@@ -169,183 +169,154 @@ export default function Login() {
   // =========================================================
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
-
-      {/* =================================================== */}
-      {/* LOGO */}
-      {/* =================================================== */}
-
-      <div className="sm:mx-auto sm:w-full sm:max-w-md">
-
-        <img
-          className="mx-auto h-24 w-auto object-contain"
-          src={logoCarecore}
-          alt="CARECORE+"
-        />
-
-        <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
-          CARECORE+
-        </h2>
-
-        <p className="mt-2 text-center text-sm text-gray-600">
-          Plataforma institucional de gestão socioassistencial
-        </p>
-
-      </div>
-
-      {/* =================================================== */}
-      {/* CARD */}
-      {/* =================================================== */}
-
-      <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
-
-        <div className="bg-white py-8 px-4 shadow-xl border border-gray-100 sm:rounded-xl sm:px-10">
-
-          {/* =============================================== */}
-          {/* ALERTA */}
-          {/* =============================================== */}
-
-          {erro && (
-            <div className="mb-5 rounded-lg border border-red-100 bg-red-50 p-3 text-sm text-red-700">
-              {erro}
-            </div>
-          )}
-
-          {/* =============================================== */}
-          {/* FORM */}
-          {/* =============================================== */}
-
-          <form
-            className="space-y-6"
-            onSubmit={handleLogin}
-          >
-
-            {/* =========================================== */}
-            {/* EMAIL */}
-            {/* =========================================== */}
-
+    <div className="min-h-screen overflow-hidden bg-gradient-to-br from-blue-600 via-violet-600 to-pink-500 p-4">
+      <div className="flex min-h-[calc(100vh-32px)] items-center justify-center rounded-[2rem] bg-slate-50/95 px-4 py-10 shadow-2xl backdrop-blur">
+        <div className="grid w-full max-w-6xl overflow-hidden rounded-[2rem] border border-white bg-white shadow-2xl lg:grid-cols-[1.05fr_0.95fr]">
+          <section className="hidden bg-gradient-to-br from-slate-950 via-blue-950 to-violet-950 p-10 text-white lg:flex lg:flex-col lg:justify-between">
             <div>
+              <img
+                className="h-20 w-auto object-contain brightness-0 invert"
+                src={logoCarecore}
+                alt="CARECORE+"
+              />
 
-              <label className="block text-sm font-medium text-gray-700">
-                E-mail
-              </label>
+              <div className="mt-12 max-w-lg">
+                <p className="text-sm font-bold uppercase tracking-[0.22em] text-blue-200">
+                  Tecnologia que cuida
+                </p>
 
-              <div className="mt-1">
+                <h1 className="mt-4 text-4xl font-black leading-tight tracking-tight">
+                  Gestão institucional para acolhimento, rotina e cuidado assistencial.
+                </h1>
 
-                <input
-                  type="email"
-                  autoComplete="email"
-                  required
-                  value={email}
-                  onChange={(e) =>
-                    setEmail(e.target.value)
-                  }
-                  className="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-brand focus:border-brand sm:text-sm"
-                  placeholder="usuario@instituicao.org"
+                <p className="mt-5 text-base leading-relaxed text-slate-300">
+                  Centralize prontuários, acomodações, ocorrências, rotina diária, SISA e relatórios em uma plataforma segura para sua instituição.
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-3 text-sm">
+              <div className="rounded-2xl border border-white/10 bg-white/10 p-4 backdrop-blur">
+                <p className="font-black">LGPD</p>
+                <p className="mt-1 text-xs text-slate-300">Dados protegidos</p>
+              </div>
+
+              <div className="rounded-2xl border border-white/10 bg-white/10 p-4 backdrop-blur">
+                <p className="font-black">SISA</p>
+                <p className="mt-1 text-xs text-slate-300">Controle mensal</p>
+              </div>
+
+              <div className="rounded-2xl border border-white/10 bg-white/10 p-4 backdrop-blur">
+                <p className="font-black">RBAC</p>
+                <p className="mt-1 text-xs text-slate-300">Acesso por perfil</p>
+              </div>
+            </div>
+          </section>
+
+          <section className="px-5 py-8 sm:px-10 lg:px-12 lg:py-12">
+            <div className="mx-auto w-full max-w-md">
+              <div className="text-center lg:text-left">
+                <img
+                  className="mx-auto h-20 w-auto object-contain lg:mx-0 lg:hidden"
+                  src={logoCarecore}
+                  alt="CARECORE+"
                 />
 
+                <p className="mt-4 text-xs font-black uppercase tracking-[0.18em] text-violet-600 lg:mt-0">
+                  Acesso institucional
+                </p>
+
+                <h2 className="mt-3 text-3xl font-black tracking-tight text-slate-950">
+                  Entrar no CARECORE+
+                </h2>
+
+                <p className="mt-2 text-sm leading-relaxed text-slate-500">
+                  Plataforma institucional de gestão socioassistencial.
+                </p>
               </div>
 
-            </div>
+              {erro && (
+                <div className="mt-6 rounded-2xl border border-red-100 bg-red-50 p-4 text-sm font-semibold text-red-700">
+                  {erro}
+                </div>
+              )}
 
-            {/* =========================================== */}
-            {/* SENHA */}
-            {/* =========================================== */}
+              <form className="mt-8 space-y-5" onSubmit={handleLogin}>
+                <div>
+                  <label className="block text-sm font-bold text-slate-700">
+                    E-mail
+                  </label>
 
-            <div>
+                  <div className="mt-2">
+                    <input
+                      type="email"
+                      autoComplete="email"
+                      required
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      className="block w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none placeholder:text-slate-400 focus:border-violet-500 focus:ring-4 focus:ring-violet-100"
+                      placeholder="usuario@instituicao.org"
+                    />
+                  </div>
+                </div>
 
-              <label className="block text-sm font-medium text-gray-700">
-                Senha
-              </label>
+                <div>
+                  <label className="block text-sm font-bold text-slate-700">
+                    Senha
+                  </label>
 
-              <div className="mt-1">
+                  <div className="mt-2">
+                    <input
+                      type="password"
+                      autoComplete="current-password"
+                      required
+                      value={senha}
+                      onChange={(e) => setSenha(e.target.value)}
+                      className="block w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none placeholder:text-slate-400 focus:border-violet-500 focus:ring-4 focus:ring-violet-100"
+                      placeholder="Digite sua senha"
+                    />
+                  </div>
+                </div>
 
-                <input
-                  type="password"
-                  autoComplete="current-password"
-                  required
-                  value={senha}
-                  onChange={(e) =>
-                    setSenha(e.target.value)
-                  }
-                  className="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-brand focus:border-brand sm:text-sm"
-                  placeholder="Digite sua senha"
-                />
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="flex w-full justify-center rounded-2xl bg-gradient-to-r from-blue-600 to-violet-700 px-4 py-3 text-sm font-black text-white shadow-lg shadow-blue-500/20 transition-all hover:from-blue-700 hover:to-violet-800 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {loading ? 'Entrando no sistema...' : 'Entrar'}
+                </button>
+              </form>
 
+              <div className="mt-8">
+                <div className="relative">
+                  <div className="absolute inset-0 flex items-center">
+                    <div className="w-full border-t border-slate-200" />
+                  </div>
+
+                  <div className="relative flex justify-center text-sm">
+                    <span className="bg-white px-3 text-sm font-semibold text-slate-500">
+                      Primeiro acesso institucional
+                    </span>
+                  </div>
+                </div>
+
+                <div className="mt-6">
+                  <Link
+                    to="/cadastro"
+                    className="flex w-full justify-center rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-700 shadow-sm transition-colors hover:bg-slate-50"
+                  >
+                    Criar instituição
+                  </Link>
+                </div>
               </div>
 
+              <p className="mt-8 text-center text-xs font-medium text-slate-400">
+                CARECORE+ © Plataforma institucional de acolhimento e gestão operacional
+              </p>
             </div>
-
-            {/* =========================================== */}
-            {/* BOTÃO */}
-            {/* =========================================== */}
-
-            <div>
-
-              <button
-                type="submit"
-                disabled={loading}
-                className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-brand hover:bg-brandDark focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-brand transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-
-                {loading
-                  ? 'Entrando no sistema...'
-                  : 'Entrar'}
-              </button>
-
-            </div>
-
-          </form>
-
-          {/* =============================================== */}
-          {/* FOOTER */}
-          {/* =============================================== */}
-
-          <div className="mt-6">
-
-            <div className="relative">
-
-              <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t border-gray-300" />
-              </div>
-
-              <div className="relative flex justify-center text-sm">
-                <span className="px-2 bg-white text-gray-500">
-                  Primeiro acesso institucional
-                </span>
-              </div>
-
-            </div>
-
-            <div className="mt-6">
-
-              <Link
-                to="/cadastro"
-                className="w-full flex justify-center py-2 px-4 border border-gray-300 rounded-md shadow-sm bg-white text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
-              >
-                Criar instituição
-              </Link>
-
-            </div>
-
-          </div>
-
+          </section>
         </div>
-
-        {/* ================================================= */}
-        {/* RODAPÉ */}
-        {/* ================================================= */}
-
-        <div className="mt-6 text-center">
-
-          <p className="text-xs text-gray-400">
-            CARECORE+ © Plataforma institucional de acolhimento e gestão operacional
-          </p>
-
-        </div>
-
       </div>
-
     </div>
   );
 }

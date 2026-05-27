@@ -5,6 +5,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import Sidebar from './Sidebar';
+import { AppShell, MainShell, PageHeader, ScrollArea } from './components/PremiumUI';
 import { API_ROOT } from './config/apiBase';
 
 export default function Quartos() {
@@ -174,23 +175,19 @@ useEffect(() => {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 flex">
-      {/* SEU NOVO MENU LATERAL INTEGRADO */}
+    <AppShell>
       <Sidebar />
 
-      {/* ÁREA DE CONTEÚDO (DIREITA) */}
-      <div className="flex-1 flex flex-col min-w-0 h-screen overflow-y-auto">
-        
-        {/* Cabeçalho */}
-        <header className="bg-white shadow-sm border-b px-8 py-5 flex justify-between items-center sticky top-0 z-10">
-          <h1 className="text-lg font-bold text-slate-800 tracking-tight">Módulo de Acomodações</h1>
-          <div className="flex items-center gap-3">
-            <span className="w-8 h-8 rounded-full bg-brand/10 text-brand flex items-center justify-center font-bold">🏠</span>
-            <span className="text-sm font-semibold text-gray-600">Configuração de Leitos</span>
-          </div>
-        </header>
+      <MainShell>
+        <PageHeader
+          eyebrow="Operação"
+          title="Módulo de Acomodações"
+          subtitle="Configuração de quartos, leitos e mapa de ocupação da instituição."
+          icon="▣"
+        />
 
-        <main className="flex-1 p-8 w-full max-w-7xl mx-auto">
+        <ScrollArea>
+          <div className="w-full max-w-7xl mx-auto">
           {erro && <div className="bg-red-50 text-red-600 p-4 rounded-xl text-sm mb-6 font-bold border border-red-100">⚠️ {erro}</div>}
           {sucesso && <div className="bg-green-50 text-green-700 p-4 rounded-xl text-sm mb-6 font-bold border border-green-100">✅ {sucesso}</div>}
 
@@ -401,8 +398,9 @@ useEffect(() => {
             </div>
           )}
 
-        </main>
-      </div>
-    </div>
+          </div>
+        </ScrollArea>
+      </MainShell>
+    </AppShell>
   );
 }

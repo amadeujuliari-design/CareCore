@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import Sidebar from './Sidebar';
 import AuthenticatedImage from './components/AuthenticatedImage';
+import { AppShell, MainShell, PageHeader, ScrollArea } from './components/PremiumUI';
 import { API_ROOT } from './config/apiBase';
 import { baixarArquivoAutenticado } from './utils/arquivosApi';
 import {
@@ -477,19 +478,19 @@ export default function Conviventes() {
   });
 
   return (
-    <div className="min-h-screen bg-gray-50 flex">
+    <AppShell>
       <Sidebar />
 
-      <div className="flex-1 flex flex-col min-w-0 h-screen overflow-y-auto">
-        <header className="bg-white shadow-sm border-b px-8 py-5 flex justify-between items-center sticky top-0 z-10">
-          <h1 className="text-xl font-bold text-gray-800">Módulo de Prontuários</h1>
-          <div className="flex items-center gap-3">
-            <span className="w-8 h-8 rounded-full bg-brand/10 text-brand flex items-center justify-center font-medium">👤</span>
-            <span className="text-sm font-medium text-gray-600">Equipe Técnica</span>
-          </div>
-        </header>
+      <MainShell>
+        <PageHeader
+          eyebrow="Assistência"
+          title="Módulo de Prontuários"
+          subtitle="Cadastro, acompanhamento técnico, documentos e histórico da população acolhida."
+          icon="👥"
+        />
 
-        <main className="flex-1 p-8 w-full max-w-7xl mx-auto">
+        <ScrollArea>
+          <div className="w-full max-w-7xl mx-auto">
           {erro && telaAtual === 'lista' && <div className="bg-red-50 text-red-600 p-4 rounded-xl text-sm mb-6 font-semibold border border-red-100 flex items-center gap-2">⚠️ {erro}</div>}
           {sucesso && <div className="bg-green-50 text-green-700 p-4 rounded-xl text-sm mb-6 font-semibold border border-green-100 flex items-center gap-2">✅ {sucesso}</div>}
 
@@ -987,8 +988,8 @@ export default function Conviventes() {
               </form>
             </div>
           )}
-        </main>
-      </div>
+          </div>
+        </ScrollArea>
 
       {/* --- MODAL DA CARTEIRINHA DE IDENTIFICAÇÃO (TAMANHO RG MILIMÉTRICO) --- */}
 {carteirinhaAberta && (() => {
@@ -1207,7 +1208,8 @@ export default function Conviventes() {
           </div>
         </div>
       )}
-    </div>
+      </MainShell>
+    </AppShell>
   );
 }
 // === FIM DO ARQUIVO ===

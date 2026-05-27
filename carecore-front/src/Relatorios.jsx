@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 
 import Sidebar from './Sidebar';
+import { AppShell, MainShell, PageHeader, PremiumButton, ScrollArea } from './components/PremiumUI';
 import { API_ROOT } from './config/apiBase';
 import { CardMetrica, RelatorioCard } from './components/RelatoriosUI';
 import { exportarRelatorioXlsx } from './utils/exportarRelatorioXlsx';
@@ -966,37 +967,42 @@ export default function Relatorios() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex">
+    <AppShell>
       <Sidebar />
 
-      <div className="flex-1 flex flex-col min-w-0 h-screen overflow-y-auto">
-        <header className="bg-white shadow-sm border-b px-8 py-5 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 sticky top-0 z-10">
-          <div>
-            <h1 className="text-xl font-black text-gray-900">Central de Relatorios</h1>
-            <p className="text-xs text-gray-500 mt-1">
-              Relatorios operacionais, gerenciais e de prestacao de contas do CARECORE+.
-            </p>
-          </div>
+      <MainShell>
+        <PageHeader
+          eyebrow="Gestão e auditoria"
+          title="Central de Relatórios"
+          subtitle="Relatórios operacionais, gerenciais e de prestação de contas do CARECORE+."
+          icon="▥"
+          actions={(
+            <>
+              <PremiumButton
+                type="button"
+                variant="brand"
+                onClick={exportarAbaAtual}
+                disabled={loading || linhasExportacao.length === 0}
+                className="text-xs"
+              >
+                Exportar aba
+              </PremiumButton>
 
-          <div className="flex gap-2">
-            <button
-              onClick={exportarAbaAtual}
-              disabled={loading || linhasExportacao.length === 0}
-              className="px-4 py-2 rounded-xl bg-brand text-white text-xs font-black hover:bg-brandDark disabled:opacity-50"
-            >
-              Exportar aba
-            </button>
-            <button
-              onClick={imprimirAbaAtual}
-              disabled={loading || linhasExportacao.length === 0}
-              className="px-4 py-2 rounded-xl bg-white border border-gray-200 text-gray-700 text-xs font-black hover:bg-gray-50 disabled:opacity-50"
-            >
-              Imprimir aba
-            </button>
-          </div>
-        </header>
+              <PremiumButton
+                type="button"
+                variant="secondary"
+                onClick={imprimirAbaAtual}
+                disabled={loading || linhasExportacao.length === 0}
+                className="text-xs"
+              >
+                Imprimir aba
+              </PremiumButton>
+            </>
+          )}
+        />
 
-        <main className="flex-1 p-8 w-full max-w-7xl mx-auto">
+        <ScrollArea>
+          <div className="w-full max-w-7xl mx-auto">
           {erro && (
             <div className="mb-6 bg-red-50 text-red-700 border border-red-100 rounded-2xl p-4 text-sm font-bold">
               {erro}
@@ -1312,8 +1318,9 @@ export default function Relatorios() {
               </section>
             </>
           )}
-        </main>
-      </div>
-    </div>
+          </div>
+        </ScrollArea>
+      </MainShell>
+    </AppShell>
   );
 }
