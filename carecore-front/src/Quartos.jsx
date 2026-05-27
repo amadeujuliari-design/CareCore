@@ -188,8 +188,8 @@ useEffect(() => {
 
         <ScrollArea>
           <div className="w-full max-w-7xl mx-auto">
-          {erro && <div className="bg-red-50 text-red-600 p-4 rounded-xl text-sm mb-6 font-bold border border-red-100">⚠️ {erro}</div>}
-          {sucesso && <div className="bg-green-50 text-green-700 p-4 rounded-xl text-sm mb-6 font-bold border border-green-100">✅ {sucesso}</div>}
+          {erro && <div className="bg-red-50 text-red-600 p-4 rounded-xl text-sm mb-6 font-bold border border-red-100">! {erro}</div>}
+          {sucesso && <div className="bg-green-50 text-green-700 p-4 rounded-xl text-sm mb-6 font-bold border border-green-100">{sucesso}</div>}
 
           {/* --- TELA DE LISTAGEM --- */}
           {telaAtual === 'lista' && (
@@ -249,7 +249,7 @@ useEffect(() => {
                                     : 'bg-white border-slate-200 hover:bg-slate-50'
                                 }`}
                               >
-                                <div className="text-base mb-1">🛏️</div>
+                                <div className="text-base mb-1">▣</div>
 
                                 <div className={`text-[12px] font-semibold leading-tight ${
                                   ocupado
@@ -313,7 +313,7 @@ useEffect(() => {
           {telaAtual === 'form' && (
             <div className="bg-white p-8 rounded-2xl shadow-sm border border-gray-100 max-w-2xl mx-auto">
               <h2 className="text-xl font-black text-gray-800 border-b pb-3 mb-6">
-                {editandoId ? '📝 Editar Estrutura de Quarto' : '🏠 Cadastrar Novo Quarto'}
+                {editandoId ? 'Editar estrutura de quarto' : 'Cadastrar novo quarto'}
               </h2>
 
               <form onSubmit={handleSalvarQuarto} className="space-y-6">
@@ -364,7 +364,7 @@ useEffect(() => {
                     {leitosForm.map((cama, index) => (
                       <div key={cama.id || cama.id_temporario} className="flex items-center justify-between p-3 bg-gray-50 rounded-xl border border-gray-200">
                         <div className="flex items-center gap-3">
-                          <span className="text-xl">🛌</span>
+                          <span className="text-xl">▣</span>
                           <span className="font-bold text-gray-700 text-sm">{cama.identificacao}</span>
                           <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded ${cama.status === 'Ocupado' ? 'bg-amber-100 text-amber-800' : 'bg-green-100 text-green-800'}`}>
                             {cama.status === 'Ocupado' ? 'Ocupada (Acolhido Deitado)' : 'Livre'}
@@ -391,7 +391,7 @@ useEffect(() => {
                     Cancelar
                   </button>
                   <button type="submit" className="px-6 py-2.5 bg-brand text-white rounded-xl hover:bg-brandDark font-bold text-sm shadow-md">
-                    💾 Salvar Estrutura
+                    Salvar estrutura
                   </button>
                 </div>
               </form>

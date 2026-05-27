@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import logoCarecore from './assets/logo.png';
 
@@ -17,6 +18,7 @@ function IconBox({ children, active }) {
 export default function Sidebar() {
   const location = useLocation();
   const navigate = useNavigate();
+  const [menuMobileAberto, setMenuMobileAberto] = useState(false);
   const token = localStorage.getItem('@CareCore:token') || localStorage.getItem('token');
 
   let perfilUsuario = '';
@@ -50,7 +52,7 @@ export default function Sidebar() {
         },
         {
           path: '/conviventes',
-          icon: '👥',
+          icon: '◇',
           label: 'Conviventes'
         },
         {
@@ -60,7 +62,7 @@ export default function Sidebar() {
         },
         {
           path: '/ocorrencias',
-          icon: '⚠',
+          icon: '!',
           label:
             perfilUsuario === 'Orientador'
               ? 'Minhas Ocorrências'
@@ -68,7 +70,7 @@ export default function Sidebar() {
         },
         {
           path: '/rotina',
-          icon: '⏱',
+          icon: '◷',
           label: 'Rotina Diária'
         },
         {
@@ -88,7 +90,7 @@ export default function Sidebar() {
         },
         {
           path: '/avisos',
-          icon: '🔔',
+          icon: '◌',
           label: 'Comunicação Interna'
         },
         {
@@ -98,7 +100,7 @@ export default function Sidebar() {
         },
         {
           path: '/usuarios',
-          icon: '👤',
+          icon: '○',
           label: 'Usuários',
           perfis: ['Gestor']
         }
@@ -109,7 +111,7 @@ export default function Sidebar() {
       items: [
         {
           path: '/backup',
-          icon: '☁',
+          icon: '◧',
           label: 'Backup',
           disabled: true
         }
@@ -136,8 +138,142 @@ export default function Sidebar() {
     );
   };
 
+  const itensVisiveisPorGrupo = menuGroups.map((group) => ({
+    ...group,
+    items: group.items.filter(item => !item.perfis || item.perfis.includes(perfilNormalizado)),
+  }));
+
+  const renderMenuGroups = ({ onNavigate } = {}) => (
+    itensVisiveisPorGrupo.map(group => (
+      <div key={group.title} className="carecore-menu-group">
+
+        <p className="carecore-menu-title">
+          {group.title}
+        </p>
+
+        <div className="carecore-menu-list">
+
+          {group.items.map(item => {
+            const active = isActivePath(item.path);
+
+            if (item.disabled) {
+              return (
+                <div
+                  key={item.path}
+                  className="carecore-menu-item carecore-menu-item-disabled"
+                  title="Em breve"
+                >
+                  <IconBox active={false}>{item.icon}</IconBox>
+                  <span className="truncate">{item.label}</span>
+                </div>
+              );
+            }
+
+            return (
+              <Link
+                key={item.path}
+                to={item.path}
+                onClick={onNavigate}
+                className={`
+                  carecore-menu-item
+                  ${active ? 'carecore-menu-item-active' : ''}
+                `}
+              >
+                <IconBox active={active}>{item.icon}</IconBox>
+
+                <span className="truncate">
+                  {item.label}
+                </span>
+
+                {active && (
+                  <span className="carecore-active-dot" />
+                )}
+              </Link>
+            );
+          })}
+
+        </div>
+
+      </div>
+    ))
+  );
+
   return (
-    <aside className="carecore-sidebar">
+    <>
+      <div className="carecore-mobile-topbar">
+        <button
+          type="button"
+          onClick={() => setMenuMobileAberto(true)}
+          className="carecore-mobile-menu-button"
+          aria-label="Abrir menu"
+        >
+          ☰
+        </button>
+
+        <img
+          src={logoCarecore}
+          alt="CARECORE+"
+          className="carecore-mobile-logo"
+        />
+
+        <div className="carecore-mobile-avatar">
+          {(nomeUsuario || 'U').slice(0, 1).toUpperCase()}
+        </div>
+      </div>
+
+      {menuMobileAberto && (
+        <div className="carecore-mobile-overlay" onClick={() => setMenuMobileAberto(false)}>
+          <aside className="carecore-mobile-drawer" onClick={(event) => event.stopPropagation()}>
+            <div className="carecore-mobile-drawer-header">
+              <img
+                src={logoCarecore}
+                alt="CARECORE+"
+                className="carecore-mobile-drawer-logo"
+              />
+
+              <button
+                type="button"
+                onClick={() => setMenuMobileAberto(false)}
+                className="carecore-mobile-close"
+                aria-label="Fechar menu"
+              >
+                ×
+              </button>
+            </div>
+
+            <nav className="carecore-sidebar-nav">
+              {renderMenuGroups({ onNavigate: () => setMenuMobileAberto(false) })}
+            </nav>
+
+            <div className="carecore-sidebar-footer">
+              <div className="carecore-user-card">
+                <div className="carecore-user-avatar">
+                  {(nomeUsuario || 'U').slice(0, 1).toUpperCase()}
+                </div>
+
+                <div className="min-w-0">
+                  <p className="carecore-user-name">
+                    {nomeUsuario}
+                  </p>
+                  <p className="carecore-user-role">
+                    {perfilUsuario || 'Perfil'}
+                  </p>
+                </div>
+              </div>
+
+              <button
+                onClick={handleLogout}
+                className="carecore-logout-button"
+              >
+                <span>↩</span>
+                Sair
+              </button>
+            </div>
+          </aside>
+        </div>
+      )}
+
+      <aside className="carecore-sidebar">
 
       <div className="carecore-sidebar-brand carecore-sidebar-brand-logo-only">
         <img
@@ -149,59 +285,7 @@ export default function Sidebar() {
 
       <nav className="carecore-sidebar-nav">
 
-        {menuGroups.map(group => (
-          <div key={group.title} className="carecore-menu-group">
-
-            <p className="carecore-menu-title">
-              {group.title}
-            </p>
-
-            <div className="carecore-menu-list">
-
-              {group.items
-                .filter(item => !item.perfis || item.perfis.includes(perfilNormalizado))
-                .map(item => {
-                const active = isActivePath(item.path);
-
-                if (item.disabled) {
-                  return (
-                    <div
-                      key={item.path}
-                      className="carecore-menu-item carecore-menu-item-disabled"
-                      title="Em breve"
-                    >
-                      <IconBox active={false}>{item.icon}</IconBox>
-                      <span className="truncate">{item.label}</span>
-                    </div>
-                  );
-                }
-
-                return (
-                  <Link
-                    key={item.path}
-                    to={item.path}
-                    className={`
-                      carecore-menu-item
-                      ${active ? 'carecore-menu-item-active' : ''}
-                    `}
-                  >
-                    <IconBox active={active}>{item.icon}</IconBox>
-
-                    <span className="truncate">
-                      {item.label}
-                    </span>
-
-                    {active && (
-                      <span className="carecore-active-dot" />
-                    )}
-                  </Link>
-                );
-              })}
-
-            </div>
-
-          </div>
-        ))}
+        {renderMenuGroups()}
 
       </nav>
 
@@ -239,7 +323,8 @@ export default function Sidebar() {
 
       </div>
 
-    </aside>
+      </aside>
+    </>
   );
 }
 

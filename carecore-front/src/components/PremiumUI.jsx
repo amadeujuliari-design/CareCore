@@ -125,7 +125,7 @@ export function PremiumBadge({ children, variant = 'default' }) {
 export function PremiumAlertTitle({ children }) {
   return (
     <div className="flex items-center gap-2">
-      <span className="carecore-badge-alert">⚠</span>
+      <span className="carecore-badge-alert">!</span>
       <h2 className="text-base font-extrabold text-slate-900">
         {children}
       </h2>

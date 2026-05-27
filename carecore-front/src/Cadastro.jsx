@@ -44,6 +44,8 @@ export default function Cadastro() {
   }, [senha]);
 
   const senhaForte = Object.values(regrasSenha).every(Boolean);
+  const inputClassName = 'appearance-none block w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 shadow-sm outline-none transition focus:border-violet-400 focus:ring-4 focus:ring-violet-100';
+  const labelClassName = 'block text-sm font-bold text-slate-700';
 
   const formatarCNPJ = (valor) => {
     let v = valor.replace(/\D/g, '');
@@ -153,7 +155,7 @@ export default function Cadastro() {
   };
 
   return (
-    <div className="min-h-screen overflow-y-auto bg-gradient-to-br from-blue-600 via-violet-600 to-pink-500 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
+    <div className="min-h-screen overflow-y-auto bg-gradient-to-br from-blue-600 via-violet-600 to-pink-500 flex flex-col justify-center px-4 py-10 sm:px-6 lg:px-8">
       <div className="sm:mx-auto sm:w-full sm:max-w-md">
         <img className="mx-auto h-20 w-auto object-contain drop-shadow-sm" src={logoCarecore} alt="CARECORE+" />
 
@@ -164,6 +166,15 @@ export default function Cadastro() {
         <p className="mt-2 text-center text-sm font-semibold text-blue-50">
           {etapa === 1 ? 'Passo 1: Dados da Instituição' : 'Passo 2: Dados do Administrador'}
         </p>
+
+        <div className="mx-auto mt-5 grid max-w-xs grid-cols-2 gap-2 rounded-full bg-white/15 p-1 text-xs font-bold text-white shadow-inner backdrop-blur">
+          <span className={`rounded-full px-3 py-2 text-center ${etapa === 1 ? 'bg-white text-violet-700 shadow' : 'text-white/80'}`}>
+            Instituição
+          </span>
+          <span className={`rounded-full px-3 py-2 text-center ${etapa === 2 ? 'bg-white text-violet-700 shadow' : 'text-white/80'}`}>
+            Administrador
+          </span>
+        </div>
       </div>
 
       <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
@@ -177,7 +188,7 @@ export default function Cadastro() {
           {etapa === 1 ? (
             <form onSubmit={handleProximaEtapa} className="space-y-6">
               <div>
-                <label className="block text-sm font-medium text-gray-700">
+                <label className={labelClassName}>
                   Nome do Abrigo / Instituição *
                 </label>
 
@@ -187,14 +198,14 @@ export default function Cadastro() {
                     required
                     value={nomeFantasia}
                     onChange={(e) => setNomeFantasia(e.target.value)}
-                    className="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-brand focus:border-brand sm:text-sm"
+                    className={inputClassName}
                     placeholder="Ex: Casa Nova Esperança"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700">
+                <label className={labelClassName}>
                   CNPJ (Opcional)
                 </label>
 
@@ -203,14 +214,14 @@ export default function Cadastro() {
                     type="text"
                     value={cnpj}
                     onChange={(e) => setCnpj(formatarCNPJ(e.target.value))}
-                    className="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-brand focus:border-brand sm:text-sm"
+                    className={inputClassName}
                     placeholder="00.000.000/0000-00"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700">
+                <label className={labelClassName}>
                   Telefone de Contato *
                 </label>
 
@@ -220,7 +231,7 @@ export default function Cadastro() {
                     required
                     value={telefone}
                     onChange={(e) => setTelefone(formatarTelefone(e.target.value))}
-                    className="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-brand focus:border-brand sm:text-sm"
+                    className={inputClassName}
                     placeholder="(11) 99999-9999"
                   />
                 </div>
@@ -228,15 +239,15 @@ export default function Cadastro() {
 
               <button
                 type="submit"
-                className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-brand hover:bg-brandDark focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-brand transition-colors"
+                className="flex w-full justify-center rounded-2xl border border-transparent bg-slate-950 px-4 py-3 text-sm font-bold text-white shadow-lg shadow-slate-900/20 transition-colors hover:bg-slate-800 focus:outline-none focus:ring-4 focus:ring-violet-100"
               >
-                Próximo Passo &rarr;
+                Próximo passo
               </button>
             </form>
           ) : (
             <form onSubmit={handleFinalizarCadastro} className="space-y-6">
               <div>
-                <label className="block text-sm font-medium text-gray-700">
+                <label className={labelClassName}>
                   Seu Nome Completo *
                 </label>
 
@@ -246,14 +257,14 @@ export default function Cadastro() {
                     required
                     value={nomeUsuario}
                     onChange={(e) => setNomeUsuario(e.target.value)}
-                    className="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-brand focus:border-brand sm:text-sm"
+                    className={inputClassName}
                     placeholder="Ex: João Diretor"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700">
+                <label className={labelClassName}>
                   E-mail (Seu login) *
                 </label>
 
@@ -263,14 +274,14 @@ export default function Cadastro() {
                     required
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    className="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-brand focus:border-brand sm:text-sm"
+                    className={inputClassName}
                     placeholder="diretoria@abrigo.com"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700">
+                <label className={labelClassName}>
                   Crie uma Senha *
                 </label>
 
@@ -280,8 +291,8 @@ export default function Cadastro() {
                     required
                     value={senha}
                     onChange={(e) => setSenha(e.target.value)}
-                    className={`appearance-none block w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-brand focus:border-brand sm:text-sm ${
-                      senha && !senhaForte ? 'border-red-300' : 'border-gray-300'
+                    className={`${inputClassName} ${
+                      senha && !senhaForte ? 'border-red-300 focus:border-red-400 focus:ring-red-100' : ''
                     }`}
                     placeholder="Mínimo 8 caracteres"
                   />
@@ -309,7 +320,7 @@ export default function Cadastro() {
                     setErro('');
                     setEtapa(1);
                   }}
-                  className="w-1/3 flex justify-center py-2 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none"
+                  className="flex w-1/3 justify-center rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-700 shadow-sm transition-colors hover:bg-slate-50 focus:outline-none"
                 >
                   Voltar
                 </button>
@@ -317,9 +328,9 @@ export default function Cadastro() {
                 <button
                   type="submit"
                   disabled={loading || !senhaForte}
-                  className="w-2/3 flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="flex w-2/3 justify-center rounded-2xl border border-transparent bg-slate-950 px-4 py-3 text-sm font-bold text-white shadow-lg shadow-slate-900/20 transition-colors hover:bg-slate-800 focus:outline-none focus:ring-4 focus:ring-violet-100 disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  {loading ? 'Criando Conta...' : 'Finalizar Cadastro'}
+                  {loading ? 'Criando conta...' : 'Finalizar cadastro'}
                 </button>
               </div>
             </form>
@@ -332,7 +343,7 @@ export default function Cadastro() {
               </div>
 
               <div className="relative flex justify-center text-sm">
-                <span className="px-2 bg-white text-gray-500">
+                <span className="bg-white/95 px-2 text-gray-500">
                   Já possui conta?
                 </span>
               </div>

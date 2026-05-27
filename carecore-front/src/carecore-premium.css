@@ -299,6 +299,88 @@ body {
   background: #fff5f5;
 }
 
+.carecore-mobile-topbar {
+  display: none;
+}
+
+.carecore-mobile-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  background: rgba(15, 23, 42, 0.42);
+  backdrop-filter: blur(6px);
+}
+
+.carecore-mobile-drawer {
+  width: min(88vw, 320px);
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: rgba(255, 255, 255, 0.96);
+  border-right: 1px solid var(--carecore-border);
+  box-shadow: 24px 0 80px rgba(15, 23, 42, 0.20);
+}
+
+.carecore-mobile-drawer-header {
+  min-height: 70px;
+  padding: 10px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--carecore-border);
+}
+
+.carecore-mobile-drawer-logo {
+  width: 150px;
+  height: auto;
+  object-fit: contain;
+}
+
+.carecore-mobile-close,
+.carecore-mobile-menu-button {
+  border: 1px solid var(--carecore-border);
+  background: #ffffff;
+  color: #243b63;
+  cursor: pointer;
+  box-shadow: var(--carecore-shadow-soft);
+}
+
+.carecore-mobile-close {
+  width: 36px;
+  height: 36px;
+  border-radius: 13px;
+  font-size: 24px;
+  line-height: 1;
+}
+
+.carecore-mobile-menu-button {
+  width: 42px;
+  height: 42px;
+  border-radius: 15px;
+  font-size: 22px;
+  font-weight: 800;
+}
+
+.carecore-mobile-logo {
+  width: 140px;
+  max-width: 48vw;
+  height: auto;
+  object-fit: contain;
+}
+
+.carecore-mobile-avatar {
+  width: 38px;
+  height: 38px;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #4f22f2;
+  background: var(--carecore-purple-soft);
+  border: 1px solid rgba(124, 58, 237, 0.08);
+  font-weight: 800;
+}
+
 /* ---------------------------------------------------------------------
    Utilitários globais para próximas telas
    --------------------------------------------------------------------- */
@@ -627,6 +709,23 @@ body {
 }
 
 @media (max-width: 1024px) {
+  .carecore-mobile-topbar {
+    height: 64px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    position: fixed;
+    left: 0;
+    right: 0;
+    top: 0;
+    z-index: 70;
+    padding: 10px 14px;
+    background: rgba(255, 255, 255, 0.92);
+    border-bottom: 1px solid var(--carecore-border);
+    backdrop-filter: blur(18px);
+  }
+
   html,
   body,
   #root {
@@ -656,6 +755,7 @@ body {
 
   .carecore-main-fixed {
     min-height: 100vh;
+    padding-top: 64px;
   }
 
   .carecore-scroll-area {

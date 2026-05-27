@@ -518,7 +518,7 @@ export default function Avisos() {
           eyebrow="Equipe"
           title="Comunicação Interna"
           subtitle="Envie avisos, mensagens direcionadas e comunicados para a equipe."
-          icon="🔔"
+          icon="◌"
           actions={(
             <>
               <PremiumButton
@@ -530,7 +530,7 @@ export default function Avisos() {
               </PremiumButton>
 
               <div className="rounded-2xl border border-purple-100 bg-purple-50 px-4 py-3 text-sm font-bold text-purple-700">
-                🔔 {resumo.total_alertas_ativos || 0} ativos
+                {resumo.total_alertas_ativos || 0} ativos
               </div>
             </>
           )}

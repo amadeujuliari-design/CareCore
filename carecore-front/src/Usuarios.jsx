@@ -547,7 +547,7 @@ export default function Usuarios() {
           eyebrow="Administração"
           title="Usuários e Permissões"
           subtitle="Gestão da equipe institucional, perfis de acesso e status de usuários."
-          icon="👤"
+          icon="○"
           actions={(
             <>
             {tela === 'lista' && podeGerenciar && (
@@ -593,7 +593,7 @@ export default function Usuarios() {
         )}
 
         {tela === 'lista' && (
-          <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <section className="rounded-3xl border border-slate-100 bg-white p-5 shadow-sm">
             <div className="mb-5 grid gap-3 md:grid-cols-4">
               <input
                 value={busca}
@@ -737,7 +737,7 @@ export default function Usuarios() {
         {tela === 'form' && (
           <form
             onSubmit={salvarUsuario}
-            className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
+            className="rounded-3xl border border-slate-100 bg-white p-5 shadow-sm"
           >
             <div className="mb-6">
               <h2 className="text-lg font-bold text-slate-900">
@@ -749,7 +749,7 @@ export default function Usuarios() {
             </div>
 
             <div className="grid gap-6">
-              <section>
+              <section className="rounded-2xl border border-slate-100 bg-slate-50/60 p-4">
                 <h3 className="mb-3 text-sm font-bold uppercase tracking-wide text-slate-500">
                   Acesso
                 </h3>
@@ -789,7 +789,7 @@ export default function Usuarios() {
                 </div>
               </section>
 
-              <section>
+              <section className="rounded-2xl border border-slate-100 bg-slate-50/60 p-4">
                 <h3 className="mb-3 text-sm font-bold uppercase tracking-wide text-slate-500">
                   Dados pessoais
                 </h3>
@@ -845,7 +845,7 @@ export default function Usuarios() {
                 </div>
               </section>
 
-              <section>
+              <section className="rounded-2xl border border-slate-100 bg-slate-50/60 p-4">
                 <h3 className="mb-3 text-sm font-bold uppercase tracking-wide text-slate-500">
                   Endereço
                 </h3>
@@ -872,7 +872,7 @@ export default function Usuarios() {
                 </div>
               </section>
 
-              <section>
+              <section className="rounded-2xl border border-slate-100 bg-slate-50/60 p-4">
                 <h3 className="mb-3 text-sm font-bold uppercase tracking-wide text-slate-500">
                   Dados profissionais
                 </h3>
@@ -910,23 +910,22 @@ export default function Usuarios() {
               </section>
             </div>
 
-            <div className="mt-6 flex justify-end gap-3">
-              <button
+            <div className="mt-6 flex flex-col-reverse justify-end gap-3 sm:flex-row">
+              <PremiumButton
                 type="button"
+                variant="secondary"
                 onClick={voltarLista}
-                className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
               >
                 Cancelar
-              </button>
+              </PremiumButton>
 
               {podeGerenciar && (
-                <button
+                <PremiumButton
                   type="submit"
                   disabled={salvando}
-                  className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-slate-800 disabled:opacity-60"
                 >
                   {salvando ? 'Salvando...' : 'Salvar usuário'}
-                </button>
+                </PremiumButton>
               )}
             </div>
           </form>

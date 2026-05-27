@@ -22,7 +22,7 @@ import {
 import QRCodeLib from 'react-qr-code';
 import BarcodeLib from 'react-barcode';
 
-// 🛡️ BLINDAGEM ATUALIZADA: Aceita funções e objetos React (como forwardRef do QRCode)
+// Blindagem atualizada: aceita funções e objetos React (como forwardRef do QRCode)
 const getValidComponent = (Lib) => {
   if (!Lib) return () => <div className="text-red-500 text-xs">Erro</div>;
   if (typeof Lib === 'function') return Lib;
@@ -91,7 +91,7 @@ export default function Conviventes() {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
 
-  // 🪪 Estados da Carteirinha
+  // Estados da carteirinha
   const [carteirinhaAberta, setCarteirinhaAberta] = useState(null);
   const [fotoCarteirinha, setFotoCarteirinha] = useState(null);
   
@@ -281,7 +281,7 @@ export default function Conviventes() {
     } catch (error) { console.error("Erro ao carregar documentos", error); } finally { setLoadingDocs(false); }
   };
 
-  // 🪪 Função para abrir o RG e buscar a foto atualizada
+  // Função para abrir o RG e buscar a foto atualizada
   const abrirCarteirinha = async (convivente) => {
     setCarteirinhaAberta(convivente);
     setFotoCarteirinha(null);
@@ -486,13 +486,13 @@ export default function Conviventes() {
           eyebrow="Assistência"
           title="Módulo de Prontuários"
           subtitle="Cadastro, acompanhamento técnico, documentos e histórico da população acolhida."
-          icon="👥"
+          icon="◇"
         />
 
         <ScrollArea>
           <div className="w-full max-w-7xl mx-auto">
-          {erro && telaAtual === 'lista' && <div className="bg-red-50 text-red-600 p-4 rounded-xl text-sm mb-6 font-semibold border border-red-100 flex items-center gap-2">⚠️ {erro}</div>}
-          {sucesso && <div className="bg-green-50 text-green-700 p-4 rounded-xl text-sm mb-6 font-semibold border border-green-100 flex items-center gap-2">✅ {sucesso}</div>}
+          {erro && telaAtual === 'lista' && <div className="bg-red-50 text-red-600 p-4 rounded-xl text-sm mb-6 font-semibold border border-red-100 flex items-center gap-2">! {erro}</div>}
+          {sucesso && <div className="bg-green-50 text-green-700 p-4 rounded-xl text-sm mb-6 font-semibold border border-green-100 flex items-center gap-2">{sucesso}</div>}
 
           {/* TELA DE LISTAGEM */}
           {telaAtual === 'lista' && (
@@ -647,11 +647,11 @@ export default function Conviventes() {
                             {fotoPerfilUrl ? (
                               <AuthenticatedImage caminhoOuUrl={fotoPerfilUrl} alt="Foto Oficial" className="w-full h-full object-cover" />
                             ) : (
-                              <div className="flex flex-col items-center justify-center text-gray-300"><span className="text-4xl">👤</span><span className="text-[9px] uppercase font-bold mt-1">Sem Foto</span></div>
+                              <div className="flex flex-col items-center justify-center text-gray-300"><span className="text-4xl">○</span><span className="text-[9px] uppercase font-bold mt-1">Sem Foto</span></div>
                             )}
                           </div>
                           {editandoId && (
-                            <button type="button" onClick={() => setAbaAtual('documentos')} className="absolute -bottom-2 -right-2 bg-brand text-white rounded-full p-1.5 text-xs hover:bg-brandDark shadow transition-transform hover:scale-110" title="Alterar fotografia">📷</button>
+                            <button type="button" onClick={() => setAbaAtual('documentos')} className="absolute -bottom-2 -right-2 bg-brand text-white rounded-full p-1.5 text-xs hover:bg-brandDark shadow transition-transform hover:scale-110" title="Alterar fotografia">+</button>
                           )}
                         </div>
 
@@ -659,7 +659,7 @@ export default function Conviventes() {
                           <div><label className="block text-xs font-semibold text-gray-700 mb-1">Nome Civil Completo *</label><input type="text" required name="nome_completo" value={formData.nome_completo} onChange={handleChange} className="w-full px-3 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none text-sm font-medium" /></div>
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div><label className="block text-xs font-semibold text-gray-700 mb-1">Nome Social</label><input type="text" name="nome_social" value={formData.nome_social} onChange={handleChange} className="w-full px-3 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none text-sm" /></div>
-                            <div><label className="block text-xs font-bold text-brand mb-1">🧑‍💼 Técnico de Referência</label><select name="tecnico_id" value={formData.tecnico_id} onChange={handleChange} className="w-full px-3 py-1.5 border border-brand/40 rounded-lg focus:ring-2 focus:ring-brand outline-none bg-white text-sm font-medium text-gray-700"><option value="">Não Definido (Atendimento Geral)</option>{listaTecnicos.map(tec => <option key={tec.id} value={tec.id}>{tec.nome} ({tec.perfil_acesso})</option>)}</select></div>
+                            <div><label className="block text-xs font-bold text-brand mb-1">Técnico de Referência</label><select name="tecnico_id" value={formData.tecnico_id} onChange={handleChange} className="w-full px-3 py-1.5 border border-brand/40 rounded-lg focus:ring-2 focus:ring-brand outline-none bg-white text-sm font-medium text-gray-700"><option value="">Não Definido (Atendimento Geral)</option>{listaTecnicos.map(tec => <option key={tec.id} value={tec.id}>{tec.nome} ({tec.perfil_acesso})</option>)}</select></div>
                           </div>
                         </div>
                       </div>
@@ -709,7 +709,7 @@ export default function Conviventes() {
                         <div><label className="block text-xs font-semibold text-gray-700 mb-1">Identidade de Gênero</label><select name="identidade_genero" value={formData.identidade_genero} onChange={handleChange} className="w-full px-3 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none bg-white text-sm"><option value="">Selecione...</option><option value="Homem Cisgênero">Homem Cisgênero</option><option value="Mulher Cisgênero">Mulher Cisgênero</option><option value="Homem Transgênero">Homem Transgênero</option><option value="Mulher Transgênero">Mulher Transgênero</option><option value="Não-Binário">Não-Binário</option><option value="Outro">Outro</option></select></div>
                         <div><label className="block text-xs font-semibold text-gray-700 mb-1">Estado Civil</label><select name="estado_civil" value={formData.estado_civil} onChange={handleChange} className="w-full px-3 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none bg-white text-sm"><option value="">Selecione...</option><option value="Solteiro(a)">Solteiro(a)</option><option value="Casado(a)">Casado(a)</option><option value="Divorciado(a)">Divorciado(a)</option><option value="Viúvo(a)">Viúvo(a)</option><option value="União Estável">União Estável</option></select></div>
                         <div><label className="block text-xs font-semibold text-gray-700 mb-1">Telefone / Celular</label><input type="text" name="telefone_celular" value={formData.telefone_celular} onChange={handleChange} onBlur={handleBlur} className={`w-full px-3 py-1.5 border rounded-lg outline-none text-sm ${errosValidacao.telefone_celular ? 'border-red-500 focus:ring-red-500 bg-red-50' : 'border-gray-300 focus:ring-brand'}`} placeholder="(00) 00000-0000" />{errosValidacao.telefone_celular && <p className="text-red-500 text-[10px] mt-0.5 font-bold">{errosValidacao.telefone_celular}</p>}</div>
-                        <div className="lg:col-span-3"><label className="block text-xs font-bold text-brand mb-1">🛌 Alocação de Quarto / Cama</label><select name="leito_id" value={formData.leito_id} onChange={handleChange} className="w-full px-3 py-1.5 border border-brand/50 rounded-lg outline-none bg-white focus:ring-2 focus:ring-brand text-sm"><option value="">Apenas Convivência Diurna (Sem Pernoite)</option>{quartos.map(q => <optgroup key={q.id} label={`${q.nome} - [${q.tipo_publico} / ${q.modalidade === 'Transitorio' ? 'Transitório' : 'Fixo'}]`}>{q.leitos?.map(l => {if (l.status === 'Livre' || l.id === formData.leito_id) {return <option key={l.id} value={l.id}>{l.identificacao} {l.id === formData.leito_id ? ' (Cama Atual)' : ' (Livre)'}</option>;}return null;})}</optgroup>)}</select></div>
+                        <div className="lg:col-span-3"><label className="block text-xs font-bold text-brand mb-1">Alocação de Quarto / Cama</label><select name="leito_id" value={formData.leito_id} onChange={handleChange} className="w-full px-3 py-1.5 border border-brand/50 rounded-lg outline-none bg-white focus:ring-2 focus:ring-brand text-sm"><option value="">Apenas Convivência Diurna (Sem Pernoite)</option>{quartos.map(q => <optgroup key={q.id} label={`${q.nome} - [${q.tipo_publico} / ${q.modalidade === 'Transitorio' ? 'Transitório' : 'Fixo'}]`}>{q.leitos?.map(l => {if (l.status === 'Livre' || l.id === formData.leito_id) {return <option key={l.id} value={l.id}>{l.identificacao} {l.id === formData.leito_id ? ' (Cama Atual)' : ' (Livre)'}</option>;}return null;})}</optgroup>)}</select></div>
                       </div>
 
                       <div className="pt-4 border-t border-gray-200">
@@ -942,7 +942,7 @@ export default function Conviventes() {
                   {abaAtual === 'sensiveis' && (
                     <div className="space-y-5 animate-fadeIn">
                       <div className="bg-red-50 p-4 rounded-xl border border-red-200">
-                        <h3 className="text-sm font-bold text-red-800 mb-4">⚠️ Acesso Restrito</h3>
+                        <h3 className="text-sm font-bold text-red-800 mb-4">Acesso restrito</h3>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                           <div className="space-y-3 bg-white p-3 rounded-lg shadow-sm border border-red-100"><label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" name="egresso_prisional" checked={formData.egresso_prisional} onChange={handleChange} className="w-5 h-5 text-red-600 rounded focus:ring-red-500" /><span className="text-sm font-semibold text-gray-800">É Egresso Prisional?</span></label><label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" name="usa_tornozeleira" checked={formData.usa_tornozeleira} onChange={handleChange} className="w-5 h-5 text-red-600 rounded focus:ring-red-500" /><span className="text-sm font-semibold text-gray-800">Usa Tornozeleira Eletrônica?</span></label></div>
                           <div className="space-y-3"><div><label className="block text-xs font-semibold text-red-900 mb-1">Acompanhamento CAPS</label><input type="text" name="acompanhamento_caps" value={formData.acompanhamento_caps} onChange={handleChange} className="w-full px-3 py-1.5 border border-red-200 rounded-lg outline-none bg-white text-sm" /></div><div><label className="block text-xs font-semibold text-red-900 mb-1">Medidas Protetivas</label><input type="text" name="medidas_protetivas" value={formData.medidas_protetivas} onChange={handleChange} className="w-full px-3 py-1.5 border border-red-200 rounded-lg outline-none bg-white text-sm" /></div></div>
@@ -963,8 +963,8 @@ export default function Conviventes() {
                             <h3 className="text-xs font-semibold text-gray-700 uppercase mb-3">Novo Documento ou Foto</h3>
                             <div className="space-y-3">
                               <select value={tipoDocumentoSelecionado} onChange={(e) => setTipoDocumentoSelecionado(e.target.value)} className="w-full px-3 py-1.5 border border-gray-300 rounded-lg outline-none bg-white text-sm"><option value="Foto de Perfil">Foto de Perfil</option><option value="RG / CPF">RG / CPF</option><option value="CadÚnico">CadÚnico</option><option value="Outros">Outros</option></select>
-                              <div className="pt-2 border-t border-gray-200"><button type="button" onClick={abrirCamera} className="w-full mb-2 py-1.5 bg-blue-600 text-white rounded-lg text-sm font-semibold">📷 Tirar Foto (Webcam)</button><input type="file" onChange={(e) => setArquivoSelecionado(e.target.files[0])} className="w-full text-xs text-gray-500" /></div>
-                              <button type="button" onClick={handleUploadDocumento} disabled={loadingDocs || !arquivoSelecionado} className="w-full py-2 bg-green-600 text-white rounded-lg text-sm font-semibold disabled:opacity-50">{loadingDocs ? 'Enviando...' : '⬆️ Fazer Upload'}</button>
+                              <div className="pt-2 border-t border-gray-200"><button type="button" onClick={abrirCamera} className="w-full mb-2 py-1.5 bg-blue-600 text-white rounded-lg text-sm font-semibold">Tirar foto (webcam)</button><input type="file" onChange={(e) => setArquivoSelecionado(e.target.files[0])} className="w-full text-xs text-gray-500" /></div>
+                              <button type="button" onClick={handleUploadDocumento} disabled={loadingDocs || !arquivoSelecionado} className="w-full py-2 bg-green-600 text-white rounded-lg text-sm font-semibold disabled:opacity-50">{loadingDocs ? 'Enviando...' : 'Fazer upload'}</button>
                             </div>
                           </div>
                           <div className="lg:col-span-2">
@@ -972,7 +972,7 @@ export default function Conviventes() {
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                               {documentos.map(doc => (
                                 <div key={doc.id} className="bg-white p-3 rounded-xl border border-gray-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow">
-                                  <div className="flex items-start gap-2 w-full"><span className="text-2xl flex-shrink-0">{doc.tipo_documento === 'Foto de Perfil' ? '📷' : '📄'}</span><div className="flex-1 min-w-0"><h4 className="text-xs font-bold text-gray-800 truncate block w-full">{doc.nome_arquivo}</h4><p className="text-[10px] text-brand font-semibold truncate">{doc.tipo_documento}</p></div></div>
+                                  <div className="flex items-start gap-2 w-full"><span className="text-2xl flex-shrink-0">{doc.tipo_documento === 'Foto de Perfil' ? '○' : '▤'}</span><div className="flex-1 min-w-0"><h4 className="text-xs font-bold text-gray-800 truncate block w-full">{doc.nome_arquivo}</h4><p className="text-[10px] text-brand font-semibold truncate">{doc.tipo_documento}</p></div></div>
                                   <div className="mt-3 pt-2 border-t border-gray-100 flex gap-2 justify-end"><button type="button" onClick={() => baixarArquivoAutenticado(doc.caminho_arquivo, doc.nome_arquivo)} className="text-[10px] font-bold bg-blue-50 text-blue-600 px-2 py-1 rounded hover:bg-blue-100">Baixar</button><button type="button" onClick={() => handleExcluirDocumento(doc.id)} className="text-[10px] font-bold bg-red-50 text-red-600 px-2 py-1 rounded hover:bg-red-100">Excluir</button></div>
                                 </div>
                               ))}
@@ -985,8 +985,8 @@ export default function Conviventes() {
                 </div>
 
                 <div className="bg-gray-100 p-4 border-t flex flex-col sm:flex-row items-center justify-between gap-4 rounded-b-xl">
-                  <div className="flex-1 w-full text-left">{erro && telaAtual === 'form' && (<span className="text-red-600 font-bold text-xs bg-red-100 px-3 py-1.5 rounded flex items-center w-fit animate-pulse shadow-sm">⚠️ {erro}</span>)}</div>
-                  <div className="flex gap-3 w-full sm:w-auto"><button type="button" onClick={() => setTelaAtual('lista')} className="px-5 py-2 bg-white border border-gray-300 rounded-lg text-gray-700 text-sm font-semibold hover:bg-gray-50 transition-colors">Cancelar</button><button type="submit" className="px-6 py-2 bg-brand text-white rounded-lg text-sm font-bold hover:bg-brandDark shadow transition-all">{editandoId ? '💾 Atualizar Prontuário' : '💾 Salvar Prontuário'}</button></div>
+                  <div className="flex-1 w-full text-left">{erro && telaAtual === 'form' && (<span className="text-red-600 font-bold text-xs bg-red-100 px-3 py-1.5 rounded flex items-center w-fit animate-pulse shadow-sm">! {erro}</span>)}</div>
+                  <div className="flex gap-3 w-full sm:w-auto"><button type="button" onClick={() => setTelaAtual('lista')} className="px-5 py-2 bg-white border border-gray-300 rounded-lg text-gray-700 text-sm font-semibold hover:bg-gray-50 transition-colors">Cancelar</button><button type="submit" className="px-6 py-2 bg-brand text-white rounded-lg text-sm font-bold hover:bg-brandDark shadow transition-all">{editandoId ? 'Atualizar prontuário' : 'Salvar prontuário'}</button></div>
                 </div>
               </form>
             </div>
@@ -1059,7 +1059,7 @@ export default function Conviventes() {
                     className="w-full h-full object-cover"
                   />
                 ) : (
-                  <span className="text-2xl opacity-20">👤</span>
+                  <span className="text-2xl opacity-20">○</span>
                 )}
               </div>
 
@@ -1192,7 +1192,7 @@ export default function Conviventes() {
             onClick={() => window.print()}
             className="px-4 py-2 bg-brand text-white font-bold rounded-lg hover:bg-brandDark transition-colors w-full flex justify-center items-center gap-2 shadow-md text-sm"
           >
-            🖨️ Imprimir RG
+            Imprimir RG
           </button>
         </div>
 

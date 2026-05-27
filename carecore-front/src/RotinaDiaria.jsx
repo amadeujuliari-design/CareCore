@@ -460,7 +460,7 @@ export default function RotinaDiaria() {
           eyebrow="Rotina"
           title="Controle de Fluxo Diário"
           subtitle="Entradas, saídas e alimentação da população acolhida."
-          icon="⏱"
+          icon="◷"
           actions={(
             <>
             <button
@@ -472,7 +472,7 @@ export default function RotinaDiaria() {
                     : 'bg-gray-100 text-gray-600 border-gray-200'
                 }`}
             >
-              {modoAutomatico ? '⚡ Automático' : '✋ Manual'}
+              {modoAutomatico ? 'Automático' : 'Manual'}
             </button>
 
             <PremiumButton
@@ -480,7 +480,7 @@ export default function RotinaDiaria() {
               variant="brand"
               onClick={() => setScannerAberto(true)}
             >
-              📷 Câmera / Leitor
+              Câmera / Leitor
             </PremiumButton>
 
             <div className="hidden sm:flex bg-brand/10 text-brand px-4 py-2 rounded-lg font-bold text-sm shadow-sm items-center gap-2 border border-brand/20">
@@ -503,7 +503,7 @@ export default function RotinaDiaria() {
                 </p>
               </div>
               <div className="w-12 h-12 bg-green-100 text-green-600 rounded-full flex items-center justify-center text-xl shadow-sm">
-                🏠
+                ◇
               </div>
             </div>
 
@@ -517,7 +517,7 @@ export default function RotinaDiaria() {
                 </p>
               </div>
               <div className="w-12 h-12 bg-orange-100 text-orange-600 rounded-full flex items-center justify-center text-xl shadow-sm">
-                🚶
+                ↗
               </div>
             </div>
 
@@ -531,7 +531,7 @@ export default function RotinaDiaria() {
                 </p>
               </div>
               <div className="w-12 h-12 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-xl shadow-sm">
-                🍽️
+                ◌
               </div>
             </div>
           </div>
@@ -672,7 +672,7 @@ export default function RotinaDiaria() {
                               className="w-full h-full object-cover"
                             />
                           ) : (
-                            <span className="text-lg opacity-40">👤</span>
+                            <span className="text-lg opacity-40">○</span>
                           )}
                         </div>
 
@@ -738,7 +738,7 @@ export default function RotinaDiaria() {
                           className={`flex-1 md:flex-none px-3 py-2 md:py-1.5 rounded-md text-xs font-bold transition-all shadow-sm flex items-center justify-center gap-1.5 min-w-[90px]
                             ${almocou || isFora ? 'bg-gray-100 text-gray-400 cursor-not-allowed opacity-60' : 'bg-blue-500 hover:bg-blue-600 text-white active:scale-95'}`}
                         >
-                          🍽️ {almocou ? 'Almoçou' : 'Almoço'}
+                          {almocou ? 'Almoçou' : 'Almoço'}
                         </button>
 
                       </div>
@@ -755,7 +755,7 @@ export default function RotinaDiaria() {
         <div className="fixed inset-0 bg-gray-900/90 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
           <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden flex flex-col">
             <div className="bg-gray-800 p-4 flex justify-between items-center text-white">
-              <h2 className="font-bold">📷 Posicione o QR Code na Câmera</h2>
+              <h2 className="font-bold">Posicione o QR Code na câmera</h2>
               <button
                 onClick={() => setScannerAberto(false)}
                 className="text-gray-400 hover:text-white font-bold text-xl px-2"
@@ -808,7 +808,7 @@ export default function RotinaDiaria() {
                       className="w-full h-full object-cover"
                     />
                   ) : (
-                    <span className="opacity-40">👤</span>
+                    <span className="opacity-40">○</span>
                   )}
                 </div>
 
@@ -855,7 +855,7 @@ export default function RotinaDiaria() {
                     className={`py-3 rounded-xl font-bold transition-all flex justify-center items-center gap-2 text-sm shadow-md
                       ${almocou || isFora ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : 'bg-blue-500 hover:bg-blue-600 text-white'}`}
                   >
-                    🍽️ {almocou ? 'Almoço Já Registrado' : 'Registrar Almoço'}
+                    {almocou ? 'Almoço já registrado' : 'Registrar almoço'}
                   </button>
                 </div>
               </div>

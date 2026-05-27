@@ -198,7 +198,7 @@ export default function CentralOcorrencias() {
       );
 
       await carregarOcorrencias();
-      alert("✅ Baixa em lote concluída com sucesso!");
+      alert("Baixa em lote concluída com sucesso!");
     } catch {
       alert("Ocorreu um erro ao tentar dar baixa em alguns chamados. A tela será recarregada.");
       carregarOcorrencias();
@@ -315,7 +315,7 @@ export default function CentralOcorrencias() {
           eyebrow="Comunicação técnica"
           title={perfilUsuario === 'Orientador' ? 'Minhas Ocorrências' : 'Central de Ocorrências'}
           subtitle="Gestão de chamados, prioridades e andamento de casos."
-          icon="⚠"
+          icon="!"
           actions={(
             <PremiumButton
               type="button"
@@ -532,7 +532,7 @@ export default function CentralOcorrencias() {
                         <div className="flex-1 min-w-0 cursor-pointer" onClick={() => abrirChamado(oc)}>
                           <div className="flex items-center gap-2 mb-1">
                             <span className="text-xs font-bold text-brand flex items-center gap-1 uppercase tracking-wide truncate">
-                              👤 {nomePaciente} 
+                              {nomePaciente} 
                               <span className="text-[10px] text-gray-400 font-medium normal-case tracking-normal ml-1 hidden md:inline">
                                 | Prontuário: {prontuarioInfo} | CPF: {cpfInfo}
                               </span>
@@ -557,7 +557,7 @@ export default function CentralOcorrencias() {
                           {new Date(oc.data_ocorrencia).toLocaleDateString('pt-BR')}
                         </span>
                         <div className="flex gap-3 text-[11px] text-gray-400 font-bold">
-                          {oc.observadores?.length > 0 && <span title="Pessoas copiadas">👥 {oc.observadores.length}</span>}
+                          {oc.observadores?.length > 0 && <span title="Pessoas copiadas">Copiados: {oc.observadores.length}</span>}
                           <span title="Comentários/Interações">💬 {oc.interacoes?.length || 0}</span>
                         </div>
                       </div>
@@ -570,7 +570,7 @@ export default function CentralOcorrencias() {
           </div>
         </ScrollArea>
 
-      {/* 🚀 BARRA FLUTUANTE DE BAIXA EM LOTE */}
+      {/* Barra flutuante de baixa em lote */}
       {selecionados.length > 0 && (
         <div className="fixed bottom-8 left-1/2 transform -translate-x-1/2 bg-gray-900 text-white px-6 py-4 rounded-full shadow-2xl flex items-center gap-6 z-40 animate-fadeIn">
           <span className="text-sm font-bold bg-gray-800 px-3 py-1 rounded-full text-brand">
@@ -582,7 +582,7 @@ export default function CentralOcorrencias() {
             disabled={baixandoLote}
             className="bg-green-500 hover:bg-green-400 text-white px-5 py-2 rounded-full font-bold text-sm shadow-lg transition-colors disabled:opacity-50"
           >
-            {baixandoLote ? 'Processando...' : '✅ Encerrar Chamados'}
+            {baixandoLote ? 'Processando...' : 'Encerrar chamados'}
           </button>
           
           <button 
@@ -623,7 +623,7 @@ export default function CentralOcorrencias() {
                   return (
                     <div className="mt-3">
                       <span className="text-sm text-brand font-semibold bg-white/10 px-3 py-1.5 rounded-lg inline-block">
-                        👤 {pModal.nome_social || pModal.nome_completo}
+                        {pModal.nome_social || pModal.nome_completo}
                       </span>
                       <p className="text-[11px] text-gray-400 mt-2 font-mono">
                         Prontuário: {pProntuario} &bull; CPF: {pCpf}
@@ -673,7 +673,7 @@ export default function CentralOcorrencias() {
             <div className="p-5 border-t border-gray-200 bg-white">
               {chamadoSelecionado.status_resolucao === 'Resolvido' ? (
                 <div className="text-center p-3 bg-gray-50 rounded-xl border border-gray-200 text-gray-500 text-sm font-semibold">
-                  🔒 Este chamado já recebeu o parecer técnico e foi encerrado.
+                  Este chamado já recebeu o parecer técnico e foi encerrado.
                 </div>
               ) : (
                 <form onSubmit={handleEnviarInteracao} className="space-y-3">
@@ -901,7 +901,7 @@ export default function CentralOcorrencias() {
                 disabled={enviandoNovo}
                 className="px-6 py-2.5 bg-brand text-white font-bold text-sm rounded-xl hover:bg-brandDark disabled:opacity-50 transition-all shadow-md flex items-center gap-2"
               >
-                {enviandoNovo ? 'Criando Ticket...' : '🚀 Abrir Chamado'}
+                {enviandoNovo ? 'Criando ticket...' : 'Abrir chamado'}
               </button>
             </div>
 

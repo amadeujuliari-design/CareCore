@@ -490,10 +490,10 @@ export default function Dashboard() {
   const totalRange = dadosGraficoRange.reduce((total, item) => total + (item.atendimentos || 0), 0);
 
   const cards = [
-    { titulo: "Total de conviventes", valor: dados.totalConviventes, subtitulo: `${dados.ativos} ativos`, icone: "👥", cor: "text-slate-900" },
-    { titulo: "Atendimentos (mês)", valor: dados.atendimentosMes, subtitulo: "Registros válidos no mês", icone: "🧮", cor: "text-slate-900" },
-    { titulo: "Atendimentos hoje", valor: dados.atendimentosHoje, subtitulo: `${dados.leitosOcupados} vagas ocupadas`, icone: "✅", cor: "text-slate-900" },
-    { titulo: "Alertas ativos", valor: dados.alertasAtivos, subtitulo: `${dados.alertasComunicacao || 0} avisos + ${dados.alertasOcorrencias || 0} ocorrências alta/crítica`, icone: "🔔", cor: dados.alertasAtivos ? "text-red-600" : "text-slate-900" },
+    { titulo: "Total de conviventes", valor: dados.totalConviventes, subtitulo: `${dados.ativos} ativos`, icone: "◇", cor: "text-slate-900" },
+    { titulo: "Atendimentos (mês)", valor: dados.atendimentosMes, subtitulo: "Registros válidos no mês", icone: "▥", cor: "text-slate-900" },
+    { titulo: "Atendimentos hoje", valor: dados.atendimentosHoje, subtitulo: `${dados.leitosOcupados} vagas ocupadas`, icone: "✓", cor: "text-slate-900" },
+    { titulo: "Alertas ativos", valor: dados.alertasAtivos, subtitulo: `${dados.alertasComunicacao || 0} avisos + ${dados.alertasOcorrencias || 0} ocorrências alta/crítica`, icone: "!", cor: dados.alertasAtivos ? "text-red-600" : "text-slate-900" },
   ];
 
   function abrirPendenciasTecnico(item) {
@@ -564,7 +564,7 @@ export default function Dashboard() {
                 className="relative rounded-2xl border border-slate-200 bg-white px-4 py-2 text-lg font-semibold text-slate-700 shadow-sm"
                 title={`${dados.alertasAtivos} alerta${dados.alertasAtivos === 1 ? "" : "s"} ativo${dados.alertasAtivos === 1 ? "" : "s"}`}
               >
-                🔔
+                !
                 {dados.alertasAtivos > 0 && (
                   <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-red-600 px-1.5 text-[10px] font-bold text-white">
                     {dados.alertasAtivos > 99 ? "99+" : dados.alertasAtivos}
@@ -627,7 +627,7 @@ export default function Dashboard() {
 
                 <article className="carecore-dashboard-card carecore-panel-scroll">
                   <div className="mb-3 flex items-start gap-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-red-50 text-xl text-red-600">⚠️</div>
+                    <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-red-50 text-xl font-bold text-red-600">!</div>
                     <div>
                       <h2 className="carecore-dashboard-card-title">Ocorrências em Alerta</h2>
                       <p className="carecore-dashboard-card-subtitle">Pendências técnicas e ocorrências com prioridade Alta ou Crítica.</p>
