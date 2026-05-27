@@ -9,6 +9,7 @@ import { useNavigate } from 'react-router-dom';
 
 import Sidebar from './Sidebar';
 import api from './services/api';
+import { AppShell, MainShell, PageHeader, PremiumButton, ScrollArea } from './components/PremiumUI';
 import {
   BadgePerfil,
   BadgeStatus,
@@ -538,47 +539,40 @@ export default function Usuarios() {
   };
 
   return (
-    <div className="carecore-app-fixed">
+    <AppShell>
       <Sidebar />
 
-      <section className="carecore-main-fixed">
-        <header className="carecore-page-header-fixed px-5 py-3">
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <p className="text-xs font-bold uppercase tracking-wide text-slate-500">
-                Administração
-              </p>
-              <h1 className="text-[23px] font-bold leading-none text-slate-900">
-                Usuários e Permissões
-              </h1>
-              <p className="mt-1 text-sm text-slate-500">
-                Gestão da equipe institucional, perfis de acesso e status de usuários.
-              </p>
-            </div>
-
+      <MainShell>
+        <PageHeader
+          eyebrow="Administração"
+          title="Usuários e Permissões"
+          subtitle="Gestão da equipe institucional, perfis de acesso e status de usuários."
+          icon="👤"
+          actions={(
+            <>
             {tela === 'lista' && podeGerenciar && (
-              <button
+              <PremiumButton
                 type="button"
                 onClick={abrirNovo}
-                className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-slate-800"
               >
                 + Novo usuário
-              </button>
+              </PremiumButton>
             )}
 
             {tela === 'form' && (
-              <button
+              <PremiumButton
                 type="button"
+                variant="secondary"
                 onClick={voltarLista}
-                className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
               >
                 Voltar
-              </button>
+              </PremiumButton>
             )}
-          </div>
-        </header>
+            </>
+          )}
+        />
 
-        <main className="carecore-scroll-area">
+        <ScrollArea>
 
         {erro && (
           <div className="mb-4 whitespace-pre-line rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
@@ -987,8 +981,8 @@ export default function Usuarios() {
             </form>
           </div>
         )}
-        </main>
-      </section>
-    </div>
+        </ScrollArea>
+      </MainShell>
+    </AppShell>
   );
 }

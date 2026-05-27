@@ -153,21 +153,21 @@ export default function Cadastro() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
+    <div className="min-h-screen overflow-y-auto bg-gradient-to-br from-blue-600 via-violet-600 to-pink-500 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
       <div className="sm:mx-auto sm:w-full sm:max-w-md">
-        <img className="mx-auto h-20 w-auto object-contain" src={logoCarecore} alt="CARECORE+" />
+        <img className="mx-auto h-20 w-auto object-contain drop-shadow-sm" src={logoCarecore} alt="CARECORE+" />
 
-        <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
+        <h2 className="mt-6 text-center text-3xl font-black tracking-tight text-white">
           Crie a conta do seu Abrigo
         </h2>
 
-        <p className="mt-2 text-center text-sm text-gray-600">
+        <p className="mt-2 text-center text-sm font-semibold text-blue-50">
           {etapa === 1 ? 'Passo 1: Dados da Instituição' : 'Passo 2: Dados do Administrador'}
         </p>
       </div>
 
       <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
-        <div className="bg-white py-8 px-4 shadow sm:rounded-lg sm:px-10 border border-gray-100">
+        <div className="bg-white/95 py-8 px-4 shadow-2xl sm:rounded-[2rem] sm:px-10 border border-white/80 backdrop-blur">
           {erro && (
             <div className="mb-4 bg-red-50 text-red-600 p-3 rounded-lg text-sm text-center font-medium">
               {erro}
