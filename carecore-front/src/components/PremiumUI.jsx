@@ -143,7 +143,7 @@ export function AppShell({ children }) {
 
 export function MainShell({ children }) {
   return (
-    <section className="carecore-main-fixed">
+    <section className="carecore-main-fixed carecore-typography-soft">
       {children}
     </section>
   );

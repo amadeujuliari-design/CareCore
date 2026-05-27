@@ -923,6 +923,56 @@ body {
   background: transparent;
 }
 
+/* =========================================================
+   Tipografia padronizada para telas operacionais
+   - aproxima os módulos migrados do refinamento do dashboard
+   - evita pesos muito pesados e números exagerados
+   ========================================================= */
+
+.carecore-typography-soft .font-black {
+  font-weight: 700 !important;
+}
+
+.carecore-typography-soft h1,
+.carecore-typography-soft h2,
+.carecore-typography-soft h3 {
+  letter-spacing: -0.025em;
+}
+
+.carecore-typography-soft .text-4xl {
+  font-size: 1.7rem !important;
+  line-height: 1 !important;
+  letter-spacing: -0.035em;
+}
+
+.carecore-typography-soft .text-3xl {
+  font-size: 1.62rem !important;
+  line-height: 1.08 !important;
+  letter-spacing: -0.035em;
+}
+
+.carecore-typography-soft .text-2xl {
+  font-size: 1.55rem !important;
+  line-height: 1.05 !important;
+  letter-spacing: -0.03em;
+}
+
+.carecore-typography-soft .text-xl {
+  font-size: 1.12rem !important;
+  line-height: 1.25 !important;
+}
+
+.carecore-typography-soft .text-xs.uppercase,
+.carecore-typography-soft .text-\[11px\].uppercase,
+.carecore-typography-soft .text-\[10px\].uppercase {
+  letter-spacing: 0.045em;
+}
+
+.carecore-typography-soft button.font-bold,
+.carecore-typography-soft button.font-black {
+  font-weight: 650 !important;
+}
+
 @media (max-width: 1450px) {
   .carecore-dashboard-main-grid {
     grid-template-rows: minmax(220px, 0.68fr) minmax(310px, 1.32fr) !important;
