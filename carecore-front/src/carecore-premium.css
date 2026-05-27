@@ -1,0 +1,940 @@
+/* =====================================================================
+   ARQUIVO: src/carecore-premium.css
+   Base visual global CARECORE+ Premium UI
+   ===================================================================== */
+
+:root {
+  --carecore-bg: #f8fbff;
+  --carecore-panel: #ffffff;
+  --carecore-border: #e7edf7;
+  --carecore-text: #0f1f3d;
+  --carecore-muted: #61708f;
+  --carecore-soft: #f3f6fb;
+  --carecore-blue: #2563eb;
+  --carecore-blue-soft: #eef4ff;
+  --carecore-purple: #7c3aed;
+  --carecore-purple-soft: #f1eaff;
+  --carecore-pink: #ec4899;
+  --carecore-green: #16a34a;
+  --carecore-shadow: 0 18px 45px rgba(15, 31, 61, 0.08);
+  --carecore-shadow-soft: 0 8px 24px rgba(15, 31, 61, 0.06);
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  color: var(--carecore-text);
+  background:
+    radial-gradient(circle at top left, rgba(37, 99, 235, 0.18), transparent 34%),
+    radial-gradient(circle at top right, rgba(236, 72, 153, 0.22), transparent 30%),
+    linear-gradient(135deg, #3b82f6 0%, #8b5cf6 50%, #ec4899 100%);
+  font-family:
+    Inter,
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+}
+
+.carecore-premium-frame {
+  min-height: calc(100vh - 20px);
+  margin: 10px;
+  overflow: hidden;
+  border-radius: 22px;
+  background: var(--carecore-bg);
+  box-shadow:
+    0 24px 80px rgba(15, 23, 42, 0.22),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.45);
+}
+
+/* Garante que layouts antigos não briguem com a nova moldura. */
+.carecore-premium-frame > .flex,
+.carecore-premium-frame > div {
+  min-height: calc(100vh - 20px);
+}
+
+/* ---------------------------------------------------------------------
+   Sidebar
+   --------------------------------------------------------------------- */
+
+.carecore-sidebar {
+  width: 252px;
+  min-height: calc(100vh - 20px);
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  position: sticky;
+  top: 10px;
+  align-self: flex-start;
+  background: rgba(255, 255, 255, 0.82);
+  border-right: 1px solid var(--carecore-border);
+  backdrop-filter: blur(18px);
+  color: var(--carecore-text);
+}
+
+.carecore-sidebar-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 22px 22px 18px;
+}
+
+.carecore-logo-shell {
+  width: 42px;
+  height: 42px;
+  border-radius: 15px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #eff6ff 0%, #f4ecff 100%);
+  border: 1px solid rgba(124, 58, 237, 0.10);
+  box-shadow: var(--carecore-shadow-soft);
+  overflow: hidden;
+}
+
+.carecore-logo-img {
+  width: 34px;
+  height: 34px;
+  object-fit: contain;
+}
+
+.carecore-brand-title {
+  margin: 0;
+  font-size: 19px;
+  line-height: 1;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  color: #2457ff;
+}
+
+.carecore-brand-subtitle {
+  margin: 4px 0 0;
+  font-size: 11px;
+  color: var(--carecore-muted);
+  font-weight: 600;
+}
+
+.carecore-sidebar-nav {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 16px 18px;
+}
+
+.carecore-menu-group + .carecore-menu-group {
+  margin-top: 22px;
+}
+
+.carecore-menu-title {
+  margin: 0 0 9px;
+  padding: 0 10px;
+  font-size: 11px;
+  font-weight: 800;
+  color: #7b88a5;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.carecore-menu-list {
+  display: grid;
+  gap: 5px;
+}
+
+.carecore-menu-item {
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  position: relative;
+  padding: 9px 11px;
+  border-radius: 13px;
+  font-size: 14px;
+  font-weight: 700;
+  color: #243b63;
+  text-decoration: none;
+  transition:
+    background 160ms ease,
+    color 160ms ease,
+    transform 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.carecore-menu-item:hover {
+  background: #f5f7fc;
+  color: var(--carecore-blue);
+}
+
+.carecore-menu-item-active {
+  color: #4f22f2;
+  background: linear-gradient(135deg, rgba(37, 99, 235, 0.08), rgba(124, 58, 237, 0.12));
+  box-shadow: inset 0 0 0 1px rgba(124, 58, 237, 0.08);
+}
+
+.carecore-menu-item-disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.carecore-menu-icon {
+  width: 25px;
+  height: 25px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #526687;
+  font-size: 15px;
+  line-height: 1;
+}
+
+.carecore-menu-icon-active {
+  color: #4f22f2;
+}
+
+.carecore-active-dot {
+  margin-left: auto;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, var(--carecore-blue), var(--carecore-purple));
+  box-shadow: 0 0 0 4px rgba(124, 58, 237, 0.10);
+}
+
+.carecore-sidebar-footer {
+  padding: 14px 16px 18px;
+  display: grid;
+  gap: 10px;
+  border-top: 1px solid rgba(231, 237, 247, 0.76);
+}
+
+.carecore-user-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px;
+  border-radius: 17px;
+  background: #ffffff;
+  border: 1px solid var(--carecore-border);
+  box-shadow: var(--carecore-shadow-soft);
+}
+
+.carecore-user-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #4f22f2;
+  background: var(--carecore-purple-soft);
+  font-weight: 900;
+}
+
+.carecore-user-name {
+  margin: 0;
+  color: var(--carecore-text);
+  font-size: 13px;
+  font-weight: 800;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.carecore-user-role {
+  margin: 2px 0 0;
+  color: var(--carecore-muted);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.carecore-version-card {
+  padding: 12px;
+  border-radius: 17px;
+  background:
+    radial-gradient(circle at bottom right, rgba(124, 58, 237, 0.12), transparent 42%),
+    linear-gradient(135deg, #ffffff 0%, #f6f1ff 100%);
+  border: 1px solid rgba(124, 58, 237, 0.08);
+}
+
+.carecore-version-card p {
+  margin: 0;
+  font-size: 12px;
+  color: #4f22f2;
+}
+
+.carecore-version-card small {
+  display: block;
+  margin-top: 4px;
+  font-size: 10px;
+  color: var(--carecore-muted);
+}
+
+.carecore-logout-button {
+  width: 100%;
+  border: 0;
+  border-radius: 14px;
+  padding: 10px 12px;
+  background: #ffffff;
+  color: #526687;
+  border: 1px solid var(--carecore-border);
+  font-size: 13px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  cursor: pointer;
+  transition: all 160ms ease;
+}
+
+.carecore-logout-button:hover {
+  color: #dc2626;
+  border-color: #fecaca;
+  background: #fff5f5;
+}
+
+/* ---------------------------------------------------------------------
+   Utilitários globais para próximas telas
+   --------------------------------------------------------------------- */
+
+.carecore-page {
+  min-width: 0;
+  flex: 1;
+  background:
+    radial-gradient(circle at top right, rgba(124, 58, 237, 0.06), transparent 34%),
+    var(--carecore-bg);
+}
+
+.carecore-topbar {
+  min-height: 72px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 15px 24px;
+  background: rgba(255, 255, 255, 0.74);
+  border-bottom: 1px solid var(--carecore-border);
+  backdrop-filter: blur(18px);
+}
+
+.carecore-content {
+  padding: 22px 24px;
+}
+
+.carecore-card {
+  border-radius: 18px;
+  background: var(--carecore-panel);
+  border: 1px solid var(--carecore-border);
+  box-shadow: var(--carecore-shadow-soft);
+}
+
+.carecore-card-soft {
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.82);
+  border: 1px solid rgba(231, 237, 247, 0.92);
+  box-shadow: var(--carecore-shadow-soft);
+}
+
+.carecore-button-primary {
+  border: 0;
+  border-radius: 13px;
+  background: linear-gradient(135deg, #2563eb 0%, #6d28d9 100%);
+  color: #ffffff;
+  font-weight: 800;
+  padding: 10px 15px;
+  cursor: pointer;
+  box-shadow: 0 10px 22px rgba(37, 99, 235, 0.18);
+}
+
+.carecore-button-secondary {
+  border-radius: 13px;
+  background: #ffffff;
+  color: #243b63;
+  border: 1px solid var(--carecore-border);
+  font-weight: 800;
+  padding: 10px 15px;
+  cursor: pointer;
+}
+
+.carecore-badge-alert {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 999px;
+  padding: 4px 10px;
+  color: #dc2626;
+  background: #fff1f2;
+  border: 1px solid #ffe4e6;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+@media (max-width: 1024px) {
+  .carecore-premium-frame {
+    margin: 0;
+    min-height: 100vh;
+    border-radius: 0;
+  }
+
+  .carecore-premium-frame > .flex,
+  .carecore-premium-frame > div {
+    min-height: 100vh;
+  }
+
+  .carecore-sidebar {
+    width: 230px;
+    min-height: 100vh;
+    top: 0;
+  }
+}
+
+@media (max-width: 768px) {
+  .carecore-sidebar {
+    display: none;
+  }
+
+  .carecore-content {
+    padding: 16px;
+  }
+}
+
+/* Ajustes suaves para telas antigas que usam Tailwind diretamente. */
+.carecore-premium-frame main {
+  min-width: 0;
+}
+
+.carecore-premium-frame table {
+  border-color: var(--carecore-border);
+}
+
+.carecore-premium-frame input,
+.carecore-premium-frame select,
+.carecore-premium-frame textarea {
+  border-color: #dbe4f0;
+}
+
+.carecore-premium-frame input:focus,
+.carecore-premium-frame select:focus,
+.carecore-premium-frame textarea:focus {
+  outline: none;
+  border-color: #7c3aed;
+  box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.10);
+}
+
+
+/* =========================================================
+   CARECORE+ App fixo sem gambiarra
+   - navegador não rola o app inteiro
+   - sidebar fixa
+   - header interno fixo
+   - somente conteúdo central rola
+   ========================================================= */
+
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  min-height: 100%;
+  overflow: hidden;
+}
+
+body {
+  overflow: hidden !important;
+}
+
+.carecore-premium-frame {
+  height: calc(100vh - 20px);
+  min-height: 0;
+  margin: 10px;
+  overflow: hidden;
+  display: flex;
+  border-radius: 22px;
+  background: var(--carecore-bg);
+}
+
+.carecore-premium-frame > .flex,
+.carecore-premium-frame > div {
+  height: 100%;
+  min-height: 0;
+  width: 100%;
+}
+
+.carecore-app-fixed {
+  height: 100%;
+  min-height: 0;
+  width: 100%;
+  display: flex;
+  overflow: hidden;
+}
+
+.carecore-sidebar {
+  width: 230px;
+  min-width: 230px;
+  height: 100%;
+  min-height: 0 !important;
+  position: relative;
+  top: 0;
+  align-self: stretch;
+  overflow: hidden;
+}
+
+.carecore-sidebar-brand-logo-only {
+  min-height: 82px !important;
+  padding: 8px 8px 8px !important;
+  margin-bottom: 0 !important;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.carecore-logo-img-large {
+  width: 150px !important;
+  max-width: 86% !important;
+  height: auto;
+  object-fit: contain;
+}
+
+.carecore-sidebar-nav {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 8px 14px 8px !important;
+}
+
+.carecore-menu-group + .carecore-menu-group {
+  margin-top: 12px !important;
+}
+
+.carecore-menu-title {
+  margin-bottom: 5px !important;
+  font-size: 10px !important;
+}
+
+.carecore-menu-list {
+  gap: 3px !important;
+}
+
+.carecore-menu-item {
+  min-height: 34px !important;
+  padding: 6px 9px !important;
+  border-radius: 11px !important;
+  font-size: 13px !important;
+  gap: 8px !important;
+}
+
+.carecore-menu-icon {
+  width: 21px !important;
+  height: 21px !important;
+  font-size: 13px !important;
+}
+
+.carecore-sidebar-footer {
+  flex-shrink: 0;
+  padding: 9px 14px 10px !important;
+  gap: 7px !important;
+}
+
+.carecore-user-card {
+  padding: 8px !important;
+  border-radius: 14px !important;
+}
+
+.carecore-user-avatar {
+  width: 30px !important;
+  height: 30px !important;
+  border-radius: 10px !important;
+}
+
+.carecore-user-name {
+  font-size: 12px !important;
+}
+
+.carecore-user-role {
+  font-size: 10px !important;
+}
+
+.carecore-version-card {
+  padding: 9px !important;
+  border-radius: 14px !important;
+}
+
+.carecore-version-card p {
+  font-size: 11px !important;
+}
+
+.carecore-version-card small {
+  font-size: 9px !important;
+}
+
+.carecore-logout-button {
+  padding: 8px 10px !important;
+  font-size: 12px !important;
+  border-radius: 12px !important;
+}
+
+.carecore-main-fixed {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at top right, rgba(124, 58, 237, 0.06), transparent 34%),
+    var(--carecore-bg);
+}
+
+.carecore-page-header-fixed {
+  flex-shrink: 0;
+  min-height: 68px;
+  background: rgba(255, 255, 255, 0.9);
+  border-bottom: 1px solid var(--carecore-border);
+  backdrop-filter: blur(18px);
+}
+
+.carecore-scroll-area {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 16px 18px 18px;
+}
+
+.carecore-dashboard-grid-fixed {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  gap: 14px;
+  min-height: 100%;
+}
+
+.carecore-panel-scroll {
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.carecore-panel-scroll-body {
+  min-height: 0;
+  overflow-y: auto;
+}
+
+@media (max-width: 1024px) {
+  html,
+  body,
+  #root {
+    overflow: auto;
+    height: auto;
+  }
+
+  body {
+    overflow: auto !important;
+  }
+
+  .carecore-premium-frame {
+    height: auto;
+    min-height: 100vh;
+    margin: 0;
+    border-radius: 0;
+  }
+
+  .carecore-app-fixed {
+    height: auto;
+    min-height: 100vh;
+  }
+
+  .carecore-sidebar {
+    display: none;
+  }
+
+  .carecore-main-fixed {
+    min-height: 100vh;
+  }
+
+  .carecore-scroll-area {
+    overflow: visible;
+  }
+}
+
+
+/* =========================================================
+   CARECORE+ Refinamento visual leve
+   ========================================================= */
+
+:root {
+  --carecore-text: #16233f;
+  --carecore-muted: #66728a;
+  --carecore-shadow: 0 14px 34px rgba(15, 31, 61, 0.065);
+  --carecore-shadow-soft: 0 6px 18px rgba(15, 31, 61, 0.05);
+}
+
+.carecore-page-header-fixed { min-height: 62px; }
+.carecore-scroll-area { padding: 14px 16px 16px; }
+
+.carecore-menu-item { font-weight: 650 !important; }
+.carecore-menu-title,
+.carecore-user-role,
+.carecore-user-name { font-weight: 700 !important; }
+
+.carecore-dashboard-v2 {
+  height: 100%;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 12px;
+}
+
+.carecore-dashboard-kpis {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.carecore-kpi-soft {
+  min-height: 88px;
+  border-radius: 20px;
+  border: 1px solid var(--carecore-border);
+  background: #fff;
+  box-shadow: var(--carecore-shadow-soft);
+  padding: 13px 15px;
+}
+
+.carecore-kpi-label {
+  font-size: 11px;
+  line-height: 1;
+  text-transform: uppercase;
+  color: #8a96ad;
+  font-weight: 750;
+  letter-spacing: .035em;
+}
+
+.carecore-kpi-value {
+  margin-top: 8px;
+  font-size: 27px;
+  line-height: 1;
+  font-weight: 750;
+  color: #14213d;
+  letter-spacing: -0.035em;
+}
+
+.carecore-kpi-subtitle {
+  margin-top: 7px;
+  font-size: 13px;
+  color: var(--carecore-muted);
+  font-weight: 500;
+}
+
+.carecore-kpi-icon {
+  width: 46px;
+  height: 46px;
+  border-radius: 16px;
+  background: #f7f9fd;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 21px;
+  flex-shrink: 0;
+}
+
+.carecore-dashboard-main-grid {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1.08fr) minmax(360px, 0.92fr);
+  grid-template-rows: minmax(250px, 0.85fr) minmax(0, 1.15fr);
+  gap: 12px;
+}
+
+.carecore-dashboard-card {
+  min-height: 0;
+  border-radius: 22px;
+  border: 1px solid var(--carecore-border);
+  background: #fff;
+  box-shadow: var(--carecore-shadow-soft);
+  padding: 14px;
+}
+
+.carecore-dashboard-card-title {
+  font-size: 17px;
+  line-height: 1.2;
+  color: #101c35;
+  font-weight: 750;
+  letter-spacing: -0.025em;
+}
+
+.carecore-dashboard-card-subtitle {
+  margin-top: 3px;
+  font-size: 13px;
+  color: var(--carecore-muted);
+  font-weight: 450;
+}
+
+.carecore-dashboard-chart-card { display: flex; flex-direction: column; }
+.carecore-dashboard-chart-wrap { min-height: 0; flex: 1; }
+
+.carecore-dashboard-table-scroll {
+  max-height: 250px;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.carecore-dashboard-table-scroll thead {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.carecore-soft-button {
+  border-radius: 14px;
+  border: 1px solid var(--carecore-border);
+  background: #fff;
+  color: #5b21b6;
+  padding: 9px 12px;
+  font-size: 13px;
+  font-weight: 700;
+  transition: all .16s ease;
+}
+
+.carecore-soft-button:hover {
+  background: #f6f1ff;
+  border-color: #e8dcff;
+}
+
+.carecore-range-input {
+  height: 34px;
+  border-radius: 13px;
+  border: 1px solid var(--carecore-border);
+  background: #fff;
+  color: #34415f;
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.carecore-technician-link {
+  color: #101c35;
+  font-weight: 750;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.carecore-technician-link:hover {
+  color: #5b21b6;
+  text-decoration: underline;
+}
+
+@media (max-width: 1450px) {
+  .carecore-kpi-soft { min-height: 82px; padding: 12px 14px; }
+  .carecore-kpi-value { font-size: 25px; }
+  .carecore-kpi-icon { width: 42px; height: 42px; border-radius: 15px; }
+  .carecore-dashboard-main-grid {
+    grid-template-rows: minmax(230px, 0.78fr) minmax(0, 1.22fr);
+    gap: 10px;
+  }
+  .carecore-dashboard-card { padding: 12px; border-radius: 20px; }
+  .carecore-dashboard-card-title { font-size: 16px; }
+  .carecore-dashboard-table-scroll { max-height: 225px; }
+}
+
+@media (max-width: 1180px) {
+  .carecore-dashboard-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .carecore-dashboard-main-grid { display: flex; flex-direction: column; }
+  .carecore-dashboard-table-scroll { max-height: 320px; }
+}
+/* =========================================================
+   Dashboard: rolagem confortável por painel
+   - dashboard geral permanece fixo
+   - avisos/ocorrências/pendências rolam individualmente
+   - mostra mais conteúdo antes de precisar rolar
+   ========================================================= */
+
+/* Mantém os cards inferiores com espaço real para exibir 3+ linhas */
+.carecore-dashboard-main-grid {
+  grid-template-rows: minmax(230px, 0.72fr) minmax(330px, 1.28fr) !important;
+}
+
+/* Painéis continuam fixos dentro do grid */
+.carecore-dashboard-card.carecore-panel-scroll {
+  min-height: 0 !important;
+  overflow: hidden !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+/* Área rolável confortável, sem parecer uma "caixinha apertada" */
+.carecore-dashboard-panel-scroll-comfort {
+  flex: 1 1 auto;
+  min-height: 190px;
+  max-height: none;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  scrollbar-gutter: stable;
+}
+
+/* Avisos também com altura útil melhor */
+.carecore-avisos-scroll {
+  min-height: 185px;
+}
+
+/* Cabeçalho da tabela fica visível enquanto rola dentro do painel */
+.carecore-dashboard-panel-scroll-comfort thead {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+/* Linhas um pouco mais compactas para mostrar mais conteúdo */
+.carecore-dashboard-panel-scroll-comfort th {
+  padding-top: 10px !important;
+  padding-bottom: 10px !important;
+}
+
+.carecore-dashboard-panel-scroll-comfort td {
+  padding-top: 10px !important;
+  padding-bottom: 10px !important;
+}
+
+/* Botões inferiores ficam fixos no card, abaixo da área rolável */
+.carecore-dashboard-card.carecore-panel-scroll > .carecore-soft-button,
+.carecore-dashboard-card.carecore-panel-scroll > button {
+  flex-shrink: 0;
+}
+
+/* Scrollbar mais discreta */
+.carecore-dashboard-panel-scroll-comfort::-webkit-scrollbar,
+.carecore-avisos-scroll::-webkit-scrollbar {
+  width: 8px;
+}
+
+.carecore-dashboard-panel-scroll-comfort::-webkit-scrollbar-thumb,
+.carecore-avisos-scroll::-webkit-scrollbar-thumb {
+  background: rgba(100, 116, 139, 0.35);
+  border-radius: 999px;
+}
+
+.carecore-dashboard-panel-scroll-comfort::-webkit-scrollbar-track,
+.carecore-avisos-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+@media (max-width: 1450px) {
+  .carecore-dashboard-main-grid {
+    grid-template-rows: minmax(220px, 0.68fr) minmax(310px, 1.32fr) !important;
+  }
+
+  .carecore-dashboard-panel-scroll-comfort {
+    min-height: 175px;
+  }
+
+  .carecore-avisos-scroll {
+    min-height: 170px;
+  }
+}
+
+/* ===== FIM CARECORE REFINAMENTO VISUAL LEVE ===== */

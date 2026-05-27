@@ -1,0 +1,92 @@
+Atue como um Engenheiro de Software Sênior me auxiliando no desenvolvimento de um sistema de gestão para ONGs, Casas de Recuperação e Projetos de Convivência.
+
+**Visão Geral do Projeto e Regras de Negócio:**
+*   **Objetivo:** Sistema para gerenciar a vida dos conviventes (data de entrada, histórico, alocação em quartos, controle de presença).
+*   **Modelo de Negócios:** SaaS (Software as a Service) com Multi-Tenancy. Cobrança de mensalidade. O bloqueio de inadimplentes é feito via backend (flag `is_active` na tabela Instituição e bloqueio de token).
+*   **Regra Financeira Estrita:** O motor financeiro (Módulo 5) deve considerar como "projeção" estritamente itens com datas futuras em relação ao dia de hoje. O sistema DEVE ignorar parcelas projetadas durante conciliação de dívidas para não inflar totais em aberto.
+
+**Stack de Tecnologia Definitiva:**
+*   **Frontend:** React como PWA (Progressive Web App). Estilização via Tailwind CSS. Hospedagem inicial: Vercel.
+*   **Backend:** Python com **FastAPI** (Assíncrono, validação Pydantic). Hospedagem inicial: Render.com.
+*   **Banco de Dados:** PostgreSQL hospedado no Supabase. Acesso via SQLAlchemy + asyncpg.
+
+**Diretrizes Arquiteturais Rigorosas (Foco em Hardware Precário e Internet Instável):**
+*   **Offline-First e Resiliência:** Uso de React Query/SWR e `localStorage`. Ações como chamadas de presença devem funcionar offline e sincronizar em background.
+*   **Optimistic UI:** A interface deve refletir ações de salvamento instantaneamente, mascarando a latência da rede.
+*   **Performance e Segurança via RBAC:** O backend não envia dados completos para o front filtrar. O FastAPI corta o payload (JSON) com base no Token JWT do usuário. Payloads devem ser minúsculos e usar paginação estrita.
+
+**Estado Atual do Desenvolvimento (Onde Paramos):**
+Estamos desenvolvendo o **Módulo 1: Core SaaS**. 
+Já definimos a modelagem de banco de dados básica (`InstituicaoDB` e `UsuarioDB`) e criamos a rota de Onboarding no FastAPI (`/api/onboarding`). 
+*Regra aplicada:* O Onboarding utiliza uma **Transação Atômica** assíncrona (`async with db.begin():`) para criar o Tenant (Instituição) e o Usuário Master simultaneamente. Se um falhar, o banco faz rollback do outro.
+
+**Instrução Operacional:**
+A partir de agora, todas as suas sugestões de código, modelagem e rotas devem respeitar estritamente este contexto e o estado atual. Considere que meu ambiente de desenvolvimento (`localhost`) já possui as bibliotecas do FastAPI e SQLAlchemy instaladas. Sempre forneça códigos focados em alta performance, adotando as melhores práticas do ecossistema FastAPI + React.
+
+
+
+
+Com certeza. Pensar de forma modular é a melhor estratégia, especialmente quando trabalhamos com React e Python. Isso permite que você construa, teste e entregue uma parte do sistema de cada vez, sem se enrolar em um código gigante.
+
+Podemos dividir a arquitetura do sistema em 5 grandes módulos lógicos. Cada um terá suas próprias tabelas no banco de dados e suas próprias telas no frontend.
+
+Módulo 1: Core SaaS (Autenticação e Controle)
+Este é o coração do seu modelo de negócios. Ele não lida com os conviventes, mas sim com os seus clientes (as ONGs).
+
+O que faz: Gerencia o login, o ID de cada instituição (Tenant) e o isolamento dos dados (para que o Projeto A nunca veja os dados do Projeto B).
+
+Controle de Acesso: É aqui que fica o botão de "emergência" para desativar a instituição caso a mensalidade não seja paga, bloqueando imediatamente o token de acesso.
+
+Módulo 2: Gestão de Conviventes (O Prontuário)
+O módulo de entrada e acompanhamento cadastral.
+
+O que faz: Ficha completa de quem entra no projeto. Nome, contatos de emergência, histórico médico básico e, o mais importante, o Status (Ativo, Em Fuga, Alta, Transferido).
+
+Métricas: Calcula automaticamente o tempo de permanência com base na data de entrada.
+
+Módulo 3: Logística e Acomodação (Gestão de Espaço)
+Módulo focado no espaço físico da instituição.
+
+O que faz: Cadastro de quartos, alas ou casas do projeto e suas respectivas capacidades (ex: Quarto 1 - 4 camas).
+
+Alocação: Uma interface visual onde você aloca ou transfere o convivente de um quarto para outro, mantendo o histórico de por onde ele passou.
+
+Módulo 4: Rotina Diária (O Motor Offline-First)
+Este é o módulo que os funcionários mais vão usar no dia a dia, e o que mais precisa ser rápido e leve.
+
+O que faz: Controle de presença no refeitório, frequência em atividades terapêuticas ou laborais e anotações rápidas de comportamento.
+
+Engenharia: É aqui que a mágica do PWA (Progressive Web App) acontece. O funcionário faz a chamada da janta pelo celular, o React salva no localStorage e manda para o Python em segundo plano.
+
+Módulo 5: Faturamento (O seu Motor Financeiro)
+A parte que garante a saúde financeira do seu SaaS através da gestão das assinaturas.
+
+O que faz: Integração com os gateways de pagamento, controle de vencimentos e geração de faturas mensais para as instituições.
+
+Lógica de Cobrança: Ao estruturarmos o motor financeiro, a lógica precisará ser exata. O sistema deve considerar como "projeção" estritamente os itens com datas futuras em relação ao dia de hoje. Durante a conciliação de assinaturas ou dívidas ativas da instituição, essas parcelas projetadas devem ser ignoradas. Isso garante que, se você ou o cliente tentarem puxar um relatório de conciliação hoje, o sistema não some parcelas que ainda não fazem parte do ciclo atual, o que inflaria erroneamente os totais em aberto.
+
+
+
+"email": "email_do_administrador@exemplo.com",
+     "senha": "defina_uma_senha_forte_no_ambiente_local"
+
+
+
+[INÍCIO DA MEMÓRIA DE CONTEXTO DO PROJETO]
+
+Instrução para a IA: Leia este contexto atentamente. Ele contém o estado atual do projeto de software que estamos construindo. Após ler, apenas confirme que entendeu a estrutura e aguarde minhas instruções para iniciarmos o desenvolvimento do módulo de "Quartos e Leitos". Regra estrita de código: Sempre forneça códigos 100% completos nos próximos passos, nunca omita partes com ....
+
+Nome do Projeto: CARECORE+ (SaaS de gestão para ONGs e Abrigos).
+Stack Tecnológico:
+
+Backend: Python 3.13+, FastAPI, SQLAlchemy (SQLite local carecore_local.db), JWT para autenticação, bcrypt para hash de senhas. Rodando na porta 8000.
+
+Frontend: React (Vite), Tailwind CSS v3, React Router Dom, Axios. Roteamento protegido (Optimistic UI) rodando na porta 5173.
+
+CHECKPOINT DO PROJETO: CARECORE+ (SaaS de Acolhimento)1. Arquitetura e TecnologiasBackend: Python com FastAPI, Banco de Dados assíncrono SQLite (aiosqlite) utilizando SQLAlchemy.  Frontend: React (Vite) utilizando TailwindCSS para estilização e Axios para comunicação com a API.  Segurança: Autenticação baseada em tokens JWT (OAuth2PasswordBearer) com expiração e criptografia de senhas.  2. Banco de Dados e Modelos (models.py)As tabelas principais já estão mapeadas e relacionadas:  Instituicoes e Usuarios (com perfis de acesso).Quartos e Leitos (para controle de capacidade).MotivosInativacao e OrigensEncaminhamento (tabelas auxiliares dinâmicas).Conviventes (Prontuário completo abrangendo Dados Pessoais, Endereço, Assistência Social, Saúde, Cofre de Senhas e Dados Sensíveis Restritos).DocumentosConvivente (Preparado para o futuro módulo de GED/Uploads).3. Funcionalidades 100% ConcluídasOnboarding e Autenticação: Tela de cadastro inicial criando a Instituição e o Usuário Master em simultâneo, com login funcional e proteção de rotas (RotaProtegida no React).  Dashboard e Gestão de Quartos: Menu rápido e estrutura para criação de quartos e camas.  Módulo de Conviventes (Prontuário Avançado):Interface em Abas: Formulário limpo e dividido em: Pessoais & Endereço, Assistência Social, Saúde & Cofre, Dados Sensíveis.  Lógica de Criação e Edição (POST/PUT): O sistema já sabe diferenciar se está a registrar um novo acolhido ou a atualizar a ficha de um existente ao clicar em "Abrir Ficha".  Automação e UX: * Cálculo automático de idade a partir da Data de Nascimento.  Busca automática de Endereço via API do ViaCEP.  Máscaras e Validações Rigorosas (Em Tempo Real): Formatação automática (handleChange) e validação de erros (onBlur / ao sair do campo) para CPF (cálculo matemático), CEP, E-mail e Telefone (Fixo/Celular).  4. O que falta conectar (Próximos Passos)Alocação de Leitos: Fazer com que o módulo de Conviventes busque os leitos "Livres" e atualize o status da cama para "Ocupado" ao salvar o prontuário.Módulo GED (Upload de Arquivos): Adicionar funcionalidade para anexar documentos (fotos, RG, PDF do CadÚnico) à ficha do convivente e salvar no servidor.Refinamentos: Filtros de busca na listagem de conviventes e relatórios.
+
+
+
+
+💾 CHECK-POINT DO SISTEMA CARECORE+ (Para Backup)1. O QUE JÁ FIZEMOS (Módulos Concluídos e Blindados):Infraestrutura e Banco de Dados: Backend em Python (FastAPI) com banco SQLite local (carecore_local.db). Criamos scripts poderosos de injeção para gerar 200 prontuários hiper-realistas, criar quartos/camas e popular uma equipe completa (4 Técnicos e 6 Orientadores) distribuindo a responsabilidade dos pacientes entre os técnicos.  Autenticação e RBAC (Controle de Acesso): Sistema de login via token JWT (com os perfis Gerente, Técnico e Orientador).  Dashboard Principal: Painel em tempo real mostrando total de prontuários, acolhidos ativos, vagas ocupadas, leitos disponíveis e gráficos de barra da lotação dos quartos.  Módulo de Acomodações (Quartos e Leitos): Tela para criar "Alas" e adicionar/remover camas dinamicamente, com bloqueio que impede a exclusão de camas onde já existe um paciente deitado.  Módulo de Prontuários (Acolhidos): Ficha completa de admissão com as seguintes funcionalidades:Segurança Visual e de Dados: Ocultação das abas "Saúde & Cofre" e "Dados Sensíveis" quando o usuário logado é um Orientador.  GED (Gestão Eletrônica de Documentos): Anexo de arquivos (RG, CadÚnico, etc.) e captura de foto de perfil direta pela Webcam.  Trava Dupla no Status: Ao alterar o status (Ativo/Inativo/Bloqueado), o sistema obriga o preenchimento de um Motivo Principal e um Relato Detalhado, mesclando ambos para a linha do tempo. Bloqueio no backend impedindo que pessoas não autorizadas mudem o status.  Pesquisa e Listagem Inteligente: A tabela de conviventes prioriza e agrupa no topo os pacientes pertencentes ao Técnico logado ("Meu Caso"). A barra de pesquisa tem prioridade de match (início da palavra primeiro, depois ordem alfabética).  Histórico / Linha do Tempo: Todas as mudanças de status vão automaticamente para uma linha do tempo elegante.  2. ONDE ESTAMOS NESTE EXATO MOMENTO:
+Temos o alicerce central do sistema rodando perfeitamente. O fluxo de informações, a proteção dos dados sensíveis por perfil de usuário, e o "Cérebro de Ocorrências" já estão mapeados no banco de dados. O usuário já não consegue salvar fichas com erros, nem burlar mudanças de status sem justificativa.  3. O QUE AINDA FAREMOS (Próximos Passos):A Caixa de Entrada / Help Desk dos Técnicos: Precisamos criar a tela onde os Técnicos (como a Dra. Aline ou o Assistente Social) farão login para ver todas as ocorrências com status "Pendente" dos pacientes sob a responsabilidade deles. Nessa tela, eles lerão o relato feito pelo orientador, darão o parecer técnico/psicológico e fecharão o chamado (mudando a bolinha do histórico para "Resolvido" / Verde).Módulo de Rotina Diária (Chamada): Criar uma interface simples e mobile-friendly (possivelmente offline-first) para que o Orientador possa fazer a chamada diária (Presença/Falta) e adicionar ocorrências rápidas de convivência de forma ágil durante o plantão.

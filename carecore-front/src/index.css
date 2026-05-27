@@ -1,0 +1,44 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  background-color: #f8fafc;
+}
+
+/* ========================================================= */
+/* FIX PARA SVG / BARCODE */
+/* Remove espaço fantasma do SVG inline */
+/* ========================================================= */
+
+svg[role="img"] {
+  display: block;
+}
+
+/* ========================================================= */
+/* IMPRESSÃO DA CARTEIRINHA */
+/* ========================================================= */
+
+@media print {
+
+  body * {
+    visibility: hidden;
+  }
+
+  #area-cracha,
+  #area-cracha * {
+    visibility: visible;
+  }
+
+  #area-cracha {
+    position: absolute;
+    left: 0;
+    top: 0;
+
+    width: 70mm !important;
+    height: 100mm !important;
+
+    border: 1px solid #000 !important;
+  }
+
+}

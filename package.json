@@ -1,0 +1,8 @@
+{
+  "dependencies": {
+    "html5-qrcode": "^2.3.8",
+    "react-barcode": "^1.6.1",
+    "react-qr-code": "^2.0.21",
+    "xlsx": "^0.18.5"
+  }
+}

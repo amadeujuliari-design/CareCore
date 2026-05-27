@@ -1,0 +1,408 @@
+// =====================================================================
+// ARQUIVO: src/Quartos.jsx (COMPLETO)
+// =====================================================================
+import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import axios from 'axios';
+import Sidebar from './Sidebar';
+import { API_ROOT } from './config/apiBase';
+
+export default function Quartos() {
+  const navigate = useNavigate();
+  const token = localStorage.getItem('@CareCore:token');
+  const [quartos, setQuartos] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [erro, setErro] = useState('');
+  const [sucesso, setSucesso] = useState('');
+
+  let perfilUsuario = '';
+  let usuarioMaster = false;
+
+  try {
+    if (token) {
+      const payload = JSON.parse(atob(token.split('.')[1]));
+      perfilUsuario = payload.perfil_acesso || '';
+      usuarioMaster = Boolean(payload.is_master);
+    }
+  } catch (error) {
+    console.error('Erro ao ler token no módulo de quartos', error);
+  }
+
+  const podeGerenciarQuartos =
+    usuarioMaster ||
+    ['Gestor', 'Gestao', 'Gestão', 'Gerente', 'Técnico', 'Tecnico'].includes(perfilUsuario);
+
+  // Formulário de Quarto
+  const [nome, setNome] = useState('');
+  const [tipoPublico, setTipoPublico] = useState('Masculino');
+  const [modalidade, setModalidade] = useState('Fixo');
+
+  // Controle de Tela
+  const [telaAtual, setTelaAtual] = useState('lista'); // 'lista' ou 'form'
+  const [editandoId, setEditandoId] = useState(null);
+
+  // Controle de Camas (Leitos) Dinâmicos no Formulário
+  const [leitosForm, setLeitosForm] = useState([{ id_temporario: 1, identificacao: 'Cama 1', status: 'Livre' }]);
+useEffect(() => {
+    if (!token) {
+      navigate('/');
+      return;
+    }
+    carregarQuartos();
+  }, [token]);
+
+  const carregarQuartos = async () => {
+    try {
+      setLoading(true);
+      const response = await axios.get(`${API_ROOT}/quartos`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setQuartos(response.data);
+    } catch (error) {
+      setErro('Erro ao carregar lista de quartos.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const abrirFormNovoQuarto = () => {
+    if (!podeGerenciarQuartos) {
+      setErro('Apenas Gestor ou Técnico podem criar quartos e leitos.');
+      return;
+    }
+
+    setNome('');
+    setTipoPublico('Masculino');
+    setModalidade('Fixo');
+    setLeitosForm([{ id_temporario: 1, identificacao: 'Cama 1', status: 'Livre' }]);
+    setEditandoId(null);
+    setTelaAtual('form');
+    setErro('');
+  };
+
+  const adicionarCamaNoForm = () => {
+    const proximoNumero = leitosForm.length + 1;
+    setLeitosForm([...leitosForm, { id_temporario: Date.now(), identificacao: `Cama ${proximoNumero}`, status: 'Livre' }]);
+  };
+
+  const removerCamaNoForm = (indexParaRemover) => {
+    if (leitosForm.length === 1) return; // Obriga a ter pelo menos 1 cama
+    const novaLista = leitosForm.filter((_, idx) => idx !== indexParaRemover);
+    // Renomeia em ordem sequencial para ficar organizado
+    const listaAjustada = novaLista.map((cama, idx) => ({
+      ...cama,
+      identificacao: `Cama ${idx + 1}`
+    }));
+    setLeitosForm(listaAjustada);
+  };
+
+  const abrirParaEdicao = (quarto) => {
+    if (!podeGerenciarQuartos) {
+      setErro('Apenas Gestor ou Técnico podem editar quartos e leitos.');
+      return;
+    }
+
+    setEditandoId(quarto.id);
+    setNome(quarto.nome);
+    setTipoPublico(quarto.tipo_publico);
+    setModalidade(quarto.modalidade);
+    
+    // Mapeia os leitos do banco para o formato do formulário
+    if (quarto.leitos && quarto.leitos.length > 0) {
+      setLeitosForm(quarto.leitos.map(l => ({ id: l.id, identificacao: l.identificacao, status: l.status })));
+    } else {
+      setLeitosForm([{ id_temporario: 1, identificacao: 'Cama 1', status: 'Livre' }]);
+    }
+    setTelaAtual('form');
+    setErro('');
+  };
+
+  const handleSalvarQuarto = async (e) => {
+    e.preventDefault();
+    setErro(''); setSucesso('');
+
+    if (!nome.trim()) {
+      setErro('Por favor, informe o nome ou número de identificação do Quarto.');
+      return;
+    }
+
+    const payload = {
+      nome: nome.trim(),
+      tipo_publico: tipoPublico,
+      modalidade: modalidade,
+      leitos: leitosForm.map(l => ({ id: l.id || null, identificacao: l.identificacao, status: l.status }))
+    };
+
+    try {
+      if (editandoId) {
+        await axios.put(`${API_ROOT}/quartos/${editandoId}`, payload, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        setSucesso('Quarto e leitos atualizados com sucesso!');
+      } else {
+        await axios.post(`${API_ROOT}/quartos`, payload, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        setSucesso('Quarto criado com sucesso!');
+      }
+
+      setTelaAtual('lista');
+      carregarQuartos();
+      setTimeout(() => setSucesso(''), 3000);
+    } catch (error) {
+      setErro(error.response?.data?.detail || 'Erro ao salvar quarto. Verifique as regras do banco.');
+    }
+  };
+
+  const handleExcluirQuarto = async (quartoId) => {
+    if (!podeGerenciarQuartos) {
+      setErro('Apenas Gestor ou Técnico podem excluir quartos.');
+      return;
+    }
+
+    if (!window.confirm("Atenção: Ao excluir este quarto, todos os seus leitos associados serão removidos. Deseja continuar?")) return;
+    try {
+      await axios.delete(`${API_ROOT}/quartos/${quartoId}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setSucesso('Quarto removido com sucesso.');
+      carregarQuartos();
+      setTimeout(() => setSucesso(''), 3000);
+    } catch (error) {
+      setErro(error.response?.data?.detail || 'Erro ao excluir quarto.');
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-50 flex">
+      {/* SEU NOVO MENU LATERAL INTEGRADO */}
+      <Sidebar />
+
+      {/* ÁREA DE CONTEÚDO (DIREITA) */}
+      <div className="flex-1 flex flex-col min-w-0 h-screen overflow-y-auto">
+        
+        {/* Cabeçalho */}
+        <header className="bg-white shadow-sm border-b px-8 py-5 flex justify-between items-center sticky top-0 z-10">
+          <h1 className="text-lg font-bold text-slate-800 tracking-tight">Módulo de Acomodações</h1>
+          <div className="flex items-center gap-3">
+            <span className="w-8 h-8 rounded-full bg-brand/10 text-brand flex items-center justify-center font-bold">🏠</span>
+            <span className="text-sm font-semibold text-gray-600">Configuração de Leitos</span>
+          </div>
+        </header>
+
+        <main className="flex-1 p-8 w-full max-w-7xl mx-auto">
+          {erro && <div className="bg-red-50 text-red-600 p-4 rounded-xl text-sm mb-6 font-bold border border-red-100">⚠️ {erro}</div>}
+          {sucesso && <div className="bg-green-50 text-green-700 p-4 rounded-xl text-sm mb-6 font-bold border border-green-100">✅ {sucesso}</div>}
+
+          {/* --- TELA DE LISTAGEM --- */}
+          {telaAtual === 'lista' && (
+            <div className="bg-white p-5 rounded-3xl shadow-sm border border-slate-100 h-full flex flex-col">
+              <div className="flex justify-between items-center mb-5 border-b border-slate-100 pb-3">
+                <div>
+                  <h2 className="text-xl font-semibold text-slate-800 tracking-tight">Mapa de Quartos</h2>
+                  <p className="text-xs text-gray-400 font-medium mt-0.5">Visualize a ocupação das camas fisicamente no abrigo</p>
+                </div>
+                {podeGerenciarQuartos && (
+                  <button onClick={abrirFormNovoQuarto} className="bg-brand text-white px-6 py-2.5 rounded-xl hover:bg-brandDark font-bold transition-all shadow-md">
+                    + Novo Quarto
+                  </button>
+                )}
+              </div>
+
+              {loading ? (
+                <div className="flex justify-center p-12"><p className="text-brand font-bold animate-pulse text-lg">Carregando acomodações...</p></div>
+              ) : quartos.length === 0 ? (
+                <div className="text-center py-16 bg-gray-50 border-2 border-dashed border-gray-300 rounded-2xl">
+                  <p className="text-gray-500 text-lg font-medium">Nenhum quarto cadastrado até o momento.</p>
+                </div>
+              ) : (
+                // MAPA VISUAL EM GRID DOS QUARTOS
+                <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4 items-start">
+                  {quartos.map(q => (
+                    <div key={q.id} className="bg-white rounded-3xl border border-slate-200 shadow-sm flex flex-col hover:shadow-md transition-all duration-200 min-h-[300px]" >
+                      
+                      {/* Topo do Quarto */}
+                      <div className="bg-slate-800 px-3 py-2.5 text-white flex justify-between items-start">
+                        <div>
+                          <h3 className="font-semibold text-[15px] tracking-tight">{q.nome}</h3>
+                          <p className="text-[9px] text-slate-300 font-medium uppercase tracking-wide mt-0.5">{q.tipo_publico} • {q.modalidade === 'Transitorio' ? 'Transitório' : 'Fixo'}</p>
+                        </div>
+                        {podeGerenciarQuartos && (
+                          <div className="flex gap-2">
+                            <button onClick={() => abrirParaEdicao(q)} className="text-[11px] bg-slate-700 hover:bg-slate-600 px-2 py-1 rounded-xl font-medium transition-colors">Editar</button>
+                            <button onClick={() => handleExcluirQuarto(q.id)} className="text-[11px] bg-red-900/60 hover:bg-red-700 px-2 py-1 rounded-xl font-medium transition-colors">Excluir</button>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Camas Internas do Quarto */}
+                      <div className="p-3 bg-slate-50/60 flex-1">
+                        <h4 className="text-[9px] font-semibold text-slate-400 uppercase tracking-wide mb-2">Disposição das Camas ({q.leitos?.length || 0})</h4>
+                        
+                        <div className="grid grid-cols-2 2xl:grid-cols-3 gap-2.5">
+                          {q.leitos?.map(l => {
+                            const ocupado = l.status === 'Ocupado';
+
+                            return (
+                              <div
+                                key={l.id}
+                                className={`group relative rounded-2xl border px-3 py-2.5 text-center transition-all min-h-[104px] ${
+                                  ocupado
+                                    ? 'bg-amber-50/80 border-amber-200 hover:bg-amber-100/80'
+                                    : 'bg-white border-slate-200 hover:bg-slate-50'
+                                }`}
+                              >
+                                <div className="text-base mb-1">🛏️</div>
+
+                                <div className={`text-[12px] font-semibold leading-tight ${
+                                  ocupado
+                                    ? 'text-amber-800'
+                                    : 'text-emerald-700'
+                                }`}>
+                                  {l.identificacao}
+                                </div>
+
+                                {ocupado ? (
+                                  <div className="mt-1.5 border-t border-amber-200 pt-1.5">
+                                    <div className="text-[11px] font-semibold text-slate-800 truncate leading-tight">
+                                      {l.convivente_nome || 'Ocupado'}
+                                    </div>
+
+                                    <div className="text-[10px] font-semibold text-slate-500 truncate leading-tight">
+                                      Pront. {l.numero_institucional ?? '--'}
+                                    </div>
+
+                                    <div className="pointer-events-none absolute left-1/2 top-full z-[9999] mt-2 hidden w-64 -translate-x-1/2 rounded-2xl border border-slate-200 bg-white p-3 text-left shadow-xl group-hover:block">
+                                      <div className="text-xs font-bold text-slate-400 uppercase tracking-wide">
+                                        Convivente alocado
+                                      </div>
+
+                                      <div className="mt-1 text-sm font-semibold text-slate-900">
+                                        {l.convivente_nome_completo || l.convivente_nome || 'Não informado'}
+                                      </div>
+
+                                      <div className="mt-2 grid gap-1 text-xs text-slate-600">
+                                        <div>
+                                          <span className="font-semibold text-slate-800">Prontuário:</span>{' '}
+                                          {l.numero_institucional ?? '--'}
+                                        </div>
+
+                                        <div>
+                                          <span className="font-semibold text-slate-800">CPF:</span>{' '}
+                                          {l.cpf || '--'}
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div className="text-[10px] uppercase tracking-wide mt-1 text-emerald-500 font-semibold">
+                                    Livre
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* --- TELA DE FORMULÁRIO DE QUARTO --- */}
+          {telaAtual === 'form' && (
+            <div className="bg-white p-8 rounded-2xl shadow-sm border border-gray-100 max-w-2xl mx-auto">
+              <h2 className="text-xl font-black text-gray-800 border-b pb-3 mb-6">
+                {editandoId ? '📝 Editar Estrutura de Quarto' : '🏠 Cadastrar Novo Quarto'}
+              </h2>
+
+              <form onSubmit={handleSalvarQuarto} className="space-y-6">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                  <div className="sm:col-span-2">
+                    <label className="block text-sm font-semibold text-gray-700 mb-1">Nome ou Número de Identificação *</label>
+                    <input 
+                      type="text" 
+                      value={nome} 
+                      onChange={(e) => setNome(e.target.value)} 
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none"
+                      placeholder="Ex: Quarto 10, Ala Masculina A, Triagem"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-1">Público Alvo</label>
+                    <select value={tipoPublico} onChange={(e) => setTipoPublico(e.target.value)} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none bg-white">
+                      <option value="Masculino">Masculino</option>
+                      <option value="Feminino">Feminino</option>
+                      <option value="Misto">Misto / Famílias</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-1">Modalidade de Vaga</label>
+                    <select value={modalidade} onChange={(e) => setModalidade(e.target.value)} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none bg-white">
+                      <option value="Fixo">Fixo (Pernoite Regular)</option>
+                      <option value="Transitorio">Transitório (Passagem de Curto Prazo)</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* ABA DE ENGENHARIA DE CAMAS */}
+                <div className="pt-6 border-t border-gray-200">
+                  <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-sm font-bold text-gray-600 uppercase tracking-wider">Camas deste Quarto</h3>
+                    <button 
+                      type="button" 
+                      onClick={adicionarCamaNoForm}
+                      className="text-xs bg-brand text-white px-3 py-1.5 rounded-lg font-bold hover:bg-brandDark transition-colors"
+                    >
+                      + Adicionar Cama
+                    </button>
+                  </div>
+
+                  <div className="space-y-3 max-h-60 overflow-y-auto pr-2">
+                    {leitosForm.map((cama, index) => (
+                      <div key={cama.id || cama.id_temporario} className="flex items-center justify-between p-3 bg-gray-50 rounded-xl border border-gray-200">
+                        <div className="flex items-center gap-3">
+                          <span className="text-xl">🛌</span>
+                          <span className="font-bold text-gray-700 text-sm">{cama.identificacao}</span>
+                          <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded ${cama.status === 'Ocupado' ? 'bg-amber-100 text-amber-800' : 'bg-green-100 text-green-800'}`}>
+                            {cama.status === 'Ocupado' ? 'Ocupada (Acolhido Deitado)' : 'Livre'}
+                          </span>
+                        </div>
+                        
+                        <button 
+                          type="button"
+                          onClick={() => removerCamaNoForm(index)}
+                          disabled={cama.status === 'Ocupado'} // Bloqueia remoção se a cama tiver alguém deitado
+                          className="text-xs font-bold text-red-600 hover:text-red-800 disabled:opacity-30 uppercase tracking-wider"
+                          title={cama.status === 'Ocupado' ? "Não é possível remover uma cama ocupada por um acolhido" : "Remover cama"}
+                        >
+                          Remover
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Botoes Form */}
+                <div className="pt-6 border-t flex justify-end gap-4">
+                  <button type="button" onClick={() => setTelaAtual('lista')} className="px-5 py-2.5 bg-white border border-gray-300 rounded-xl text-gray-700 hover:bg-gray-50 font-bold text-sm shadow-sm">
+                    Cancelar
+                  </button>
+                  <button type="submit" className="px-6 py-2.5 bg-brand text-white rounded-xl hover:bg-brandDark font-bold text-sm shadow-md">
+                    💾 Salvar Estrutura
+                  </button>
+                </div>
+              </form>
+            </div>
+          )}
+
+        </main>
+      </div>
+    </div>
+  );
+}
