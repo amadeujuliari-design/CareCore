@@ -6,6 +6,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Sidebar from "./Sidebar";
+import { AppShell, MainShell, PageHeader, PremiumButton, ScrollArea } from "./components/PremiumUI";
 import { exportarRelatorioXlsx } from "./utils/exportarRelatorioXlsx";
 import { imprimirRelatorio } from "./utils/imprimirRelatorio";
 import {
@@ -503,7 +504,7 @@ export default function Avisos() {
   }
 
   return (
-    <div className="carecore-app-fixed">
+    <AppShell>
       <Sidebar />
 
       <ModalAvisoCompleto
@@ -512,31 +513,30 @@ export default function Avisos() {
         onMarcarLido={handleMarcarLido}
       />
 
-      <section className="carecore-main-fixed">
-        <header className="carecore-page-header-fixed px-5 py-3">
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <h1 className="text-[23px] font-bold text-slate-900 leading-none">Comunicação Interna</h1>
-              <p className="text-sm text-slate-500 mt-1">Envie avisos, mensagens direcionadas e comunicados para a equipe.</p>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <button
+      <MainShell>
+        <PageHeader
+          eyebrow="Equipe"
+          title="Comunicação Interna"
+          subtitle="Envie avisos, mensagens direcionadas e comunicados para a equipe."
+          icon="🔔"
+          actions={(
+            <>
+              <PremiumButton
                 type="button"
+                variant="secondary"
                 onClick={() => navigate("/dashboard")}
-                className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-600 shadow-sm hover:bg-slate-50"
               >
                 Dashboard
-              </button>
+              </PremiumButton>
 
               <div className="rounded-2xl border border-purple-100 bg-purple-50 px-4 py-3 text-sm font-bold text-purple-700">
                 🔔 {resumo.total_alertas_ativos || 0} ativos
               </div>
-            </div>
-          </div>
-        </header>
+            </>
+          )}
+        />
 
-        <main className="flex-1 overflow-y-auto p-5">
+        <ScrollArea>
           <section className="grid grid-cols-1 gap-4 xl:grid-cols-[0.95fr_1.25fr]">
             <form onSubmit={handleSubmit} className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
               <div className="mb-5">
@@ -911,8 +911,8 @@ export default function Avisos() {
               </section>
             </div>
           </section>
-        </main>
-      </section>
-    </div>
+        </ScrollArea>
+      </MainShell>
+    </AppShell>
   );
 }
