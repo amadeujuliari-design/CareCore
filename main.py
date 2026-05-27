@@ -25,11 +25,21 @@ ORIGENS_PERMITIDAS = {
     "http://127.0.0.1:5173",
 }
 
+APP_ENV = os.getenv("APP_ENV", "local").strip().lower()
+AUTO_CREATE_TABLES_PADRAO = "true" if APP_ENV in {"local", "development", "dev"} else "false"
+AUTO_CREATE_TABLES = os.getenv("CARECORE_AUTO_CREATE_TABLES", AUTO_CREATE_TABLES_PADRAO).strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "sim",
+}
+
 
 @contextlib.asynccontextmanager
 async def lifespan(app: FastAPI):
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    if AUTO_CREATE_TABLES:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
 
     yield
 

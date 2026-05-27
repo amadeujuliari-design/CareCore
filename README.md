@@ -46,11 +46,13 @@ Arquivos em `uploads/` são servidos pela rota autenticada `GET /api/arquivos/..
 
 ## Migrações (Alembic)
 
-O app ainda cria tabelas no startup (`create_all`). Para evoluir o schema com Alembic:
+O projeto possui uma baseline Alembic com o schema atual. Para criar/evoluir o banco via migrations:
 
 ```bash
 alembic upgrade head
 ```
+
+Em ambiente local, `CARECORE_AUTO_CREATE_TABLES=true` mantém o fallback de criar tabelas no startup para facilitar desenvolvimento. Em produção, use `APP_ENV=production` e `CARECORE_AUTO_CREATE_TABLES=false`, deixando o schema sob controle do Alembic.
 
 ## Licença
 

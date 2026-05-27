@@ -28,6 +28,25 @@ from models import *
 
 target_metadata = Base.metadata
 
+
+def _database_url_para_alembic() -> str:
+    """
+    Alembic usa drivers síncronos, enquanto a aplicação usa SQLAlchemy async.
+    Convertemos as URLs async mais comuns para suas equivalentes síncronas.
+    """
+    url = os.getenv("DATABASE_URL") or config.get_main_option("sqlalchemy.url")
+
+    if url.startswith("sqlite+aiosqlite://"):
+        return url.replace("sqlite+aiosqlite://", "sqlite://", 1)
+
+    if url.startswith("postgresql+asyncpg://"):
+        return url.replace("postgresql+asyncpg://", "postgresql://", 1)
+
+    return url
+
+
+config.set_main_option("sqlalchemy.url", _database_url_para_alembic())
+
 # other values from the config, defined by the needs of env.py,
 # can be acquired:
 # my_important_option = config.get_main_option("my_important_option")
