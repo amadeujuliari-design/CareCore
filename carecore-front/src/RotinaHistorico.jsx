@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import Sidebar from './Sidebar';
+import { AppShell, MainShell, PageHeader, PremiumButton, ScrollArea } from './components/PremiumUI';
 import { API_ROOT } from './config/apiBase';
 import logoCarecore from './assets/logo.png';
 import {
@@ -573,49 +574,39 @@ export default function RotinaHistorico() {
   // =====================================================================
 
   return (
-    <div className="min-h-screen bg-gray-50 flex">
+    <AppShell>
 
       <Sidebar />
 
-      <div className="flex-1 p-4 md:p-6 overflow-auto">
-
-        {/* HEADER */}
-
-        <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-4 mb-5">
-
-          <div>
-
-            <h1 className="text-2xl font-black text-gray-800">
-              Histórico Geral da Rotina
-            </h1>
-
-            <p className="text-sm text-gray-500 mt-1">
-              Entradas, saídas e alimentação dos conviventes
-            </p>
-
-          </div>
-
-          <div className="flex flex-wrap gap-2">
-
-            <button
+      <MainShell>
+        <PageHeader
+          eyebrow="Auditoria da rotina"
+          title="Histórico Geral da Rotina"
+          subtitle="Entradas, saídas, alimentação e eventos de auditoria dos conviventes."
+          icon="☷"
+          actions={(
+            <>
+            <PremiumButton
               type="button"
               onClick={exportarXLSX}
-              className="px-4 py-2 rounded-xl bg-emerald-600 text-white text-sm font-bold hover:bg-emerald-700 transition-colors"
+              className="bg-emerald-600 hover:bg-emerald-700"
             >
               Exportar XLSX
-            </button>
+            </PremiumButton>
 
-            <button
+            <PremiumButton
               type="button"
+              variant="primary"
               onClick={abrirRelatorioImpressao}
-              className="px-4 py-2 rounded-xl bg-gray-900 text-white text-sm font-bold hover:bg-black transition-colors"
             >
               Relatório para impressão
-            </button>
+            </PremiumButton>
+            </>
+          )}
+        />
 
-          </div>
-
-        </div>
+        <ScrollArea>
+          <div className="w-full max-w-7xl mx-auto">
 
         {/* RESUMO */}
 
@@ -1092,7 +1083,8 @@ export default function RotinaHistorico() {
 
         </div>
 
-      </div>
+          </div>
+        </ScrollArea>
 
       {/* MODAL EDIÇÃO */}
 
@@ -1245,6 +1237,7 @@ export default function RotinaHistorico() {
 
       )}
 
-    </div>
+      </MainShell>
+    </AppShell>
   );
 }

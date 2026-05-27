@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 import Sidebar from './Sidebar';
+import { AppShell, MainShell, PageHeader, PremiumButton, ScrollArea } from './components/PremiumUI';
 import { exportarRelatorioXlsx } from './utils/exportarRelatorioXlsx';
 import { imprimirRelatorio } from './utils/imprimirRelatorio';
 import { API_ROOT } from './config/apiBase';
@@ -306,27 +307,28 @@ export default function CentralOcorrencias() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 flex relative">
+    <AppShell>
       <Sidebar />
 
-      <div className="flex-1 flex flex-col min-w-0 h-screen overflow-y-auto pb-24">
-        <header className="bg-white shadow-sm border-b px-8 py-5 flex justify-between items-center sticky top-0 z-10">
-          <div>
-            <h1 className="text-xl font-bold text-gray-800">
-              {perfilUsuario === 'Orientador' ? 'Minhas Ocorrências' : 'Central de Ocorrências'}
-            </h1>
-            <p className="text-xs text-gray-500 mt-0.5">Gestão de chamados e andamento de casos</p>
-          </div>
-          
-          <button 
+      <MainShell>
+        <PageHeader
+          eyebrow="Comunicação técnica"
+          title={perfilUsuario === 'Orientador' ? 'Minhas Ocorrências' : 'Central de Ocorrências'}
+          subtitle="Gestão de chamados, prioridades e andamento de casos."
+          icon="⚠"
+          actions={(
+            <PremiumButton
+              type="button"
+              variant="brand"
             onClick={abrirFormularioNovo}
-            className="bg-brand text-white px-5 py-2.5 rounded-xl hover:bg-brandDark font-bold transition-all shadow-md transform hover:-translate-y-0.5"
           >
             + Novo Chamado
-          </button>
-        </header>
+            </PremiumButton>
+          )}
+        />
 
-        <main className="flex-1 p-8 w-full max-w-7xl mx-auto">
+        <ScrollArea className="pb-24">
+          <div className="w-full max-w-7xl mx-auto">
           {erro && <div className="bg-red-50 text-red-600 p-4 rounded-xl text-sm mb-6 font-semibold border border-red-100">{erro}</div>}
 
 
@@ -565,8 +567,8 @@ export default function CentralOcorrencias() {
               </div>
             )}
           </div>
-        </main>
-      </div>
+          </div>
+        </ScrollArea>
 
       {/* 🚀 BARRA FLUTUANTE DE BAIXA EM LOTE */}
       {selecionados.length > 0 && (
@@ -907,7 +909,8 @@ export default function CentralOcorrencias() {
         </div>
       )}
 
-    </div>
+      </MainShell>
+    </AppShell>
   );
 }
 

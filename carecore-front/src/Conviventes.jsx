@@ -584,12 +584,15 @@ export default function Conviventes() {
 
 {/* === INÍCIO DA SEÇÃO 5: CABEÇALHO DO FORMULÁRIO E ABA 1 (PESSOAIS E STATUS) === */}
           {telaAtual === 'form' && (
-            <div className="bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden mb-8">
+            <div className="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden mb-8">
               
-              <div className="bg-gray-800 p-4 text-white flex justify-between items-center">
+              <div className="bg-gradient-to-r from-slate-950 via-blue-950 to-violet-950 p-5 text-white flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                 <div>
-                  <h2 className="text-xl font-bold">Ficha de Admissão Institucional</h2>
-                  <p className="text-gray-300 text-xs mt-0.5">Isolamento Multi-Tenancy Ativo. Dados restritos à sua instituição.</p>
+                  <p className="text-[11px] font-black uppercase tracking-[0.18em] text-blue-200">
+                    Prontuário institucional
+                  </p>
+                  <h2 className="mt-1 text-xl font-black tracking-tight">Ficha de admissão institucional</h2>
+                  <p className="text-slate-300 text-xs mt-1">Dados assistenciais restritos à instituição e protegidos por perfil de acesso.</p>
                 </div>
                 
                 <div className="flex items-center gap-3">
@@ -597,26 +600,26 @@ export default function Conviventes() {
                     <button 
                       type="button" 
                       onClick={() => abrirCarteirinha(conviventes.find(c => c.id === editandoId))} 
-                      className="bg-brand text-white px-4 py-1.5 rounded-lg text-sm font-bold shadow-md hover:bg-brandDark transition-colors flex items-center gap-2 border border-brandDark"
+                      className="bg-white/10 text-white px-4 py-2 rounded-xl text-sm font-bold shadow-sm hover:bg-white/15 transition-colors flex items-center gap-2 border border-white/15"
                     >
-                      🪪 Imprimir ID
+                      Imprimir ID
                     </button>
                   )}
-                  <button type="button" onClick={() => setTelaAtual('lista')} className="text-gray-300 hover:text-white text-sm font-medium bg-gray-700 px-3 py-1.5 rounded-lg">✕ Fechar</button>
+                  <button type="button" onClick={() => setTelaAtual('lista')} className="text-slate-200 hover:text-white text-sm font-bold bg-white/10 px-4 py-2 rounded-xl border border-white/10">Fechar</button>
                 </div>
               </div>
 
-              <div className="flex border-b bg-gray-50 overflow-x-auto">
-                <button type="button" onClick={() => setAbaAtual('pessoais')} className={`px-4 py-3 text-sm font-medium border-b-2 whitespace-nowrap transition-colors ${abaAtual === 'pessoais' ? 'border-brand text-brand bg-white' : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-100'}`}>👤 Pessoais & Status</button>
-                <button type="button" onClick={() => setAbaAtual('social')} className={`px-4 py-3 text-sm font-medium border-b-2 whitespace-nowrap transition-colors ${abaAtual === 'social' ? 'border-brand text-brand bg-white' : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-100'}`}>📄 Assistência Social</button>
-                <button type="button" onClick={() => setAbaAtual('historico')} className={`px-4 py-3 text-sm font-medium border-b-2 whitespace-nowrap transition-colors ${abaAtual === 'historico' ? 'border-brand text-brand bg-white' : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-100'}`}>📝 Histórico</button>
+              <div className="flex border-b bg-slate-50 overflow-x-auto px-2">
+                <button type="button" onClick={() => setAbaAtual('pessoais')} className={`px-4 py-3 text-sm font-bold border-b-2 whitespace-nowrap transition-colors ${abaAtual === 'pessoais' ? 'border-brand text-brand bg-white' : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-white/70'}`}>Pessoais e status</button>
+                <button type="button" onClick={() => setAbaAtual('social')} className={`px-4 py-3 text-sm font-bold border-b-2 whitespace-nowrap transition-colors ${abaAtual === 'social' ? 'border-brand text-brand bg-white' : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-white/70'}`}>Assistência social</button>
+                <button type="button" onClick={() => setAbaAtual('historico')} className={`px-4 py-3 text-sm font-bold border-b-2 whitespace-nowrap transition-colors ${abaAtual === 'historico' ? 'border-brand text-brand bg-white' : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-white/70'}`}>Histórico</button>
                 <button
   type="button"
   onClick={() => setAbaAtual('fluxo')}
-  className={`px-4 py-3 text-sm font-medium border-b-2 whitespace-nowrap transition-colors ${
+  className={`px-4 py-3 text-sm font-bold border-b-2 whitespace-nowrap transition-colors ${
     abaAtual === 'fluxo'
       ? 'border-emerald-500 text-emerald-600 bg-white'
-      : 'border-transparent text-gray-500 hover:text-gray-700'
+      : 'border-transparent text-slate-500 hover:text-slate-700'
   }`}
 >
   Fluxo Diário
@@ -624,12 +627,12 @@ export default function Conviventes() {
                 
                 {perfilUsuario !== 'Orientador' && (
                   <>
-                    <button type="button" onClick={() => setAbaAtual('saude')} className={`px-4 py-3 text-sm font-medium border-b-2 whitespace-nowrap transition-colors ${abaAtual === 'saude' ? 'border-brand text-brand bg-white' : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-100'}`}>🏥 Saúde & Cofre</button>
-                    <button type="button" onClick={() => setAbaAtual('sensiveis')} className={`px-4 py-3 text-sm font-medium border-b-2 whitespace-nowrap transition-colors ${abaAtual === 'sensiveis' ? 'border-red-500 text-red-600 bg-red-50/50' : 'border-transparent text-gray-500 hover:text-red-500 hover:bg-red-50/30'}`}>🔒 Dados Sensíveis</button>
+                    <button type="button" onClick={() => setAbaAtual('saude')} className={`px-4 py-3 text-sm font-bold border-b-2 whitespace-nowrap transition-colors ${abaAtual === 'saude' ? 'border-brand text-brand bg-white' : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-white/70'}`}>Saúde e cofre</button>
+                    <button type="button" onClick={() => setAbaAtual('sensiveis')} className={`px-4 py-3 text-sm font-bold border-b-2 whitespace-nowrap transition-colors ${abaAtual === 'sensiveis' ? 'border-red-500 text-red-600 bg-red-50/50' : 'border-transparent text-slate-500 hover:text-red-500 hover:bg-red-50/30'}`}>Dados sensíveis</button>
                   </>
                 )}
 
-                <button type="button" onClick={() => setAbaAtual('documentos')} className={`px-4 py-3 text-sm font-medium border-b-2 whitespace-nowrap transition-colors ${abaAtual === 'documentos' ? 'border-blue-500 text-blue-600 bg-blue-50/50' : 'border-transparent text-gray-500 hover:text-blue-600 hover:bg-blue-50/30'}`}>📎 Anexos e GED</button>
+                <button type="button" onClick={() => setAbaAtual('documentos')} className={`px-4 py-3 text-sm font-bold border-b-2 whitespace-nowrap transition-colors ${abaAtual === 'documentos' ? 'border-blue-500 text-blue-600 bg-blue-50/50' : 'border-transparent text-slate-500 hover:text-blue-600 hover:bg-blue-50/30'}`}>Anexos e GED</button>
               </div>
 
               <form onSubmit={handleSalvar}>

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import Sidebar from './Sidebar';
+import { AppShell, MainShell, PageHeader, PremiumButton, ScrollArea } from './components/PremiumUI';
 import { API_ROOT } from './config/apiBase';
 import logoCarecore from './assets/logo.png';
 
@@ -345,7 +346,7 @@ export default function ConvenioSisa() {
   });
 
   return (
-    <div className="min-h-screen bg-gray-50 flex sisa-page">
+    <AppShell>
 
       <style>
         {`
@@ -444,37 +445,36 @@ export default function ConvenioSisa() {
 
       <Sidebar />
 
-      <div className="flex-1 p-6 md:p-8 overflow-auto sisa-print-area">
-
-        <div className="print:hidden flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
-
-          <div>
-            <h1 className="text-2xl font-black text-gray-800">
-              Convênio / SISA
-            </h1>
-
-            <p className="text-sm text-gray-500 mt-1">
-              Relatórios operacionais para conferência, digitação manual e fechamento mensal.
-            </p>
-          </div>
-
-          <div className="flex flex-wrap gap-2">
-            <button
+      <MainShell>
+        <div className="print:hidden">
+          <PageHeader
+            eyebrow="Prestação de contas"
+            title="Convênio / SISA"
+            subtitle="Relatórios operacionais para conferência, digitação manual e fechamento mensal."
+            icon="▤"
+            actions={(
+              <>
+            <PremiumButton
+              type="button"
+              variant="secondary"
               onClick={imprimir}
-              className="px-4 py-2 rounded-xl border border-gray-200 bg-white text-gray-700 font-bold text-sm hover:bg-gray-50"
             >
               Imprimir / PDF
-            </button>
+            </PremiumButton>
 
-            <button
+            <PremiumButton
+              type="button"
               onClick={exportarMensalXlsx}
-              className="px-4 py-2 rounded-xl bg-emerald-600 text-white font-bold text-sm hover:bg-emerald-700"
+              className="bg-emerald-600 hover:bg-emerald-700"
             >
               Exportar XLSX
-            </button>
-          </div>
-
+            </PremiumButton>
+              </>
+            )}
+          />
         </div>
+
+        <ScrollArea className="sisa-print-area">
 
         <div className="hidden print:flex print:items-center print:justify-between print:gap-6 print:border-b print:border-gray-200 print:pb-4 print:mb-5">
           <img
@@ -903,9 +903,10 @@ export default function ConvenioSisa() {
 
         )}
 
-      </div>
+        </ScrollArea>
 
-    </div>
+      </MainShell>
+    </AppShell>
   );
 }
 

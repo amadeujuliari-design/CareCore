@@ -5,6 +5,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import Sidebar from './Sidebar';
+import { AppShell, MainShell, PageHeader, PremiumButton, ScrollArea } from './components/PremiumUI';
 import { API_ROOT } from './config/apiBase';
 
 export default function DashboardOperacional() {
@@ -121,43 +122,37 @@ export default function DashboardOperacional() {
   ];
 
   return (
-    <div className="min-h-screen bg-gray-50 flex">
+    <AppShell>
 
       <Sidebar />
 
-      <div className="flex-1 p-6 md:p-8 overflow-auto">
-
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 mb-6">
-
-          <div>
-            <h1 className="text-2xl font-black text-gray-800">
-              Dashboard Operacional
-            </h1>
-
-            <p className="text-sm text-gray-500 mt-1">
-              Estado real de presença, movimentação diária, refeições e alertas operacionais.
-            </p>
-          </div>
-
-          <div className="flex flex-wrap gap-2 items-center">
-
+      <MainShell>
+        <PageHeader
+          eyebrow="Rotina"
+          title="Dashboard Operacional"
+          subtitle="Estado real de presença, movimentação diária, refeições e alertas operacionais."
+          icon="↗"
+          actions={(
+            <>
             {dados?.atualizado_em && (
               <span className="text-xs font-bold text-gray-500 bg-white border border-gray-100 rounded-xl px-3 py-2">
                 Atualizado: {formatarDataHora(dados.atualizado_em)}
               </span>
             )}
 
-            <button
+            <PremiumButton
               type="button"
+              variant="brand"
               onClick={carregarDashboard}
-              className="bg-brand hover:bg-brand-dark text-white font-bold px-4 py-2 rounded-xl shadow-sm transition-colors"
             >
               Atualizar
-            </button>
+            </PremiumButton>
+            </>
+          )}
+        />
 
-          </div>
-
-        </div>
+        <ScrollArea>
+          <div className="w-full max-w-7xl mx-auto">
 
         {erro && (
           <div className="mb-6 bg-red-50 border border-red-100 text-red-700 rounded-2xl p-4 text-sm font-semibold">
@@ -458,8 +453,10 @@ export default function DashboardOperacional() {
 
         )}
 
-      </div>
+          </div>
+        </ScrollArea>
 
-    </div>
+      </MainShell>
+    </AppShell>
   );
 }

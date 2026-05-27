@@ -221,3 +221,84 @@ export function PremiumButton({
     </button>
   );
 }
+
+export function SectionCard({ title, subtitle, children, actions, className = '' }) {
+  return (
+    <section className={`rounded-3xl border border-slate-100 bg-white shadow-sm ${className}`}>
+      {(title || subtitle || actions) && (
+        <div className="border-b border-slate-100 px-5 py-4 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+          <div>
+            {title && (
+              <h2 className="text-base font-black text-slate-900">
+                {title}
+              </h2>
+            )}
+
+            {subtitle && (
+              <p className="mt-1 text-xs font-medium text-slate-500">
+                {subtitle}
+              </p>
+            )}
+          </div>
+
+          {actions && (
+            <div className="flex flex-wrap gap-2">
+              {actions}
+            </div>
+          )}
+        </div>
+      )}
+
+      {children}
+    </section>
+  );
+}
+
+export function SectionTitle({ title, subtitle, actions }) {
+  return (
+    <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+      <div>
+        <h2 className="text-base font-black text-slate-900">
+          {title}
+        </h2>
+
+        {subtitle && (
+          <p className="mt-1 text-xs text-slate-500">
+            {subtitle}
+          </p>
+        )}
+      </div>
+
+      {actions && (
+        <div className="flex flex-wrap gap-2">
+          {actions}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function FilterPanel({ title = 'Filtros', subtitle, actions, children, className = '' }) {
+  return (
+    <section className={`rounded-3xl border border-slate-100 bg-white p-5 shadow-sm ${className}`}>
+      <SectionTitle title={title} subtitle={subtitle} actions={actions} />
+      {children}
+    </section>
+  );
+}
+
+export function EmptyState({ title, subtitle }) {
+  return (
+    <div className="rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50 px-4 py-12 text-center">
+      <p className="text-sm font-bold text-slate-600">
+        {title}
+      </p>
+
+      {subtitle && (
+        <p className="mt-1 text-xs text-slate-400">
+          {subtitle}
+        </p>
+      )}
+    </div>
+  );
+}

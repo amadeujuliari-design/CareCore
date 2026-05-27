@@ -8,6 +8,7 @@ import axios from 'axios';
 import { Html5Qrcode } from 'html5-qrcode';
 import Sidebar from './Sidebar';
 import AuthenticatedImage from './components/AuthenticatedImage';
+import { AppShell, MainShell, PageHeader, PremiumButton, ScrollArea } from './components/PremiumUI';
 import { API_ROOT } from './config/apiBase';
 import {
   calcularResumoRotinaDiaria,
@@ -451,21 +452,17 @@ export default function RotinaDiaria() {
     calcularResumoRotinaDiaria(conviventes, resumoHoje);
 
   return (
-    <div className="min-h-screen bg-gray-50 flex relative">
+    <AppShell>
       <Sidebar />
 
-      <div className="flex-1 flex flex-col min-w-0 h-screen overflow-y-auto pb-24">
-        <header className="bg-white shadow-sm border-b px-8 py-5 flex justify-between items-center sticky top-0 z-10">
-          <div>
-            <h1 className="text-xl font-bold text-gray-800">
-              Controle de Fluxo Diário
-            </h1>
-            <p className="text-xs text-gray-500 mt-0.5">
-              Entradas, Saídas e Alimentação
-            </p>
-          </div>
-
-          <div className="flex gap-3">
+      <MainShell>
+        <PageHeader
+          eyebrow="Rotina"
+          title="Controle de Fluxo Diário"
+          subtitle="Entradas, saídas e alimentação da população acolhida."
+          icon="⏱"
+          actions={(
+            <>
             <button
               onClick={() => setModoAutomatico(prev => !prev)}
               className={`px-4 py-2 rounded-lg font-bold text-sm shadow-sm transition-all flex items-center gap-2 border
@@ -478,20 +475,23 @@ export default function RotinaDiaria() {
               {modoAutomatico ? '⚡ Automático' : '✋ Manual'}
             </button>
 
-            <button
+            <PremiumButton
+              type="button"
+              variant="brand"
               onClick={() => setScannerAberto(true)}
-              className="bg-brand text-white px-4 py-2 rounded-lg font-bold text-sm shadow-md hover:bg-brandDark transition-all flex items-center gap-2"
             >
               📷 Câmera / Leitor
-            </button>
+            </PremiumButton>
 
             <div className="hidden sm:flex bg-brand/10 text-brand px-4 py-2 rounded-lg font-bold text-sm shadow-sm items-center gap-2 border border-brand/20">
               📅 Hoje
             </div>
-          </div>
-        </header>
+            </>
+          )}
+        />
 
-        <main className="flex-1 p-4 sm:p-8 w-full max-w-7xl mx-auto space-y-6">
+        <ScrollArea className="pb-24">
+          <div className="w-full max-w-7xl mx-auto space-y-6">
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-between">
               <div>
@@ -748,8 +748,8 @@ export default function RotinaDiaria() {
               </div>
             )}
           </div>
-        </main>
-      </div>
+          </div>
+        </ScrollArea>
 
       {scannerAberto && (
         <div className="fixed inset-0 bg-gray-900/90 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
@@ -952,7 +952,8 @@ export default function RotinaDiaria() {
           </div>
         </div>
       )}
-    </div>
+      </MainShell>
+    </AppShell>
   );
 }
 

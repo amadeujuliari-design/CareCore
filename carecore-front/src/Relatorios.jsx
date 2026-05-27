@@ -87,8 +87,8 @@ export default function Relatorios() {
         setAvisos(Array.isArray(resAvisos) ? resAvisos : []);
         setResumoAvisos(resResumoAvisos || null);
       } catch (error) {
-        console.error('Erro ao carregar central de relatorios', error);
-        setErro('Nao foi possivel carregar os dados da central de relatorios.');
+        console.error('Erro ao carregar central de relatórios', error);
+        setErro('Não foi possível carregar os dados da central de relatórios.');
       } finally {
         setLoading(false);
       }
@@ -457,32 +457,32 @@ export default function Relatorios() {
       geral: [
         {
           titulo: 'Resumo executivo institucional',
-          descricao: 'Painel consolidado com acolhidos, ocupacao, ocorrencias, rotina e comunicacao interna.',
+          descricao: 'Painel consolidado com acolhidos, ocupação, ocorrências, rotina e comunicação interna.',
           status: 'parcial',
           link: '/dashboard',
           metricas: [
             { label: 'Conviventes ativos', valor: dados.ativos },
-            { label: 'Ocupacao', valor: `${dados.taxaOcupacao}%` },
-            { label: 'Pendencias', valor: dados.ocorrenciasPendentes },
-            { label: 'Avisos nao lidos', valor: dados.avisosNaoLidos },
+            { label: 'Ocupação', valor: `${dados.taxaOcupacao}%` },
+            { label: 'Pendências', valor: dados.ocorrenciasPendentes },
+            { label: 'Avisos não lidos', valor: dados.avisosNaoLidos },
           ],
         },
       ],
       conviventes: [
         {
-          titulo: 'Relatorio de conviventes',
-          descricao: 'Status, tecnico responsavel, leito, origem e dados cadastrais relevantes.',
+          titulo: 'Relatório de conviventes',
+          descricao: 'Status, técnico responsável, leito, origem e dados cadastrais relevantes.',
           status: 'planejado',
           metricas: [
             { label: 'Total', valor: dados.totalConviventes },
             { label: 'Ativos', valor: dados.ativos },
             { label: 'Inativos', valor: dados.inativos },
-            { label: 'Sem tecnico', valor: dados.semTecnico },
+            { label: 'Sem técnico', valor: dados.semTecnico },
           ],
         },
         {
-          titulo: 'Relatorio de permanencia',
-          descricao: 'Tempo medio na instituicao, entradas, saidas, altas, transferencias e evasoes por periodo.',
+          titulo: 'Relatório de permanência',
+          descricao: 'Tempo médio na instituição, entradas, saídas, altas, transferências e evasões por período.',
           status: 'planejado',
           metricas: [
             { label: 'Ativos', valor: dados.ativos },
@@ -494,20 +494,20 @@ export default function Relatorios() {
       ],
       rotina: [
         {
-          titulo: 'Historico da rotina',
-          descricao: 'Entradas, saidas, almocos, edicoes, cancelamentos e retornos rapidos por filtros.',
+          titulo: 'Histórico da rotina',
+          descricao: 'Entradas, saídas, almoços, edições, cancelamentos e retornos rápidos por filtros.',
           status: 'pronto',
           link: '/rotina/historico',
           metricas: [
             { label: 'Registros', valor: dados.rotinaFiltradaResumo.total },
             { label: 'Entradas', valor: dados.rotinaFiltradaResumo.entradas },
-            { label: 'Saidas', valor: dados.rotinaFiltradaResumo.saidas },
-            { label: 'Almocos', valor: dados.rotinaFiltradaResumo.almocos },
+            { label: 'Saídas', valor: dados.rotinaFiltradaResumo.saidas },
+            { label: 'Almoços', valor: dados.rotinaFiltradaResumo.almocos },
           ],
         },
         {
           titulo: 'Dashboard operacional',
-          descricao: 'Situacao atual dos acolhidos dentro/fora, sem movimento e auditoria do dia.',
+          descricao: 'Situação atual dos acolhidos dentro/fora, sem movimento e auditoria do dia.',
           status: 'pronto',
           link: '/rotina/dashboard',
           metricas: [
@@ -520,47 +520,47 @@ export default function Relatorios() {
       ],
       ocorrencias: [
         {
-          titulo: 'Relatorio de ocorrencias',
-          descricao: 'Fila de chamados, pendencias tecnicas, criticidade, tipos e responsaveis.',
+          titulo: 'Relatório de ocorrências',
+          descricao: 'Fila de chamados, pendências técnicas, criticidade, tipos e responsáveis.',
           status: 'pronto',
           link: '/ocorrencias',
           metricas: [
-            { label: 'Total visivel', valor: dados.totalOcorrencias },
+            { label: 'Total visível', valor: dados.totalOcorrencias },
             { label: 'Pendentes', valor: dados.ocorrenciasPendentes },
             { label: 'Resolvidas', valor: dados.ocorrenciasResolvidas },
-            { label: 'Alta/Critica', valor: dados.ocorrenciasAltaCritica },
+            { label: 'Alta/Crítica', valor: dados.ocorrenciasAltaCritica },
           ],
         },
         {
-          titulo: 'Relatorio tecnico por profissional',
-          descricao: 'Casos do tecnico, pendencias, resolucoes no periodo e tempo medio de atendimento.',
+          titulo: 'Relatório técnico por profissional',
+          descricao: 'Casos do técnico, pendências, resoluções no período e tempo médio de atendimento.',
           status: 'planejado',
           metricas: [
-            { label: 'Tecnicos', valor: dados.tecnicos },
-            { label: 'Pendencias', valor: dados.ocorrenciasPendentes },
+            { label: 'Técnicos', valor: dados.tecnicos },
+            { label: 'Pendências', valor: dados.ocorrenciasPendentes },
             { label: 'Resolvidas', valor: dados.ocorrenciasResolvidas },
-            { label: 'Criticas', valor: dados.ocorrenciasAltaCritica },
+            { label: 'Críticas', valor: dados.ocorrenciasAltaCritica },
           ],
         },
       ],
       sisa: [
         {
-          titulo: 'Relatorio SISA mensal e diario',
-          descricao: 'Conferencia diaria, mensal, fechamento, lancamentos e exportacao XLSX.',
+          titulo: 'Relatório SISA mensal e diário',
+          descricao: 'Conferência diária, mensal, fechamento, lançamentos e exportação XLSX.',
           status: 'pronto',
           link: '/convenio-sisa',
           metricas: [
             { label: 'Registros', valor: dados.sisaTotal },
-            { label: 'Lancados', valor: dados.sisaLancados },
+            { label: 'Lançados', valor: dados.sisaLancados },
             { label: 'Pendentes', valor: dados.sisaPendentes },
-            { label: 'Periodo', valor: `${String(filtros.sisaMes).padStart(2, '0')}/${filtros.sisaAno}` },
+            { label: 'Período', valor: `${String(filtros.sisaMes).padStart(2, '0')}/${filtros.sisaAno}` },
           ],
         },
       ],
       acomodacoes: [
         {
-          titulo: 'Relatorio de acomodacoes',
-          descricao: 'Quartos, leitos, ocupacao, vagas livres e distribuicao por acomodacao.',
+          titulo: 'Relatório de acomodações',
+          descricao: 'Quartos, leitos, ocupação, vagas livres e distribuição por acomodação.',
           status: 'pronto',
           link: '/quartos',
           metricas: [
@@ -573,8 +573,8 @@ export default function Relatorios() {
       ],
       documentacao: [
         {
-          titulo: 'Pendencias de prontuario',
-          descricao: 'Acolhidos sem foto, CPF, contato de emergencia, numero SISA, NIS ou documentacao essencial.',
+          titulo: 'Pendências de prontuário',
+          descricao: 'Acolhidos sem foto, CPF, contato de emergência, número SISA, NIS ou documentação essencial.',
           status: 'planejado',
           metricas: [
             { label: 'Sem foto', valor: dados.semFoto },
@@ -587,27 +587,27 @@ export default function Relatorios() {
       ],
       equipe: [
         {
-          titulo: 'Relatorio de equipe',
-          descricao: 'Usuarios por perfil, tecnicos ativos, carga de casos e estrutura institucional.',
+          titulo: 'Relatório de equipe',
+          descricao: 'Usuários por perfil, técnicos ativos, carga de casos e estrutura institucional.',
           status: 'planejado',
           metricas: [
-            { label: 'Tecnicos', valor: dados.tecnicos },
+            { label: 'Técnicos', valor: dados.tecnicos },
             { label: 'Conviventes', valor: dados.totalConviventes },
-            { label: 'Sem tecnico', valor: dados.semTecnico },
-            { label: 'Tecnicos c/ casos', valor: dados.tecnicosComCasos },
+            { label: 'Sem técnico', valor: dados.semTecnico },
+            { label: 'Técnicos c/ casos', valor: dados.tecnicosComCasos },
           ],
         },
       ],
       auditoria: [
         {
-          titulo: 'Relatorio de auditoria',
-          descricao: 'Eventos auditaveis da rotina: edicoes, cancelamentos e retornos rapidos com operador e justificativa.',
+          titulo: 'Relatório de auditoria',
+          descricao: 'Eventos auditáveis da rotina: edições, cancelamentos e retornos rápidos com operador e justificativa.',
           status: 'pronto',
           metricas: [
             { label: 'Eventos', valor: dados.auditoriaRotinaTotal },
             { label: 'Editados', valor: dados.rotinaFiltradaResumo.editados },
             { label: 'Cancelados', valor: dados.rotinaFiltradaResumo.cancelados },
-            { label: 'Retornos rapidos', valor: dados.rotinaFiltradaResumo.retornosRapidos },
+            { label: 'Retornos rápidos', valor: dados.rotinaFiltradaResumo.retornosRapidos },
           ],
         },
       ],
@@ -647,29 +647,29 @@ export default function Relatorios() {
       if (!convivente.foto_url) pendencias.push('Foto');
       if (!convivente.cpf) pendencias.push('CPF');
       if (!convivente.contato_emergencia_nome || !convivente.contato_emergencia_telefone) pendencias.push('Contato');
-      if (!convivente.tecnico_id) pendencias.push('Tecnico');
+      if (!convivente.tecnico_id) pendencias.push('Técnico');
       if (!convivente.numero_sisa) pendencias.push('SISA');
 
-      return pendencias.length ? pendencias.join(', ') : 'Sem pendencias principais';
+      return pendencias.length ? pendencias.join(', ') : 'Sem pendências principais';
     };
 
     const montarLinhaConvivente = (convivente) => ({
-      Prontuario: convivente.numero_institucional ? `#${convivente.numero_institucional}` : 'S/N',
+      Prontuário: convivente.numero_institucional ? `#${convivente.numero_institucional}` : 'S/N',
       Nome: convivente.nome_social || convivente.nome_completo || '-',
       Status: convivente.status || '-',
-      Tecnico: mapaTecnicos.get(convivente.tecnico_id) || 'Sem tecnico',
+      Técnico: mapaTecnicos.get(convivente.tecnico_id) || 'Sem técnico',
       Entrada: formatarData(convivente.data_entrada),
       Leito: mapaLeitos.get(convivente.leito_id) || 'Centro dia / sem leito',
       CPF: convivente.cpf || '-',
       Cidade: convivente.cidade || '-',
-      'Ocorrencias pendentes': contarOcorrenciasPendentesConvivente(convivente.id),
-      Pendencias: pendenciasConvivente(convivente),
+      'Ocorrências pendentes': contarOcorrenciasPendentesConvivente(convivente.id),
+      Pendências: pendenciasConvivente(convivente),
     });
 
     if (aba === 'geral') {
       const colunas = filtros.tecnicoId
-        ? ['Prontuario', 'Nome', 'Status', 'Entrada', 'Leito', 'Ocorrencias pendentes', 'Pendencias']
-        : ['Prontuario', 'Nome', 'Status', 'Tecnico', 'Entrada', 'Leito', 'Ocorrencias pendentes', 'Pendencias'];
+        ? ['Prontuário', 'Nome', 'Status', 'Entrada', 'Leito', 'Ocorrências pendentes', 'Pendências']
+        : ['Prontuário', 'Nome', 'Status', 'Técnico', 'Entrada', 'Leito', 'Ocorrências pendentes', 'Pendências'];
 
       return {
         titulo: 'Base nominal filtrada',
@@ -678,17 +678,17 @@ export default function Relatorios() {
           const linha = montarLinhaConvivente(convivente);
 
           const base = {
-            Prontuario: linha.Prontuario,
+            Prontuário: linha.Prontuário,
             Nome: linha.Nome,
             Status: linha.Status,
             Entrada: linha.Entrada,
             Leito: linha.Leito,
-            'Ocorrencias pendentes': linha['Ocorrencias pendentes'],
-            Pendencias: linha.Pendencias,
+            'Ocorrências pendentes': linha['Ocorrências pendentes'],
+            Pendências: linha.Pendências,
           };
 
           if (!filtros.tecnicoId) {
-            base.Tecnico = linha.Tecnico;
+            base.Técnico = linha.Técnico;
           }
 
           return base;
@@ -700,16 +700,16 @@ export default function Relatorios() {
       return {
         titulo: 'Conviventes filtrados',
         colunas: filtros.tecnicoId
-          ? ['Prontuario', 'Nome', 'Status', 'Entrada', 'Leito', 'CPF', 'Cidade', 'Ocorrencias pendentes', 'Pendencias']
-          : ['Prontuario', 'Nome', 'Status', 'Tecnico', 'Entrada', 'Leito', 'CPF', 'Cidade', 'Ocorrencias pendentes', 'Pendencias'],
+          ? ['Prontuário', 'Nome', 'Status', 'Entrada', 'Leito', 'CPF', 'Cidade', 'Ocorrências pendentes', 'Pendências']
+          : ['Prontuário', 'Nome', 'Status', 'Técnico', 'Entrada', 'Leito', 'CPF', 'Cidade', 'Ocorrências pendentes', 'Pendências'],
         linhas: conviventesFiltrados.map(montarLinhaConvivente),
       };
     }
 
     if (aba === 'ocorrencias') {
       return {
-        titulo: 'Ocorrencias filtradas',
-        colunas: ['Data', 'Convivente', 'Tipo', 'Motivo', 'Prioridade', 'Status', 'Tecnico'],
+        titulo: 'Ocorrências filtradas',
+        colunas: ['Data', 'Convivente', 'Tipo', 'Motivo', 'Prioridade', 'Status', 'Técnico'],
         linhas: ocorrenciasFiltradas.map((ocorrencia) => {
           const convivente = conviventes.find((c) => c.id === ocorrencia.convivente_id);
 
@@ -720,7 +720,7 @@ export default function Relatorios() {
             Motivo: ocorrencia.motivo || '-',
             Prioridade: normalizarPrioridade(ocorrencia.prioridade),
             Status: ocorrencia.status_resolucao || '-',
-            Tecnico: mapaTecnicos.get(ocorrencia.tecnico_responsavel_id) || 'Sem tecnico',
+            Técnico: mapaTecnicos.get(ocorrencia.tecnico_responsavel_id) || 'Sem técnico',
           };
         }),
       };
@@ -729,7 +729,7 @@ export default function Relatorios() {
     if (aba === 'rotina') {
       return {
         titulo: 'Historico da rotina filtrado',
-        colunas: ['Data/Hora', 'Prontuario', 'Convivente', 'Tipo', 'Operador', 'Status', 'Retorno rapido', 'Auditoria/Observacao'],
+        colunas: ['Data/Hora', 'Prontuário', 'Convivente', 'Tipo', 'Operador', 'Status', 'Retorno rápido', 'Auditoria/Observação'],
         linhas: historicoRotinaFiltrado.map((registro) => {
           const status = [
             registro.cancelado ? 'Cancelado' : 'Ativo',
@@ -738,12 +738,12 @@ export default function Relatorios() {
 
           return {
             'Data/Hora': formatarDataHora(registro.data_registro),
-            Prontuario: registro.numero_institucional ? `#${registro.numero_institucional}` : 'S/N',
+            Prontuário: registro.numero_institucional ? `#${registro.numero_institucional}` : 'S/N',
             Convivente: registro.convivente_nome || registro.convivente_nome_completo || '-',
             Tipo: registro.tipo_registro || '-',
             Operador: registro.usuario_nome || '-',
             Status: status || '-',
-            'Retorno rapido': registro.retorno_rapido ? 'Sim' : 'Nao',
+            'Retorno rápido': registro.retorno_rapido ? 'Sim' : 'Não',
             'Auditoria/Observacao': registro.justificativa_retorno_rapido || registro.motivo_edicao || registro.motivo_cancelamento || '-',
           };
         }),
@@ -752,8 +752,8 @@ export default function Relatorios() {
 
     if (aba === 'acomodacoes') {
       const colunas = filtros.tecnicoId
-        ? ['Quarto', 'Modalidade', 'Publico', 'Leito', 'Status leito', 'Convivente', 'Prontuario', 'Status convivente']
-        : ['Quarto', 'Modalidade', 'Publico', 'Leito', 'Status leito', 'Convivente', 'Prontuario', 'Status convivente', 'Tecnico'];
+        ? ['Quarto', 'Modalidade', 'Público', 'Leito', 'Status leito', 'Convivente', 'Prontuário', 'Status convivente']
+        : ['Quarto', 'Modalidade', 'Público', 'Leito', 'Status leito', 'Convivente', 'Prontuário', 'Status convivente', 'Técnico'];
 
       return {
         titulo: 'Acomodacoes e leitos',
@@ -761,19 +761,19 @@ export default function Relatorios() {
         linhas: leitosAcomodacoesFiltrados.map(({ quarto, leito, convivente }) => {
           const linha = {
             Quarto: quarto.nome || '-',
-            Modalidade: quarto.modalidade === 'Transitorio' ? 'Transitorio' : quarto.modalidade || '-',
-            Publico: quarto.tipo_publico || '-',
+            Modalidade: quarto.modalidade === 'Transitorio' ? 'Transitório' : quarto.modalidade || '-',
+            Público: quarto.tipo_publico || '-',
             Leito: leito.identificacao || '-',
             'Status leito': leito.status || 'Livre',
             Convivente: convivente?.nome_social || convivente?.nome_completo || leito.convivente_nome_completo || leito.convivente_nome || '-',
-            Prontuario: convivente?.numero_institucional || leito.numero_institucional
+            Prontuário: convivente?.numero_institucional || leito.numero_institucional
               ? `#${convivente?.numero_institucional || leito.numero_institucional}`
               : '-',
             'Status convivente': convivente?.status || (leito.status === 'Ocupado' ? 'Ocupado sem vinculo cadastral' : '-'),
           };
 
           if (!filtros.tecnicoId) {
-            linha.Tecnico = mapaTecnicos.get(convivente?.tecnico_id) || (convivente ? 'Sem tecnico' : '-');
+            linha.Técnico = mapaTecnicos.get(convivente?.tecnico_id) || (convivente ? 'Sem técnico' : '-');
           }
 
           return linha;
@@ -783,26 +783,26 @@ export default function Relatorios() {
 
     if (aba === 'documentacao') {
       const colunas = filtros.tecnicoId
-        ? ['Prontuario', 'Nome', 'Status', 'N SISA', 'NIS', 'Sem foto', 'Sem CPF', 'Sem contato']
-        : ['Prontuario', 'Nome', 'Status', 'Tecnico', 'N SISA', 'NIS', 'Sem foto', 'Sem CPF', 'Sem contato'];
+        ? ['Prontuário', 'Nome', 'Status', 'N SISA', 'NIS', 'Sem foto', 'Sem CPF', 'Sem contato']
+        : ['Prontuário', 'Nome', 'Status', 'Técnico', 'N SISA', 'NIS', 'Sem foto', 'Sem CPF', 'Sem contato'];
 
       return {
         titulo: 'Pendencias documentais filtradas',
         colunas,
         linhas: conviventesFiltrados.map((convivente) => {
           const linha = {
-            Prontuario: convivente.numero_institucional ? `#${convivente.numero_institucional}` : 'S/N',
+            Prontuário: convivente.numero_institucional ? `#${convivente.numero_institucional}` : 'S/N',
             Nome: convivente.nome_social || convivente.nome_completo || '-',
             Status: convivente.status || '-',
             'N SISA': convivente.numero_sisa || '-',
             NIS: convivente.numero_nis || '-',
-            'Sem foto': convivente.foto_url ? 'Nao' : 'Sim',
-            'Sem CPF': convivente.cpf ? 'Nao' : 'Sim',
-            'Sem contato': convivente.contato_emergencia_nome && convivente.contato_emergencia_telefone ? 'Nao' : 'Sim',
+            'Sem foto': convivente.foto_url ? 'Não' : 'Sim',
+            'Sem CPF': convivente.cpf ? 'Não' : 'Sim',
+            'Sem contato': convivente.contato_emergencia_nome && convivente.contato_emergencia_telefone ? 'Não' : 'Sim',
           };
 
           if (!filtros.tecnicoId) {
-            linha.Tecnico = mapaTecnicos.get(convivente.tecnico_id) || 'Sem tecnico';
+            linha.Técnico = mapaTecnicos.get(convivente.tecnico_id) || 'Sem técnico';
           }
 
           return linha;
@@ -813,9 +813,9 @@ export default function Relatorios() {
     if (aba === 'sisa') {
       return {
         titulo: `Relatorio Convenio SISA - ${String(filtros.sisaMes).padStart(2, '0')}/${filtros.sisaAno}`,
-        colunas: ['Prontuario', 'N SISA', 'Convivente', 'Dias', 'Atend.', 'Almocos', 'Entradas', 'Saidas', 'Retornos', 'Status SISA', 'Lancado por'],
+        colunas: ['Prontuário', 'N SISA', 'Convivente', 'Dias', 'Atend.', 'Almoços', 'Entradas', 'Saídas', 'Retornos', 'Status SISA', 'Lançado por'],
         linhas: sisaItensFiltrados.map((item) => ({
-          Prontuario: item.prontuario ? `#${item.prontuario}` : 'S/N',
+          Prontuário: item.prontuario ? `#${item.prontuario}` : 'S/N',
           'N SISA': item.numero_sisa || '-',
           Convivente: item.nome || item.nome_completo || '-',
           Dias: item.dias_presentes ?? 0,
@@ -835,12 +835,12 @@ export default function Relatorios() {
     if (aba === 'equipe') {
       return {
         titulo: 'Equipe tecnica e carga de casos',
-        colunas: ['Tecnico', 'Perfil', 'Conviventes vinculados', 'Ocorrencias pendentes'],
+        colunas: ['Técnico', 'Perfil', 'Conviventes vinculados', 'Ocorrências pendentes'],
         linhas: tecnicos.map((tecnico) => ({
-          Tecnico: tecnico.nome || '-',
+          Técnico: tecnico.nome || '-',
           Perfil: tecnico.perfil_acesso || '-',
           'Conviventes vinculados': contar(conviventesFiltrados, (c) => c.tecnico_id === tecnico.id),
-          'Ocorrencias pendentes': contar(ocorrenciasFiltradas, (o) => o.tecnico_responsavel_id === tecnico.id && o.status_resolucao !== 'Resolvido'),
+          'Ocorrências pendentes': contar(ocorrenciasFiltradas, (o) => o.tecnico_responsavel_id === tecnico.id && o.status_resolucao !== 'Resolvido'),
         })),
       };
     }
