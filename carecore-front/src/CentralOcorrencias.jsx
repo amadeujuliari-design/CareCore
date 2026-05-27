@@ -85,7 +85,7 @@ export default function CentralOcorrencias() {
       });
       setOcorrencias(response.data);
       setSelecionados([]);
-    } catch (error) {
+    } catch {
       setErro('Erro ao carregar a fila de ocorrências.');
     } finally {
       setLoading(false);
@@ -198,7 +198,7 @@ export default function CentralOcorrencias() {
 
       await carregarOcorrencias();
       alert("✅ Baixa em lote concluída com sucesso!");
-    } catch (error) {
+    } catch {
       alert("Ocorreu um erro ao tentar dar baixa em alguns chamados. A tela será recarregada.");
       carregarOcorrencias();
     } finally {
@@ -266,7 +266,7 @@ export default function CentralOcorrencias() {
 
       setModalNovoAberto(false);
       carregarOcorrencias();
-    } catch (error) {
+    } catch {
       alert('Erro ao criar o chamado. Verifique a conexão com o servidor.');
     } finally {
       setEnviandoNovo(false);
@@ -298,7 +298,7 @@ export default function CentralOcorrencias() {
         setOcorrencias(response.data);
         setChamadoSelecionado(response.data.find(o => o.id === chamadoSelecionado.id));
       }
-    } catch (error) {
+    } catch {
       alert('Erro ao enviar a mensagem.');
     } finally {
       setEnviando(false);

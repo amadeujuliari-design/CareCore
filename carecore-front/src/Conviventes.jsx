@@ -148,7 +148,7 @@ export default function Conviventes() {
       setQuartos(resQuartos.data);
       setListaTecnicos(resTecnicos.data);
       setHistoricoMotivos(resMotivos.data);
-    } catch (error) { 
+    } catch { 
       setErro('Erro ao sincronizar dados com o servidor.'); 
     } finally { 
       setLoading(false); 
@@ -241,7 +241,7 @@ export default function Conviventes() {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: true });
       if (videoRef.current) videoRef.current.srcObject = stream;
-    } catch (err) {
+    } catch {
       setErro('Erro ao acessar a webcam. Verifique as permissões.');
       setCameraAberta(false);
     }
@@ -314,7 +314,7 @@ export default function Conviventes() {
       setArquivoSelecionado(null);
       carregarDocumentos(editandoId);
       setTimeout(() => setSucesso(''), 3000);
-    } catch (error) { setErro('Erro ao realizar upload do arquivo.'); } finally { setLoadingDocs(false); }
+    } catch { setErro('Erro ao realizar upload do arquivo.'); } finally { setLoadingDocs(false); }
   };
 
   const handleExcluirDocumento = async (documentoId) => {
@@ -324,7 +324,7 @@ export default function Conviventes() {
       setSucesso('Arquivo excluído com sucesso.');
       carregarDocumentos(editandoId);
       setTimeout(() => setSucesso(''), 3000);
-    } catch (error) { setErro('Erro ao excluir o documento.'); }
+    } catch { setErro('Erro ao excluir o documento.'); }
   };
 
   const buscarCep = async (cepBuscado) => {

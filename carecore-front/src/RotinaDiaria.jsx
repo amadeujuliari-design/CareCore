@@ -105,7 +105,9 @@ export default function RotinaDiaria() {
   if (leitor) {
     try {
       leitor.clear();
-    } catch (e) {}
+    } catch {
+      // Leitor pode já ter sido encerrado pelo navegador.
+    }
   }
 };
 }, [scannerAberto]);
@@ -445,7 +447,7 @@ export default function RotinaDiaria() {
   };
 
   const conviventesFiltrados = filtrarConviventesRotina(conviventes, busca);
-  const { totalAtivos, totalFora, totalDentro, totalAlmocos } =
+  const { totalFora, totalDentro, totalAlmocos } =
     calcularResumoRotinaDiaria(conviventes, resumoHoje);
 
   return (

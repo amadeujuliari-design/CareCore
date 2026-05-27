@@ -611,7 +611,7 @@ export default function Relatorios() {
         },
       ],
     };
-  }, [conviventesFiltrados, dados, filtros.sisaAno, filtros.sisaMes]);
+  }, [dados, filtros.sisaAno, filtros.sisaMes]);
 
   const relatoriosAtuais = relatoriosPorAba[aba] || [];
 
@@ -914,7 +914,7 @@ export default function Relatorios() {
         }))
       ),
     };
-  }, [aba, conviventes, conviventesFiltrados, filtros.sisaAno, filtros.sisaMes, filtros.tecnicoId, historicoRotinaFiltrado, leitosAcomodacoesFiltrados, mapaLeitos, mapaTecnicos, ocorrenciasFiltradas, quartos, relatoriosAtuais, sisaItensFiltrados, tecnicos]);
+  }, [aba, conviventes, conviventesFiltrados, filtros.sisaAno, filtros.sisaMes, filtros.tecnicoId, historicoRotinaFiltrado, leitosAcomodacoesFiltrados, mapaLeitos, mapaTecnicos, ocorrenciasFiltradas, relatoriosAtuais, sisaItensFiltrados, tecnicos]);
 
   const linhasResumoMetricas = relatoriosAtuais.flatMap((relatorio) =>
     (relatorio.metricas || []).map((metrica) => ({

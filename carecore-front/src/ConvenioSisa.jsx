@@ -126,7 +126,6 @@ export default function ConvenioSisa() {
   useEffect(() => {
     carregarDiario();
     carregarMensal();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const formatarDataHora = (valor) => {

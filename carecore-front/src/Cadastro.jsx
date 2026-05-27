@@ -3,6 +3,21 @@ import { useNavigate, Link } from 'react-router-dom';
 import logoCarecore from './assets/logo.png';
 import api from './services/api';
 
+function ItemRegraSenha({ valido, texto }) {
+  return (
+    <li className={`flex items-center gap-2 text-xs ${valido ? 'text-green-700' : 'text-gray-500'}`}>
+      <span
+        className={`flex h-4 w-4 items-center justify-center rounded-full text-[10px] font-bold ${
+          valido ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-400'
+        }`}
+      >
+        {valido ? '✓' : '•'}
+      </span>
+      {texto}
+    </li>
+  );
+}
+
 export default function Cadastro() {
   const navigate = useNavigate();
 
@@ -136,19 +151,6 @@ export default function Cadastro() {
       setLoading(false);
     }
   };
-
-  const ItemRegraSenha = ({ valido, texto }) => (
-    <li className={`flex items-center gap-2 text-xs ${valido ? 'text-green-700' : 'text-gray-500'}`}>
-      <span
-        className={`flex h-4 w-4 items-center justify-center rounded-full text-[10px] font-bold ${
-          valido ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-400'
-        }`}
-      >
-        {valido ? '✓' : '•'}
-      </span>
-      {texto}
-    </li>
-  );
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8">

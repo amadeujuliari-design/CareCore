@@ -125,7 +125,6 @@ export default function RotinaHistorico() {
 
     carregarHistorico();
 
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // =====================================================================

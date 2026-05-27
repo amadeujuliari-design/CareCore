@@ -58,7 +58,7 @@ useEffect(() => {
         headers: { Authorization: `Bearer ${token}` }
       });
       setQuartos(response.data);
-    } catch (error) {
+    } catch {
       setErro('Erro ao carregar lista de quartos.');
     } finally {
       setLoading(false);

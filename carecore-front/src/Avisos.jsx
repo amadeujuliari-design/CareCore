@@ -271,7 +271,6 @@ export default function Avisos() {
 
   useEffect(() => {
     carregarAvisos();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   function atualizarCampo(campo, valor) {
