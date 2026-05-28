@@ -38,6 +38,7 @@ export default function Relatorios() {
   const [resumoAvisos, setResumoAvisos] = useState(null);
   const [avisos, setAvisos] = useState([]);
   const [filtros, setFiltros] = useState(criarFiltrosRelatoriosIniciais);
+  const [filtrosMobileAbertos, setFiltrosMobileAbertos] = useState(false);
 
   useEffect(() => {
     async function carregarDados() {
@@ -1001,7 +1002,7 @@ export default function Relatorios() {
           )}
         />
 
-        <ScrollArea>
+        <ScrollArea className="pb-24">
           <div className="w-full max-w-7xl mx-auto">
           {erro && (
             <div className="mb-6 bg-red-50 text-red-700 border border-red-100 rounded-2xl p-4 text-sm font-bold">
@@ -1018,16 +1019,26 @@ export default function Relatorios() {
                 </p>
               </div>
 
-              <button
-                type="button"
-                onClick={limparFiltros}
-                className="w-fit px-4 py-2 rounded-xl border border-gray-200 bg-white text-xs font-black text-gray-600 hover:bg-gray-50"
-              >
-                Limpar filtros
-              </button>
+              <div className="grid grid-cols-1 gap-2 sm:flex sm:flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => setFiltrosMobileAbertos((valor) => !valor)}
+                  className="px-4 py-2 rounded-xl border border-blue-100 bg-blue-50 text-xs font-black text-blue-700 hover:bg-blue-100 md:hidden"
+                >
+                  {filtrosMobileAbertos ? 'Ocultar filtros' : 'Mostrar filtros'}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={limparFiltros}
+                  className="px-4 py-2 rounded-xl border border-gray-200 bg-white text-xs font-black text-gray-600 hover:bg-gray-50"
+                >
+                  Limpar filtros
+                </button>
+              </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+            <div className={`${filtrosMobileAbertos ? 'grid' : 'hidden'} grid-cols-1 md:grid md:grid-cols-2 xl:grid-cols-4 gap-4`}>
               <div>
                 <label className="block text-[10px] font-black uppercase text-gray-400 mb-1">Inicio</label>
                 <input
@@ -1239,12 +1250,12 @@ export default function Relatorios() {
           </section>
 
           <section className="bg-white border border-gray-100 rounded-3xl shadow-sm p-4 mb-6">
-            <div className="flex flex-wrap gap-2">
+            <div className="flex gap-2 overflow-x-auto pb-1 md:flex-wrap md:overflow-visible md:pb-0">
               {ABAS_RELATORIOS.map((item) => (
                 <button
                   key={item.id}
                   onClick={() => setAba(item.id)}
-                  className={`px-4 py-2 rounded-xl text-xs font-black border transition-colors ${
+                  className={`min-w-fit px-4 py-2 rounded-xl text-xs font-black border transition-colors ${
                     aba === item.id
                       ? 'bg-brand text-white border-brand'
                       : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
@@ -1282,7 +1293,40 @@ export default function Relatorios() {
                   </span>
                 </div>
 
-                <div className="overflow-x-auto">
+                <div className="space-y-3 p-3 md:hidden">
+                  {linhasExportacao.slice(0, 30).length === 0 ? (
+                    <div className="rounded-2xl border border-gray-100 bg-gray-50 p-8 text-center text-sm font-semibold text-gray-500">
+                      Nenhum registro encontrado com os filtros atuais.
+                    </div>
+                  ) : (
+                    linhasExportacao.slice(0, 30).map((linha, index) => {
+                      const titulo = linha[colunasExportacao[2]] || linha[colunasExportacao[1]] || linha[colunasExportacao[0]] || `${dadosDetalhados.titulo} ${index + 1}`;
+                      const camposResumo = colunasExportacao.filter((coluna) => linha[coluna] !== undefined).slice(0, 6);
+
+                      return (
+                        <article
+                          key={`${aba}-mobile-${index}`}
+                          className="rounded-2xl border border-gray-100 bg-gray-50/70 p-4 shadow-sm"
+                        >
+                          <p className="truncate text-sm font-black uppercase text-gray-800">
+                            {titulo}
+                          </p>
+
+                          <div className="mt-3 grid grid-cols-1 gap-2">
+                            {camposResumo.map((coluna) => (
+                              <div key={coluna} className="rounded-xl bg-white px-3 py-2">
+                                <p className="text-[10px] font-black uppercase text-gray-400">{coluna}</p>
+                                <p className="mt-0.5 text-xs font-bold text-gray-700">{linha[coluna] ?? '-'}</p>
+                              </div>
+                            ))}
+                          </div>
+                        </article>
+                      );
+                    })
+                  )}
+                </div>
+
+                <div className="hidden overflow-x-auto md:block">
                   <table className="w-full min-w-[900px] text-sm">
                     <thead className="bg-gray-50 border-b border-gray-100">
                       <tr>

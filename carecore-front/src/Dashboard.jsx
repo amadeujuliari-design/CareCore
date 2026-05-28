@@ -557,21 +557,21 @@ export default function Dashboard() {
       />
 
       <section className="carecore-main-fixed">
-        <header className="carecore-page-header-fixed px-5 py-3">
-          <div className="flex items-center justify-between gap-4">
-            <div>
+        <header className="carecore-page-header-fixed px-4 py-3 sm:px-5">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+            <div className="min-w-0">
               <h1 className="text-[23px] font-bold text-slate-900 leading-none">Dashboard</h1>
               <p className="text-sm text-slate-500 mt-1">Visão executiva da instituição, rotina e ocorrências.</p>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex w-full items-center gap-2 overflow-x-auto pb-1 sm:w-auto sm:overflow-visible sm:pb-0">
               <button
                 type="button"
                 onClick={() => {
                   const painelAvisos = document.querySelector(".carecore-avisos-scroll");
                   painelAvisos?.scrollIntoView({ behavior: "smooth", block: "center" });
                 }}
-                className="relative rounded-2xl border border-slate-200 bg-white px-4 py-2 text-lg font-semibold text-slate-700 shadow-sm"
+                className="relative shrink-0 rounded-2xl border border-slate-200 bg-white px-4 py-2 text-lg font-semibold text-slate-700 shadow-sm"
                 title={`${dados.alertasAtivos} alerta${dados.alertasAtivos === 1 ? "" : "s"} ativo${dados.alertasAtivos === 1 ? "" : "s"}`}
               >
                 !
@@ -581,13 +581,13 @@ export default function Dashboard() {
                   </span>
                 )}
               </button>
-              <span className="rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700">Hoje</span>
-              <span className="rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-700">● Banco ativo</span>
+              <span className="shrink-0 rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700">Hoje</span>
+              <span className="shrink-0 rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-700">Banco ativo</span>
             </div>
           </div>
         </header>
 
-        <main className="carecore-scroll-area">
+        <main className="carecore-scroll-area carecore-dashboard-scroll-area">
           {erro && <div className="mb-3 rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-sm font-semibold text-red-600">{erro}</div>}
 
           {loading ? (
@@ -644,7 +644,7 @@ export default function Dashboard() {
                     </div>
                   </div>
 
-                  <div className="carecore-dashboard-panel-scroll-comfort rounded-2xl border border-slate-100">
+                  <div className="carecore-dashboard-panel-scroll-comfort hidden rounded-2xl border border-slate-100 md:block">
                     <table className="w-full text-left text-sm">
                       <thead className="bg-slate-50 text-[11px] uppercase text-slate-500">
                         <tr>
@@ -681,6 +681,43 @@ export default function Dashboard() {
                     </table>
                   </div>
 
+                  <div className="carecore-dashboard-mobile-list md:hidden">
+                    {dados.ocorrenciasEmAlerta.length === 0 ? (
+                      <div className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-8 text-center text-sm font-semibold text-slate-400">
+                        Nenhuma ocorrência em alerta no momento.
+                      </div>
+                    ) : (
+                      dados.ocorrenciasEmAlerta.map((oc) => {
+                        const prioridade = prioridadeOcorrencia(oc);
+                        return (
+                          <button
+                            type="button"
+                            key={oc.id}
+                            onClick={() => navigate("/ocorrencias")}
+                            className="w-full rounded-2xl border border-slate-100 bg-slate-50/70 p-4 text-left shadow-sm"
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <p className="truncate text-sm font-bold text-slate-900">
+                                  {oc.motivo || oc.tipo_ocorrencia || "Ocorrência"}
+                                </p>
+                                <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-slate-500">
+                                  {oc.descricao || "Sem descrição"}
+                                </p>
+                              </div>
+                              <BadgePrioridade prioridade={prioridade} />
+                            </div>
+
+                            <div className="mt-3 flex items-center justify-between gap-3 text-xs font-semibold text-slate-500">
+                              <span>{formatarData(oc.data_ocorrencia)}</span>
+                              <span className="text-purple-700">Ver ocorrência</span>
+                            </div>
+                          </button>
+                        );
+                      })
+                    )}
+                  </div>
+
                   <button onClick={() => navigate("/ocorrencias?prioridade=Alta&status=Pendente")} className="carecore-soft-button mt-3 w-full">Ver ocorrências prioritárias →</button>
                 </article>
 
@@ -690,7 +727,7 @@ export default function Dashboard() {
                     <p className="carecore-dashboard-card-subtitle">Ocorrências aguardando encerramento técnico.</p>
                   </div>
 
-                  <div className="carecore-dashboard-panel-scroll-comfort rounded-2xl border border-slate-100">
+                  <div className="carecore-dashboard-panel-scroll-comfort hidden rounded-2xl border border-slate-100 md:block">
                     <table className="w-full text-left text-sm">
                       <thead className="bg-slate-50 text-[11px] uppercase text-slate-500">
                         <tr>
@@ -727,6 +764,47 @@ export default function Dashboard() {
                         )}
                       </tbody>
                     </table>
+                  </div>
+
+                  <div className="carecore-dashboard-mobile-list md:hidden">
+                    {dados.pendenciasTecnicos.length === 0 ? (
+                      <div className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-8 text-center text-sm font-semibold text-slate-400">
+                        Nenhuma pendência técnica encontrada.
+                      </div>
+                    ) : (
+                      dados.pendenciasTecnicos.map((item) => (
+                        <button
+                          type="button"
+                          key={item.tecnico_id}
+                          onClick={() => abrirPendenciasTecnico(item)}
+                          className="w-full rounded-2xl border border-slate-100 bg-slate-50/70 p-4 text-left shadow-sm"
+                        >
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="flex min-w-0 items-center gap-3">
+                              <UserAvatar
+                                nome={item.tecnico_nome}
+                                avatarUrl={item.tecnico_avatar_url}
+                                size="sm"
+                              />
+                              <div className="min-w-0">
+                                <p className="truncate text-sm font-bold text-slate-900">{item.tecnico_nome}</p>
+                                <p className="text-xs text-slate-500">{item.perfil}</p>
+                              </div>
+                            </div>
+
+                            <div className="text-right">
+                              <p className="text-2xl font-bold leading-none text-slate-900">{item.pendentes}</p>
+                              <p className="text-[10px] font-bold uppercase text-slate-400">pend.</p>
+                            </div>
+                          </div>
+
+                          <div className="mt-3 flex items-center justify-between gap-3">
+                            <BadgePrioridade prioridade={item.prioridade} />
+                            <span className="text-xs font-bold text-purple-700">Abrir fila</span>
+                          </div>
+                        </button>
+                      ))
+                    )}
                   </div>
 
                   <button onClick={() => navigate("/ocorrencias")} className="carecore-soft-button mt-3 w-full">Ver todas as pendências →</button>

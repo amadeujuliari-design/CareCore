@@ -1,6 +1,6 @@
 # =====================================================================
+import contextlib
 import os
-import shutil
 import uuid
 import calendar
 from io import BytesIO
@@ -62,6 +62,79 @@ router = APIRouter(prefix="/api", tags=["Conviventes e Ocorrencias"])
 
 UPLOAD_DIR = "uploads/documentos"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
+UPLOAD_DIR_ABSOLUTO = os.path.abspath(UPLOAD_DIR)
+TAMANHO_MAXIMO_DOCUMENTO_BYTES = 10 * 1024 * 1024
+EXTENSOES_DOCUMENTO_PERMITIDAS = {
+    ".jpg",
+    ".jpeg",
+    ".png",
+    ".webp",
+    ".pdf",
+    ".doc",
+    ".docx",
+    ".xls",
+    ".xlsx",
+}
+CONTENT_TYPES_DOCUMENTO_PERMITIDOS = {
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+    "application/pdf",
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.ms-excel",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+}
+
+
+def validar_upload_documento(file: UploadFile) -> str:
+    nome_original = os.path.basename(file.filename or "")
+    extensao = os.path.splitext(nome_original)[1].lower()
+    content_type = (file.content_type or "").lower()
+
+    if not nome_original or extensao not in EXTENSOES_DOCUMENTO_PERMITIDAS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Tipo de arquivo não permitido.",
+        )
+
+    if content_type and content_type not in CONTENT_TYPES_DOCUMENTO_PERMITIDOS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Formato de arquivo não permitido.",
+        )
+
+    return nome_original
+
+
+async def salvar_upload_documento(file: UploadFile, caminho_completo: str) -> None:
+    tamanho_total = 0
+
+    with open(caminho_completo, "wb") as buffer:
+        while True:
+            bloco = await file.read(1024 * 1024)
+
+            if not bloco:
+                break
+
+            tamanho_total += len(bloco)
+
+            if tamanho_total > TAMANHO_MAXIMO_DOCUMENTO_BYTES:
+                buffer.close()
+                with contextlib.suppress(FileNotFoundError):
+                    os.remove(caminho_completo)
+
+                raise HTTPException(
+                    status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                    detail="Arquivo muito grande. O limite é 10 MB.",
+                )
+
+            buffer.write(bloco)
+
+
+def caminho_absoluto_documento(caminho_arquivo: str) -> str:
+    nome_arquivo = os.path.basename(caminho_arquivo or "")
+    return os.path.abspath(os.path.join(UPLOAD_DIR, nome_arquivo))
 
 
 async def verificar_mes_fechado(
@@ -467,11 +540,12 @@ async def upload_documento(convivente_id: str, tipo_documento: str = Form(...), 
     if not (await db.execute(select(ConviventeDB).where(ConviventeDB.id == convivente_id, ConviventeDB.instituicao_id == usuario_atual["instituicao_id"]))).scalar_one_or_none():
         raise HTTPException(status_code=404, detail="Convivente não encontrado.")
 
-    nome_unico = f"{uuid.uuid4().hex}{os.path.splitext(file.filename)[1]}"
+    nome_original = validar_upload_documento(file)
+    nome_unico = f"{uuid.uuid4().hex}{os.path.splitext(nome_original)[1].lower()}"
     caminho_completo = os.path.join(UPLOAD_DIR, nome_unico)
-    with open(caminho_completo, "wb") as buffer: shutil.copyfileobj(file.file, buffer)
+    await salvar_upload_documento(file, caminho_completo)
 
-    novo_doc = DocumentoConviventeDB(convivente_id=convivente_id, nome_arquivo=file.filename, caminho_arquivo=f"/uploads/documentos/{nome_unico}", tipo_documento=tipo_documento)
+    novo_doc = DocumentoConviventeDB(convivente_id=convivente_id, nome_arquivo=nome_original, caminho_arquivo=f"/uploads/documentos/{nome_unico}", tipo_documento=tipo_documento)
     db.add(novo_doc)
     await db.commit()
     await db.refresh(novo_doc)
@@ -479,13 +553,34 @@ async def upload_documento(convivente_id: str, tipo_documento: str = Form(...), 
 
 @router.get("/conviventes/{convivente_id}/documentos", response_model=List[DocumentoResponse])
 async def listar_documentos(convivente_id: str, db: AsyncSession = Depends(get_db), usuario_atual: dict = Depends(get_usuario_logado)):
-    return (await db.execute(select(DocumentoConviventeDB).where(DocumentoConviventeDB.convivente_id == convivente_id))).scalars().all()
+    return (
+        await db.execute(
+            select(DocumentoConviventeDB)
+            .join(ConviventeDB, ConviventeDB.id == DocumentoConviventeDB.convivente_id)
+            .where(
+                DocumentoConviventeDB.convivente_id == convivente_id,
+                ConviventeDB.instituicao_id == usuario_atual["instituicao_id"],
+            )
+            .order_by(DocumentoConviventeDB.data_upload.desc())
+        )
+    ).scalars().all()
 
 @router.delete("/documentos/{documento_id}")
 async def excluir_documento(documento_id: str, db: AsyncSession = Depends(get_db), usuario_atual: dict = Depends(get_usuario_logado)):
-    documento = (await db.execute(select(DocumentoConviventeDB).where(DocumentoConviventeDB.id == documento_id))).scalar_one_or_none()
+    documento = (
+        await db.execute(
+            select(DocumentoConviventeDB)
+            .join(ConviventeDB, ConviventeDB.id == DocumentoConviventeDB.convivente_id)
+            .where(
+                DocumentoConviventeDB.id == documento_id,
+                ConviventeDB.instituicao_id == usuario_atual["instituicao_id"],
+            )
+        )
+    ).scalar_one_or_none()
     if not documento: raise HTTPException(status_code=404, detail="Não encontrado.")
-    if os.path.exists(f".{documento.caminho_arquivo}"): os.remove(f".{documento.caminho_arquivo}")
+    caminho_documento = caminho_absoluto_documento(documento.caminho_arquivo)
+    if os.path.commonpath([UPLOAD_DIR_ABSOLUTO, caminho_documento]) == UPLOAD_DIR_ABSOLUTO and os.path.exists(caminho_documento):
+        os.remove(caminho_documento)
     await db.delete(documento)
     await db.commit()
     return {"status": "sucesso"}

@@ -29,6 +29,8 @@ export default function ConvenioSisa() {
 
   const [aba, setAba] = useState('mensal');
   const [loading, setLoading] = useState(false);
+  const [erro, setErro] = useState('');
+  const [sucesso, setSucesso] = useState('');
 
   const [dataDiaria, setDataDiaria] = useState(dataHoje);
   const [ano, setAno] = useState(hoje.getFullYear());
@@ -44,6 +46,16 @@ export default function ConvenioSisa() {
   const headers = useMemo(() => ({
     Authorization: `Bearer ${token}`
   }), [token]);
+
+  const avisarErro = (mensagem) => {
+    setSucesso('');
+    setErro(mensagem);
+  };
+
+  const avisarSucesso = (mensagem) => {
+    setErro('');
+    setSucesso(mensagem);
+  };
 
   const carregarDiario = async () => {
     try {
@@ -62,7 +74,7 @@ export default function ConvenioSisa() {
       setDiario(response.data);
     } catch (error) {
       console.error(error);
-      alert(
+      avisarErro(
         error.response?.data?.detail ||
         'Erro ao carregar relatório diário.'
       );
@@ -115,7 +127,7 @@ export default function ConvenioSisa() {
       await carregarFechamentoAtual();
     } catch (error) {
       console.error(error);
-      alert(
+      avisarErro(
         error.response?.data?.detail ||
         'Erro ao carregar relatório mensal.'
       );
@@ -166,7 +178,7 @@ export default function ConvenioSisa() {
       window.URL.revokeObjectURL(url);
     } catch (error) {
       console.error(error);
-      alert('Erro ao exportar XLSX.');
+      avisarErro('Erro ao exportar XLSX.');
     }
   };
 
@@ -181,7 +193,7 @@ export default function ConvenioSisa() {
 
   const fecharMes = async () => {
     if (mensal.resumo?.fechado) {
-      alert('Este mês já está fechado.');
+      avisarErro('Este mês já está fechado.');
       return;
     }
 
@@ -207,10 +219,10 @@ export default function ConvenioSisa() {
       setObservacoesFechamento('');
       await carregarMensal();
 
-      alert('Mês fechado com sucesso.');
+      avisarSucesso('Mês fechado com sucesso.');
     } catch (error) {
       console.error(error);
-      alert(
+      avisarErro(
         error.response?.data?.detail ||
         'Erro ao fechar mês.'
       );
@@ -221,12 +233,12 @@ export default function ConvenioSisa() {
     const fechamentoId = resumoMensal.fechamento_id || fechamentoAtual?.id;
 
     if (!resumoMensal.fechado) {
-      alert('Este mês não está fechado.');
+      avisarErro('Este mês não está fechado.');
       return;
     }
 
     if (!fechamentoId) {
-      alert('Não foi possível localizar o fechamento deste mês. Atualize a tela e tente novamente.');
+      avisarErro('Não foi possível localizar o fechamento deste mês. Atualize a tela e tente novamente.');
       await carregarMensal();
       return;
     }
@@ -238,7 +250,7 @@ export default function ConvenioSisa() {
     if (motivo === null) return;
 
     if (!motivo.trim()) {
-      alert('Informe o motivo da reabertura.');
+      avisarErro('Informe o motivo da reabertura.');
       return;
     }
 
@@ -261,10 +273,10 @@ export default function ConvenioSisa() {
 
       await carregarMensal();
 
-      alert('Mês reaberto com sucesso.');
+      avisarSucesso('Mês reaberto com sucesso.');
     } catch (error) {
       console.error(error);
-      alert(
+      avisarErro(
         error.response?.data?.detail ||
         'Erro ao reabrir mês.'
       );
@@ -273,7 +285,7 @@ export default function ConvenioSisa() {
 
   const marcarLancadoSisa = async (item) => {
     if (mensal.resumo?.fechado) {
-      alert('Este mês já está fechado.');
+      avisarErro('Este mês já está fechado.');
       return;
     }
 
@@ -299,7 +311,7 @@ export default function ConvenioSisa() {
       await carregarMensal();
     } catch (error) {
       console.error(error);
-      alert(
+      avisarErro(
         error.response?.data?.detail ||
         'Erro ao marcar lançamento no SISA.'
       );
@@ -308,7 +320,7 @@ export default function ConvenioSisa() {
 
   const desfazerLancamentoSisa = async (item) => {
     if (mensal.resumo?.fechado) {
-      alert('Este mês já está fechado.');
+      avisarErro('Este mês já está fechado.');
       return;
     }
 
@@ -329,7 +341,7 @@ export default function ConvenioSisa() {
       await carregarMensal();
     } catch (error) {
       console.error(error);
-      alert(
+      avisarErro(
         error.response?.data?.detail ||
         'Erro ao desfazer lançamento no SISA.'
       );
@@ -498,6 +510,18 @@ export default function ConvenioSisa() {
           </div>
         </div>
 
+        {erro && (
+          <div className="print:hidden mb-6 rounded-2xl border border-red-100 bg-red-50 p-4 text-sm font-semibold text-red-700">
+            {erro}
+          </div>
+        )}
+
+        {sucesso && (
+          <div className="print:hidden mb-6 rounded-2xl border border-green-100 bg-green-50 p-4 text-sm font-semibold text-green-700">
+            {sucesso}
+          </div>
+        )}
+
         <div className="print:hidden bg-white border border-gray-100 rounded-2xl shadow-sm p-4 mb-6">
 
           <div className="flex flex-wrap gap-2 mb-4">
@@ -652,7 +676,7 @@ export default function ConvenioSisa() {
 
               </div>
 
-              <div className="grid grid-cols-2 md:grid-cols-7 gap-3 mt-5">
+              <div className="grid grid-cols-2 md:grid-cols-7 gap-2 sm:gap-3 mt-5">
 
                 <ResumoCard titulo="Atendimentos" valor={resumoMensal.total_atendimentos || 0} />
                 <ResumoCard titulo="Almoços" valor={resumoMensal.total_almocos || 0} />
@@ -697,7 +721,7 @@ export default function ConvenioSisa() {
                 )}
 
                 {podeFecharOuReabrirMes && (
-                  <div className="flex flex-col sm:flex-row gap-2">
+                  <div className="grid grid-cols-1 gap-2 sm:flex sm:flex-row">
                     <button
                       onClick={fecharMes}
                       disabled={resumoMensal.fechado}
@@ -739,7 +763,7 @@ export default function ConvenioSisa() {
                   <select
                     value={filtroLancamento}
                     onChange={(e) => setFiltroLancamento(e.target.value)}
-                    className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
                   >
                     <option value="todos">Todos</option>
                     <option value="pendentes">Pendentes</option>
@@ -751,7 +775,84 @@ export default function ConvenioSisa() {
 
             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
 
-              <div className="overflow-x-auto">
+              <div className="space-y-3 p-3 md:hidden">
+                {itensMensaisFiltrados.length === 0 ? (
+                  <div className="rounded-2xl border border-gray-100 bg-gray-50 p-8 text-center text-sm font-semibold text-gray-500">
+                    Nenhum convivente encontrado para este filtro.
+                  </div>
+                ) : (
+                  itensMensaisFiltrados.map(item => (
+                    <article
+                      key={item.convivente_id}
+                      className="rounded-2xl border border-gray-100 bg-gray-50/70 p-4 shadow-sm"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-black uppercase text-gray-800">
+                            {item.nome}
+                          </p>
+                          <p className="mt-1 text-xs font-semibold text-gray-500">
+                            Pront. #{item.prontuario || 'S/N'} · SISA {item.numero_sisa || '-'}
+                          </p>
+                        </div>
+
+                        {item.lancado_sisa ? (
+                          <span className="shrink-0 rounded-full bg-emerald-50 px-3 py-1 text-xs font-black text-emerald-700">
+                            Lançado
+                          </span>
+                        ) : (
+                          <span className="shrink-0 rounded-full bg-yellow-50 px-3 py-1 text-xs font-black text-yellow-700">
+                            Pendente
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="mt-3 grid grid-cols-3 gap-2 text-center">
+                        <div className="rounded-xl bg-white px-2 py-2">
+                          <p className="text-[10px] font-black uppercase text-gray-400">Dias</p>
+                          <p className="text-lg font-black text-gray-800">{item.dias_presentes}</p>
+                        </div>
+                        <div className="rounded-xl bg-white px-2 py-2">
+                          <p className="text-[10px] font-black uppercase text-gray-400">Atend.</p>
+                          <p className="text-lg font-black text-gray-800">{item.total_atendimentos}</p>
+                        </div>
+                        <div className="rounded-xl bg-white px-2 py-2">
+                          <p className="text-[10px] font-black uppercase text-gray-400">Almoços</p>
+                          <p className="text-lg font-black text-gray-800">{item.almocos}</p>
+                        </div>
+                      </div>
+
+                      {item.lancado_sisa && (
+                        <p className="mt-3 text-xs font-semibold text-gray-500">
+                          {item.lancado_por_nome || '-'} · {formatarDataHora(item.lancado_em)}
+                        </p>
+                      )}
+
+                      <div className="mt-3">
+                        {item.lancado_sisa ? (
+                          <button
+                            onClick={() => desfazerLancamentoSisa(item)}
+                            disabled={resumoMensal.fechado}
+                            className="print:hidden min-h-11 w-full rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-bold text-gray-700 disabled:opacity-50"
+                          >
+                            Desfazer lançamento
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => marcarLancadoSisa(item)}
+                            disabled={resumoMensal.fechado}
+                            className="print:hidden min-h-11 w-full rounded-xl bg-emerald-600 px-4 py-2 text-sm font-bold text-white disabled:opacity-50"
+                          >
+                            Marcar lançado no SISA
+                          </button>
+                        )}
+                      </div>
+                    </article>
+                  ))
+                )}
+              </div>
+
+              <div className="hidden overflow-x-auto md:block">
 
                 <table className="w-full min-w-[1150px]">
 
@@ -840,7 +941,7 @@ export default function ConvenioSisa() {
                 Relatório Diário — {dataDiaria}
               </h2>
 
-              <div className="grid grid-cols-2 md:grid-cols-6 gap-3 mt-5">
+              <div className="grid grid-cols-2 md:grid-cols-6 gap-2 sm:gap-3 mt-5">
                 <ResumoCard titulo="Ativos" valor={resumoDiario.conviventes_ativos || 0} />
                 <ResumoCard titulo="Presentes" valor={resumoDiario.presentes || 0} />
                 <ResumoCard titulo="Ausentes" valor={resumoDiario.ausentes || 0} />
@@ -853,7 +954,62 @@ export default function ConvenioSisa() {
 
             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
 
-              <div className="overflow-x-auto">
+              <div className="space-y-3 p-3 md:hidden">
+                {(diario.items || []).length === 0 ? (
+                  <div className="rounded-2xl border border-gray-100 bg-gray-50 p-8 text-center text-sm font-semibold text-gray-500">
+                    Nenhum registro diário encontrado.
+                  </div>
+                ) : (
+                  (diario.items || []).map(item => (
+                    <article
+                      key={item.convivente_id}
+                      className="rounded-2xl border border-gray-100 bg-gray-50/70 p-4 shadow-sm"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-black uppercase text-gray-800">
+                            {item.nome}
+                          </p>
+                          <p className="mt-1 text-xs font-semibold text-gray-500">
+                            Pront. #{item.prontuario || 'S/N'} · SISA {item.numero_sisa || '-'}
+                          </p>
+                        </div>
+
+                        <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-black ${
+                          item.presenca === 'Sim'
+                            ? 'bg-emerald-50 text-emerald-700'
+                            : 'bg-gray-100 text-gray-500'
+                        }`}>
+                          {item.presenca === 'Sim' ? 'Presente' : 'Ausente'}
+                        </span>
+                      </div>
+
+                      <div className="mt-3 grid grid-cols-3 gap-2 text-center">
+                        <div className="rounded-xl bg-white px-2 py-2">
+                          <p className="text-[10px] font-black uppercase text-gray-400">Entrada</p>
+                          <p className="text-xs font-bold text-gray-800">{formatarDataHora(item.entrada)}</p>
+                        </div>
+                        <div className="rounded-xl bg-white px-2 py-2">
+                          <p className="text-[10px] font-black uppercase text-gray-400">Saída</p>
+                          <p className="text-xs font-bold text-gray-800">{formatarDataHora(item.saida)}</p>
+                        </div>
+                        <div className="rounded-xl bg-white px-2 py-2">
+                          <p className="text-[10px] font-black uppercase text-gray-400">Almoço</p>
+                          <p className="text-xs font-bold text-gray-800">{item.almoco}</p>
+                        </div>
+                      </div>
+
+                      {item.observacoes && (
+                        <p className="mt-3 rounded-xl bg-white px-3 py-2 text-xs leading-relaxed text-gray-600">
+                          {item.observacoes}
+                        </p>
+                      )}
+                    </article>
+                  ))
+                )}
+              </div>
+
+              <div className="hidden overflow-x-auto md:block">
 
                 <table className="w-full min-w-[950px]">
 

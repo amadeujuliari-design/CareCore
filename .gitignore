@@ -20,6 +20,7 @@ build/
 *.db
 *.db-journal
 *.sqlite3
+backups/
 
 # Uploads gerados em runtime (não versionar conteúdo sensível)
 uploads/
@@ -48,3 +49,4 @@ htmlcov/
 # Snapshots locais contendo cópias antigas do projeto
 SNAPSHOT_COMPLETO_PROJETO.txt
 codigo_completo.txt
+documentos_teste/

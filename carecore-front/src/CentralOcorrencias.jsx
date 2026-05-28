@@ -41,6 +41,7 @@ export default function CentralOcorrencias() {
   const [ocorrencias, setOcorrencias] = useState([]);
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState('');
+  const [sucesso, setSucesso] = useState('');
   
   const [chamadoSelecionado, setChamadoSelecionado] = useState(null);
   const [novaMensagem, setNovaMensagem] = useState('');
@@ -198,9 +199,11 @@ export default function CentralOcorrencias() {
       );
 
       await carregarOcorrencias();
-      alert("Baixa em lote concluída com sucesso!");
+      setErro('');
+      setSucesso("Baixa em lote concluída com sucesso!");
     } catch {
-      alert("Ocorreu um erro ao tentar dar baixa em alguns chamados. A tela será recarregada.");
+      setSucesso('');
+      setErro("Ocorreu um erro ao tentar dar baixa em alguns chamados. A tela será recarregada.");
       carregarOcorrencias();
     } finally {
       setBaixandoLote(false);
@@ -249,7 +252,7 @@ export default function CentralOcorrencias() {
   const handleSalvarNovoChamado = async (e) => {
     e.preventDefault();
     if (!formNovo.convivente_id || !formNovo.motivo.trim() || !formNovo.descricao.trim()) {
-      alert("Preencha o acolhido, o título e a descrição da ocorrência.");
+      setErro("Preencha o acolhido, o título e a descrição da ocorrência.");
       return;
     }
 
@@ -266,9 +269,12 @@ export default function CentralOcorrencias() {
       });
 
       setModalNovoAberto(false);
+      setErro('');
+      setSucesso('Chamado criado com sucesso.');
       carregarOcorrencias();
     } catch {
-      alert('Erro ao criar o chamado. Verifique a conexão com o servidor.');
+      setSucesso('');
+      setErro('Erro ao criar o chamado. Verifique a conexão com o servidor.');
     } finally {
       setEnviandoNovo(false);
     }
@@ -300,7 +306,7 @@ export default function CentralOcorrencias() {
         setChamadoSelecionado(response.data.find(o => o.id === chamadoSelecionado.id));
       }
     } catch {
-      alert('Erro ao enviar a mensagem.');
+      setErro('Erro ao enviar a mensagem.');
     } finally {
       setEnviando(false);
     }
@@ -330,6 +336,7 @@ export default function CentralOcorrencias() {
         <ScrollArea className="pb-24">
           <div className="w-full max-w-7xl mx-auto">
           {erro && <div className="bg-red-50 text-red-600 p-4 rounded-xl text-sm mb-6 font-semibold border border-red-100">{erro}</div>}
+          {sucesso && <div className="bg-green-50 text-green-700 p-4 rounded-xl text-sm mb-6 font-semibold border border-green-100">{sucesso}</div>}
 
 
           <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-6">
@@ -493,7 +500,7 @@ export default function CentralOcorrencias() {
                   const paciente = listaConviventes.find(c => c.id === oc.convivente_id);
                   const nomePaciente = paciente ? (paciente.nome_social || paciente.nome_completo) : 'Acolhido não encontrado';
                   
-                  // 🎯 Adicionando Prontuário e CPF na listagem principal
+                  // Dados de identificação exibidos na listagem principal.
                   const prontuarioInfo = paciente?.numero_institucional ? `#${paciente.numero_institucional}` : 'S/N';
                   const cpfInfo = paciente?.cpf || 'Não informado';
 
@@ -558,7 +565,7 @@ export default function CentralOcorrencias() {
                         </span>
                         <div className="flex gap-3 text-[11px] text-gray-400 font-bold">
                           {oc.observadores?.length > 0 && <span title="Pessoas copiadas">Copiados: {oc.observadores.length}</span>}
-                          <span title="Comentários/Interações">💬 {oc.interacoes?.length || 0}</span>
+                          <span title="Comentários/Interações">Interações: {oc.interacoes?.length || 0}</span>
                         </div>
                       </div>
                     </div>
@@ -616,7 +623,7 @@ export default function CentralOcorrencias() {
                   const pModal = listaConviventes.find(c => c.id === chamadoSelecionado.convivente_id);
                   if (!pModal) return <p className="text-sm text-red-400 font-semibold mt-2">Acolhido não encontrado</p>;
 
-                  // 🎯 Adicionando Prontuário e CPF dentro do cabeçalho do Modal
+                  // Dados de identificação exibidos no cabeçalho do modal.
                   const pProntuario = pModal.numero_institucional ? `#${pModal.numero_institucional}` : 'S/N';
                   const pCpf = pModal.cpf || 'Não informado';
 

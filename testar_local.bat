@@ -1,18 +1,30 @@
 @echo off
 set "ROOT=%~dp0"
 set "PYTHON_BACKEND=%ROOT%venv\Scripts\python.exe"
+set "FRONTEND=%ROOT%carecore-front"
 
 echo ==========================================
 echo    TESTES LOCAIS CARECORE+
 echo ==========================================
 
 if not exist "%PYTHON_BACKEND%" (
-    echo ERRO: ambiente virtual nao encontrado em:
-    echo %PYTHON_BACKEND%
-    echo.
-    echo Instale o ambiente antes de testar:
+    echo Ambiente virtual nao encontrado. Usando Python instalado no Windows...
+    set "PYTHON_BACKEND=python"
+)
+
+"%PYTHON_BACKEND%" --version >nul 2>&1
+if errorlevel 1 (
+    echo ERRO: Python nao encontrado.
+    echo Instale o Python ou crie o ambiente virtual com:
     echo python -m venv venv
-    echo venv\Scripts\python.exe -m pip install -r requirements.txt
+    pause
+    exit /b 1
+)
+
+where npm >nul 2>&1
+if errorlevel 1 (
+    echo ERRO: Node.js/npm nao encontrado.
+    echo Instale o Node.js antes de testar o frontend.
     pause
     exit /b 1
 )
@@ -31,7 +43,12 @@ echo [3/4] Rodando testes backend...
 if errorlevel 1 goto erro
 
 echo [4/4] Build do frontend...
-cd /d "%ROOT%carecore-front"
+cd /d "%FRONTEND%"
+if not exist "%FRONTEND%\node_modules" (
+    echo Instalando dependencias do frontend...
+    npm install
+    if errorlevel 1 goto erro
+)
 npm run build
 if errorlevel 1 goto erro
 

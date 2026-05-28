@@ -909,6 +909,11 @@ body {
 .carecore-dashboard-chart-card { display: flex; flex-direction: column; }
 .carecore-dashboard-chart-wrap { min-height: 0; flex: 1; }
 
+.carecore-dashboard-mobile-list {
+  display: grid;
+  gap: 10px;
+}
+
 .carecore-dashboard-table-scroll {
   max-height: 250px;
   overflow-y: auto;
@@ -977,6 +982,99 @@ body {
   .carecore-dashboard-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .carecore-dashboard-main-grid { display: flex; flex-direction: column; }
   .carecore-dashboard-table-scroll { max-height: 320px; }
+}
+
+@media (max-width: 768px) {
+  .carecore-dashboard-scroll-area {
+    padding: 12px 12px 88px !important;
+  }
+
+  .carecore-dashboard-v2 {
+    height: auto;
+    display: block;
+  }
+
+  .carecore-dashboard-kpis {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .carecore-kpi-soft {
+    min-height: auto;
+    border-radius: 18px;
+    padding: 14px;
+  }
+
+  .carecore-kpi-soft > div {
+    align-items: center;
+  }
+
+  .carecore-kpi-value {
+    margin-top: 6px;
+    font-size: 30px;
+  }
+
+  .carecore-kpi-subtitle {
+    margin-top: 5px;
+    font-size: 12px;
+  }
+
+  .carecore-kpi-icon {
+    width: 40px;
+    height: 40px;
+    font-size: 18px;
+  }
+
+  .carecore-dashboard-main-grid {
+    margin-top: 12px;
+    gap: 12px;
+  }
+
+  .carecore-dashboard-card {
+    border-radius: 20px;
+    padding: 14px;
+  }
+
+  .carecore-dashboard-card.carecore-panel-scroll {
+    overflow: visible !important;
+  }
+
+  .carecore-dashboard-panel-scroll-comfort,
+  .carecore-avisos-scroll {
+    min-height: 0;
+    max-height: none;
+    overflow: visible !important;
+    scrollbar-gutter: auto;
+  }
+
+  .carecore-dashboard-chart-card {
+    min-height: auto;
+  }
+
+  .carecore-dashboard-chart-wrap svg {
+    height: 138px;
+  }
+
+  .carecore-dashboard-chart-wrap .mt-1 {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .carecore-range-input {
+    width: 100%;
+    min-height: 42px;
+    font-size: 13px;
+  }
+
+  .carecore-dashboard-chart-card .flex.flex-wrap.items-center.gap-2 {
+    width: 100%;
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .carecore-dashboard-chart-card .flex.flex-wrap.items-center.gap-2 > span {
+    display: none;
+  }
 }
 /* =========================================================
    Dashboard: rolagem confortável por painel

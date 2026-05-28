@@ -131,7 +131,7 @@ export default function DashboardOperacional() {
           eyebrow="Rotina"
           title="Dashboard Operacional"
           subtitle="Estado real de presença, movimentação diária, refeições e alertas operacionais."
-          icon="↗"
+          icon=">"
           actions={(
             <>
             {dados?.atualizado_em && (
@@ -151,7 +151,7 @@ export default function DashboardOperacional() {
           )}
         />
 
-        <ScrollArea>
+        <ScrollArea className="pb-24">
           <div className="w-full max-w-7xl mx-auto">
 
         {erro && (
@@ -168,22 +168,22 @@ export default function DashboardOperacional() {
 
           <>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
+            <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4 mb-5">
 
               {cardsPrincipais.map(card => (
                 <div
                   key={card.label}
-                  className={`rounded-2xl border p-5 shadow-sm ${card.classe}`}
+                  className={`rounded-2xl border p-4 sm:p-5 shadow-sm ${card.classe}`}
                 >
-                  <p className="text-xs font-black uppercase tracking-wide opacity-80">
+                  <p className="text-[10px] sm:text-xs font-black uppercase tracking-wide opacity-80">
                     {card.label}
                   </p>
 
-                  <p className="text-4xl font-black mt-2">
+                  <p className="text-3xl sm:text-4xl font-black mt-2">
                     {card.valor}
                   </p>
 
-                  <p className="text-xs font-bold mt-2 opacity-80">
+                  <p className="text-[11px] sm:text-xs font-bold mt-2 opacity-80">
                     {card.detalhe}
                   </p>
                 </div>
@@ -191,18 +191,18 @@ export default function DashboardOperacional() {
 
             </div>
 
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-2 sm:gap-3 mb-5">
 
               {cardsAuditoria.map(card => (
                 <div
                   key={card.label}
-                  className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4"
+                  className="bg-white rounded-2xl border border-gray-100 shadow-sm p-3 sm:p-4"
                 >
-                  <p className="text-[11px] font-black text-gray-400 uppercase tracking-wide">
+                  <p className="text-[10px] sm:text-[11px] font-black text-gray-400 uppercase tracking-wide">
                     {card.label}
                   </p>
 
-                  <p className="text-2xl font-black text-gray-800 mt-1">
+                  <p className="text-xl sm:text-2xl font-black text-gray-800 mt-1">
                     {card.valor}
                   </p>
                 </div>
@@ -214,7 +214,7 @@ export default function DashboardOperacional() {
 
               <div className="xl:col-span-2 bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
 
-                <div className="p-4 border-b border-gray-100 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                  <div className="p-4 border-b border-gray-100 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
                   <div>
                     <h2 className="font-black text-gray-800">
                       Situação dos conviventes
@@ -224,11 +224,11 @@ export default function DashboardOperacional() {
                     </p>
                   </div>
 
-                  <div className="flex flex-wrap gap-2">
+                  <div className="flex gap-2 overflow-x-auto pb-1 md:flex-wrap md:overflow-visible md:pb-0">
                     <button
                       type="button"
                       onClick={() => setAbaLista('presentes')}
-                      className={`px-3 py-2 rounded-xl text-xs font-black border ${
+                      className={`min-w-fit px-3 py-2 rounded-xl text-xs font-black border ${
                         abaLista === 'presentes'
                           ? 'bg-emerald-600 text-white border-emerald-600'
                           : 'bg-white text-gray-600 border-gray-200'
@@ -240,7 +240,7 @@ export default function DashboardOperacional() {
                     <button
                       type="button"
                       onClick={() => setAbaLista('fora')}
-                      className={`px-3 py-2 rounded-xl text-xs font-black border ${
+                      className={`min-w-fit px-3 py-2 rounded-xl text-xs font-black border ${
                         abaLista === 'fora'
                           ? 'bg-orange-600 text-white border-orange-600'
                           : 'bg-white text-gray-600 border-gray-200'
@@ -252,7 +252,7 @@ export default function DashboardOperacional() {
                     <button
                       type="button"
                       onClick={() => setAbaLista('sem_movimento')}
-                      className={`px-3 py-2 rounded-xl text-xs font-black border ${
+                      className={`min-w-fit px-3 py-2 rounded-xl text-xs font-black border ${
                         abaLista === 'sem_movimento'
                           ? 'bg-gray-700 text-white border-gray-700'
                           : 'bg-white text-gray-600 border-gray-200'
@@ -263,7 +263,51 @@ export default function DashboardOperacional() {
                   </div>
                 </div>
 
-                <div className="overflow-x-auto">
+                <div className="space-y-3 p-3 md:hidden">
+                  {listaAtual.length === 0 ? (
+                    <div className="rounded-2xl border border-gray-100 bg-gray-50 p-8 text-center text-sm font-semibold text-gray-500">
+                      Nenhum convivente nesta visão.
+                    </div>
+                  ) : (
+                    listaAtual.map(item => (
+                      <article
+                        key={item.convivente_id}
+                        className="rounded-2xl border border-gray-100 bg-gray-50/70 p-4 shadow-sm"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-black uppercase text-gray-800">
+                              {item.convivente_nome}
+                            </p>
+                            <p className="mt-1 text-xs font-semibold text-gray-500">
+                              Prontuário #{item.numero_institucional || 'S/N'}
+                            </p>
+                          </div>
+
+                          {item.tipo_registro ? (
+                            <span className={`shrink-0 rounded-full border px-3 py-1 text-xs font-black ${
+                              item.tipo_registro === 'Entrada'
+                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                : 'bg-orange-50 text-orange-700 border-orange-200'
+                            }`}>
+                              {item.tipo_registro}
+                            </span>
+                          ) : (
+                            <span className="shrink-0 rounded-full border border-gray-200 bg-white px-3 py-1 text-[10px] font-black text-gray-500">
+                              Sem mov.
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="mt-3 rounded-xl bg-white px-3 py-2 text-xs font-semibold text-gray-600">
+                          Último movimento: {formatarDataHora(item.data_registro)}
+                        </div>
+                      </article>
+                    ))
+                  )}
+                </div>
+
+                <div className="hidden overflow-x-auto md:block">
                   <table className="w-full min-w-[680px]">
                     <thead className="bg-gray-50 border-b border-gray-100">
                       <tr>

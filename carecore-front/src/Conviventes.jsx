@@ -526,7 +526,7 @@ export default function Conviventes() {
 
               <div className="mb-6 grid grid-cols-1 md:grid-cols-4 gap-4 p-5 bg-gray-50/50 rounded-xl border border-gray-200 shadow-inner">
                 <div className="md:col-span-2">
-                  <label className="block text-xs font-medium text-gray-500 uppercase mb-1.5">🔍 Pesquisar Acolhido</label>
+                  <label className="block text-xs font-medium text-gray-500 uppercase mb-1.5">Pesquisar acolhido</label>
                   <input type="text" value={termoPesquisa} onChange={(e) => setTermoPesquisa(e.target.value)} placeholder="Pesquise por Nome ou CPF..." className="w-full px-4 py-2.5 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-brand text-sm bg-white" />
                 </div>
                 <div>
@@ -742,7 +742,7 @@ export default function Conviventes() {
                               disabled={!podeMudarStatus}
                               className={`w-full px-3 py-1.5 border border-gray-300 rounded-lg outline-none text-sm font-semibold text-gray-800 ${!podeMudarStatus ? 'bg-gray-100 cursor-not-allowed opacity-70' : 'bg-white focus:ring-2 focus:ring-brand'}`}
                             >
-                              <option value="Ativo">🟢 Ativo (Presente)</option><option value="Inativado">🔴 Inativado (Evadiu/Alta)</option><option value="Bloqueado">🚫 Bloqueado (Suspensão)</option>
+                              <option value="Ativo">Ativo (Presente)</option><option value="Inativado">Inativado (Evadiu/Alta)</option><option value="Bloqueado">Bloqueado (Suspensão)</option>
                             </select>
                             {!podeMudarStatus && <p className="text-[9px] text-red-500 font-bold mt-1">Apenas o Gerente ou Técnico Responsável podem alterar.</p>}
                           </div>
@@ -752,7 +752,7 @@ export default function Conviventes() {
                             <input type="date" name="data_entrada" required value={formData.data_entrada ? formData.data_entrada.split('T')[0] : ''} onChange={handleChange} className="w-full px-3 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none bg-white text-sm" />
                           </div>
                           
-                          {/* 🎯 OS DOIS CAMPOS RETORNARAM! Lado a lado e perfeitamente mapeados */}
+                          {/* Campos de auditoria exibidos somente quando a situação muda. */}
                           {formData.status !== statusOriginal && (
                             <div className="md:col-span-3 grid grid-cols-1 md:grid-cols-3 gap-4 pt-3 border-t border-red-200 animate-fadeIn">
                               <div className="md:col-span-1">
@@ -984,7 +984,7 @@ export default function Conviventes() {
                         </div>
                       </div>
                       <div className="bg-gray-800 p-4 rounded-xl text-white shadow-inner">
-                        <h3 className="text-sm font-bold mb-3">🔐 Cofre de Senhas</h3>
+                        <h3 className="text-sm font-bold mb-3">Cofre de Senhas</h3>
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                           <div><label className="block text-xs text-gray-300 mb-1">E-mail Pessoal</label><input type="email" name="email_pessoal" value={formData.email_pessoal} onChange={handleChange} onBlur={handleBlur} className={`w-full px-3 py-1.5 bg-gray-700 border rounded-lg text-white text-sm outline-none ${errosValidacao.email_pessoal ? 'border-red-500 focus:ring-red-500' : 'border-gray-600 focus:ring-brand'}`} placeholder="usuario@email.com" />{errosValidacao.email_pessoal && <p className="text-red-400 text-[10px] mt-0.5 font-bold">{errosValidacao.email_pessoal}</p>}</div>
                           <div>

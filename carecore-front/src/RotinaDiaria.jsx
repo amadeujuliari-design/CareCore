@@ -143,7 +143,14 @@ export default function RotinaDiaria() {
     } catch (error) {
       console.error('Erro ao carregar dados da rotina', error);
       if (!silencioso) {
-        alert('Erro ao carregar os dados da portaria.');
+        setFeedback({
+          tipo: 'Erro',
+          nome: 'Erro ao carregar os dados da portaria.',
+          horario: new Date().toLocaleTimeString('pt-BR', {
+            hour: '2-digit',
+            minute: '2-digit'
+          })
+        });
       }
     } finally {
       if (!silencioso) {
@@ -448,7 +455,14 @@ export default function RotinaDiaria() {
     const justificativa = justificativaRetornoRapido.trim();
 
     if (!justificativa) {
-      alert('Informe a justificativa do retorno em menos de 10 minutos.');
+      setFeedback({
+        tipo: 'Erro',
+        nome: 'Informe a justificativa do retorno em menos de 10 minutos.',
+        horario: new Date().toLocaleTimeString('pt-BR', {
+          hour: '2-digit',
+          minute: '2-digit'
+        })
+      });
       return;
     }
 
@@ -510,7 +524,14 @@ export default function RotinaDiaria() {
         error.response?.data?.detail ||
         'Não foi possível desfazer o registro.';
 
-      alert(mensagem);
+      setFeedback({
+        tipo: 'Erro',
+        nome: mensagem,
+        horario: new Date().toLocaleTimeString('pt-BR', {
+          hour: '2-digit',
+          minute: '2-digit'
+        })
+      });
     } finally {
       setProcessandoAcao(null);
     }
@@ -560,7 +581,7 @@ export default function RotinaDiaria() {
             </PremiumButton>
 
             <div className="hidden sm:flex bg-brand/10 text-brand px-4 py-2 rounded-lg font-bold text-sm shadow-sm items-center gap-2 border border-brand/20">
-              📅 Hoje
+              Hoje
             </div>
             </>
           )}
@@ -593,7 +614,7 @@ export default function RotinaDiaria() {
                 </p>
               </div>
               <div className="w-12 h-12 bg-orange-100 text-orange-600 rounded-full flex items-center justify-center text-xl shadow-sm">
-                ↗
+                {">"}
               </div>
             </div>
 
@@ -616,7 +637,7 @@ export default function RotinaDiaria() {
             <div className="flex flex-col md:flex-row justify-between gap-4 mb-6">
               <input
                 type="text"
-                placeholder="🔍 Buscar nome, prontuário, CPF ou bipar leitor USB..."
+                placeholder="Buscar nome, prontuário, CPF ou bipar leitor USB..."
                 value={busca}
                 onChange={(e) => setBusca(e.target.value)}
                 onKeyDown={handleBuscaKeyDown}

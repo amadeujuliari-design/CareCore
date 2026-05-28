@@ -20,6 +20,8 @@ export default function RotinaHistorico() {
 
   const [registros, setRegistros] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [erro, setErro] = useState('');
+  const [sucesso, setSucesso] = useState('');
 
   // filtros
   const [tipoFiltro, setTipoFiltro] = useState('');
@@ -83,6 +85,16 @@ export default function RotinaHistorico() {
     });
   };
 
+  const avisarErro = (mensagem) => {
+    setSucesso('');
+    setErro(mensagem);
+  };
+
+  const avisarSucesso = (mensagem) => {
+    setErro('');
+    setSucesso(mensagem);
+  };
+
   // =====================================================================
   // LOAD
   // =====================================================================
@@ -111,7 +123,7 @@ export default function RotinaHistorico() {
 
       console.error(error);
 
-      alert(
+      avisarErro(
         'Erro ao carregar histórico da rotina.'
       );
 
@@ -149,7 +161,7 @@ export default function RotinaHistorico() {
 
     if (!motivoEdicao.trim()) {
 
-      alert(
+      avisarErro(
         'Informe o motivo da edição.'
       );
 
@@ -179,13 +191,13 @@ export default function RotinaHistorico() {
 
       await carregarHistorico();
 
-      alert('Registro editado com sucesso.');
+      avisarSucesso('Registro editado com sucesso.');
 
     } catch (error) {
 
       console.error(error);
 
-      alert(
+      avisarErro(
         error.response?.data?.detail ||
         'Erro ao editar registro.'
       );
@@ -209,7 +221,7 @@ export default function RotinaHistorico() {
 
     if (!motivoCancelamento.trim()) {
 
-      alert(
+      avisarErro(
         'Informe o motivo do cancelamento.'
       );
 
@@ -237,7 +249,7 @@ export default function RotinaHistorico() {
 
       await carregarHistorico();
 
-      alert(
+      avisarSucesso(
         'Registro cancelado com sucesso.'
       );
 
@@ -245,7 +257,7 @@ export default function RotinaHistorico() {
 
       console.error(error);
 
-      alert(
+      avisarErro(
         error.response?.data?.detail ||
         'Erro ao cancelar registro.'
       );
@@ -348,7 +360,7 @@ export default function RotinaHistorico() {
 
       console.error(error);
 
-      alert(
+      avisarErro(
         'Erro ao exportar XLSX.'
       );
     }
@@ -542,7 +554,7 @@ export default function RotinaHistorico() {
     const janela = window.open('', '_blank');
 
     if (!janela) {
-      alert('Permita pop-ups para abrir o relatório de impressão.');
+      avisarErro('Permita pop-ups para abrir o relatório de impressão.');
       return;
     }
 
@@ -583,7 +595,7 @@ export default function RotinaHistorico() {
           eyebrow="Auditoria da rotina"
           title="Histórico Geral da Rotina"
           subtitle="Entradas, saídas, alimentação e eventos de auditoria dos conviventes."
-          icon="☷"
+          icon="H"
           actions={(
             <>
             <PremiumButton
@@ -605,44 +617,56 @@ export default function RotinaHistorico() {
           )}
         />
 
-        <ScrollArea>
+        <ScrollArea className="pb-24">
           <div className="w-full max-w-7xl mx-auto">
+
+        {erro && (
+          <div className="mb-5 rounded-2xl border border-red-100 bg-red-50 p-4 text-sm font-semibold text-red-700">
+            {erro}
+          </div>
+        )}
+
+        {sucesso && (
+          <div className="mb-5 rounded-2xl border border-green-100 bg-green-50 p-4 text-sm font-semibold text-green-700">
+            {sucesso}
+          </div>
+        )}
 
         {/* RESUMO */}
 
-        <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-3 mb-5">
+        <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-2 sm:gap-3 mb-5">
 
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-3 sm:p-4">
             <p className="text-xs uppercase font-black text-gray-400">Total</p>
             <p className="text-2xl font-black text-gray-800">{resumo.total}</p>
           </div>
 
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-3 sm:p-4">
             <p className="text-xs uppercase font-black text-gray-400">Entradas</p>
             <p className="text-2xl font-black text-emerald-700">{resumo.entradas}</p>
           </div>
 
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-3 sm:p-4">
             <p className="text-xs uppercase font-black text-gray-400">Saídas</p>
             <p className="text-2xl font-black text-orange-700">{resumo.saidas}</p>
           </div>
 
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-3 sm:p-4">
             <p className="text-xs uppercase font-black text-gray-400">Almoços</p>
             <p className="text-2xl font-black text-blue-700">{resumo.almocos}</p>
           </div>
 
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-3 sm:p-4">
             <p className="text-xs uppercase font-black text-gray-400">Retornos</p>
             <p className="text-2xl font-black text-amber-700">{resumo.retornosRapidos}</p>
           </div>
 
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-3 sm:p-4">
             <p className="text-xs uppercase font-black text-gray-400">Editados</p>
             <p className="text-2xl font-black text-purple-700">{resumo.editados}</p>
           </div>
 
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-3 sm:p-4">
             <p className="text-xs uppercase font-black text-gray-400">Cancelados</p>
             <p className="text-2xl font-black text-red-700">{resumo.cancelados}</p>
           </div>
@@ -776,7 +800,7 @@ export default function RotinaHistorico() {
 
           </div>
 
-          <div className="flex flex-wrap gap-2 mt-4">
+          <div className="grid grid-cols-1 gap-2 mt-4 sm:flex sm:flex-wrap">
 
             <button
               type="button"
@@ -822,7 +846,96 @@ export default function RotinaHistorico() {
 
           </div>
 
-          <div className="overflow-x-auto">
+          <div className="space-y-3 p-3 md:hidden">
+            {loading ? (
+              <div className="rounded-2xl border border-gray-100 bg-gray-50 p-8 text-center text-sm font-semibold text-gray-500">
+                Carregando histórico...
+              </div>
+            ) : registrosPaginados.length === 0 ? (
+              <div className="rounded-2xl border border-gray-100 bg-gray-50 p-8 text-center text-sm font-semibold text-gray-500">
+                Nenhum registro encontrado.
+              </div>
+            ) : (
+              registrosPaginados.map(registro => (
+                <article
+                  key={registro.id}
+                  className={`rounded-2xl border p-4 shadow-sm ${registro.cancelado ? 'border-red-100 bg-red-50/60' : 'border-gray-100 bg-gray-50/70'}`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-black uppercase text-gray-800">
+                        {registro.convivente_nome}
+                      </p>
+                      <p className="mt-1 text-xs font-semibold text-gray-500">
+                        Prontuário #{registro.numero_institucional || 'S/N'} · {formatarDataHoraRotina(registro.data_registro)}
+                      </p>
+                    </div>
+
+                    <span className={`shrink-0 rounded-full border px-3 py-1 text-xs font-black ${classeTipoRegistroRotina(registro.tipo_registro)}`}>
+                      {registro.tipo_registro}
+                    </span>
+                  </div>
+
+                  <div className="mt-3 flex flex-wrap gap-1.5">
+                    {!registro.cancelado && (
+                      <span className="text-[11px] font-black px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                        Ativo
+                      </span>
+                    )}
+                    {registro.cancelado && (
+                      <span className="text-[11px] font-black px-2.5 py-1 rounded-full bg-red-50 text-red-700 border border-red-200">
+                        Cancelado
+                      </span>
+                    )}
+                    {registro.foi_editado && (
+                      <span className="text-[11px] font-black px-2.5 py-1 rounded-full bg-purple-50 text-purple-700 border border-purple-200">
+                        Editado
+                      </span>
+                    )}
+                    {registro.retorno_rapido && (
+                      <span className="text-[11px] font-black px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
+                        Retorno rápido
+                      </span>
+                    )}
+                  </div>
+
+                  {(registro.justificativa_retorno_rapido || registro.motivo_edicao || registro.motivo_cancelamento) && (
+                    <p className="mt-3 rounded-xl bg-white px-3 py-2 text-xs leading-relaxed text-gray-600">
+                      {registro.justificativa_retorno_rapido && <>Justificativa: {registro.justificativa_retorno_rapido}</>}
+                      {!registro.justificativa_retorno_rapido && registro.motivo_edicao && <>Edição: {registro.motivo_edicao}</>}
+                      {!registro.justificativa_retorno_rapido && !registro.motivo_edicao && registro.motivo_cancelamento && <>Cancelamento: {registro.motivo_cancelamento}</>}
+                    </p>
+                  )}
+
+                  <div className="mt-3 flex items-center justify-between gap-3 text-xs font-semibold text-gray-500">
+                    <span>{registro.usuario_nome || 'Usuário'}</span>
+                    {isGestor && (
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => abrirModalEdicao(registro)}
+                          disabled={registro.cancelado}
+                          className="rounded-xl bg-blue-50 px-3 py-2 text-xs font-bold text-blue-700 disabled:opacity-40"
+                        >
+                          Editar
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => abrirModalCancelamento(registro)}
+                          disabled={registro.cancelado}
+                          className="rounded-xl bg-red-50 px-3 py-2 text-xs font-bold text-red-700 disabled:opacity-40"
+                        >
+                          Cancelar
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </article>
+              ))
+            )}
+          </div>
+
+          <div className="hidden overflow-x-auto md:block">
 
             <table className="w-full min-w-[980px]">
 

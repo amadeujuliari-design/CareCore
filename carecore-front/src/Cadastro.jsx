@@ -23,6 +23,7 @@ export default function Cadastro() {
 
   const [etapa, setEtapa] = useState(1);
   const [erro, setErro] = useState('');
+  const [sucesso, setSucesso] = useState('');
   const [loading, setLoading] = useState(false);
 
   const [nomeFantasia, setNomeFantasia] = useState('');
@@ -129,6 +130,7 @@ export default function Cadastro() {
 
     setLoading(true);
     setErro('');
+    setSucesso('');
 
     try {
       await api.post('/api/onboarding', {
@@ -145,8 +147,8 @@ export default function Cadastro() {
         },
       });
 
-      alert('Cadastro realizado com sucesso! Faça login para começar.');
-      navigate('/');
+      setSucesso('Cadastro realizado com sucesso. Redirecionando para o login...');
+      window.setTimeout(() => navigate('/'), 900);
     } catch (error) {
       setErro(obterMensagemErroServidor(error));
     } finally {
@@ -182,6 +184,11 @@ export default function Cadastro() {
           {erro && (
             <div className="mb-4 bg-red-50 text-red-600 p-3 rounded-lg text-sm text-center font-medium">
               {erro}
+            </div>
+          )}
+          {sucesso && (
+            <div className="mb-4 bg-green-50 text-green-700 p-3 rounded-lg text-sm text-center font-medium">
+              {sucesso}
             </div>
           )}
 
