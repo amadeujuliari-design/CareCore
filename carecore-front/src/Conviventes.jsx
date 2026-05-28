@@ -6,6 +6,11 @@ import Sidebar from './Sidebar';
 import AuthenticatedImage from './components/AuthenticatedImage';
 import { AppShell, MainShell, PageHeader, ScrollArea } from './components/PremiumUI';
 import { API_ROOT } from './config/apiBase';
+import {
+  getCameraUnavailableMessage,
+  getPreferredCameraConstraints,
+  useDeviceInfo,
+} from './hooks/useDeviceInfo';
 import { baixarArquivoAutenticado } from './utils/arquivosApi';
 import {
   calcularIdade,
@@ -38,6 +43,7 @@ const Barcode = getValidComponent(BarcodeLib);
 export default function Conviventes() {
   const navigate = useNavigate();
   const token = localStorage.getItem('@CareCore:token');
+  const deviceInfo = useDeviceInfo();
 
   // 🧠 LÓGICA DE PERFIS (RBAC) E IDENTIDADE
   let perfilUsuario = '';
@@ -240,10 +246,24 @@ export default function Conviventes() {
   const abrirCamera = async () => {
     setCameraAberta(true);
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-      if (videoRef.current) videoRef.current.srcObject = stream;
+      if (!navigator.mediaDevices?.getUserMedia) {
+        setErro('Seu navegador não permite captura direta pela câmera. Use o botão de arquivo/câmera do celular.');
+        setCameraAberta(false);
+        return;
+      }
+
+      const stream = await navigator.mediaDevices.getUserMedia(
+        getPreferredCameraConstraints(deviceInfo)
+      );
+
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        videoRef.current.muted = true;
+        videoRef.current.playsInline = true;
+        await videoRef.current.play();
+      }
     } catch {
-      setErro('Erro ao acessar a webcam. Verifique as permissões.');
+      setErro(getCameraUnavailableMessage(deviceInfo, 'a câmera'));
       setCameraAberta(false);
     }
   };
@@ -266,7 +286,7 @@ export default function Conviventes() {
         const file = new File([blob], `foto_perfil_${editandoId || 'novo'}.png`, { type: "image/png" });
         setArquivoSelecionado(file);
         setTipoDocumentoSelecionado("Foto de Perfil");
-        setSucesso('📸 Foto capturada! Clique em "Fazer Upload" para confirmar.');
+        setSucesso('Foto capturada. Clique em "Fazer upload" para confirmar.');
         fecharCamera();
         setTimeout(() => setSucesso(''), 4000);
       }, 'image/png');
@@ -528,7 +548,53 @@ export default function Conviventes() {
               ) : conviventesFiltrados.length === 0 ? (
                 <div className="text-center py-16 bg-gray-50 border-2 border-dashed border-gray-300 rounded-2xl"><p className="text-gray-600 text-lg font-medium">Nenhum registro encontrado com estes filtros.</p></div>
               ) : (
-                <div className="overflow-x-auto rounded-xl border border-gray-200">
+                <>
+                <div className="space-y-3 md:hidden">
+                  {conviventesFiltrados.map((c) => {
+                    const isMeuCaso = c.tecnico_id === idUsuarioLogado;
+                    return (
+                      <article
+                        key={c.id}
+                        className={`rounded-3xl border p-4 shadow-sm ${isMeuCaso ? 'border-blue-100 bg-blue-50/70' : 'border-slate-100 bg-slate-50'}`}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="text-xs font-black uppercase tracking-wide text-brand">
+                              #{c.numero_institucional || 'Novo'}
+                              {isMeuCaso && <span className="ml-2 rounded-full bg-brand px-2 py-0.5 text-[9px] text-white">Meu caso</span>}
+                            </p>
+                            <h3 className="mt-1 truncate text-base font-bold text-slate-900">
+                              {c.nome_social || c.nome_completo}
+                            </h3>
+                            {c.nome_social && (
+                              <p className="truncate text-xs text-slate-500">
+                                Civil: {c.nome_completo}
+                              </p>
+                            )}
+                          </div>
+
+                          <span className={`shrink-0 rounded-full px-3 py-1 text-[10px] font-bold uppercase ${c.status === 'Ativo' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                            {c.status}
+                          </span>
+                        </div>
+
+                        <div className="mt-3 grid gap-2 rounded-2xl bg-white px-3 py-2 text-xs text-slate-600">
+                          <p><strong>CPF:</strong> {c.cpf || '-'}</p>
+                          <p><strong>Acomodação:</strong> {obterLocalizacaoLeito(c.leito_id)}</p>
+                        </div>
+
+                        <button
+                          onClick={() => abrirParaEdicao(c)}
+                          className="mt-4 min-h-11 w-full rounded-2xl bg-brand px-4 py-2 text-sm font-bold text-white shadow-sm"
+                        >
+                          Abrir ficha
+                        </button>
+                      </article>
+                    );
+                  })}
+                </div>
+
+                <div className="hidden overflow-x-auto rounded-xl border border-gray-200 md:block">
                   <table className="w-full text-left border-collapse">
                     <thead>
                       <tr className="bg-gray-50 text-gray-800 text-sm border-b border-gray-200">
@@ -573,6 +639,7 @@ export default function Conviventes() {
                     </tbody>
                   </table>
                 </div>
+                </>
               )}
             </div>
           )}
@@ -963,7 +1030,23 @@ export default function Conviventes() {
                             <h3 className="text-xs font-semibold text-gray-700 uppercase mb-3">Novo Documento ou Foto</h3>
                             <div className="space-y-3">
                               <select value={tipoDocumentoSelecionado} onChange={(e) => setTipoDocumentoSelecionado(e.target.value)} className="w-full px-3 py-1.5 border border-gray-300 rounded-lg outline-none bg-white text-sm"><option value="Foto de Perfil">Foto de Perfil</option><option value="RG / CPF">RG / CPF</option><option value="CadÚnico">CadÚnico</option><option value="Outros">Outros</option></select>
-                              <div className="pt-2 border-t border-gray-200"><button type="button" onClick={abrirCamera} className="w-full mb-2 py-1.5 bg-blue-600 text-white rounded-lg text-sm font-semibold">Tirar foto (webcam)</button><input type="file" onChange={(e) => setArquivoSelecionado(e.target.files[0])} className="w-full text-xs text-gray-500" /></div>
+                              <div className="pt-2 border-t border-gray-200">
+                                {!deviceInfo.isSecureCameraContext && (
+                                  <p className="mb-2 rounded-lg border border-amber-100 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700">
+                                    No celular, a captura direta pode ser bloqueada em endereço local. Use a câmera/galeria abaixo.
+                                  </p>
+                                )}
+                                <button type="button" onClick={abrirCamera} className="w-full mb-2 py-1.5 bg-blue-600 text-white rounded-lg text-sm font-semibold">
+                                  {deviceInfo.isTouchDevice ? 'Abrir câmera' : 'Tirar foto (webcam)'}
+                                </button>
+                                <input
+                                  type="file"
+                                  accept="image/*"
+                                  capture={deviceInfo.isTouchDevice ? 'environment' : undefined}
+                                  onChange={(e) => setArquivoSelecionado(e.target.files[0])}
+                                  className="w-full text-xs text-gray-500"
+                                />
+                              </div>
                               <button type="button" onClick={handleUploadDocumento} disabled={loadingDocs || !arquivoSelecionado} className="w-full py-2 bg-green-600 text-white rounded-lg text-sm font-semibold disabled:opacity-50">{loadingDocs ? 'Enviando...' : 'Fazer upload'}</button>
                             </div>
                           </div>
@@ -1205,9 +1288,9 @@ export default function Conviventes() {
       {cameraAberta && (
         <div className="fixed inset-0 bg-black/80 z-50 flex flex-col items-center justify-center p-4">
           <div className="bg-white p-6 rounded-2xl max-w-2xl w-full flex flex-col items-center">
-            <h3 className="text-xl font-semibold mb-2">📸 Capturar Foto de Perfil</h3>
+            <h3 className="text-xl font-semibold mb-2">Capturar foto de perfil</h3>
             <div className="w-full bg-black rounded-lg overflow-hidden flex justify-center mb-6 relative"><video ref={videoRef} autoPlay playsInline className="w-full max-h-[60vh] object-cover"></video><canvas ref={canvasRef} className="hidden"></canvas></div>
-            <div className="flex gap-4 w-full"><button type="button" onClick={fecharCamera} className="flex-1 py-3 bg-gray-200 font-semibold rounded-xl hover:bg-gray-300 transition-colors">Cancelar</button><button type="button" onClick={capturarFoto} className="flex-1 py-3 bg-brand text-white font-semibold rounded-xl hover:bg-brandDark transition-colors shadow-lg">📸 Capturar e Salvar</button></div>
+            <div className="flex gap-4 w-full"><button type="button" onClick={fecharCamera} className="flex-1 py-3 bg-gray-200 font-semibold rounded-xl hover:bg-gray-300 transition-colors">Cancelar</button><button type="button" onClick={capturarFoto} className="flex-1 py-3 bg-brand text-white font-semibold rounded-xl hover:bg-brandDark transition-colors shadow-lg">Capturar e salvar</button></div>
           </div>
         </div>
       )}

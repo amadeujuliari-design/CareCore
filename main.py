@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse, Response
 from fastapi.exceptions import RequestValidationError
 import contextlib
 import os
+import re
 
 from database import engine, Base
 from licenciamento import middleware_licenciamento
@@ -24,6 +25,7 @@ ORIGENS_PERMITIDAS = {
     "http://localhost:5173",
     "http://127.0.0.1:5173",
 }
+ORIGEM_LAN_REGEX = r"^http://(192\.168\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}):5173$"
 
 APP_ENV = os.getenv("APP_ENV", "local").strip().lower()
 AUTO_CREATE_TABLES_PADRAO = "true" if APP_ENV in {"local", "development", "dev"} else "false"
@@ -62,6 +64,7 @@ app.middleware("http")(middleware_licenciamento)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=list(ORIGENS_PERMITIDAS),
+    allow_origin_regex=ORIGEM_LAN_REGEX,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -80,7 +83,7 @@ async def cors_seguro_carecore(request: Request, call_next):
     else:
         response = await call_next(request)
 
-    if origin in ORIGENS_PERMITIDAS:
+    if origin in ORIGENS_PERMITIDAS or (origin and re.match(ORIGEM_LAN_REGEX, origin)):
         response.headers["Access-Control-Allow-Origin"] = origin
         response.headers["Access-Control-Allow-Credentials"] = "true"
         response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, PATCH, DELETE, OPTIONS"

@@ -169,27 +169,42 @@ export default function Login() {
   // =========================================================
 
   return (
-    <div className="min-h-screen overflow-hidden bg-gradient-to-br from-blue-600 via-violet-600 to-pink-500 p-4">
+    <div className="min-h-screen overflow-hidden bg-gradient-to-br from-sky-500 via-teal-500 to-amber-300 p-4">
       <div className="flex min-h-[calc(100vh-32px)] items-center justify-center rounded-[2rem] bg-slate-50/95 px-4 py-10 shadow-2xl backdrop-blur">
         <div className="grid w-full max-w-6xl overflow-hidden rounded-[2rem] border border-white bg-white shadow-2xl lg:grid-cols-[1.05fr_0.95fr]">
-          <section className="hidden bg-gradient-to-br from-slate-950 via-blue-950 to-violet-950 p-10 text-white lg:flex lg:flex-col lg:justify-between">
+          <section className="hidden bg-gradient-to-br from-[#12385b] via-[#1f9a92] to-[#d9c465] p-10 text-white lg:flex lg:flex-col lg:justify-between">
             <div>
-              <img
-                className="h-20 w-auto object-contain brightness-0 invert"
-                src={logoCarecore}
-                alt="CARECORE+"
-              />
+              <div className="inline-flex rounded-3xl bg-white p-4 shadow-2xl shadow-black/20">
+                <img
+                  className="h-20 w-auto object-contain"
+                  src={logoCarecore}
+                  alt="CARECORE+"
+                />
+              </div>
 
               <div className="mt-12 max-w-lg">
-                <p className="text-sm font-bold uppercase tracking-[0.22em] text-blue-200">
+                <p className="text-sm font-bold uppercase tracking-[0.22em] text-teal-50">
                   Tecnologia que cuida
                 </p>
 
                 <h1 className="mt-4 text-4xl font-black leading-tight tracking-tight">
-                  Gestão institucional para acolhimento, rotina e cuidado assistencial.
+                  <span
+                    style={{
+                      WebkitTextStroke: '0.75px rgba(15, 23, 42, 0.78)',
+                      textShadow: '0 3px 14px rgba(15, 23, 42, 0.42)',
+                    }}
+                  >
+                    Gestão institucional para acolhimento, rotina e cuidado assistencial.
+                  </span>
                 </h1>
 
-                <p className="mt-5 text-base leading-relaxed text-slate-300">
+                <p
+                  className="mt-5 text-base font-medium leading-relaxed text-white/90"
+                  style={{
+                    WebkitTextStroke: '0.35px rgba(15, 23, 42, 0.66)',
+                    textShadow: '0 2px 10px rgba(15, 23, 42, 0.38)',
+                  }}
+                >
                   Centralize prontuários, acomodações, ocorrências, rotina diária, SISA e relatórios em uma plataforma segura para sua instituição.
                 </p>
               </div>
@@ -197,18 +212,66 @@ export default function Login() {
 
             <div className="grid grid-cols-3 gap-3 text-sm">
               <div className="rounded-2xl border border-white/10 bg-white/10 p-4 backdrop-blur">
-                <p className="font-black">LGPD</p>
-                <p className="mt-1 text-xs text-slate-300">Dados protegidos</p>
+                <p
+                  className="font-black"
+                  style={{
+                    WebkitTextStroke: '0.35px rgba(15, 23, 42, 0.68)',
+                    textShadow: '0 2px 8px rgba(15, 23, 42, 0.34)',
+                  }}
+                >
+                  LGPD
+                </p>
+                <p
+                  className="mt-1 text-xs text-white/85"
+                  style={{
+                    WebkitTextStroke: '0.2px rgba(15, 23, 42, 0.56)',
+                    textShadow: '0 1px 6px rgba(15, 23, 42, 0.30)',
+                  }}
+                >
+                  Dados protegidos
+                </p>
               </div>
 
               <div className="rounded-2xl border border-white/10 bg-white/10 p-4 backdrop-blur">
-                <p className="font-black">SISA</p>
-                <p className="mt-1 text-xs text-slate-300">Controle mensal</p>
+                <p
+                  className="font-black"
+                  style={{
+                    WebkitTextStroke: '0.35px rgba(15, 23, 42, 0.68)',
+                    textShadow: '0 2px 8px rgba(15, 23, 42, 0.34)',
+                  }}
+                >
+                  SISA
+                </p>
+                <p
+                  className="mt-1 text-xs text-white/85"
+                  style={{
+                    WebkitTextStroke: '0.2px rgba(15, 23, 42, 0.56)',
+                    textShadow: '0 1px 6px rgba(15, 23, 42, 0.30)',
+                  }}
+                >
+                  Controle mensal
+                </p>
               </div>
 
               <div className="rounded-2xl border border-white/10 bg-white/10 p-4 backdrop-blur">
-                <p className="font-black">RBAC</p>
-                <p className="mt-1 text-xs text-slate-300">Acesso por perfil</p>
+                <p
+                  className="font-black"
+                  style={{
+                    WebkitTextStroke: '0.35px rgba(15, 23, 42, 0.68)',
+                    textShadow: '0 2px 8px rgba(15, 23, 42, 0.34)',
+                  }}
+                >
+                  RBAC
+                </p>
+                <p
+                  className="mt-1 text-xs text-white/85"
+                  style={{
+                    WebkitTextStroke: '0.2px rgba(15, 23, 42, 0.56)',
+                    textShadow: '0 1px 6px rgba(15, 23, 42, 0.30)',
+                  }}
+                >
+                  Acesso por perfil
+                </p>
               </div>
             </div>
           </section>

@@ -41,6 +41,7 @@ export function criarItemHistoricoLeitura({
   registroId = null,
   retornoRapido = false,
   dataRegistro = null,
+  desfazerExpiraEm = null,
 }) {
   return {
     id: `${Date.now()}-${Math.random()}`,
@@ -52,6 +53,7 @@ export function criarItemHistoricoLeitura({
     registroId,
     retornoRapido,
     dataRegistro,
+    desfazerExpiraEm,
     horario: new Date().toLocaleTimeString('pt-BR', {
       hour: '2-digit',
       minute: '2-digit',
@@ -66,6 +68,10 @@ export function definirAcaoAutomaticaRotina(resumoHoje, conviventeId) {
 }
 
 export function registroAindaPodeSerDesfeitoRotina(dataRegistro, agora = Date.now()) {
+  if (typeof dataRegistro === 'number') {
+    return agora <= dataRegistro;
+  }
+
   if (!dataRegistro) return false;
 
   const momentoRegistro = new Date(dataRegistro).getTime();

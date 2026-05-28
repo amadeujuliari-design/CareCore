@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import Sidebar from "./Sidebar";
+import UserAvatar from "./components/UserAvatar";
 import { listarMeusAvisos, obterResumoAvisos, marcarAvisoComoLido } from "./services/avisosService";
 import { API_ROOT } from "./config/apiBase";
 
@@ -202,13 +203,21 @@ function AvisosImportantes({ avisos, carregando, onAbrirAviso, onGerenciar }) {
                 title="Clique para ler a mensagem completa"
               >
                 <div className="flex items-center justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-semibold text-slate-900">
-                      {avisoPrivado ? `${aviso.remetente_nome || "Usuário"} enviou uma mensagem` : aviso.titulo}
-                    </p>
-                    <p className="mt-0.5 text-[11px] font-semibold text-slate-400">
-                      Remetente: {aviso.remetente_nome || "Sistema"}
-                    </p>
+                  <div className="flex min-w-0 items-center gap-3">
+                    <UserAvatar
+                      nome={aviso.remetente_nome || "Sistema"}
+                      avatarUrl={aviso.remetente_avatar_url}
+                      size="sm"
+                    />
+
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-slate-900">
+                        {avisoPrivado ? `${aviso.remetente_nome || "Usuário"} enviou uma mensagem` : aviso.titulo}
+                      </p>
+                      <p className="mt-0.5 text-[11px] font-semibold text-slate-400">
+                        Remetente: {aviso.remetente_nome || "Sistema"}
+                      </p>
+                    </div>
                   </div>
 
                   <div className="flex shrink-0 items-center gap-2">
@@ -439,6 +448,7 @@ export default function Dashboard() {
           agrupado[tecnicoId] = {
             tecnico_id: tecnicoId,
             tecnico_nome: tecnico?.nome || "Sem técnico definido",
+            tecnico_avatar_url: tecnico?.avatar_url || "",
             perfil: tecnico?.perfil_acesso || "Técnico",
             pendentes: 0,
             alta: 0,
@@ -697,8 +707,17 @@ export default function Dashboard() {
                           dados.pendenciasTecnicos.map((item) => (
                             <tr key={item.tecnico_id} className="hover:bg-slate-50">
                               <td className="px-3 py-3">
-                                <button type="button" onClick={() => abrirPendenciasTecnico(item)} className="carecore-technician-link text-left">{item.tecnico_nome}</button>
-                                <p className="text-xs text-slate-500">{item.perfil}</p>
+                                <div className="flex items-center gap-3">
+                                  <UserAvatar
+                                    nome={item.tecnico_nome}
+                                    avatarUrl={item.tecnico_avatar_url}
+                                    size="sm"
+                                  />
+                                  <div className="min-w-0">
+                                    <button type="button" onClick={() => abrirPendenciasTecnico(item)} className="carecore-technician-link truncate text-left">{item.tecnico_nome}</button>
+                                    <p className="text-xs text-slate-500">{item.perfil}</p>
+                                  </div>
+                                </div>
                               </td>
                               <td className="px-3 py-3 text-center text-xl font-bold text-slate-900">{item.pendentes}</td>
                               <td className="px-3 py-3"><BadgePrioridade prioridade={item.prioridade} /></td>

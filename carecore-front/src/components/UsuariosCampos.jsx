@@ -45,6 +45,8 @@ export function CampoFotoUsuario({
   onSelecionarArquivo,
   onUploadArquivo,
   onRemoverFoto,
+  isTouchDevice = false,
+  isSecureCameraContext = true,
 }) {
   return (
     <div className="md:col-span-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
@@ -69,8 +71,16 @@ export function CampoFotoUsuario({
           </label>
 
           <p className="mb-3 text-xs text-slate-500">
-            Capture pela webcam ou envie uma imagem existente. A foto será cortada em formato quadrado e padronizada automaticamente.
+            {isTouchDevice
+              ? 'No celular, use a câmera nativa ou escolha uma imagem existente. A foto será cortada em formato quadrado.'
+              : 'Capture pela webcam ou envie uma imagem existente. A foto será cortada em formato quadrado e padronizada automaticamente.'}
           </p>
+
+          {!isSecureCameraContext && (
+            <p className="mb-3 rounded-xl border border-amber-100 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700">
+              Captura direta pode ser bloqueada no celular em endereço local. O botão de arquivo abre a câmera nativa do aparelho.
+            </p>
+          )}
 
           <div className="flex flex-wrap gap-2">
             <button
@@ -78,7 +88,7 @@ export function CampoFotoUsuario({
               onClick={onAbrirCamera}
               className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100"
             >
-              Abrir webcam
+              {isTouchDevice ? 'Abrir câmera' : 'Abrir webcam'}
             </button>
 
             <button
@@ -87,7 +97,7 @@ export function CampoFotoUsuario({
               disabled={processandoFoto}
               className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-60"
             >
-              {processandoFoto ? 'Processando...' : 'Enviar arquivo'}
+              {processandoFoto ? 'Processando...' : isTouchDevice ? 'Câmera/galeria' : 'Enviar arquivo'}
             </button>
 
             {avatarUrl && (
@@ -105,6 +115,7 @@ export function CampoFotoUsuario({
             ref={fileInputRef}
             type="file"
             accept="image/*"
+            capture={isTouchDevice ? 'environment' : undefined}
             onChange={onUploadArquivo}
             className="hidden"
           />

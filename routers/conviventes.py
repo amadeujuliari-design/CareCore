@@ -101,9 +101,24 @@ async def verificar_mes_fechado(
 
 @router.get("/tecnicos")
 async def listar_tecnicos(db: AsyncSession = Depends(get_db), usuario_atual: dict = Depends(get_usuario_logado)):
-    query = select(UsuarioDB.id, UsuarioDB.nome, UsuarioDB.perfil_acesso).where(UsuarioDB.instituicao_id == usuario_atual["instituicao_id"])
+    query = select(
+        UsuarioDB.id,
+        UsuarioDB.nome,
+        UsuarioDB.perfil_acesso,
+        UsuarioDB.avatar_url,
+    ).where(
+        UsuarioDB.instituicao_id == usuario_atual["instituicao_id"]
+    )
     result = await db.execute(query)
-    return [{"id": t.id, "nome": t.nome, "perfil_acesso": t.perfil_acesso} for t in result.all()]
+    return [
+        {
+            "id": t.id,
+            "nome": t.nome,
+            "perfil_acesso": t.perfil_acesso,
+            "avatar_url": t.avatar_url,
+        }
+        for t in result.all()
+    ]
 
 @router.get("/motivos-inteligentes")
 async def listar_motivos_inteligentes(db: AsyncSession = Depends(get_db), usuario_atual: dict = Depends(get_usuario_logado)):
@@ -768,6 +783,43 @@ async def resumo_rotina_hoje(
             )
 
     return resumo
+
+
+@router.get("/rotina/sync-status")
+async def status_sincronizacao_rotina(
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado)
+):
+    hoje = agora_sao_paulo().date()
+    inicio_dia = datetime.combine(hoje, datetime.min.time())
+
+    resultado = (
+        await db.execute(
+            select(
+                func.count(RegistroRotinaDB.id),
+                func.max(RegistroRotinaDB.data_registro),
+                func.max(RegistroRotinaDB.cancelado_em),
+                func.max(RegistroRotinaDB.editado_em),
+            ).where(
+                RegistroRotinaDB.instituicao_id == usuario_atual["instituicao_id"],
+                RegistroRotinaDB.data_registro >= inicio_dia,
+            )
+        )
+    ).one()
+
+    total_registros, ultima_data, ultimo_cancelamento, ultima_edicao = resultado
+    marcos = [
+        marco
+        for marco in (ultima_data, ultimo_cancelamento, ultima_edicao)
+        if marco is not None
+    ]
+    ultimo_evento = max(marcos) if marcos else None
+
+    return {
+        "total_registros_hoje": int(total_registros or 0),
+        "ultimo_evento": ultimo_evento.isoformat() if ultimo_evento else None,
+        "verificado_em": agora_sao_paulo().isoformat(),
+    }
 
 # =====================================================================
 # DASHBOARD OPERACIONAL DA ROTINA

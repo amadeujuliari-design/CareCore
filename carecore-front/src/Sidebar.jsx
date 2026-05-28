@@ -1,8 +1,23 @@
 import { useState } from 'react';
+import {
+  Bell,
+  BedDouble,
+  CalendarClock,
+  ChartNoAxesColumnIncreasing,
+  ClipboardList,
+  Cloud,
+  FileBarChart,
+  LayoutDashboard,
+  MessageSquareWarning,
+  PanelsTopLeft,
+  Users,
+  UserRoundCog,
+} from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import logoCarecore from './assets/logo.png';
+import UserAvatar from './components/UserAvatar';
 
-function IconBox({ children, active }) {
+function IconBox({ icon: Icon, active }) {
   return (
     <span
       className={`
@@ -10,7 +25,7 @@ function IconBox({ children, active }) {
         ${active ? 'carecore-menu-icon-active' : ''}
       `}
     >
-      {children}
+      {Icon ? <Icon size={17} strokeWidth={2.2} /> : null}
     </span>
   );
 }
@@ -23,12 +38,19 @@ export default function Sidebar() {
 
   let perfilUsuario = '';
   let nomeUsuario = 'Usuário';
+  let usuarioSessao = null;
 
   try {
+    const usuarioRaw = localStorage.getItem('@CareCore:user') || localStorage.getItem('usuario');
+
+    if (usuarioRaw) {
+      usuarioSessao = JSON.parse(usuarioRaw);
+    }
+
     if (token) {
       const payload = JSON.parse(atob(token.split('.')[1]));
       perfilUsuario = payload.perfil_acesso || '';
-      nomeUsuario = payload.nome || payload.email || 'Usuário';
+      nomeUsuario = usuarioSessao?.nome || payload.nome || payload.email || 'Usuário';
     }
   } catch (e) {
     console.error('Erro ao ler perfil no menu lateral', e);
@@ -47,22 +69,22 @@ export default function Sidebar() {
       items: [
         {
           path: '/dashboard',
-          icon: '▦',
+          icon: LayoutDashboard,
           label: 'Dashboard'
         },
         {
           path: '/conviventes',
-          icon: '◇',
+          icon: Users,
           label: 'Conviventes'
         },
         {
           path: '/quartos',
-          icon: '▣',
+          icon: BedDouble,
           label: 'Acomodações'
         },
         {
           path: '/ocorrencias',
-          icon: '!',
+          icon: MessageSquareWarning,
           label:
             perfilUsuario === 'Orientador'
               ? 'Minhas Ocorrências'
@@ -70,37 +92,37 @@ export default function Sidebar() {
         },
         {
           path: '/rotina',
-          icon: '◷',
+          icon: CalendarClock,
           label: 'Rotina Diária'
         },
         {
           path: '/rotina/dashboard',
-          icon: '↗',
+          icon: ChartNoAxesColumnIncreasing,
           label: 'Dashboard Operacional'
         },
         {
           path: '/rotina/historico',
-          icon: '☷',
+          icon: ClipboardList,
           label: 'Histórico da Rotina'
         },
         {
           path: '/convenio-sisa',
-          icon: '▤',
+          icon: PanelsTopLeft,
           label: 'Convênio / SISA'
         },
         {
           path: '/avisos',
-          icon: '◌',
+          icon: Bell,
           label: 'Comunicação Interna'
         },
         {
           path: '/relatorios',
-          icon: '▥',
+          icon: FileBarChart,
           label: 'Relatórios'
         },
         {
           path: '/usuarios',
-          icon: '○',
+          icon: UserRoundCog,
           label: 'Usuários',
           perfis: ['Gestor']
         }
@@ -111,7 +133,7 @@ export default function Sidebar() {
       items: [
         {
           path: '/backup',
-          icon: '◧',
+          icon: Cloud,
           label: 'Backup',
           disabled: true
         }
@@ -163,7 +185,7 @@ export default function Sidebar() {
                   className="carecore-menu-item carecore-menu-item-disabled"
                   title="Em breve"
                 >
-                  <IconBox active={false}>{item.icon}</IconBox>
+                  <IconBox icon={item.icon} active={false} />
                   <span className="truncate">{item.label}</span>
                 </div>
               );
@@ -179,7 +201,7 @@ export default function Sidebar() {
                   ${active ? 'carecore-menu-item-active' : ''}
                 `}
               >
-                <IconBox active={active}>{item.icon}</IconBox>
+                <IconBox icon={item.icon} active={active} />
 
                 <span className="truncate">
                   {item.label}
@@ -216,9 +238,7 @@ export default function Sidebar() {
           className="carecore-mobile-logo"
         />
 
-        <div className="carecore-mobile-avatar">
-          {(nomeUsuario || 'U').slice(0, 1).toUpperCase()}
-        </div>
+        <UserAvatar usuario={usuarioSessao} nome={nomeUsuario} size="sm" />
       </div>
 
       {menuMobileAberto && (
@@ -247,9 +267,7 @@ export default function Sidebar() {
 
             <div className="carecore-sidebar-footer">
               <div className="carecore-user-card">
-                <div className="carecore-user-avatar">
-                  {(nomeUsuario || 'U').slice(0, 1).toUpperCase()}
-                </div>
+                <UserAvatar usuario={usuarioSessao} nome={nomeUsuario} size="sm" />
 
                 <div className="min-w-0">
                   <p className="carecore-user-name">
@@ -292,9 +310,7 @@ export default function Sidebar() {
       <div className="carecore-sidebar-footer">
 
         <div className="carecore-user-card">
-          <div className="carecore-user-avatar">
-            {(nomeUsuario || 'U').slice(0, 1).toUpperCase()}
-          </div>
+          <UserAvatar usuario={usuarioSessao} nome={nomeUsuario} size="sm" />
 
           <div className="min-w-0">
             <p className="carecore-user-name">

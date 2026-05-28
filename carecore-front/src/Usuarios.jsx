@@ -10,6 +10,12 @@ import { useNavigate } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import api from './services/api';
 import { AppShell, MainShell, PageHeader, PremiumButton, ScrollArea } from './components/PremiumUI';
+import UserAvatar from './components/UserAvatar';
+import {
+  getCameraUnavailableMessage,
+  getPreferredCameraConstraints,
+  useDeviceInfo,
+} from './hooks/useDeviceInfo';
 import {
   BadgePerfil,
   BadgeStatus,
@@ -44,6 +50,7 @@ import {
 
 export default function Usuarios() {
   const navigate = useNavigate();
+  const deviceInfo = useDeviceInfo();
 
   const [usuarios, setUsuarios] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -236,7 +243,7 @@ export default function Usuarios() {
       limparAlertas();
 
       if (!navigator.mediaDevices?.getUserMedia) {
-        setErro('Seu navegador não permite captura por webcam.');
+        setErro('Seu navegador não permite captura direta pela câmera. Use a opção de enviar arquivo.');
         return;
       }
 
@@ -249,10 +256,9 @@ export default function Usuarios() {
         window.setTimeout(resolve, 150);
       });
 
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: true,
-        audio: false,
-      });
+      const stream = await navigator.mediaDevices.getUserMedia(
+        getPreferredCameraConstraints(deviceInfo, { square: true })
+      );
 
       streamRef.current = stream;
 
@@ -265,7 +271,7 @@ export default function Usuarios() {
       }
     } catch (error) {
       console.error('Erro ao acessar webcam:', error);
-      setErro('Não foi possível acessar a webcam. Verifique a permissão do navegador.');
+      setErro(getCameraUnavailableMessage(deviceInfo, 'a câmera'));
       pararCamera();
     }
   };
@@ -643,7 +649,78 @@ export default function Usuarios() {
                 Nenhum usuário encontrado.
               </div>
             ) : (
-              <div className="overflow-x-auto">
+              <>
+              <div className="space-y-3 md:hidden">
+                {usuarios.map((usuario) => (
+                  <article
+                    key={usuario.id}
+                    className="rounded-3xl border border-slate-100 bg-slate-50 p-4 shadow-sm"
+                  >
+                    <div className="flex items-start gap-3">
+                      <UserAvatar usuario={usuario} size="md" />
+
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate font-bold text-slate-900">
+                          {usuario.nome}
+                        </p>
+                        <p className="truncate text-xs text-slate-500">
+                          {usuario.email}
+                        </p>
+
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          <BadgePerfil perfil={usuario.perfil_acesso} />
+                          <BadgeStatus ativo={usuario.ativo} />
+                        </div>
+
+                        <div className="mt-3 rounded-2xl bg-white px-3 py-2 text-xs text-slate-500">
+                          <p>
+                            <strong className="text-slate-700">Cargo:</strong> {usuario.cargo || '-'}
+                          </p>
+                          <p>
+                            <strong className="text-slate-700">Setor:</strong> {usuario.setor || 'Sem setor'}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="mt-4 grid grid-cols-1 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => abrirEdicao(usuario.id)}
+                        className="min-h-11 rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm font-bold text-slate-700"
+                      >
+                        Ver/Editar
+                      </button>
+
+                      {podeGerenciar && (
+                        <div className="grid grid-cols-2 gap-2">
+                          <button
+                            type="button"
+                            onClick={() => abrirRedefinirSenha(usuario)}
+                            className="min-h-11 rounded-2xl border border-blue-100 bg-blue-50 px-3 py-2 text-sm font-bold text-blue-700"
+                          >
+                            Senha
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => alterarStatus(usuario)}
+                            className={`min-h-11 rounded-2xl border px-3 py-2 text-sm font-bold ${
+                              usuario.ativo
+                                ? 'border-red-100 bg-red-50 text-red-700'
+                                : 'border-emerald-100 bg-emerald-50 text-emerald-700'
+                            }`}
+                          >
+                            {usuario.ativo ? 'Inativar' : 'Ativar'}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </article>
+                ))}
+              </div>
+
+              <div className="hidden overflow-x-auto md:block">
                 <table className="min-w-full border-separate border-spacing-y-2">
                   <thead>
                     <tr className="text-left text-xs uppercase tracking-wide text-slate-500">
@@ -660,9 +737,7 @@ export default function Usuarios() {
                       <tr key={usuario.id} className="bg-slate-50">
                         <td className="rounded-l-xl px-3 py-3">
                           <div className="flex items-center gap-3">
-                            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-900 text-sm font-bold text-white">
-                              {(usuario.nome || 'U').slice(0, 1).toUpperCase()}
-                            </div>
+                            <UserAvatar usuario={usuario} size="sm" />
 
                             <div>
                               <p className="font-semibold text-slate-900">
@@ -730,6 +805,7 @@ export default function Usuarios() {
                   </tbody>
                 </table>
               </div>
+              </>
             )}
           </section>
         )}
@@ -841,6 +917,8 @@ export default function Usuarios() {
                     onSelecionarArquivo={selecionarArquivoFoto}
                     onUploadArquivo={processarUploadFoto}
                     onRemoverFoto={removerFoto}
+                    isTouchDevice={deviceInfo.isTouchDevice}
+                    isSecureCameraContext={deviceInfo.isSecureCameraContext}
                   />
                 </div>
               </section>

@@ -760,6 +760,37 @@ body {
 
   .carecore-scroll-area {
     overflow: visible;
+    padding: 12px;
+  }
+
+  .carecore-page-header-fixed {
+    padding-left: 14px !important;
+    padding-right: 14px !important;
+  }
+
+  .carecore-page-header-fixed h1 {
+    white-space: normal !important;
+    line-height: 1.1 !important;
+  }
+
+  input,
+  select,
+  textarea,
+  button,
+  a {
+    touch-action: manipulation;
+  }
+
+  input,
+  select,
+  textarea {
+    min-height: 44px;
+    font-size: 16px !important;
+  }
+
+  button,
+  a[role="button"] {
+    min-height: 44px;
   }
 }
 

@@ -10,6 +10,7 @@ import Sidebar from './Sidebar';
 import AuthenticatedImage from './components/AuthenticatedImage';
 import { AppShell, MainShell, PageHeader, PremiumButton, ScrollArea } from './components/PremiumUI';
 import { API_ROOT } from './config/apiBase';
+import { useDeviceInfo } from './hooks/useDeviceInfo';
 import {
   calcularResumoRotinaDiaria,
   criarItemHistoricoLeitura,
@@ -26,6 +27,7 @@ import {
 export default function RotinaDiaria() {
   const navigate = useNavigate();
   const token = localStorage.getItem('@CareCore:token');
+  const deviceInfo = useDeviceInfo();
 
   const [conviventes, setConviventes] = useState([]);
   const [resumoHoje, setResumoHoje] = useState({});
@@ -34,6 +36,8 @@ export default function RotinaDiaria() {
   const [processandoAcao, setProcessandoAcao] = useState(null);
 
   const [scannerAberto, setScannerAberto] = useState(false);
+  const [scannerErro, setScannerErro] = useState('');
+  const [codigoManualScanner, setCodigoManualScanner] = useState('');
   const [pacienteEscaneado, setPacienteEscaneado] = useState(null);
 
   const [feedback, setFeedback] = useState(null);
@@ -45,6 +49,7 @@ export default function RotinaDiaria() {
 
   const ultimaLeituraRef = useRef('');
   const ultimaLeituraTempoRef = useRef(0);
+  const assinaturaSyncRotinaRef = useRef(null);
 
   useEffect(() => {
     if (!token) {
@@ -74,7 +79,7 @@ export default function RotinaDiaria() {
       leitor = new Html5Qrcode("leitor-camera");
 
       await leitor.start(
-        { facingMode: "environment" },
+        { facingMode: { ideal: deviceInfo.isTouchDevice ? "environment" : "user" } },
         {
           fps: 10,
           qrbox: {
@@ -93,8 +98,11 @@ export default function RotinaDiaria() {
       );
     } catch (error) {
       console.error("Erro ao iniciar câmera QR:", error);
-      alert("Não foi possível iniciar a câmera para leitura do QR Code.");
-      setScannerAberto(false);
+      setScannerErro(
+        deviceInfo.isSecureCameraContext
+          ? "Não foi possível iniciar a câmera para leitura do QR Code. Verifique a permissão do navegador."
+          : "O navegador do celular pode bloquear câmera em endereço local HTTP. Use o campo manual abaixo ou acesse por HTTPS quando publicado."
+      );
     }
   };
 
@@ -111,10 +119,12 @@ export default function RotinaDiaria() {
     }
   }
 };
-}, [scannerAberto]);
+}, [scannerAberto, deviceInfo.isSecureCameraContext, deviceInfo.isTouchDevice]);
 
-  const carregarDados = async () => {
-    setLoading(true);
+  const carregarDados = async ({ silencioso = false } = {}) => {
+    if (!silencioso) {
+      setLoading(true);
+    }
 
     try {
       const config = {
@@ -132,13 +142,66 @@ export default function RotinaDiaria() {
       setResumoHoje(resRotina.data || {});
     } catch (error) {
       console.error('Erro ao carregar dados da rotina', error);
-      alert('Erro ao carregar os dados da portaria.');
+      if (!silencioso) {
+        alert('Erro ao carregar os dados da portaria.');
+      }
     } finally {
-      setLoading(false);
+      if (!silencioso) {
+        setLoading(false);
+      }
     }
   };
 
-  const adicionarHistorico = ({ convivente, tipo, status = 'Sucesso', mensagem = '', registroId = null, retornoRapido = false, dataRegistro = null }) => {
+  const obterAssinaturaSyncRotina = (status) => {
+    return [
+      status?.total_registros_hoje ?? 0,
+      status?.ultimo_evento ?? 'sem-evento',
+    ].join('|');
+  };
+
+  const verificarSincronizacaoRotina = async () => {
+    try {
+      const response = await axios.get(`${API_ROOT}/rotina/sync-status`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const assinaturaAtual = obterAssinaturaSyncRotina(response.data || {});
+
+      if (!assinaturaSyncRotinaRef.current) {
+        assinaturaSyncRotinaRef.current = assinaturaAtual;
+        return;
+      }
+
+      if (assinaturaSyncRotinaRef.current !== assinaturaAtual) {
+        assinaturaSyncRotinaRef.current = assinaturaAtual;
+        await carregarDados({ silencioso: true });
+      }
+    } catch (error) {
+      console.warn('Não foi possível verificar sincronização da rotina', error);
+    }
+  };
+
+  useEffect(() => {
+    if (!token) return undefined;
+
+    const sincronizar = () => verificarSincronizacaoRotina();
+    const intervalo = window.setInterval(sincronizar, 5000);
+    const sincronizarAoVoltar = () => {
+      if (document.visibilityState === 'visible') {
+        sincronizar();
+      }
+    };
+
+    window.addEventListener('focus', sincronizar);
+    document.addEventListener('visibilitychange', sincronizarAoVoltar);
+
+    return () => {
+      window.clearInterval(intervalo);
+      window.removeEventListener('focus', sincronizar);
+      document.removeEventListener('visibilitychange', sincronizarAoVoltar);
+    };
+  }, [token]);
+
+  const adicionarHistorico = ({ convivente, tipo, status = 'Sucesso', mensagem = '', registroId = null, retornoRapido = false, dataRegistro = null, desfazerExpiraEm = null }) => {
     const novoItem = criarItemHistoricoLeitura({
       convivente,
       tipo,
@@ -147,6 +210,7 @@ export default function RotinaDiaria() {
       registroId,
       retornoRapido,
       dataRegistro,
+      desfazerExpiraEm,
     });
 
     setHistoricoLeituras(prev => [novoItem, ...prev].slice(0, 8));
@@ -156,8 +220,12 @@ export default function RotinaDiaria() {
     return definirAcaoAutomaticaRotina(resumoHoje, conviventeId);
   };
 
-  const registroAindaPodeSerDesfeito = (dataRegistro) => {
-    return registroAindaPodeSerDesfeitoRotina(dataRegistro, agoraDesfazer);
+  const registroAindaPodeSerDesfeito = (itemOuDataRegistro) => {
+    if (itemOuDataRegistro?.desfazerExpiraEm) {
+      return registroAindaPodeSerDesfeitoRotina(itemOuDataRegistro.desfazerExpiraEm, agoraDesfazer);
+    }
+
+    return registroAindaPodeSerDesfeitoRotina(itemOuDataRegistro, agoraDesfazer);
   };
 
   const exigeJustificativaRetornoRapido = (conviventeId, tipoRegistro) => {
@@ -338,7 +406,8 @@ export default function RotinaDiaria() {
         status: 'Sucesso',
         registroId: registroCriado.id || null,
         retornoRapido: registroCriado.retorno_rapido === true,
-        dataRegistro: registroCriado.data_registro || new Date().toISOString()
+        dataRegistro: registroCriado.data_registro || new Date().toISOString(),
+        desfazerExpiraEm: Date.now() + 60 * 1000
       });
 
       setTimeout(() => {
@@ -450,6 +519,9 @@ export default function RotinaDiaria() {
   const conviventesFiltrados = filtrarConviventesRotina(conviventes, busca);
   const { totalFora, totalDentro, totalAlmocos } =
     calcularResumoRotinaDiaria(conviventes, resumoHoje);
+  const ultimoRegistroDesfazivel = historicoLeituras.find(
+    item => item.registroId && item.status === 'Sucesso' && registroAindaPodeSerDesfeito(item)
+  );
 
   return (
     <AppShell>
@@ -478,7 +550,11 @@ export default function RotinaDiaria() {
             <PremiumButton
               type="button"
               variant="brand"
-              onClick={() => setScannerAberto(true)}
+              onClick={() => {
+                setScannerErro('');
+                setCodigoManualScanner('');
+                setScannerAberto(true);
+              }}
             >
               Câmera / Leitor
             </PremiumButton>
@@ -558,6 +634,33 @@ export default function RotinaDiaria() {
               </div>
             </div>
 
+            {ultimoRegistroDesfazivel && (
+              <div className="mb-6 rounded-2xl border border-red-100 bg-red-50 p-4 shadow-sm">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="min-w-0">
+                    <p className="text-[11px] font-black uppercase tracking-wide text-red-500">
+                      Desfazer disponível por 1 minuto
+                    </p>
+                    <p className="mt-1 truncate text-sm font-black text-slate-900">
+                      {ultimoRegistroDesfazivel.nome}
+                    </p>
+                    <p className="text-xs text-slate-600">
+                      {ultimoRegistroDesfazivel.tipo} registrado às {ultimoRegistroDesfazivel.horario}
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => handleDesfazerRegistro(ultimoRegistroDesfazivel)}
+                    disabled={processandoAcao === `desfazer-${ultimoRegistroDesfazivel.registroId}`}
+                    className="min-h-11 rounded-2xl bg-red-600 px-5 py-2 text-sm font-black text-white shadow-sm disabled:opacity-60"
+                  >
+                    Desfazer registro
+                  </button>
+                </div>
+              </div>
+            )}
+
             {historicoLeituras.length > 0 && (
               <div className="mb-6 bg-gray-50 border border-gray-200 rounded-2xl overflow-hidden">
                 <div className="px-4 py-3 border-b border-gray-200 flex justify-between items-center">
@@ -576,7 +679,7 @@ export default function RotinaDiaria() {
                   {historicoLeituras.map(item => (
                     <div
                       key={item.id}
-                      className="px-4 py-2 flex items-center justify-between gap-3 bg-white"
+                      className="flex flex-col gap-3 bg-white px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
                     >
                       <div className="min-w-0">
                         <p className="text-xs font-bold text-gray-800 uppercase truncate">
@@ -588,7 +691,7 @@ export default function RotinaDiaria() {
                         </p>
                       </div>
 
-                      <div className="flex items-center gap-2 flex-shrink-0">
+                      <div className="flex flex-wrap items-center gap-2 sm:flex-shrink-0 sm:justify-end">
                         <span
                           className={`text-[10px] font-black px-2 py-1 rounded border
                             ${
@@ -611,11 +714,11 @@ export default function RotinaDiaria() {
                           </span>
                         )}
 
-                        {item.registroId && item.status === 'Sucesso' && registroAindaPodeSerDesfeito(item.dataRegistro) && (
+                        {item.registroId && item.status === 'Sucesso' && registroAindaPodeSerDesfeito(item) && (
                           <button
                             onClick={() => handleDesfazerRegistro(item)}
                             disabled={processandoAcao === `desfazer-${item.registroId}`}
-                            className="text-[10px] font-black px-2 py-1 rounded border bg-red-50 text-red-700 border-red-200 hover:bg-red-100 disabled:opacity-50"
+                            className="min-h-9 rounded-xl border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-black text-red-700 hover:bg-red-100 disabled:opacity-50"
                           >
                             Desfazer
                           </button>
@@ -713,32 +816,32 @@ export default function RotinaDiaria() {
                         )}
                       </div>
 
-                      <div className="flex items-center gap-2 w-full md:w-[380px] justify-between md:justify-end flex-shrink-0 mt-2 md:mt-0">
+                      <div className="grid w-full grid-cols-3 gap-2 md:mt-0 md:flex md:w-[380px] md:flex-shrink-0 md:items-center md:justify-end">
                         <button
                           onClick={() => handleRegistrar(c.id, 'Entrada')}
                           disabled={!isFora || processandoAcao === `${c.id}-Entrada`}
-                          className={`flex-1 md:flex-none px-3 py-2 md:py-1.5 rounded-md text-xs font-bold transition-all shadow-sm flex items-center justify-center gap-1.5
+                          className={`min-h-11 md:min-h-0 px-3 py-2 md:py-1.5 rounded-md text-xs font-bold transition-all shadow-sm flex items-center justify-center gap-1.5
                             ${!isFora ? 'bg-gray-100 text-gray-400 cursor-not-allowed opacity-60' : 'bg-emerald-500 hover:bg-emerald-600 text-white active:scale-95'}`}
                         >
-                          🟢 <span className="hidden sm:inline">Entrada</span>
+                          <span className="text-[11px] sm:text-xs">Entrada</span>
                         </button>
 
                         <button
                           onClick={() => handleRegistrar(c.id, 'Saída')}
                           disabled={isFora || processandoAcao === `${c.id}-Saída`}
-                          className={`flex-1 md:flex-none px-3 py-2 md:py-1.5 rounded-md text-xs font-bold transition-all shadow-sm flex items-center justify-center gap-1.5
+                          className={`min-h-11 md:min-h-0 px-3 py-2 md:py-1.5 rounded-md text-xs font-bold transition-all shadow-sm flex items-center justify-center gap-1.5
                             ${isFora ? 'bg-gray-100 text-gray-400 cursor-not-allowed opacity-60' : 'bg-orange-500 hover:bg-orange-600 text-white active:scale-95'}`}
                         >
-                          🔴 <span className="hidden sm:inline">Saída</span>
+                          <span className="text-[11px] sm:text-xs">Saída</span>
                         </button>
 
                         <button
                           onClick={() => handleRegistrar(c.id, 'Almoço')}
                           disabled={almocou || isFora || processandoAcao === `${c.id}-Almoço`}
-                          className={`flex-1 md:flex-none px-3 py-2 md:py-1.5 rounded-md text-xs font-bold transition-all shadow-sm flex items-center justify-center gap-1.5 min-w-[90px]
+                          className={`min-h-11 md:min-h-0 px-3 py-2 md:py-1.5 rounded-md text-xs font-bold transition-all shadow-sm flex items-center justify-center gap-1.5 md:min-w-[90px]
                             ${almocou || isFora ? 'bg-gray-100 text-gray-400 cursor-not-allowed opacity-60' : 'bg-blue-500 hover:bg-blue-600 text-white active:scale-95'}`}
                         >
-                          {almocou ? 'Almoçou' : 'Almoço'}
+                          <span className="text-[11px] sm:text-xs">{almocou ? 'Almoçou' : 'Almoço'}</span>
                         </button>
 
                       </div>
@@ -750,14 +853,16 @@ export default function RotinaDiaria() {
           </div>
           </div>
         </ScrollArea>
-
       {scannerAberto && (
         <div className="fixed inset-0 bg-gray-900/90 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
           <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden flex flex-col">
             <div className="bg-gray-800 p-4 flex justify-between items-center text-white">
               <h2 className="font-bold">Posicione o QR Code na câmera</h2>
               <button
-                onClick={() => setScannerAberto(false)}
+                onClick={() => {
+                  setScannerAberto(false);
+                  setScannerErro('');
+                }}
                 className="text-gray-400 hover:text-white font-bold text-xl px-2"
               >
                 ✕
@@ -770,6 +875,42 @@ export default function RotinaDiaria() {
                 className="w-full max-w-[400px] border-2 border-brand rounded-lg overflow-hidden"
               />
             </div>
+
+            {scannerErro && (
+              <div className="mx-4 mt-4 rounded-2xl border border-amber-100 bg-amber-50 px-4 py-3 text-left text-sm font-semibold text-amber-800">
+                {scannerErro}
+              </div>
+            )}
+
+            <form
+              className="p-4"
+              onSubmit={(event) => {
+                event.preventDefault();
+                if (!codigoManualScanner.trim()) return;
+                processarCodigoLido(codigoManualScanner);
+                setCodigoManualScanner('');
+                setScannerAberto(false);
+              }}
+            >
+              <label className="mb-2 block text-xs font-bold uppercase tracking-wide text-gray-500">
+                Alternativa manual
+              </label>
+
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <input
+                  value={codigoManualScanner}
+                  onChange={(event) => setCodigoManualScanner(event.target.value)}
+                  className="min-h-11 flex-1 rounded-xl border border-gray-200 px-3 py-2 text-sm outline-none focus:border-brand"
+                  placeholder="Digite CPF, prontuário ou código do QR"
+                />
+                <button
+                  type="submit"
+                  className="min-h-11 rounded-xl bg-gray-900 px-4 py-2 text-sm font-bold text-white"
+                >
+                  Processar
+                </button>
+              </div>
+            </form>
 
             <div className="p-4 bg-gray-50 text-center text-sm text-gray-600">
               {modoAutomatico
@@ -837,7 +978,7 @@ export default function RotinaDiaria() {
                     className={`py-3 rounded-xl font-bold transition-all flex justify-center items-center gap-2 text-sm shadow-md
                       ${!isFora ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : 'bg-emerald-500 hover:bg-emerald-600 text-white'}`}
                   >
-                    🟢 Registrar Entrada
+                    Registrar entrada
                   </button>
 
                   <button
@@ -846,7 +987,7 @@ export default function RotinaDiaria() {
                     className={`py-3 rounded-xl font-bold transition-all flex justify-center items-center gap-2 text-sm shadow-md
                       ${isFora ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : 'bg-orange-500 hover:bg-orange-600 text-white'}`}
                   >
-                    🔴 Registrar Saída
+                    Registrar saída
                   </button>
 
                   <button
