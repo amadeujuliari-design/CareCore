@@ -42,6 +42,7 @@ export default function RotinaDiaria() {
 
   const [feedback, setFeedback] = useState(null);
   const [modoAutomatico, setModoAutomatico] = useState(true);
+  const [tipoBipagemAutomatica, setTipoBipagemAutomatica] = useState('fluxo');
   const [historicoLeituras, setHistoricoLeituras] = useState([]);
   const [agoraDesfazer, setAgoraDesfazer] = useState(Date.now());
   const [retornoRapidoPendente, setRetornoRapidoPendente] = useState(null);
@@ -301,7 +302,9 @@ export default function RotinaDiaria() {
     setBusca('');
 
     if (modoAutomatico) {
-      const acao = definirAcaoAutomatica(pacienteEncontrado.id);
+      const acao = tipoBipagemAutomatica === 'almoco'
+        ? 'Almoço'
+        : definirAcaoAutomatica(pacienteEncontrado.id);
       handleRegistrar(pacienteEncontrado.id, acao, pacienteEncontrado);
     } else {
       setPacienteEscaneado(pacienteEncontrado);
@@ -568,6 +571,18 @@ export default function RotinaDiaria() {
               {modoAutomatico ? 'Automático' : 'Manual'}
             </button>
 
+            {modoAutomatico && (
+              <select
+                value={tipoBipagemAutomatica}
+                onChange={(event) => setTipoBipagemAutomatica(event.target.value)}
+                className="min-h-10 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-sm font-bold text-blue-700 shadow-sm outline-none"
+                title="Escolha o que o bip automático deve registrar"
+              >
+                <option value="fluxo">Bipar entrada/saída</option>
+                <option value="almoco">Bipar almoço</option>
+              </select>
+            )}
+
             <PremiumButton
               type="button"
               variant="brand"
@@ -650,10 +665,55 @@ export default function RotinaDiaria() {
                   Modo atual:
                 </span>
                 {modoAutomatico
-                  ? 'Bipou, registra Entrada/Saída automaticamente.'
+                  ? tipoBipagemAutomatica === 'almoco'
+                    ? 'Bipou, registra Almoço automaticamente.'
+                    : 'Bipou, registra Entrada/Saída automaticamente.'
                   : 'Bipou, abre modal para escolher a ação.'}
               </div>
             </div>
+
+            {modoAutomatico && (
+              <div className="mb-6 rounded-2xl border border-blue-100 bg-blue-50/70 p-4">
+                <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                  <div>
+                    <p className="text-xs font-black uppercase tracking-wide text-blue-700">
+                      Tipo de bipagem automática
+                    </p>
+                    <p className="mt-1 text-sm font-semibold text-blue-900">
+                      {tipoBipagemAutomatica === 'almoco'
+                        ? 'Cada leitura registra almoço direto para o acolhido.'
+                        : 'Cada leitura alterna Entrada ou Saída conforme o último movimento.'}
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setTipoBipagemAutomatica('fluxo')}
+                      className={`min-h-11 rounded-xl px-4 py-2 text-xs font-black transition-colors ${
+                        tipoBipagemAutomatica === 'fluxo'
+                          ? 'bg-blue-600 text-white shadow-sm'
+                          : 'bg-white text-blue-700 border border-blue-100'
+                      }`}
+                    >
+                      Entrada/Saída
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setTipoBipagemAutomatica('almoco')}
+                      className={`min-h-11 rounded-xl px-4 py-2 text-xs font-black transition-colors ${
+                        tipoBipagemAutomatica === 'almoco'
+                          ? 'bg-blue-600 text-white shadow-sm'
+                          : 'bg-white text-blue-700 border border-blue-100'
+                      }`}
+                    >
+                      Almoço
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {ultimoRegistroDesfazivel && (
               <div className="mb-6 rounded-2xl border border-red-100 bg-red-50 p-4 shadow-sm">
@@ -903,6 +963,22 @@ export default function RotinaDiaria() {
               </div>
             )}
 
+            {modoAutomatico && (
+              <div className="mx-4 mt-4 rounded-2xl border border-blue-100 bg-blue-50 p-3">
+                <label className="mb-2 block text-xs font-bold uppercase tracking-wide text-blue-700">
+                  Registro automático da leitura
+                </label>
+                <select
+                  value={tipoBipagemAutomatica}
+                  onChange={(event) => setTipoBipagemAutomatica(event.target.value)}
+                  className="min-h-11 w-full rounded-xl border border-blue-100 bg-white px-3 py-2 text-sm font-bold text-blue-800 outline-none"
+                >
+                  <option value="fluxo">Entrada/Saída conforme presença</option>
+                  <option value="almoco">Almoço direto</option>
+                </select>
+              </div>
+            )}
+
             <form
               className="p-4"
               onSubmit={(event) => {
@@ -935,7 +1011,9 @@ export default function RotinaDiaria() {
 
             <div className="p-4 bg-gray-50 text-center text-sm text-gray-600">
               {modoAutomatico
-                ? 'Modo automático ativo: a leitura registra Entrada ou Saída automaticamente.'
+                ? tipoBipagemAutomatica === 'almoco'
+                  ? 'Modo automático ativo: a leitura registra Almoço diretamente.'
+                  : 'Modo automático ativo: a leitura registra Entrada ou Saída automaticamente.'
                 : 'Modo manual ativo: a leitura abre o painel de ações.'}
             </div>
           </div>
