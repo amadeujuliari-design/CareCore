@@ -1,0 +1,109 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+
+const modules = [
+  {
+    title: 'Cadastro e prontuário',
+    items: [
+      'Ficha completa do acolhido (pessoais, assistência, saúde, dados sensíveis)',
+      'Documentos e foto de perfil com controle por perfil',
+      'PIA — Plano Individual de Atendimento com evoluções',
+      'Carteirinha com QR/código para rotina',
+    ],
+    image: '/telas/conviventes-elaine.png',
+    alt: 'Ficha da convivente Elaine Barbosa Barbosa',
+  },
+  {
+    title: 'Rotina e presença',
+    items: [
+      'Controle de fluxo diário: entrada, saída e refeições',
+      'Bipagem manual ou automática por câmera/leitor',
+      'Histórico da rotina com filtros e exportação',
+      'Dashboard operacional do dia',
+    ],
+    image: '/telas/rotina.png',
+    alt: 'Rotina diária',
+  },
+  {
+    title: 'Ocorrências e equipe',
+    items: [
+      'Central de ocorrências com parecer técnico',
+      'Usuários com perfis Gestor, Técnico e Orientador',
+      'Avisos internos para a equipe',
+      'RBAC: cada perfil vê só o que precisa',
+    ],
+    image: '/telas/ocorrencias.png',
+    alt: 'Central de ocorrências',
+  },
+  {
+    title: 'Acomodações',
+    items: [
+      'Quartos, alas e leitos com ocupação em tempo real',
+      'Bloqueio de exclusão de leito ocupado',
+      'Visão de lotação no dashboard',
+    ],
+    image: '/telas/acomodacoes.png',
+    alt: 'Gestão de acomodações',
+  },
+  {
+    title: 'Convênio / SISA',
+    items: [
+      'Relatório mensal e diário de atendimentos',
+      'Importação de planilhas para conferência',
+      'Exportação para prestação de contas',
+    ],
+    image: '/telas/sisa.png',
+    alt: 'Convênio SISA',
+  },
+  {
+    title: 'Relatórios',
+    items: [
+      'Central unificada: conviventes, rotina, ocorrências, documentação',
+      'Impressão e exportação quando necessário',
+      'Carteirinhas em lote para impressão',
+    ],
+    image: '/telas/relatorios.png',
+    alt: 'Central de relatórios',
+  },
+];
+---
+
+<BaseLayout
+  title="Funcionalidades — CareCore+"
+  description="Conheça os módulos do CareCore+: prontuário, rotina diária, ocorrências, acomodações, SISA e relatórios."
+>
+  <section class="mx-auto max-w-6xl px-4 py-14 sm:px-6">
+    <h1 class="section-title">Funcionalidades</h1>
+    <p class="section-lead">
+      Módulos integrados para a operação diária da instituição — do acolhimento à prestação de contas.
+    </p>
+
+    <div class="mt-12 space-y-16">
+      {
+        modules.map((mod, index) => (
+          <article
+            class:list={[
+              'grid items-center gap-8 lg:grid-cols-2',
+              index % 2 === 1 && 'lg:[direction:rtl] lg:*:[direction:ltr]',
+            ]}
+          >
+            <div>
+              <h2 class="text-2xl font-black text-slate-900">{mod.title}</h2>
+              <ul class="mt-4 space-y-2 text-sm text-slate-600">
+                {mod.items.map((item) => (
+                  <li class="flex gap-2">
+                    <span class="mt-1 text-brand-600" aria-hidden="true">•</span>
+                    <span>{item}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <div class="card overflow-hidden p-0">
+              <img src={mod.image} alt={mod.alt} width="900" height="560" class="w-full" loading="lazy" />
+            </div>
+          </article>
+        ))
+      }
+    </div>
+  </section>
+</BaseLayout>

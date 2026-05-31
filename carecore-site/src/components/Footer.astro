@@ -1,0 +1,60 @@
+---
+import { SITE, whatsappLink } from '../config/site';
+const year = new Date().getFullYear();
+---
+
+<footer class="border-t border-slate-200 bg-white">
+  <div class="mx-auto grid max-w-6xl gap-8 px-4 py-12 sm:px-6 md:grid-cols-3">
+    <div>
+      <div class="flex items-center gap-3">
+        <img src="/logo.png" alt="" width="36" height="36" class="h-9 w-9 object-contain" />
+        <span class="font-black text-slate-900">CARE<span class="text-brand-600">CORE+</span></span>
+      </div>
+      <p class="mt-4 text-sm leading-relaxed text-slate-600">
+        Gestão operacional para instituições de acolhida e convivência — com foco em rotina,
+        prontuário e equipe multidisciplinar.
+      </p>
+    </div>
+
+    <div>
+      <h2 class="text-sm font-bold uppercase tracking-wider text-slate-900">Navegação</h2>
+      <ul class="mt-4 space-y-2 text-sm">
+        <li><a href="/funcionalidades" class="text-slate-600 hover:text-brand-600">Funcionalidades</a></li>
+        <li><a href="/guia/" class="text-slate-600 hover:text-brand-600">Guia do sistema</a></li>
+        <li><a href="/contato" class="text-slate-600 hover:text-brand-600">Contato</a></li>
+        <li><a href="/privacidade" class="text-slate-600 hover:text-brand-600">Privacidade (LGPD)</a></li>
+        <li>
+          <a href={SITE.appUrl} class="text-slate-600 hover:text-brand-600" rel="noopener noreferrer">
+            Acessar o sistema
+          </a>
+        </li>
+      </ul>
+    </div>
+
+    <div>
+      <h2 class="text-sm font-bold uppercase tracking-wider text-slate-900">Contato</h2>
+      <p class="mt-4 text-sm text-slate-600">
+        WhatsApp:{' '}
+        <a
+          href={whatsappLink()}
+          class="font-semibold text-brand-600 hover:underline"
+          rel="noopener noreferrer"
+          target="_blank"
+        >
+          {SITE.whatsappDisplay}
+        </a>
+      </p>
+      <p class="mt-2 text-xs text-slate-500">
+        O login e os dados das instituições ficam em{' '}
+        <a href={SITE.appUrl} class="text-brand-600 hover:underline" rel="noopener noreferrer">
+          app.{SITE.domain}
+        </a>
+        , separado deste site institucional.
+      </p>
+    </div>
+  </div>
+
+  <div class="border-t border-slate-100 py-4 text-center text-xs text-slate-500">
+    © {year} CareCore+. Todos os direitos reservados.
+  </div>
+</footer>

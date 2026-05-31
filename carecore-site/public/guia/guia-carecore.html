@@ -1,0 +1,992 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>CARECORE+ — Guia do Sistema</title>
+<style>
+  :root{
+    --brand:#6d28d9;
+    --brand-2:#7c3aed;
+    --brand-3:#a855f7;
+    --ink:#0f172a;
+    --slate:#334155;
+    --muted:#64748b;
+    --line:#e2e8f0;
+    --soft:#f1f5f9;
+    --soft-2:#faf5ff;
+    --ok:#16a34a;
+    --warn:#d97706;
+    --danger:#dc2626;
+  }
+
+  *{ box-sizing:border-box; }
+
+  html,body{
+    margin:0;
+    padding:0;
+    background:#e9edf3;
+    color:var(--ink);
+    font-family:"Segoe UI", system-ui, -apple-system, Roboto, Arial, sans-serif;
+    -webkit-print-color-adjust:exact;
+    print-color-adjust:exact;
+  }
+
+  /* ====== Barra de ações (somente tela) ====== */
+  .toolbar{
+    position:sticky; top:0; z-index:50;
+    display:flex; align-items:center; justify-content:center; gap:14px;
+    padding:12px; background:rgba(15,23,42,.92); color:#fff;
+    box-shadow:0 6px 18px rgba(0,0,0,.18);
+  }
+  .toolbar small{ opacity:.75; }
+  .btn-print{
+    border:0; cursor:pointer; font-weight:800; font-size:14px;
+    padding:10px 20px; border-radius:999px; color:#fff;
+    background:linear-gradient(135deg,var(--brand-2),var(--brand-3));
+    box-shadow:0 6px 16px rgba(124,58,237,.45);
+  }
+
+  /* ====== Página A4 ====== */
+  .page{
+    position:relative;
+    width:210mm; height:297mm;
+    margin:18px auto; padding:15mm 16mm 22mm;
+    background:#fff; overflow:hidden;
+    box-shadow:0 12px 40px rgba(15,23,42,.18);
+    display:flex; flex-direction:column;
+  }
+  .page::before{
+    content:""; position:absolute; top:0; left:0; right:0; height:7mm;
+    background:linear-gradient(90deg,var(--brand),var(--brand-2) 55%,var(--brand-3));
+  }
+
+  /* ====== Cabeçalho de página ====== */
+  .pg-header{
+    display:flex; align-items:center; justify-content:space-between;
+    padding-bottom:8px; margin-bottom:12px; border-bottom:1px solid var(--line);
+  }
+  .pg-header .brand{ display:flex; align-items:center; gap:10px; }
+  .brand-logo{ height:32px; width:auto; object-fit:contain; }
+  .brand-name{ font-size:13px; font-weight:900; letter-spacing:.04em; color:var(--ink); }
+  .brand-name span{ color:var(--brand-2); }
+  .pg-kicker{
+    font-size:10px; font-weight:800; text-transform:uppercase; letter-spacing:.16em;
+    color:var(--brand-2); background:var(--soft-2); padding:6px 12px; border-radius:999px;
+  }
+
+  /* ====== Rodapé de página (em todas as páginas) ====== */
+  .pg-footer{
+    position:absolute; left:16mm; right:16mm; bottom:8mm;
+    display:flex; align-items:flex-end; justify-content:center;
+    padding-top:6px; border-top:1px solid var(--line);
+  }
+  .pg-num{ position:absolute; left:0; bottom:2px; font-size:9.5px; color:var(--muted); font-weight:700; }
+  .pg-tag{
+    position:absolute; right:0; bottom:2px;
+    display:flex; flex-direction:column; align-items:flex-end; gap:1px;
+    font-size:9.5px; color:var(--muted); font-weight:700; text-align:right;
+  }
+  .pg-tag b{ color:var(--brand-2); }
+  .pg-site{
+    font-size:8.5px; font-weight:800; color:var(--brand-2);
+    text-decoration:none; letter-spacing:.01em;
+  }
+  .pg-site:hover{ text-decoration:underline; }
+  .zap{ display:flex; flex-direction:column; align-items:center; gap:3px; }
+  .zap-qr{ width:46px; height:46px; display:block; }
+  .zap-label{ font-size:11px; font-weight:800; color:var(--ink); letter-spacing:.02em; }
+  .zap-phone{ font-size:8.5px; color:var(--muted); }
+
+  /* ====== Conteúdo ====== */
+  .content{ flex:1 1 auto; min-height:0; }
+  h1,h2,h3,h4,p,ul,ol{ margin:0; }
+  .eyebrow{ font-size:10px; font-weight:900; letter-spacing:.18em; text-transform:uppercase; color:var(--brand-2); }
+  .h-section{ font-size:22px; font-weight:900; color:var(--ink); margin-top:4px; letter-spacing:-.01em; }
+  .h-section .num{ color:var(--brand-3); }
+  .lead{ font-size:12px; line-height:1.5; color:var(--slate); margin-top:7px; text-align:justify; text-justify:inter-word; }
+
+  .divider{ height:3px; width:54px; border-radius:3px; background:linear-gradient(90deg,var(--brand-2),var(--brand-3)); margin:9px 0 13px; }
+
+  /* Grades e cards */
+  .grid{ display:grid; gap:12px; }
+  .g2{ grid-template-columns:1fr 1fr; }
+  .g3{ grid-template-columns:repeat(3,1fr); }
+  .card{
+    border:1px solid var(--line); border-radius:14px; padding:12px 13px; background:#fff;
+  }
+  .card.soft{ background:var(--soft-2); border-color:#ede9fe; }
+  .card h4{ font-size:12.5px; font-weight:900; color:var(--ink); margin-bottom:5px; display:flex; align-items:center; gap:8px; }
+  .card p{ font-size:10.5px; line-height:1.45; color:var(--slate); }
+  .chip-ico{
+    width:26px; height:26px; flex:none; border-radius:9px; display:inline-flex; align-items:center; justify-content:center;
+    background:linear-gradient(135deg,var(--brand-2),var(--brand-3)); color:#fff; font-size:14px; font-weight:900;
+  }
+
+  ul.feat{ list-style:none; padding:0; display:grid; gap:8px; }
+  ul.feat li{ position:relative; padding-left:24px; font-size:11px; line-height:1.4; color:var(--slate); }
+  ul.feat li::before{
+    content:"✓"; position:absolute; left:0; top:0; color:#fff; font-size:10px; font-weight:900;
+    width:16px; height:16px; border-radius:50%; display:flex; align-items:center; justify-content:center;
+    background:linear-gradient(135deg,var(--brand-2),var(--brand-3));
+  }
+
+  .steps{ counter-reset:step; display:grid; gap:9px; }
+  .steps li{ list-style:none; position:relative; padding:10px 13px 10px 50px; border:1px solid var(--line); border-radius:12px; background:#fff; }
+  .steps li::before{
+    counter-increment:step; content:counter(step);
+    position:absolute; left:11px; top:50%; transform:translateY(-50%);
+    width:26px; height:26px; border-radius:50%; background:var(--ink); color:#fff;
+    display:flex; align-items:center; justify-content:center; font-weight:900; font-size:12px;
+  }
+  .steps li b{ font-size:11.5px; color:var(--ink); }
+  .steps li p{ font-size:10.5px; color:var(--muted); margin-top:2px; }
+
+  .callout{
+    border-radius:14px; padding:11px 14px; font-size:11px; line-height:1.45;
+    display:flex; gap:10px; align-items:flex-start;
+  }
+  .callout .ico{ font-size:17px; line-height:1; }
+  .callout b{ font-weight:900; }
+  .callout.brand{ background:var(--soft-2); border:1px solid #ddd6fe; color:#4c1d95; }
+  .callout.warn{ background:#fffbeb; border:1px solid #fde68a; color:#92400e; }
+  .callout.danger{ background:#fef2f2; border:1px solid #fecaca; color:#991b1b; }
+  .callout.ok{ background:#f0fdf4; border:1px solid #bbf7d0; color:#166534; }
+
+  .pill-list{ display:flex; flex-wrap:wrap; gap:7px; margin-top:4px; }
+  .pill{ font-size:10.5px; font-weight:700; padding:5px 11px; border-radius:999px; background:var(--soft); color:var(--slate); border:1px solid var(--line); }
+  .pill.b{ background:var(--soft-2); color:var(--brand); border-color:#ddd6fe; }
+
+  /* Screenshots reais (moldura de janela) */
+  .shot{ max-width:172mm; margin:11px auto 0; border:1px solid var(--line); border-radius:13px;
+    overflow:hidden; box-shadow:0 14px 34px rgba(15,23,42,.16); background:#fff; }
+  .shot.in-grid{ max-width:none; margin:0; box-shadow:0 8px 22px rgba(15,23,42,.14); }
+  .shot .bar{ height:22px; background:#f1f5f9; display:flex; align-items:center; gap:6px; padding:0 11px; border-bottom:1px solid var(--line); }
+  .shot .bar i{ width:7px; height:7px; border-radius:50%; background:#cbd5e1; }
+  .shot .bar .url{ margin-left:8px; font-size:8px; color:var(--muted); background:#fff; border:1px solid var(--line); border-radius:6px; padding:2px 11px; }
+  .shot img{ display:block; width:100%; height:auto; }
+  .shot-cap{ text-align:center; font-size:9.5px; color:var(--muted); margin-top:6px; }
+  .two-cap{ text-align:center; font-size:9px; font-weight:700; color:var(--brand); margin-top:5px; }
+
+  .mini3{ display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-top:13px; }
+  .mini{ border:1px solid var(--line); border-radius:11px; padding:9px 11px; background:#fff; }
+  .mini b{ display:block; font-size:11px; color:var(--ink); }
+  .mini span{ font-size:9.5px; color:var(--muted); line-height:1.35; display:block; margin-top:2px; }
+
+  /* ====== CAPA ====== */
+  .cover{ padding:0; }
+  .cover .content{ display:flex; flex-direction:column; }
+  .cover-hero{ flex:1; display:flex; flex-direction:column; justify-content:center; align-items:center; text-align:center; }
+  .cover-logo-box{ background:#fff; border-radius:26px; padding:22px 30px; box-shadow:0 16px 50px rgba(109,40,217,.18); border:1px solid #ede9fe; }
+  .cover-logo-box img{ height:96px; width:auto; }
+  .cover-title{ font-size:52px; font-weight:900; letter-spacing:-.02em; margin-top:28px; color:var(--ink); }
+  .cover-title span{ color:var(--brand-2); }
+  .cover-sub{ font-size:15px; color:var(--slate); margin-top:10px; max-width:150mm; line-height:1.5; }
+  .cover-tags{ margin-top:20px; }
+  .cover-strip{ margin-top:24px; display:grid; grid-template-columns:repeat(3,1fr); gap:10px; width:100%; }
+  .cover-strip .item{ border:1px solid var(--line); border-radius:14px; padding:12px; text-align:center; background:var(--soft-2); }
+  .cover-strip .item .t{ font-weight:900; font-size:12px; color:var(--brand); }
+  .cover-strip .item .d{ font-size:9.5px; color:var(--muted); margin-top:3px; }
+
+  /* ====== ÍNDICE ====== */
+  .toc{ display:grid; gap:4px; margin-top:2px; }
+  .toc a, .toc .row{
+    display:flex; align-items:center; gap:11px; text-decoration:none; color:inherit;
+    border:1px solid var(--line); border-radius:10px; padding:5px 12px; background:#fff;
+  }
+  .toc .tnum{ width:23px; height:23px; flex:none; border-radius:7px; background:var(--soft-2); color:var(--brand);
+    display:flex; align-items:center; justify-content:center; font-weight:900; font-size:11px; border:1px solid #ede9fe; }
+  .toc .ttl{ flex:1; }
+  .toc .ttl b{ display:block; font-size:11px; color:var(--ink); }
+  .toc .ttl small{ font-size:9px; color:var(--muted); }
+  .toc .dots{ flex:1; border-bottom:2px dotted var(--line); margin:0 4px; height:10px; }
+  .toc .tpg{ font-weight:900; color:var(--brand-2); font-size:11.5px; }
+
+  table.def{ width:100%; border-collapse:collapse; margin-top:6px; }
+  table.def th, table.def td{ text-align:left; padding:7px 10px; border-bottom:1px solid var(--line); font-size:10.5px; }
+  table.def th{ background:var(--soft); color:var(--ink); font-weight:800; font-size:9.5px; text-transform:uppercase; letter-spacing:.05em; }
+  table.def td:first-child{ font-weight:800; color:var(--brand); white-space:nowrap; }
+
+  /* ====== Impressão ====== */
+  @page{ size:A4 portrait; margin:0; }
+  @media print{
+    html,body{ background:#fff; }
+    .toolbar{ display:none !important; }
+    .page{ margin:0; box-shadow:none; page-break-after:always; break-after:page; }
+    .page:last-child{ page-break-after:auto; break-after:auto; }
+  }
+</style>
+</head>
+<body>
+
+  <div class="toolbar">
+    <span><strong>CARECORE+</strong> — Guia do Sistema</span>
+    <small>Use o botão para imprimir ou salvar em PDF (A4)</small>
+    <button class="btn-print" onclick="window.print()">🖨️ Imprimir / Salvar em PDF</button>
+  </div>
+
+  <!-- ================= PÁGINA 1 — CAPA ================= -->
+  <section class="page cover">
+    <div class="content">
+      <div class="cover-hero">
+        <div class="cover-logo-box">
+          <img src="logo.png" alt="CARECORE+" />
+        </div>
+        <h1 class="cover-title">CARE<span>CORE+</span></h1>
+        <p class="cover-sub">
+          Guia do sistema para o primeiro acesso e o dia a dia. Da criação da instituição ao
+          controle de presença, rotina, acomodações, ocorrências, convênio SISA e relatórios —
+          tudo passo a passo, com as telas reais do programa.
+        </p>
+        <div class="cover-tags">
+          <div class="pill-list" style="justify-content:center;">
+            <span class="pill b">Guia de primeiro acesso</span>
+            <span class="pill b">Telas reais</span>
+            <span class="pill b">Leitura por carteirinha</span>
+            <span class="pill b">Auditoria SISA</span>
+          </div>
+        </div>
+
+        <div class="cover-strip">
+          <div class="item"><div class="t">Cadastro & Equipe</div><div class="d">instituição, master e perfis de acesso</div></div>
+          <div class="item"><div class="t">Operação diária</div><div class="d">portaria, refeições, itens e ocorrências</div></div>
+          <div class="item"><div class="t">Gestão & Convênio</div><div class="d">relatórios, evolução e repasse SISA</div></div>
+        </div>
+      </div>
+    </div>
+
+    <footer class="pg-footer">
+      <span class="pg-num">Página 1</span>
+      <div class="zap">
+        <img class="zap-qr" src="whatsapp_qr.svg" alt="QR WhatsApp" />
+        <span class="zap-label">WhatsApp me</span>
+        <span class="zap-phone">(11) 97072-9208</span>
+      </div>
+      <span class="pg-tag"><b>CARECORE+</b><a class="pg-site" href="https://carecoreplus.com.br" target="_blank" rel="noopener noreferrer">carecoreplus.com.br</a></span>
+    </footer>
+  </section>
+
+  <!-- ================= PÁGINA 2 — ÍNDICE ================= -->
+  <section class="page">
+    <header class="pg-header">
+      <div class="brand"><img class="brand-logo" src="logo.png" alt="CARECORE+" /><span class="brand-name">CARE<span>CORE+</span></span></div>
+      <span class="pg-kicker">Sumário</span>
+    </header>
+
+    <div class="content">
+      <p class="eyebrow">Navegue pelo guia</p>
+      <h2 class="h-section">Índice</h2>
+      <div class="divider"></div>
+
+      <nav class="toc">
+        <a href="#sec1" class="row"><span class="tnum">01</span><span class="ttl"><b>Primeiro acesso: instituição e usuário master</b><small>Criação da conta em 2 passos</small></span><span class="dots"></span><span class="tpg">03</span></a>
+        <a href="#sec2" class="row"><span class="tnum">02</span><span class="ttl"><b>Usuários e permissões</b><small>Cadastro da equipe e perfis de acesso</small></span><span class="dots"></span><span class="tpg">04</span></a>
+        <a href="#sec3" class="row"><span class="tnum">03</span><span class="ttl"><b>Dashboard principal</b><small>A tela inicial, personalizada por perfil</small></span><span class="dots"></span><span class="tpg">05</span></a>
+        <a href="#sec4" class="row"><span class="tnum">04</span><span class="ttl"><b>Cadastro de conviventes e abas</b><small>Ficha completa e proteção por perfil</small></span><span class="dots"></span><span class="tpg">06</span></a>
+        <a href="#sec5" class="row"><span class="tnum">05</span><span class="ttl"><b>Dados sensíveis e carteirinha</b><small>Sigilo por perfil e ID de acesso</small></span><span class="dots"></span><span class="tpg">07</span></a>
+        <a href="#sec6" class="row"><span class="tnum">06</span><span class="ttl"><b>PIA — Plano Individual de Atendimento</b><small>Evoluções e histórico</small></span><span class="dots"></span><span class="tpg">08</span></a>
+        <a href="#sec7" class="row"><span class="tnum">07</span><span class="ttl"><b>Acomodações</b><small>Quartos, leitos e alocação</small></span><span class="dots"></span><span class="tpg">09</span></a>
+        <a href="#sec8" class="row"><span class="tnum">08</span><span class="ttl"><b>Ocorrências</b><small>Prioridade, atenção do técnico e autoria do convivente</small></span><span class="dots"></span><span class="tpg">10</span></a>
+        <a href="#sec9" class="row"><span class="tnum">09</span><span class="ttl"><b>Rotina diária</b><small>Entradas, refeições e itens por leitura</small></span><span class="dots"></span><span class="tpg">11</span></a>
+        <a href="#sec10" class="row"><span class="tnum">10</span><span class="ttl"><b>Dashboard operacional</b><small>Visão de plantão em tempo real</small></span><span class="dots"></span><span class="tpg">12</span></a>
+        <a href="#sec11" class="row"><span class="tnum">11</span><span class="ttl"><b>Histórico geral da rotina</b><small>Auditoria com filtro por tipo de registro</small></span><span class="dots"></span><span class="tpg">13</span></a>
+        <a href="#sec12" class="row"><span class="tnum">12</span><span class="ttl"><b>Convênio / SISA</b><small>Importação e divergências de repasse</small></span><span class="dots"></span><span class="tpg">14</span></a>
+        <a href="#sec13" class="row"><span class="tnum">13</span><span class="ttl"><b>Comunicação interna</b><small>Avisos direcionados e leitura</small></span><span class="dots"></span><span class="tpg">15</span></a>
+        <a href="#sec14" class="row"><span class="tnum">14</span><span class="ttl"><b>Central de relatórios</b><small>Abas, filtros e impressão</small></span><span class="dots"></span><span class="tpg">16</span></a>
+        <a href="#sec15" class="row"><span class="tnum">15</span><span class="ttl"><b>Relatório de evolução</b><small>Gráficos para prestação de contas</small></span><span class="dots"></span><span class="tpg">17</span></a>
+        <a href="#sec16" class="row"><span class="tnum">16</span><span class="ttl"><b>Contato e próximos passos</b><small>Fale com a equipe CARECORE+</small></span><span class="dots"></span><span class="tpg">18</span></a>
+      </nav>
+    </div>
+
+    <footer class="pg-footer">
+      <span class="pg-num">Página 2</span>
+      <div class="zap"><img class="zap-qr" src="whatsapp_qr.svg" alt="QR WhatsApp" /><span class="zap-label">WhatsApp me</span><span class="zap-phone">(11) 97072-9208</span></div>
+      <span class="pg-tag"><b>CARECORE+</b><a class="pg-site" href="https://carecoreplus.com.br" target="_blank" rel="noopener noreferrer">carecoreplus.com.br</a></span>
+    </footer>
+  </section>
+
+  <!-- ================= PÁGINA 3 — PRIMEIRO ACESSO ================= -->
+  <section class="page" id="sec1">
+    <header class="pg-header">
+      <div class="brand"><img class="brand-logo" src="logo.png" alt="CARECORE+" /><span class="brand-name">CARE<span>CORE+</span></span></div>
+      <span class="pg-kicker">01 · Primeiro acesso</span>
+    </header>
+
+    <div class="content">
+      <p class="eyebrow">Comece por aqui</p>
+      <h2 class="h-section"><span class="num">01.</span> Primeiro acesso: instituição e usuário master</h2>
+      <div class="divider"></div>
+
+      <p class="lead">
+        No primeiro acesso, a conta é criada em <b>dois passos</b>. No <b>Passo 1</b> você informa os dados
+        do abrigo (nome, CNPJ opcional e telefone). No <b>Passo 2</b> cria o <b>usuário master</b> — nome,
+        e-mail (que será o login) e uma senha forte. O master é o administrador da conta: é ele quem,
+        depois, cadastra os demais usuários e define os perfis de cada um.
+      </p>
+
+      <div class="grid g2" style="margin-top:13px;">
+        <div>
+          <div class="shot in-grid"><div class="bar"><i></i><i></i><i></i><span class="url">carecore+ · /cadastro</span></div><img src="telas/g01-cadastro-instituicao.png" alt="Cadastro da instituição" /></div>
+          <p class="two-cap">Passo 1 — Dados da instituição</p>
+        </div>
+        <div>
+          <div class="shot in-grid"><div class="bar"><i></i><i></i><i></i><span class="url">carecore+ · /cadastro</span></div><img src="telas/g02-cadastro-master.png" alt="Cadastro do usuário master" /></div>
+          <p class="two-cap">Passo 2 — Usuário administrador (master)</p>
+        </div>
+      </div>
+
+      <div class="callout brand" style="margin-top:14px;">
+        <span class="ico">🔑</span>
+        <span><b>O master é o “dono” da conta:</b> tem acesso total, cria toda a equipe e define o que cada
+        pessoa pode ver e fazer. A senha exige maiúscula, minúscula, número e caractere especial — guarde
+        bem essas credenciais.</span>
+      </div>
+    </div>
+
+    <footer class="pg-footer">
+      <span class="pg-num">Página 3</span>
+      <div class="zap"><img class="zap-qr" src="whatsapp_qr.svg" alt="QR WhatsApp" /><span class="zap-label">WhatsApp me</span><span class="zap-phone">(11) 97072-9208</span></div>
+      <span class="pg-tag"><b>CARECORE+</b><a class="pg-site" href="https://carecoreplus.com.br" target="_blank" rel="noopener noreferrer">carecoreplus.com.br</a></span>
+    </footer>
+  </section>
+
+  <!-- ================= PÁGINA 4 — USUÁRIOS ================= -->
+  <section class="page" id="sec2">
+    <header class="pg-header">
+      <div class="brand"><img class="brand-logo" src="logo.png" alt="CARECORE+" /><span class="brand-name">CARE<span>CORE+</span></span></div>
+      <span class="pg-kicker">02 · Usuários</span>
+    </header>
+
+    <div class="content">
+      <p class="eyebrow">A equipe e suas permissões</p>
+      <h2 class="h-section"><span class="num">02.</span> Usuários e permissões</h2>
+      <div class="divider"></div>
+
+      <p class="lead">
+        Em <b>Usuários</b>, o master (ou um gestor) cadastra a equipe. Cada pessoa recebe <b>login
+        individual</b> e um <b>perfil de acesso</b> que define exatamente o que ela enxerga e pode fazer no
+        sistema. O cadastro reúne dados de acesso, dados pessoais e foto.
+      </p>
+
+      <div class="grid g2" style="margin-top:13px;">
+        <div>
+          <div class="shot in-grid"><div class="bar"><i></i><i></i><i></i><span class="url">carecore+ · Usuários</span></div><img src="telas/g03-usuarios.png" alt="Usuários e permissões" /></div>
+          <p class="two-cap">Lista da equipe e status</p>
+        </div>
+        <div>
+          <div class="shot in-grid"><div class="bar"><i></i><i></i><i></i><span class="url">carecore+ · Novo usuário</span></div><img src="telas/g03b-usuarios-novo.png" alt="Cadastro de novo usuário" /></div>
+          <p class="two-cap">Cadastro de novo usuário e perfil</p>
+        </div>
+      </div>
+
+      <table class="def" style="margin-top:13px;">
+        <thead><tr><th>Perfil</th><th>O que pode fazer</th></tr></thead>
+        <tbody>
+          <tr><td>Gestor</td><td>Acesso total: equipe, auditoria, edição/cancelamento de registros e todos os relatórios.</td></tr>
+          <tr><td>Técnico</td><td>Acompanhamento e prontuário, incluindo dados sensíveis e PIA dos conviventes sob sua referência.</td></tr>
+          <tr><td>Orientador</td><td>Operação de portaria e rotina (entradas, saídas, refeições e itens) — sem acesso a dados sensíveis.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <footer class="pg-footer">
+      <span class="pg-num">Página 4</span>
+      <div class="zap"><img class="zap-qr" src="whatsapp_qr.svg" alt="QR WhatsApp" /><span class="zap-label">WhatsApp me</span><span class="zap-phone">(11) 97072-9208</span></div>
+      <span class="pg-tag"><b>CARECORE+</b><a class="pg-site" href="https://carecoreplus.com.br" target="_blank" rel="noopener noreferrer">carecoreplus.com.br</a></span>
+    </footer>
+  </section>
+
+  <!-- ================= PÁGINA 5 — DASHBOARD PRINCIPAL ================= -->
+  <section class="page" id="sec3">
+    <header class="pg-header">
+      <div class="brand"><img class="brand-logo" src="logo.png" alt="CARECORE+" /><span class="brand-name">CARE<span>CORE+</span></span></div>
+      <span class="pg-kicker">03 · Dashboard</span>
+    </header>
+
+    <div class="content">
+      <p class="eyebrow">A primeira tela ao entrar</p>
+      <h2 class="h-section"><span class="num">03.</span> Dashboard principal</h2>
+      <div class="divider"></div>
+
+      <p class="lead">
+        Ao fazer login, o usuário cai no <b>Dashboard</b> — a fotografia do dia. O conteúdo é
+        <b>personalizado pelo perfil de quem entrou</b>: as ocorrências e avisos exibidos mudam conforme a
+        pessoa. Cada um vê primeiro os itens <b>que pedem a atenção dele</b> (ex.: o técnico responsável pelo
+        convivente) e também os avisos e ocorrências marcados para <b>todos</b>.
+      </p>
+
+      <div class="shot">
+        <div class="bar"><i></i><i></i><i></i><span class="url">carecore+ · Dashboard</span></div>
+        <img src="telas/g04-dashboard.png" alt="Dashboard principal" />
+      </div>
+      <p class="shot-cap">Indicadores, ocupação, avisos e ocorrências priorizados de acordo com o perfil logado.</p>
+
+      <div class="mini3">
+        <div class="mini"><b>👔 Gestor</b><span>Visão gerencial: indicadores, auditoria e pendências da instituição.</span></div>
+        <div class="mini"><b>🩺 Técnico</b><span>Primeiro o que exige sua atenção: seus conviventes e chamados.</span></div>
+        <div class="mini"><b>🛎️ Orientador</b><span>Foco na operação do plantão e nos avisos para todos.</span></div>
+      </div>
+    </div>
+
+    <footer class="pg-footer">
+      <span class="pg-num">Página 5</span>
+      <div class="zap"><img class="zap-qr" src="whatsapp_qr.svg" alt="QR WhatsApp" /><span class="zap-label">WhatsApp me</span><span class="zap-phone">(11) 97072-9208</span></div>
+      <span class="pg-tag"><b>CARECORE+</b><a class="pg-site" href="https://carecoreplus.com.br" target="_blank" rel="noopener noreferrer">carecoreplus.com.br</a></span>
+    </footer>
+  </section>
+
+  <!-- ================= PÁGINA 6 — CONVIVENTES ================= -->
+  <section class="page" id="sec4">
+    <header class="pg-header">
+      <div class="brand"><img class="brand-logo" src="logo.png" alt="CARECORE+" /><span class="brand-name">CARE<span>CORE+</span></span></div>
+      <span class="pg-kicker">04 · Conviventes</span>
+    </header>
+
+    <div class="content">
+      <p class="eyebrow">A pessoa no centro do sistema</p>
+      <h2 class="h-section"><span class="num">04.</span> Cadastro de conviventes e suas abas</h2>
+      <div class="divider"></div>
+
+      <p class="lead">
+        O Módulo de Prontuários reúne a ficha completa de cada convivente, organizada em <b>abas</b>:
+        Pessoais e status, Assistência social, Histórico, PIA, Fluxo Diário, Saúde e cofre, Dados sensíveis
+        e Anexos/GED. A ficha guarda foto, nome social, número de prontuário, status, número SISA, técnico
+        de referência e a alocação de leito.
+      </p>
+
+      <div class="shot">
+        <div class="bar"><i></i><i></i><i></i><span class="url">carecore+ · Conviventes</span></div>
+        <img src="telas/g06-ficha-pessoais.png" alt="Ficha do convivente" />
+      </div>
+      <p class="shot-cap">Ficha de admissão institucional com abas — aqui, a aba “Pessoais e status”.</p>
+
+      <div class="callout danger" style="margin-top:13px;">
+        <span class="ico">🔒</span>
+        <span><b>Sigilo por perfil:</b> abas e campos sensíveis (Saúde e cofre, Dados sensíveis) só aparecem
+        para perfis autorizados — um Orientador, por exemplo, <b>não as visualiza</b>. Veja a próxima página.</span>
+      </div>
+    </div>
+
+    <footer class="pg-footer">
+      <span class="pg-num">Página 6</span>
+      <div class="zap"><img class="zap-qr" src="whatsapp_qr.svg" alt="QR WhatsApp" /><span class="zap-label">WhatsApp me</span><span class="zap-phone">(11) 97072-9208</span></div>
+      <span class="pg-tag"><b>CARECORE+</b><a class="pg-site" href="https://carecoreplus.com.br" target="_blank" rel="noopener noreferrer">carecoreplus.com.br</a></span>
+    </footer>
+  </section>
+
+  <!-- ================= PÁGINA 7 — DADOS SENSÍVEIS & CARTEIRINHA ================= -->
+  <section class="page" id="sec5">
+    <header class="pg-header">
+      <div class="brand"><img class="brand-logo" src="logo.png" alt="CARECORE+" /><span class="brand-name">CARE<span>CORE+</span></span></div>
+      <span class="pg-kicker">05 · Sigilo & ID</span>
+    </header>
+
+    <div class="content">
+      <p class="eyebrow">Proteção de dados e identificação</p>
+      <h2 class="h-section"><span class="num">05.</span> Dados sensíveis e carteirinha</h2>
+      <div class="divider"></div>
+
+      <p class="lead">
+        A aba <b>Dados sensíveis</b> (egresso prisional, tornozeleira, acompanhamento CAPS, medidas
+        protetivas, uso de substâncias, transtornos) e os <b>arquivos sensíveis</b> em Anexos/GED ficam
+        <b>restritos por perfil</b>, protegendo o convivente conforme a LGPD. Da própria ficha, com um clique
+        em <b>“Imprimir ID de acesso”</b>, o sistema gera a <b>carteirinha</b> com QR Code e código de barras.
+      </p>
+
+      <div class="grid g2" style="margin-top:13px;">
+        <div>
+          <div class="shot in-grid"><div class="bar"><i></i><i></i><i></i><span class="url">carecore+ · Dados sensíveis</span></div><img src="telas/g08-ficha-sensiveis.png" alt="Aba de dados sensíveis" /></div>
+          <p class="two-cap">Acesso restrito por perfil</p>
+        </div>
+        <div>
+          <div class="shot in-grid"><div class="bar"><i></i><i></i><i></i><span class="url">carecore+ · Carteirinha</span></div><img src="telas/g09-carteirinha.png" alt="Carteirinha do convivente" /></div>
+          <p class="two-cap">Carteirinha com QR Code e código de barras</p>
+        </div>
+      </div>
+
+      <div class="callout brand" style="margin-top:14px;">
+        <span class="ico">🪪</span>
+        <span><b>A carteirinha é a chave da operação:</b> é com a leitura dela que se autenticam entradas,
+        saídas, refeições, retiradas de itens e até a assinatura digital de ocorrências. Imprima uma a uma
+        no cadastro ou <b>em lote</b> pela Central de Relatórios (seção 14).</span>
+      </div>
+    </div>
+
+    <footer class="pg-footer">
+      <span class="pg-num">Página 7</span>
+      <div class="zap"><img class="zap-qr" src="whatsapp_qr.svg" alt="QR WhatsApp" /><span class="zap-label">WhatsApp me</span><span class="zap-phone">(11) 97072-9208</span></div>
+      <span class="pg-tag"><b>CARECORE+</b><a class="pg-site" href="https://carecoreplus.com.br" target="_blank" rel="noopener noreferrer">carecoreplus.com.br</a></span>
+    </footer>
+  </section>
+
+  <!-- ================= PÁGINA 8 — PIA ================= -->
+  <section class="page" id="sec6">
+    <header class="pg-header">
+      <div class="brand"><img class="brand-logo" src="logo.png" alt="CARECORE+" /><span class="brand-name">CARE<span>CORE+</span></span></div>
+      <span class="pg-kicker">06 · PIA</span>
+    </header>
+
+    <div class="content">
+      <p class="eyebrow">Acompanhamento que evolui com a pessoa</p>
+      <h2 class="h-section"><span class="num">06.</span> PIA — Plano Individual de Atendimento</h2>
+      <div class="divider"></div>
+
+      <p class="lead">
+        Dentro da ficha existe a aba <b>PIA</b>, onde a equipe técnica abre o plano principal e registra as
+        <b>evoluções ao longo do tempo</b>. Cada evolução tem subtítulo (selecionável ou digitado),
+        descrição, objetivos/metas e encaminhamentos — e recebe data e hora automaticamente, formando uma
+        linha do tempo contínua do acompanhamento.
+      </p>
+
+      <div class="shot">
+        <div class="bar"><i></i><i></i><i></i><span class="url">carecore+ · PIA</span></div>
+        <img src="telas/g07-ficha-pia.png" alt="Aba PIA" />
+      </div>
+      <p class="shot-cap">Abertura do PIA principal e histórico de evoluções no mesmo lugar.</p>
+
+      <div class="mini3">
+        <div class="mini"><b>📝 Plano + evoluções</b><span>Um plano principal concentra todas as evoluções seguintes.</span></div>
+        <div class="mini"><b>⏱️ Datado</b><span>Cada registro fica carimbado em ordem cronológica.</span></div>
+        <div class="mini"><b>⚠️ Sem duplicar</b><span>O sistema avisa se já existe um PIA principal aberto.</span></div>
+      </div>
+    </div>
+
+    <footer class="pg-footer">
+      <span class="pg-num">Página 8</span>
+      <div class="zap"><img class="zap-qr" src="whatsapp_qr.svg" alt="QR WhatsApp" /><span class="zap-label">WhatsApp me</span><span class="zap-phone">(11) 97072-9208</span></div>
+      <span class="pg-tag"><b>CARECORE+</b><a class="pg-site" href="https://carecoreplus.com.br" target="_blank" rel="noopener noreferrer">carecoreplus.com.br</a></span>
+    </footer>
+  </section>
+
+  <!-- ================= PÁGINA 9 — ACOMODAÇÕES ================= -->
+  <section class="page" id="sec7">
+    <header class="pg-header">
+      <div class="brand"><img class="brand-logo" src="logo.png" alt="CARECORE+" /><span class="brand-name">CARE<span>CORE+</span></span></div>
+      <span class="pg-kicker">07 · Acomodações</span>
+    </header>
+
+    <div class="content">
+      <p class="eyebrow">Cada vaga no lugar certo</p>
+      <h2 class="h-section"><span class="num">07.</span> Acomodações: quartos e leitos</h2>
+      <div class="divider"></div>
+
+      <p class="lead">
+        O mapa de acomodações é interativo e foi feito para refletir o espaço físico com fidelidade.
+        <b>Passe o mouse sobre um leito</b> para ver o resumo de quem está alocado; <b>clique em um leito
+        ocupado</b> para liberar/remover o convivente; <b>clique em um leito livre</b> para atribuir alguém.
+        Você ainda <b>edita cada quarto livremente</b>, incluindo ou excluindo leitos.
+      </p>
+
+      <div class="shot">
+        <div class="bar"><i></i><i></i><i></i><span class="url">carecore+ · Acomodações</span></div>
+        <img src="telas/g10-acomodacoes.png" alt="Mapa de acomodações" />
+      </div>
+      <p class="shot-cap">Mapa de ocupação por ala, com leitos livres e ocupados e o convivente em cada cama.</p>
+
+      <div class="mini3">
+        <div class="mini"><b>🖱️ Resumo ao passar</b><span>Mouse sobre o leito mostra quem está ali.</span></div>
+        <div class="mini"><b>👆 Atribuir / remover</b><span>Clique no leito para alocar ou liberar.</span></div>
+        <div class="mini"><b>🧱 Editar o quarto</b><span>Inclua ou exclua leitos como no físico.</span></div>
+      </div>
+    </div>
+
+    <footer class="pg-footer">
+      <span class="pg-num">Página 9</span>
+      <div class="zap"><img class="zap-qr" src="whatsapp_qr.svg" alt="QR WhatsApp" /><span class="zap-label">WhatsApp me</span><span class="zap-phone">(11) 97072-9208</span></div>
+      <span class="pg-tag"><b>CARECORE+</b><a class="pg-site" href="https://carecoreplus.com.br" target="_blank" rel="noopener noreferrer">carecoreplus.com.br</a></span>
+    </footer>
+  </section>
+
+  <!-- ================= PÁGINA 10 — OCORRÊNCIAS ================= -->
+  <section class="page" id="sec8">
+    <header class="pg-header">
+      <div class="brand"><img class="brand-logo" src="logo.png" alt="CARECORE+" /><span class="brand-name">CARE<span>CORE+</span></span></div>
+      <span class="pg-kicker">08 · Ocorrências</span>
+    </header>
+
+    <div class="content">
+      <p class="eyebrow">Registro confiável de tudo que acontece</p>
+      <h2 class="h-section"><span class="num">08.</span> Ocorrências</h2>
+      <div class="divider"></div>
+
+      <p class="lead">
+        Os chamados aparecem <b>ordenados por criticidade</b> (crítica, alta, média, baixa) e de acordo
+        <b>com quem está logado</b> — cada um vê primeiro o que lhe diz respeito. Ao abrir uma ocorrência,
+        é possível marcar <b>“Requer atenção do técnico responsável”</b> pelo convivente e <b>copiar outros
+        funcionários ou todos</b> (via @menções), que passam a vê-la em suas telas.
+      </p>
+
+      <div class="grid g2" style="margin-top:13px;">
+        <div>
+          <div class="shot in-grid"><div class="bar"><i></i><i></i><i></i><span class="url">carecore+ · Ocorrências</span></div><img src="telas/g11-ocorrencias.png" alt="Central de ocorrências" /></div>
+          <p class="two-cap">Chamados por prioridade e responsável</p>
+        </div>
+        <div>
+          <div class="shot in-grid"><div class="bar"><i></i><i></i><i></i><span class="url">carecore+ · Novo chamado</span></div><img src="telas/g12-ocorrencia-nova.png" alt="Abrir novo chamado" /></div>
+          <p class="two-cap">Abertura: atenção do técnico e cópia da equipe</p>
+        </div>
+      </div>
+
+      <div class="callout brand" style="margin-top:14px;">
+        <span class="ico">✍️</span>
+        <span><b>Convivente como autor:</b> a ocorrência também pode ser registrada em nome do próprio
+        convivente (reclamação). Nesse caso ele <b>assina digitalmente pela leitura da carteirinha</b> e o
+        sistema gera um <b>documento impresso</b> para a assinatura física, que é anexada ao prontuário.</span>
+      </div>
+    </div>
+
+    <footer class="pg-footer">
+      <span class="pg-num">Página 10</span>
+      <div class="zap"><img class="zap-qr" src="whatsapp_qr.svg" alt="QR WhatsApp" /><span class="zap-label">WhatsApp me</span><span class="zap-phone">(11) 97072-9208</span></div>
+      <span class="pg-tag"><b>CARECORE+</b><a class="pg-site" href="https://carecoreplus.com.br" target="_blank" rel="noopener noreferrer">carecoreplus.com.br</a></span>
+    </footer>
+  </section>
+
+  <!-- ================= PÁGINA 11 — ROTINA DIÁRIA ================= -->
+  <section class="page" id="sec9">
+    <header class="pg-header">
+      <div class="brand"><img class="brand-logo" src="logo.png" alt="CARECORE+" /><span class="brand-name">CARE<span>CORE+</span></span></div>
+      <span class="pg-kicker">09 · Rotina diária</span>
+    </header>
+
+    <div class="content">
+      <p class="eyebrow">Todo o fluxo do dia em um lugar</p>
+      <h2 class="h-section"><span class="num">09.</span> Rotina diária</h2>
+      <div class="divider"></div>
+
+      <p class="lead">
+        A Rotina Diária concentra o fluxo completo do convivente, <b>tudo autenticado pela leitura da
+        carteirinha</b>: saída, entrada, café da manhã, almoço, jantar e lanche noturno, retirada e
+        devolução de <b>cobertores</b> e <b>toalhas</b>, acesso ao <b>bagageiro</b> e retirada/entrega de
+        <b>documentos</b>. Cada bipagem registra data, hora e responsável.
+      </p>
+
+      <div class="shot">
+        <div class="bar"><i></i><i></i><i></i><span class="url">carecore+ · Rotina Diária</span></div>
+        <img src="telas/g13-rotina.png" alt="Rotina diária" />
+      </div>
+      <p class="shot-cap">Leitura por câmera ou leitor USB, com a ação certa para cada tipo de registro.</p>
+
+      <div class="pill-list" style="margin-top:13px;">
+        <span class="pill">Entrada</span>
+        <span class="pill">Saída</span>
+        <span class="pill">Café da manhã</span>
+        <span class="pill">Almoço</span>
+        <span class="pill">Jantar</span>
+        <span class="pill">Lanche noturno</span>
+        <span class="pill">Cobertor</span>
+        <span class="pill">Toalha</span>
+        <span class="pill">Bagageiro</span>
+        <span class="pill">Documentos</span>
+      </div>
+
+      <div class="callout brand" style="margin-top:13px;">
+        <span class="ico">🔁</span>
+        <span><b>Inteligência embutida:</b> refeição não se repete no mesmo dia; cobertor e toalha alternam
+        sozinhos entre “retirar” e “devolver”; documentos e bagagem mantêm rastro completo.</span>
+      </div>
+    </div>
+
+    <footer class="pg-footer">
+      <span class="pg-num">Página 11</span>
+      <div class="zap"><img class="zap-qr" src="whatsapp_qr.svg" alt="QR WhatsApp" /><span class="zap-label">WhatsApp me</span><span class="zap-phone">(11) 97072-9208</span></div>
+      <span class="pg-tag"><b>CARECORE+</b><a class="pg-site" href="https://carecoreplus.com.br" target="_blank" rel="noopener noreferrer">carecoreplus.com.br</a></span>
+    </footer>
+  </section>
+
+  <!-- ================= PÁGINA 12 — DASHBOARD OPERACIONAL ================= -->
+  <section class="page" id="sec10">
+    <header class="pg-header">
+      <div class="brand"><img class="brand-logo" src="logo.png" alt="CARECORE+" /><span class="brand-name">CARE<span>CORE+</span></span></div>
+      <span class="pg-kicker">10 · Operacional</span>
+    </header>
+
+    <div class="content">
+      <p class="eyebrow">A visão de plantão</p>
+      <h2 class="h-section"><span class="num">10.</span> Dashboard operacional</h2>
+      <div class="divider"></div>
+
+      <p class="lead">
+        Voltado à operação do dia, o <b>Dashboard Operacional</b> mostra em tempo real quem está dentro e
+        fora, as refeições já servidas, as movimentações de itens e os alertas do plantão. É a tela ideal
+        para a portaria e para a equipe acompanhar o andamento da casa.
+      </p>
+
+      <div class="shot">
+        <div class="bar"><i></i><i></i><i></i><span class="url">carecore+ · Dashboard Operacional</span></div>
+        <img src="telas/g14-operacional.png" alt="Dashboard operacional" />
+      </div>
+      <p class="shot-cap">Presença, refeições e movimentações consolidadas em tempo real, com alertas.</p>
+
+      <div class="mini3">
+        <div class="mini"><b>🚪 Dentro / fora</b><span>Quem está na casa e quem saiu, ao vivo.</span></div>
+        <div class="mini"><b>🍽️ Refeições</b><span>Totais servidos por tipo no dia.</span></div>
+        <div class="mini"><b>⚠️ Alertas</b><span>Pendências e situações que pedem ação.</span></div>
+      </div>
+    </div>
+
+    <footer class="pg-footer">
+      <span class="pg-num">Página 12</span>
+      <div class="zap"><img class="zap-qr" src="whatsapp_qr.svg" alt="QR WhatsApp" /><span class="zap-label">WhatsApp me</span><span class="zap-phone">(11) 97072-9208</span></div>
+      <span class="pg-tag"><b>CARECORE+</b><a class="pg-site" href="https://carecoreplus.com.br" target="_blank" rel="noopener noreferrer">carecoreplus.com.br</a></span>
+    </footer>
+  </section>
+
+  <!-- ================= PÁGINA 13 — HISTÓRICO DA ROTINA ================= -->
+  <section class="page" id="sec11">
+    <header class="pg-header">
+      <div class="brand"><img class="brand-logo" src="logo.png" alt="CARECORE+" /><span class="brand-name">CARE<span>CORE+</span></span></div>
+      <span class="pg-kicker">11 · Histórico</span>
+    </header>
+
+    <div class="content">
+      <p class="eyebrow">Auditoria de tudo que foi bipado</p>
+      <h2 class="h-section"><span class="num">11.</span> Histórico geral da rotina</h2>
+      <div class="divider"></div>
+
+      <p class="lead">
+        O Histórico Geral da Rotina é a trilha de auditoria de todos os registros. Você filtra por período,
+        convivente e por <b>qualquer tipo de registro</b> — entrada, saída, café, almoço, jantar, lanche,
+        cobertor, toalha, bagageiro e documentos. O card <b>“Tipo de registro”</b> no topo é <b>dinâmico</b>:
+        mostra a soma do tipo que estiver filtrado. Gestores ainda editam ou cancelam registros com motivo.
+      </p>
+
+      <div class="shot">
+        <div class="bar"><i></i><i></i><i></i><span class="url">carecore+ · Histórico da Rotina</span></div>
+        <img src="telas/g15-historico.png" alt="Histórico geral da rotina" />
+      </div>
+      <p class="shot-cap">Filtro “Tipo de registro” e card de total dinâmico, com todos os tipos de bipagem.</p>
+
+      <div class="callout ok" style="margin-top:13px;">
+        <span class="ico">📊</span>
+        <span><b>Tudo conferível:</b> exporte em XLSX ou gere o relatório para impressão respeitando os
+        filtros — a mesma base que alimenta os relatórios e a conferência do convênio.</span>
+      </div>
+    </div>
+
+    <footer class="pg-footer">
+      <span class="pg-num">Página 13</span>
+      <div class="zap"><img class="zap-qr" src="whatsapp_qr.svg" alt="QR WhatsApp" /><span class="zap-label">WhatsApp me</span><span class="zap-phone">(11) 97072-9208</span></div>
+      <span class="pg-tag"><b>CARECORE+</b><a class="pg-site" href="https://carecoreplus.com.br" target="_blank" rel="noopener noreferrer">carecoreplus.com.br</a></span>
+    </footer>
+  </section>
+
+  <!-- ================= PÁGINA 14 — CONVÊNIO / SISA ================= -->
+  <section class="page" id="sec12">
+    <header class="pg-header">
+      <div class="brand"><img class="brand-logo" src="logo.png" alt="CARECORE+" /><span class="brand-name">CARE<span>CORE+</span></span></div>
+      <span class="pg-kicker">12 · Convênio / SISA</span>
+    </header>
+
+    <div class="content">
+      <p class="eyebrow">Onde o controle vira repasse</p>
+      <h2 class="h-section"><span class="num">12.</span> Convênio / SISA e auditoria de divergências</h2>
+      <div class="divider"></div>
+
+      <p class="lead">
+        A instituição importa periodicamente a <b>planilha do SISA</b> (.xls). Cada importação vira um
+        <b>“snapshot” auditável</b>, e o CareCore+ compara os <b>dias de permanência</b> do SISA com as
+        presenças (entradas, saídas e refeições) registradas na rotina no mesmo período — classificando
+        cada divergência por tipo, prioridade e status de tratativa.
+      </p>
+
+      <div class="shot">
+        <div class="bar"><i></i><i></i><i></i><span class="url">carecore+ · Convênio / SISA</span></div>
+        <img src="telas/g16-sisa.png" alt="Convênio / SISA" />
+      </div>
+      <p class="shot-cap">Importação da planilha, histórico de snapshots e conferência de presenças por período.</p>
+
+      <div class="grid g2" style="margin-top:13px;">
+        <div class="callout danger" style="margin:0;">
+          <span class="ico">📉</span>
+          <span><b>SISA menor (crítico):</b> o CareCore+ registrou <b>mais</b> presenças do que o SISA — ou
+          seja, <b>repasse a menos</b>. O sistema alerta para corrigir antes do fechamento.</span>
+        </div>
+        <div class="callout warn" style="margin:0;">
+          <span class="ico">📈</span>
+          <span><b>SISA maior:</b> o SISA aponta mais dias do que o registrado internamente. Sinaliza falha
+          de registro na rotina que precisa ser conferida.</span>
+        </div>
+      </div>
+    </div>
+
+    <footer class="pg-footer">
+      <span class="pg-num">Página 14</span>
+      <div class="zap"><img class="zap-qr" src="whatsapp_qr.svg" alt="QR WhatsApp" /><span class="zap-label">WhatsApp me</span><span class="zap-phone">(11) 97072-9208</span></div>
+      <span class="pg-tag"><b>CARECORE+</b><a class="pg-site" href="https://carecoreplus.com.br" target="_blank" rel="noopener noreferrer">carecoreplus.com.br</a></span>
+    </footer>
+  </section>
+
+  <!-- ================= PÁGINA 15 — COMUNICAÇÃO INTERNA ================= -->
+  <section class="page" id="sec13">
+    <header class="pg-header">
+      <div class="brand"><img class="brand-logo" src="logo.png" alt="CARECORE+" /><span class="brand-name">CARE<span>CORE+</span></span></div>
+      <span class="pg-kicker">13 · Comunicação</span>
+    </header>
+
+    <div class="content">
+      <p class="eyebrow">A equipe na mesma página</p>
+      <h2 class="h-section"><span class="num">13.</span> Comunicação interna</h2>
+      <div class="divider"></div>
+
+      <p class="lead">
+        A <b>Comunicação Interna</b> envia avisos para <b>toda a equipe</b> ou para <b>usuários
+        específicos</b>, com <b>classificação</b> (informativo, comunicado, urgente, atenção, pendência) e
+        <b>prioridade</b>. Mensagens com título aparecem para todos; mensagens direcionadas aparecem só para
+        os destinatários.
+      </p>
+
+      <div class="shot">
+        <div class="bar"><i></i><i></i><i></i><span class="url">carecore+ · Comunicação Interna</span></div>
+        <img src="telas/g17-comunicacao.png" alt="Comunicação interna" />
+      </div>
+      <p class="shot-cap">Novo aviso, relatório de avisos por classificação/prioridade e lista do que é visível a você.</p>
+
+      <div class="mini3">
+        <div class="mini"><b>🎯 Direcionado</b><span>Para todos ou para pessoas específicas.</span></div>
+        <div class="mini"><b>🔔 No sininho</b><span>Reflete no dashboard e nas notificações de cada um.</span></div>
+        <div class="mini"><b>✅ Marcar lido</b><span>Atualiza os contadores; não lidos ficam em destaque.</span></div>
+      </div>
+    </div>
+
+    <footer class="pg-footer">
+      <span class="pg-num">Página 15</span>
+      <div class="zap"><img class="zap-qr" src="whatsapp_qr.svg" alt="QR WhatsApp" /><span class="zap-label">WhatsApp me</span><span class="zap-phone">(11) 97072-9208</span></div>
+      <span class="pg-tag"><b>CARECORE+</b><a class="pg-site" href="https://carecoreplus.com.br" target="_blank" rel="noopener noreferrer">carecoreplus.com.br</a></span>
+    </footer>
+  </section>
+
+  <!-- ================= PÁGINA 16 — CENTRAL DE RELATÓRIOS ================= -->
+  <section class="page" id="sec14">
+    <header class="pg-header">
+      <div class="brand"><img class="brand-logo" src="logo.png" alt="CARECORE+" /><span class="brand-name">CARE<span>CORE+</span></span></div>
+      <span class="pg-kicker">14 · Relatórios</span>
+    </header>
+
+    <div class="content">
+      <p class="eyebrow">Informação pronta para apresentar</p>
+      <h2 class="h-section"><span class="num">14.</span> Central de relatórios</h2>
+      <div class="divider"></div>
+
+      <p class="lead">
+        A Central reúne, em <b>abas</b>, todas as visões da operação — cada uma com <b>filtros próprios</b> e
+        <b>impressão/exportação que respeitam exatamente o que foi filtrado</b>. Cada aba já abre com o
+        período ideal (ex.: Rotina no dia de hoje; Evolução nos últimos 3 meses; Conviventes sem filtro de
+        data).
+      </p>
+
+      <div class="shot">
+        <div class="bar"><i></i><i></i><i></i><span class="url">carecore+ · Relatórios</span></div>
+        <img src="telas/g18-relatorios.png" alt="Central de relatórios" />
+      </div>
+      <p class="shot-cap">Filtros, cards e abas (incluindo Carteirinhas em lote) — tudo pronto para exportar ou imprimir.</p>
+
+      <div class="pill-list" style="margin-top:13px;">
+        <span class="pill b">Conviventes</span>
+        <span class="pill b">Rotina</span>
+        <span class="pill b">Ocorrências</span>
+        <span class="pill b">Acomodações</span>
+        <span class="pill b">Documentação</span>
+        <span class="pill b">Carteirinhas</span>
+        <span class="pill b">Equipe</span>
+        <span class="pill b">Auditoria</span>
+        <span class="pill b">Evolução</span>
+      </div>
+
+      <div class="callout brand" style="margin-top:13px;">
+        <span class="ico">🪪</span>
+        <span><b>Carteirinhas em lote:</b> na aba Carteirinhas, busque por nome, prontuário, SISA ou CPF,
+        selecione os conviventes e imprima <b>4, 6 ou 8 cartões por folha A4</b>, com guias de corte.</span>
+      </div>
+    </div>
+
+    <footer class="pg-footer">
+      <span class="pg-num">Página 16</span>
+      <div class="zap"><img class="zap-qr" src="whatsapp_qr.svg" alt="QR WhatsApp" /><span class="zap-label">WhatsApp me</span><span class="zap-phone">(11) 97072-9208</span></div>
+      <span class="pg-tag"><b>CARECORE+</b><a class="pg-site" href="https://carecoreplus.com.br" target="_blank" rel="noopener noreferrer">carecoreplus.com.br</a></span>
+    </footer>
+  </section>
+
+  <!-- ================= PÁGINA 17 — RELATÓRIO DE EVOLUÇÃO ================= -->
+  <section class="page" id="sec15">
+    <header class="pg-header">
+      <div class="brand"><img class="brand-logo" src="logo.png" alt="CARECORE+" /><span class="brand-name">CARE<span>CORE+</span></span></div>
+      <span class="pg-kicker">15 · Evolução</span>
+    </header>
+
+    <div class="content">
+      <p class="eyebrow">Dados que contam a história</p>
+      <h2 class="h-section"><span class="num">15.</span> Relatório de evolução com gráficos</h2>
+      <div class="divider"></div>
+
+      <p class="lead">
+        A aba <b>Evolução</b> transforma os indicadores do período em <b>gráficos prontos para apresentação
+        e prestação de contas</b>: evolução de atendimentos, comparativo de entradas/saídas/refeições,
+        pendências técnicas e novos acolhimentos. O relatório sai com o logotipo e pode ser salvo em PDF.
+      </p>
+
+      <div class="shot">
+        <div class="bar"><i></i><i></i><i></i><span class="url">carecore+ · Relatório de Evolução (PDF)</span></div>
+        <img src="telas/g20-evolucao-graficos.png" alt="Relatório de evolução com gráficos" />
+      </div>
+      <p class="shot-cap">Relatório de Evolução: indicadores e gráficos de linha gerados a partir da rotina registrada.</p>
+
+      <div class="callout ok" style="margin-top:13px;">
+        <span class="ico">📈</span>
+        <span><b>Pronto para a reunião:</b> os gráficos são leves, imprimíveis e ajudam a comunicar
+        resultados a gestores, conselhos e parceiros — sem montar planilha nenhuma.</span>
+      </div>
+    </div>
+
+    <footer class="pg-footer">
+      <span class="pg-num">Página 17</span>
+      <div class="zap"><img class="zap-qr" src="whatsapp_qr.svg" alt="QR WhatsApp" /><span class="zap-label">WhatsApp me</span><span class="zap-phone">(11) 97072-9208</span></div>
+      <span class="pg-tag"><b>CARECORE+</b><a class="pg-site" href="https://carecoreplus.com.br" target="_blank" rel="noopener noreferrer">carecoreplus.com.br</a></span>
+    </footer>
+  </section>
+
+  <!-- ================= PÁGINA 18 — CONTATO ================= -->
+  <section class="page" id="sec16">
+    <header class="pg-header">
+      <div class="brand"><img class="brand-logo" src="logo.png" alt="CARECORE+" /><span class="brand-name">CARE<span>CORE+</span></span></div>
+      <span class="pg-kicker">16 · Contato</span>
+    </header>
+
+    <div class="content" style="display:flex; flex-direction:column;">
+      <p class="eyebrow">Vamos conversar</p>
+      <h2 class="h-section"><span class="num">16.</span> Próximos passos</h2>
+      <div class="divider"></div>
+
+      <p class="lead">
+        Com este guia você já consegue dar o primeiro acesso, montar a equipe e operar o dia a dia — da
+        portaria à prestação de contas. Quer ajuda para configurar a sua instituição ou ver tudo
+        funcionando ao vivo? Fale com a gente.
+      </p>
+
+      <div style="flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; gap:16px;">
+        <div class="cover-logo-box" style="padding:18px 26px;">
+          <img src="logo.png" alt="CARECORE+" style="height:70px;" />
+        </div>
+
+        <div>
+          <h3 style="font-size:24px; font-weight:900;">Fale com a gente</h3>
+          <p style="font-size:13px; color:var(--muted); margin-top:6px;">Aponte a câmera para o QR Code e chame no WhatsApp</p>
+        </div>
+
+        <div style="display:flex; flex-direction:column; align-items:center; gap:8px; border:1px solid var(--line); border-radius:18px; padding:18px 26px; background:var(--soft-2);">
+          <img class="zap-qr" src="whatsapp_qr.svg" alt="QR WhatsApp" style="width:120px; height:120px;" />
+          <div style="font-size:18px; font-weight:900; color:var(--ink);">WhatsApp me</div>
+          <div style="font-size:14px; color:var(--brand); font-weight:800;">(11) 97072-9208</div>
+        </div>
+      </div>
+    </div>
+
+    <footer class="pg-footer">
+      <span class="pg-num">Página 18</span>
+      <div class="zap"><img class="zap-qr" src="whatsapp_qr.svg" alt="QR WhatsApp" /><span class="zap-label">WhatsApp me</span><span class="zap-phone">(11) 97072-9208</span></div>
+      <span class="pg-tag"><b>CARECORE+</b><a class="pg-site" href="https://carecoreplus.com.br" target="_blank" rel="noopener noreferrer">carecoreplus.com.br</a></span>
+    </footer>
+  </section>
+
+</body>
+</html>

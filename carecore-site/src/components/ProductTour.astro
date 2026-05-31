@@ -1,0 +1,371 @@
+---
+import { SITE } from '../config/site';
+
+/** Apresentação automática das principais telas (efeito “vídeo” leve, sem MP4). */
+const slides = [
+  {
+    image: '/telas/dashboard.png',
+    alt: 'Dashboard principal',
+    tag: 'Dashboard',
+    title: 'Visão geral da instituição',
+    text: 'Indicadores de acolhidos, leitos, pendências e avisos — tudo em um painel para a gestão começar o dia informada.',
+  },
+  {
+    image: '/telas/operacional.png',
+    alt: 'Dashboard operacional',
+    tag: 'Operacional',
+    title: 'Rotina do dia em tempo real',
+    text: 'Quem está dentro ou fora, refeições registradas e alertas operacionais para a equipe de plantão.',
+  },
+  {
+    image: '/telas/rotina.png',
+    alt: 'Rotina diária',
+    tag: 'Rotina',
+    title: 'Controle de fluxo na portaria',
+    text: 'Entrada, saída, refeições e interações com bipagem por QR ou código — manual ou automático.',
+  },
+  {
+    image: '/telas/conviventes-elaine.png',
+    alt: 'Ficha da convivente Elaine Barbosa Barbosa',
+    tag: 'Prontuário',
+    title: 'Ficha completa do acolhido',
+    text: 'Dados pessoais, assistência, saúde, documentos e PIA — com foto de perfil e permissões por perfil de usuário.',
+  },
+  {
+    image: '/telas/ocorrencias.png',
+    alt: 'Central de ocorrências',
+    tag: 'Ocorrências',
+    title: 'Central de ocorrências',
+    text: 'Registro pelo orientador, parecer do técnico e histórico resolvido — com rastreabilidade da equipe.',
+  },
+  {
+    image: '/telas/acomodacoes.png',
+    alt: 'Acomodações',
+    tag: 'Acomodações',
+    title: 'Quartos e leitos',
+    text: 'Cadastro de alas, capacidade e ocupação. Transfira acolhidos entre leitos com segurança.',
+  },
+  {
+    image: '/telas/sisa.png',
+    alt: 'Convênio SISA',
+    tag: 'SISA',
+    title: 'Convênio e SISA',
+    text: 'Relatórios mensais e diários, importação de planilhas e exportação para prestação de contas.',
+  },
+  {
+    image: '/telas/relatorios.png',
+    alt: 'Central de relatórios',
+    tag: 'Relatórios',
+    title: 'Central de relatórios',
+    text: 'Filtros por período, impressão e exportação — conviventes, rotina, ocorrências e documentação.',
+  },
+];
+
+const slideDurationMs = 5500;
+---
+
+<div
+  class="product-tour card overflow-hidden p-0 shadow-xl shadow-brand-600/10"
+  data-product-tour
+  data-duration={slideDurationMs}
+  aria-roledescription="carousel"
+  aria-label="Apresentação das principais telas do CareCore+"
+>
+  <div class="flex items-center justify-between border-b border-slate-800 bg-slate-900 px-4 py-2.5 text-xs text-slate-300">
+    <div class="flex items-center gap-2">
+      <span class="flex gap-1" aria-hidden="true">
+        <span class="h-2.5 w-2.5 rounded-full bg-red-400/80"></span>
+        <span class="h-2.5 w-2.5 rounded-full bg-amber-400/80"></span>
+        <span class="h-2.5 w-2.5 rounded-full bg-emerald-400/80"></span>
+      </span>
+      <span class="hidden sm:inline">app.{SITE.domain}</span>
+    </div>
+    <div class="flex items-center gap-2">
+      <span
+        class="inline-flex items-center gap-1.5 rounded-full bg-slate-800 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-200"
+        data-tour-status
+      >
+        <span class="relative flex h-2 w-2" aria-hidden="true">
+          <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-60"></span>
+          <span class="relative inline-flex h-2 w-2 rounded-full bg-emerald-400"></span>
+        </span>
+        Apresentação
+      </span>
+    </div>
+  </div>
+
+  <div class="relative aspect-[16/10] bg-slate-950">
+    {
+      slides.map((slide, index) => (
+        <article
+          class:list={['tour-slide absolute inset-0 flex flex-col', index === 0 && 'is-active']}
+          data-tour-slide
+          data-index={index}
+          aria-hidden={index !== 0 ? 'true' : 'false'}
+        >
+          <div class="relative min-h-0 flex-1 overflow-hidden bg-slate-900">
+            <img
+              src={slide.image}
+              alt={slide.alt}
+              width="1200"
+              height="750"
+              class="tour-image h-full w-full object-cover object-top"
+              loading={index === 0 ? 'eager' : 'lazy'}
+              decoding="async"
+            />
+            <div
+              class="pointer-events-none absolute inset-0 bg-gradient-to-t from-slate-950/90 via-slate-950/20 to-transparent"
+              aria-hidden="true"
+            ></div>
+          </div>
+
+          <div class="tour-caption absolute inset-x-0 bottom-0 p-4 sm:p-5">
+            <p class="text-[10px] font-bold uppercase tracking-[0.2em] text-brand-400">{slide.tag}</p>
+            <h3 class="mt-1 text-lg font-black text-white sm:text-xl">{slide.title}</h3>
+            <p class="mt-2 max-w-xl text-sm leading-relaxed text-slate-200">{slide.text}</p>
+          </div>
+        </article>
+      ))
+    }
+
+    <div
+      class="pointer-events-none absolute left-0 right-0 top-0 h-1 bg-slate-800"
+      aria-hidden="true"
+    >
+      <div class="tour-progress h-full w-0 bg-gradient-to-r from-brand-600 to-brand-400" data-tour-progress></div>
+    </div>
+  </div>
+
+  <div class="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 bg-white px-4 py-3">
+    <div class="flex flex-wrap gap-1.5" role="tablist" aria-label="Telas da apresentação">
+      {
+        slides.map((slide, index) => (
+          <button
+            type="button"
+            class:list={[
+              'tour-dot h-2 w-2 rounded-full bg-slate-300 transition-all hover:bg-brand-400',
+              index === 0 && 'is-active',
+            ]}
+            data-tour-dot={index}
+            aria-label={`Ir para: ${slide.title}`}
+            aria-selected={index === 0 ? 'true' : 'false'}
+          ></button>
+        ))
+      }
+    </div>
+
+    <div class="flex items-center gap-2">
+      <button
+        type="button"
+        class="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-bold text-slate-600 hover:border-brand-600 hover:text-brand-600"
+        data-tour-prev
+        aria-label="Tela anterior"
+      >
+        ← Anterior
+      </button>
+      <button
+        type="button"
+        class="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-bold text-slate-600 hover:border-brand-600 hover:text-brand-600"
+        data-tour-play
+        aria-label="Pausar apresentação"
+        aria-pressed="false"
+      >
+        Pausar
+      </button>
+      <button
+        type="button"
+        class="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-bold text-slate-600 hover:border-brand-600 hover:text-brand-600"
+        data-tour-next
+        aria-label="Próxima tela"
+      >
+        Próxima →
+      </button>
+    </div>
+  </div>
+</div>
+
+<style>
+  .tour-slide {
+    opacity: 0;
+    visibility: hidden;
+    transition:
+      opacity 0.7s ease,
+      visibility 0.7s ease;
+  }
+
+  .tour-slide.is-active {
+    opacity: 1;
+    visibility: visible;
+    z-index: 1;
+  }
+
+  .tour-slide.is-active .tour-caption {
+    animation: caption-in 0.65s ease 0.15s both;
+  }
+
+  .tour-slide.is-active .tour-image {
+    animation: kenburns 5.5s ease both;
+  }
+
+  .tour-dot.is-active {
+    width: 1.25rem;
+    background-color: #7c3aed;
+  }
+
+  .tour-progress {
+    transition: width 0.1s linear;
+  }
+
+  @keyframes caption-in {
+    from {
+      opacity: 0;
+      transform: translateY(12px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes kenburns {
+    from {
+      transform: scale(1);
+    }
+    to {
+      transform: scale(1.04);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .tour-slide,
+    .tour-slide.is-active .tour-caption,
+    .tour-slide.is-active .tour-image {
+      animation: none !important;
+      transition: opacity 0.2s ease;
+    }
+  }
+</style>
+
+<script>
+  function initProductTour(root) {
+    const slides = Array.from(root.querySelectorAll('[data-tour-slide]'));
+    const dots = Array.from(root.querySelectorAll('[data-tour-dot]'));
+    const progress = root.querySelector('[data-tour-progress]');
+    const btnPrev = root.querySelector('[data-tour-prev]');
+    const btnNext = root.querySelector('[data-tour-next]');
+    const btnPlay = root.querySelector('[data-tour-play]');
+    const status = root.querySelector('[data-tour-status]');
+
+    if (!slides.length || !progress) return;
+
+    const duration = Number(root.dataset.duration) || 5500;
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    let index = 0;
+    let playing = !reducedMotion;
+    let progressFrame = null;
+    let slideStartedAt = 0;
+
+    function setActive(nextIndex) {
+      index = (nextIndex + slides.length) % slides.length;
+
+      slides.forEach((slide, i) => {
+        const active = i === index;
+        slide.classList.toggle('is-active', active);
+        slide.setAttribute('aria-hidden', active ? 'false' : 'true');
+      });
+
+      dots.forEach((dot, i) => {
+        const active = i === index;
+        dot.classList.toggle('is-active', active);
+        dot.setAttribute('aria-selected', active ? 'true' : 'false');
+      });
+
+      slideStartedAt = performance.now();
+      progress.style.width = '0%';
+    }
+
+    function tickProgress() {
+      if (!playing) return;
+
+      const elapsed = performance.now() - slideStartedAt;
+      const pct = Math.min(100, (elapsed / duration) * 100);
+      progress.style.width = `${pct}%`;
+
+      if (elapsed >= duration) {
+        setActive(index + 1);
+      }
+
+      progressFrame = requestAnimationFrame(tickProgress);
+    }
+
+    function stopTimers() {
+      if (progressFrame) {
+        cancelAnimationFrame(progressFrame);
+        progressFrame = null;
+      }
+    }
+
+    function startAutoplay() {
+      stopTimers();
+      if (!playing) return;
+
+      slideStartedAt = performance.now();
+      progressFrame = requestAnimationFrame(tickProgress);
+    }
+
+    function updatePlayUi() {
+      if (!btnPlay) return;
+      btnPlay.textContent = playing ? 'Pausar' : 'Reproduzir';
+      btnPlay.setAttribute('aria-label', playing ? 'Pausar apresentação' : 'Reproduzir apresentação');
+      btnPlay.setAttribute('aria-pressed', playing ? 'false' : 'true');
+
+      if (status) {
+        status.innerHTML = playing
+          ? `<span class="relative flex h-2 w-2" aria-hidden="true"><span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-60"></span><span class="relative inline-flex h-2 w-2 rounded-full bg-emerald-400"></span></span> Apresentação`
+          : `<span class="inline-flex h-2 w-2 rounded-full bg-amber-400" aria-hidden="true"></span> Pausado`;
+      }
+    }
+
+    function go(delta) {
+      setActive(index + delta);
+      if (playing) startAutoplay();
+    }
+
+    function togglePlay() {
+      playing = !playing;
+      updatePlayUi();
+      if (playing) startAutoplay();
+      else stopTimers();
+    }
+
+    dots.forEach((dot) => {
+      dot.addEventListener('click', () => {
+        const target = Number(dot.getAttribute('data-tour-dot'));
+        if (Number.isNaN(target)) return;
+        setActive(target);
+        if (playing) startAutoplay();
+      });
+    });
+
+    btnPrev?.addEventListener('click', () => go(-1));
+    btnNext?.addEventListener('click', () => go(1));
+    btnPlay?.addEventListener('click', togglePlay);
+
+    root.addEventListener('mouseenter', () => {
+      if (!playing) return;
+      stopTimers();
+    });
+
+    root.addEventListener('mouseleave', () => {
+      if (!playing) return;
+      startAutoplay();
+    });
+
+    setActive(0);
+    updatePlayUi();
+    if (playing) startAutoplay();
+  }
+
+  document.querySelectorAll('[data-product-tour]').forEach(initProductTour);
+</script>

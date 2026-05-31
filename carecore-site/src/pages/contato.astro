@@ -1,0 +1,53 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import { SITE, whatsappLink } from '../config/site';
+---
+
+<BaseLayout
+  title="Contato — CareCore+"
+  description="Fale com a equipe CareCore+ para demonstração, dúvidas comerciais ou suporte à contratação."
+>
+  <section class="mx-auto max-w-3xl px-4 py-14 sm:px-6">
+    <h1 class="section-title">Contato</h1>
+    <p class="section-lead">
+      Quer conhecer o sistema, agendar uma demonstração ou tirar dúvidas sobre implantação? Fale conosco.
+    </p>
+
+    <div class="mt-10 space-y-6">
+      <div class="card">
+        <h2 class="text-lg font-bold text-slate-900">WhatsApp</h2>
+        <p class="mt-2 text-sm text-slate-600">
+          Canal preferencial para resposta rápida sobre o produto e apresentações.
+        </p>
+        <a
+          href={whatsappLink('Olá! Vi o site do CareCore+ e gostaria de mais informações.')}
+          class="btn-primary mt-4"
+          rel="noopener noreferrer"
+          target="_blank"
+        >
+          Chamar no WhatsApp — {SITE.whatsappDisplay}
+        </a>
+      </div>
+
+      <div class="card border-brand-600/20 bg-brand-soft/40">
+        <h2 class="text-lg font-bold text-slate-900">Já sou cliente</h2>
+        <p class="mt-2 text-sm text-slate-600">
+          O acesso ao sistema (login, prontuários, rotina) fica em endereço separado, por segurança.
+          Não envie senhas por WhatsApp.
+        </p>
+        <a href={SITE.appUrl} class="btn-secondary mt-4" rel="noopener noreferrer">
+          Ir para app.{SITE.domain}
+        </a>
+      </div>
+
+      <div class="card">
+        <h2 class="text-lg font-bold text-slate-900">Implantação</h2>
+        <p class="mt-2 text-sm leading-relaxed text-slate-600">
+          O CareCore+ é oferecido como serviço (SaaS) para instituições. A implantação em produção inclui
+          ambiente seguro (HTTPS), banco de dados dedicado e migração assistida dos primeiros cadastros.
+          Detalhes comerciais são combinados na contratação.
+        </p>
+      </div>
+    </div>
+  </section>
+</BaseLayout>

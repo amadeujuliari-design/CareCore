@@ -1,0 +1,104 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import ProductTour from '../components/ProductTour.astro';
+import { SITE, whatsappLink } from '../config/site';
+
+const highlights = [
+  {
+    title: 'Rotina diária',
+    text: 'Entrada, saída, refeições e interações com bipagem por QR/código — pensado para portaria e plantão.',
+  },
+  {
+    title: 'Prontuário completo',
+    text: 'Ficha do acolhido com abas, documentos, PIA, histórico e controle de acesso por perfil (RBAC).',
+  },
+  {
+    title: 'Operação e relatórios',
+    text: 'Dashboard, ocorrências, acomodações, Convênio/SISA e central de relatórios para gestão e prestação de contas.',
+  },
+];
+
+const pillars = [
+  'Multi-instituição (cada ONG vê só os seus dados)',
+  'Perfis de acesso: gestão, técnico, orientador',
+  'Responsivo para notebook, tablet e celular na rede',
+  'HTTPS e domínio próprio na operação em produção',
+];
+---
+
+<BaseLayout>
+  <section class="relative overflow-hidden bg-gradient-to-br from-brand-soft via-white to-slate-50">
+    <div class="absolute -right-24 -top-24 h-72 w-72 rounded-full bg-brand-400/10 blur-3xl" aria-hidden="true"></div>
+    <div class="absolute -bottom-16 -left-16 h-64 w-64 rounded-full bg-brand-600/10 blur-3xl" aria-hidden="true"></div>
+
+    <div class="relative mx-auto grid max-w-6xl gap-10 px-4 py-16 sm:px-6 lg:grid-cols-2 lg:items-center lg:py-24">
+      <div>
+        <p class="inline-flex rounded-full bg-brand-soft px-4 py-1 text-xs font-bold uppercase tracking-wider text-brand-600">
+          Gestão para acolhida e convivência
+        </p>
+        <h1 class="mt-6 text-4xl font-black leading-tight tracking-tight text-slate-900 sm:text-5xl">
+          Operação do dia a dia, prontuário e relatórios — sem planilha solta.
+        </h1>
+        <p class="mt-6 text-lg leading-relaxed text-slate-600">
+          O <strong>CareCore+</strong> centraliza cadastro de acolhidos, rotina, ocorrências,
+          acomodações e indicadores para equipes de ONGs e casas de recuperação.
+        </p>
+        <div class="mt-8 flex flex-wrap gap-3">
+          <a href={whatsappLink()} class="btn-primary" rel="noopener noreferrer" target="_blank">
+            Falar conosco
+          </a>
+          <a href="/funcionalidades" class="btn-secondary">Ver funcionalidades</a>
+          <a href={SITE.guiaUrl} class="btn-secondary">Guia do sistema</a>
+        </div>
+        <p class="mt-6 text-sm text-slate-500">
+          Já é cliente?{' '}
+          <a href={SITE.appUrl} class="font-semibold text-brand-600 hover:underline" rel="noopener noreferrer">
+            Entrar no sistema →
+          </a>
+        </p>
+      </div>
+
+      <ProductTour />
+    </div>
+  </section>
+
+  <section class="mx-auto max-w-6xl px-4 py-16 sm:px-6">
+    <h2 class="section-title">Feito para quem cuida de pessoas</h2>
+    <p class="section-lead">
+      Telas pensadas para rotina real: plantão, técnicos, portaria e gestão — com dados isolados por instituição.
+    </p>
+    <div class="mt-10 grid gap-6 md:grid-cols-3">
+      {
+        highlights.map((item) => (
+          <article class="card">
+            <h3 class="text-lg font-bold text-slate-900">{item.title}</h3>
+            <p class="mt-3 text-sm leading-relaxed text-slate-600">{item.text}</p>
+          </article>
+        ))
+      }
+    </div>
+  </section>
+
+  <section class="bg-slate-900 text-white">
+    <div class="mx-auto max-w-6xl px-4 py-16 sm:px-6 lg:flex lg:items-center lg:justify-between lg:gap-12">
+      <div>
+        <h2 class="text-3xl font-black tracking-tight">Segurança desde a arquitetura</h2>
+        <p class="mt-4 max-w-xl text-slate-300">
+          Site institucional separado do sistema operacional. Login, prontuários e documentos ficam em
+          subdomínio dedicado, com API e banco isolados — reduzindo superfície de ataque e simplificando HTTPS.
+        </p>
+        <ul class="mt-6 space-y-2 text-sm text-slate-300">
+          {pillars.map((item) => (
+            <li class="flex gap-2">
+              <span class="text-brand-400" aria-hidden="true">✓</span>
+              <span>{item}</span>
+            </li>
+          ))}
+        </ul>
+      </div>
+      <div class="mt-10 shrink-0 lg:mt-0">
+        <a href="/contato" class="btn-primary">Solicitar apresentação</a>
+      </div>
+    </div>
+  </section>
+</BaseLayout>

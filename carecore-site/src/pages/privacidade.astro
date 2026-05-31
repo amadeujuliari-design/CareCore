@@ -1,0 +1,57 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import { SITE } from '../config/site';
+---
+
+<BaseLayout
+  title="Privacidade e LGPD — CareCore+"
+  description="Política de privacidade do site institucional CareCore+ e informações sobre tratamento de dados no sistema."
+>
+  <section class="mx-auto max-w-3xl px-4 py-14 sm:px-6">
+    <h1 class="section-title">Privacidade</h1>
+    <p class="section-lead">
+      Transparência sobre este site institucional e sobre o tratamento de dados no sistema operacional.
+    </p>
+
+    <div class="prose prose-slate mt-10 max-w-none text-sm leading-relaxed text-slate-600">
+      <h2 class="text-lg font-bold text-slate-900">1. Este site ({SITE.domain})</h2>
+      <p>
+        Este endereço é o site institucional (informações comerciais e de produto). Ele <strong>não</strong>
+        processa login, prontuários nem dados sensíveis de acolhidos. Não utilizamos cookies de rastreamento
+        de marketing nesta versão inicial.
+      </p>
+      <p>
+        Ao clicar em links externos (por exemplo WhatsApp), você passa a estar sujeito às políticas da
+        plataforma de destino.
+      </p>
+
+      <h2 class="text-lg font-bold text-slate-900 mt-8">2. Sistema operacional (app.{SITE.domain})</h2>
+      <p>
+        O aplicativo de gestão é hospedado em subdomínio separado. Lá são tratados dados cadastrais de
+        instituições, equipe e acolhidos, incluindo informações que podem ser sensíveis (saúde, documentos,
+        ocorrências). O acesso exige autenticação e obedece a perfis de permissão definidos pela instituição.
+      </p>
+      <p>
+        Documentos e fotos são servidos por rotas autenticadas — não ficam expostos publicamente na internet.
+      </p>
+
+      <h2 class="text-lg font-bold text-slate-900 mt-8">3. Responsabilidades</h2>
+      <p>
+        Cada instituição contratante é responsável pelo uso adequado dos dados de seus acolhidos e equipe,
+        em conformidade com a LGPD e com suas políticas internas. O CareCore+ fornece isolamento por
+        instituição (multi-tenant) e controles de acesso por perfil.
+      </p>
+
+      <h2 class="text-lg font-bold text-slate-900 mt-8">4. Contato sobre privacidade</h2>
+      <p>
+        Dúvidas sobre privacidade ou tratamento de dados podem ser encaminhadas pelo canal de contato
+        em <a href="/contato" class="text-brand-600 hover:underline">/contato</a>.
+      </p>
+
+      <p class="mt-8 text-xs text-slate-500">
+        Última atualização: maio de 2026. Este texto será refinado junto com o contrato comercial e o
+        encarregado de dados quando a operação SaaS estiver ativa.
+      </p>
+    </div>
+  </section>
+</BaseLayout>
