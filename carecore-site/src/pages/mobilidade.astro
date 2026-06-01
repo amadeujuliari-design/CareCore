@@ -1,0 +1,133 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import { whatsappLink } from '../config/site';
+
+const dispositivos = [
+  {
+    nome: 'Computador e notebook',
+    descricao: 'Gestão, relatórios, prontuário completo e visão ampla da operação — ideal para coordenação e backoffice.',
+    icon: '💻',
+  },
+  {
+    nome: 'Tablet',
+    descricao: 'Ficha do acolhido, ocorrências e rotina com tela confortável — perfeito para técnicos em visita ou plantão.',
+    icon: '📱',
+  },
+  {
+    nome: 'Celular',
+    descricao: 'Entrada, saída, refeições e bipagem por QR na portaria — registro rápido onde a ação acontece.',
+    icon: '📲',
+  },
+];
+
+const cenarios = [
+  {
+    titulo: 'Portaria e plantão',
+    texto: 'Registre presença, refeições e movimentação pelo celular — com leitor de QR ou busca manual, sem depender de um PC fixo.',
+  },
+  {
+    titulo: 'Equipe técnica',
+    texto: 'Consulte ficha, lance ocorrências e acompanhe pendências no tablet ou notebook, dentro ou fora da sala administrativa.',
+  },
+  {
+    titulo: 'Gestão',
+    texto: 'Dashboards, relatórios e indicadores no computador — com a mesma base de dados que a equipe de campo alimenta em tempo real.',
+  },
+];
+---
+
+<BaseLayout
+  title="Mobilidade e multiplataforma — CareCore+"
+  description="CareCore+ funciona em computador, notebook, tablet e celular. Registre rotina e atividades onde a equipe estiver."
+>
+  <section class="relative overflow-hidden bg-gradient-to-br from-brand-soft via-white to-slate-50">
+    <div class="mx-auto max-w-5xl px-4 py-14 sm:px-6 lg:py-20">
+      <p class="inline-flex rounded-full bg-brand-soft px-4 py-1 text-xs font-bold uppercase tracking-wider text-brand-600">
+        Multiplataforma
+      </p>
+      <h1 class="section-title mt-4">A operação acompanha quem cuida — em qualquer tela</h1>
+      <p class="section-lead">
+        O CareCore+ é <strong>responsivo e pensado para a rotina real</strong>: funciona em computador,
+        notebook, tablet e celular, na rede da instituição. Quem está na portaria, no corredor ou na
+        sala técnica registra atividades no mesmo sistema — sem planilha paralela.
+      </p>
+    </div>
+  </section>
+
+  <section class="mx-auto max-w-5xl px-4 py-14 sm:px-6">
+    <h2 class="text-2xl font-black text-slate-900">Onde sua equipe pode trabalhar</h2>
+    <p class="mt-3 max-w-2xl text-slate-600">
+      Um único login, mesma instituição, mesmos dados — adaptados ao tamanho da tela que estiver à mão.
+    </p>
+    <div class="mt-10 grid gap-6 md:grid-cols-3">
+      {
+        dispositivos.map((item) => (
+          <article class="card text-center md:text-left">
+            <span class="text-4xl" aria-hidden="true">{item.icon}</span>
+            <h3 class="mt-4 text-lg font-bold text-slate-900">{item.nome}</h3>
+            <p class="mt-2 text-sm leading-relaxed text-slate-600">{item.descricao}</p>
+          </article>
+        ))
+      }
+    </div>
+  </section>
+
+  <section class="bg-slate-900 text-white">
+    <div class="mx-auto max-w-5xl px-4 py-14 sm:px-6">
+      <h2 class="text-2xl font-black">Mobilidade que facilita o registro</h2>
+      <p class="mt-3 max-w-2xl text-slate-300">
+        A informação entra no sistema no momento da ação — não horas depois, copiada de um caderno.
+      </p>
+      <ul class="mt-10 space-y-6">
+        {
+          cenarios.map((item) => (
+            <li class="flex gap-4 rounded-2xl border border-slate-700 bg-slate-800/50 p-5">
+              <span class="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand-600 text-sm font-black">
+                ✓
+              </span>
+              <div>
+                <h3 class="font-bold text-white">{item.titulo}</h3>
+                <p class="mt-1 text-sm leading-relaxed text-slate-300">{item.texto}</p>
+              </div>
+            </li>
+          ))
+        }
+      </ul>
+    </div>
+  </section>
+
+  <section class="mx-auto max-w-5xl px-4 py-14 sm:px-6">
+    <div class="card border-brand-600/20 bg-brand-soft/30">
+      <h2 class="text-xl font-bold text-slate-900">Interface que se adapta ao dispositivo</h2>
+      <p class="mt-3 text-sm leading-relaxed text-slate-600">
+        Menus, fichas e telas de rotina reorganizam-se automaticamente para telas menores. A equipe não
+        precisa de um aplicativo diferente por aparelho — acessa pelo navegador, com segurança HTTPS,
+        no endereço dedicado da sua instituição.
+      </p>
+      <ul class="mt-5 grid gap-2 text-sm text-slate-700 sm:grid-cols-2">
+        <li class="flex gap-2"><span class="text-brand-600 font-bold">✓</span> Celular na portaria e no plantão</li>
+        <li class="flex gap-2"><span class="text-brand-600 font-bold">✓</span> Tablet para técnicos e orientadores</li>
+        <li class="flex gap-2"><span class="text-brand-600 font-bold">✓</span> Notebook e PC para gestão</li>
+        <li class="flex gap-2"><span class="text-brand-600 font-bold">✓</span> Dados sincronizados em tempo real</li>
+      </ul>
+      <a href="/funcionalidades" class="btn-secondary mt-6">Ver todas as funcionalidades</a>
+    </div>
+  </section>
+
+  <section class="mx-auto max-w-5xl px-4 pb-16 sm:px-6">
+    <div class="card text-center sm:text-left">
+      <h2 class="text-xl font-bold text-slate-900">Quer ver na prática no seu celular ou tablet?</h2>
+      <p class="mt-2 text-sm text-slate-600">
+        Agende uma demonstração e mostramos a rotina sendo registrada em diferentes dispositivos.
+      </p>
+      <a
+        href={whatsappLink('Olá! Quero conhecer o CareCore+ no celular/tablet e ver a mobilidade na rotina.')}
+        class="btn-primary mt-5"
+        rel="noopener noreferrer"
+        target="_blank"
+      >
+        Agendar demonstração
+      </a>
+    </div>
+  </section>
+</BaseLayout>

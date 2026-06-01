@@ -25,6 +25,12 @@ const slides = [
     text: 'Entrada, saída, refeições e interações com bipagem por QR ou código — manual ou automático.',
   },
   {
+    layout: 'mobility',
+    tag: 'Mobilidade',
+    title: 'Registre de qualquer lugar',
+    text: 'Computador, notebook, tablet ou celular — a equipe lança rotina e atividades na tela que tiver à mão, com os mesmos dados em tempo real.',
+  },
+  {
     image: '/telas/conviventes-elaine.png',
     alt: 'Ficha da convivente Elaine Barbosa Barbosa',
     tag: 'Prontuário',
@@ -104,15 +110,43 @@ const slideDurationMs = 5500;
           aria-hidden={index !== 0 ? 'true' : 'false'}
         >
           <div class="relative min-h-0 flex-1 overflow-hidden bg-slate-900">
-            <img
-              src={slide.image}
-              alt={slide.alt}
-              width="1200"
-              height="750"
-              class="tour-image h-full w-full object-cover object-top"
-              loading={index === 0 ? 'eager' : 'lazy'}
-              decoding="async"
-            />
+            {slide.layout === 'mobility' ? (
+              <div class="mobility-slide flex h-full w-full flex-col items-center justify-center gap-6 bg-gradient-to-br from-slate-900 via-brand-950 to-slate-900 px-6 py-8">
+                <div class="flex flex-wrap items-end justify-center gap-4 sm:gap-6">
+                  <div class="mobility-device mobility-device--desktop rounded-lg border border-slate-600 bg-slate-800 p-1 shadow-xl">
+                    <div class="h-24 w-40 overflow-hidden rounded bg-slate-950 sm:h-28 sm:w-48">
+                      <img src="/telas/dashboard.png" alt="" class="h-full w-full object-cover object-top opacity-90" loading="lazy" />
+                    </div>
+                    <p class="mt-1 text-center text-[9px] font-bold text-slate-400">PC / Notebook</p>
+                  </div>
+                  <div class="mobility-device mobility-device--tablet rounded-xl border border-slate-600 bg-slate-800 p-1.5 shadow-xl">
+                    <div class="h-28 w-20 overflow-hidden rounded-lg bg-slate-950 sm:h-32 sm:w-24">
+                      <img src="/telas/rotina.png" alt="" class="h-full w-full object-cover object-top opacity-90" loading="lazy" />
+                    </div>
+                    <p class="mt-1 text-center text-[9px] font-bold text-slate-400">Tablet</p>
+                  </div>
+                  <div class="mobility-device mobility-device--phone rounded-2xl border border-slate-600 bg-slate-800 p-1 shadow-xl">
+                    <div class="h-32 w-16 overflow-hidden rounded-xl bg-slate-950 sm:h-36 sm:w-[4.5rem]">
+                      <img src="/telas/operacional.png" alt="" class="h-full w-full object-cover object-top opacity-90" loading="lazy" />
+                    </div>
+                    <p class="mt-1 text-center text-[9px] font-bold text-slate-400">Celular</p>
+                  </div>
+                </div>
+                <p class="max-w-md text-center text-xs font-semibold text-brand-300">
+                  Mesma operação · qualquer dispositivo · dados sincronizados
+                </p>
+              </div>
+            ) : (
+              <img
+                src={slide.image}
+                alt={slide.alt}
+                width="1200"
+                height="750"
+                class="tour-image h-full w-full object-cover object-top"
+                loading={index === 0 ? 'eager' : 'lazy'}
+                decoding="async"
+              />
+            )}
             <div
               class="pointer-events-none absolute inset-0 bg-gradient-to-t from-slate-950/90 via-slate-950/20 to-transparent"
               aria-hidden="true"
@@ -207,6 +241,22 @@ const slideDurationMs = 5500;
     animation: kenburns 5.5s ease both;
   }
 
+  .tour-slide.is-active .mobility-device {
+    animation: device-in 0.6s ease both;
+  }
+
+  .tour-slide.is-active .mobility-device--desktop {
+    animation-delay: 0.1s;
+  }
+
+  .tour-slide.is-active .mobility-device--tablet {
+    animation-delay: 0.2s;
+  }
+
+  .tour-slide.is-active .mobility-device--phone {
+    animation-delay: 0.3s;
+  }
+
   .tour-dot.is-active {
     width: 1.25rem;
     background-color: #7c3aed;
@@ -233,6 +283,17 @@ const slideDurationMs = 5500;
     }
     to {
       transform: scale(1.04);
+    }
+  }
+
+  @keyframes device-in {
+    from {
+      opacity: 0;
+      transform: translateY(16px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
     }
   }
 
