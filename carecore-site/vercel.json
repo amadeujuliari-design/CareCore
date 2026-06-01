@@ -1,8 +1,10 @@
 {
-  "rewrites": [
-    { "source": "/guia", "destination": "/guia/guia-carecore.html" },
-    { "source": "/guia/", "destination": "/guia/guia-carecore.html" }
-  ],
+  "rewrites": {
+    "beforeFiles": [
+      { "source": "/guia", "destination": "/guia/guia-carecore.html" },
+      { "source": "/guia/", "destination": "/guia/guia-carecore.html" }
+    ]
+  },
   "headers": [
     {
       "source": "/(.*)",
