@@ -4,9 +4,25 @@ export const PRECIFICACAO = {
   blocoCadastros: 100,
   valorBloco: 500,
   tetoDesconto: 1000,
-  descontoPercentual: 0.15,
-  valorBlocoComDesconto: 425,
+  /** 1º degrau acima de 1.000 cadastros. */
+  descontoInicialPercentual: 15,
+  /** +5 p.p. a cada novo bloco de 100 acima de 1.000. */
+  incrementoDescontoPorBloco: 5,
 };
+
+export function descontoPercentualDegrau(indiceDegrau) {
+  const desconto =
+    PRECIFICACAO.descontoInicialPercentual +
+    (indiceDegrau - 1) * PRECIFICACAO.incrementoDescontoPorBloco;
+
+  return Math.min(100, desconto);
+}
+
+export function valorBlocoDegrau(indiceDegrau) {
+  const desconto = descontoPercentualDegrau(indiceDegrau);
+
+  return PRECIFICACAO.valorBloco * (1 - desconto / 100);
+}
 
 export function calcularMensalidade(totalCadastros) {
   const total = Math.max(0, Math.floor(Number(totalCadastros) || 0));
@@ -20,13 +36,34 @@ export function calcularMensalidade(totalCadastros) {
   }
 
   const blocosExtras = Math.ceil((total - PRECIFICACAO.tetoDesconto) / PRECIFICACAO.blocoCadastros);
-  const baseAteMil = (PRECIFICACAO.tetoDesconto / PRECIFICACAO.blocoCadastros) * PRECIFICACAO.valorBloco;
+  const baseAteMil =
+    (PRECIFICACAO.tetoDesconto / PRECIFICACAO.blocoCadastros) * PRECIFICACAO.valorBloco;
 
-  return baseAteMil + blocosExtras * PRECIFICACAO.valorBlocoComDesconto;
+  let extras = 0;
+
+  for (let degrau = 1; degrau <= blocosExtras; degrau += 1) {
+    extras += valorBlocoDegrau(degrau);
+  }
+
+  return baseAteMil + extras;
 }
 
 export function formatarMoeda(valor) {
   return valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+}
+
+function descreverComposicaoAcimaMil(total) {
+  const blocosExtras = Math.ceil((total - PRECIFICACAO.tetoDesconto) / PRECIFICACAO.blocoCadastros);
+  const partes = [`R$ 5.000 (até 1.000)`];
+
+  for (let degrau = 1; degrau <= blocosExtras; degrau += 1) {
+    const desconto = descontoPercentualDegrau(degrau);
+    partes.push(
+      `bloco ${degrau}: ${desconto}% → ${formatarMoeda(valorBlocoDegrau(degrau))}`,
+    );
+  }
+
+  return partes.join(' + ');
 }
 
 /** Linhas principais da tabela comercial (total = conviventes + usuários). */
@@ -43,8 +80,22 @@ export function gerarLinhasTabelaPrecos() {
     observacao:
       ate <= PRECIFICACAO.tetoDesconto
         ? `${Math.ceil(ate / PRECIFICACAO.blocoCadastros)} blocos × R$ 500`
-        : ate === 1100
-          ? 'R$ 5.000 (até 1.000) + 1 bloco com 15% de desconto'
-          : `R$ 5.000 (até 1.000) + ${Math.ceil((ate - PRECIFICACAO.tetoDesconto) / PRECIFICACAO.blocoCadastros)} blocos com 15% de desconto`,
+        : descreverComposicaoAcimaMil(ate),
   }));
+}
+
+/** Degraus de desconto progressivo (para exibir no site). */
+export function gerarDegrausDescontoProgressivo(quantidade = 8) {
+  return Array.from({ length: quantidade }, (_, index) => {
+    const degrau = index + 1;
+    const inicio = PRECIFICACAO.tetoDesconto + (degrau - 1) * PRECIFICACAO.blocoCadastros + 1;
+    const fim = PRECIFICACAO.tetoDesconto + degrau * PRECIFICACAO.blocoCadastros;
+
+    return {
+      degrau,
+      faixa: `${inicio.toLocaleString('pt-BR')} a ${fim.toLocaleString('pt-BR')}`,
+      desconto: descontoPercentualDegrau(degrau),
+      valorBloco: valorBlocoDegrau(degrau),
+    };
+  });
 }

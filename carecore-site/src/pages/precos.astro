@@ -2,12 +2,13 @@
 import BaseLayout from '../layouts/BaseLayout.astro';
 import { whatsappLink } from '../config/site';
 import {
-  PRECIFICACAO,
   formatarMoeda,
+  gerarDegrausDescontoProgressivo,
   gerarLinhasTabelaPrecos,
 } from '../config/precificacao';
 
 const linhas = gerarLinhasTabelaPrecos();
+const degraus = gerarDegrausDescontoProgressivo(8);
 ---
 
 <BaseLayout
@@ -34,11 +35,44 @@ const linhas = gerarLinhasTabelaPrecos();
       </article>
       <article class="card">
         <p class="text-xs font-bold uppercase tracking-wider text-slate-500">Acima de 1.000</p>
-        <p class="mt-2 text-2xl font-black text-slate-900">R$ 425 / bloco</p>
+        <p class="mt-2 text-2xl font-black text-slate-900">Desconto progressivo</p>
         <p class="mt-2 text-sm text-slate-600">
-          15% de desconto só nos blocos acima de 1.000. Os primeiros R$ 5.000 (até 1.000) permanecem integrais.
+          1º bloco extra: 15% · 2º: 20% · 3º: 25%… (+5 p.p. a cada 100 cadastros). Base de R$ 5.000 até 1.000 permanece integral.
         </p>
       </article>
+    </div>
+
+    <div class="mt-8 card overflow-hidden p-0">
+      <div class="border-b border-slate-200 bg-slate-50 px-6 py-4">
+        <h2 class="text-lg font-bold text-slate-900">Desconto progressivo acima de 1.000</h2>
+        <p class="mt-1 text-sm text-slate-600">
+          Cada bloco de 100 cadastros acima de 1.000 ganha +5 pontos percentuais de desconto sobre R$ 500.
+        </p>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="min-w-full text-left text-sm">
+          <thead class="bg-white text-xs font-bold uppercase tracking-wider text-slate-500">
+            <tr>
+              <th class="px-6 py-3">Degrau</th>
+              <th class="px-6 py-3">Faixa (total cadastros)</th>
+              <th class="px-6 py-3">Desconto no bloco</th>
+              <th class="px-6 py-3">Valor do bloco</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100">
+            {
+              degraus.map((degrau) => (
+                <tr class="hover:bg-slate-50/80">
+                  <td class="px-6 py-3 font-semibold text-slate-800">{degrau.degrau}º acima de 1.000</td>
+                  <td class="px-6 py-3 text-slate-700">{degrau.faixa}</td>
+                  <td class="px-6 py-3 font-bold text-brand-600">{degrau.desconto}%</td>
+                  <td class="px-6 py-3 text-slate-700">{formatarMoeda(degrau.valorBloco)}</td>
+                </tr>
+              ))
+            }
+          </tbody>
+        </table>
+      </div>
     </div>
 
     <div class="mt-10 card overflow-hidden p-0">
@@ -81,9 +115,9 @@ const linhas = gerarLinhasTabelaPrecos();
         entram na faixa de R$ 1.000.
       </p>
       <p>
-        <strong>Acima de 1.000:</strong> a base de R$ {formatarMoeda(5000)} permanece. Cada novo bloco de 100
-        custa R$ {PRECIFICACAO.valorBlocoComDesconto.toLocaleString('pt-BR')} (R$ 500 − 15%), sem desconto retroativo
-        sobre os blocos anteriores.
+        <strong>Acima de 1.000:</strong> a base de {formatarMoeda(5000)} permanece. Cada novo bloco de 100 recebe
+        desconto progressivo sobre R$ 500: 15% no 1º degrau (1.001–1.100), 20% no 2º (1.101–1.200), 25% no 3º,
+        e assim por diante (+5 p.p. por degrau), sem desconto retroativo nos blocos anteriores.
       </p>
     </div>
 
