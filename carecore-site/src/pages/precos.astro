@@ -1,138 +1,161 @@
 ---
 import BaseLayout from '../layouts/BaseLayout.astro';
 import { whatsappLink } from '../config/site';
-import {
-  formatarMoeda,
-  gerarDegrausDescontoProgressivo,
-  gerarLinhasTabelaPrecos,
-} from '../config/precificacao';
+import { formatarMoeda, gerarLinhasTabelaComercial } from '../config/precificacao';
 
-const linhas = gerarLinhasTabelaPrecos();
-const degraus = gerarDegrausDescontoProgressivo(8);
+const linhas = gerarLinhasTabelaComercial();
+
+const incluso = [
+  'Prontuário, rotina, ocorrências, acomodações e relatórios',
+  'Perfis de acesso para gestão, técnicos e orientadores',
+  'Ambiente separado por instituição (multi-tenant)',
+  'Atualizações e evolução contínua da plataforma',
+  'Suporte comercial e orientação na implantação',
+];
 ---
 
 <BaseLayout
   title="Preços — CareCore+"
-  description="Mensalidade CareCore+ por volume de cadastros: conviventes + usuários, com faixas a cada 100 registros."
+  description="Investimento transparente no CareCore+: paga conforme o tamanho da sua operação (acolhidos + equipe), com desconto progressivo para grandes volumes."
 >
   <section class="mx-auto max-w-5xl px-4 py-14 sm:px-6">
-    <h1 class="section-title">Preços</h1>
+    <p class="inline-flex rounded-full bg-brand-soft px-4 py-1 text-xs font-bold uppercase tracking-wider text-brand-600">
+      Investimento previsível
+    </p>
+    <h1 class="section-title mt-4">Pague pelo tamanho da sua operação — não por surpresa</h1>
     <p class="section-lead">
-      A mensalidade considera a <strong>soma de todos os conviventes cadastrados</strong> com
-      <strong>todos os usuários da instituição</strong> — ativos, inativos ou bloqueados entram na conta.
+      Um único investimento mensal para centralizar acolhidos e equipe no CareCore+.
+      Quanto mais pessoas você cadastra na plataforma, mais previsível fica o custo por pessoa — e
+      <strong>operações grandes ganham desconto automático</strong>.
     </p>
 
-    <div class="mt-8 grid gap-4 sm:grid-cols-3">
+    <div class="mt-10 grid gap-4 sm:grid-cols-3">
       <article class="card border-brand-600/20 bg-brand-soft/30">
-        <p class="text-xs font-bold uppercase tracking-wider text-brand-600">Base</p>
-        <p class="mt-2 text-2xl font-black text-slate-900">R$ 500</p>
-        <p class="mt-2 text-sm text-slate-600">A cada bloco de 100 cadastros (conviventes + usuários).</p>
+        <p class="text-xs font-bold uppercase tracking-wider text-brand-600">Simples de entender</p>
+        <p class="mt-2 text-sm leading-relaxed text-slate-600">
+          Contamos acolhidos + usuários cadastrados. Sem taxas escondidas por módulo ou por tela.
+        </p>
       </article>
       <article class="card">
-        <p class="text-xs font-bold uppercase tracking-wider text-slate-500">Até 1.000 cadastros</p>
-        <p class="mt-2 text-2xl font-black text-slate-900">R$ 500 / bloco</p>
-        <p class="mt-2 text-sm text-slate-600">Ex.: 155 total → 2 blocos → R$ 1.000/mês.</p>
-      </article>
-      <article class="card">
-        <p class="text-xs font-bold uppercase tracking-wider text-slate-500">Acima de 1.000</p>
-        <p class="mt-2 text-2xl font-black text-slate-900">Desconto progressivo</p>
+        <p class="text-xs font-bold uppercase tracking-wider text-slate-500">Comece leve</p>
+        <p class="mt-2 text-2xl font-black text-slate-900">a partir de {formatarMoeda(500)}<span class="text-base font-bold text-slate-500">/mês</span></p>
         <p class="mt-2 text-sm text-slate-600">
-          1º bloco extra: 15% · 2º: 20% · 3º: 25%… (+5 p.p. a cada 100 cadastros). Base de R$ 5.000 até 1.000 permanece integral.
+          Ideal para dar os primeiros passos com equipe e acolhidos na mesma plataforma.
+        </p>
+      </article>
+      <article class="card">
+        <p class="text-xs font-bold uppercase tracking-wider text-slate-500">Cresce com você</p>
+        <p class="mt-2 text-sm leading-relaxed text-slate-600">
+          Acima de 1.000 cadastros, cada novo lote de 100 recebe <strong>desconto progressivo</strong> —
+          quanto maior a operação, melhor o investimento por pessoa.
         </p>
       </article>
     </div>
 
-    <div class="mt-8 card overflow-hidden p-0">
-      <div class="border-b border-slate-200 bg-slate-50 px-6 py-4">
-        <h2 class="text-lg font-bold text-slate-900">Desconto progressivo acima de 1.000</h2>
+    <div class="mt-12 card overflow-hidden p-0">
+      <div class="border-b border-slate-200 bg-gradient-to-r from-brand-soft/60 to-white px-6 py-5">
+        <h2 class="text-lg font-bold text-slate-900">Quanto investir na prática?</h2>
         <p class="mt-1 text-sm text-slate-600">
-          Cada bloco de 100 cadastros acima de 1.000 ganha +5 pontos percentuais de desconto sobre R$ 500.
+          Referência mensal conforme o volume de pessoas na plataforma (acolhidos + equipe).
         </p>
       </div>
       <div class="overflow-x-auto">
         <table class="min-w-full text-left text-sm">
           <thead class="bg-white text-xs font-bold uppercase tracking-wider text-slate-500">
             <tr>
-              <th class="px-6 py-3">Degrau</th>
-              <th class="px-6 py-3">Faixa (total cadastros)</th>
-              <th class="px-6 py-3">Desconto no bloco</th>
-              <th class="px-6 py-3">Valor do bloco</th>
-            </tr>
-          </thead>
-          <tbody class="divide-y divide-slate-100">
-            {
-              degraus.map((degrau) => (
-                <tr class="hover:bg-slate-50/80">
-                  <td class="px-6 py-3 font-semibold text-slate-800">{degrau.degrau}º acima de 1.000</td>
-                  <td class="px-6 py-3 text-slate-700">{degrau.faixa}</td>
-                  <td class="px-6 py-3 font-bold text-brand-600">{degrau.desconto}%</td>
-                  <td class="px-6 py-3 text-slate-700">{formatarMoeda(degrau.valorBloco)}</td>
-                </tr>
-              ))
-            }
-          </tbody>
-        </table>
-      </div>
-    </div>
-
-    <div class="mt-10 card overflow-hidden p-0">
-      <div class="border-b border-slate-200 bg-slate-50 px-6 py-4">
-        <h2 class="text-lg font-bold text-slate-900">Tabela de referência mensal</h2>
-        <p class="mt-1 text-sm text-slate-600">
-          Valores calculados pelo total <em>no teto de cada faixa</em> (ex.: de 101 a 200 cadastros → R$ 1.000).
-        </p>
-      </div>
-      <div class="overflow-x-auto">
-        <table class="min-w-full text-left text-sm">
-          <thead class="bg-white text-xs font-bold uppercase tracking-wider text-slate-500">
-            <tr>
-              <th class="px-6 py-3">Faixa de cadastros</th>
-              <th class="px-6 py-3">Total no teto</th>
-              <th class="px-6 py-3">Mensalidade</th>
-              <th class="hidden px-6 py-3 md:table-cell">Composição</th>
+              <th class="px-6 py-3">Perfil</th>
+              <th class="px-6 py-3">Para quem</th>
+              <th class="px-6 py-3">Volume na plataforma</th>
+              <th class="px-6 py-3">Investimento mensal</th>
+              <th class="hidden px-6 py-3 sm:table-cell">Média por pessoa*</th>
             </tr>
           </thead>
           <tbody class="divide-y divide-slate-100">
             {
               linhas.map((linha) => (
                 <tr class="hover:bg-slate-50/80">
-                  <td class="px-6 py-3 font-semibold text-slate-800">{linha.faixa}</td>
-                  <td class="px-6 py-3 text-slate-700">{linha.totalCadastros.toLocaleString('pt-BR')}</td>
-                  <td class="px-6 py-3 font-bold text-brand-600">{formatarMoeda(linha.mensalidade)}</td>
-                  <td class="hidden px-6 py-3 text-slate-500 md:table-cell">{linha.observacao}</td>
+                  <td class="px-6 py-4 font-bold text-brand-600">{linha.perfil}</td>
+                  <td class="px-6 py-4 text-slate-700">{linha.descricao}</td>
+                  <td class="px-6 py-4 font-semibold text-slate-800">{linha.faixa}</td>
+                  <td class="px-6 py-4 text-lg font-black text-slate-900">{formatarMoeda(linha.mensalidade)}</td>
+                  <td class="hidden px-6 py-4 text-slate-600 sm:table-cell">
+                    ~{formatarMoeda(linha.porPessoa)}/pessoa
+                  </td>
                 </tr>
               ))
             }
           </tbody>
         </table>
       </div>
-    </div>
-
-    <div class="mt-8 space-y-3 text-sm leading-relaxed text-slate-600">
-      <p>
-        <strong>Como contar:</strong> conviventes (qualquer status) + usuários (qualquer perfil e status).
-        Ao ultrapassar 100, 200, 300… o valor sobe para o próximo bloco — por exemplo, 101 cadastros já
-        entram na faixa de R$ 1.000.
-      </p>
-      <p>
-        <strong>Acima de 1.000:</strong> a base de {formatarMoeda(5000)} permanece. Cada novo bloco de 100 recebe
-        desconto progressivo sobre R$ 500: 15% no 1º degrau (1.001–1.100), 20% no 2º (1.101–1.200), 25% no 3º,
-        e assim por diante (+5 p.p. por degrau), sem desconto retroativo nos blocos anteriores.
+      <p class="border-t border-slate-100 px-6 py-3 text-xs text-slate-500">
+        * Média ilustrativa no teto de cada faixa. Valores exatos dependem do total de cadastros no mês.
       </p>
     </div>
 
-    <div class="mt-10 card border-brand-600/20 bg-gradient-to-br from-brand-soft/50 to-white">
-      <h2 class="text-lg font-bold text-slate-900">Quer um orçamento para sua instituição?</h2>
+    <div class="mt-8 grid gap-4 md:grid-cols-2">
+      <article class="card">
+        <h2 class="text-lg font-bold text-slate-900">O que está incluso</h2>
+        <ul class="mt-4 space-y-2 text-sm text-slate-600">
+          {
+            incluso.map((item) => (
+              <li class="flex gap-2">
+                <span class="font-bold text-brand-600">✓</span>
+                <span>{item}</span>
+              </li>
+            ))
+          }
+        </ul>
+      </article>
+      <article class="card border-brand-600/15 bg-brand-soft/20">
+        <h2 class="text-lg font-bold text-slate-900">Grandes operações</h2>
+        <p class="mt-3 text-sm leading-relaxed text-slate-600">
+          Instituições com mais de <strong>1.000 pessoas cadastradas</strong> passam a ter
+          <strong>desconto progressivo</strong> a cada novo grupo de 100 — reconhecendo o volume e
+          tornando o investimento por pessoa ainda mais eficiente, sem renegociar contrato a cada mês.
+        </p>
+        <p class="mt-3 text-sm text-slate-600">
+          Exemplo: com até <strong>1.500 pessoas</strong>, o investimento mensal fica em torno de{' '}
+          <strong>{formatarMoeda(linhas.find((l) => l.ate === 1500)?.mensalidade ?? 0)}</strong>.
+        </p>
+      </article>
+    </div>
+
+    <div class="mt-8 rounded-2xl border border-slate-200 bg-white p-6">
+      <h2 class="text-sm font-bold uppercase tracking-wider text-slate-900">Perguntas frequentes</h2>
+      <dl class="mt-4 space-y-4 text-sm">
+        <div>
+          <dt class="font-bold text-slate-900">O que entra na conta?</dt>
+          <dd class="mt-1 text-slate-600">
+            Todos os acolhidos cadastrados + todos os usuários da instituição (equipe, gestão, portaria etc.).
+          </dd>
+        </div>
+        <div>
+          <dt class="font-bold text-slate-900">E se eu passar de uma faixa para outra?</dt>
+          <dd class="mt-1 text-slate-600">
+            O investimento acompanha o crescimento real da operação. Você sabe antecipadamente qual faixa passa a valer.
+          </dd>
+        </div>
+        <div>
+          <dt class="font-bold text-slate-900">Preciso fechar pacote de módulos?</dt>
+          <dd class="mt-1 text-slate-600">
+            Não. O CareCore+ é uma plataforma completa — rotina, prontuário, ocorrências, SISA e relatórios no mesmo investimento.
+          </dd>
+        </div>
+      </dl>
+    </div>
+
+    <div class="mt-10 card border-brand-600/20 bg-gradient-to-br from-brand-soft/50 to-white text-center sm:text-left">
+      <h2 class="text-xl font-bold text-slate-900">Quer saber o investimento exato da sua instituição?</h2>
       <p class="mt-2 text-sm text-slate-600">
-        Informe quantos conviventes e usuários você pretende cadastrar. Montamos a proposta com base nesta tabela.
+        Conte quantos acolhidos e quantos usuários você pretende cadastrar. Montamos a proposta em minutos — sem compromisso.
       </p>
       <a
-        href={whatsappLink('Olá! Gostaria de um orçamento CareCore+ com base na quantidade de conviventes e usuários.')}
-        class="btn-primary mt-4"
+        href={whatsappLink('Olá! Gostaria de saber o investimento CareCore+ para a minha instituição.')}
+        class="btn-primary mt-5"
         rel="noopener noreferrer"
         target="_blank"
       >
-        Pedir orçamento no WhatsApp
+        Simular investimento no WhatsApp
       </a>
     </div>
   </section>

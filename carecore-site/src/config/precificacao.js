@@ -66,7 +66,55 @@ function descreverComposicaoAcimaMil(total) {
   return partes.join(' + ');
 }
 
-/** Linhas principais da tabela comercial (total = conviventes + usuários). */
+/** Linhas da tabela comercial — linguagem para o comprador. */
+export function gerarLinhasTabelaComercial() {
+  const exemplos = [
+    {
+      perfil: 'Início',
+      descricao: 'Primeiros acolhidos e equipe enxuta na plataforma',
+      ate: 100,
+    },
+    {
+      perfil: 'Expansão',
+      descricao: 'Mais acolhidos, técnicos e rotina estruturada',
+      ate: 200,
+    },
+    {
+      perfil: 'Consolidado',
+      descricao: 'Operação com dezenas de profissionais e acolhidos',
+      ate: 500,
+    },
+    {
+      perfil: 'Escala',
+      descricao: 'Grande volume de cadastros e múltiplas frentes de trabalho',
+      ate: 1000,
+    },
+    {
+      perfil: 'Rede ampliada',
+      descricao: 'Operação muito grande — com desconto progressivo automático',
+      ate: 1500,
+    },
+    {
+      perfil: 'Referência',
+      descricao: 'Instituições de alto volume — melhor custo por pessoa cadastrada',
+      ate: 2000,
+    },
+  ];
+
+  return exemplos.map((exemplo) => {
+    const mensalidade = calcularMensalidade(exemplo.ate);
+    const porPessoa = mensalidade / exemplo.ate;
+
+    return {
+      ...exemplo,
+      faixa: `até ${exemplo.ate.toLocaleString('pt-BR')} pessoas`,
+      mensalidade,
+      porPessoa,
+    };
+  });
+}
+
+/** Linhas técnicas (referência interna — não expor no site comercial). */
 export function gerarLinhasTabelaPrecos() {
   const marcos = [
     100, 200, 300, 400, 500, 600, 700, 800, 900, 1000,
