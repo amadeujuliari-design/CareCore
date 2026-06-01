@@ -6,7 +6,7 @@ export const SITE = {
   /** App operacional (login) — subdomínio separado por segurança. */
   appUrl: 'https://app.carecoreplus.com.br',
   /** Guia completo do sistema (material de apresentação em PDF/tela). */
-  guiaUrl: '/guia/',
+  guiaUrl: '/guia/guia-carecore.html',
   whatsappNumber: '5511970729208',
   whatsappDisplay: '(11) 97072-9208',
 };

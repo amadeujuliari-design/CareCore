@@ -1,10 +1,8 @@
 {
-  "rewrites": {
-    "beforeFiles": [
-      { "source": "/guia", "destination": "/guia/guia-carecore.html" },
-      { "source": "/guia/", "destination": "/guia/guia-carecore.html" }
-    ]
-  },
+  "redirects": [
+    { "source": "/guia", "destination": "/guia/guia-carecore.html", "permanent": false },
+    { "source": "/guia/", "destination": "/guia/guia-carecore.html", "permanent": false }
+  ],
   "headers": [
     {
       "source": "/(.*)",
