@@ -40,11 +40,14 @@
     box-shadow:0 6px 18px rgba(0,0,0,.18);
   }
   .toolbar small{ opacity:.75; }
-  .btn-print{
+  .btn-print, .btn-back{
     border:0; cursor:pointer; font-weight:800; font-size:14px;
     padding:10px 20px; border-radius:999px; color:#fff;
     background:linear-gradient(135deg,var(--brand-2),var(--brand-3));
     box-shadow:0 6px 16px rgba(124,58,237,.45);
+  }
+  .btn-back{
+    text-decoration:none; background:rgba(255,255,255,.12); box-shadow:none; border:1px solid rgba(255,255,255,.22);
   }
 
   /* ====== Página A4 ====== */
@@ -222,6 +225,7 @@
   <div class="toolbar">
     <span><strong>CARECORE+</strong> — Guia do Sistema</span>
     <small>Use o botão para imprimir ou salvar em PDF (A4)</small>
+    <a class="btn-back" href="/">← Voltar ao site</a>
     <button class="btn-print" onclick="window.print()">🖨️ Imprimir / Salvar em PDF</button>
   </div>
 
@@ -234,7 +238,7 @@
         </div>
         <h1 class="cover-title">CARE<span>CORE+</span></h1>
         <p class="cover-sub">
-          Guia do sistema para o primeiro acesso e o dia a dia. Da criação da instituição ao
+          Guia do sistema para o primeiro acesso e o dia a dia. Da organização e seus projetos ao
           controle de presença, rotina, acomodações, ocorrências, convênio SISA e relatórios —
           tudo passo a passo, com as telas reais do programa.
         </p>
@@ -248,7 +252,7 @@
         </div>
 
         <div class="cover-strip">
-          <div class="item"><div class="t">Cadastro & Equipe</div><div class="d">instituição, master e perfis de acesso</div></div>
+          <div class="item"><div class="t">Organização & Equipe</div><div class="d">projetos, usuários globais e perfis de acesso</div></div>
           <div class="item"><div class="t">Operação diária</div><div class="d">portaria, refeições, itens e ocorrências</div></div>
           <div class="item"><div class="t">Gestão & Convênio</div><div class="d">relatórios, evolução e repasse SISA</div></div>
         </div>
@@ -279,8 +283,8 @@
       <div class="divider"></div>
 
       <nav class="toc">
-        <a href="#sec1" class="row"><span class="tnum">01</span><span class="ttl"><b>Primeiro acesso: instituição e usuário master</b><small>Criação da conta em 2 passos</small></span><span class="dots"></span><span class="tpg">03</span></a>
-        <a href="#sec2" class="row"><span class="tnum">02</span><span class="ttl"><b>Usuários e permissões</b><small>Cadastro da equipe e perfis de acesso</small></span><span class="dots"></span><span class="tpg">04</span></a>
+        <a href="#sec1" class="row"><span class="tnum">01</span><span class="ttl"><b>Primeiro acesso: organização, projeto e master</b><small>Estrutura inicial da operação</small></span><span class="dots"></span><span class="tpg">03</span></a>
+        <a href="#sec2" class="row"><span class="tnum">02</span><span class="ttl"><b>Usuários e permissões</b><small>Globais, gestores, técnicos e orientadores</small></span><span class="dots"></span><span class="tpg">04</span></a>
         <a href="#sec3" class="row"><span class="tnum">03</span><span class="ttl"><b>Dashboard principal</b><small>A tela inicial, personalizada por perfil</small></span><span class="dots"></span><span class="tpg">05</span></a>
         <a href="#sec4" class="row"><span class="tnum">04</span><span class="ttl"><b>Cadastro de conviventes e abas</b><small>Ficha completa e proteção por perfil</small></span><span class="dots"></span><span class="tpg">06</span></a>
         <a href="#sec5" class="row"><span class="tnum">05</span><span class="ttl"><b>Dados sensíveis e carteirinha</b><small>Sigilo por perfil e ID de acesso</small></span><span class="dots"></span><span class="tpg">07</span></a>
@@ -314,32 +318,38 @@
 
     <div class="content">
       <p class="eyebrow">Comece por aqui</p>
-      <h2 class="h-section"><span class="num">01.</span> Primeiro acesso: instituição e usuário master</h2>
+      <h2 class="h-section"><span class="num">01.</span> Primeiro acesso: organização, projeto e usuário master</h2>
       <div class="divider"></div>
 
       <p class="lead">
-        No primeiro acesso, a conta é criada em <b>dois passos</b>. No <b>Passo 1</b> você informa os dados
-        do abrigo (nome, CNPJ opcional e telefone). No <b>Passo 2</b> cria o <b>usuário master</b> — nome,
-        e-mail (que será o login) e uma senha forte. O master é o administrador da conta: é ele quem,
-        depois, cadastra os demais usuários e define os perfis de cada um.
+        No primeiro acesso, a conta é estruturada em camadas. A <b>Organização</b> representa a entidade
+        mantenedora ou rede. Dentro dela ficam um ou mais <b>Projetos</b> (por exemplo, unidade, serviço
+        ou frente de atendimento). Depois é criado o <b>usuário master/gestor</b>, responsável por
+        administrar o projeto inicial e cadastrar a equipe.
       </p>
 
       <div class="grid g2" style="margin-top:13px;">
         <div>
           <div class="shot in-grid"><div class="bar"><i></i><i></i><i></i><span class="url">carecore+ · /cadastro</span></div><img src="telas/g01-cadastro-instituicao.png" alt="Cadastro da instituição" /></div>
-          <p class="two-cap">Passo 1 — Dados da instituição</p>
+          <p class="two-cap">Passo 1 — Dados da organização/projeto inicial</p>
         </div>
         <div>
           <div class="shot in-grid"><div class="bar"><i></i><i></i><i></i><span class="url">carecore+ · /cadastro</span></div><img src="telas/g02-cadastro-master.png" alt="Cadastro do usuário master" /></div>
-          <p class="two-cap">Passo 2 — Usuário administrador (master)</p>
+          <p class="two-cap">Passo 2 — Usuário administrador do projeto</p>
         </div>
+      </div>
+
+      <div class="grid g3" style="margin-top:13px;">
+        <div class="card soft"><h4><span class="chip-ico">1</span>Organização</h4><p>Guarda os dados gerais da entidade e permite uma visão consolidada quando houver mais de um projeto.</p></div>
+        <div class="card soft"><h4><span class="chip-ico">2</span>Projeto</h4><p>É o ambiente operacional do dia a dia: conviventes, rotina, acomodações, ocorrências, SISA e relatórios.</p></div>
+        <div class="card soft"><h4><span class="chip-ico">3</span>Equipe</h4><p>Usuários recebem perfil e vínculo com o projeto ou, quando autorizado, visão global de gestão.</p></div>
       </div>
 
       <div class="callout brand" style="margin-top:14px;">
         <span class="ico">🔑</span>
-        <span><b>O master é o “dono” da conta:</b> tem acesso total, cria toda a equipe e define o que cada
-        pessoa pode ver e fazer. A senha exige maiúscula, minúscula, número e caractere especial — guarde
-        bem essas credenciais.</span>
+        <span><b>Importante:</b> quem atua dentro de um projeto enxerga a operação daquele projeto. Usuários
+        globais são reservados para gestão da organização, projetos e usuários — não para lançar rotina,
+        ocorrências ou SISA no lugar da equipe operacional.</span>
       </div>
     </div>
 
@@ -363,9 +373,9 @@
       <div class="divider"></div>
 
       <p class="lead">
-        Em <b>Usuários</b>, o master (ou um gestor) cadastra a equipe. Cada pessoa recebe <b>login
-        individual</b> e um <b>perfil de acesso</b> que define exatamente o que ela enxerga e pode fazer no
-        sistema. O cadastro reúne dados de acesso, dados pessoais e foto.
+        Em <b>Usuários</b>, o master ou gestor cadastra a equipe. Cada pessoa recebe <b>login individual</b>,
+        vínculo com a organização/projeto e um <b>perfil de acesso</b>. Essa combinação define se o usuário
+        administra a estrutura global, gerencia o projeto ou atua na rotina técnica e operacional.
       </p>
 
       <div class="grid g2" style="margin-top:13px;">
@@ -382,11 +392,19 @@
       <table class="def" style="margin-top:13px;">
         <thead><tr><th>Perfil</th><th>O que pode fazer</th></tr></thead>
         <tbody>
+          <tr><td>Global</td><td>Administra organização, projetos, usuários, avisos, dashboards e relatórios consolidados. Não opera rotina, quartos, ocorrências ou SISA como equipe do projeto.</td></tr>
           <tr><td>Gestor</td><td>Acesso total: equipe, auditoria, edição/cancelamento de registros e todos os relatórios.</td></tr>
           <tr><td>Técnico</td><td>Acompanhamento e prontuário, incluindo dados sensíveis e PIA dos conviventes sob sua referência.</td></tr>
           <tr><td>Orientador</td><td>Operação de portaria e rotina (entradas, saídas, refeições e itens) — sem acesso a dados sensíveis.</td></tr>
+          <tr><td>Administrativo/Consulta</td><td>Acesso direcionado para apoio, conferência e consulta, conforme permissões definidas pela instituição.</td></tr>
         </tbody>
       </table>
+
+      <div class="callout ok" style="margin-top:13px;">
+        <span class="ico">🛡️</span>
+        <span><b>Hierarquia e privacidade:</b> os perfis evitam que todos vejam tudo. Prontuários, documentos,
+        dados sensíveis e relatórios ficam disponíveis conforme a função real de cada usuário.</span>
+      </div>
     </div>
 
     <footer class="pg-footer">
@@ -872,14 +890,14 @@
         A Central reúne, em <b>abas</b>, todas as visões da operação — cada uma com <b>filtros próprios</b> e
         <b>impressão/exportação que respeitam exatamente o que foi filtrado</b>. Cada aba já abre com o
         período ideal (ex.: Rotina no dia de hoje; Evolução nos últimos 3 meses; Conviventes sem filtro de
-        data).
+        data). A aba <b>Personalização</b> permite configurar a identidade visual dos relatórios do projeto.
       </p>
 
       <div class="shot">
         <div class="bar"><i></i><i></i><i></i><span class="url">carecore+ · Relatórios</span></div>
         <img src="telas/g18-relatorios.png" alt="Central de relatórios" />
       </div>
-      <p class="shot-cap">Filtros, cards e abas (incluindo Carteirinhas em lote) — tudo pronto para exportar ou imprimir.</p>
+      <p class="shot-cap">Filtros, cards e abas, incluindo Carteirinhas e Personalização — tudo pronto para exportar ou imprimir.</p>
 
       <div class="pill-list" style="margin-top:13px;">
         <span class="pill b">Conviventes</span>
@@ -891,12 +909,19 @@
         <span class="pill b">Equipe</span>
         <span class="pill b">Auditoria</span>
         <span class="pill b">Evolução</span>
+        <span class="pill b">Personalização</span>
       </div>
 
       <div class="callout brand" style="margin-top:13px;">
         <span class="ico">🪪</span>
         <span><b>Carteirinhas em lote:</b> na aba Carteirinhas, busque por nome, prontuário, SISA ou CPF,
         selecione os conviventes e imprima <b>4, 6 ou 8 cartões por folha A4</b>, com guias de corte.</span>
+      </div>
+
+      <div class="callout ok" style="margin-top:10px;">
+        <span class="ico">🧾</span>
+        <span><b>Relatórios com identidade do projeto:</b> em Personalização, o gestor pode inserir logotipo,
+        nome exibido, endereço, telefone, e-mail e rodapé. Esses dados saem nos relatórios impressos/PDF.</span>
       </div>
     </div>
 

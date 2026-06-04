@@ -1,9 +1,6 @@
 ---
 import BaseLayout from '../layouts/BaseLayout.astro';
-import { whatsappLink } from '../config/site';
-import { formatarMoeda, gerarLinhasTabelaComercial } from '../config/precificacao';
-
-const linhas = gerarLinhasTabelaComercial();
+import { SITE, whatsappLink } from '../config/site';
 
 const incluso = [
   'Prontuário, rotina, ocorrências, acomodações e relatórios',
@@ -16,80 +13,61 @@ const incluso = [
 
 <BaseLayout
   title="Preços — CareCore+"
-  description="Investimento transparente no CareCore+: paga conforme o tamanho da sua operação (acolhidos + equipe), com desconto progressivo para grandes volumes."
+  description="Consulte o melhor investimento CareCore+ para o tamanho da sua operação. Atendimento comercial pelo WhatsApp."
 >
   <section class="mx-auto max-w-5xl px-4 py-14 sm:px-6">
     <p class="inline-flex rounded-full bg-brand-soft px-4 py-1 text-xs font-bold uppercase tracking-wider text-brand-600">
-      Investimento previsível
+      Proposta sob medida
     </p>
-    <h1 class="section-title mt-4">Pague pelo tamanho da sua operação — não por surpresa</h1>
+    <h1 class="section-title mt-4">Consulte o melhor preço para o tamanho da sua operação</h1>
     <p class="section-lead">
-      Um único investimento mensal para centralizar acolhidos e equipe no CareCore+.
-      Quanto mais pessoas você cadastra na plataforma, mais previsível fica o custo por pessoa — e
-      <strong>operações grandes ganham desconto automático</strong>.
+      O CareCore+ se adapta à realidade de cada instituição. Em vez de uma tabela fixa,
+      avaliamos o volume de acolhidos, equipe, unidades e módulos necessários para indicar
+      a melhor condição comercial para sua operação.
     </p>
 
-    <div class="mt-10 grid gap-4 sm:grid-cols-3">
-      <article class="card border-brand-600/20 bg-brand-soft/30">
-        <p class="text-xs font-bold uppercase tracking-wider text-brand-600">Simples de entender</p>
-        <p class="mt-2 text-sm leading-relaxed text-slate-600">
-          Contamos acolhidos + usuários cadastrados. Sem taxas escondidas por módulo ou por tela.
-        </p>
-      </article>
-      <article class="card">
-        <p class="text-xs font-bold uppercase tracking-wider text-slate-500">Comece leve</p>
-        <p class="mt-2 text-2xl font-black text-slate-900">a partir de {formatarMoeda(500)}<span class="text-base font-bold text-slate-500">/mês</span></p>
-        <p class="mt-2 text-sm text-slate-600">
-          Ideal para dar os primeiros passos com equipe e acolhidos na mesma plataforma.
-        </p>
-      </article>
-      <article class="card">
-        <p class="text-xs font-bold uppercase tracking-wider text-slate-500">Cresce com você</p>
-        <p class="mt-2 text-sm leading-relaxed text-slate-600">
-          Acima de 1.000 cadastros, cada novo lote de 100 recebe <strong>desconto progressivo</strong> —
-          quanto maior a operação, melhor o investimento por pessoa.
-        </p>
-      </article>
+    <div class="mt-8 rounded-3xl border border-brand-600/20 bg-brand-soft/40 p-6">
+      <p class="text-xl font-black leading-snug text-slate-900">
+        O valor do cuidado não está na quantidade, e sim na qualidade. O CareCore+ pode estar
+        com sua ONG oferecendo qualidade, não importa o tamanho dela.
+      </p>
     </div>
 
-    <div class="mt-12 card overflow-hidden p-0">
-      <div class="border-b border-slate-200 bg-gradient-to-r from-brand-soft/60 to-white px-6 py-5">
-        <h2 class="text-lg font-bold text-slate-900">Quanto investir na prática?</h2>
-        <p class="mt-1 text-sm text-slate-600">
-          Referência mensal conforme o volume de pessoas na plataforma (acolhidos + equipe).
+    <div class="mt-10 grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
+      <article class="card border-brand-600/20 bg-gradient-to-br from-brand-soft/60 to-white p-7">
+        <p class="text-xs font-bold uppercase tracking-wider text-brand-600">Atendimento comercial</p>
+        <h2 class="mt-3 text-2xl font-black text-slate-900">Fale com a gente pelo WhatsApp</h2>
+        <p class="mt-3 text-sm leading-relaxed text-slate-600">
+          Envie uma estimativa de quantas pessoas serão cadastradas, quantos profissionais usarão
+          o sistema e se há mais de uma unidade/projeto. Com isso, retornamos com uma proposta
+          ajustada ao seu cenário.
         </p>
-      </div>
-      <div class="overflow-x-auto">
-        <table class="min-w-full text-left text-sm">
-          <thead class="bg-white text-xs font-bold uppercase tracking-wider text-slate-500">
-            <tr>
-              <th class="px-6 py-3">Perfil</th>
-              <th class="px-6 py-3">Para quem</th>
-              <th class="px-6 py-3">Volume na plataforma</th>
-              <th class="px-6 py-3">Investimento mensal</th>
-              <th class="hidden px-6 py-3 sm:table-cell">Média por pessoa*</th>
-            </tr>
-          </thead>
-          <tbody class="divide-y divide-slate-100">
-            {
-              linhas.map((linha) => (
-                <tr class="hover:bg-slate-50/80">
-                  <td class="px-6 py-4 font-bold text-brand-600">{linha.perfil}</td>
-                  <td class="px-6 py-4 text-slate-700">{linha.descricao}</td>
-                  <td class="px-6 py-4 font-semibold text-slate-800">{linha.faixa}</td>
-                  <td class="px-6 py-4 text-lg font-black text-slate-900">{formatarMoeda(linha.mensalidade)}</td>
-                  <td class="hidden px-6 py-4 text-slate-600 sm:table-cell">
-                    ~{formatarMoeda(linha.porPessoa)}/pessoa
-                  </td>
-                </tr>
-              ))
-            }
-          </tbody>
-        </table>
-      </div>
-      <p class="border-t border-slate-100 px-6 py-3 text-xs text-slate-500">
-        * Média ilustrativa no teto de cada faixa. Valores exatos dependem do total de cadastros no mês.
-      </p>
+        <div class="mt-6 flex flex-col gap-3 sm:flex-row">
+          <a
+            href={whatsappLink('Olá! Gostaria de consultar o melhor preço do CareCore+ para o tamanho da minha operação.')}
+            class="btn-primary"
+            rel="noopener noreferrer"
+            target="_blank"
+          >
+            Consultar pelo WhatsApp
+          </a>
+          <a href={`tel:+${SITE.whatsappNumber}`} class="btn-secondary">
+            {SITE.whatsappDisplay}
+          </a>
+        </div>
+      </article>
+
+      <article class="card flex flex-col items-center justify-center text-center">
+        <p class="text-xs font-bold uppercase tracking-wider text-slate-500">Aponte a câmera</p>
+        <img
+          src="/guia/whatsapp_qr.svg"
+          alt="QR Code para falar com o CareCore+ no WhatsApp"
+          class="mt-4 h-48 w-48 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm"
+          loading="lazy"
+        />
+        <p class="mt-4 text-sm font-bold text-slate-900">WhatsApp CareCore+</p>
+        <p class="mt-1 text-sm text-slate-600">{SITE.whatsappDisplay}</p>
+      </article>
     </div>
 
     <div class="mt-8 grid gap-4 md:grid-cols-2">
@@ -107,15 +85,14 @@ const incluso = [
         </ul>
       </article>
       <article class="card border-brand-600/15 bg-brand-soft/20">
-        <h2 class="text-lg font-bold text-slate-900">Grandes operações</h2>
+        <h2 class="text-lg font-bold text-slate-900">Como montamos a proposta</h2>
         <p class="mt-3 text-sm leading-relaxed text-slate-600">
-          Instituições com mais de <strong>1.000 pessoas cadastradas</strong> passam a ter
-          <strong>desconto progressivo</strong> a cada novo grupo de 100 — reconhecendo o volume e
-          tornando o investimento por pessoa ainda mais eficiente, sem renegociar contrato a cada mês.
+          Consideramos o tamanho da base de acolhidos, a quantidade de usuários da equipe, o número
+          de unidades/projetos e o nível de apoio necessário na implantação.
         </p>
         <p class="mt-3 text-sm text-slate-600">
-          Exemplo: com até <strong>1.500 pessoas</strong>, o investimento mensal fica em torno de{' '}
-          <strong>{formatarMoeda(linhas.find((l) => l.ate === 1500)?.mensalidade ?? 0)}</strong>.
+          Assim, instituições pequenas não pagam por uma estrutura maior do que precisam, e operações
+          maiores recebem uma condição compatível com o volume de uso.
         </p>
       </article>
     </div>
@@ -124,15 +101,24 @@ const incluso = [
       <h2 class="text-sm font-bold uppercase tracking-wider text-slate-900">Perguntas frequentes</h2>
       <dl class="mt-4 space-y-4 text-sm">
         <div>
-          <dt class="font-bold text-slate-900">O que entra na conta?</dt>
+          <dt class="font-bold text-slate-900">Por que a tabela de preços não fica pública?</dt>
           <dd class="mt-1 text-slate-600">
-            Todos os acolhidos cadastrados + todos os usuários da instituição (equipe, gestão, portaria etc.).
+            Porque o investimento depende do tamanho e do desenho da operação. Uma conversa rápida
+            evita valores distorcidos e permite indicar a condição mais adequada.
           </dd>
         </div>
         <div>
-          <dt class="font-bold text-slate-900">E se eu passar de uma faixa para outra?</dt>
+          <dt class="font-bold text-slate-900">O contato tem compromisso?</dt>
           <dd class="mt-1 text-slate-600">
-            O investimento acompanha o crescimento real da operação. Você sabe antecipadamente qual faixa passa a valer.
+            Não. O atendimento inicial serve para entender a necessidade, tirar dúvidas e preparar
+            uma estimativa comercial.
+          </dd>
+        </div>
+        <div>
+          <dt class="font-bold text-slate-900">O CareCore+ atende operações maiores?</dt>
+          <dd class="mt-1 text-slate-600">
+            Sim. A plataforma foi desenhada para operar com múltiplos perfis, grande volume de
+            cadastros e relatórios gerenciais.
           </dd>
         </div>
         <div>
@@ -145,17 +131,18 @@ const incluso = [
     </div>
 
     <div class="mt-10 card border-brand-600/20 bg-gradient-to-br from-brand-soft/50 to-white text-center sm:text-left">
-      <h2 class="text-xl font-bold text-slate-900">Quer saber o investimento exato da sua instituição?</h2>
+      <h2 class="text-xl font-bold text-slate-900">Quer receber uma proposta para sua instituição?</h2>
       <p class="mt-2 text-sm text-slate-600">
-        Conte quantos acolhidos e quantos usuários você pretende cadastrar. Montamos a proposta em minutos — sem compromisso.
+        Chame no WhatsApp e informe o tamanho aproximado da operação. Retornamos com a melhor
+        condição para o seu cenário.
       </p>
       <a
-        href={whatsappLink('Olá! Gostaria de saber o investimento CareCore+ para a minha instituição.')}
+        href={whatsappLink('Olá! Gostaria de receber uma proposta do CareCore+ para a minha instituição.')}
         class="btn-primary mt-5"
         rel="noopener noreferrer"
         target="_blank"
       >
-        Simular investimento no WhatsApp
+        Solicitar proposta
       </a>
     </div>
   </section>

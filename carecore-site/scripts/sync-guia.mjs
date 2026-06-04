@@ -18,6 +18,11 @@ const target = join(root, 'carecore-site', 'public', 'guia');
 const htmlSource = join(source, 'apresentacao-carecore.html');
 
 if (!existsSync(htmlSource)) {
+  if (existsSync(join(target, 'guia-carecore.html'))) {
+    console.warn('Origem do guia não encontrada; usando public/guia já sincronizado.');
+    process.exit(0);
+  }
+
   console.error('Arquivo não encontrado:', htmlSource);
   process.exit(1);
 }

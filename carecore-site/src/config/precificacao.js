@@ -1,21 +1,67 @@
-/** Regras comerciais CareCore+ — conviventes + usuários (todos os cadastros). */
+/** Regras comerciais CareCore+ — conviventes + usuários faturáveis na data de fechamento. */
 
 export const PRECIFICACAO = {
   blocoCadastros: 100,
   valorBloco: 500,
   tetoDesconto: 1000,
-  /** 1º degrau acima de 1.000 cadastros. */
-  descontoInicialPercentual: 15,
-  /** +5 p.p. a cada novo bloco de 100 acima de 1.000. */
-  incrementoDescontoPorBloco: 5,
+  /** 1º degrau acima de 1.000 cadastros faturáveis. */
+  descontoInicialPercentual: 20,
+  /** +6,1111 p.p. a cada novo bloco de 100 acima de 1.000, até atingir 75%. */
+  incrementoDescontoPorBloco: 55 / 9,
+  /** Teto do desconto progressivo (acima deste % o bloco mantém o mesmo valor). */
+  descontoMaximoPercentual: 75,
+  /**
+   * Inativo só deixa de entrar na conta se foi inativado há >= 15 dias antes do fechamento.
+   * Inativado há 14 dias ou menos antes do fechamento ainda compõe o valor.
+   */
+  diasAntecedenciaExclusaoInativo: 15,
 };
+
+/**
+ * @param {boolean} ativo
+ * @param {Date|string|null|undefined} inativadoEm
+ * @param {Date|string} dataFechamento
+ */
+export function cadastroContaParaFaturamento(ativo, inativadoEm, dataFechamento) {
+  if (ativo) {
+    return true;
+  }
+
+  if (!inativadoEm) {
+    return false;
+  }
+
+  const fechamento = dataFechamento instanceof Date ? dataFechamento : new Date(dataFechamento);
+  const inativacao = inativadoEm instanceof Date ? inativadoEm : new Date(inativadoEm);
+
+  const fechamentoDia = Date.UTC(
+    fechamento.getFullYear(),
+    fechamento.getMonth(),
+    fechamento.getDate(),
+  );
+  const inativacaoDia = Date.UTC(
+    inativacao.getFullYear(),
+    inativacao.getMonth(),
+    inativacao.getDate(),
+  );
+
+  const diasAntesDoFechamento = Math.floor((fechamentoDia - inativacaoDia) / 86400000);
+  return diasAntesDoFechamento < PRECIFICACAO.diasAntecedenciaExclusaoInativo;
+}
+
+/** @param {Array<{ ativo: boolean, inativadoEm?: Date|string|null }>} cadastros */
+export function contarCadastrosFaturaveis(cadastros, dataFechamento) {
+  return cadastros.filter((cadastro) =>
+    cadastroContaParaFaturamento(cadastro.ativo, cadastro.inativadoEm ?? null, dataFechamento),
+  ).length;
+}
 
 export function descontoPercentualDegrau(indiceDegrau) {
   const desconto =
     PRECIFICACAO.descontoInicialPercentual +
     (indiceDegrau - 1) * PRECIFICACAO.incrementoDescontoPorBloco;
 
-  return Math.min(100, desconto);
+  return Math.min(PRECIFICACAO.descontoMaximoPercentual, desconto);
 }
 
 export function valorBlocoDegrau(indiceDegrau) {
@@ -24,8 +70,8 @@ export function valorBlocoDegrau(indiceDegrau) {
   return PRECIFICACAO.valorBloco * (1 - desconto / 100);
 }
 
-export function calcularMensalidade(totalCadastros) {
-  const total = Math.max(0, Math.floor(Number(totalCadastros) || 0));
+export function calcularMensalidade(totalCadastrosFaturaveis) {
+  const total = Math.max(0, Math.floor(Number(totalCadastrosFaturaveis) || 0));
 
   if (total === 0) {
     return 0;

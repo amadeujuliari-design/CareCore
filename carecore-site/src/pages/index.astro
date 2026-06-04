@@ -19,10 +19,10 @@ const highlights = [
 ];
 
 const pillars = [
-  'Multi-instituição (cada ONG vê só os seus dados)',
-  'Perfis de acesso: gestão, técnico, orientador',
-  'Responsivo em computador, notebook, tablet e celular',
-  'HTTPS e domínio próprio na operação em produção',
+  'Perfis de acesso por função: gestão, técnico, orientador e operação',
+  'Controle de quem pode ver, criar, editar ou consultar informações sensíveis',
+  'Prontuários, documentos e registros organizados com acesso protegido',
+  'Histórico e rastreabilidade para apoiar decisões, auditorias e prestação de contas',
 ];
 ---
 
@@ -37,11 +37,11 @@ const pillars = [
           Gestão para acolhida e convivência
         </p>
         <h1 class="mt-6 text-4xl font-black leading-tight tracking-tight text-slate-900 sm:text-5xl">
-          Operação do dia a dia, prontuário e relatórios — sem planilha solta.
+          Sua ONG acolhe pessoas? O CareCore+ acolhe a gestão da sua ONG.
         </h1>
         <p class="mt-6 text-lg leading-relaxed text-slate-600">
-          O <strong>CareCore+</strong> centraliza cadastro de acolhidos, rotina, ocorrências,
-          acomodações e indicadores para equipes de ONGs e casas de recuperação.
+          Centralize rotina, prontuários, ocorrências, acomodações e relatórios em uma
+          plataforma criada para quem cuida de vidas todos os dias.
         </p>
         <div class="mt-8 flex flex-wrap gap-3">
           <a href={whatsappLink()} class="btn-primary" rel="noopener noreferrer" target="_blank">
@@ -89,9 +89,10 @@ const pillars = [
   </section>
 
   <section class="mx-auto max-w-6xl px-4 py-16 sm:px-6">
-    <h2 class="section-title">Feito para quem cuida de pessoas</h2>
+    <h2 class="section-title">Sua ONG transforma vidas? O CareCore+ transforma a sua gestão.</h2>
     <p class="section-lead">
-      Telas pensadas para rotina real: plantão, técnicos, portaria e gestão — com dados isolados por instituição.
+      Menos planilhas, mais clareza operacional e mais tempo para sua equipe se dedicar ao
+      que realmente importa: o cuidado.
     </p>
     <div class="mt-10 grid gap-6 md:grid-cols-3">
       {
@@ -108,10 +109,11 @@ const pillars = [
   <section class="bg-slate-900 text-white">
     <div class="mx-auto max-w-6xl px-4 py-16 sm:px-6 lg:flex lg:items-center lg:justify-between lg:gap-12">
       <div>
-        <h2 class="text-3xl font-black tracking-tight">Segurança desde a arquitetura</h2>
+        <h2 class="text-3xl font-black tracking-tight">Segurança para proteger dados, documentos e decisões da sua equipe</h2>
         <p class="mt-4 max-w-xl text-slate-300">
-          Site institucional separado do sistema operacional. Login, prontuários e documentos ficam em
-          subdomínio dedicado, com API e banco isolados — reduzindo superfície de ataque e simplificando HTTPS.
+          O CareCore+ organiza o acesso por perfil e responsabilidade. Gestão, técnicos,
+          orientadores e equipe operacional veem apenas o que precisam para trabalhar, com
+          cadastros, prontuários, arquivos e relatórios protegidos por permissões.
         </p>
         <ul class="mt-6 space-y-2 text-sm text-slate-300">
           {pillars.map((item) => (
