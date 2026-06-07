@@ -1,0 +1,64 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import { SITE } from '../config/site';
+
+const titulo = '© 2026 CARECORE+. Todos os direitos reservados.';
+---
+
+<BaseLayout
+  title="Direitos reservados — CareCore+"
+  description="Aviso de direitos autorais, proteção do software CareCore+ e restrições de uso, cópia e engenharia reversa."
+>
+  <section class="mx-auto max-w-4xl px-4 py-14 sm:px-6">
+    <div class="rounded-[2rem] border border-brand-100 bg-white p-6 shadow-sm sm:p-10">
+      <p class="text-xs font-black uppercase tracking-[0.22em] text-brand-600">
+        Direitos autorais e software
+      </p>
+
+      <h1 class="section-title mt-4">{titulo}</h1>
+
+      <p class="section-lead mt-5">
+        Esta página apresenta o aviso público de proteção legal aplicável ao sistema, site,
+        materiais, relatórios e identidade do CareCore+.
+      </p>
+
+      <div class="prose prose-slate mt-10 max-w-none text-justify text-sm leading-relaxed text-slate-600">
+        <h2 class="text-lg font-bold text-slate-900">1. Proteção legal</h2>
+        <p>
+          Sistema, código-fonte, banco de dados, telas, fluxos operacionais, documentação,
+          relatórios e identidade visual são protegidos pela
+          <strong> Lei nº 9.610/1998 (Lei de Direitos Autorais)</strong>, pela
+          <strong> Lei nº 9.609/1998 (Lei do Software)</strong> e pela legislação aplicável,
+          sem prejuízo da <strong>Lei nº 13.709/2018 (LGPD)</strong> quando houver tratamento
+          de dados pessoais.
+        </p>
+
+        <h2 class="mt-8 text-lg font-bold text-slate-900">2. Uso não autorizado</h2>
+        <p>
+          É proibida a cópia, reprodução, engenharia reversa, distribuição, modificação, cessão,
+          revenda ou utilização por terceiros sem autorização expressa e por escrito do titular.
+        </p>
+
+        <h2 class="mt-8 text-lg font-bold text-slate-900">3. Abrangência</h2>
+        <p>
+          A proteção se aplica ao site público em <strong>{SITE.domain}</strong>, ao aplicativo
+          operacional em <strong>app.{SITE.domain}</strong>, aos relatórios, planilhas, telas,
+          modelos de dados, documentação, guias, fluxos de atendimento, identidade visual e
+          demais elementos associados ao CareCore+.
+        </p>
+
+        <h2 class="mt-8 text-lg font-bold text-slate-900">4. Autorização de uso</h2>
+        <p>
+          O acesso concedido a clientes, instituições, usuários ou avaliadores não transfere
+          propriedade intelectual, titularidade, direito de cópia ou direito de exploração
+          comercial do sistema. Qualquer uso fora das condições autorizadas deve ser solicitado
+          formalmente ao titular.
+        </p>
+
+        <p class="mt-8 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-xs text-slate-500">
+          Última atualização: junho de 2026.
+        </p>
+      </div>
+    </div>
+  </section>
+</BaseLayout>
