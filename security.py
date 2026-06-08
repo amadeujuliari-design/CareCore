@@ -293,6 +293,27 @@ def decodificar_token(token: str) -> dict:
         )
 
 
+def validar_token_version(payload: dict, usuario: UsuarioDB) -> None:
+    versao_token = payload.get("token_version")
+    if versao_token is None:
+        return
+
+    try:
+        versao_token_int = int(versao_token)
+    except (TypeError, ValueError):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Sessão inválida. Faça login novamente.",
+        )
+
+    versao_usuario = int(getattr(usuario, "token_version", 0) or 0)
+    if versao_token_int != versao_usuario:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Sessão expirada. Faça login novamente.",
+        )
+
+
 # =====================================================================
 # USUÁRIO LOGADO
 # IMPORTANTE:
@@ -339,6 +360,8 @@ async def get_usuario_logado(
             detail="Usuário inativo. Acesso bloqueado.",
         )
 
+    validar_token_version(payload, usuario)
+
     perfil_acesso = normalizar_perfil_acesso(
         getattr(usuario, "perfil_acesso", None)
     )
@@ -370,6 +393,7 @@ async def get_usuario_logado(
         "is_master": bool(getattr(usuario, "is_master", False)),
         "is_global": bool(getattr(usuario, "is_global", False)),
         "ativo": bool(getattr(usuario, "ativo", True)),
+        "token_version": int(getattr(usuario, "token_version", 0) or 0),
     }
 
 

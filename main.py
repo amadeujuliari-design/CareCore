@@ -18,6 +18,7 @@ from config_utils import env_bool, env_int
 from database import engine, Base
 from licenciamento import middleware_licenciamento
 from logging_config import configurar_logging_carecore
+from observability import configurar_observabilidade_carecore
 
 from routers import usuarios
 from routers import auth
@@ -31,6 +32,7 @@ from routers import chat
 
 
 configurar_logging_carecore()
+configurar_observabilidade_carecore()
 logger = logging.getLogger("carecore.api")
 
 APP_ENV = os.getenv("APP_ENV", "local").strip().lower()
@@ -144,6 +146,7 @@ async def lifespan(app: FastAPI):
                 "ALTER TABLE instituicoes ADD COLUMN historico_legado_ativo BOOLEAN DEFAULT 0",
                 "ALTER TABLE usuarios ADD COLUMN organizacao_id VARCHAR",
                 "ALTER TABLE usuarios ADD COLUMN is_global BOOLEAN DEFAULT 0",
+                "ALTER TABLE usuarios ADD COLUMN token_version INTEGER DEFAULT 0 NOT NULL",
             ):
                 with contextlib.suppress(Exception):
                     await conn.execute(text(ddl))

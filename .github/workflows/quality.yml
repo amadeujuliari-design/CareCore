@@ -31,6 +31,9 @@ jobs:
       - name: Run backend tests
         run: pytest -q
 
+      - name: Check Alembic schema drift
+        run: alembic check
+
   frontend:
     name: Frontend lint and build
     runs-on: ubuntu-latest
@@ -56,5 +59,14 @@ jobs:
       - name: Run frontend lint
         run: npm run lint
 
+      - name: Run frontend tests
+        run: npm test
+
       - name: Build frontend
         run: npm run build
+
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+
+      - name: Run frontend E2E smoke
+        run: npm run test:e2e

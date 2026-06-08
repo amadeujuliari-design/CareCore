@@ -772,6 +772,25 @@ class UsuarioResumoResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class UsuarioSessaoResponse(BaseModel):
+    id: str
+    sub: Optional[str] = None
+    usuario_id: Optional[str] = None
+    nome: str
+    email: str
+    instituicao_id: Optional[str] = None
+    organizacao_id: Optional[str] = None
+    projeto_nome: Optional[str] = None
+    perfil_acesso: str
+    is_master: bool = False
+    is_global: bool = False
+    ativo: bool = True
+    avatar_url: Optional[str] = None
+    token_version: Optional[int] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 # --- AUTENTICAÇÃO E ONBOARDING ---
 
 class LoginPayload(BaseModel):
@@ -813,7 +832,7 @@ class OnboardingPayload(BaseModel):
 class Token(BaseModel):
     access_token: str
     token_type: str
-    usuario: UsuarioResponse
+    usuario: UsuarioSessaoResponse
 
 # --- QUARTOS E LEITOS ---
 

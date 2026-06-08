@@ -107,6 +107,7 @@ class UsuarioDB(Base):
     avatar_url = Column(String, nullable=True)
 
     senha_hash = Column(String, nullable=False)
+    token_version = Column(Integer, default=0, nullable=False)
 
     # =========================================================
     # RBAC

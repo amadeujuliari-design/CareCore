@@ -1,5 +1,4 @@
 # =====================================================================
-import contextlib
 import json
 import os
 import re
@@ -14,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy import and_, case, cast, func, or_, String
 
+from audit_log import registrar_evento_auditoria
 from database import get_db
 from models import (
     ConviventeDB, MotivoInativacaoDB, OrigemEncaminhamentoDB, 
@@ -73,39 +73,22 @@ from routers.conviventes_helpers import (
     usuario_pode_resolver_ocorrencia,
     usuario_pode_ver_credenciais_cofre_convivente,
 )
+from routers.conviventes_documentos import (
+    TAMANHO_MAXIMO_DOCUMENTO_BYTES,
+    UPLOAD_DIR,
+    UPLOAD_DIR_ABSOLUTO,
+    caminho_absoluto_documento,
+    remover_documentos_foto_perfil,
+    validar_upload_documento,
+)
 from routers.conviventes_xlsx import (
     gerar_xlsx_convenio_sisa_mensal,
     gerar_xlsx_historico,
 )
 from imagem_upload import eh_arquivo_imagem, padronizar_upload_imagem
+from tenant_scope import obter_instituicao_escopo
 
 router = APIRouter(prefix="/api", tags=["Conviventes e Ocorrencias"])
-
-UPLOAD_DIR = "uploads/documentos"
-os.makedirs(UPLOAD_DIR, exist_ok=True)
-UPLOAD_DIR_ABSOLUTO = os.path.abspath(UPLOAD_DIR)
-TAMANHO_MAXIMO_DOCUMENTO_BYTES = 10 * 1024 * 1024
-EXTENSOES_DOCUMENTO_PERMITIDAS = {
-    ".jpg",
-    ".jpeg",
-    ".png",
-    ".webp",
-    ".pdf",
-    ".doc",
-    ".docx",
-    ".xls",
-    ".xlsx",
-}
-CONTENT_TYPES_DOCUMENTO_PERMITIDOS = {
-    "image/jpeg",
-    "image/png",
-    "image/webp",
-    "application/pdf",
-    "application/msword",
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    "application/vnd.ms-excel",
-    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-}
 
 TIPOS_ROTINA_PRINCIPAIS = {"Entrada", "Saída"}
 TIPOS_ROTINA_REFEICOES = {"Café da manhã", "Almoço", "Jantar", "Lanche noturno"}
@@ -128,81 +111,6 @@ TIPOS_ROTINA_VALIDOS = (
     | TIPOS_ROTINA_PARES
     | TIPOS_ROTINA_COM_OBSERVACAO_OBRIGATORIA
 )
-
-
-def validar_upload_documento(file: UploadFile) -> str:
-    nome_original = os.path.basename(file.filename or "")
-    extensao = os.path.splitext(nome_original)[1].lower()
-    content_type = (file.content_type or "").lower()
-
-    if not nome_original or extensao not in EXTENSOES_DOCUMENTO_PERMITIDAS:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Tipo de arquivo não permitido.",
-        )
-
-    if content_type and content_type not in CONTENT_TYPES_DOCUMENTO_PERMITIDOS:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Formato de arquivo não permitido.",
-        )
-
-    return nome_original
-
-
-async def salvar_upload_documento(file: UploadFile, caminho_completo: str) -> None:
-    tamanho_total = 0
-
-    with open(caminho_completo, "wb") as buffer:
-        while True:
-            bloco = await file.read(1024 * 1024)
-
-            if not bloco:
-                break
-
-            tamanho_total += len(bloco)
-
-            if tamanho_total > TAMANHO_MAXIMO_DOCUMENTO_BYTES:
-                buffer.close()
-                with contextlib.suppress(FileNotFoundError):
-                    os.remove(caminho_completo)
-
-                raise HTTPException(
-                    status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-                    detail="Arquivo muito grande. O limite é 10 MB.",
-                )
-
-            buffer.write(bloco)
-
-
-async def remover_documentos_foto_perfil(
-    db: AsyncSession,
-    convivente_id: str,
-) -> None:
-    documentos_foto = (
-        await db.execute(
-            select(DocumentoConviventeDB).where(
-                DocumentoConviventeDB.convivente_id == convivente_id,
-                DocumentoConviventeDB.tipo_documento == "Foto de Perfil",
-            )
-        )
-    ).scalars().all()
-
-    for documento in documentos_foto:
-        caminho_documento = caminho_absoluto_documento(documento.caminho_arquivo)
-
-        if (
-            os.path.commonpath([UPLOAD_DIR_ABSOLUTO, caminho_documento]) == UPLOAD_DIR_ABSOLUTO
-            and os.path.exists(caminho_documento)
-        ):
-            os.remove(caminho_documento)
-
-        await db.delete(documento)
-
-
-def caminho_absoluto_documento(caminho_arquivo: str) -> str:
-    nome_arquivo = os.path.basename(caminho_arquivo or "")
-    return os.path.abspath(os.path.join(UPLOAD_DIR, nome_arquivo))
 
 
 async def validar_leito_do_projeto(
@@ -330,7 +238,7 @@ async def verificar_mes_fechado(
     fechamento = (
         await db.execute(
             select(FechamentoMensalDB).where(
-                FechamentoMensalDB.instituicao_id == usuario_atual["instituicao_id"],
+                FechamentoMensalDB.instituicao_id == obter_instituicao_escopo(usuario_atual),
                 FechamentoMensalDB.ano == data_referencia.year,
                 FechamentoMensalDB.mes == data_referencia.month,
                 FechamentoMensalDB.status == "Fechado"
@@ -358,7 +266,7 @@ async def listar_tecnicos(db: AsyncSession = Depends(get_db), usuario_atual: dic
         UsuarioDB.perfil_acesso,
         UsuarioDB.avatar_url,
     ).where(
-        UsuarioDB.instituicao_id == usuario_atual["instituicao_id"]
+        UsuarioDB.instituicao_id == obter_instituicao_escopo(usuario_atual)
     )
     result = await db.execute(query)
     return [
@@ -373,17 +281,17 @@ async def listar_tecnicos(db: AsyncSession = Depends(get_db), usuario_atual: dic
 
 @router.get("/motivos-inteligentes")
 async def listar_motivos_inteligentes(db: AsyncSession = Depends(get_db), usuario_atual: dict = Depends(get_usuario_logado)):
-    query = select(OcorrenciaConviventeDB.motivo).where(OcorrenciaConviventeDB.instituicao_id == usuario_atual["instituicao_id"]).distinct()
+    query = select(OcorrenciaConviventeDB.motivo).where(OcorrenciaConviventeDB.instituicao_id == obter_instituicao_escopo(usuario_atual)).distinct()
     return [m for m in (await db.execute(query)).scalars().all() if m and m.strip()]
 
 @router.get("/motivos-inativacao", response_model=List[MotivoInativacaoResponse])
 async def listar_motivos(db: AsyncSession = Depends(get_db), usuario_atual: dict = Depends(get_usuario_logado)):
-    return (await db.execute(select(MotivoInativacaoDB).where(MotivoInativacaoDB.instituicao_id == usuario_atual["instituicao_id"]))).scalars().all()
+    return (await db.execute(select(MotivoInativacaoDB).where(MotivoInativacaoDB.instituicao_id == obter_instituicao_escopo(usuario_atual)))).scalars().all()
 
 @router.post("/motivos-inativacao", response_model=MotivoInativacaoResponse)
 async def criar_motivo(motivo: MotivoInativacaoCreate, db: AsyncSession = Depends(get_db), usuario_atual: dict = Depends(get_usuario_logado)):
     bloquear_usuario_global_puro(usuario_atual)
-    novo_motivo = MotivoInativacaoDB(instituicao_id=usuario_atual["instituicao_id"], descricao=motivo.descricao)
+    novo_motivo = MotivoInativacaoDB(instituicao_id=obter_instituicao_escopo(usuario_atual), descricao=motivo.descricao)
     db.add(novo_motivo)
     await db.commit()
     await db.refresh(novo_motivo)
@@ -393,14 +301,14 @@ async def criar_motivo(motivo: MotivoInativacaoCreate, db: AsyncSession = Depend
 async def listar_origens(db: AsyncSession = Depends(get_db), usuario_atual: dict = Depends(get_usuario_logado)):
     return (await db.execute(
         select(OrigemEncaminhamentoDB)
-        .where(OrigemEncaminhamentoDB.instituicao_id == usuario_atual["instituicao_id"])
+        .where(OrigemEncaminhamentoDB.instituicao_id == obter_instituicao_escopo(usuario_atual))
         .order_by(OrigemEncaminhamentoDB.descricao.asc())
     )).scalars().all()
 
 @router.post("/origens-encaminhamento", response_model=OrigemEncaminhamentoResponse)
 async def criar_origem(origem: OrigemEncaminhamentoCreate, db: AsyncSession = Depends(get_db), usuario_atual: dict = Depends(get_usuario_logado)):
     bloquear_usuario_global_puro(usuario_atual)
-    nova_origem = OrigemEncaminhamentoDB(instituicao_id=usuario_atual["instituicao_id"], descricao=origem.descricao)
+    nova_origem = OrigemEncaminhamentoDB(instituicao_id=obter_instituicao_escopo(usuario_atual), descricao=origem.descricao)
     db.add(nova_origem)
     await db.commit()
     await db.refresh(nova_origem)
@@ -427,13 +335,13 @@ async def criar_convivente(convivente: ConviventeCreate, db: AsyncSession = Depe
         await validar_referencias_convivente_do_projeto(
             db,
             dados,
-            usuario_atual["instituicao_id"],
+            obter_instituicao_escopo(usuario_atual),
         )
 
         aplicar_credenciais_convivente_salvar(dados)
 
-        novo_convivente = ConviventeDB(instituicao_id=usuario_atual["instituicao_id"], **dados)
-        maior_numero = (await db.execute(select(func.max(ConviventeDB.numero_institucional)).where(ConviventeDB.instituicao_id == usuario_atual["instituicao_id"]))).scalar()
+        novo_convivente = ConviventeDB(instituicao_id=obter_instituicao_escopo(usuario_atual), **dados)
+        maior_numero = (await db.execute(select(func.max(ConviventeDB.numero_institucional)).where(ConviventeDB.instituicao_id == obter_instituicao_escopo(usuario_atual)))).scalar()
         novo_convivente.numero_institucional = (maior_numero or 0) + 1
         db.add(novo_convivente)
         await db.flush() 
@@ -444,7 +352,7 @@ async def criar_convivente(convivente: ConviventeCreate, db: AsyncSession = Depe
 
         if novo_convivente.status != "Ativo" and obs_status:
             db.add(OcorrenciaConviventeDB(
-                instituicao_id=usuario_atual["instituicao_id"], convivente_id=novo_convivente.id,
+                instituicao_id=obter_instituicao_escopo(usuario_atual), convivente_id=novo_convivente.id,
                 usuario_criador_id=usuario_atual["sub"], tecnico_responsavel_id=novo_convivente.tecnico_id,
                 tipo_ocorrencia="Mudança de Status Institucional", motivo=f"Registro Inicial: {novo_convivente.status}",
                 descricao=obs_status, requer_acao_tecnica=False, status_resolucao="Resolvido",
@@ -453,6 +361,13 @@ async def criar_convivente(convivente: ConviventeCreate, db: AsyncSession = Depe
 
         await db.commit()
         await db.refresh(novo_convivente)
+        registrar_evento_auditoria(
+            "convivente_criado",
+            usuario_atual=usuario_atual,
+            convivente_id=novo_convivente.id,
+            status=novo_convivente.status,
+            tecnico_id=novo_convivente.tecnico_id,
+        )
         return convivente_para_response(novo_convivente, usuario_atual)
     except HTTPException:
         await db.rollback()
@@ -469,7 +384,7 @@ async def listar_conviventes(db: AsyncSession = Depends(get_db), usuario_atual: 
     rows = (
         await db.execute(
             select(ConviventeDB).where(
-                ConviventeDB.instituicao_id == usuario_atual["instituicao_id"],
+                ConviventeDB.instituicao_id == obter_instituicao_escopo(usuario_atual),
             )
         )
     ).scalars().all()
@@ -488,7 +403,7 @@ async def listar_ausencias_justificadas_pendentes(
     confirmados_hoje = (
         select(AusenciaJustificadaConfirmacaoDB.convivente_id)
         .where(
-            AusenciaJustificadaConfirmacaoDB.instituicao_id == usuario_atual["instituicao_id"],
+            AusenciaJustificadaConfirmacaoDB.instituicao_id == obter_instituicao_escopo(usuario_atual),
             AusenciaJustificadaConfirmacaoDB.data_referencia == hoje,
         )
     )
@@ -497,7 +412,7 @@ async def listar_ausencias_justificadas_pendentes(
         select(ConviventeDB, UsuarioDB.nome.label("tecnico_nome"))
         .outerjoin(UsuarioDB, UsuarioDB.id == ConviventeDB.tecnico_id)
         .where(
-            ConviventeDB.instituicao_id == usuario_atual["instituicao_id"],
+            ConviventeDB.instituicao_id == obter_instituicao_escopo(usuario_atual),
             ConviventeDB.status == "Ausência justificada",
             ~ConviventeDB.id.in_(confirmados_hoje),
             or_(
@@ -538,7 +453,7 @@ async def responder_ausencia_justificada(
         await db.execute(
             select(ConviventeDB).where(
                 ConviventeDB.id == convivente_id,
-                ConviventeDB.instituicao_id == usuario_atual["instituicao_id"],
+                ConviventeDB.instituicao_id == obter_instituicao_escopo(usuario_atual),
                 ConviventeDB.status == "Ausência justificada",
             )
         )
@@ -568,7 +483,7 @@ async def responder_ausencia_justificada(
     confirmacao = (
         await db.execute(
             select(AusenciaJustificadaConfirmacaoDB).where(
-                AusenciaJustificadaConfirmacaoDB.instituicao_id == usuario_atual["instituicao_id"],
+                AusenciaJustificadaConfirmacaoDB.instituicao_id == obter_instituicao_escopo(usuario_atual),
                 AusenciaJustificadaConfirmacaoDB.convivente_id == convivente_id,
                 AusenciaJustificadaConfirmacaoDB.data_referencia == hoje,
             )
@@ -577,7 +492,7 @@ async def responder_ausencia_justificada(
 
     if not confirmacao:
         confirmacao = AusenciaJustificadaConfirmacaoDB(
-            instituicao_id=usuario_atual["instituicao_id"],
+            instituicao_id=obter_instituicao_escopo(usuario_atual),
             convivente_id=convivente_id,
             usuario_id=usuario_atual["sub"],
             data_referencia=hoje,
@@ -614,7 +529,7 @@ async def responder_ausencia_justificada(
                     leito.status = "Livre"
 
         db.add(OcorrenciaConviventeDB(
-            instituicao_id=usuario_atual["instituicao_id"],
+            instituicao_id=obter_instituicao_escopo(usuario_atual),
             convivente_id=convivente.id,
             usuario_criador_id=usuario_atual["sub"],
             tecnico_responsavel_id=convivente.tecnico_id,
@@ -649,7 +564,7 @@ async def listar_conviventes_resumo(
                 ConviventeDB.tecnico_id,
                 ConviventeDB.foto_url,
             ).where(
-                ConviventeDB.instituicao_id == usuario_atual["instituicao_id"],
+                ConviventeDB.instituicao_id == obter_instituicao_escopo(usuario_atual),
             ).order_by(
                 ConviventeDB.status.asc(),
                 ConviventeDB.nome_completo.asc(),
@@ -674,7 +589,7 @@ async def listar_conviventes_resumo(
 
 @router.get("/conviventes/{convivente_id}", response_model=ConviventeResponse)
 async def obtener_convivente(convivente_id: str, db: AsyncSession = Depends(get_db), usuario_atual: dict = Depends(get_usuario_logado)):
-    convivente = (await db.execute(select(ConviventeDB).where(ConviventeDB.id == convivente_id, ConviventeDB.instituicao_id == usuario_atual["instituicao_id"]))).scalar_one_or_none()
+    convivente = (await db.execute(select(ConviventeDB).where(ConviventeDB.id == convivente_id, ConviventeDB.instituicao_id == obter_instituicao_escopo(usuario_atual)))).scalar_one_or_none()
     if not convivente: raise HTTPException(status_code=404, detail="Convivente não encontrado.")
     return convivente_para_response(convivente, usuario_atual)
 
@@ -689,7 +604,7 @@ async def listar_registros_pia(
         await db.execute(
             select(ConviventeDB).where(
                 ConviventeDB.id == convivente_id,
-                ConviventeDB.instituicao_id == usuario_atual["instituicao_id"],
+                ConviventeDB.instituicao_id == obter_instituicao_escopo(usuario_atual),
             )
         )
     ).scalar_one_or_none()
@@ -703,7 +618,7 @@ async def listar_registros_pia(
             .join(UsuarioDB, UsuarioDB.id == RegistroPIADB.usuario_id)
             .where(
                 RegistroPIADB.convivente_id == convivente_id,
-                RegistroPIADB.instituicao_id == usuario_atual["instituicao_id"],
+                RegistroPIADB.instituicao_id == obter_instituicao_escopo(usuario_atual),
             )
             .order_by(RegistroPIADB.data_registro.desc())
         )
@@ -730,7 +645,7 @@ async def criar_registro_pia(
         await db.execute(
             select(ConviventeDB).where(
                 ConviventeDB.id == convivente_id,
-                ConviventeDB.instituicao_id == usuario_atual["instituicao_id"],
+                ConviventeDB.instituicao_id == obter_instituicao_escopo(usuario_atual),
             )
         )
     ).scalar_one_or_none()
@@ -748,7 +663,7 @@ async def criar_registro_pia(
                 select(RegistroPIADB).where(
                     RegistroPIADB.id == registro_pai_id,
                     RegistroPIADB.convivente_id == convivente_id,
-                    RegistroPIADB.instituicao_id == usuario_atual["instituicao_id"],
+                    RegistroPIADB.instituicao_id == obter_instituicao_escopo(usuario_atual),
                 )
             )
         ).scalar_one_or_none()
@@ -763,7 +678,7 @@ async def criar_registro_pia(
             raise HTTPException(status_code=400, detail="Informe o subtítulo/tema da evolução.")
 
     registro = RegistroPIADB(
-        instituicao_id=usuario_atual["instituicao_id"],
+        instituicao_id=obter_instituicao_escopo(usuario_atual),
         convivente_id=convivente_id,
         usuario_id=usuario_atual["sub"],
         registro_pai_id=registro_pai_id,
@@ -811,7 +726,7 @@ async def listar_historicos_convivente(
         await db.execute(
             select(ConviventeDB).where(
                 ConviventeDB.id == convivente_id,
-                ConviventeDB.instituicao_id == usuario_atual["instituicao_id"],
+                ConviventeDB.instituicao_id == obter_instituicao_escopo(usuario_atual),
             )
         )
     ).scalar_one_or_none()
@@ -824,7 +739,7 @@ async def listar_historicos_convivente(
             select(HistoricoConviventeDB, UsuarioDB.nome.label("usuario_nome"))
             .join(UsuarioDB, UsuarioDB.id == HistoricoConviventeDB.usuario_id)
             .where(
-                HistoricoConviventeDB.instituicao_id == usuario_atual["instituicao_id"],
+                HistoricoConviventeDB.instituicao_id == obter_instituicao_escopo(usuario_atual),
                 HistoricoConviventeDB.convivente_id == convivente_id,
             )
             .order_by(
@@ -862,7 +777,7 @@ async def criar_historico_convivente(
         await db.execute(
             select(ConviventeDB).where(
                 ConviventeDB.id == convivente_id,
-                ConviventeDB.instituicao_id == usuario_atual["instituicao_id"],
+                ConviventeDB.instituicao_id == obter_instituicao_escopo(usuario_atual),
             )
         )
     ).scalar_one_or_none()
@@ -876,7 +791,7 @@ async def criar_historico_convivente(
             await db.execute(
                 select(HistoricoLegadoSIATDB).where(
                     HistoricoLegadoSIATDB.id == historico_legado_id,
-                    HistoricoLegadoSIATDB.instituicao_id == usuario_atual["instituicao_id"],
+                    HistoricoLegadoSIATDB.instituicao_id == obter_instituicao_escopo(usuario_atual),
                 )
             )
         ).scalar_one_or_none()
@@ -884,7 +799,7 @@ async def criar_historico_convivente(
             raise HTTPException(status_code=404, detail="Registro legado não encontrado neste projeto.")
 
     registro = HistoricoConviventeDB(
-        instituicao_id=usuario_atual["instituicao_id"],
+        instituicao_id=obter_instituicao_escopo(usuario_atual),
         convivente_id=convivente_id,
         usuario_id=usuario_atual["sub"],
         historico_legado_id=historico_legado_id,
@@ -919,7 +834,7 @@ async def atualizar_historico_convivente(
         await db.execute(
             select(ConviventeDB).where(
                 ConviventeDB.id == convivente_id,
-                ConviventeDB.instituicao_id == usuario_atual["instituicao_id"],
+                ConviventeDB.instituicao_id == obter_instituicao_escopo(usuario_atual),
             )
         )
     ).scalar_one_or_none()
@@ -938,7 +853,7 @@ async def atualizar_historico_convivente(
             select(HistoricoConviventeDB).where(
                 HistoricoConviventeDB.id == historico_id,
                 HistoricoConviventeDB.convivente_id == convivente_id,
-                HistoricoConviventeDB.instituicao_id == usuario_atual["instituicao_id"],
+                HistoricoConviventeDB.instituicao_id == obter_instituicao_escopo(usuario_atual),
             )
         )
     ).scalar_one_or_none()
@@ -973,7 +888,7 @@ async def excluir_historico_convivente(
         await db.execute(
             select(ConviventeDB).where(
                 ConviventeDB.id == convivente_id,
-                ConviventeDB.instituicao_id == usuario_atual["instituicao_id"],
+                ConviventeDB.instituicao_id == obter_instituicao_escopo(usuario_atual),
             )
         )
     ).scalar_one_or_none()
@@ -992,7 +907,7 @@ async def excluir_historico_convivente(
             select(HistoricoConviventeDB).where(
                 HistoricoConviventeDB.id == historico_id,
                 HistoricoConviventeDB.convivente_id == convivente_id,
-                HistoricoConviventeDB.instituicao_id == usuario_atual["instituicao_id"],
+                HistoricoConviventeDB.instituicao_id == obter_instituicao_escopo(usuario_atual),
             )
         )
     ).scalar_one_or_none()
@@ -1008,7 +923,7 @@ async def excluir_historico_convivente(
 @router.put("/conviventes/{convivente_id}", response_model=ConviventeResponse)
 async def atualizar_convivente(convivente_id: str, dados_atualizacao: ConviventeUpdate, db: AsyncSession = Depends(get_db), usuario_atual: dict = Depends(get_usuario_logado)):
     bloquear_usuario_global_puro(usuario_atual)
-    convivente = (await db.execute(select(ConviventeDB).where(ConviventeDB.id == convivente_id, ConviventeDB.instituicao_id == usuario_atual["instituicao_id"]))).scalar_one_or_none()
+    convivente = (await db.execute(select(ConviventeDB).where(ConviventeDB.id == convivente_id, ConviventeDB.instituicao_id == obter_instituicao_escopo(usuario_atual)))).scalar_one_or_none()
     if not convivente: raise HTTPException(status_code=404, detail="Convivente não encontrado.")
 
     leito_id_antigo = convivente.leito_id
@@ -1047,7 +962,7 @@ async def atualizar_convivente(convivente_id: str, dados_atualizacao: Convivente
     await validar_referencias_convivente_do_projeto(
         db,
         dados,
-        usuario_atual["instituicao_id"],
+        obter_instituicao_escopo(usuario_atual),
     )
 
     aplicar_credenciais_convivente_salvar(dados)
@@ -1065,7 +980,7 @@ async def atualizar_convivente(convivente_id: str, dados_atualizacao: Convivente
 
         if status_antigo != convivente.status and obs_status:
             db.add(OcorrenciaConviventeDB(
-                instituicao_id=usuario_atual["instituicao_id"], convivente_id=convivente.id,
+                instituicao_id=obter_instituicao_escopo(usuario_atual), convivente_id=convivente.id,
                 usuario_criador_id=usuario_atual["sub"], tecnico_responsavel_id=convivente.tecnico_id,
                 tipo_ocorrencia="Mudança de Status Institucional",
                 motivo=f"Alterado de {status_antigo} para {convivente.status}",
@@ -1075,6 +990,15 @@ async def atualizar_convivente(convivente_id: str, dados_atualizacao: Convivente
 
         await db.commit()
         await db.refresh(convivente)
+        registrar_evento_auditoria(
+            "convivente_editado",
+            usuario_atual=usuario_atual,
+            convivente_id=convivente.id,
+            status_anterior=status_antigo,
+            status_atual=convivente.status,
+            alterou_status=status_antigo != convivente.status,
+            alterou_leito=leito_id_antigo != convivente.leito_id,
+        )
         return convivente_para_response(convivente, usuario_atual)
     except HTTPException:
         raise
@@ -1105,7 +1029,7 @@ async def listar_todas_ocorrencias(
 ):
     perfil = usuario_atual.get("perfil_acesso")
     user_id = usuario_atual.get("sub")
-    inst_id = usuario_atual.get("instituicao_id")
+    inst_id = obter_instituicao_escopo(usuario_atual)
 
     query = select(OcorrenciaConviventeDB).where(OcorrenciaConviventeDB.instituicao_id == inst_id)
 
@@ -1301,7 +1225,7 @@ async def listar_todas_ocorrencias(
 
 @router.get("/ocorrencias/relatorio-prioridades", response_model=OcorrenciaRelatorioPrioridades)
 async def relatorio_prioridades_ocorrencias(db: AsyncSession = Depends(get_db), usuario_atual: dict = Depends(get_usuario_logado)):
-    inst_id = usuario_atual.get("instituicao_id")
+    inst_id = obter_instituicao_escopo(usuario_atual)
 
     query = select(OcorrenciaConviventeDB).where(OcorrenciaConviventeDB.instituicao_id == inst_id)
     ocorrencias = (await db.execute(query)).scalars().all()
@@ -1339,7 +1263,7 @@ async def relatorio_prioridades_ocorrencias(db: AsyncSession = Depends(get_db), 
 
 @router.get("/ocorrencias/pendencias-tecnicas", response_model=List[OcorrenciaResponse])
 async def listar_pendencias_tecnicas_priorizadas(db: AsyncSession = Depends(get_db), usuario_atual: dict = Depends(get_usuario_logado)):
-    inst_id = usuario_atual.get("instituicao_id")
+    inst_id = obter_instituicao_escopo(usuario_atual)
 
     query = select(OcorrenciaConviventeDB).where(
         OcorrenciaConviventeDB.instituicao_id == inst_id,
@@ -1377,7 +1301,7 @@ async def criar_ocorrencia_manual(payload: OcorrenciaCreate, db: AsyncSession = 
         await db.execute(
             select(ConviventeDB).where(
                 ConviventeDB.id == payload.convivente_id,
-                ConviventeDB.instituicao_id == usuario_atual["instituicao_id"],
+                ConviventeDB.instituicao_id == obter_instituicao_escopo(usuario_atual),
             )
         )
     ).scalar_one_or_none()
@@ -1387,13 +1311,13 @@ async def criar_ocorrencia_manual(payload: OcorrenciaCreate, db: AsyncSession = 
     await validar_usuario_do_projeto(
         db,
         payload.tecnico_responsavel_id,
-        usuario_atual["instituicao_id"],
+        obter_instituicao_escopo(usuario_atual),
         detail="Técnico responsável não encontrado neste projeto.",
     )
     await validar_usuarios_do_projeto(
         db,
         payload.observadores_ids,
-        usuario_atual["instituicao_id"],
+        obter_instituicao_escopo(usuario_atual),
         detail="Um ou mais observadores não pertencem ao projeto atual.",
     )
 
@@ -1409,7 +1333,7 @@ async def criar_ocorrencia_manual(payload: OcorrenciaCreate, db: AsyncSession = 
             await db.execute(
                 select(UsuarioDB).where(
                     UsuarioDB.id == payload.funcionario_envolvido_id,
-                    UsuarioDB.instituicao_id == usuario_atual["instituicao_id"],
+                    UsuarioDB.instituicao_id == obter_instituicao_escopo(usuario_atual),
                 )
             )
         ).scalar_one_or_none()
@@ -1436,7 +1360,7 @@ async def criar_ocorrencia_manual(payload: OcorrenciaCreate, db: AsyncSession = 
         assinatura_validada_em = agora_sao_paulo()
 
     nova_oc = OcorrenciaConviventeDB(
-        instituicao_id=usuario_atual["instituicao_id"],
+        instituicao_id=obter_instituicao_escopo(usuario_atual),
         convivente_id=payload.convivente_id,
         usuario_criador_id=usuario_atual["sub"],
         tecnico_responsavel_id=payload.tecnico_responsavel_id,
@@ -1460,12 +1384,21 @@ async def criar_ocorrencia_manual(payload: OcorrenciaCreate, db: AsyncSession = 
         db.add(obs)
 
     await db.commit()
+    registrar_evento_auditoria(
+        "ocorrencia_criada",
+        usuario_atual=usuario_atual,
+        ocorrencia_id=nova_oc.id,
+        convivente_id=nova_oc.convivente_id,
+        prioridade=prioridade,
+        requer_acao_tecnica=requer_acao_tecnica,
+        convivente_autor_ocorrencia=bool(payload.convivente_autor_ocorrencia),
+    )
     return {"status": "sucesso", "id": nova_oc.id, "prioridade": prioridade}
 
 @router.post("/ocorrencias/{ocorrencia_id}/interacoes")
 async def adicionar_interacao(ocorrencia_id: str, payload: InteracaoOcorrenciaCreate, db: AsyncSession = Depends(get_db), usuario_atual: dict = Depends(get_usuario_logado)):
     bloquear_usuario_global_puro(usuario_atual)
-    query = select(OcorrenciaConviventeDB).where(OcorrenciaConviventeDB.id == ocorrencia_id, OcorrenciaConviventeDB.instituicao_id == usuario_atual["instituicao_id"])
+    query = select(OcorrenciaConviventeDB).where(OcorrenciaConviventeDB.id == ocorrencia_id, OcorrenciaConviventeDB.instituicao_id == obter_instituicao_escopo(usuario_atual))
     oc = (await db.execute(query)).scalar_one_or_none()
     
     if not oc: 
@@ -1494,6 +1427,13 @@ async def adicionar_interacao(ocorrencia_id: str, payload: InteracaoOcorrenciaCr
     )
     db.add(nova_int)
     await db.commit()
+    registrar_evento_auditoria(
+        "ocorrencia_interacao_registrada",
+        usuario_atual=usuario_atual,
+        ocorrencia_id=oc.id,
+        tipo_interacao=payload.tipo_interacao,
+        status_resolucao=oc.status_resolucao,
+    )
     
     return {"status": "sucesso"}
 
@@ -1501,7 +1441,7 @@ async def adicionar_interacao(ocorrencia_id: str, payload: InteracaoOcorrenciaCr
 async def listar_ocorrencias_convivente(convivente_id: str, db: AsyncSession = Depends(get_db), usuario_atual: dict = Depends(get_usuario_logado)):
     query = select(OcorrenciaConviventeDB).where(
         OcorrenciaConviventeDB.convivente_id == convivente_id, 
-        OcorrenciaConviventeDB.instituicao_id == usuario_atual["instituicao_id"]
+        OcorrenciaConviventeDB.instituicao_id == obter_instituicao_escopo(usuario_atual)
     ).order_by(OcorrenciaConviventeDB.data_ocorrencia.desc())
     
     ocorrencias_db = (await db.execute(query)).scalars().all()
@@ -1538,7 +1478,7 @@ async def upload_documento(
         await db.execute(
             select(ConviventeDB).where(
                 ConviventeDB.id == convivente_id,
-                ConviventeDB.instituicao_id == usuario_atual["instituicao_id"],
+                ConviventeDB.instituicao_id == obter_instituicao_escopo(usuario_atual),
             )
         )
     ).scalar_one_or_none()
@@ -1602,13 +1542,22 @@ async def upload_documento(
     db.add(novo_doc)
     await db.commit()
     await db.refresh(novo_doc)
+    registrar_evento_auditoria(
+        "convivente_documento_enviado",
+        usuario_atual=usuario_atual,
+        convivente_id=convivente_id,
+        documento_id=novo_doc.id,
+        tipo_documento=tipo_documento,
+        sensivel=bool(sensivel),
+        extensao=extensao_final,
+    )
     return novo_doc
 
 @router.get("/conviventes/{convivente_id}/documentos", response_model=List[DocumentoResponse])
 async def listar_documentos(convivente_id: str, db: AsyncSession = Depends(get_db), usuario_atual: dict = Depends(get_usuario_logado)):
     filtros = [
         DocumentoConviventeDB.convivente_id == convivente_id,
-        ConviventeDB.instituicao_id == usuario_atual["instituicao_id"],
+        ConviventeDB.instituicao_id == obter_instituicao_escopo(usuario_atual),
     ]
     if not (
         usuario_eh_gestor(usuario_atual)
@@ -1639,7 +1588,7 @@ async def excluir_documento(documento_id: str, db: AsyncSession = Depends(get_db
             .join(ConviventeDB, ConviventeDB.id == DocumentoConviventeDB.convivente_id)
             .where(
                 DocumentoConviventeDB.id == documento_id,
-                ConviventeDB.instituicao_id == usuario_atual["instituicao_id"],
+                ConviventeDB.instituicao_id == obter_instituicao_escopo(usuario_atual),
             )
         )
     ).scalar_one_or_none()
@@ -1649,8 +1598,19 @@ async def excluir_documento(documento_id: str, db: AsyncSession = Depends(get_db
     caminho_documento = caminho_absoluto_documento(documento.caminho_arquivo)
     if os.path.commonpath([UPLOAD_DIR_ABSOLUTO, caminho_documento]) == UPLOAD_DIR_ABSOLUTO and os.path.exists(caminho_documento):
         os.remove(caminho_documento)
+    convivente_id = documento.convivente_id
+    tipo_documento = documento.tipo_documento
+    sensivel = bool(documento.sensivel)
     await db.delete(documento)
     await db.commit()
+    registrar_evento_auditoria(
+        "convivente_documento_excluido",
+        usuario_atual=usuario_atual,
+        convivente_id=convivente_id,
+        documento_id=documento_id,
+        tipo_documento=tipo_documento,
+        sensivel=sensivel,
+    )
     return {"status": "sucesso"}
 
 
@@ -1665,7 +1625,7 @@ async def remover_foto_perfil_convivente(
         await db.execute(
             select(ConviventeDB).where(
                 ConviventeDB.id == convivente_id,
-                ConviventeDB.instituicao_id == usuario_atual["instituicao_id"]
+                ConviventeDB.instituicao_id == obter_instituicao_escopo(usuario_atual)
             )
         )
     ).scalar_one_or_none()
@@ -1677,6 +1637,11 @@ async def remover_foto_perfil_convivente(
 
     convivente.foto_url = None
     await db.commit()
+    registrar_evento_auditoria(
+        "convivente_foto_removida",
+        usuario_atual=usuario_atual,
+        convivente_id=convivente_id,
+    )
 
     return {"status": "sucesso", "mensagem": "Foto de perfil removida com sucesso."}
 
@@ -1709,7 +1674,7 @@ async def registar_rotina(
         await db.execute(
             select(ConviventeDB).where(
                 ConviventeDB.id == payload.convivente_id,
-                ConviventeDB.instituicao_id == usuario_atual["instituicao_id"],
+                ConviventeDB.instituicao_id == obter_instituicao_escopo(usuario_atual),
                 ConviventeDB.status == "Ativo"
             )
         )
@@ -1731,7 +1696,7 @@ async def registar_rotina(
     registros_hoje = (
         await db.execute(
             select(RegistroRotinaDB).where(
-                RegistroRotinaDB.instituicao_id == usuario_atual["instituicao_id"],
+                RegistroRotinaDB.instituicao_id == obter_instituicao_escopo(usuario_atual),
                 RegistroRotinaDB.convivente_id == payload.convivente_id,
                 RegistroRotinaDB.cancelado != True,
                 RegistroRotinaDB.data_registro >= inicio_dia
@@ -1752,7 +1717,7 @@ async def registar_rotina(
     ultimo_movimento = (
         await db.execute(
             select(RegistroRotinaDB).where(
-                RegistroRotinaDB.instituicao_id == usuario_atual["instituicao_id"],
+                RegistroRotinaDB.instituicao_id == obter_instituicao_escopo(usuario_atual),
                 RegistroRotinaDB.convivente_id == payload.convivente_id,
                 RegistroRotinaDB.cancelado != True,
                 RegistroRotinaDB.tipo_registro.in_(["Entrada", "Saída"])
@@ -1813,7 +1778,7 @@ async def registar_rotina(
         ultima_interacao_grupo = (
             await db.execute(
                 select(RegistroRotinaDB).where(
-                    RegistroRotinaDB.instituicao_id == usuario_atual["instituicao_id"],
+                    RegistroRotinaDB.instituicao_id == obter_instituicao_escopo(usuario_atual),
                     RegistroRotinaDB.convivente_id == payload.convivente_id,
                     RegistroRotinaDB.cancelado != True,
                     RegistroRotinaDB.tipo_registro.in_(tipos_do_grupo),
@@ -1885,7 +1850,7 @@ async def registar_rotina(
     )
 
     novo_registro = RegistroRotinaDB(
-        instituicao_id=usuario_atual["instituicao_id"],
+        instituicao_id=obter_instituicao_escopo(usuario_atual),
         convivente_id=payload.convivente_id,
         usuario_id=usuario_atual["sub"],
 
@@ -1926,7 +1891,7 @@ async def resumo_rotina_hoje(
     registros_hoje = (
         await db.execute(
             select(RegistroRotinaDB).where(
-                RegistroRotinaDB.instituicao_id == usuario_atual["instituicao_id"],
+                RegistroRotinaDB.instituicao_id == obter_instituicao_escopo(usuario_atual),
                 RegistroRotinaDB.cancelado != True,
                 RegistroRotinaDB.data_registro >= inicio_dia
             ).order_by(
@@ -1946,7 +1911,7 @@ async def resumo_rotina_hoje(
             func.max(RegistroRotinaDB.data_registro).label("ultima_data")
         )
         .where(
-            RegistroRotinaDB.instituicao_id == usuario_atual["instituicao_id"],
+            RegistroRotinaDB.instituicao_id == obter_instituicao_escopo(usuario_atual),
             RegistroRotinaDB.cancelado != True,
             RegistroRotinaDB.tipo_registro.in_(["Entrada", "Saída"])
         )
@@ -1964,7 +1929,7 @@ async def resumo_rotina_hoje(
                     RegistroRotinaDB.data_registro == ultimo_movimento_subq.c.ultima_data
                 )
             )
-            .where(RegistroRotinaDB.instituicao_id == usuario_atual["instituicao_id"])
+            .where(RegistroRotinaDB.instituicao_id == obter_instituicao_escopo(usuario_atual))
         )
     ).scalars().all()
 
@@ -2065,7 +2030,7 @@ async def status_sincronizacao_rotina(
                 func.max(RegistroRotinaDB.cancelado_em),
                 func.max(RegistroRotinaDB.editado_em),
             ).where(
-                RegistroRotinaDB.instituicao_id == usuario_atual["instituicao_id"],
+                RegistroRotinaDB.instituicao_id == obter_instituicao_escopo(usuario_atual),
                 RegistroRotinaDB.data_registro >= inicio_dia,
             )
         )
@@ -2109,7 +2074,7 @@ async def dashboard_operacional_rotina(
     inicio_dia = datetime.combine(hoje, datetime.min.time())
     fim_dia = datetime.combine(hoje, datetime.max.time())
 
-    inst_id = usuario_atual["instituicao_id"]
+    inst_id = obter_instituicao_escopo(usuario_atual)
 
     # Base operacional: conviventes ativos da instituição.
     # Eles compõem o universo para "presentes agora" e "fora agora".
@@ -2439,7 +2404,7 @@ def _query_base_historico_rotina(usuario_atual: dict):
         .join(ConviventeDB, RegistroRotinaDB.convivente_id == ConviventeDB.id)
         .join(UsuarioDB, RegistroRotinaDB.usuario_id == UsuarioDB.id)
         .where(
-            RegistroRotinaDB.instituicao_id == usuario_atual["instituicao_id"]
+            RegistroRotinaDB.instituicao_id == obter_instituicao_escopo(usuario_atual)
         )
         .order_by(RegistroRotinaDB.data_registro.desc())
     )
@@ -2506,7 +2471,7 @@ async def resumo_evolucao_historico_rotina(
             func.sum(case((RegistroRotinaDB.tipo_registro.in_(list(TIPOS_ROTINA_REFEICOES)), 1), else_=0)).label("almocos"),
         )
         .join(ConviventeDB, RegistroRotinaDB.convivente_id == ConviventeDB.id)
-        .where(RegistroRotinaDB.instituicao_id == usuario_atual["instituicao_id"])
+        .where(RegistroRotinaDB.instituicao_id == obter_instituicao_escopo(usuario_atual))
     )
 
     query = _aplicar_filtros_historico_rotina(
@@ -3170,7 +3135,7 @@ async def listar_importacoes_sisa(
     bloquear_usuario_global_puro(usuario_atual)
     resultado = await db.execute(
         select(SisaImportacaoDB)
-        .where(SisaImportacaoDB.instituicao_id == usuario_atual["instituicao_id"])
+        .where(SisaImportacaoDB.instituicao_id == obter_instituicao_escopo(usuario_atual))
         .order_by(SisaImportacaoDB.data_referencia.desc(), SisaImportacaoDB.importado_em.desc())
     )
 
@@ -3188,7 +3153,7 @@ async def detalhar_importacao_sisa(
         await db.execute(
             select(SisaImportacaoDB).where(
                 SisaImportacaoDB.id == importacao_id,
-                SisaImportacaoDB.instituicao_id == usuario_atual["instituicao_id"],
+                SisaImportacaoDB.instituicao_id == obter_instituicao_escopo(usuario_atual),
             )
         )
     ).scalar_one_or_none()
@@ -3201,7 +3166,7 @@ async def detalhar_importacao_sisa(
             select(SisaDivergenciaDB)
             .where(
                 SisaDivergenciaDB.importacao_id == importacao_id,
-                SisaDivergenciaDB.instituicao_id == usuario_atual["instituicao_id"],
+                SisaDivergenciaDB.instituicao_id == obter_instituicao_escopo(usuario_atual),
             )
             .order_by(
                 case(
@@ -3221,7 +3186,7 @@ async def detalhar_importacao_sisa(
         conviventes = (
             await db.execute(
                 select(ConviventeDB.id, ConviventeDB.status).where(
-                    ConviventeDB.instituicao_id == usuario_atual["instituicao_id"],
+                    ConviventeDB.instituicao_id == obter_instituicao_escopo(usuario_atual),
                     ConviventeDB.id.in_(convivente_ids),
                 )
             )
@@ -3235,7 +3200,7 @@ async def detalhar_importacao_sisa(
                 SisaPresencaImportadaDB.data_desligamento,
             ).where(
                 SisaPresencaImportadaDB.importacao_id == importacao_id,
-                SisaPresencaImportadaDB.instituicao_id == usuario_atual["instituicao_id"],
+                SisaPresencaImportadaDB.instituicao_id == obter_instituicao_escopo(usuario_atual),
             )
         )
     ).all()
@@ -3279,7 +3244,7 @@ async def atualizar_status_divergencia_sisa(
         await db.execute(
             select(SisaDivergenciaDB).where(
                 SisaDivergenciaDB.id == divergencia_id,
-                SisaDivergenciaDB.instituicao_id == usuario_atual["instituicao_id"],
+                SisaDivergenciaDB.instituicao_id == obter_instituicao_escopo(usuario_atual),
             )
         )
     ).scalar_one_or_none()
@@ -3297,7 +3262,7 @@ async def atualizar_status_divergencia_sisa(
             await db.execute(
                 select(ConviventeDB.status).where(
                     ConviventeDB.id == divergencia.convivente_id,
-                    ConviventeDB.instituicao_id == usuario_atual["instituicao_id"],
+                    ConviventeDB.instituicao_id == obter_instituicao_escopo(usuario_atual),
                 )
             )
         ).scalar_one_or_none()
@@ -3306,7 +3271,7 @@ async def atualizar_status_divergencia_sisa(
         await db.execute(
             select(SisaPresencaImportadaDB.data_desligamento).where(
                 SisaPresencaImportadaDB.importacao_id == divergencia.importacao_id,
-                SisaPresencaImportadaDB.instituicao_id == usuario_atual["instituicao_id"],
+                SisaPresencaImportadaDB.instituicao_id == obter_instituicao_escopo(usuario_atual),
                 SisaPresencaImportadaDB.numero_sisa == divergencia.numero_sisa,
             )
         )
@@ -3339,7 +3304,7 @@ async def importar_planilha_sisa(
 
     conviventes_resultado = await db.execute(
         select(ConviventeDB).where(
-            ConviventeDB.instituicao_id == usuario_atual["instituicao_id"],
+            ConviventeDB.instituicao_id == obter_instituicao_escopo(usuario_atual),
             ConviventeDB.numero_sisa.is_not(None),
         )
     )
@@ -3349,7 +3314,7 @@ async def importar_planilha_sisa(
     }
 
     importacao = SisaImportacaoDB(
-        instituicao_id=usuario_atual["instituicao_id"],
+        instituicao_id=obter_instituicao_escopo(usuario_atual),
         usuario_id=usuario_atual["sub"],
         nome_arquivo=arquivo.filename or "planilha_sisa.xls",
         servico=dados["servico"],
@@ -3379,7 +3344,7 @@ async def importar_planilha_sisa(
 
         presenca = SisaPresencaImportadaDB(
             importacao_id=importacao.id,
-            instituicao_id=usuario_atual["instituicao_id"],
+            instituicao_id=obter_instituicao_escopo(usuario_atual),
             convivente_id=convivente.id if convivente else None,
             numero_sisa=linha["numero_sisa"],
             nome_planilha=linha["nome_planilha"],
@@ -3450,7 +3415,7 @@ async def relatorio_sisa_diario(
     conviventes = (
         await db.execute(
             select(ConviventeDB).where(
-                ConviventeDB.instituicao_id == usuario_atual["instituicao_id"],
+                ConviventeDB.instituicao_id == obter_instituicao_escopo(usuario_atual),
                 ConviventeDB.status.in_(["Ativo", "Ausência justificada"]),
             ).order_by(
                 ConviventeDB.nome_completo.asc()
@@ -3465,7 +3430,7 @@ async def relatorio_sisa_diario(
             RegistroRotinaDB.data_registro,
             RegistroRotinaDB.retorno_rapido
         ).where(
-            RegistroRotinaDB.instituicao_id == usuario_atual["instituicao_id"],
+            RegistroRotinaDB.instituicao_id == obter_instituicao_escopo(usuario_atual),
             RegistroRotinaDB.cancelado != True,
             RegistroRotinaDB.data_registro >= inicio,
             RegistroRotinaDB.data_registro <= fim
@@ -3493,7 +3458,7 @@ async def relatorio_sisa_diario(
             RegistroRotinaDB.tipo_registro,
             RegistroRotinaDB.data_registro,
         ).where(
-            RegistroRotinaDB.instituicao_id == usuario_atual["instituicao_id"],
+            RegistroRotinaDB.instituicao_id == obter_instituicao_escopo(usuario_atual),
             RegistroRotinaDB.cancelado != True,
             RegistroRotinaDB.convivente_id.in_(convivente_ids),
             RegistroRotinaDB.tipo_registro.in_(["Entrada", "Saída"]),
@@ -3666,7 +3631,7 @@ async def relatorio_sisa_mensal(
     conviventes = (
         await db.execute(
             select(ConviventeDB).where(
-                ConviventeDB.instituicao_id == usuario_atual["instituicao_id"],
+                ConviventeDB.instituicao_id == obter_instituicao_escopo(usuario_atual),
                 ConviventeDB.status.in_(["Ativo", "Ausência justificada"]),
             ).order_by(
                 ConviventeDB.nome_completo.asc()
@@ -3681,7 +3646,7 @@ async def relatorio_sisa_mensal(
             RegistroRotinaDB.data_registro,
             RegistroRotinaDB.retorno_rapido
         ).where(
-            RegistroRotinaDB.instituicao_id == usuario_atual["instituicao_id"],
+            RegistroRotinaDB.instituicao_id == obter_instituicao_escopo(usuario_atual),
             RegistroRotinaDB.cancelado != True,
             RegistroRotinaDB.data_registro >= inicio,
             RegistroRotinaDB.data_registro <= fim
@@ -3709,7 +3674,7 @@ async def relatorio_sisa_mensal(
             RegistroRotinaDB.tipo_registro,
             RegistroRotinaDB.data_registro,
         ).where(
-            RegistroRotinaDB.instituicao_id == usuario_atual["instituicao_id"],
+            RegistroRotinaDB.instituicao_id == obter_instituicao_escopo(usuario_atual),
             RegistroRotinaDB.cancelado != True,
             RegistroRotinaDB.convivente_id.in_(convivente_ids),
             RegistroRotinaDB.tipo_registro.in_(["Entrada", "Saída"]),
@@ -3736,7 +3701,7 @@ async def relatorio_sisa_mensal(
         )
         .join(UsuarioDB, SisaLancamentoDB.lancado_por_id == UsuarioDB.id)
         .where(
-            SisaLancamentoDB.instituicao_id == usuario_atual["instituicao_id"],
+            SisaLancamentoDB.instituicao_id == obter_instituicao_escopo(usuario_atual),
             SisaLancamentoDB.ano == ano,
             SisaLancamentoDB.mes == mes
         )
@@ -3847,7 +3812,7 @@ async def relatorio_sisa_mensal(
     fechamento = (
         await db.execute(
             select(FechamentoMensalDB).where(
-                FechamentoMensalDB.instituicao_id == usuario_atual["instituicao_id"],
+                FechamentoMensalDB.instituicao_id == obter_instituicao_escopo(usuario_atual),
                 FechamentoMensalDB.ano == ano,
                 FechamentoMensalDB.mes == mes
             )
@@ -3896,7 +3861,7 @@ async def listar_fechamentos_mensais(
     bloquear_usuario_global_puro(usuario_atual)
     resultado = await db.execute(
         select(FechamentoMensalDB).where(
-            FechamentoMensalDB.instituicao_id == usuario_atual["instituicao_id"]
+            FechamentoMensalDB.instituicao_id == obter_instituicao_escopo(usuario_atual)
         ).order_by(
             FechamentoMensalDB.ano.desc(),
             FechamentoMensalDB.mes.desc()
@@ -3924,7 +3889,7 @@ async def fechar_mes_convenio_sisa(
     fechamento_existente = (
         await db.execute(
             select(FechamentoMensalDB).where(
-                FechamentoMensalDB.instituicao_id == usuario_atual["instituicao_id"],
+                FechamentoMensalDB.instituicao_id == obter_instituicao_escopo(usuario_atual),
                 FechamentoMensalDB.ano == payload.ano,
                 FechamentoMensalDB.mes == payload.mes
             )
@@ -3956,7 +3921,7 @@ async def fechar_mes_convenio_sisa(
         return fechamento_existente
 
     fechamento = FechamentoMensalDB(
-        instituicao_id=usuario_atual["instituicao_id"],
+        instituicao_id=obter_instituicao_escopo(usuario_atual),
         ano=payload.ano,
         mes=payload.mes,
         protocolo=protocolo,
@@ -3999,7 +3964,7 @@ async def reabrir_fechamento_convenio_sisa(
         await db.execute(
             select(FechamentoMensalDB).where(
                 FechamentoMensalDB.id == fechamento_id,
-                FechamentoMensalDB.instituicao_id == usuario_atual["instituicao_id"]
+                FechamentoMensalDB.instituicao_id == obter_instituicao_escopo(usuario_atual)
             )
         )
     ).scalar_one_or_none()
@@ -4037,7 +4002,7 @@ async def marcar_lancamento_sisa(
     fechamento = (
         await db.execute(
             select(FechamentoMensalDB).where(
-                FechamentoMensalDB.instituicao_id == usuario_atual["instituicao_id"],
+                FechamentoMensalDB.instituicao_id == obter_instituicao_escopo(usuario_atual),
                 FechamentoMensalDB.ano == payload.ano,
                 FechamentoMensalDB.mes == payload.mes
             )
@@ -4054,7 +4019,7 @@ async def marcar_lancamento_sisa(
         await db.execute(
             select(ConviventeDB).where(
                 ConviventeDB.id == payload.convivente_id,
-                ConviventeDB.instituicao_id == usuario_atual["instituicao_id"]
+                ConviventeDB.instituicao_id == obter_instituicao_escopo(usuario_atual)
             )
         )
     ).scalar_one_or_none()
@@ -4068,7 +4033,7 @@ async def marcar_lancamento_sisa(
     existente = (
         await db.execute(
             select(SisaLancamentoDB).where(
-                SisaLancamentoDB.instituicao_id == usuario_atual["instituicao_id"],
+                SisaLancamentoDB.instituicao_id == obter_instituicao_escopo(usuario_atual),
                 SisaLancamentoDB.ano == payload.ano,
                 SisaLancamentoDB.mes == payload.mes,
                 SisaLancamentoDB.convivente_id == payload.convivente_id
@@ -4088,7 +4053,7 @@ async def marcar_lancamento_sisa(
         return existente
 
     lancamento = SisaLancamentoDB(
-        instituicao_id=usuario_atual["instituicao_id"],
+        instituicao_id=obter_instituicao_escopo(usuario_atual),
         ano=payload.ano,
         mes=payload.mes,
         convivente_id=payload.convivente_id,
@@ -4117,7 +4082,7 @@ async def desfazer_lancamento_sisa(
         await db.execute(
             select(SisaLancamentoDB).where(
                 SisaLancamentoDB.id == lancamento_id,
-                SisaLancamentoDB.instituicao_id == usuario_atual["instituicao_id"]
+                SisaLancamentoDB.instituicao_id == obter_instituicao_escopo(usuario_atual)
             )
         )
     ).scalar_one_or_none()
@@ -4131,7 +4096,7 @@ async def desfazer_lancamento_sisa(
     fechamento = (
         await db.execute(
             select(FechamentoMensalDB).where(
-                FechamentoMensalDB.instituicao_id == usuario_atual["instituicao_id"],
+                FechamentoMensalDB.instituicao_id == obter_instituicao_escopo(usuario_atual),
                 FechamentoMensalDB.ano == lancamento.ano,
                 FechamentoMensalDB.mes == lancamento.mes
             )
@@ -4199,7 +4164,7 @@ async def verificar_permissao_edicao(
         await db.execute(
             select(ConviventeDB).where(
                 ConviventeDB.id == registro.convivente_id,
-                ConviventeDB.instituicao_id == usuario_atual["instituicao_id"],
+                ConviventeDB.instituicao_id == obter_instituicao_escopo(usuario_atual),
             )
         )
     ).scalar_one_or_none()
@@ -4248,7 +4213,7 @@ async def editar_registro_rotina(
         await db.execute(
             select(RegistroRotinaDB).where(
                 RegistroRotinaDB.id == registro_id,
-                RegistroRotinaDB.instituicao_id == usuario_atual["instituicao_id"]
+                RegistroRotinaDB.instituicao_id == obter_instituicao_escopo(usuario_atual)
             )
         )
     ).scalar_one_or_none()
@@ -4313,7 +4278,7 @@ async def cancelar_registro_rotina(
         await db.execute(
             select(RegistroRotinaDB).where(
                 RegistroRotinaDB.id == registro_id,
-                RegistroRotinaDB.instituicao_id == usuario_atual["instituicao_id"]
+                RegistroRotinaDB.instituicao_id == obter_instituicao_escopo(usuario_atual)
             )
         )
     ).scalar_one_or_none()
@@ -4368,7 +4333,7 @@ async def desfazer_registro_rapido(
         await db.execute(
             select(RegistroRotinaDB).where(
                 RegistroRotinaDB.id == registro_id,
-                RegistroRotinaDB.instituicao_id == usuario_atual["instituicao_id"]
+                RegistroRotinaDB.instituicao_id == obter_instituicao_escopo(usuario_atual)
             )
         )
     ).scalar_one_or_none()
@@ -4565,7 +4530,7 @@ async def dashboard_resumo(
     db: AsyncSession = Depends(get_db),
     usuario_atual: dict = Depends(get_usuario_logado)
 ):
-    inst_id = usuario_atual["instituicao_id"]
+    inst_id = obter_instituicao_escopo(usuario_atual)
     perfil = usuario_atual.get("perfil_acesso")
     user_id = usuario_atual.get("sub")
     agora = agora_sao_paulo()
@@ -4768,7 +4733,7 @@ async def dashboard_series_atendimentos(
     - agrupamento por dia, semana e mês;
     - atendimento = registro operacional válido de rotina.
     """
-    inst_id = usuario_atual["instituicao_id"]
+    inst_id = obter_instituicao_escopo(usuario_atual)
     agora = agora_sao_paulo()
     hoje = agora.date()
 

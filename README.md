@@ -88,6 +88,11 @@ Uploads de documentos sao limitados a arquivos comuns de imagem, PDF, Word e Exc
 
 - Não commite `.env`, bancos `*.db` nem a pasta `uploads/`.
 - Em `APP_ENV=production`, defina `SECRET_KEY` forte; chaves de desenvolvimento são recusadas.
+- Use `CREDENCIAIS_CONVIVENTE_KEY` própria e diferente da `SECRET_KEY` para criptografar credenciais sensíveis.
+- Configure `CARECORE_RATE_LIMIT_REDIS_URL` em produção para que o bloqueio de tentativas de login funcione entre múltiplas instâncias.
+- Configure `CARECORE_SENTRY_DSN` quando houver monitoramento externo; o backend inicializa Sentry com envio de PII desativado.
+- Mantenha `CARECORE_ONBOARDING_PUBLICO=false` em produção, salvo decisão comercial explícita.
+- Mantenha `CARECORE_AUTO_CREATE_TABLES=false` em produção e rode migrations antes do deploy.
 
 ## Migrações (Alembic)
 
@@ -100,6 +105,30 @@ alembic upgrade head
 Em ambiente local, `CARECORE_AUTO_CREATE_TABLES=true` mantém o fallback de criar tabelas no startup para facilitar desenvolvimento. Em produção, use `APP_ENV=production` e `CARECORE_AUTO_CREATE_TABLES=false`, deixando o schema sob controle do Alembic.
 
 Regra do projeto: toda alteração de schema em `models.py` ou em tabelas/índices do banco deve ser acompanhada por uma nova migration Alembic versionada. O fallback local de `create_all`/`ALTER TABLE` não substitui migration para produção.
+
+## Checklist De Produção
+
+Antes de publicar uma nova versão:
+
+```bash
+pytest -q
+alembic check
+cd carecore-front
+npm ci
+npm run lint
+npm test
+npm run build
+```
+
+Verifique também:
+
+- `DATABASE_URL` aponta para o banco correto.
+- `alembic upgrade head` foi executado no banco de destino.
+- `CARECORE_CORS_ORIGINS` contém apenas os domínios oficiais do app.
+- `CARECORE_RATE_LIMIT_REDIS_URL` usa Redis compartilhado em produção.
+- `CARECORE_SENTRY_DSN` está configurado se houver monitoramento de erros.
+- `uploads/` não é servido como pasta pública; arquivos devem passar por `GET /api/arquivos/...`.
+- O frontend publicado contém `manifest.webmanifest`, ícones e `sw.js`.
 
 ## Licença
 

@@ -5,6 +5,9 @@ import './index.css';
 
 import App from './App.jsx';
 import { AuthProvider } from './context/AuthContext.jsx';
+import { registrarServiceWorkerCareCore } from './utils/serviceWorkerRegistration.js';
+
+registrarServiceWorkerCareCore();
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>

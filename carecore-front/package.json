@@ -7,8 +7,10 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
-    "test": "node --test src/utils/conviventesProntuarioUtils.test.js src/hooks/useConviventesLista.test.js src/services/api.test.js",
-    "test:run": "node --test src/utils/conviventesProntuarioUtils.test.js src/hooks/useConviventesLista.test.js src/services/api.test.js",
+    "test": "node --test src/utils/conviventesProntuarioUtils.test.js src/hooks/useConviventesLista.test.js src/services/api.test.js src/App.routes.test.js src/utils/serviceWorkerPolicy.test.js src/utils/exportarRelatorioXlsx.test.js",
+    "test:run": "node --test src/utils/conviventesProntuarioUtils.test.js src/hooks/useConviventesLista.test.js src/services/api.test.js src/App.routes.test.js src/utils/serviceWorkerPolicy.test.js src/utils/exportarRelatorioXlsx.test.js",
+    "test:e2e": "playwright test",
+    "test:e2e:install": "playwright install chromium",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -19,11 +21,11 @@
     "react-barcode": "^1.6.1",
     "react-dom": "^19.2.6",
     "react-qr-code": "^2.0.21",
-    "react-router-dom": "^7.15.0",
-    "xlsx": "^0.18.5"
+    "react-router-dom": "^7.15.0"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.60.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.1",

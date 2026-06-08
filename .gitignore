@@ -29,6 +29,8 @@ uploads/
 node_modules/
 carecore-front/node_modules/
 carecore-front/dist/
+carecore-front/playwright-report/
+carecore-front/test-results/
 carecore-site/node_modules/
 carecore-site/dist/
 npm-debug.log*

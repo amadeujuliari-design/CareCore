@@ -15,6 +15,7 @@ from sqlalchemy.future import select
 from audit_log import registrar_evento_auditoria
 from database import get_db
 from models import UsuarioDB
+from tenant_scope import obter_instituicao_escopo
 from schemas import (
     UsuarioCreate,
     UsuarioUpdate,
@@ -233,6 +234,10 @@ def usuario_para_resumo(usuario: UsuarioDB) -> UsuarioResumoResponse:
     return UsuarioResumoResponse.model_validate(usuario)
 
 
+def incrementar_token_version(usuario: UsuarioDB) -> None:
+    usuario.token_version = int(getattr(usuario, "token_version", 0) or 0) + 1
+
+
 def usuario_pode_gerenciar_globais(usuario_atual: dict) -> bool:
     return bool(usuario_atual.get("is_global"))
 
@@ -283,7 +288,7 @@ async def obter_meu_usuario(
     usuario = await buscar_usuario_por_id(
         db=db,
         usuario_id=usuario_id,
-        instituicao_id=usuario_atual["instituicao_id"],
+        instituicao_id=obter_instituicao_escopo(usuario_atual),
     )
 
     return usuario_para_response(usuario)
@@ -303,8 +308,9 @@ async def listar_usuarios(
     db: AsyncSession = Depends(get_db),
     usuario_atual: dict = Depends(exigir_gestor_ou_global),
 ):
+    instituicao_id = obter_instituicao_escopo(usuario_atual)
     filtros = [
-        UsuarioDB.instituicao_id == usuario_atual["instituicao_id"],
+        UsuarioDB.instituicao_id == instituicao_id,
     ]
 
     if ativo is not None:
@@ -353,7 +359,7 @@ async def obter_usuario(
     usuario = await buscar_usuario_por_id(
         db=db,
         usuario_id=usuario_id,
-        instituicao_id=usuario_atual["instituicao_id"],
+        instituicao_id=obter_instituicao_escopo(usuario_atual),
     )
 
     return usuario_para_response(usuario)
@@ -387,7 +393,7 @@ async def criar_usuario(
     usuario_criador_id = obter_usuario_id(usuario_atual)
 
     novo_usuario = UsuarioDB(
-        instituicao_id=usuario_atual["instituicao_id"],
+        instituicao_id=obter_instituicao_escopo(usuario_atual),
         organizacao_id=usuario_atual.get("organizacao_id"),
         nome=payload.nome,
         email=payload.email.lower().strip(),
@@ -464,7 +470,7 @@ async def editar_usuario(
     usuario = await buscar_usuario_por_id(
         db=db,
         usuario_id=usuario_id,
-        instituicao_id=usuario_atual["instituicao_id"],
+        instituicao_id=obter_instituicao_escopo(usuario_atual),
     )
 
     dados = payload.model_dump(exclude_unset=True)
@@ -542,7 +548,7 @@ async def alterar_status_usuario(
     usuario = await buscar_usuario_por_id(
         db=db,
         usuario_id=usuario_id,
-        instituicao_id=usuario_atual["instituicao_id"],
+        instituicao_id=obter_instituicao_escopo(usuario_atual),
     )
 
     usuario_logado_id = obter_usuario_id(usuario_atual)
@@ -602,10 +608,11 @@ async def redefinir_senha_usuario(
     usuario = await buscar_usuario_por_id(
         db=db,
         usuario_id=usuario_id,
-        instituicao_id=usuario_atual["instituicao_id"],
+        instituicao_id=obter_instituicao_escopo(usuario_atual),
     )
 
     usuario.senha_hash = gerar_hash_senha(payload.nova_senha)
+    incrementar_token_version(usuario)
     usuario.atualizado_em = agora_utc()
     usuario.atualizado_por_id = obter_usuario_id(usuario_atual)
 
@@ -650,7 +657,7 @@ async def alterar_minha_senha(
     usuario = await buscar_usuario_por_id(
         db=db,
         usuario_id=usuario_id,
-        instituicao_id=usuario_atual["instituicao_id"],
+        instituicao_id=obter_instituicao_escopo(usuario_atual),
     )
 
     if not payload.senha_atual:
@@ -671,6 +678,7 @@ async def alterar_minha_senha(
         )
 
     usuario.senha_hash = gerar_hash_senha(payload.nova_senha)
+    incrementar_token_version(usuario)
     usuario.atualizado_em = agora_utc()
     usuario.atualizado_por_id = usuario.id
 

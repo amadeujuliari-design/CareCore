@@ -5,6 +5,8 @@
 # =====================================================================
 
 from datetime import timedelta, datetime, timezone
+import hashlib
+import logging
 import os
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -28,12 +30,18 @@ from security import (
     normalizar_perfil_acesso,
 )
 
+try:
+    import redis.asyncio as redis_async
+except ImportError:  # pragma: no cover - dependência opcional em ambiente local antigo.
+    redis_async = None
+
 
 router = APIRouter(
     prefix="/api",
     tags=["Autenticação"],
 )
 
+logger = logging.getLogger("carecore.auth")
 APP_ENV = os.getenv("APP_ENV", "local").strip().lower()
 ONBOARDING_PUBLICO_PADRAO = "false" if APP_ENV in {"production", "prod"} else "true"
 ONBOARDING_PUBLICO = env_bool("CARECORE_ONBOARDING_PUBLICO", ONBOARDING_PUBLICO_PADRAO)
@@ -41,7 +49,9 @@ LOGIN_MAX_TENTATIVAS = env_int("CARECORE_LOGIN_MAX_TENTATIVAS", 8, minimo=0)
 LOGIN_JANELA_SEGUNDOS = env_int("CARECORE_LOGIN_JANELA_SEGUNDOS", 900, minimo=1)
 LOGIN_BLOQUEIO_SEGUNDOS = env_int("CARECORE_LOGIN_BLOQUEIO_SEGUNDOS", 900, minimo=1)
 LOGIN_MAX_CHAVES_CACHE = env_int("CARECORE_LOGIN_MAX_CHAVES_CACHE", 5000, minimo=0)
+RATE_LIMIT_REDIS_URL = os.getenv("CARECORE_RATE_LIMIT_REDIS_URL", "").strip()
 _tentativas_login: dict[str, list[datetime]] = {}
+_redis_rate_limit_client = None
 
 
 # =====================================================================
@@ -67,6 +77,98 @@ def dominio_email(email: str) -> str | None:
 
 def chave_tentativa_login(request: Request, email: str) -> str:
     return f"{obter_ip_cliente(request)}:{email.lower().strip()}"
+
+
+def chave_tentativa_login_redis(request: Request, email: str) -> str:
+    chave_bruta = chave_tentativa_login(request, email)
+    digest = hashlib.sha256(chave_bruta.encode("utf-8")).hexdigest()
+    return f"carecore:login-rate-limit:{digest}"
+
+
+def obter_cliente_redis_rate_limit():
+    global _redis_rate_limit_client
+
+    if not RATE_LIMIT_REDIS_URL or redis_async is None:
+        return None
+
+    if _redis_rate_limit_client is None:
+        _redis_rate_limit_client = redis_async.from_url(
+            RATE_LIMIT_REDIS_URL,
+            encoding="utf-8",
+            decode_responses=True,
+        )
+
+    return _redis_rate_limit_client
+
+
+async def verificar_limite_login_redis(request: Request, email: str) -> bool:
+    cliente = obter_cliente_redis_rate_limit()
+    if cliente is None:
+        return False
+
+    chave_base = chave_tentativa_login_redis(request, email)
+    chave_bloqueio = f"{chave_base}:blocked"
+
+    try:
+        bloqueado = await cliente.exists(chave_bloqueio)
+    except Exception as erro:
+        logger.warning(
+            "Rate limit Redis indisponível; usando fallback local",
+            extra={"rate_limit_backend": "redis", "erro": str(erro)},
+        )
+        return False
+
+    if bloqueado:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Muitas tentativas de login. Aguarde alguns minutos e tente novamente.",
+        )
+
+    return True
+
+
+async def registrar_falha_login_redis(request: Request, email: str) -> bool:
+    cliente = obter_cliente_redis_rate_limit()
+    if cliente is None:
+        return False
+
+    chave_base = chave_tentativa_login_redis(request, email)
+    chave_bloqueio = f"{chave_base}:blocked"
+
+    try:
+        total = await cliente.incr(chave_base)
+        if total == 1:
+            await cliente.expire(chave_base, LOGIN_JANELA_SEGUNDOS)
+
+        if total >= LOGIN_MAX_TENTATIVAS:
+            await cliente.set(chave_bloqueio, "1", ex=LOGIN_BLOQUEIO_SEGUNDOS)
+
+        return True
+    except Exception as erro:
+        logger.warning(
+            "Falha ao registrar rate limit no Redis; usando fallback local",
+            extra={"rate_limit_backend": "redis", "erro": str(erro)},
+        )
+        return False
+
+
+async def limpar_falhas_login_redis(request: Request, email: str) -> bool:
+    cliente = obter_cliente_redis_rate_limit()
+    if cliente is None:
+        return False
+
+    chave_base = chave_tentativa_login_redis(request, email)
+    chave_bloqueio = f"{chave_base}:blocked"
+
+    try:
+        await cliente.delete(chave_base, chave_bloqueio)
+        return True
+    except Exception as erro:
+        logger.warning(
+            "Falha ao limpar rate limit no Redis; usando fallback local",
+            extra={"rate_limit_backend": "redis", "erro": str(erro)},
+        )
+        return False
 
 
 def limpar_tentativas_antigas(chave: str, agora: datetime) -> list[datetime]:
@@ -105,7 +207,7 @@ def limitar_cache_tentativas_login(agora: datetime) -> None:
         _tentativas_login.pop(chave, None)
 
 
-def verificar_limite_login(request: Request, email: str) -> None:
+def verificar_limite_login_local(request: Request, email: str) -> None:
     if LOGIN_MAX_TENTATIVAS <= 0:
         return
 
@@ -129,7 +231,7 @@ def verificar_limite_login(request: Request, email: str) -> None:
     _tentativas_login.pop(chave, None)
 
 
-def registrar_falha_login(request: Request, email: str) -> None:
+def registrar_falha_login_local(request: Request, email: str) -> None:
     if LOGIN_MAX_TENTATIVAS <= 0:
         return
 
@@ -141,8 +243,35 @@ def registrar_falha_login(request: Request, email: str) -> None:
     _tentativas_login[chave] = tentativas
 
 
-def limpar_falhas_login(request: Request, email: str) -> None:
+def limpar_falhas_login_local(request: Request, email: str) -> None:
     _tentativas_login.pop(chave_tentativa_login(request, email), None)
+
+
+async def verificar_limite_login(request: Request, email: str) -> None:
+    if LOGIN_MAX_TENTATIVAS <= 0:
+        return
+
+    if await verificar_limite_login_redis(request, email):
+        return
+
+    verificar_limite_login_local(request, email)
+
+
+async def registrar_falha_login(request: Request, email: str) -> None:
+    if LOGIN_MAX_TENTATIVAS <= 0:
+        return
+
+    if await registrar_falha_login_redis(request, email):
+        return
+
+    registrar_falha_login_local(request, email)
+
+
+async def limpar_falhas_login(request: Request, email: str) -> None:
+    if await limpar_falhas_login_redis(request, email):
+        return
+
+    limpar_falhas_login_local(request, email)
 
 
 async def verificar_email_unico(
@@ -204,6 +333,7 @@ def montar_payload_token(usuario: UsuarioDB, projeto: InstituicaoDB | None = Non
         "is_master": bool(getattr(usuario, "is_master", False)),
         "is_global": bool(getattr(usuario, "is_global", False)),
         "ativo": bool(getattr(usuario, "ativo", True)),
+        "token_version": int(getattr(usuario, "token_version", 0) or 0),
     }
 
 
@@ -218,7 +348,7 @@ async def login(
     db: AsyncSession = Depends(get_db),
 ):
     email = payload.email.lower().strip()
-    verificar_limite_login(request, email)
+    await verificar_limite_login(request, email)
 
     resultado = await db.execute(
         select(UsuarioDB).where(
@@ -229,7 +359,7 @@ async def login(
     usuario = resultado.scalar_one_or_none()
 
     if not usuario:
-        registrar_falha_login(request, email)
+        await registrar_falha_login(request, email)
         registrar_evento_auditoria(
             "login_falha",
             ip=obter_ip_cliente(request),
@@ -245,7 +375,7 @@ async def login(
         payload.senha,
         usuario.senha_hash,
     ):
-        registrar_falha_login(request, email)
+        await registrar_falha_login(request, email)
         registrar_evento_auditoria(
             "login_falha",
             ip=obter_ip_cliente(request),
@@ -272,7 +402,7 @@ async def login(
         )
 
     usuario.ultimo_login_em = agora_utc_sem_timezone()
-    limpar_falhas_login(request, email)
+    await limpar_falhas_login(request, email)
 
     await db.commit()
     await db.refresh(usuario)

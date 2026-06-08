@@ -5,6 +5,7 @@ from database import get_db
 from models import QuartoDB, LeitoDB, ConviventeDB
 from schemas import LeitoAlocacaoPayload, QuartoCreate, QuartoUpdate
 from security import exigir_tecnico_ou_gestor, get_usuario_logado
+from tenant_scope import obter_instituicao_escopo
 
 router = APIRouter(prefix="/api/quartos", tags=["Quartos e Leitos"])
 
@@ -15,9 +16,10 @@ async def criar_quarto(
     db: AsyncSession = Depends(get_db), 
     usuario_atual: dict = Depends(exigir_tecnico_ou_gestor)
 ):
+    instituicao_id = obter_instituicao_escopo(usuario_atual)
     try:
         novo_quarto = QuartoDB(
-            instituicao_id=usuario_atual["instituicao_id"],
+            instituicao_id=instituicao_id,
             nome=payload.nome,
             tipo_publico=payload.tipo_publico,
             modalidade=payload.modalidade
@@ -47,8 +49,9 @@ async def listar_quartos(
     db: AsyncSession = Depends(get_db), 
     usuario_atual: dict = Depends(get_usuario_logado)
 ):
+    instituicao_id = obter_instituicao_escopo(usuario_atual)
     query = select(QuartoDB).where(
-        QuartoDB.instituicao_id == usuario_atual["instituicao_id"]
+        QuartoDB.instituicao_id == instituicao_id
     )
     resultado = await db.execute(query)
     quartos = resultado.scalars().all()
@@ -72,7 +75,7 @@ async def listar_quartos(
             conviventes = (
                 await db.execute(
                     select(ConviventeDB).where(
-                        ConviventeDB.instituicao_id == usuario_atual["instituicao_id"],
+                        ConviventeDB.instituicao_id == instituicao_id,
                         ConviventeDB.leito_id.in_(leito_ids),
                         ConviventeDB.status == "Ativo"
                     )
@@ -140,13 +143,14 @@ async def alocar_convivente_leito(
     db: AsyncSession = Depends(get_db),
     usuario_atual: dict = Depends(exigir_tecnico_ou_gestor)
 ):
+    instituicao_id = obter_instituicao_escopo(usuario_atual)
     leito = (
         await db.execute(
             select(LeitoDB)
             .join(QuartoDB, QuartoDB.id == LeitoDB.quarto_id)
             .where(
                 LeitoDB.id == leito_id,
-                QuartoDB.instituicao_id == usuario_atual["instituicao_id"]
+                QuartoDB.instituicao_id == instituicao_id
             )
         )
     ).scalar_one_or_none()
@@ -158,7 +162,7 @@ async def alocar_convivente_leito(
         await db.execute(
             select(ConviventeDB).where(
                 ConviventeDB.id == payload.convivente_id,
-                ConviventeDB.instituicao_id == usuario_atual["instituicao_id"],
+                ConviventeDB.instituicao_id == instituicao_id,
                 ConviventeDB.status == "Ativo"
             )
         )
@@ -170,7 +174,7 @@ async def alocar_convivente_leito(
     ocupante_atual = (
         await db.execute(
             select(ConviventeDB).where(
-                ConviventeDB.instituicao_id == usuario_atual["instituicao_id"],
+                ConviventeDB.instituicao_id == instituicao_id,
                 ConviventeDB.leito_id == leito_id,
                 ConviventeDB.status == "Ativo"
             )
@@ -213,13 +217,14 @@ async def liberar_leito(
     db: AsyncSession = Depends(get_db),
     usuario_atual: dict = Depends(exigir_tecnico_ou_gestor)
 ):
+    instituicao_id = obter_instituicao_escopo(usuario_atual)
     leito = (
         await db.execute(
             select(LeitoDB)
             .join(QuartoDB, QuartoDB.id == LeitoDB.quarto_id)
             .where(
                 LeitoDB.id == leito_id,
-                QuartoDB.instituicao_id == usuario_atual["instituicao_id"]
+                QuartoDB.instituicao_id == instituicao_id
             )
         )
     ).scalar_one_or_none()
@@ -230,7 +235,7 @@ async def liberar_leito(
     ocupante = (
         await db.execute(
             select(ConviventeDB).where(
-                ConviventeDB.instituicao_id == usuario_atual["instituicao_id"],
+                ConviventeDB.instituicao_id == instituicao_id,
                 ConviventeDB.leito_id == leito_id,
                 ConviventeDB.status == "Ativo"
             )
@@ -262,8 +267,9 @@ async def atualizar_quarto(
     db: AsyncSession = Depends(get_db), 
     usuario_atual: dict = Depends(exigir_tecnico_ou_gestor)
 ):
+    instituicao_id = obter_instituicao_escopo(usuario_atual)
     try:
-        query = select(QuartoDB).where(QuartoDB.id == quarto_id, QuartoDB.instituicao_id == usuario_atual["instituicao_id"])
+        query = select(QuartoDB).where(QuartoDB.id == quarto_id, QuartoDB.instituicao_id == instituicao_id)
         res = await db.execute(query)
         quarto = res.scalar_one_or_none()
         
@@ -288,7 +294,7 @@ async def atualizar_quarto(
             for leito_id in (
                 await db.execute(
                     select(ConviventeDB.leito_id).where(
-                        ConviventeDB.instituicao_id == usuario_atual["instituicao_id"],
+                        ConviventeDB.instituicao_id == instituicao_id,
                         ConviventeDB.leito_id.in_(list(mapa_leitos_atuais.keys())),
                         ConviventeDB.status == "Ativo"
                     )
@@ -350,8 +356,9 @@ async def excluir_quarto(
     db: AsyncSession = Depends(get_db), 
     usuario_atual: dict = Depends(exigir_tecnico_ou_gestor)
 ):
+    instituicao_id = obter_instituicao_escopo(usuario_atual)
     try:
-        query = select(QuartoDB).where(QuartoDB.id == quarto_id, QuartoDB.instituicao_id == usuario_atual["instituicao_id"])
+        query = select(QuartoDB).where(QuartoDB.id == quarto_id, QuartoDB.instituicao_id == instituicao_id)
         res = await db.execute(query)
         quarto = res.scalar_one_or_none()
         
@@ -367,7 +374,7 @@ async def excluir_quarto(
             convivente_vinculado = (
                 await db.execute(
                     select(ConviventeDB.id).where(
-                        ConviventeDB.instituicao_id == usuario_atual["instituicao_id"],
+                        ConviventeDB.instituicao_id == instituicao_id,
                         ConviventeDB.leito_id.in_(leito_ids),
                         ConviventeDB.status == "Ativo"
                     )
