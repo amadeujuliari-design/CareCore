@@ -12,6 +12,7 @@ from sqlalchemy import or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
+from audit_log import registrar_evento_auditoria
 from database import get_db
 from models import UsuarioDB
 from schemas import (
@@ -25,8 +26,8 @@ from schemas import (
 )
 from security import (
     get_usuario_logado,
-    exigir_gestor,
     gerar_hash_senha,
+    usuario_eh_gestor,
     verificar_senha,
 )
 
@@ -43,6 +44,7 @@ router = APIRouter(
 
 PERFIS_ACESSO_VALIDOS = {
     "Gestor",
+    "Global",
     "Técnico",
     "Orientador",
     "Administrativo",
@@ -91,7 +93,7 @@ def normalizar_perfil_acesso(perfil: Optional[str]) -> str:
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=(
                 "Perfil de acesso inválido. "
-                "Use: Gestor, Técnico, Orientador, Administrativo ou Consulta."
+                "Use: Gestor, Global, Técnico, Orientador, Administrativo ou Consulta."
             ),
         )
 
@@ -170,6 +172,7 @@ def aplicar_dados_usuario(
     usuario: UsuarioDB,
     dados: dict,
     permitir_ativo: bool = False,
+    permitir_global: bool = False,
 ) -> None:
     campos_permitidos = {
         "nome",
@@ -206,6 +209,9 @@ def aplicar_dados_usuario(
     if permitir_ativo:
         campos_permitidos.add("ativo")
 
+    if permitir_global:
+        campos_permitidos.add("is_global")
+
     for campo, valor in dados.items():
         if campo not in campos_permitidos:
             continue
@@ -225,6 +231,36 @@ def usuario_para_response(usuario: UsuarioDB) -> UsuarioResponse:
 
 def usuario_para_resumo(usuario: UsuarioDB) -> UsuarioResumoResponse:
     return UsuarioResumoResponse.model_validate(usuario)
+
+
+def usuario_pode_gerenciar_globais(usuario_atual: dict) -> bool:
+    return bool(usuario_atual.get("is_global"))
+
+
+async def exigir_gestor_ou_global(
+    usuario_atual: dict = Depends(get_usuario_logado),
+) -> dict:
+    if usuario_eh_gestor(usuario_atual) or usuario_atual.get("is_global"):
+        return usuario_atual
+
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Apenas gestores ou usuários globais podem gerenciar usuários.",
+    )
+
+
+def validar_alteracao_global(
+    usuario_atual: dict,
+    valor_global_solicitado: Optional[bool],
+) -> None:
+    if valor_global_solicitado is None:
+        return
+
+    if not usuario_pode_gerenciar_globais(usuario_atual):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Apenas usuários globais podem conceder ou remover acesso global.",
+        )
 
 
 # =====================================================================
@@ -265,7 +301,7 @@ async def listar_usuarios(
     limite: int = Query(default=100, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
     db: AsyncSession = Depends(get_db),
-    usuario_atual: dict = Depends(exigir_gestor),
+    usuario_atual: dict = Depends(exigir_gestor_ou_global),
 ):
     filtros = [
         UsuarioDB.instituicao_id == usuario_atual["instituicao_id"],
@@ -312,7 +348,7 @@ async def listar_usuarios(
 async def obter_usuario(
     usuario_id: str,
     db: AsyncSession = Depends(get_db),
-    usuario_atual: dict = Depends(exigir_gestor),
+    usuario_atual: dict = Depends(exigir_gestor_ou_global),
 ):
     usuario = await buscar_usuario_por_id(
         db=db,
@@ -336,8 +372,15 @@ async def obter_usuario(
 async def criar_usuario(
     payload: UsuarioCreate,
     db: AsyncSession = Depends(get_db),
-    usuario_atual: dict = Depends(exigir_gestor),
+    usuario_atual: dict = Depends(exigir_gestor_ou_global),
 ):
+    perfil_normalizado = normalizar_perfil_acesso(payload.perfil_acesso)
+    solicita_acesso_global = bool(payload.is_global) or perfil_normalizado == "Global"
+
+    validar_alteracao_global(
+        usuario_atual,
+        True if solicita_acesso_global else None,
+    )
     await verificar_email_unico(db, payload.email)
     await verificar_cpf_unico(db, payload.cpf)
 
@@ -345,14 +388,16 @@ async def criar_usuario(
 
     novo_usuario = UsuarioDB(
         instituicao_id=usuario_atual["instituicao_id"],
+        organizacao_id=usuario_atual.get("organizacao_id"),
         nome=payload.nome,
         email=payload.email.lower().strip(),
         cpf=payload.cpf,
         telefone=payload.telefone,
         avatar_url=payload.avatar_url,
         senha_hash=gerar_hash_senha(payload.senha),
-        perfil_acesso=normalizar_perfil_acesso(payload.perfil_acesso),
+        perfil_acesso=perfil_normalizado,
         is_master=False,
+        is_global=bool(payload.is_global),
         ativo=True,
         data_nascimento=payload.data_nascimento,
         genero=payload.genero,
@@ -386,13 +431,20 @@ async def criar_usuario(
     try:
         await db.commit()
         await db.refresh(novo_usuario)
+        registrar_evento_auditoria(
+            "usuario_criado",
+            usuario_atual=usuario_atual,
+            usuario_alvo_id=novo_usuario.id,
+            perfil_acesso=novo_usuario.perfil_acesso,
+            usuario_global=bool(novo_usuario.is_global),
+        )
 
     except Exception as erro:
         await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Erro ao criar usuário: {str(erro)}",
-        )
+            detail="Não foi possível criar o usuário. Verifique os dados informados.",
+        ) from erro
 
     return usuario_para_response(novo_usuario)
 
@@ -407,7 +459,7 @@ async def editar_usuario(
     usuario_id: str,
     payload: UsuarioUpdate,
     db: AsyncSession = Depends(get_db),
-    usuario_atual: dict = Depends(exigir_gestor),
+    usuario_atual: dict = Depends(exigir_gestor_ou_global),
 ):
     usuario = await buscar_usuario_por_id(
         db=db,
@@ -416,6 +468,7 @@ async def editar_usuario(
     )
 
     dados = payload.model_dump(exclude_unset=True)
+    validar_alteracao_global(usuario_atual, dados.get("is_global"))
 
     if "email" in dados and dados["email"]:
         await verificar_email_unico(
@@ -438,6 +491,7 @@ async def editar_usuario(
         usuario=usuario,
         dados=dados,
         permitir_ativo=True,
+        permitir_global=usuario_pode_gerenciar_globais(usuario_atual),
     )
 
     usuario.atualizado_em = agora_utc()
@@ -454,13 +508,21 @@ async def editar_usuario(
     try:
         await db.commit()
         await db.refresh(usuario)
+        registrar_evento_auditoria(
+            "usuario_editado",
+            usuario_atual=usuario_atual,
+            usuario_alvo_id=usuario.id,
+            campos_alterados=",".join(sorted(dados.keys())),
+            ativo_anterior=ativo_anterior,
+            ativo_novo=bool(getattr(usuario, "ativo", True)),
+        )
 
     except Exception as erro:
         await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Erro ao editar usuário: {str(erro)}",
-        )
+            detail="Não foi possível editar o usuário.",
+        ) from erro
 
     return usuario_para_response(usuario)
 
@@ -475,7 +537,7 @@ async def alterar_status_usuario(
     usuario_id: str,
     payload: UsuarioAtivarInativar,
     db: AsyncSession = Depends(get_db),
-    usuario_atual: dict = Depends(exigir_gestor),
+    usuario_atual: dict = Depends(exigir_gestor_ou_global),
 ):
     usuario = await buscar_usuario_por_id(
         db=db,
@@ -499,19 +561,28 @@ async def alterar_status_usuario(
         usuario.inativado_em = None
         usuario.inativado_por_id = None
     else:
-        usuario.inativado_em = agora_utc()
+        agora = agora_utc()
+        usuario.inativado_em = agora
         usuario.inativado_por_id = usuario_logado_id
+        usuario.data_desligamento = payload.data_desligamento or agora.date()
+        usuario.motivo_desligamento = payload.motivo_desligamento.strip()
 
     try:
         await db.commit()
         await db.refresh(usuario)
+        registrar_evento_auditoria(
+            "usuario_status_alterado",
+            usuario_atual=usuario_atual,
+            usuario_alvo_id=usuario.id,
+            ativo=bool(usuario.ativo),
+        )
 
     except Exception as erro:
         await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Erro ao alterar status do usuário: {str(erro)}",
-        )
+            detail="Não foi possível alterar o status do usuário.",
+        ) from erro
 
     return usuario_para_response(usuario)
 
@@ -526,7 +597,7 @@ async def redefinir_senha_usuario(
     usuario_id: str,
     payload: UsuarioDefinirSenha,
     db: AsyncSession = Depends(get_db),
-    usuario_atual: dict = Depends(exigir_gestor),
+    usuario_atual: dict = Depends(exigir_gestor_ou_global),
 ):
     usuario = await buscar_usuario_por_id(
         db=db,
@@ -541,13 +612,18 @@ async def redefinir_senha_usuario(
     try:
         await db.commit()
         await db.refresh(usuario)
+        registrar_evento_auditoria(
+            "senha_redefinida_por_gestor",
+            usuario_atual=usuario_atual,
+            usuario_alvo_id=usuario.id,
+        )
 
     except Exception as erro:
         await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Erro ao redefinir senha: {str(erro)}",
-        )
+            detail="Não foi possível redefinir a senha.",
+        ) from erro
 
     return usuario_para_response(usuario)
 
@@ -584,8 +660,13 @@ async def alterar_minha_senha(
         )
 
     if not verificar_senha(payload.senha_atual, usuario.senha_hash):
+        registrar_evento_auditoria(
+            "senha_atual_invalida",
+            usuario_atual=usuario_atual,
+            usuario_alvo_id=usuario.id,
+        )
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
+            status_code=status.HTTP_400_BAD_REQUEST,
             detail="Senha atual inválida.",
         )
 
@@ -596,12 +677,17 @@ async def alterar_minha_senha(
     try:
         await db.commit()
         await db.refresh(usuario)
+        registrar_evento_auditoria(
+            "senha_alterada_pelo_usuario",
+            usuario_atual=usuario_atual,
+            usuario_alvo_id=usuario.id,
+        )
 
     except Exception as erro:
         await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Erro ao alterar senha: {str(erro)}",
-        )
+            detail="Não foi possível alterar a senha.",
+        ) from erro
 
     return usuario_para_response(usuario)

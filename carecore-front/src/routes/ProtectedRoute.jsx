@@ -1,6 +1,23 @@
 import { Navigate } from 'react-router-dom';
 
+import ChatFlutuante from '../components/ChatFlutuante';
 import { useAuth } from '../context/AuthContext';
+
+const PERFIS_LEGADOS = {
+  Gestao: 'Gestor',
+  Gestão: 'Gestor',
+  Gerente: 'Gestor',
+  Tecnico: 'Técnico',
+  Executivo: 'Global',
+};
+
+function normalizarPerfil(perfil) {
+  if (!perfil) {
+    return '';
+  }
+
+  return PERFIS_LEGADOS[perfil] || perfil;
+}
 
 export default function ProtectedRoute({
   children,
@@ -29,7 +46,7 @@ export default function ProtectedRoute({
 
   if (
     perfis.length > 0 &&
-    !perfis.includes(usuario.perfil_acesso)
+    !perfis.map(normalizarPerfil).includes(normalizarPerfil(usuario.perfil_acesso))
   ) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
@@ -49,6 +66,7 @@ export default function ProtectedRoute({
   return (
     <div className="carecore-premium-frame">
       {children}
+      <ChatFlutuante />
     </div>
   );
 }

@@ -19,7 +19,7 @@ export function CardMetrica({ label, valor, detalhe }) {
 function StatusBadge({ status }) {
   return (
     <span className={`text-[10px] font-black px-2 py-1 rounded-full border uppercase ${STATUS_CLASSES[status] || STATUS_CLASSES.planejado}`}>
-      {status === 'pronto' ? 'Disponivel' : status === 'parcial' ? 'Parcial' : 'Planejado'}
+      {status === 'pronto' ? 'Disponível' : status === 'parcial' ? 'Parcial' : 'Planejado'}
     </span>
   );
 }
@@ -49,13 +49,13 @@ export function RelatorioCard({ item }) {
           to={item.link}
           className="mt-auto inline-flex w-fit items-center rounded-xl bg-brand px-4 py-2 text-xs font-black text-white hover:bg-brandDark"
         >
-          Abrir relatorio detalhado
+          Abrir relatório detalhado
         </Link>
       )}
 
-      {!item.link && (
+      {!item.link && item.status === 'planejado' && (
         <p className="mt-auto text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2">
-          Ainda precisa de implementacao especifica.
+          Ainda precisa de implementação específica.
         </p>
       )}
     </div>

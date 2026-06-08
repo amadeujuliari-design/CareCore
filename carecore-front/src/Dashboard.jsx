@@ -7,17 +7,24 @@ import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import Sidebar from "./Sidebar";
 import UserAvatar from "./components/UserAvatar";
+import ProjetoAtualBadge from "./components/ProjetoAtualBadge";
 import { listarMeusAvisos, obterResumoAvisos, marcarAvisoComoLido } from "./services/avisosService";
 import { API_ROOT } from "./config/apiBase";
+import { criarHeadersAutenticados } from "./utils/requestIdUtils";
 
-function hojeISO() {
-  return new Date().toISOString().slice(0, 10);
+function dataLocalISO(data = new Date()) {
+  const pad = (numero) => String(numero).padStart(2, "0");
+  return `${data.getFullYear()}-${pad(data.getMonth() + 1)}-${pad(data.getDate())}`;
 }
 
 function diasAtrasISO(dias) {
   const data = new Date();
   data.setDate(data.getDate() - dias);
-  return data.toISOString().slice(0, 10);
+  return dataLocalISO(data);
+}
+
+function hojeISO() {
+  return dataLocalISO();
 }
 
 function formatarData(data) {
@@ -259,8 +266,8 @@ function ModalAvisoDashboard({ aviso, onFechar, onGerenciar }) {
   const mensagem = aviso.mensagem || aviso.mensagem_resumo || "Sem conteúdo informado.";
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-sm">
-      <div className="w-full max-w-2xl overflow-hidden rounded-[2rem] border border-white/70 bg-white shadow-2xl">
+    <div className="carecore-modal-overlay fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-sm">
+      <div className="carecore-modal-panel w-full max-w-2xl overflow-hidden rounded-[2rem] border border-white/70 bg-white shadow-2xl">
         <div className="border-b border-slate-100 bg-gradient-to-r from-purple-50 to-white p-5">
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
@@ -327,10 +334,11 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const token = localStorage.getItem("@CareCore:token");
 
-  const [conviventes, setConviventes] = useState([]);
-  const [quartos, setQuartos] = useState([]);
-  const [ocorrencias, setOcorrencias] = useState([]);
-  const [tecnicos, setTecnicos] = useState([]);
+  const [conviventes] = useState([]);
+  const [quartos] = useState([]);
+  const [ocorrencias] = useState([]);
+  const [tecnicos] = useState([]);
+  const [resumoDashboard, setResumoDashboard] = useState(null);
   const [series, setSeries] = useState(null);
   const [avisos, setAvisos] = useState([]);
   const [resumoAvisos, setResumoAvisos] = useState({ total_visiveis: 0, total_nao_lidos: 0, total_alertas_ativos: 0 });
@@ -354,16 +362,12 @@ export default function Dashboard() {
     try {
       setLoading(true);
       setErro("");
-      const headers = { Authorization: `Bearer ${token}` };
+      const headers = criarHeadersAutenticados(token);
 
       setCarregandoAvisos(true);
 
-      const [resConviventes, resQuartos, resOcorrencias, resTecnicos, resSeries, resAvisos, resResumoAvisos] = await Promise.all([
-        axios.get(`${API_ROOT}/conviventes`, { headers }),
-        axios.get(`${API_ROOT}/quartos`, { headers }),
-        axios.get(`${API_ROOT}/ocorrencias`, { headers }),
-        axios.get(`${API_ROOT}/tecnicos`, { headers }),
-        axios.get(`${API_ROOT}/dashboard/series-atendimentos`, { headers }),
+      const [resDashboard, resAvisos, resResumoAvisos] = await Promise.all([
+        axios.get(`${API_ROOT}/dashboard/resumo`, { headers }),
         listarMeusAvisos(token, { limite: 10 }).catch((error) => {
           console.warn("Avisos ainda não disponíveis no backend.", error);
           return [];
@@ -374,11 +378,8 @@ export default function Dashboard() {
         }),
       ]);
 
-      setConviventes(resConviventes.data || []);
-      setQuartos(resQuartos.data || []);
-      setOcorrencias(resOcorrencias.data || []);
-      setTecnicos(resTecnicos.data || []);
-      setSeries(resSeries.data || null);
+      setResumoDashboard(resDashboard.data || null);
+      setSeries(resDashboard.data?.series || null);
       setAvisos(Array.isArray(resAvisos) ? resAvisos : []);
       setResumoAvisos(resResumoAvisos || { total_visiveis: 0, total_nao_lidos: 0, total_alertas_ativos: 0 });
     } catch (error) {
@@ -391,6 +392,35 @@ export default function Dashboard() {
   }
 
   const dados = useMemo(() => {
+    if (resumoDashboard) {
+      const alertasComunicacao = Number(
+        resumoAvisos?.total_alertas_ativos ??
+        resumoAvisos?.total_nao_lidos ??
+        0
+      );
+
+      return {
+        totalConviventes: resumoDashboard.totalConviventes || 0,
+        ativos: resumoDashboard.ativos || 0,
+        leitosOcupados: resumoDashboard.leitosOcupados || 0,
+        totalLeitos: resumoDashboard.totalLeitos || 0,
+        atendimentosMes: resumoDashboard.atendimentosMes || 0,
+        atendimentosHoje: resumoDashboard.atendimentosHoje || 0,
+        alertasComunicacao,
+        alertasOcorrencias: resumoDashboard.alertasOcorrencias || 0,
+        alertasAtivos: alertasComunicacao + Number(resumoDashboard.alertasOcorrencias || 0),
+        pendenciasTecnicas: resumoDashboard.pendenciasTecnicas || 0,
+        ocorrenciasEmAlerta: resumoDashboard.ocorrenciasEmAlerta || [],
+        pendenciasTecnicos: resumoDashboard.pendenciasTecnicos || [],
+        resumoPrioridades: resumoDashboard.resumoPrioridades || {
+          Baixa: { total: 0, pendentes: 0 },
+          Média: { total: 0, pendentes: 0 },
+          Alta: { total: 0, pendentes: 0 },
+          Crítica: { total: 0, pendentes: 0 },
+        },
+      };
+    }
+
     const ativos = conviventes.filter((c) => c.status === "Ativo");
 
     let totalLeitos = 0;
@@ -494,7 +524,7 @@ export default function Dashboard() {
       pendenciasTecnicos,
       resumoPrioridades,
     };
-  }, [conviventes, quartos, ocorrencias, tecnicos, series, resumoAvisos]);
+  }, [conviventes, quartos, ocorrencias, tecnicos, series, resumoAvisos, resumoDashboard]);
 
   const dadosGraficoRange = useMemo(() => gerarSeriePorRange(series, dataInicio, dataFim), [series, dataInicio, dataFim]);
   const totalRange = dadosGraficoRange.reduce((total, item) => total + (item.atendimentos || 0), 0);
@@ -565,6 +595,7 @@ export default function Dashboard() {
             </div>
 
             <div className="flex w-full items-center gap-2 overflow-x-auto pb-1 sm:w-auto sm:overflow-visible sm:pb-0">
+              <ProjetoAtualBadge />
               <button
                 type="button"
                 onClick={() => {

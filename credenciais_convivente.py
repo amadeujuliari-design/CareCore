@@ -17,13 +17,20 @@ _PREFIXO_FERNET = "fernet:"
 
 def _chave_fernet() -> bytes:
     """
-    CREDENCIAIS_CONVIVENTE_KEY (opcional) ou derivação de SECRET_KEY.
+    CREDENCIAIS_CONVIVENTE_KEY ou fallback local para SECRET_KEY.
     Fernet espera base64-url de 32 bytes.
     """
     explicita = os.getenv("CREDENCIAIS_CONVIVENTE_KEY", "").strip()
     if explicita:
         digest = hashlib.sha256(explicita.encode("utf-8")).digest()
     else:
+        app_env = os.getenv("APP_ENV", "local").strip().lower()
+        if app_env in {"production", "prod"}:
+            raise RuntimeError(
+                "Defina CREDENCIAIS_CONVIVENTE_KEY em produção para separar "
+                "a criptografia do cofre da SECRET_KEY dos tokens."
+            )
+
         secret = os.getenv("SECRET_KEY", "CARECORE_SECRET_DEV_LOCAL")
         digest = hashlib.sha256(secret.encode("utf-8")).digest()
     return base64.urlsafe_b64encode(digest)

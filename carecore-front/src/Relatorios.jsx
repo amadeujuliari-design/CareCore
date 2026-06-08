@@ -1,44 +1,92 @@
 import { useEffect, useMemo, useState } from 'react';
-import axios from 'axios';
 
 import Sidebar from './Sidebar';
-import { AppShell, MainShell, PageHeader, PremiumButton, ScrollArea } from './components/PremiumUI';
-import { API_ROOT } from './config/apiBase';
-import { CardMetrica, RelatorioCard } from './components/RelatoriosUI';
+import { AppShell, MainShell, PageHeader, ReportActionButton, ScrollArea } from './components/PremiumUI';
+import CarteirinhasLote from './components/CarteirinhasLote';
+import DireitosReservadosAviso from './components/DireitosReservadosAviso';
+import { RelatoriosEvolucaoGraficos } from './components/relatorios/RelatoriosEvolucaoGraficos';
+import { RelatoriosFiltrosPanel } from './components/relatorios/RelatoriosFiltrosPanel';
+import { RelatoriosPersonalizacao } from './components/relatorios/RelatoriosPersonalizacao';
+import { RelatoriosCardsAba, RelatoriosMetricasTopo } from './components/relatorios/RelatoriosResumoAba';
+import { RelatoriosTabelaDados } from './components/relatorios/RelatoriosTabelaDados';
 import { exportarRelatorioXlsx } from './utils/exportarRelatorioXlsx';
 import { imprimirRelatorio } from './utils/imprimirRelatorio';
-import { listarMeusAvisos, obterResumoAvisos } from './services/avisosService';
+import { gerarGraficosEvolucaoHtml } from './utils/relatoriosGraficosHtml';
+import { useRelatoriosFiltros } from './hooks/useRelatoriosFiltros';
+import { useRelatoriosIndicadores } from './hooks/useRelatoriosIndicadores';
+import { useRelatoriosTabela } from './hooks/useRelatoriosTabela';
+import {
+  LIMITE_AMOSTRA_OCORRENCIAS_RELATORIOS,
+  carregarDadosRelatorios,
+} from './services/relatoriosService';
+import { useRelatoriosIdentidade } from './hooks/useRelatoriosIdentidade';
 import {
   ABAS_RELATORIOS,
-  campoTexto,
-  contar,
   criarFiltrosRelatoriosIniciais,
-  dataDentroDoPeriodo,
   descreverFiltrosAtivosRelatorios,
   formatarData,
-  formatarDataHora,
-  normalizarPrioridade,
-  porcentagem,
 } from './utils/relatoriosUtils';
+
+function dataLocalISO(data) {
+  const pad = (numero) => String(numero).padStart(2, '0');
+  return `${data.getFullYear()}-${pad(data.getMonth() + 1)}-${pad(data.getDate())}`;
+}
+
+function periodoInicialPorAbaRelatorios(aba) {
+  const hoje = new Date();
+
+  if (aba === 'rotina') {
+    const dia = dataLocalISO(hoje);
+    return { dataInicio: dia, dataFim: dia };
+  }
+
+  if (aba === 'evolucao') {
+    const inicio = new Date(hoje);
+    inicio.setMonth(inicio.getMonth() - 3);
+    return { dataInicio: dataLocalISO(inicio), dataFim: dataLocalISO(hoje) };
+  }
+
+  return { dataInicio: '', dataFim: '' };
+}
 
 export default function Relatorios() {
   const token = localStorage.getItem('@CareCore:token') || localStorage.getItem('token');
 
-  const [aba, setAba] = useState('geral');
+  const [aba, setAba] = useState('conviventes');
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState('');
 
   const [conviventes, setConviventes] = useState([]);
   const [quartos, setQuartos] = useState([]);
   const [ocorrencias, setOcorrencias] = useState([]);
+  const [resumoOcorrencias, setResumoOcorrencias] = useState(null);
   const [tecnicos, setTecnicos] = useState([]);
   const [rotinaOperacional, setRotinaOperacional] = useState(null);
   const [historicoRotina, setHistoricoRotina] = useState([]);
-  const [sisaMensal, setSisaMensal] = useState({ resumo: {}, items: [] });
+  const [resumoRotinaEvolucao, setResumoRotinaEvolucao] = useState([]);
   const [resumoAvisos, setResumoAvisos] = useState(null);
   const [avisos, setAvisos] = useState([]);
   const [filtros, setFiltros] = useState(criarFiltrosRelatoriosIniciais);
   const [filtrosMobileAbertos, setFiltrosMobileAbertos] = useState(false);
+  const [paginaTabela, setPaginaTabela] = useState(1);
+  const [ordenacaoAcomodacoes, setOrdenacaoAcomodacoes] = useState('quarto');
+  const [opcoesImpressaoEvolucaoAbertas, setOpcoesImpressaoEvolucaoAbertas] = useState(false);
+  const [tecnicoPendenciasEvolucaoId, setTecnicoPendenciasEvolucaoId] = useState('');
+  const {
+    aplicarIdentidadeRelatorio,
+    atualizarCampoIdentidade,
+    enviarLogoRelatorio,
+    errosIdentidade,
+    formIdentidade,
+    identidadeRelatorio,
+    mensagemIdentidade,
+    obterLogoRelatorioParaImpressao,
+    removerLogoRelatorio,
+    salvarIdentidadeRelatorio,
+    salvandoIdentidade,
+    validarCampoIdentidade,
+  } = useRelatoriosIdentidade(token);
+  const itensPorPaginaTabela = 20;
 
   useEffect(() => {
     async function carregarDados() {
@@ -48,45 +96,32 @@ export default function Relatorios() {
         setLoading(true);
         setErro('');
 
-        const headers = { Authorization: `Bearer ${token}` };
+        const carregarIdentidade = identidadeRelatorio === null;
 
-        const [
-          resConviventes,
-          resQuartos,
-          resOcorrencias,
-          resTecnicos,
-          resRotina,
-          resHistoricoRotina,
-          resSisaMensal,
-          resAvisos,
-          resResumoAvisos,
-        ] = await Promise.all([
-          axios.get(`${API_ROOT}/conviventes`, { headers }),
-          axios.get(`${API_ROOT}/quartos`, { headers }),
-          axios.get(`${API_ROOT}/ocorrencias`, { headers }),
-          axios.get(`${API_ROOT}/tecnicos`, { headers }),
-          axios.get(`${API_ROOT}/rotina/dashboard-operacional`, { headers }).catch(() => ({ data: null })),
-          axios.get(`${API_ROOT}/rotina/historico`, { headers }).catch(() => ({ data: [] })),
-          axios.get(`${API_ROOT}/convenio-sisa/mensal`, {
-            headers,
-            params: {
-              ano: filtros.sisaAno,
-              mes: filtros.sisaMes,
-            },
-          }).catch(() => ({ data: { resumo: {}, items: [] } })),
-          listarMeusAvisos(token, { limite: 50 }).catch(() => []),
-          obterResumoAvisos(token).catch(() => null),
-        ]);
+        const dadosRelatorios = await carregarDadosRelatorios({
+          aba,
+          filtros,
+          carregarIdentidade,
+        });
 
-        setConviventes(resConviventes.data || []);
-        setQuartos(resQuartos.data || []);
-        setOcorrencias(resOcorrencias.data || []);
-        setTecnicos(resTecnicos.data || []);
-        setRotinaOperacional(resRotina.data || null);
-        setHistoricoRotina(resHistoricoRotina.data || []);
-        setSisaMensal(resSisaMensal.data || { resumo: {}, items: [] });
-        setAvisos(Array.isArray(resAvisos) ? resAvisos : []);
-        setResumoAvisos(resResumoAvisos || null);
+        setConviventes(dadosRelatorios.conviventes);
+        setQuartos(dadosRelatorios.quartos);
+        if (Array.isArray(dadosRelatorios.ocorrencias)) {
+          setOcorrencias(dadosRelatorios.ocorrencias || []);
+          setResumoOcorrencias(null);
+        } else {
+          setOcorrencias(dadosRelatorios.ocorrencias?.items || []);
+          setResumoOcorrencias(dadosRelatorios.ocorrencias?.resumo || null);
+        }
+        setTecnicos(dadosRelatorios.tecnicos);
+        if (dadosRelatorios.rotina) setRotinaOperacional(dadosRelatorios.rotina);
+        if (dadosRelatorios.historicoRotina) setHistoricoRotina(dadosRelatorios.historicoRotina);
+        if (dadosRelatorios.resumoRotinaEvolucao) setResumoRotinaEvolucao(dadosRelatorios.resumoRotinaEvolucao);
+        if (dadosRelatorios.avisos) setAvisos(Array.isArray(dadosRelatorios.avisos) ? dadosRelatorios.avisos : []);
+        if (dadosRelatorios.resumoAvisos) setResumoAvisos(dadosRelatorios.resumoAvisos || null);
+        if (dadosRelatorios.identidade) {
+          aplicarIdentidadeRelatorio(dadosRelatorios.identidade);
+        }
       } catch (error) {
         console.error('Erro ao carregar central de relatórios', error);
         setErro('Não foi possível carregar os dados da central de relatórios.');
@@ -96,7 +131,7 @@ export default function Relatorios() {
     }
 
     carregarDados();
-  }, [filtros.sisaAno, filtros.sisaMes, token]);
+  }, [aba, filtros.busca, filtros.dataFim, filtros.dataInicio, filtros.prioridadeOcorrencia, filtros.somentePendencias, filtros.statusConvivente, filtros.statusOcorrencia, filtros.tecnicoId, identidadeRelatorio, token]);
 
   const filtrosAtivos = useMemo(() => {
     return descreverFiltrosAtivosRelatorios({ aba, filtros, tecnicos });
@@ -109,848 +144,382 @@ export default function Relatorios() {
     }));
   }
 
+  function selecionarAba(novaAba) {
+    const periodo = periodoInicialPorAbaRelatorios(novaAba);
+    setFiltros((atual) => ({ ...atual, ...periodo }));
+    setAba(novaAba);
+  }
+
   function limparFiltros() {
     setFiltros(criarFiltrosRelatoriosIniciais());
   }
 
-  const conviventesFiltrados = useMemo(() => {
-    const termo = filtros.busca.trim().toLowerCase();
+  useEffect(() => {
+    setPaginaTabela(1);
+  }, [aba, filtros, ordenacaoAcomodacoes]);
 
-    return conviventes.filter((convivente) => {
-      if (filtros.statusConvivente !== 'Todos' && convivente.status !== filtros.statusConvivente) {
-        return false;
-      }
+  const {
+    avisosFiltrados,
+    conviventesFiltrados,
+    historicoRotinaFiltrado,
+    idsConviventesFiltrados,
+    leitosAcomodacoesFiltrados,
+    ocorrenciasFiltradas,
+  } = useRelatoriosFiltros({
+    avisos,
+    conviventes,
+    filtros,
+    historicoRotina,
+    ocorrencias,
+    ordenacaoAcomodacoes,
+    quartos,
+  });
 
-      if (filtros.tecnicoId && convivente.tecnico_id !== filtros.tecnicoId) {
-        return false;
-      }
+  const {
+    cardsTopo,
+    relatoriosAtuais,
+  } = useRelatoriosIndicadores({
+    aba,
+    avisosFiltrados,
+    conviventesFiltrados,
+    historicoRotinaFiltrado,
+    idsConviventesFiltrados,
+    leitosAcomodacoesFiltrados,
+    ocorrenciasFiltradas,
+    quartos,
+    resumoAvisos,
+    resumoOcorrencias,
+    rotinaOperacional,
+    tecnicoId: filtros.tecnicoId,
+    tecnicos,
+  });
 
-      if (!dataDentroDoPeriodo(convivente.data_entrada, filtros.dataInicio, filtros.dataFim)) {
-        return false;
-      }
-
-      if (termo) {
-        const texto = campoTexto(convivente, [
-          'nome_completo',
-          'nome_social',
-          'cpf',
-          'numero_sisa',
-          'numero_nis',
-          'cidade',
-          'bairro',
-        ]);
-
-        if (!texto.includes(termo)) return false;
-      }
-
-      return true;
-    });
-  }, [conviventes, filtros]);
-
-  const idsConviventesFiltrados = useMemo(
-    () => new Set(conviventesFiltrados.map((convivente) => convivente.id)),
-    [conviventesFiltrados],
-  );
-
-  const ocorrenciasFiltradas = useMemo(() => {
-    const termo = filtros.busca.trim().toLowerCase();
-
-    return ocorrencias.filter((ocorrencia) => {
-      if (filtros.tecnicoId && ocorrencia.tecnico_responsavel_id !== filtros.tecnicoId) {
-        return false;
-      }
-
-      if (filtros.statusOcorrencia === 'Pendentes' && ocorrencia.status_resolucao === 'Resolvido') {
-        return false;
-      }
-
-      if (filtros.statusOcorrencia === 'Resolvidas' && ocorrencia.status_resolucao !== 'Resolvido') {
-        return false;
-      }
-
-      if (filtros.somentePendencias && ocorrencia.status_resolucao === 'Resolvido') {
-        return false;
-      }
-
-      if (
-        filtros.prioridadeOcorrencia !== 'Todas' &&
-        normalizarPrioridade(ocorrencia.prioridade) !== filtros.prioridadeOcorrencia
-      ) {
-        return false;
-      }
-
-      if (!dataDentroDoPeriodo(ocorrencia.data_ocorrencia, filtros.dataInicio, filtros.dataFim)) {
-        return false;
-      }
-
-      if (filtros.statusConvivente !== 'Todos' && !idsConviventesFiltrados.has(ocorrencia.convivente_id)) {
-        return false;
-      }
-
-      if (termo) {
-        const texto = campoTexto(ocorrencia, [
-          'tipo_ocorrencia',
-          'motivo',
-          'descricao',
-          'parecer_tecnico',
-        ]);
-
-        if (!texto.includes(termo)) return false;
-      }
-
-      return true;
-    });
-  }, [filtros, idsConviventesFiltrados, ocorrencias]);
-
-  const historicoRotinaFiltrado = useMemo(() => {
-    const termo = filtros.busca.trim().toLowerCase();
-
-    return historicoRotina.filter((registro) => {
-      if (!dataDentroDoPeriodo(registro.data_registro, filtros.dataInicio, filtros.dataFim)) {
-        return false;
-      }
-
-      if (filtros.tecnicoId && !idsConviventesFiltrados.has(registro.convivente_id)) {
-        return false;
-      }
-
-      if (filtros.statusConvivente !== 'Todos' && !idsConviventesFiltrados.has(registro.convivente_id)) {
-        return false;
-      }
-
-      if (filtros.somentePendencias && !registro.cancelado && !registro.foi_editado && !registro.retorno_rapido) {
-        return false;
-      }
-
-      if (termo) {
-        const texto = campoTexto(registro, [
-          'convivente_nome',
-          'convivente_nome_completo',
-          'tipo_registro',
-          'usuario_nome',
-          'motivo_edicao',
-          'motivo_cancelamento',
-          'justificativa_retorno_rapido',
-        ]);
-
-        if (!texto.includes(termo)) return false;
-      }
-
-      return true;
-    });
-  }, [filtros, historicoRotina, idsConviventesFiltrados]);
-
-  const avisosFiltrados = useMemo(() => {
-    const termo = filtros.busca.trim().toLowerCase();
-
-    return avisos.filter((aviso) => {
-      const dataAviso = aviso.criado_em || aviso.data_criacao || aviso.created_at || aviso.valido_ate;
-
-      if ((filtros.dataInicio || filtros.dataFim) && !dataDentroDoPeriodo(dataAviso, filtros.dataInicio, filtros.dataFim)) {
-        return false;
-      }
-
-      if (filtros.somentePendencias && aviso.lido) {
-        return false;
-      }
-
-      if (termo) {
-        const texto = campoTexto(aviso, ['titulo', 'mensagem', 'classificacao', 'prioridade']);
-        if (!texto.includes(termo)) return false;
-      }
-
-      return true;
-    });
-  }, [avisos, filtros]);
-
-  const anosSisa = useMemo(() => {
-    const anoAtual = new Date().getFullYear();
-    return [anoAtual - 1, anoAtual, anoAtual + 1];
-  }, []);
-
-  const sisaItensFiltrados = useMemo(() => {
-    const termo = filtros.busca.trim().toLowerCase();
-
-    return (sisaMensal.items || []).filter((item) => {
-      if (filtros.sisaStatusLancamento === 'lancados' && !item.lancado_sisa) {
-        return false;
-      }
-
-      if (filtros.sisaStatusLancamento === 'pendentes' && item.lancado_sisa) {
-        return false;
-      }
-
-      if (filtros.tecnicoId) {
-        const convivente = conviventes.find((c) => c.id === item.convivente_id);
-        if (convivente?.tecnico_id !== filtros.tecnicoId) return false;
-      }
-
-      if (filtros.statusConvivente !== 'Todos' && !idsConviventesFiltrados.has(item.convivente_id)) {
-        return false;
-      }
-
-      if (termo) {
-        const texto = [
-          item.nome,
-          item.nome_completo,
-          item.prontuario,
-          item.numero_sisa,
-          item.lancado_por_nome,
-          item.observacoes_lancamento_sisa,
-        ].join(' ').toLowerCase();
-
-        if (!texto.includes(termo)) return false;
-      }
-
-      return true;
-    });
-  }, [conviventes, filtros, idsConviventesFiltrados, sisaMensal.items]);
-
-  const leitosAcomodacoesFiltrados = useMemo(() => {
-    const termo = filtros.busca.trim().toLowerCase();
-
-    return quartos.flatMap((quarto) => {
-      if (filtros.acomodacaoModalidade !== 'Todas' && quarto.modalidade !== filtros.acomodacaoModalidade) {
-        return [];
-      }
-
-      if (filtros.acomodacaoPublico !== 'Todos' && quarto.tipo_publico !== filtros.acomodacaoPublico) {
-        return [];
-      }
-
-      return (quarto.leitos || [])
-        .map((leito) => ({
-          quarto,
-          leito,
-          convivente: conviventes.find((conv) => conv.id === leito.convivente_id),
-        }))
-        .filter(({ quarto: q, leito, convivente }) => {
-          const statusLeito = leito.status || 'Livre';
-
-          if (filtros.acomodacaoStatusLeito !== 'Todos' && statusLeito !== filtros.acomodacaoStatusLeito) {
-            return false;
-          }
-
-          if (filtros.tecnicoId) {
-            if (!convivente || convivente.tecnico_id !== filtros.tecnicoId) return false;
-          }
-
-          if (filtros.statusConvivente !== 'Todos') {
-            if (!convivente || convivente.status !== filtros.statusConvivente) return false;
-          }
-
-          if (filtros.somentePendencias && statusLeito !== 'Livre') {
-            return false;
-          }
-
-          if (termo) {
-            const texto = [
-              q.nome,
-              q.modalidade,
-              q.tipo_publico,
-              leito.identificacao,
-              leito.status,
-              leito.convivente_nome,
-              leito.convivente_nome_completo,
-              leito.cpf,
-              convivente?.nome_completo,
-              convivente?.nome_social,
-              convivente?.cpf,
-            ].join(' ').toLowerCase();
-
-            if (!texto.includes(termo)) return false;
-          }
-
-          return true;
-        });
-    });
-  }, [conviventes, filtros, quartos]);
-
-  const dados = useMemo(() => {
-    const totalConviventes = conviventesFiltrados.length;
-    const ativos = contar(conviventesFiltrados, (c) => c.status === 'Ativo');
-    const inativos = contar(conviventesFiltrados, (c) => c.status === 'Inativado');
-    const bloqueados = contar(conviventesFiltrados, (c) => c.status === 'Bloqueado');
-    const semTecnico = contar(conviventesFiltrados, (c) => !c.tecnico_id);
-    const semLeitoAtivo = contar(conviventesFiltrados, (c) => c.status === 'Ativo' && !c.leito_id);
-    const semFoto = contar(conviventesFiltrados, (c) => !c.foto_url);
-    const semCpf = contar(conviventesFiltrados, (c) => !c.cpf);
-    const semContato = contar(conviventesFiltrados, (c) => !c.contato_emergencia_nome || !c.contato_emergencia_telefone);
-    const semSisa = contar(conviventesFiltrados, (c) => !c.numero_sisa);
-    const semNis = contar(conviventesFiltrados, (c) => !c.numero_nis);
-
-    const leitos = quartos.flatMap((q) => q.leitos || []);
-    const totalLeitos = leitos.length;
-    const leitosOcupados = contar(leitos, (l) => idsConviventesFiltrados.has(l.convivente_id));
-    const leitosLivres = contar(leitos, (l) => l.status === 'Livre');
-    const quartosAcomodacoes = new Set(leitosAcomodacoesFiltrados.map(({ quarto }) => quarto.id)).size;
-    const leitosAcomodacoesOcupados = contar(
-      leitosAcomodacoesFiltrados,
-      ({ leito }) => leito.status === 'Ocupado',
-    );
-    const leitosAcomodacoesLivres = contar(
-      leitosAcomodacoesFiltrados,
-      ({ leito }) => (leito.status || 'Livre') === 'Livre',
-    );
-
-    const totalOcorrencias = ocorrenciasFiltradas.length;
-    const ocorrenciasPendentes = contar(ocorrenciasFiltradas, (o) => o.status_resolucao !== 'Resolvido');
-    const ocorrenciasResolvidas = contar(ocorrenciasFiltradas, (o) => o.status_resolucao === 'Resolvido');
-    const ocorrenciasAltaCritica = contar(ocorrenciasFiltradas, (o) => ['Alta', 'Crítica'].includes(normalizarPrioridade(o.prioridade)) && o.status_resolucao !== 'Resolvido');
-
-    const rotinaResumo = rotinaOperacional?.resumo || {};
-    const rotinaFiltradaResumo = {
-      total: historicoRotinaFiltrado.length,
-      entradas: contar(historicoRotinaFiltrado, (r) => r.tipo_registro === 'Entrada'),
-      saidas: contar(historicoRotinaFiltrado, (r) => r.tipo_registro === 'Saída'),
-      almocos: contar(historicoRotinaFiltrado, (r) => r.tipo_registro === 'Almoço'),
-      retornosRapidos: contar(historicoRotinaFiltrado, (r) => r.retorno_rapido),
-      editados: contar(historicoRotinaFiltrado, (r) => r.foi_editado),
-      cancelados: contar(historicoRotinaFiltrado, (r) => r.cancelado),
+  const dadosEvolucao = useMemo(() => {
+    const chaveDia = (valor) => {
+      if (!valor) return null;
+      const data = new Date(valor);
+      if (Number.isNaN(data.getTime())) return null;
+      return dataLocalISO(data);
     };
-    const tecnicosComCasos = new Set(
-      conviventesFiltrados
-        .map((convivente) => convivente.tecnico_id)
-        .filter(Boolean),
-    ).size;
 
-    return {
-      totalConviventes,
-      ativos,
-      inativos,
-      bloqueados,
-      semTecnico,
-      semLeitoAtivo,
-      semFoto,
-      semCpf,
-      semContato,
-      semSisa,
-      semNis,
-      quartos: quartos.length,
-      totalLeitos,
-      leitosOcupados,
-      leitosLivres,
-      taxaOcupacao: porcentagem(leitosOcupados, totalLeitos),
-      quartosAcomodacoes,
-      leitosAcomodacoesTotal: leitosAcomodacoesFiltrados.length,
-      leitosAcomodacoesOcupados,
-      leitosAcomodacoesLivres,
-      taxaOcupacaoAcomodacoes: porcentagem(leitosAcomodacoesOcupados, leitosAcomodacoesFiltrados.length),
-      totalOcorrencias,
-      ocorrenciasPendentes,
-      ocorrenciasResolvidas,
-      ocorrenciasAltaCritica,
-      tecnicos: filtros.tecnicoId ? 1 : tecnicos.length,
-      tecnicosComCasos,
-      rotinaResumo,
-      rotinaFiltradaResumo,
-      auditoriaRotinaTotal: rotinaFiltradaResumo.editados + rotinaFiltradaResumo.cancelados + rotinaFiltradaResumo.retornosRapidos,
-      avisosTotal: avisosFiltrados.length || resumoAvisos?.total_visiveis || 0,
-      avisosNaoLidos: contar(avisosFiltrados, (a) => !a.lido),
-      sisaLancados: contar(sisaItensFiltrados, (item) => item.lancado_sisa),
-      sisaPendentes: contar(sisaItensFiltrados, (item) => !item.lancado_sisa),
-      sisaTotal: sisaItensFiltrados.length,
+    const rotuloDia = (chave) => {
+      if (!chave) return '-';
+      const [, mes, dia] = chave.split('-');
+      return `${dia}/${mes}`;
     };
-  }, [avisosFiltrados, conviventesFiltrados, filtros.tecnicoId, historicoRotinaFiltrado, idsConviventesFiltrados, leitosAcomodacoesFiltrados, ocorrenciasFiltradas, quartos, resumoAvisos, rotinaOperacional, sisaItensFiltrados, tecnicos]);
 
-  const relatoriosPorAba = useMemo(() => {
-    return {
-      geral: [
-        {
-          titulo: 'Resumo executivo institucional',
-          descricao: 'Painel consolidado com acolhidos, ocupação, ocorrências, rotina e comunicação interna.',
-          status: 'parcial',
-          link: '/dashboard',
-          metricas: [
-            { label: 'Conviventes ativos', valor: dados.ativos },
-            { label: 'Ocupação', valor: `${dados.taxaOcupacao}%` },
-            { label: 'Pendências', valor: dados.ocorrenciasPendentes },
-            { label: 'Avisos não lidos', valor: dados.avisosNaoLidos },
-          ],
-        },
-      ],
-      conviventes: [
-        {
-          titulo: 'Relatório de conviventes',
-          descricao: 'Status, técnico responsável, leito, origem e dados cadastrais relevantes.',
-          status: 'planejado',
-          metricas: [
-            { label: 'Total', valor: dados.totalConviventes },
-            { label: 'Ativos', valor: dados.ativos },
-            { label: 'Inativos', valor: dados.inativos },
-            { label: 'Sem técnico', valor: dados.semTecnico },
-          ],
-        },
-        {
-          titulo: 'Relatório de permanência',
-          descricao: 'Tempo médio na instituição, entradas, saídas, altas, transferências e evasões por período.',
-          status: 'planejado',
-          metricas: [
-            { label: 'Ativos', valor: dados.ativos },
-            { label: 'Inativados', valor: dados.inativos },
-            { label: 'Bloqueados', valor: dados.bloqueados },
-            { label: 'Centro dia', valor: dados.semLeitoAtivo },
-          ],
-        },
-      ],
-      rotina: [
-        {
-          titulo: 'Histórico da rotina',
-          descricao: 'Entradas, saídas, almoços, edições, cancelamentos e retornos rápidos por filtros.',
-          status: 'pronto',
-          link: '/rotina/historico',
-          metricas: [
-            { label: 'Registros', valor: dados.rotinaFiltradaResumo.total },
-            { label: 'Entradas', valor: dados.rotinaFiltradaResumo.entradas },
-            { label: 'Saídas', valor: dados.rotinaFiltradaResumo.saidas },
-            { label: 'Almoços', valor: dados.rotinaFiltradaResumo.almocos },
-          ],
-        },
-        {
-          titulo: 'Dashboard operacional',
-          descricao: 'Situação atual dos acolhidos dentro/fora, sem movimento e auditoria do dia.',
-          status: 'pronto',
-          link: '/rotina/dashboard',
-          metricas: [
-            { label: 'Retornos', valor: dados.rotinaFiltradaResumo.retornosRapidos },
-            { label: 'Editados', valor: dados.rotinaFiltradaResumo.editados },
-            { label: 'Cancelados', valor: dados.rotinaFiltradaResumo.cancelados },
-            { label: 'Presentes agora', valor: dados.rotinaResumo.presentes_agora || 0 },
-          ],
-        },
-      ],
-      ocorrencias: [
-        {
-          titulo: 'Relatório de ocorrências',
-          descricao: 'Fila de chamados, pendências técnicas, criticidade, tipos e responsáveis.',
-          status: 'pronto',
-          link: '/ocorrencias',
-          metricas: [
-            { label: 'Total visível', valor: dados.totalOcorrencias },
-            { label: 'Pendentes', valor: dados.ocorrenciasPendentes },
-            { label: 'Resolvidas', valor: dados.ocorrenciasResolvidas },
-            { label: 'Alta/Crítica', valor: dados.ocorrenciasAltaCritica },
-          ],
-        },
-        {
-          titulo: 'Relatório técnico por profissional',
-          descricao: 'Casos do técnico, pendências, resoluções no período e tempo médio de atendimento.',
-          status: 'planejado',
-          metricas: [
-            { label: 'Técnicos', valor: dados.tecnicos },
-            { label: 'Pendências', valor: dados.ocorrenciasPendentes },
-            { label: 'Resolvidas', valor: dados.ocorrenciasResolvidas },
-            { label: 'Críticas', valor: dados.ocorrenciasAltaCritica },
-          ],
-        },
-      ],
-      sisa: [
-        {
-          titulo: 'Relatório SISA mensal e diário',
-          descricao: 'Conferência diária, mensal, fechamento, lançamentos e exportação XLSX.',
-          status: 'pronto',
-          link: '/convenio-sisa',
-          metricas: [
-            { label: 'Registros', valor: dados.sisaTotal },
-            { label: 'Lançados', valor: dados.sisaLancados },
-            { label: 'Pendentes', valor: dados.sisaPendentes },
-            { label: 'Período', valor: `${String(filtros.sisaMes).padStart(2, '0')}/${filtros.sisaAno}` },
-          ],
-        },
-      ],
-      acomodacoes: [
-        {
-          titulo: 'Relatório de acomodações',
-          descricao: 'Quartos, leitos, ocupação, vagas livres e distribuição por acomodação.',
-          status: 'pronto',
-          link: '/quartos',
-          metricas: [
-            { label: 'Quartos', valor: dados.quartosAcomodacoes },
-            { label: 'Leitos', valor: dados.leitosAcomodacoesTotal },
-            { label: 'Ocupados', valor: dados.leitosAcomodacoesOcupados },
-            { label: 'Livres', valor: dados.leitosAcomodacoesLivres },
-          ],
-        },
-      ],
-      documentacao: [
-        {
-          titulo: 'Pendências de prontuário',
-          descricao: 'Acolhidos sem foto, CPF, contato de emergência, número SISA, NIS ou documentação essencial.',
-          status: 'planejado',
-          metricas: [
-            { label: 'Sem foto', valor: dados.semFoto },
-            { label: 'Sem CPF', valor: dados.semCpf },
-            { label: 'Sem contato', valor: dados.semContato },
-            { label: 'Sem SISA', valor: dados.semSisa },
-            { label: 'Sem NIS', valor: dados.semNis },
-          ],
-        },
-      ],
-      equipe: [
-        {
-          titulo: 'Relatório de equipe',
-          descricao: 'Usuários por perfil, técnicos ativos, carga de casos e estrutura institucional.',
-          status: 'planejado',
-          metricas: [
-            { label: 'Técnicos', valor: dados.tecnicos },
-            { label: 'Conviventes', valor: dados.totalConviventes },
-            { label: 'Sem técnico', valor: dados.semTecnico },
-            { label: 'Técnicos c/ casos', valor: dados.tecnicosComCasos },
-          ],
-        },
-      ],
-      auditoria: [
-        {
-          titulo: 'Relatório de auditoria',
-          descricao: 'Eventos auditáveis da rotina: edições, cancelamentos e retornos rápidos com operador e justificativa.',
-          status: 'pronto',
-          metricas: [
-            { label: 'Eventos', valor: dados.auditoriaRotinaTotal },
-            { label: 'Editados', valor: dados.rotinaFiltradaResumo.editados },
-            { label: 'Cancelados', valor: dados.rotinaFiltradaResumo.cancelados },
-            { label: 'Retornos rápidos', valor: dados.rotinaFiltradaResumo.retornosRapidos },
-          ],
-        },
-      ],
-    };
-  }, [dados, filtros.sisaAno, filtros.sisaMes]);
-
-  const relatoriosAtuais = relatoriosPorAba[aba] || [];
-
-  const mapaTecnicos = useMemo(() => {
-    return new Map(tecnicos.map((tecnico) => [tecnico.id, tecnico.nome]));
-  }, [tecnicos]);
-
-  const mapaLeitos = useMemo(() => {
-    const mapa = new Map();
-
-    quartos.forEach((quarto) => {
-      (quarto.leitos || []).forEach((leito) => {
-        mapa.set(leito.id, `${quarto.nome} - ${leito.identificacao}`);
+    const chaves = new Set();
+    const usarResumoAgregadoRotina = Array.isArray(resumoRotinaEvolucao) && resumoRotinaEvolucao.length > 0;
+    if (usarResumoAgregadoRotina) {
+      resumoRotinaEvolucao.forEach((registro) => {
+        const chave = chaveDia(registro.data);
+        if (chave) chaves.add(chave);
       });
+    } else {
+      historicoRotinaFiltrado.forEach((registro) => {
+        const chave = chaveDia(registro.data_registro);
+        if (chave) chaves.add(chave);
+      });
+    }
+    ocorrenciasFiltradas.forEach((ocorrencia) => {
+      const chave = chaveDia(ocorrencia.data_ocorrencia);
+      if (chave) chaves.add(chave);
+      if (ocorrencia.status_resolucao === 'Resolvido') {
+        const chaveResolucao = chaveDia(ocorrencia.data_resolucao || ocorrencia.atualizado_em || ocorrencia.data_ocorrencia);
+        if (chaveResolucao) chaves.add(chaveResolucao);
+      }
+    });
+    conviventesFiltrados.forEach((convivente) => {
+      const chave = chaveDia(convivente.data_entrada);
+      if (chave) chaves.add(chave);
     });
 
-    return mapa;
-  }, [quartos]);
+    const chavesOrdenadas = Array.from(chaves).sort();
+    const chavesLimitadas = chavesOrdenadas.slice(-31);
 
-  const dadosDetalhados = useMemo(() => {
-    const contarOcorrenciasPendentesConvivente = (conviventeId) =>
-      contar(
-        ocorrenciasFiltradas,
-        (ocorrencia) =>
-          ocorrencia.convivente_id === conviventeId &&
-          ocorrencia.status_resolucao !== 'Resolvido',
+    const basePorDia = Object.fromEntries(
+      chavesLimitadas.map((chave) => [
+        chave,
+        {
+          chave,
+          rotulo: rotuloDia(chave),
+          atendimentos: 0,
+          entradas: 0,
+          saidas: 0,
+          almocos: 0,
+          ocorrencias: 0,
+          resolvidas: 0,
+          pendenciasAbertas: 0,
+          pendenciasResolvidas: 0,
+          saldoPendencias: 0,
+          novos: 0,
+        },
+      ]),
+    );
+
+    if (usarResumoAgregadoRotina) {
+      resumoRotinaEvolucao.forEach((registro) => {
+        const chave = chaveDia(registro.data);
+        const item = basePorDia[chave];
+        if (!item) return;
+        item.atendimentos += Number(registro.atendimentos || 0);
+        item.entradas += Number(registro.entradas || 0);
+        item.saidas += Number(registro.saidas || 0);
+        item.almocos += Number(registro.almocos || 0);
+      });
+    } else {
+      historicoRotinaFiltrado.forEach((registro) => {
+        const chave = chaveDia(registro.data_registro);
+        const item = basePorDia[chave];
+        if (!item) return;
+        item.atendimentos += 1;
+        if (registro.tipo_registro === 'Entrada') item.entradas += 1;
+        if (registro.tipo_registro === 'Saída') item.saidas += 1;
+        if (registro.tipo_registro === 'Almoço') item.almocos += 1;
+      });
+    }
+
+    ocorrenciasFiltradas.forEach((ocorrencia) => {
+      const chave = chaveDia(ocorrencia.data_ocorrencia);
+      const item = basePorDia[chave];
+      if (item) {
+        item.ocorrencias += 1;
+        item.pendenciasAbertas += 1;
+      }
+
+      if (ocorrencia.status_resolucao === 'Resolvido') {
+        const chaveResolucao = chaveDia(ocorrencia.data_resolucao || ocorrencia.atualizado_em || ocorrencia.data_ocorrencia);
+        const itemResolucao = basePorDia[chaveResolucao];
+        if (itemResolucao) {
+          itemResolucao.resolvidas += 1;
+          itemResolucao.pendenciasResolvidas += 1;
+        }
+      }
+    });
+
+    conviventesFiltrados.forEach((convivente) => {
+      const chave = chaveDia(convivente.data_entrada);
+      const item = basePorDia[chave];
+      if (!item) return;
+      item.novos += 1;
+    });
+
+    const serie = Object.values(basePorDia);
+    let saldoPendencias = 0;
+    serie.forEach((item) => {
+      saldoPendencias = Math.max(
+        0,
+        saldoPendencias + item.pendenciasAbertas - item.pendenciasResolvidas,
       );
-
-    const pendenciasConvivente = (convivente) => {
-      const pendencias = [];
-
-      if (!convivente.foto_url) pendencias.push('Foto');
-      if (!convivente.cpf) pendencias.push('CPF');
-      if (!convivente.contato_emergencia_nome || !convivente.contato_emergencia_telefone) pendencias.push('Contato');
-      if (!convivente.tecnico_id) pendencias.push('Técnico');
-      if (!convivente.numero_sisa) pendencias.push('SISA');
-
-      return pendencias.length ? pendencias.join(', ') : 'Sem pendências principais';
-    };
-
-    const montarLinhaConvivente = (convivente) => ({
-      Prontuário: convivente.numero_institucional ? `#${convivente.numero_institucional}` : 'S/N',
-      Nome: convivente.nome_social || convivente.nome_completo || '-',
-      Status: convivente.status || '-',
-      Técnico: mapaTecnicos.get(convivente.tecnico_id) || 'Sem técnico',
-      Entrada: formatarData(convivente.data_entrada),
-      Leito: mapaLeitos.get(convivente.leito_id) || 'Centro dia / sem leito',
-      CPF: convivente.cpf || '-',
-      Cidade: convivente.cidade || '-',
-      'Ocorrências pendentes': contarOcorrenciasPendentesConvivente(convivente.id),
-      Pendências: pendenciasConvivente(convivente),
+      item.saldoPendencias = saldoPendencias;
     });
-
-    if (aba === 'geral') {
-      const colunas = filtros.tecnicoId
-        ? ['Prontuário', 'Nome', 'Status', 'Entrada', 'Leito', 'Ocorrências pendentes', 'Pendências']
-        : ['Prontuário', 'Nome', 'Status', 'Técnico', 'Entrada', 'Leito', 'Ocorrências pendentes', 'Pendências'];
-
-      return {
-        titulo: 'Base nominal filtrada',
-        colunas,
-        linhas: conviventesFiltrados.map((convivente) => {
-          const linha = montarLinhaConvivente(convivente);
-
-          const base = {
-            Prontuário: linha.Prontuário,
-            Nome: linha.Nome,
-            Status: linha.Status,
-            Entrada: linha.Entrada,
-            Leito: linha.Leito,
-            'Ocorrências pendentes': linha['Ocorrências pendentes'],
-            Pendências: linha.Pendências,
-          };
-
-          if (!filtros.tecnicoId) {
-            base.Técnico = linha.Técnico;
-          }
-
-          return base;
-        }),
-      };
-    }
-
-    if (aba === 'conviventes') {
-      return {
-        titulo: 'Conviventes filtrados',
-        colunas: filtros.tecnicoId
-          ? ['Prontuário', 'Nome', 'Status', 'Entrada', 'Leito', 'CPF', 'Cidade', 'Ocorrências pendentes', 'Pendências']
-          : ['Prontuário', 'Nome', 'Status', 'Técnico', 'Entrada', 'Leito', 'CPF', 'Cidade', 'Ocorrências pendentes', 'Pendências'],
-        linhas: conviventesFiltrados.map(montarLinhaConvivente),
-      };
-    }
-
-    if (aba === 'ocorrencias') {
-      return {
-        titulo: 'Ocorrências filtradas',
-        colunas: ['Data', 'Convivente', 'Tipo', 'Motivo', 'Prioridade', 'Status', 'Técnico'],
-        linhas: ocorrenciasFiltradas.map((ocorrencia) => {
-          const convivente = conviventes.find((c) => c.id === ocorrencia.convivente_id);
-
-          return {
-            Data: formatarDataHora(ocorrencia.data_ocorrencia),
-            Convivente: convivente?.nome_social || convivente?.nome_completo || '-',
-            Tipo: ocorrencia.tipo_ocorrencia || '-',
-            Motivo: ocorrencia.motivo || '-',
-            Prioridade: normalizarPrioridade(ocorrencia.prioridade),
-            Status: ocorrencia.status_resolucao || '-',
-            Técnico: mapaTecnicos.get(ocorrencia.tecnico_responsavel_id) || 'Sem técnico',
-          };
-        }),
-      };
-    }
-
-    if (aba === 'rotina') {
-      return {
-        titulo: 'Historico da rotina filtrado',
-        colunas: ['Data/Hora', 'Prontuário', 'Convivente', 'Tipo', 'Operador', 'Status', 'Retorno rápido', 'Auditoria/Observação'],
-        linhas: historicoRotinaFiltrado.map((registro) => {
-          const status = [
-            registro.cancelado ? 'Cancelado' : 'Ativo',
-            registro.foi_editado ? 'Editado' : '',
-          ].filter(Boolean).join(' / ');
-
-          return {
-            'Data/Hora': formatarDataHora(registro.data_registro),
-            Prontuário: registro.numero_institucional ? `#${registro.numero_institucional}` : 'S/N',
-            Convivente: registro.convivente_nome || registro.convivente_nome_completo || '-',
-            Tipo: registro.tipo_registro || '-',
-            Operador: registro.usuario_nome || '-',
-            Status: status || '-',
-            'Retorno rápido': registro.retorno_rapido ? 'Sim' : 'Não',
-            'Auditoria/Observacao': registro.justificativa_retorno_rapido || registro.motivo_edicao || registro.motivo_cancelamento || '-',
-          };
-        }),
-      };
-    }
-
-    if (aba === 'acomodacoes') {
-      const colunas = filtros.tecnicoId
-        ? ['Quarto', 'Modalidade', 'Público', 'Leito', 'Status leito', 'Convivente', 'Prontuário', 'Status convivente']
-        : ['Quarto', 'Modalidade', 'Público', 'Leito', 'Status leito', 'Convivente', 'Prontuário', 'Status convivente', 'Técnico'];
-
-      return {
-        titulo: 'Acomodacoes e leitos',
-        colunas,
-        linhas: leitosAcomodacoesFiltrados.map(({ quarto, leito, convivente }) => {
-          const linha = {
-            Quarto: quarto.nome || '-',
-            Modalidade: quarto.modalidade === 'Transitorio' ? 'Transitório' : quarto.modalidade || '-',
-            Público: quarto.tipo_publico || '-',
-            Leito: leito.identificacao || '-',
-            'Status leito': leito.status || 'Livre',
-            Convivente: convivente?.nome_social || convivente?.nome_completo || leito.convivente_nome_completo || leito.convivente_nome || '-',
-            Prontuário: convivente?.numero_institucional || leito.numero_institucional
-              ? `#${convivente?.numero_institucional || leito.numero_institucional}`
-              : '-',
-            'Status convivente': convivente?.status || (leito.status === 'Ocupado' ? 'Ocupado sem vinculo cadastral' : '-'),
-          };
-
-          if (!filtros.tecnicoId) {
-            linha.Técnico = mapaTecnicos.get(convivente?.tecnico_id) || (convivente ? 'Sem técnico' : '-');
-          }
-
-          return linha;
-        }),
-      };
-    }
-
-    if (aba === 'documentacao') {
-      const colunas = filtros.tecnicoId
-        ? ['Prontuário', 'Nome', 'Status', 'N SISA', 'NIS', 'Sem foto', 'Sem CPF', 'Sem contato']
-        : ['Prontuário', 'Nome', 'Status', 'Técnico', 'N SISA', 'NIS', 'Sem foto', 'Sem CPF', 'Sem contato'];
-
-      return {
-        titulo: 'Pendencias documentais filtradas',
-        colunas,
-        linhas: conviventesFiltrados.map((convivente) => {
-          const linha = {
-            Prontuário: convivente.numero_institucional ? `#${convivente.numero_institucional}` : 'S/N',
-            Nome: convivente.nome_social || convivente.nome_completo || '-',
-            Status: convivente.status || '-',
-            'N SISA': convivente.numero_sisa || '-',
-            NIS: convivente.numero_nis || '-',
-            'Sem foto': convivente.foto_url ? 'Não' : 'Sim',
-            'Sem CPF': convivente.cpf ? 'Não' : 'Sim',
-            'Sem contato': convivente.contato_emergencia_nome && convivente.contato_emergencia_telefone ? 'Não' : 'Sim',
-          };
-
-          if (!filtros.tecnicoId) {
-            linha.Técnico = mapaTecnicos.get(convivente.tecnico_id) || 'Sem técnico';
-          }
-
-          return linha;
-        }),
-      };
-    }
-
-    if (aba === 'sisa') {
-      return {
-        titulo: `Relatorio Convenio SISA - ${String(filtros.sisaMes).padStart(2, '0')}/${filtros.sisaAno}`,
-        colunas: ['Prontuário', 'N SISA', 'Convivente', 'Dias', 'Atend.', 'Almoços', 'Entradas', 'Saídas', 'Retornos', 'Status SISA', 'Lançado por'],
-        linhas: sisaItensFiltrados.map((item) => ({
-          Prontuário: item.prontuario ? `#${item.prontuario}` : 'S/N',
-          'N SISA': item.numero_sisa || '-',
-          Convivente: item.nome || item.nome_completo || '-',
-          Dias: item.dias_presentes ?? 0,
-          'Atend.': item.total_atendimentos ?? 0,
-          Almocos: item.almocos ?? 0,
-          Entradas: item.entradas ?? 0,
-          Saidas: item.saidas ?? 0,
-          Retornos: item.retornos_rapidos ?? 0,
-          'Status SISA': item.lancado_sisa ? 'Lancado' : 'Pendente',
-          'Lancado por': item.lancado_sisa
-            ? `${item.lancado_por_nome || '-'} (${formatarDataHora(item.lancado_em)})`
-            : '-',
-        })),
-      };
-    }
-
-    if (aba === 'equipe') {
-      return {
-        titulo: 'Equipe tecnica e carga de casos',
-        colunas: ['Técnico', 'Perfil', 'Conviventes vinculados', 'Ocorrências pendentes'],
-        linhas: tecnicos.map((tecnico) => ({
-          Técnico: tecnico.nome || '-',
-          Perfil: tecnico.perfil_acesso || '-',
-          'Conviventes vinculados': contar(conviventesFiltrados, (c) => c.tecnico_id === tecnico.id),
-          'Ocorrências pendentes': contar(ocorrenciasFiltradas, (o) => o.tecnico_responsavel_id === tecnico.id && o.status_resolucao !== 'Resolvido'),
-        })),
-      };
-    }
-
-    if (aba === 'auditoria') {
-      const colunas = filtros.tecnicoId
-        ? ['Data/Hora', 'Evento', 'Prontuario', 'Convivente', 'Registro', 'Operador', 'Justificativa/Motivo']
-        : ['Data/Hora', 'Evento', 'Prontuario', 'Convivente', 'Tecnico', 'Registro', 'Operador', 'Justificativa/Motivo'];
-
-      const linhas = historicoRotinaFiltrado.flatMap((registro) => {
-        const convivente = conviventes.find((c) => c.id === registro.convivente_id);
-        const base = {
-          'Data/Hora': formatarDataHora(registro.data_registro),
-          Prontuario: registro.numero_institucional || convivente?.numero_institucional
-            ? `#${registro.numero_institucional || convivente?.numero_institucional}`
-            : 'S/N',
-          Convivente: registro.convivente_nome || registro.convivente_nome_completo || convivente?.nome_social || convivente?.nome_completo || '-',
-          Registro: registro.tipo_registro || '-',
-          Operador: registro.usuario_nome || '-',
-        };
-
-        if (!filtros.tecnicoId) {
-          base.Tecnico = mapaTecnicos.get(convivente?.tecnico_id) || (convivente ? 'Sem tecnico' : '-');
-        }
-
-        const eventos = [];
-
-        if (registro.foi_editado) {
-          eventos.push({
-            ...base,
-            Evento: 'Edicao',
-            'Justificativa/Motivo': registro.motivo_edicao || '-',
-          });
-        }
-
-        if (registro.cancelado) {
-          eventos.push({
-            ...base,
-            Evento: 'Cancelamento',
-            'Justificativa/Motivo': registro.motivo_cancelamento || '-',
-          });
-        }
-
-        if (registro.retorno_rapido) {
-          eventos.push({
-            ...base,
-            Evento: 'Retorno rapido',
-            'Justificativa/Motivo': registro.justificativa_retorno_rapido || '-',
-          });
-        }
-
-        return eventos;
-      });
-
-      return {
-        titulo: 'Eventos de auditoria filtrados',
-        colunas,
-        linhas,
-      };
-    }
+    const totalAtendimentos = serie.reduce((total, item) => total + item.atendimentos, 0);
+    const mediaDiaria = serie.length ? Math.round(totalAtendimentos / serie.length) : 0;
+    const pico = serie.reduce((maior, item) => Math.max(maior, item.atendimentos), 0);
+    const primeiraMetade = serie.slice(0, Math.floor(serie.length / 2));
+    const segundaMetade = serie.slice(Math.floor(serie.length / 2));
+    const totalPrimeira = primeiraMetade.reduce((total, item) => total + item.atendimentos, 0);
+    const totalSegunda = segundaMetade.reduce((total, item) => total + item.atendimentos, 0);
+    const tendencia = totalSegunda > totalPrimeira ? 'Alta' : totalSegunda < totalPrimeira ? 'Queda' : 'Estável';
 
     return {
-      titulo: 'Resumo da aba',
-      colunas: ['Relatorio', 'Status', 'Metrica', 'Valor', 'Descricao'],
-      linhas: relatoriosAtuais.flatMap((relatorio) =>
-        (relatorio.metricas || []).map((metrica) => ({
-          Relatorio: relatorio.titulo,
-          Status: relatorio.status,
-          Metrica: metrica.label,
-          Valor: metrica.valor,
-          Descricao: relatorio.descricao,
-        }))
-      ),
+      serie,
+      totalAtendimentos,
+      mediaDiaria,
+      pico,
+      tendencia,
     };
-  }, [aba, conviventes, conviventesFiltrados, filtros.sisaAno, filtros.sisaMes, filtros.tecnicoId, historicoRotinaFiltrado, leitosAcomodacoesFiltrados, mapaLeitos, mapaTecnicos, ocorrenciasFiltradas, relatoriosAtuais, sisaItensFiltrados, tecnicos]);
+  }, [conviventesFiltrados, historicoRotinaFiltrado, ocorrenciasFiltradas, resumoRotinaEvolucao]);
 
-  const linhasResumoMetricas = relatoriosAtuais.flatMap((relatorio) =>
-    (relatorio.metricas || []).map((metrica) => ({
-      Relatorio: relatorio.titulo,
-      Status: relatorio.status,
-      Metrica: metrica.label,
-      Valor: metrica.valor,
-      Descricao: relatorio.descricao,
-    }))
+  const tecnicoPendenciasSelecionadoId = filtros.tecnicoId || tecnicoPendenciasEvolucaoId;
+
+  const tecnicoPendenciasSelecionadoNome = useMemo(() => {
+    if (!tecnicoPendenciasSelecionadoId) return 'todos os técnicos';
+    return tecnicos.find((tecnico) => tecnico.id === tecnicoPendenciasSelecionadoId)?.nome || 'técnico selecionado';
+  }, [tecnicoPendenciasSelecionadoId, tecnicos]);
+
+  const tecnicosComPendenciasEvolucao = useMemo(() => {
+    const idsComOcorrencias = new Set(
+      ocorrenciasFiltradas
+        .map((ocorrencia) => ocorrencia.tecnico_responsavel_id)
+        .filter(Boolean),
+    );
+
+    return tecnicos.filter((tecnico) => idsComOcorrencias.has(tecnico.id));
+  }, [ocorrenciasFiltradas, tecnicos]);
+
+  const dadosPendenciasTecnicasEvolucao = useMemo(() => {
+    const chaveDia = (valor) => {
+      if (!valor) return null;
+      const data = new Date(valor);
+      if (Number.isNaN(data.getTime())) return null;
+      return dataLocalISO(data);
+    };
+
+    const rotuloDia = (chave) => {
+      if (!chave) return '-';
+      const [, mes, dia] = chave.split('-');
+      return `${dia}/${mes}`;
+    };
+
+    const ocorrenciasDoTecnico = tecnicoPendenciasSelecionadoId
+      ? ocorrenciasFiltradas.filter((ocorrencia) => ocorrencia.tecnico_responsavel_id === tecnicoPendenciasSelecionadoId)
+      : ocorrenciasFiltradas;
+
+    const chaves = new Set();
+    ocorrenciasDoTecnico.forEach((ocorrencia) => {
+      const chaveAbertura = chaveDia(ocorrencia.data_ocorrencia);
+      if (chaveAbertura) chaves.add(chaveAbertura);
+      if (ocorrencia.status_resolucao === 'Resolvido') {
+        const chaveResolucao = chaveDia(ocorrencia.data_resolucao || ocorrencia.atualizado_em || ocorrencia.data_ocorrencia);
+        if (chaveResolucao) chaves.add(chaveResolucao);
+      }
+    });
+
+    const chavesLimitadas = Array.from(chaves).sort().slice(-31);
+    const basePorDia = Object.fromEntries(
+      chavesLimitadas.map((chave) => [
+        chave,
+        {
+          chave,
+          rotulo: rotuloDia(chave),
+          pendenciasAbertas: 0,
+          pendenciasResolvidas: 0,
+          saldoPendencias: 0,
+        },
+      ]),
+    );
+
+    ocorrenciasDoTecnico.forEach((ocorrencia) => {
+      const chaveAbertura = chaveDia(ocorrencia.data_ocorrencia);
+      if (basePorDia[chaveAbertura]) {
+        basePorDia[chaveAbertura].pendenciasAbertas += 1;
+      }
+
+      if (ocorrencia.status_resolucao === 'Resolvido') {
+        const chaveResolucao = chaveDia(ocorrencia.data_resolucao || ocorrencia.atualizado_em || ocorrencia.data_ocorrencia);
+        if (basePorDia[chaveResolucao]) {
+          basePorDia[chaveResolucao].pendenciasResolvidas += 1;
+        }
+      }
+    });
+
+    const serie = Object.values(basePorDia);
+    let saldoPendencias = 0;
+    serie.forEach((item) => {
+      saldoPendencias = Math.max(
+        0,
+        saldoPendencias + item.pendenciasAbertas - item.pendenciasResolvidas,
+      );
+      item.saldoPendencias = saldoPendencias;
+    });
+
+    return serie;
+  }, [ocorrenciasFiltradas, tecnicoPendenciasSelecionadoId]);
+
+  const resumoPendenciasTecnicasEvolucao = useMemo(() => {
+    const abertas = dadosPendenciasTecnicasEvolucao.reduce(
+      (total, item) => total + Number(item.pendenciasAbertas || 0),
+      0,
+    );
+    const resolvidas = dadosPendenciasTecnicasEvolucao.reduce(
+      (total, item) => total + Number(item.pendenciasResolvidas || 0),
+      0,
+    );
+    const saldo = dadosPendenciasTecnicasEvolucao.at(-1)?.saldoPendencias || 0;
+
+    return { abertas, resolvidas, saldo };
+  }, [dadosPendenciasTecnicasEvolucao]);
+
+  const totalNovosAcolhimentosEvolucao = useMemo(
+    () => dadosEvolucao.serie.reduce((total, item) => total + Number(item.novos || 0), 0),
+    [dadosEvolucao.serie],
   );
 
-  const linhasExportacao = dadosDetalhados.linhas || linhasResumoMetricas;
-  const colunasExportacao = dadosDetalhados.colunas || ['Relatorio', 'Status', 'Metrica', 'Valor', 'Descricao'];
+  const cardsTopoEvolucao = useMemo(() => [
+    {
+      label: 'Atendimentos',
+      valor: dadosEvolucao.totalAtendimentos,
+      detalhe: 'Registros da rotina no período filtrado',
+    },
+    {
+      label: 'Média diária',
+      valor: dadosEvolucao.mediaDiaria,
+      detalhe: `${dadosEvolucao.pico} no dia de maior movimento`,
+    },
+    {
+      label: 'Pendências técnicas',
+      valor: resumoPendenciasTecnicasEvolucao.saldo,
+      detalhe: `${resumoPendenciasTecnicasEvolucao.abertas} abertas, ${resumoPendenciasTecnicasEvolucao.resolvidas} resolvidas`,
+    },
+    {
+      label: 'Novos acolhimentos',
+      valor: totalNovosAcolhimentosEvolucao,
+      detalhe: 'Entradas cadastrais no período filtrado',
+    },
+  ], [dadosEvolucao.mediaDiaria, dadosEvolucao.pico, dadosEvolucao.totalAtendimentos, resumoPendenciasTecnicasEvolucao, totalNovosAcolhimentosEvolucao]);
+
+  const cardsTopoVisiveis = aba === 'evolucao' ? cardsTopoEvolucao : cardsTopo;
+  const relatoriosAtuaisVisiveis = useMemo(() => {
+    if (aba !== 'evolucao') return relatoriosAtuais;
+
+    return relatoriosAtuais.map((relatorio) => ({
+      ...relatorio,
+      metricas: cardsTopoEvolucao.map((card) => ({
+        label: card.label,
+        valor: card.valor,
+      })),
+    }));
+  }, [aba, cardsTopoEvolucao, relatoriosAtuais]);
+
+  const {
+    colunasExportacao,
+    dadosDetalhados,
+    fimTabela,
+    inicioTabela,
+    irParaPaginaTabela,
+    linhasExportacao,
+    linhasTabelaPaginadas,
+    paginaTabelaSegura,
+    totalPaginasTabela,
+  } = useRelatoriosTabela({
+    aba,
+    conviventes,
+    conviventesFiltrados,
+    dadosEvolucao,
+    filtros,
+    historicoRotinaFiltrado,
+    itensPorPaginaTabela,
+    leitosAcomodacoesFiltrados,
+    ocorrenciasFiltradas,
+    paginaTabela,
+    quartos,
+    relatoriosAtuais,
+    resumoPendenciasTecnicasEvolucao,
+    setPaginaTabela,
+    tecnicoPendenciasSelecionadoNome,
+    tecnicos,
+    totalNovosAcolhimentosEvolucao,
+  });
 
   function exportarAbaAtual() {
     exportarRelatorioXlsx({
       nomeArquivo: `central-relatorios-${aba}-${new Date().toISOString().slice(0, 10)}`,
-      titulo: `Central de Relatorios - ${ABAS_RELATORIOS.find((a) => a.id === aba)?.label || aba}`,
+      titulo: `Central de Relatórios - ${ABAS_RELATORIOS.find((a) => a.id === aba)?.label || aba}`,
       filtros: {
         Aba: ABAS_RELATORIOS.find((a) => a.id === aba)?.label || aba,
-        'Relatorios listados': relatoriosAtuais.length,
-        Periodo: filtros.dataInicio || filtros.dataFim
-          ? `${filtros.dataInicio || 'inicio'} a ${filtros.dataFim || 'hoje'}`
+        'Relatórios listados': relatoriosAtuais.length,
+        Período: filtros.dataInicio || filtros.dataFim
+          ? `${filtros.dataInicio ? formatarData(filtros.dataInicio) : 'início'} a ${filtros.dataFim ? formatarData(filtros.dataFim) : 'hoje'}`
           : 'Todos',
-        Tecnico: tecnicos.find((t) => t.id === filtros.tecnicoId)?.nome || 'Todos',
+        Técnico: tecnicos.find((t) => t.id === filtros.tecnicoId)?.nome || 'Todos',
         'Status convivente': filtros.statusConvivente,
-        'Status ocorrencia': filtros.statusOcorrencia,
+        'Status ocorrência': filtros.statusOcorrencia,
         Prioridade: filtros.prioridadeOcorrencia,
-        Pendencias: filtros.somentePendencias ? 'Sim' : 'Nao',
+        Pendências: filtros.somentePendencias ? 'Sim' : 'Não',
         'Status leito': filtros.acomodacaoStatusLeito,
-        'Modalidade acomodacao': filtros.acomodacaoModalidade,
-        'Publico acomodacao': filtros.acomodacaoPublico,
-        'SISA periodo': `${String(filtros.sisaMes).padStart(2, '0')}/${filtros.sisaAno}`,
-        'Lancamento SISA': filtros.sisaStatusLancamento,
+        'Modalidade acomodação': filtros.acomodacaoModalidade,
+        'Público acomodação': filtros.acomodacaoPublico,
         Busca: filtros.busca || '-',
       },
       colunas: colunasExportacao,
@@ -958,12 +527,67 @@ export default function Relatorios() {
     });
   }
 
-  function imprimirAbaAtual() {
+  async function imprimirAbaAtual({ incluirGraficos = null } = {}) {
+    if (aba === 'evolucao' && incluirGraficos === null) {
+      setOpcoesImpressaoEvolucaoAbertas(true);
+      return;
+    }
+
+    setOpcoesImpressaoEvolucaoAbertas(false);
+    const metricasImpressao = aba === 'evolucao'
+      ? cardsTopoEvolucao.map((card) => ({
+        label: card.label,
+        valor: card.valor,
+        detalhe: card.detalhe,
+      }))
+      : cardsTopo.map((card) => ({
+        label: card.label,
+        valor: card.valor,
+        detalhe: card.detalhe,
+      }));
+
+    const logoRelatorioDataUrl = await obterLogoRelatorioParaImpressao();
+
     imprimirRelatorio({
       titulo: `${dadosDetalhados.titulo} - ${ABAS_RELATORIOS.find((a) => a.id === aba)?.label || aba}`,
-      subtitulo: `${linhasExportacao.length} registros. Filtros: ${filtrosAtivos.join(' | ') || 'Todos'}.`,
+      subtitulo: `${linhasExportacao.length} registros filtrados para impressão. Filtros: ${filtrosAtivos.join(' | ') || 'Todos'}.`,
+      metricas: metricasImpressao,
+      conteudoExtraHtml: aba === 'evolucao' && incluirGraficos === true
+        ? gerarGraficosEvolucaoHtml({
+          dadosEvolucao,
+          dadosPendenciasTecnicasEvolucao,
+          tecnicoPendenciasSelecionadoNome,
+        })
+        : '',
       colunas: colunasExportacao,
       dados: linhasExportacao,
+      identidade: {
+        ...identidadeRelatorio,
+        logo_src: logoRelatorioDataUrl,
+      },
+    });
+  }
+
+  async function imprimirModeloIdentidadeRelatorio() {
+    const logoRelatorioDataUrl = await obterLogoRelatorioParaImpressao();
+    imprimirRelatorio({
+      titulo: 'Modelo de Relatório Personalizado',
+      subtitulo: 'Pré-visualização da identidade visual configurada para este projeto.',
+      metricas: [
+        { label: 'Exemplo', valor: '123', detalhe: 'Indicador demonstrativo' },
+        { label: 'Período', valor: 'Mês atual', detalhe: 'Texto de apoio' },
+      ],
+      colunas: ['Campo', 'Valor'],
+      dados: [
+        { Campo: 'Nome exibido', Valor: formIdentidade.relatorio_nome_exibicao || '-' },
+        { Campo: 'Rodapé linha 1', Valor: formIdentidade.relatorio_rodape_linha1 || '-' },
+        { Campo: 'Rodapé linha 2', Valor: formIdentidade.relatorio_rodape_linha2 || '-' },
+      ],
+      identidade: {
+        ...identidadeRelatorio,
+        ...formIdentidade,
+        logo_src: logoRelatorioDataUrl,
+      },
     });
   }
 
@@ -977,284 +601,58 @@ export default function Relatorios() {
           title="Central de Relatórios"
           subtitle="Relatórios operacionais, gerenciais e de prestação de contas do CARECORE+."
           icon="▥"
-          actions={(
+          actions={['carteirinhas', 'personalizacao'].includes(aba) ? null : (
             <>
-              <PremiumButton
-                type="button"
-                variant="brand"
+              <ReportActionButton
+                action="export"
                 onClick={exportarAbaAtual}
                 disabled={loading || linhasExportacao.length === 0}
-                className="text-xs"
               >
-                Exportar aba
-              </PremiumButton>
+                Exportar
+              </ReportActionButton>
 
-              <PremiumButton
-                type="button"
-                variant="secondary"
+              <ReportActionButton
+                action="print"
                 onClick={imprimirAbaAtual}
                 disabled={loading || linhasExportacao.length === 0}
-                className="text-xs"
               >
-                Imprimir aba
-              </PremiumButton>
+                Imprimir
+              </ReportActionButton>
             </>
           )}
         />
 
         <ScrollArea className="pb-24">
           <div className="w-full max-w-7xl mx-auto">
+          <DireitosReservadosAviso className="mb-4" />
+
           {erro && (
             <div className="mb-6 bg-red-50 text-red-700 border border-red-100 rounded-2xl p-4 text-sm font-bold">
               {erro}
             </div>
           )}
 
-          <section className="bg-white border border-gray-100 rounded-3xl shadow-sm p-5 mb-6">
-            <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4 mb-4">
-              <div>
-                <h2 className="text-base font-black text-gray-900">Filtros da central</h2>
-                <p className="text-xs text-gray-500 mt-1">
-                  Os cards, exportacoes e impressao desta central usam os filtros abaixo.
-                </p>
-              </div>
+          <RelatoriosFiltrosPanel
+            aba={aba}
+            atualizarFiltro={atualizarFiltro}
+            filtros={filtros}
+            filtrosAtivos={filtrosAtivos}
+            filtrosMobileAbertos={filtrosMobileAbertos}
+            limparFiltros={limparFiltros}
+            ordenacaoAcomodacoes={ordenacaoAcomodacoes}
+            setFiltrosMobileAbertos={setFiltrosMobileAbertos}
+            setOrdenacaoAcomodacoes={setOrdenacaoAcomodacoes}
+            tecnicos={tecnicos}
+          />
 
-              <div className="grid grid-cols-1 gap-2 sm:flex sm:flex-wrap">
-                <button
-                  type="button"
-                  onClick={() => setFiltrosMobileAbertos((valor) => !valor)}
-                  className="px-4 py-2 rounded-xl border border-blue-100 bg-blue-50 text-xs font-black text-blue-700 hover:bg-blue-100 md:hidden"
-                >
-                  {filtrosMobileAbertos ? 'Ocultar filtros' : 'Mostrar filtros'}
-                </button>
-
-                <button
-                  type="button"
-                  onClick={limparFiltros}
-                  className="px-4 py-2 rounded-xl border border-gray-200 bg-white text-xs font-black text-gray-600 hover:bg-gray-50"
-                >
-                  Limpar filtros
-                </button>
-              </div>
-            </div>
-
-            <div className={`${filtrosMobileAbertos ? 'grid' : 'hidden'} grid-cols-1 md:grid md:grid-cols-2 xl:grid-cols-4 gap-4`}>
-              <div>
-                <label className="block text-[10px] font-black uppercase text-gray-400 mb-1">Inicio</label>
-                <input
-                  type="date"
-                  value={filtros.dataInicio}
-                  onChange={(e) => atualizarFiltro('dataInicio', e.target.value)}
-                  className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand"
-                />
-              </div>
-
-              <div>
-                <label className="block text-[10px] font-black uppercase text-gray-400 mb-1">Fim</label>
-                <input
-                  type="date"
-                  value={filtros.dataFim}
-                  onChange={(e) => atualizarFiltro('dataFim', e.target.value)}
-                  className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand"
-                />
-              </div>
-
-              <div>
-                <label className="block text-[10px] font-black uppercase text-gray-400 mb-1">Tecnico</label>
-                <select
-                  value={filtros.tecnicoId}
-                  onChange={(e) => atualizarFiltro('tecnicoId', e.target.value)}
-                  className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand bg-white"
-                >
-                  <option value="">Todos</option>
-                  {tecnicos.map((tecnico) => (
-                    <option key={tecnico.id} value={tecnico.id}>
-                      {tecnico.nome}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-[10px] font-black uppercase text-gray-400 mb-1">Busca geral</label>
-                <input
-                  type="text"
-                  value={filtros.busca}
-                  onChange={(e) => atualizarFiltro('busca', e.target.value)}
-                  placeholder="Nome, CPF, motivo, aviso..."
-                  className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand"
-                />
-              </div>
-
-              <div>
-                <label className="block text-[10px] font-black uppercase text-gray-400 mb-1">Status convivente</label>
-                <select
-                  value={filtros.statusConvivente}
-                  onChange={(e) => atualizarFiltro('statusConvivente', e.target.value)}
-                  className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand bg-white"
-                >
-                  <option value="Todos">Todos</option>
-                  <option value="Ativo">Ativo</option>
-                  <option value="Inativado">Inativado</option>
-                  <option value="Bloqueado">Bloqueado</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-[10px] font-black uppercase text-gray-400 mb-1">Status ocorrencia</label>
-                <select
-                  value={filtros.statusOcorrencia}
-                  onChange={(e) => atualizarFiltro('statusOcorrencia', e.target.value)}
-                  className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand bg-white"
-                >
-                  <option value="Todos">Todos</option>
-                  <option value="Pendentes">Pendentes</option>
-                  <option value="Resolvidas">Resolvidas</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-[10px] font-black uppercase text-gray-400 mb-1">Prioridade ocorrencia</label>
-                <select
-                  value={filtros.prioridadeOcorrencia}
-                  onChange={(e) => atualizarFiltro('prioridadeOcorrencia', e.target.value)}
-                  className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand bg-white"
-                >
-                  <option value="Todas">Todas</option>
-                  <option value="Baixa">Baixa</option>
-                  <option value="Média">Media</option>
-                  <option value="Alta">Alta</option>
-                  <option value="Crítica">Critica</option>
-                </select>
-              </div>
-
-              <label className="flex items-center gap-3 rounded-xl border border-gray-200 px-3 py-2 text-sm font-bold text-gray-700 bg-gray-50">
-                <input
-                  type="checkbox"
-                  checked={filtros.somentePendencias}
-                  onChange={(e) => atualizarFiltro('somentePendencias', e.target.checked)}
-                  className="w-4 h-4 text-brand rounded focus:ring-brand"
-                />
-                Somente pendencias
-              </label>
-
-              {aba === 'sisa' && (
-                <>
-                  <div>
-                    <label className="block text-[10px] font-black uppercase text-gray-400 mb-1">Mes SISA</label>
-                    <select
-                      value={filtros.sisaMes}
-                      onChange={(e) => atualizarFiltro('sisaMes', Number(e.target.value))}
-                      className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand bg-white"
-                    >
-                      {Array.from({ length: 12 }, (_, index) => index + 1).map((mes) => (
-                        <option key={mes} value={mes}>
-                          {String(mes).padStart(2, '0')}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-[10px] font-black uppercase text-gray-400 mb-1">Ano SISA</label>
-                    <select
-                      value={filtros.sisaAno}
-                      onChange={(e) => atualizarFiltro('sisaAno', Number(e.target.value))}
-                      className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand bg-white"
-                    >
-                      {anosSisa.map((ano) => (
-                        <option key={ano} value={ano}>
-                          {ano}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-[10px] font-black uppercase text-gray-400 mb-1">Lancamento SISA</label>
-                    <select
-                      value={filtros.sisaStatusLancamento}
-                      onChange={(e) => atualizarFiltro('sisaStatusLancamento', e.target.value)}
-                      className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand bg-white"
-                    >
-                      <option value="todos">Todos</option>
-                      <option value="pendentes">Nao lancados / pendentes</option>
-                      <option value="lancados">Lancados</option>
-                    </select>
-                  </div>
-                </>
-              )}
-
-              {aba === 'acomodacoes' && (
-                <>
-                  <div>
-                    <label className="block text-[10px] font-black uppercase text-gray-400 mb-1">Status do leito</label>
-                    <select
-                      value={filtros.acomodacaoStatusLeito}
-                      onChange={(e) => atualizarFiltro('acomodacaoStatusLeito', e.target.value)}
-                      className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand bg-white"
-                    >
-                      <option value="Todos">Todos</option>
-                      <option value="Livre">Livres</option>
-                      <option value="Ocupado">Ocupados</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-[10px] font-black uppercase text-gray-400 mb-1">Modalidade</label>
-                    <select
-                      value={filtros.acomodacaoModalidade}
-                      onChange={(e) => atualizarFiltro('acomodacaoModalidade', e.target.value)}
-                      className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand bg-white"
-                    >
-                      <option value="Todas">Todas</option>
-                      <option value="Fixo">Fixo</option>
-                      <option value="Transitorio">Transitorio</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-[10px] font-black uppercase text-gray-400 mb-1">Publico</label>
-                    <select
-                      value={filtros.acomodacaoPublico}
-                      onChange={(e) => atualizarFiltro('acomodacaoPublico', e.target.value)}
-                      className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand bg-white"
-                    >
-                      <option value="Todos">Todos</option>
-                      <option value="Masculino">Masculino</option>
-                      <option value="Feminino">Feminino</option>
-                      <option value="Misto">Misto / Familias</option>
-                    </select>
-                  </div>
-                </>
-              )}
-            </div>
-
-            <div className="mt-4 flex flex-wrap gap-2">
-              {(filtrosAtivos.length > 0 ? filtrosAtivos : ['Sem filtros ativos']).map((filtro) => (
-                <span
-                  key={filtro}
-                  className="text-[10px] font-black uppercase tracking-wide px-3 py-1 rounded-full bg-blue-50 text-blue-700 border border-blue-100"
-                >
-                  {filtro}
-                </span>
-              ))}
-            </div>
-          </section>
-
-          <section className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
-            <CardMetrica label="Conviventes ativos" valor={dados.ativos} detalhe={`${dados.totalConviventes} cadastrados no total`} />
-            <CardMetrica label="Taxa de ocupacao" valor={`${dados.taxaOcupacao}%`} detalhe={`${dados.leitosOcupados}/${dados.totalLeitos} leitos ocupados`} />
-            <CardMetrica label="Ocorrencias pendentes" valor={dados.ocorrenciasPendentes} detalhe={`${dados.ocorrenciasAltaCritica} alta/critica`} />
-            <CardMetrica label="Avisos nao lidos" valor={dados.avisosNaoLidos} detalhe={`${dados.avisosTotal} avisos visiveis`} />
-          </section>
+          <RelatoriosMetricasTopo aba={aba} cardsTopoVisiveis={cardsTopoVisiveis} />
 
           <section className="bg-white border border-gray-100 rounded-3xl shadow-sm p-4 mb-6">
             <div className="flex gap-2 overflow-x-auto pb-1 md:flex-wrap md:overflow-visible md:pb-0">
               {ABAS_RELATORIOS.map((item) => (
                 <button
                   key={item.id}
-                  onClick={() => setAba(item.id)}
+                  onClick={() => selecionarAba(item.id)}
                   className={`min-w-fit px-4 py-2 rounded-xl text-xs font-black border transition-colors ${
                     aba === item.id
                       ? 'bg-brand text-white border-brand'
@@ -1269,102 +667,103 @@ export default function Relatorios() {
 
           {loading ? (
             <div className="bg-white border border-gray-100 rounded-3xl p-12 text-center text-brand font-black animate-pulse">
-              Carregando central de relatorios...
+              Carregando central de relatórios...
             </div>
+          ) : aba === 'personalizacao' ? (
+            <RelatoriosPersonalizacao
+              atualizarCampoIdentidade={atualizarCampoIdentidade}
+              enviarLogoRelatorio={enviarLogoRelatorio}
+              errosIdentidade={errosIdentidade}
+              formIdentidade={formIdentidade}
+              identidadeRelatorio={identidadeRelatorio}
+              imprimirModeloIdentidadeRelatorio={imprimirModeloIdentidadeRelatorio}
+              mensagemIdentidade={mensagemIdentidade}
+              removerLogoRelatorio={removerLogoRelatorio}
+              salvarIdentidadeRelatorio={salvarIdentidadeRelatorio}
+              salvandoIdentidade={salvandoIdentidade}
+              validarCampoIdentidade={validarCampoIdentidade}
+            />
+          ) : aba === 'carteirinhas' ? (
+            <CarteirinhasLote
+              conviventes={conviventesFiltrados}
+              quartos={quartos}
+              tecnicos={tecnicos}
+              identidadeRelatorio={identidadeRelatorio}
+            />
           ) : (
             <>
-              <section className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-                {relatoriosAtuais.map((item) => (
-                  <RelatorioCard key={item.titulo} item={item} />
-                ))}
-              </section>
+              <RelatoriosCardsAba relatoriosAtuaisVisiveis={relatoriosAtuaisVisiveis} />
 
-              <section className="mt-6 bg-white border border-gray-100 rounded-3xl shadow-sm overflow-hidden">
-                <div className="px-5 py-4 border-b border-gray-100 flex flex-col md:flex-row md:items-center md:justify-between gap-2">
-                  <div>
-                    <h2 className="text-base font-black text-gray-900">{dadosDetalhados.titulo}</h2>
-                    <p className="text-xs text-gray-500 mt-1">
-                      Esta é a tabela que será enviada para XLSX/PDF. Exibindo ate 30 registros na tela.
-                    </p>
-                  </div>
+              {aba === 'evolucao' && (
+                <RelatoriosEvolucaoGraficos
+                  dadosEvolucao={dadosEvolucao}
+                  dadosPendenciasTecnicasEvolucao={dadosPendenciasTecnicasEvolucao}
+                  filtros={filtros}
+                  setTecnicoPendenciasEvolucaoId={setTecnicoPendenciasEvolucaoId}
+                  tecnicoPendenciasSelecionadoId={tecnicoPendenciasSelecionadoId}
+                  tecnicoPendenciasSelecionadoNome={tecnicoPendenciasSelecionadoNome}
+                  tecnicosComPendenciasEvolucao={tecnicosComPendenciasEvolucao}
+                />
+              )}
 
-                  <span className="text-xs font-black text-brand bg-blue-50 border border-blue-100 rounded-full px-3 py-1">
-                    {linhasExportacao.length} registro(s)
-                  </span>
-                </div>
-
-                <div className="space-y-3 p-3 md:hidden">
-                  {linhasExportacao.slice(0, 30).length === 0 ? (
-                    <div className="rounded-2xl border border-gray-100 bg-gray-50 p-8 text-center text-sm font-semibold text-gray-500">
-                      Nenhum registro encontrado com os filtros atuais.
-                    </div>
-                  ) : (
-                    linhasExportacao.slice(0, 30).map((linha, index) => {
-                      const titulo = linha[colunasExportacao[2]] || linha[colunasExportacao[1]] || linha[colunasExportacao[0]] || `${dadosDetalhados.titulo} ${index + 1}`;
-                      const camposResumo = colunasExportacao.filter((coluna) => linha[coluna] !== undefined).slice(0, 6);
-
-                      return (
-                        <article
-                          key={`${aba}-mobile-${index}`}
-                          className="rounded-2xl border border-gray-100 bg-gray-50/70 p-4 shadow-sm"
-                        >
-                          <p className="truncate text-sm font-black uppercase text-gray-800">
-                            {titulo}
-                          </p>
-
-                          <div className="mt-3 grid grid-cols-1 gap-2">
-                            {camposResumo.map((coluna) => (
-                              <div key={coluna} className="rounded-xl bg-white px-3 py-2">
-                                <p className="text-[10px] font-black uppercase text-gray-400">{coluna}</p>
-                                <p className="mt-0.5 text-xs font-bold text-gray-700">{linha[coluna] ?? '-'}</p>
-                              </div>
-                            ))}
-                          </div>
-                        </article>
-                      );
-                    })
-                  )}
-                </div>
-
-                <div className="hidden overflow-x-auto md:block">
-                  <table className="w-full min-w-[900px] text-sm">
-                    <thead className="bg-gray-50 border-b border-gray-100">
-                      <tr>
-                        {colunasExportacao.map((coluna) => (
-                          <th key={coluna} className="text-left text-[10px] font-black uppercase tracking-wider text-gray-400 px-4 py-3">
-                            {coluna}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-
-                    <tbody>
-                      {linhasExportacao.slice(0, 30).map((linha, index) => (
-                        <tr key={`${aba}-${index}`} className="border-b border-gray-50 hover:bg-gray-50">
-                          {colunasExportacao.map((coluna) => (
-                            <td key={coluna} className="px-4 py-3 text-xs text-gray-700 align-top">
-                              {linha[coluna] ?? '-'}
-                            </td>
-                          ))}
-                        </tr>
-                      ))}
-
-                      {linhasExportacao.length === 0 && (
-                        <tr>
-                          <td colSpan={colunasExportacao.length} className="px-4 py-8 text-center text-sm text-gray-500">
-                            Nenhum registro encontrado com os filtros atuais.
-                          </td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </section>
+              <RelatoriosTabelaDados
+                aba={aba}
+                colunasExportacao={colunasExportacao}
+                dadosDetalhados={dadosDetalhados}
+                fimTabela={fimTabela}
+                inicioTabela={inicioTabela}
+                irParaPaginaTabela={irParaPaginaTabela}
+                limiteAmostraOcorrencias={LIMITE_AMOSTRA_OCORRENCIAS_RELATORIOS}
+                linhasExportacao={linhasExportacao}
+                linhasTabelaPaginadas={linhasTabelaPaginadas}
+                paginaTabelaSegura={paginaTabelaSegura}
+                totalPaginasTabela={totalPaginasTabela}
+              />
             </>
           )}
           </div>
         </ScrollArea>
       </MainShell>
+
+      {opcoesImpressaoEvolucaoAbertas && (
+        <div className="carecore-modal-overlay fixed inset-0 z-50 flex items-center justify-center bg-slate-900/70 p-4 backdrop-blur-sm">
+          <div className="carecore-modal-panel w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl">
+            <p className="text-xs font-black uppercase tracking-[0.18em] text-brand">
+              Impressão da evolução
+            </p>
+            <h2 className="mt-2 text-xl font-black text-slate-900">
+              Incluir gráficos no relatório?
+            </h2>
+            <p className="mt-2 text-sm leading-relaxed text-slate-600">
+              Você pode gerar o PDF com os gráficos visuais da aba Evolução ou manter apenas os indicadores e a tabela.
+            </p>
+
+            <div className="mt-5 grid gap-2">
+              <button
+                type="button"
+                onClick={() => imprimirAbaAtual({ incluirGraficos: true })}
+                className="rounded-2xl bg-brand px-4 py-3 text-sm font-black text-white hover:bg-brandDark"
+              >
+                Imprimir com gráficos
+              </button>
+              <button
+                type="button"
+                onClick={() => imprimirAbaAtual({ incluirGraficos: false })}
+                className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-black text-slate-700 hover:bg-slate-50"
+              >
+                Imprimir sem gráficos
+              </button>
+              <button
+                type="button"
+                onClick={() => setOpcoesImpressaoEvolucaoAbertas(false)}
+                className="rounded-2xl border border-slate-200 bg-slate-100 px-4 py-3 text-sm font-black text-slate-500 hover:bg-slate-200"
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </AppShell>
   );
 }

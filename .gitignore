@@ -64,6 +64,16 @@ DEPLOY_CHECKLIST.md
 # Artefatos locais de análise/importação histórica
 /scripts/
 RelatorioCidadaoVinculado.xls
+comparacao_conviventes_*.csv
+analise_*.csv
+analise_*.md
+atualizacao_vinculacao_conviventes_*.csv
+completar_sisa_conviventes_por_historico_*.csv
+completar_sisa_conviventes_por_historico_*.md
+mescla_*.csv
+mescla_*.md
+pacote_importacao_*.zip
+Perfil CareCore+.png
 *.xlsx
 
 # Scripts manuais antigos de manutenção/população local
@@ -79,3 +89,5 @@ preparar_saas_local.py
 atualizar_licenca_saas_local.py
 atualizar_fechamento_reabertura_local.py
 atualizar_prioridade_ocorrencias.py
+preparar_base_demo_completa.py
+carecore-site/scripts/gerar-tabela-precos-xlsx.py

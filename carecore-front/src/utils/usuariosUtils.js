@@ -1,61 +1,9 @@
-export function imagemParaBase64Padronizada(file, tamanho = 512, qualidade = 0.85) {
-  return new Promise((resolve, reject) => {
-    if (!file) {
-      reject(new Error('Arquivo não informado.'));
-      return;
-    }
-
-    if (!file.type?.startsWith('image/')) {
-      reject(new Error('Selecione um arquivo de imagem válido.'));
-      return;
-    }
-
-    const reader = new FileReader();
-
-    reader.onload = () => {
-      const img = new Image();
-
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        canvas.width = tamanho;
-        canvas.height = tamanho;
-
-        const ctx = canvas.getContext('2d');
-
-        if (!ctx) {
-          reject(new Error('Não foi possível processar a imagem.'));
-          return;
-        }
-
-        const lado = Math.min(img.width, img.height);
-        const sx = (img.width - lado) / 2;
-        const sy = (img.height - lado) / 2;
-
-        ctx.fillStyle = '#f8fafc';
-        ctx.fillRect(0, 0, tamanho, tamanho);
-        ctx.drawImage(
-          img,
-          sx,
-          sy,
-          lado,
-          lado,
-          0,
-          0,
-          tamanho,
-          tamanho
-        );
-
-        resolve(canvas.toDataURL('image/jpeg', qualidade));
-      };
-
-      img.onerror = () => reject(new Error('Não foi possível ler a imagem.'));
-      img.src = reader.result;
-    };
-
-    reader.onerror = () => reject(new Error('Não foi possível carregar o arquivo.'));
-    reader.readAsDataURL(file);
-  });
-}
+export {
+  imagemParaBase64Padronizada,
+  imagemParaArquivoPadronizado,
+  ehArquivoImagem,
+  presetImagemPorTipoDocumento,
+} from './imagemUploadUtils';
 
 export function dataUrlParaArquivo(dataUrl, nomeArquivo = 'foto-webcam.jpg') {
   const partes = dataUrl.split(',');

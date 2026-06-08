@@ -1,5 +1,6 @@
 import { API_BASE_URL } from '../config/apiBase';
 import { obterTokenLocal } from '../services/api';
+import { criarHeadersAutenticados } from './requestIdUtils';
 
 /**
  * Transforma um caminho salvo no banco (/uploads/... ou uploads/...) na rota autenticada GET /api/arquivos/...
@@ -55,7 +56,7 @@ export async function baixarArquivoAutenticado(caminhoOuUrl, nomeSugerido) {
 
   const token = obterTokenLocal();
   const resposta = await fetch(url, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    headers: criarHeadersAutenticados(token),
   });
 
   if (!resposta.ok) {

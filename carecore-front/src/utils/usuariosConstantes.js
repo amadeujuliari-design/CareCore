@@ -1,5 +1,6 @@
 export const PERFIS = [
   'Gestor',
+  'Global',
   'Técnico',
   'Orientador',
   'Administrativo',
@@ -40,6 +41,8 @@ export const FORM_INICIAL = {
   email: '',
   senha: '',
   perfil_acesso: 'Consulta',
+  is_global: false,
+  ativo: true,
   cpf: '',
   telefone: '',
   avatar_url: '',

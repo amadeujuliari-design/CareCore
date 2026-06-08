@@ -42,12 +42,103 @@ class OrigemEncaminhamentoResponse(OrigemEncaminhamentoBase):
     model_config = ConfigDict(from_attributes=True)
 
 
-# --- INSTITUIÇÃO ---
+# --- ORGANIZAÇÃO / PROJETO ---
 
-class InstituicaoBase(BaseModel):
+class EnderecoBase(BaseModel):
+    cep: Optional[str] = None
+    logradouro: Optional[str] = None
+    numero: Optional[str] = None
+    complemento: Optional[str] = None
+    bairro: Optional[str] = None
+    cidade: Optional[str] = None
+    uf: Optional[str] = None
+
+    @field_validator("cep")
+    @classmethod
+    def validar_cep(cls, valor: Optional[str]):
+        return normalizar_cep(valor)
+
+    @field_validator("uf")
+    @classmethod
+    def validar_uf(cls, valor: Optional[str]):
+        return normalizar_uf(valor)
+
+
+class OrganizacaoBase(EnderecoBase):
+    nome: str
+    cnpj: Optional[str] = None
+    telefone: Optional[str] = None
+    email: Optional[str] = None
+
+    @field_validator("nome")
+    @classmethod
+    def validar_nome(cls, valor: str):
+        valor = valor.strip()
+        if not valor:
+            raise ValueError("Nome da organização obrigatório.")
+        return valor
+
+    @field_validator("cnpj")
+    @classmethod
+    def validar_cnpj(cls, valor: Optional[str]):
+        return normalizar_cnpj(valor)
+
+    @field_validator("telefone")
+    @classmethod
+    def validar_telefone(cls, valor: Optional[str]):
+        return normalizar_telefone(valor)
+
+    @field_validator("email")
+    @classmethod
+    def validar_email(cls, valor: Optional[str]):
+        return normalizar_email(valor)
+
+
+class OrganizacaoCreate(OrganizacaoBase):
+    pass
+
+
+class OrganizacaoResponse(OrganizacaoBase):
+    id: str
+    is_active: bool = True
+    criado_em: Optional[datetime] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class InstituicaoBase(EnderecoBase):
     nome_fantasia: str
     cnpj: Optional[str] = None
     telefone: str
+    email: Optional[str] = None
+    tipo_projeto: Optional[str] = "Projeto"
+    projeto_unico: Optional[bool] = True
+
+    @field_validator("nome_fantasia")
+    @classmethod
+    def validar_nome_fantasia(cls, valor: str):
+        valor = valor.strip()
+        if not valor:
+            raise ValueError("Nome do projeto obrigatório.")
+        return valor
+
+    @field_validator("cnpj")
+    @classmethod
+    def validar_cnpj(cls, valor: Optional[str]):
+        return normalizar_cnpj(valor)
+
+    @field_validator("telefone")
+    @classmethod
+    def validar_telefone(cls, valor: str):
+        telefone = normalizar_telefone(valor)
+        if not telefone:
+            raise ValueError("Telefone obrigatório.")
+        return telefone
+
+    @field_validator("email")
+    @classmethod
+    def validar_email(cls, valor: Optional[str]):
+        return normalizar_email(valor)
 
 
 class InstituicaoCreate(InstituicaoBase):
@@ -56,6 +147,7 @@ class InstituicaoCreate(InstituicaoBase):
 
 class InstituicaoResponse(InstituicaoBase):
     id: str
+    organizacao_id: Optional[str] = None
     is_active: bool
 
     status_assinatura: Optional[str] = "Ativa"
@@ -67,10 +159,98 @@ class InstituicaoResponse(InstituicaoBase):
     model_config = ConfigDict(from_attributes=True)
 
 
+class IdentidadeRelatorioBase(BaseModel):
+    relatorio_nome_exibicao: Optional[str] = None
+    relatorio_rodape_linha1: Optional[str] = None
+    relatorio_rodape_linha2: Optional[str] = None
+    relatorio_telefone: Optional[str] = None
+    relatorio_email: Optional[str] = None
+    relatorio_site: Optional[str] = None
+
+    @field_validator("relatorio_telefone")
+    @classmethod
+    def validar_relatorio_telefone(cls, valor: Optional[str]):
+        return normalizar_telefone(valor)
+
+    @field_validator("relatorio_email")
+    @classmethod
+    def validar_relatorio_email(cls, valor: Optional[str]):
+        return normalizar_email(valor)
+
+
+class IdentidadeRelatorioUpdate(IdentidadeRelatorioBase):
+    pass
+
+
+class IdentidadeRelatorioResponse(IdentidadeRelatorioBase):
+    relatorio_logo_url: Optional[str] = None
+
+
+class GestaoGlobalProjetoResumo(BaseModel):
+    id: str
+    nome: str
+    tipo_projeto: Optional[str] = "Projeto"
+    is_active: bool = True
+    status_assinatura: Optional[str] = "Ativa"
+    bloqueado: Optional[bool] = False
+    conviventes_total: int = 0
+    conviventes_ativos: int = 0
+    saidas_qualificadas: int = 0
+    saidas_qualificadas_periodo: int = 0
+    inativacoes_periodo: int = 0
+    taxa_sucesso_periodo: float = 0
+    usuarios_ativos: int = 0
+    quartos_ativos: int = 0
+    leitos_total: int = 0
+    leitos_ocupados: int = 0
+    ocupacao_percentual: float = 0
+    rotina_registros: int = 0
+    rotina_cancelados: int = 0
+    ocorrencias_total: int = 0
+    ocorrencias_pendentes: int = 0
+    ocorrencias_alta_critica: int = 0
+    avisos_ativos: int = 0
+    sisa_lancamentos: int = 0
+    sisa_divergencias_pendentes: int = 0
+
+
+class GestaoGlobalTotais(BaseModel):
+    projetos: int = 0
+    conviventes_total: int = 0
+    conviventes_ativos: int = 0
+    saidas_qualificadas: int = 0
+    saidas_qualificadas_periodo: int = 0
+    inativacoes_periodo: int = 0
+    taxa_sucesso_periodo: float = 0
+    usuarios_ativos: int = 0
+    leitos_total: int = 0
+    leitos_ocupados: int = 0
+    ocupacao_percentual: float = 0
+    rotina_registros: int = 0
+    ocorrencias_total: int = 0
+    ocorrencias_pendentes: int = 0
+    ocorrencias_alta_critica: int = 0
+    avisos_ativos: int = 0
+    sisa_lancamentos: int = 0
+    sisa_divergencias_pendentes: int = 0
+
+
+class GestaoGlobalResumoResponse(BaseModel):
+    organizacao_id: str
+    organizacao_nome: Optional[str] = None
+    projeto_atual_id: Optional[str] = None
+    projeto_atual_nome: Optional[str] = None
+    periodo_inicio: Optional[date] = None
+    periodo_fim: Optional[date] = None
+    totais: GestaoGlobalTotais
+    projetos: List[GestaoGlobalProjetoResumo]
+
+
 # --- USUÁRIO / RBAC / EQUIPE INSTITUCIONAL ---
 
 PERFIS_ACESSO_VALIDOS = {
     "Gestor",
+    "Global",
     "Técnico",
     "Orientador",
     "Administrativo",
@@ -99,6 +279,40 @@ def normalizar_email(valor: Optional[str]) -> Optional[str]:
         raise ValueError("E-mail inválido.")
 
     return valor
+
+
+def normalizar_cnpj(valor: Optional[str]) -> Optional[str]:
+    if valor is None:
+        return None
+
+    cnpj = re.sub(r"\D", "", valor)
+
+    if not cnpj:
+        return None
+
+    if len(cnpj) != 14:
+        raise ValueError("CNPJ deve conter 14 dígitos.")
+
+    if cnpj == cnpj[0] * 14:
+        raise ValueError("CNPJ inválido.")
+
+    def calcular_digito(base: str) -> str:
+        pesos = (
+            [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]
+            if len(base) == 12
+            else [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]
+        )
+        soma = sum(int(digito) * peso for digito, peso in zip(base, pesos))
+        resto = soma % 11
+        return "0" if resto < 2 else str(11 - resto)
+
+    digito_1 = calcular_digito(cnpj[:12])
+    digito_2 = calcular_digito(cnpj[:12] + digito_1)
+
+    if cnpj[-2:] != f"{digito_1}{digito_2}":
+        raise ValueError("CNPJ inválido.")
+
+    return cnpj
 
 
 def normalizar_cpf(valor: Optional[str]) -> Optional[str]:
@@ -203,6 +417,43 @@ def validar_senha_forte_valor(senha: str) -> str:
     return senha
 
 
+STATUS_CONVIVENTE_VALIDOS = {
+    "Ativo",
+    "Inativado",
+    "Bloqueado",
+    "Saída qualificada",
+    "Ausência justificada",
+}
+
+MAPEAMENTO_STATUS_CONVIVENTE = {
+    "ativo": "Ativo",
+    "inativado": "Inativado",
+    "bloqueado": "Bloqueado",
+    "saida qualificada": "Saída qualificada",
+    "saída qualificada": "Saída qualificada",
+    "ausencia justificada": "Ausência justificada",
+    "ausência justificada": "Ausência justificada",
+}
+
+
+def normalizar_status_convivente(valor: Optional[str]) -> str:
+    if valor is None:
+        return "Ativo"
+
+    status = valor.strip()
+    if not status:
+        return "Ativo"
+
+    status = MAPEAMENTO_STATUS_CONVIVENTE.get(status.lower(), status)
+    if status not in STATUS_CONVIVENTE_VALIDOS:
+        raise ValueError(
+            "Status do convivente inválido. "
+            "Use: Ativo, Inativado, Bloqueado, Saída qualificada ou Ausência justificada."
+        )
+
+    return status
+
+
 def normalizar_perfil_acesso(valor: Optional[str]) -> str:
     if valor is None:
         return "Consulta"
@@ -217,7 +468,7 @@ def normalizar_perfil_acesso(valor: Optional[str]) -> str:
     if perfil not in PERFIS_ACESSO_VALIDOS:
         raise ValueError(
             "Perfil de acesso inválido. "
-            "Use: Gestor, Técnico, Orientador, Administrativo ou Consulta."
+            "Use: Gestor, Global, Técnico, Orientador, Administrativo ou Consulta."
         )
 
     return perfil
@@ -227,6 +478,7 @@ class UsuarioBase(BaseModel):
     nome: str
     email: str
     perfil_acesso: str = "Consulta"
+    is_global: bool = False
 
     cpf: Optional[str] = None
     telefone: Optional[str] = None
@@ -343,6 +595,7 @@ class UsuarioUpdate(BaseModel):
     nome: Optional[str] = None
     email: Optional[str] = None
     perfil_acesso: Optional[str] = None
+    is_global: Optional[bool] = None
 
     cpf: Optional[str] = None
     telefone: Optional[str] = None
@@ -469,12 +722,28 @@ class UsuarioDefinirSenha(BaseModel):
 
 class UsuarioAtivarInativar(BaseModel):
     ativo: bool
+    data_desligamento: Optional[date] = None
+    motivo_desligamento: Optional[str] = None
+
+    @model_validator(mode="after")
+    def validar_motivo_ao_inativar(self):
+        if self.ativo is False:
+            motivo = (self.motivo_desligamento or "").strip()
+
+            if not motivo:
+                raise ValueError("Informe o motivo do desligamento para inativar o usuário.")
+
+            self.motivo_desligamento = motivo
+
+        return self
 
 
 class UsuarioResponse(UsuarioBase):
     id: str
     instituicao_id: str
+    organizacao_id: Optional[str] = None
     is_master: bool
+    is_global: bool = False
     ativo: bool = True
 
     criado_em: Optional[datetime] = None
@@ -494,6 +763,7 @@ class UsuarioResumoResponse(BaseModel):
     nome: str
     email: str
     perfil_acesso: str
+    is_global: bool = False
     ativo: bool = True
     avatar_url: Optional[str] = None
     cargo: Optional[str] = None
@@ -520,8 +790,22 @@ class LoginPayload(BaseModel):
 
 
 class OnboardingPayload(BaseModel):
-    instituicao: InstituicaoCreate
+    organizacao: Optional[OrganizacaoCreate] = None
+    projeto: Optional[InstituicaoCreate] = None
+    projeto_unico: bool = True
+    # Compatibilidade com payload antigo.
+    instituicao: Optional[InstituicaoCreate] = None
     usuario_master: UsuarioCreate
+
+    @model_validator(mode="after")
+    def validar_organizacao_e_projeto(self):
+        if self.organizacao is None and self.instituicao is None:
+            raise ValueError("Informe os dados da organização.")
+
+        if self.projeto is None and self.instituicao is None:
+            raise ValueError("Informe os dados do projeto.")
+
+        return self
 
 
 # --- LOGIN / TOKEN ---
@@ -564,6 +848,10 @@ class QuartoUpdate(QuartoBase):
     leitos: List[LeitoCreate] = []
 
 
+class LeitoAlocacaoPayload(BaseModel):
+    convivente_id: str
+
+
 class QuartoResponse(QuartoBase):
     id: str
     instituicao_id: str
@@ -581,7 +869,36 @@ class DocumentoResponse(BaseModel):
     nome_arquivo: str
     caminho_arquivo: str
     tipo_documento: str
+    sensivel: bool = False
     data_upload: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+# --- PIA (Plano Individual de Atendimento) ---
+
+class RegistroPIABase(BaseModel):
+    tipo_registro: str = "Evolução"
+    titulo: str
+    subtitulo: Optional[str] = None
+    descricao: str
+    objetivos: Optional[str] = None
+    encaminhamentos: Optional[str] = None
+    status: str = "Em acompanhamento"
+
+
+class RegistroPIACreate(RegistroPIABase):
+    registro_pai_id: Optional[str] = None
+
+
+class RegistroPIAResponse(RegistroPIABase):
+    id: str
+    instituicao_id: str
+    convivente_id: str
+    usuario_id: str
+    registro_pai_id: Optional[str] = None
+    usuario_nome: Optional[str] = None
+    data_registro: datetime
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -620,6 +937,10 @@ class OcorrenciaBase(BaseModel):
     descricao: str
     requer_acao_tecnica: bool = False
     prioridade: str = "Média"
+    convivente_autor_ocorrencia: bool = False
+    funcionario_envolvido_id: Optional[str] = None
+    assinatura_convivente_metodo: Optional[str] = None
+    assinatura_convivente_codigo: Optional[str] = None
 
 
 class OcorrenciaCreate(OcorrenciaBase):
@@ -639,6 +960,11 @@ class OcorrenciaResponse(OcorrenciaBase):
     parecer_tecnico: Optional[str]
     data_resolucao: Optional[datetime]
     usuario_resolutor_id: Optional[str]
+    convivente_autor_ocorrencia: bool = False
+    funcionario_envolvido_id: Optional[str] = None
+    assinatura_convivente_metodo: Optional[str] = None
+    assinatura_convivente_codigo: Optional[str] = None
+    assinatura_convivente_validada_em: Optional[datetime] = None
 
     interacoes: List[InteracaoOcorrenciaResponse] = []
     observadores: List[ObservadorOcorrenciaResponse] = []
@@ -666,6 +992,7 @@ class ConviventeBase(BaseModel):
     status: str = "Ativo"
 
     data_entrada: Optional[date] = None
+    ausencia_justificada_desde: Optional[date] = None
     leito_id: Optional[str] = None
     tecnico_id: Optional[str] = None
 
@@ -720,11 +1047,28 @@ class ConviventeBase(BaseModel):
 
     egresso_prisional: bool = False
     usa_tornozeleira: bool = False
+    tem_mandado_prisao: bool = False
 
     medidas_protetivas: Optional[str] = None
     acompanhamento_caps: Optional[str] = None
     uso_substancias: Optional[str] = None
     transtorno_mental: Optional[str] = None
+
+    @field_validator("status")
+    @classmethod
+    def validar_status(cls, valor: Optional[str]):
+        return normalizar_status_convivente(valor)
+
+    @field_validator(
+        "possui_renda",
+        "egresso_prisional",
+        "usa_tornozeleira",
+        "tem_mandado_prisao",
+        mode="before",
+    )
+    @classmethod
+    def normalizar_booleanos_legados(cls, valor):
+        return False if valor is None else valor
 
 
 class ConviventeCreate(ConviventeBase):
@@ -745,12 +1089,90 @@ class ConviventeResponse(ConviventeBase):
     model_config = ConfigDict(from_attributes=True)
 
 
+class AusenciaJustificadaPendenteResponse(BaseModel):
+    convivente_id: str
+    nome: str
+    prontuario: Optional[int] = None
+    tecnico_id: Optional[str] = None
+    tecnico_nome: Optional[str] = None
+    ausencia_justificada_desde: Optional[date] = None
+    dias_em_ausencia: int = 0
+
+
+class AusenciaJustificadaResposta(BaseModel):
+    continua_ausente: bool
+    status_atribuido: Optional[str] = None
+    justificativa: Optional[str] = None
+
+    @field_validator("status_atribuido")
+    @classmethod
+    def validar_status_atribuido(cls, valor: Optional[str]):
+        if valor is None or not valor.strip():
+            return None
+
+        status = normalizar_status_convivente(valor)
+        if status not in {"Ativo", "Inativado"}:
+            raise ValueError("Quando a ausência não continuar, escolha Ativo ou Inativado.")
+        return status
+
+
+# --- HISTÓRICO MANUAL DO CONVIVENTE ---
+
+class HistoricoConviventeCreate(BaseModel):
+    origem_informacao: str
+    data_origem: date
+    descricao: str
+    titulo: Optional[str] = None
+    historico_legado_id: Optional[str] = None
+
+    @field_validator("origem_informacao", "descricao")
+    @classmethod
+    def validar_texto_obrigatorio(cls, valor: str):
+        valor = (valor or "").strip()
+        if not valor:
+            raise ValueError("Campo obrigatório.")
+        return valor
+
+
+class HistoricoConviventeUpdate(BaseModel):
+    origem_informacao: str
+    data_origem: date
+    descricao: str
+    titulo: Optional[str] = None
+
+    @field_validator("origem_informacao", "descricao")
+    @classmethod
+    def validar_texto_obrigatorio(cls, valor: str):
+        valor = (valor or "").strip()
+        if not valor:
+            raise ValueError("Campo obrigatório.")
+        return valor
+
+
+class HistoricoConviventeResponse(BaseModel):
+    id: str
+    instituicao_id: str
+    convivente_id: str
+    usuario_id: str
+    usuario_nome: Optional[str] = None
+    historico_legado_id: Optional[str] = None
+
+    origem_informacao: str
+    data_origem: date
+    titulo: Optional[str] = None
+    descricao: str
+    criado_em: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 # =====================================================================
 # ROTINA DIÁRIA
 # =====================================================================
 
 class RegistroRotinaBase(BaseModel):
     tipo_registro: str
+    observacao: Optional[str] = None
 
 
 class RegistroRotinaCreate(RegistroRotinaBase):
@@ -766,6 +1188,7 @@ class RegistroRotinaResponse(RegistroRotinaBase):
     usuario_id: str
 
     data_registro: datetime
+    observacao: Optional[str] = None
 
     retorno_rapido: Optional[bool] = False
     justificativa_retorno_rapido: Optional[str] = None
@@ -788,6 +1211,7 @@ class RegistroRotinaResponse(RegistroRotinaBase):
 
 class RegistroRotinaEdicao(BaseModel):
     tipo_registro: str
+    observacao: Optional[str] = None
     motivo_edicao: str
 
 
@@ -797,6 +1221,110 @@ class RegistroRotinaCancelamento(BaseModel):
 
 class RegistroRotinaDesfazerRapido(BaseModel):
     pass
+
+
+# =====================================================================
+# HISTÓRICO LEGADO SIAT
+# =====================================================================
+
+class HistoricoLegadoSIATResponse(BaseModel):
+    id: str
+    instituicao_id: Optional[str] = None
+
+    origem_informacao: str
+    arquivo_origem: str
+    ano_origem: Optional[int] = None
+    pagina_origem: Optional[int] = None
+    sequencia_origem: Optional[int] = None
+
+    data_original: Optional[date] = None
+    data_original_texto: Optional[str] = None
+    operador_origem: Optional[str] = None
+    titulo_original: Optional[str] = None
+    nome_identificado: Optional[str] = None
+
+    tipo_sugerido: Optional[str] = "Não classificado"
+    status_revisao: Optional[str] = "Pendente"
+    texto_original: str
+    observacoes_revisao: Optional[str] = None
+    importado_em: Optional[datetime] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class HistoricoLegadoSIATListResponse(BaseModel):
+    items: List[HistoricoLegadoSIATResponse]
+    total: int
+    limit: int
+    offset: int
+    has_more: bool
+    resumo: dict
+    opcoes: dict
+
+
+class HistoricoLegadoSIATUpdate(BaseModel):
+    status_revisao: Optional[str] = None
+    tipo_sugerido: Optional[str] = None
+    observacoes_revisao: Optional[str] = None
+
+
+class HistoricoLegadoRotinaSIATResponse(BaseModel):
+    id: str
+    instituicao_id: str
+    convivente_id: Optional[str] = None
+
+    origem_arquivo: str
+    linha_origem: Optional[int] = None
+    id_as_atendimento_serv_legado: str
+    id_as_atendimento_legado: Optional[str] = None
+    id_cr_clientes_legado: Optional[str] = None
+
+    numero_sisa: Optional[str] = None
+    numero_institucional_legado: Optional[str] = None
+    nome_convivente: Optional[str] = None
+    data_nascimento: Optional[date] = None
+    nome_mae: Optional[str] = None
+
+    data_servico: date
+    servico_prestado: Optional[str] = None
+    id_servico_prestado_legado: Optional[str] = None
+    atividade: Optional[str] = None
+    id_atividade_legado: Optional[str] = None
+
+    quarto: Optional[str] = None
+    cama: Optional[str] = None
+    periodo_acolhimento: Optional[str] = None
+    data_entrada: Optional[date] = None
+    data_saida: Optional[date] = None
+    motivo_saida: Optional[str] = None
+    gestante: Optional[bool] = None
+    gestante_com_pre_natal: Optional[bool] = None
+
+    auditoria_datahora: Optional[datetime] = None
+    usuario_origem: Optional[str] = None
+    chave_natural_convivente: Optional[str] = None
+    confianca_vinculo: Optional[str] = None
+    identificado: Optional[bool] = False
+    status_revisao: Optional[str] = "Pendente"
+    observacoes: Optional[str] = None
+    importado_em: Optional[datetime] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class HistoricoLegadoRotinaSIATListResponse(BaseModel):
+    items: List[HistoricoLegadoRotinaSIATResponse]
+    total: int
+    limit: int
+    offset: int
+    has_more: bool
+    resumo: dict
+    opcoes: dict
+
+
+class HistoricoLegadoRotinaSIATUpdate(BaseModel):
+    status_revisao: Optional[str] = None
+    observacoes: Optional[str] = None
 
 
 # =====================================================================
@@ -850,6 +1378,58 @@ class SisaLancamentoResponse(BaseModel):
     observacoes: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class SisaDivergenciaResponse(BaseModel):
+    id: str
+    importacao_id: str
+    instituicao_id: str
+    convivente_id: Optional[str] = None
+    numero_sisa: str
+    nome_convivente: str
+    tipo: str
+    prioridade: str
+    status: str
+    data_inicio: Optional[date] = None
+    data_fim: date
+    dias_sisa_anterior: Optional[int] = None
+    dias_sisa_atual: int
+    dias_sisa_delta: Optional[int] = None
+    dias_carecore: int
+    diferenca: Optional[int] = None
+    dias_carecore_lista: Optional[str] = None
+    resumo_carecore_json: Optional[str] = None
+    mensagem: Optional[str] = None
+    criado_em: datetime
+    status_convivente: Optional[str] = None
+    tem_desligamento: Optional[bool] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class SisaDivergenciaStatusUpdate(BaseModel):
+    status: str
+
+
+class SisaImportacaoResponse(BaseModel):
+    id: str
+    instituicao_id: str
+    usuario_id: str
+    nome_arquivo: str
+    servico: Optional[str] = None
+    data_referencia: date
+    importado_em: datetime
+    total_linhas: int
+    total_vinculados: int
+    total_nao_encontrados: int
+    total_divergencias: int
+    total_alertas_criticos: int
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class SisaImportacaoDetalheResponse(SisaImportacaoResponse):
+    divergencias: List[SisaDivergenciaResponse] = []
 
 
 # =====================================================================
@@ -915,6 +1495,14 @@ class AvisoResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class AvisoHistoricoListResponse(BaseModel):
+    items: List[AvisoResponse]
+    total: int
+    limit: int
+    offset: int
+    has_more: bool
+
+
 class AvisoDashboardResponse(BaseModel):
     id: str
     remetente_id: str
@@ -940,4 +1528,75 @@ class AvisosResumoResponse(BaseModel):
     total_visiveis: int
     total_nao_lidos: int
     total_alertas_ativos: int
+
+
+# =====================================================================
+# CHAT INTERNO
+# =====================================================================
+
+class ChatUsuarioResponse(BaseModel):
+    id: str
+    nome: str
+    email: str
+    perfil_acesso: str
+    avatar_url: Optional[str] = None
+    cargo: Optional[str] = None
+    setor: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ChatConversaCreate(BaseModel):
+    participantes_ids: List[str]
+    titulo: Optional[str] = None
+
+
+class ChatMensagemCreate(BaseModel):
+    conteudo: str
+
+    @field_validator("conteudo")
+    @classmethod
+    def validar_conteudo(cls, valor: str):
+        conteudo = (valor or "").strip()
+
+        if not conteudo:
+            raise ValueError("Digite uma mensagem.")
+
+        if len(conteudo) > 4000:
+            raise ValueError("Mensagem muito longa. Limite de 4000 caracteres.")
+
+        return conteudo
+
+
+class ChatMensagemResponse(BaseModel):
+    id: str
+    conversa_id: str
+    remetente_id: str
+    remetente_nome: Optional[str] = None
+    conteudo: str
+    criado_em: datetime
+    enviada_por_mim: bool = False
+
+
+class ChatConversaResponse(BaseModel):
+    id: str
+    tipo: str
+    titulo: Optional[str] = None
+    participantes: List[ChatUsuarioResponse] = []
+    ultima_mensagem: Optional[ChatMensagemResponse] = None
+    nao_lidas: int = 0
+    atualizado_em: datetime
+
+
+class ChatMensagensListResponse(BaseModel):
+    items: List[ChatMensagemResponse]
+    total: int
+    limit: int
+    offset: int
+    has_more: bool
+
+
+class ChatResumoResponse(BaseModel):
+    total_nao_lidas: int
+    total_conversas: int
 

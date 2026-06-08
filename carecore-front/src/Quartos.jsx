@@ -7,14 +7,21 @@ import axios from 'axios';
 import Sidebar from './Sidebar';
 import { AppShell, MainShell, PageHeader, ScrollArea } from './components/PremiumUI';
 import { API_ROOT } from './config/apiBase';
+import { criarHeadersAutenticados } from './utils/requestIdUtils';
 
 export default function Quartos() {
   const navigate = useNavigate();
   const token = localStorage.getItem('@CareCore:token');
   const [quartos, setQuartos] = useState([]);
+  const [conviventes, setConviventes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState('');
   const [sucesso, setSucesso] = useState('');
+  const [modalLeito, setModalLeito] = useState(null);
+  const [tooltipLeito, setTooltipLeito] = useState(null);
+  const [conviventeSelecionadoId, setConviventeSelecionadoId] = useState('');
+  const [buscaConvivente, setBuscaConvivente] = useState('');
+  const [salvandoAlocacao, setSalvandoAlocacao] = useState(false);
 
   let perfilUsuario = '';
   let usuarioMaster = false;
@@ -32,7 +39,6 @@ export default function Quartos() {
   const podeGerenciarQuartos =
     usuarioMaster ||
     ['Gestor', 'Gestao', 'Gestão', 'Gerente', 'Técnico', 'Tecnico'].includes(perfilUsuario);
-
   // Formulário de Quarto
   const [nome, setNome] = useState('');
   const [tipoPublico, setTipoPublico] = useState('Masculino');
@@ -55,10 +61,13 @@ useEffect(() => {
   const carregarQuartos = async () => {
     try {
       setLoading(true);
-      const response = await axios.get(`${API_ROOT}/quartos`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      setQuartos(response.data);
+      const config = { headers: criarHeadersAutenticados(token) };
+      const [resQuartos, resConviventes] = await Promise.all([
+        axios.get(`${API_ROOT}/quartos`, config),
+        axios.get(`${API_ROOT}/conviventes`, config)
+      ]);
+      setQuartos(resQuartos.data);
+      setConviventes(resConviventes.data || []);
     } catch {
       setErro('Erro ao carregar lista de quartos.');
     } finally {
@@ -137,12 +146,12 @@ useEffect(() => {
     try {
       if (editandoId) {
         await axios.put(`${API_ROOT}/quartos/${editandoId}`, payload, {
-          headers: { Authorization: `Bearer ${token}` }
+          headers: criarHeadersAutenticados(token)
         });
         setSucesso('Quarto e leitos atualizados com sucesso!');
       } else {
         await axios.post(`${API_ROOT}/quartos`, payload, {
-          headers: { Authorization: `Bearer ${token}` }
+          headers: criarHeadersAutenticados(token)
         });
         setSucesso('Quarto criado com sucesso!');
       }
@@ -164,7 +173,7 @@ useEffect(() => {
     if (!window.confirm("Atenção: Ao excluir este quarto, todos os seus leitos associados serão removidos. Deseja continuar?")) return;
     try {
       await axios.delete(`${API_ROOT}/quartos/${quartoId}`, {
-        headers: { Authorization: `Bearer ${token}` }
+        headers: criarHeadersAutenticados(token)
       });
       setSucesso('Quarto removido com sucesso.');
       carregarQuartos();
@@ -172,6 +181,93 @@ useEffect(() => {
     } catch (error) {
       setErro(error.response?.data?.detail || 'Erro ao excluir quarto.');
     }
+  };
+
+  const conviventesElegiveis = conviventes
+    .filter(c => c.status === 'Ativo')
+    .filter(c => {
+      const termo = buscaConvivente.trim().toLowerCase();
+      if (!termo) return true;
+
+      return [
+        c.nome_social,
+        c.nome_completo,
+        c.numero_institucional,
+        c.cpf
+      ].join(' ').toLowerCase().includes(termo);
+    });
+
+  const abrirModalLeito = (quarto, leito) => {
+    if (!podeGerenciarQuartos) return;
+
+    setModalLeito({ quarto, leito });
+    setConviventeSelecionadoId('');
+    setBuscaConvivente('');
+    setErro('');
+  };
+
+  const alocarConviventeNoLeito = async () => {
+    if (!modalLeito || !conviventeSelecionadoId) {
+      setErro('Selecione um convivente para alocar neste leito.');
+      return;
+    }
+
+    try {
+      setSalvandoAlocacao(true);
+      await axios.patch(
+        `${API_ROOT}/quartos/leitos/${modalLeito.leito.id}/alocar`,
+        { convivente_id: conviventeSelecionadoId },
+        { headers: criarHeadersAutenticados(token) }
+      );
+      setModalLeito(null);
+      setSucesso('Convivente alocado com sucesso.');
+      await carregarQuartos();
+      setTimeout(() => setSucesso(''), 3000);
+    } catch (error) {
+      setErro(error.response?.data?.detail || 'Erro ao alocar convivente.');
+    } finally {
+      setSalvandoAlocacao(false);
+    }
+  };
+
+  const liberarLeito = async () => {
+    if (!modalLeito) return;
+
+    try {
+      setSalvandoAlocacao(true);
+      await axios.patch(
+        `${API_ROOT}/quartos/leitos/${modalLeito.leito.id}/liberar`,
+        {},
+        { headers: criarHeadersAutenticados(token) }
+      );
+      setModalLeito(null);
+      setSucesso('Leito liberado com sucesso.');
+      await carregarQuartos();
+      setTimeout(() => setSucesso(''), 3000);
+    } catch (error) {
+      setErro(error.response?.data?.detail || 'Erro ao liberar leito.');
+    } finally {
+      setSalvandoAlocacao(false);
+    }
+  };
+
+  const atualizarTooltipLeito = (event, leito) => {
+    if (leito.status !== 'Ocupado') return;
+
+    const larguraTooltip = 260;
+    const alturaTooltip = 150;
+    const margem = 16;
+
+    const x = Math.min(
+      Math.max(event.clientX + margem, margem),
+      window.innerWidth - larguraTooltip - margem
+    );
+    const y = Math.min(
+      Math.max(event.clientY + margem, margem),
+      window.innerHeight - alturaTooltip - margem
+    );
+
+    setTooltipLeito({ leito, x, y });
   };
 
   return (
@@ -241,9 +337,15 @@ useEffect(() => {
                             const ocupado = l.status === 'Ocupado';
 
                             return (
-                              <div
+                              <button
+                                type="button"
                                 key={l.id}
-                                className={`group relative rounded-2xl border px-3 py-2.5 text-center transition-all min-h-[104px] ${
+                                onClick={() => abrirModalLeito(q, l)}
+                                onMouseEnter={(event) => atualizarTooltipLeito(event, l)}
+                                onMouseMove={(event) => atualizarTooltipLeito(event, l)}
+                                onMouseLeave={() => setTooltipLeito(null)}
+                                disabled={!podeGerenciarQuartos}
+                                className={`group relative rounded-2xl border px-3 py-2.5 text-center transition-all min-h-[104px] disabled:cursor-default ${
                                   ocupado
                                     ? 'bg-amber-50/80 border-amber-200 hover:bg-amber-100/80'
                                     : 'bg-white border-slate-200 hover:bg-slate-50'
@@ -268,35 +370,13 @@ useEffect(() => {
                                     <div className="text-[10px] font-semibold text-slate-500 truncate leading-tight">
                                       Pront. {l.numero_institucional ?? '--'}
                                     </div>
-
-                                    <div className="pointer-events-none absolute left-1/2 top-full z-[9999] mt-2 hidden w-64 -translate-x-1/2 rounded-2xl border border-slate-200 bg-white p-3 text-left shadow-xl group-hover:block">
-                                      <div className="text-xs font-bold text-slate-400 uppercase tracking-wide">
-                                        Convivente alocado
-                                      </div>
-
-                                      <div className="mt-1 text-sm font-semibold text-slate-900">
-                                        {l.convivente_nome_completo || l.convivente_nome || 'Não informado'}
-                                      </div>
-
-                                      <div className="mt-2 grid gap-1 text-xs text-slate-600">
-                                        <div>
-                                          <span className="font-semibold text-slate-800">Prontuário:</span>{' '}
-                                          {l.numero_institucional ?? '--'}
-                                        </div>
-
-                                        <div>
-                                          <span className="font-semibold text-slate-800">CPF:</span>{' '}
-                                          {l.cpf || '--'}
-                                        </div>
-                                      </div>
-                                    </div>
                                   </div>
                                 ) : (
                                   <div className="text-[10px] uppercase tracking-wide mt-1 text-emerald-500 font-semibold">
                                     Livre
                                   </div>
                                 )}
-                              </div>
+                              </button>
                             );
                           })}
                         </div>
@@ -395,6 +475,113 @@ useEffect(() => {
                   </button>
                 </div>
               </form>
+            </div>
+          )}
+
+          {modalLeito && (
+            <div className="carecore-modal-overlay fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4">
+              <div className="carecore-modal-panel w-full max-w-lg rounded-3xl bg-white p-6 shadow-2xl">
+                <div className="flex items-start justify-between gap-4 border-b border-slate-100 pb-4">
+                  <div>
+                    <p className="text-xs font-black uppercase tracking-wide text-brand">
+                      {modalLeito.quarto.nome}
+                    </p>
+                    <h2 className="mt-1 text-xl font-black text-slate-900">
+                      {modalLeito.leito.identificacao}
+                    </h2>
+                    <p className="mt-1 text-sm font-semibold text-slate-500">
+                      {modalLeito.leito.convivente_id
+                        ? `Ocupado por ${modalLeito.leito.convivente_nome_completo || modalLeito.leito.convivente_nome}`
+                        : 'Leito livre para alocação'}
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setModalLeito(null)}
+                    className="rounded-xl border border-slate-200 px-3 py-2 text-xs font-black text-slate-500 hover:bg-slate-50"
+                  >
+                    Fechar
+                  </button>
+                </div>
+
+                {modalLeito.leito.convivente_id ? (
+                  <div className="mt-5 space-y-4">
+                    <div className="rounded-2xl border border-amber-100 bg-amber-50 p-4 text-sm text-amber-800">
+                      Liberar este leito remove apenas o vínculo de acomodação. O convivente permanece ativo no sistema.
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={liberarLeito}
+                      disabled={salvandoAlocacao}
+                      className="w-full rounded-2xl bg-red-600 px-4 py-3 text-sm font-black text-white hover:bg-red-700 disabled:opacity-50"
+                    >
+                      {salvandoAlocacao ? 'Liberando...' : 'Liberar leito'}
+                    </button>
+                  </div>
+                ) : (
+                  <div className="mt-5 space-y-4">
+                    <input
+                      type="text"
+                      value={buscaConvivente}
+                      onChange={(e) => setBuscaConvivente(e.target.value)}
+                      placeholder="Buscar por nome, prontuário ou CPF"
+                      className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-brand"
+                    />
+
+                    <select
+                      value={conviventeSelecionadoId}
+                      onChange={(e) => setConviventeSelecionadoId(e.target.value)}
+                      className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm font-semibold outline-none focus:ring-2 focus:ring-brand"
+                    >
+                      <option value="">Selecione um convivente ativo...</option>
+                      {conviventesElegiveis.map(c => (
+                        <option key={c.id} value={c.id}>
+                          #{c.numero_institucional || 'S/N'} - {c.nome_social || c.nome_completo}
+                          {c.leito_id ? ' (transferir de outro leito)' : ''}
+                        </option>
+                      ))}
+                    </select>
+
+                    <button
+                      type="button"
+                      onClick={alocarConviventeNoLeito}
+                      disabled={salvandoAlocacao || !conviventeSelecionadoId}
+                      className="w-full rounded-2xl bg-brand px-4 py-3 text-sm font-black text-white hover:bg-brandDark disabled:opacity-50"
+                    >
+                      {salvandoAlocacao ? 'Alocando...' : 'Alocar neste leito'}
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {tooltipLeito && (
+            <div
+              className="pointer-events-none fixed z-[10000] w-64 rounded-2xl border border-slate-200 bg-white p-3 text-left shadow-2xl"
+              style={{ left: tooltipLeito.x, top: tooltipLeito.y }}
+            >
+              <div className="text-xs font-bold uppercase tracking-wide text-slate-400">
+                Convivente alocado
+              </div>
+
+              <div className="mt-1 text-sm font-semibold text-slate-900">
+                {tooltipLeito.leito.convivente_nome_completo || tooltipLeito.leito.convivente_nome || 'Não informado'}
+              </div>
+
+              <div className="mt-2 grid gap-1 text-xs text-slate-600">
+                <div>
+                  <span className="font-semibold text-slate-800">Prontuário:</span>{' '}
+                  {tooltipLeito.leito.numero_institucional ?? '--'}
+                </div>
+
+                <div>
+                  <span className="font-semibold text-slate-800">CPF:</span>{' '}
+                  {tooltipLeito.leito.cpf || '--'}
+                </div>
+              </div>
             </div>
           )}
 

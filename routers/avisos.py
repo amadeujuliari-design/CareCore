@@ -1,10 +1,11 @@
 # =====================================================================
 # ARQUIVO: routers/avisos.py
 # =====================================================================
-from datetime import datetime
-from typing import List
+from datetime import datetime, time, timedelta, timezone
+from typing import List, Optional
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -13,6 +14,7 @@ from models import AvisoDB, AvisoDestinatarioDB, UsuarioDB
 from schemas import (
     AvisoCreate,
     AvisoDashboardResponse,
+    AvisoHistoricoListResponse,
     AvisoResponse,
     AvisosResumoResponse,
     AvisoUpdate,
@@ -20,6 +22,11 @@ from schemas import (
 from security import get_usuario_logado
 
 router = APIRouter(prefix="/api/avisos", tags=["Avisos e Comunicação Interna"])
+try:
+    _FUSO_OPERACIONAL = ZoneInfo("America/Sao_Paulo")
+except ZoneInfoNotFoundError:
+    # Windows pode não trazer a base IANA de fusos sem o pacote tzdata.
+    _FUSO_OPERACIONAL = timezone(timedelta(hours=-3))
 
 
 def _usuario_id(usuario_atual: dict) -> str:
@@ -63,13 +70,43 @@ def _pode_gerenciar_avisos(usuario_atual: dict) -> bool:
     return _usuario_eh_gestor(usuario_atual)
 
 
+def _pode_consultar_historico_avisos(usuario_atual: dict) -> bool:
+    perfil = (usuario_atual.get("perfil_acesso") or usuario_atual.get("perfil") or "").lower()
+    return _pode_gerenciar_avisos(usuario_atual) or perfil in {
+        "global",
+        "técnico",
+        "tecnico",
+        "orientador",
+        "orientadora",
+    }
+
+
+def _agora_operacional_naive() -> datetime:
+    return datetime.now(_FUSO_OPERACIONAL).replace(tzinfo=None)
+
+
 def _aviso_ativo_e_valido():
-    agora = datetime.utcnow()
+    agora = _agora_operacional_naive()
     return and_(
         AvisoDB.ativo == True,  # noqa: E712
         AvisoDB.cancelado_em.is_(None),
         or_(AvisoDB.valido_ate.is_(None), AvisoDB.valido_ate >= agora),
     )
+
+
+def _parse_data_filtro(valor: Optional[str], fim_do_dia: bool = False) -> Optional[datetime]:
+    if not valor:
+        return None
+
+    try:
+        data = datetime.fromisoformat(valor.strip()).date()
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Data inválida. Use o formato AAAA-MM-DD.",
+        )
+
+    return datetime.combine(data, time.max if fim_do_dia else time.min)
 
 
 async def _ids_destinatarios_validos(
@@ -350,6 +387,86 @@ async def resumo_meus_avisos(
         # Este campo deve alimentar o card "Alertas ativos" e o badge do sininho.
         total_alertas_ativos=total_nao_lidos,
     )
+
+
+@router.get("/historico", response_model=AvisoHistoricoListResponse)
+async def listar_historico_avisos(
+    status_filtro: str = Query("baixados", pattern="^(ativos|baixados|todos)$"),
+    busca: Optional[str] = None,
+    classificacao: Optional[str] = None,
+    data_inicio: Optional[str] = None,
+    data_fim: Optional[str] = None,
+    limite: int = Query(10, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    instituicao_id = _instituicao_id(usuario_atual)
+
+    if not _pode_consultar_historico_avisos(usuario_atual):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Seu perfil não tem permissão para consultar o histórico de avisos.",
+        )
+
+    agora = _agora_operacional_naive()
+
+    consulta = select(AvisoDB).where(AvisoDB.instituicao_id == instituicao_id)
+    consulta_total = select(func.count(AvisoDB.id)).where(AvisoDB.instituicao_id == instituicao_id)
+
+    if status_filtro == "ativos":
+        consulta = consulta.where(_aviso_ativo_e_valido())
+        consulta_total = consulta_total.where(_aviso_ativo_e_valido())
+    elif status_filtro == "baixados":
+        filtro_baixados = or_(
+            AvisoDB.ativo == False,  # noqa: E712
+            AvisoDB.cancelado_em.is_not(None),
+            and_(AvisoDB.valido_ate.is_not(None), AvisoDB.valido_ate < agora),
+        )
+        consulta = consulta.where(filtro_baixados)
+        consulta_total = consulta_total.where(filtro_baixados)
+
+    busca_limpa = (busca or "").strip()
+    if busca_limpa:
+        termo = f"%{busca_limpa}%"
+        filtro_busca = or_(
+            AvisoDB.titulo.ilike(termo),
+            AvisoDB.mensagem.ilike(termo),
+        )
+        consulta = consulta.where(filtro_busca)
+        consulta_total = consulta_total.where(filtro_busca)
+
+    classificacao_limpa = (classificacao or "").strip()
+    if classificacao_limpa:
+        consulta = consulta.where(AvisoDB.classificacao == classificacao_limpa)
+        consulta_total = consulta_total.where(AvisoDB.classificacao == classificacao_limpa)
+
+    inicio = _parse_data_filtro(data_inicio)
+    if inicio:
+        consulta = consulta.where(AvisoDB.criado_em >= inicio)
+        consulta_total = consulta_total.where(AvisoDB.criado_em >= inicio)
+
+    fim = _parse_data_filtro(data_fim, fim_do_dia=True)
+    if fim:
+        consulta = consulta.where(AvisoDB.criado_em <= fim)
+        consulta_total = consulta_total.where(AvisoDB.criado_em <= fim)
+
+    total = (await db.execute(consulta_total)).scalar_one()
+
+    resultado = await db.execute(
+        consulta.order_by(AvisoDB.criado_em.desc()).offset(offset).limit(limite)
+    )
+
+    items = resultado.scalars().all()
+    total_int = int(total or 0)
+
+    return {
+        "items": items,
+        "total": total_int,
+        "limit": limite,
+        "offset": offset,
+        "has_more": offset + limite < total_int,
+    }
 
 
 @router.patch("/{aviso_id}/lido")

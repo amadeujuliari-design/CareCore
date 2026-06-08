@@ -5,12 +5,12 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import { Html5Qrcode } from 'html5-qrcode';
 import Sidebar from './Sidebar';
 import AuthenticatedImage from './components/AuthenticatedImage';
 import { AppShell, MainShell, PageHeader, PremiumButton, ScrollArea } from './components/PremiumUI';
 import { API_ROOT } from './config/apiBase';
 import { useDeviceInfo } from './hooks/useDeviceInfo';
+import { criarHeadersAutenticados } from './utils/requestIdUtils';
 import {
   calcularResumoRotinaDiaria,
   criarItemHistoricoLeitura,
@@ -23,6 +23,19 @@ import {
   registroAindaPodeSerDesfeitoRotina,
   tocarBeep,
 } from './utils/rotinaDiariaUtils';
+
+const OPCOES_INTERACAO_ROTINA = [
+  { valor: 'Café da manhã', label: 'Café da manhã', grupo: 'refeicao' },
+  { valor: 'Almoço', label: 'Almoço', grupo: 'refeicao' },
+  { valor: 'Jantar', label: 'Jantar', grupo: 'refeicao' },
+  { valor: 'Lanche noturno', label: 'Lanche noturno', grupo: 'refeicao' },
+  { valor: 'Banho', label: 'Banho', grupo: 'simples' },
+  { valor: 'Cobertor', label: 'Cobertor (sugerir retirada/entrega)', grupo: 'par' },
+  { valor: 'Toalha', label: 'Toalha (sugerir retirada/entrega)', grupo: 'par' },
+  { valor: 'Movimentação de Bagageiro', label: 'Movimentação de Bagageiro', grupo: 'observacao' },
+  { valor: 'Bipar documentos guardados', label: 'Documentos guardados', grupo: 'observacao' },
+  { valor: 'Bipar documentos retirados', label: 'Documentos retirados', grupo: 'observacao' },
+];
 
 export default function RotinaDiaria() {
   const navigate = useNavigate();
@@ -43,6 +56,11 @@ export default function RotinaDiaria() {
   const [feedback, setFeedback] = useState(null);
   const [modoAutomatico, setModoAutomatico] = useState(true);
   const [tipoBipagemAutomatica, setTipoBipagemAutomatica] = useState('fluxo');
+  const [interacaoSelecionada, setInteracaoSelecionada] = useState('Almoço');
+  const [interacaoConfirmacao, setInteracaoConfirmacao] = useState(null);
+  const [interacaoObservacaoPendente, setInteracaoObservacaoPendente] = useState(null);
+  const [observacaoInteracao, setObservacaoInteracao] = useState('');
+  const [resumoInteracoesAberto, setResumoInteracoesAberto] = useState(false);
   const [historicoLeituras, setHistoricoLeituras] = useState([]);
   const [agoraDesfazer, setAgoraDesfazer] = useState(Date.now());
   const [retornoRapidoPendente, setRetornoRapidoPendente] = useState(null);
@@ -51,6 +69,7 @@ export default function RotinaDiaria() {
   const ultimaLeituraRef = useRef('');
   const ultimaLeituraTempoRef = useRef(0);
   const assinaturaSyncRotinaRef = useRef(null);
+  const processarCodigoLidoRef = useRef(null);
 
   useEffect(() => {
     if (!token) {
@@ -77,10 +96,43 @@ export default function RotinaDiaria() {
     if (!scannerAberto) return;
 
     try {
+      setScannerErro('');
+
+      if (!navigator.mediaDevices?.getUserMedia) {
+        setScannerErro('Este navegador não disponibilizou acesso à câmera. Use o campo manual abaixo.');
+        return;
+      }
+
+      // Garante que o modal e o elemento #leitor-camera já foram renderizados.
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      if (!ativo) return;
+
+      const elementoLeitor = document.getElementById("leitor-camera");
+      if (!elementoLeitor) {
+        setScannerErro('Não foi possível preparar o leitor da câmera. Feche e abra o leitor novamente.');
+        return;
+      }
+
+      const { Html5Qrcode } = await import('html5-qrcode');
+      if (!ativo) return;
+
+      const cameras = await Html5Qrcode.getCameras();
+      if (!cameras?.length) {
+        setScannerErro('Nenhuma câmera foi encontrada neste computador. Verifique as permissões do Windows e do navegador.');
+        return;
+      }
+
+      const cameraPreferida = cameras.find((camera) => {
+        const label = String(camera.label || '').toLowerCase();
+        return deviceInfo.isTouchDevice
+          ? /back|rear|environment|traseira/.test(label)
+          : /front|user|integrated|webcam|camera|câmera/.test(label);
+      }) || cameras[0];
+
       leitor = new Html5Qrcode("leitor-camera");
 
       await leitor.start(
-        { facingMode: { ideal: deviceInfo.isTouchDevice ? "environment" : "user" } },
+        cameraPreferida.id,
         {
           fps: 10,
           qrbox: {
@@ -92,16 +144,29 @@ export default function RotinaDiaria() {
 
   if (!ativo) return;
 
-  processarCodigoLido(codigoLido);
+  processarCodigoLidoRef.current?.(codigoLido);
 
 },
         () => {}
       );
     } catch (error) {
       console.error("Erro ao iniciar câmera QR:", error);
+      const nomeErro = error?.name || '';
+      const mensagemErro = String(error?.message || error || '');
+      const detalhe =
+        nomeErro === 'NotAllowedError'
+          ? 'A câmera foi bloqueada pelo navegador ou pelo Windows.'
+          : nomeErro === 'NotFoundError'
+            ? 'Nenhuma câmera foi encontrada neste computador.'
+            : nomeErro === 'NotReadableError'
+              ? 'A câmera pode estar em uso por outro aplicativo.'
+              : mensagemErro.includes('Permission')
+                ? 'A permissão da câmera ainda parece bloqueada.'
+                : '';
+
       setScannerErro(
         deviceInfo.isSecureCameraContext
-          ? "Não foi possível iniciar a câmera para leitura do QR Code. Verifique a permissão do navegador."
+          ? `Não foi possível iniciar a câmera para leitura do QR Code. ${detalhe || 'Verifique se a câmera está livre e permitida no navegador.'}`
           : "O navegador do celular pode bloquear câmera em endereço local HTTP. Use o campo manual abaixo ou acesse por HTTPS quando publicado."
       );
     }
@@ -114,6 +179,7 @@ export default function RotinaDiaria() {
 
   if (leitor) {
     try {
+      leitor.stop?.();
       leitor.clear();
     } catch {
       // Leitor pode já ter sido encerrado pelo navegador.
@@ -129,7 +195,7 @@ export default function RotinaDiaria() {
 
     try {
       const config = {
-        headers: { Authorization: `Bearer ${token}` }
+        headers: criarHeadersAutenticados(token)
       };
 
       const [resConv, resRotina] = await Promise.all([
@@ -170,7 +236,7 @@ export default function RotinaDiaria() {
   const verificarSincronizacaoRotina = async () => {
     try {
       const response = await axios.get(`${API_ROOT}/rotina/sync-status`, {
-        headers: { Authorization: `Bearer ${token}` }
+        headers: criarHeadersAutenticados(token)
       });
       const assinaturaAtual = obterAssinaturaSyncRotina(response.data || {});
 
@@ -240,6 +306,70 @@ export default function RotinaDiaria() {
     return exigeJustificativaRetornoRapidoRotina(resumoHoje, conviventeId, tipoRegistro);
   };
 
+  const obterProximaInteracaoPar = (conviventeId, grupo) => {
+    const ultima = resumoHoje[conviventeId]?.ultimas_interacoes?.[grupo]?.tipo_registro || '';
+
+    if (grupo === 'Toalha') {
+      return ultima === 'Retirada de Toalha' ? 'Entrega de Toalha' : 'Retirada de Toalha';
+    }
+
+    if (grupo === 'Cobertor') {
+      return ultima === 'Retirada de Cobertor' ? 'Entrega de Cobertor' : 'Retirada de Cobertor';
+    }
+
+    return null;
+  };
+
+  const conviventeEstaFora = (conviventeId) => resumoHoje[conviventeId]?.ultimo_movimento === 'Saída';
+
+  const avisarConviventeFora = (convivente, tipoRegistro = 'Interação') => {
+    const mensagem = 'Convivente está fora da unidade. Registre uma entrada antes de qualquer interação.';
+
+    setFeedback({
+      tipo: 'Erro',
+      nome: mensagem,
+      horario: new Date().toLocaleTimeString('pt-BR', {
+        hour: '2-digit',
+        minute: '2-digit'
+      })
+    });
+
+    setTimeout(() => {
+      setFeedback(null);
+    }, 3200);
+
+    adicionarHistorico({
+      convivente,
+      tipo: tipoRegistro,
+      status: 'Erro',
+      mensagem
+    });
+  };
+
+  const solicitarRegistroInteracao = (convivente) => {
+    const opcao = OPCOES_INTERACAO_ROTINA.find(item => item.valor === interacaoSelecionada);
+    if (!opcao) return;
+
+    if (conviventeEstaFora(convivente.id)) {
+      avisarConviventeFora(convivente, opcao.valor);
+      return;
+    }
+
+    if (opcao.grupo === 'par') {
+      const tipoSugerido = obterProximaInteracaoPar(convivente.id, opcao.valor);
+      const ultima = resumoHoje[convivente.id]?.ultimas_interacoes?.[opcao.valor] || null;
+      setInteracaoConfirmacao({ convivente, tipoRegistro: tipoSugerido, grupo: opcao.valor, ultima });
+      return;
+    }
+
+    if (opcao.grupo === 'observacao') {
+      setInteracaoObservacaoPendente({ convivente, tipoRegistro: opcao.valor });
+      setObservacaoInteracao('');
+      return;
+    }
+
+    handleRegistrar(convivente.id, opcao.valor, convivente);
+  };
 
   const processarCodigoLido = (codigoBruto) => {
     const codigo = normalizarCodigo(codigoBruto);
@@ -302,14 +432,21 @@ export default function RotinaDiaria() {
     setBusca('');
 
     if (modoAutomatico) {
-      const acao = tipoBipagemAutomatica === 'almoco'
-        ? 'Almoço'
-        : definirAcaoAutomatica(pacienteEncontrado.id);
+      if (tipoBipagemAutomatica === 'interacao') {
+        solicitarRegistroInteracao(pacienteEncontrado);
+        return;
+      }
+
+      const acao = definirAcaoAutomatica(pacienteEncontrado.id);
       handleRegistrar(pacienteEncontrado.id, acao, pacienteEncontrado);
     } else {
       setPacienteEscaneado(pacienteEncontrado);
     }
   };
+
+  useEffect(() => {
+    processarCodigoLidoRef.current = processarCodigoLido;
+  });
 
   const handleBuscaKeyDown = (e) => {
     if (e.key === 'Enter' && busca.trim() !== '') {
@@ -323,11 +460,16 @@ export default function RotinaDiaria() {
     conviventePreCarregado = null,
     opcoes = {}
   ) => {
-    setProcessandoAcao(`${conviventeId}-${tipoRegistro}`);
-
     const convivente =
       conviventePreCarregado ||
       conviventes.find(c => c.id === conviventeId);
+
+    if (tipoRegistro !== 'Entrada' && conviventeEstaFora(conviventeId)) {
+      avisarConviventeFora(convivente, tipoRegistro);
+      return;
+    }
+
+    setProcessandoAcao(`${conviventeId}-${tipoRegistro}`);
 
     if (
       exigeJustificativaRetornoRapido(conviventeId, tipoRegistro) &&
@@ -349,12 +491,16 @@ export default function RotinaDiaria() {
         tipo_registro: tipoRegistro
       };
 
+      if (opcoes.observacao) {
+        payload.observacao = opcoes.observacao;
+      }
+
       if (opcoes.justificativaRetornoRapido) {
         payload.justificativa_retorno_rapido = opcoes.justificativaRetornoRapido;
       }
 
       const resposta = await axios.post(`${API_ROOT}/rotina`, payload, {
-        headers: { Authorization: `Bearer ${token}` }
+        headers: criarHeadersAutenticados(token)
       });
 
       const registroCriado = resposta.data || {};
@@ -377,10 +523,41 @@ export default function RotinaDiaria() {
           novoResumo.almocou = true;
         }
 
+        if (['Café da manhã', 'Almoço', 'Jantar', 'Lanche noturno'].includes(tipoRegistro)) {
+          novoResumo.refeicoes = {
+            ...(novoResumo.refeicoes || {}),
+            [tipoRegistro]: {
+              id: registroCriado.id || null,
+              data_registro: registroCriado.data_registro || new Date().toISOString(),
+            },
+          };
+        }
+
+        if (['Retirada de Cobertor', 'Entrega de Cobertor'].includes(tipoRegistro)) {
+          novoResumo.ultimas_interacoes = {
+            ...(novoResumo.ultimas_interacoes || {}),
+            Cobertor: {
+              tipo_registro: tipoRegistro,
+              data_registro: registroCriado.data_registro || new Date().toISOString(),
+            },
+          };
+        }
+
+        if (['Retirada de Toalha', 'Entrega de Toalha'].includes(tipoRegistro)) {
+          novoResumo.ultimas_interacoes = {
+            ...(novoResumo.ultimas_interacoes || {}),
+            Toalha: {
+              tipo_registro: tipoRegistro,
+              data_registro: registroCriado.data_registro || new Date().toISOString(),
+            },
+          };
+        }
+
         if (registroCriado.id) {
           novoResumo.presencas.push({
             id: registroCriado.id,
             tipo_registro: tipoRegistro,
+            observacao: registroCriado.observacao || opcoes.observacao || null,
             data_registro: registroCriado.data_registro || new Date().toISOString(),
             usuario_id: registroCriado.usuario_id,
             retorno_rapido: registroCriado.retorno_rapido === true,
@@ -492,7 +669,7 @@ export default function RotinaDiaria() {
         `${API_ROOT}/rotina/${item.registroId}/desfazer`,
         {},
         {
-          headers: { Authorization: `Bearer ${token}` }
+          headers: criarHeadersAutenticados(token)
         }
       );
 
@@ -541,8 +718,24 @@ export default function RotinaDiaria() {
   };
 
   const conviventesFiltrados = filtrarConviventesRotina(conviventes, busca);
-  const { totalFora, totalDentro, totalAlmocos } =
+  const { totalFora, totalDentro, totalInteracoesRotina } =
     calcularResumoRotinaDiaria(conviventes, resumoHoje);
+  const resumoInteracoesPorTipo = Object.values(resumoHoje).reduce((acc, resumo) => {
+    const presencas = Array.isArray(resumo?.presencas) ? resumo.presencas : [];
+    presencas.forEach((registro) => {
+      if (['Entrada', 'Saída'].includes(registro.tipo_registro)) return;
+      acc[registro.tipo_registro] = (acc[registro.tipo_registro] || 0) + 1;
+    });
+    return acc;
+  }, {});
+  const resumoInteracoesLista = Object.entries(resumoInteracoesPorTipo)
+    .sort(([, totalA], [, totalB]) => totalB - totalA);
+  const resumoInteracoesTooltip = resumoInteracoesLista.length
+    ? resumoInteracoesLista.map(([tipo, total]) => `${tipo}: ${total}`).join('\n')
+    : 'Nenhuma interação de rotina registrada hoje.';
+  const placeholderBusca = modoAutomatico && tipoBipagemAutomatica === 'interacao'
+    ? 'Digite o código do prontuário para registrar a interação selecionada...'
+    : 'Buscar nome, prontuário, CPF ou bipar leitor USB...';
   const ultimoRegistroDesfazivel = historicoLeituras.find(
     item => item.registroId && item.status === 'Sucesso' && registroAindaPodeSerDesfeito(item)
   );
@@ -579,7 +772,7 @@ export default function RotinaDiaria() {
                 title="Escolha o que o bip automático deve registrar"
               >
                 <option value="fluxo">Bipar entrada/saída</option>
-                <option value="almoco">Bipar almoço</option>
+                <option value="interacao">Bipar interação</option>
               </select>
             )}
 
@@ -633,40 +826,72 @@ export default function RotinaDiaria() {
               </div>
             </div>
 
-            <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-between">
+            <button
+              type="button"
+              onClick={() => setResumoInteracoesAberto(true)}
+              title={resumoInteracoesTooltip}
+              className="group relative bg-white p-5 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-between text-left hover:border-blue-200 hover:shadow-md transition-all"
+            >
               <div>
                 <p className="text-xs text-gray-500 font-bold uppercase tracking-wide">
-                  Almoços Servidos
+                  Interações de Rotina
                 </p>
                 <p className="text-2xl font-black text-gray-800 mt-1">
-                  {totalAlmocos}
+                  {totalInteracoesRotina}
+                </p>
+                <p className="mt-1 text-[11px] font-bold text-blue-600">
+                  Clique para ver por tipo
                 </p>
               </div>
               <div className="w-12 h-12 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-xl shadow-sm">
                 ◌
               </div>
-            </div>
+              <div className="pointer-events-none absolute right-4 top-full z-20 mt-2 hidden w-64 rounded-xl border border-gray-100 bg-white p-3 text-xs font-semibold text-gray-700 shadow-xl group-hover:block">
+                {resumoInteracoesLista.length === 0 ? (
+                  <p className="text-gray-400">Nenhuma interação registrada hoje.</p>
+                ) : (
+                  resumoInteracoesLista.slice(0, 8).map(([tipo, total]) => (
+                    <div key={tipo} className="flex items-center justify-between gap-3 py-1">
+                      <span className="truncate">{tipo}</span>
+                      <span className="font-black text-blue-700">{total}</span>
+                    </div>
+                  ))
+                )}
+              </div>
+            </button>
           </div>
 
           <div className="bg-white p-4 sm:p-6 rounded-2xl shadow-sm border border-gray-100">
             <div className="flex flex-col md:flex-row justify-between gap-4 mb-6">
-              <input
-                type="text"
-                placeholder="Buscar nome, prontuário, CPF ou bipar leitor USB..."
-                value={busca}
-                onChange={(e) => setBusca(e.target.value)}
-                onKeyDown={handleBuscaKeyDown}
-                className="w-full md:w-[450px] px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-brand outline-none bg-gray-50 text-sm font-medium shadow-inner"
-                autoFocus
-              />
+              <div className="flex w-full flex-col gap-2 md:w-[560px] sm:flex-row">
+                <input
+                  type="text"
+                  placeholder={placeholderBusca}
+                  value={busca}
+                  onChange={(e) => setBusca(e.target.value)}
+                  onKeyDown={handleBuscaKeyDown}
+                  className="min-h-12 flex-1 px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-brand outline-none bg-gray-50 text-sm font-medium shadow-inner"
+                  autoFocus
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!busca.trim()) return;
+                    processarCodigoLido(busca.trim());
+                  }}
+                  className="min-h-12 rounded-xl bg-gray-900 px-4 py-2 text-xs font-black text-white hover:bg-black"
+                >
+                  Registrar manual
+                </button>
+              </div>
 
               <div className="text-xs text-gray-400 flex items-center gap-2">
                 <span className="font-bold bg-gray-200 px-2 py-1 rounded">
                   Modo atual:
                 </span>
                 {modoAutomatico
-                  ? tipoBipagemAutomatica === 'almoco'
-                    ? 'Bipou, registra Almoço automaticamente.'
+                  ? tipoBipagemAutomatica === 'interacao'
+                    ? `Bipou, registra interação: ${OPCOES_INTERACAO_ROTINA.find(item => item.valor === interacaoSelecionada)?.label || interacaoSelecionada}.`
                     : 'Bipou, registra Entrada/Saída automaticamente.'
                   : 'Bipou, abre modal para escolher a ação.'}
               </div>
@@ -680,8 +905,8 @@ export default function RotinaDiaria() {
                       Tipo de bipagem automática
                     </p>
                     <p className="mt-1 text-sm font-semibold text-blue-900">
-                      {tipoBipagemAutomatica === 'almoco'
-                        ? 'Cada leitura registra almoço direto para o acolhido.'
+                      {tipoBipagemAutomatica === 'interacao'
+                        ? 'Cada leitura registra ou confirma a interação de rotina selecionada.'
                         : 'Cada leitura alterna Entrada ou Saída conforme o último movimento.'}
                     </p>
                   </div>
@@ -701,17 +926,41 @@ export default function RotinaDiaria() {
 
                     <button
                       type="button"
-                      onClick={() => setTipoBipagemAutomatica('almoco')}
+                      onClick={() => setTipoBipagemAutomatica('interacao')}
                       className={`min-h-11 rounded-xl px-4 py-2 text-xs font-black transition-colors ${
-                        tipoBipagemAutomatica === 'almoco'
+                        tipoBipagemAutomatica === 'interacao'
                           ? 'bg-blue-600 text-white shadow-sm'
                           : 'bg-white text-blue-700 border border-blue-100'
                       }`}
                     >
-                      Almoço
+                      Interação
                     </button>
                   </div>
                 </div>
+
+                {tipoBipagemAutomatica === 'interacao' && (
+                  <div className="mt-4 grid grid-cols-1 gap-2 md:grid-cols-[1fr_auto] md:items-end">
+                    <div>
+                      <label className="mb-1 block text-[10px] font-black uppercase tracking-wide text-blue-700">
+                        Tipo de interação
+                      </label>
+                      <select
+                        value={interacaoSelecionada}
+                        onChange={(event) => setInteracaoSelecionada(event.target.value)}
+                        className="min-h-11 w-full rounded-xl border border-blue-100 bg-white px-3 py-2 text-sm font-bold text-blue-800 outline-none"
+                      >
+                        {OPCOES_INTERACAO_ROTINA.map((opcao) => (
+                          <option key={opcao.valor} value={opcao.valor}>
+                            {opcao.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <p className="rounded-xl bg-white px-3 py-2 text-xs font-semibold text-blue-700 border border-blue-100">
+                      Refeições bloqueiam duplicidade no dia; toalha/cobertor sugerem a próxima ação.
+                    </p>
+                  </div>
+                )}
               </div>
             )}
 
@@ -838,7 +1087,6 @@ export default function RotinaDiaria() {
                 {conviventesFiltrados.map((c, index) => {
                   const resumo = resumoHoje[c.id] || {};
                   const isFora = resumo.ultimo_movimento === 'Saída';
-                  const almocou = resumo.almocou === true;
                   const isLast = index === conviventesFiltrados.length - 1;
                   const fotoUrl = getFotoUrl(c);
 
@@ -854,6 +1102,7 @@ export default function RotinaDiaria() {
                               caminhoOuUrl={fotoUrl}
                               alt="Foto"
                               className="w-full h-full object-cover"
+                              lazy
                             />
                           ) : (
                             <span className="text-lg opacity-40">○</span>
@@ -917,12 +1166,12 @@ export default function RotinaDiaria() {
                         </button>
 
                         <button
-                          onClick={() => handleRegistrar(c.id, 'Almoço')}
-                          disabled={almocou || isFora || processandoAcao === `${c.id}-Almoço`}
+                          onClick={() => solicitarRegistroInteracao(c)}
+                          disabled={isFora || processandoAcao === `${c.id}-${interacaoSelecionada}`}
                           className={`min-h-11 md:min-h-0 px-3 py-2 md:py-1.5 rounded-md text-xs font-bold transition-all shadow-sm flex items-center justify-center gap-1.5 md:min-w-[90px]
-                            ${almocou || isFora ? 'bg-gray-100 text-gray-400 cursor-not-allowed opacity-60' : 'bg-blue-500 hover:bg-blue-600 text-white active:scale-95'}`}
+                            ${isFora ? 'bg-gray-100 text-gray-400 cursor-not-allowed opacity-60' : 'bg-blue-500 hover:bg-blue-600 text-white active:scale-95'}`}
                         >
-                          <span className="text-[11px] sm:text-xs">{almocou ? 'Almoçou' : 'Almoço'}</span>
+                          <span className="text-[11px] sm:text-xs">Interação</span>
                         </button>
 
                       </div>
@@ -935,8 +1184,8 @@ export default function RotinaDiaria() {
           </div>
         </ScrollArea>
       {scannerAberto && (
-        <div className="fixed inset-0 bg-gray-900/90 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
-          <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden flex flex-col">
+        <div className="carecore-modal-overlay fixed inset-0 bg-gray-900/90 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+          <div className="carecore-modal-panel bg-white w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden flex flex-col">
             <div className="bg-gray-800 p-4 flex justify-between items-center text-white">
               <h2 className="font-bold">Posicione o QR Code na câmera</h2>
               <button
@@ -974,8 +1223,21 @@ export default function RotinaDiaria() {
                   className="min-h-11 w-full rounded-xl border border-blue-100 bg-white px-3 py-2 text-sm font-bold text-blue-800 outline-none"
                 >
                   <option value="fluxo">Entrada/Saída conforme presença</option>
-                  <option value="almoco">Almoço direto</option>
+                  <option value="interacao">Interação selecionada</option>
                 </select>
+                {tipoBipagemAutomatica === 'interacao' && (
+                  <select
+                    value={interacaoSelecionada}
+                    onChange={(event) => setInteracaoSelecionada(event.target.value)}
+                    className="mt-2 min-h-11 w-full rounded-xl border border-blue-100 bg-white px-3 py-2 text-sm font-bold text-blue-800 outline-none"
+                  >
+                    {OPCOES_INTERACAO_ROTINA.map((opcao) => (
+                      <option key={opcao.valor} value={opcao.valor}>
+                        {opcao.label}
+                      </option>
+                    ))}
+                  </select>
+                )}
               </div>
             )}
 
@@ -998,7 +1260,7 @@ export default function RotinaDiaria() {
                   value={codigoManualScanner}
                   onChange={(event) => setCodigoManualScanner(event.target.value)}
                   className="min-h-11 flex-1 rounded-xl border border-gray-200 px-3 py-2 text-sm outline-none focus:border-brand"
-                  placeholder="Digite CPF, prontuário ou código do QR"
+                  placeholder="Digite o código do prontuário, CPF ou QR Code"
                 />
                 <button
                   type="submit"
@@ -1011,8 +1273,8 @@ export default function RotinaDiaria() {
 
             <div className="p-4 bg-gray-50 text-center text-sm text-gray-600">
               {modoAutomatico
-                ? tipoBipagemAutomatica === 'almoco'
-                  ? 'Modo automático ativo: a leitura registra Almoço diretamente.'
+                ? tipoBipagemAutomatica === 'interacao'
+                  ? 'Modo automático ativo: a leitura registra a interação selecionada.'
                   : 'Modo automático ativo: a leitura registra Entrada ou Saída automaticamente.'
                 : 'Modo manual ativo: a leitura abre o painel de ações.'}
             </div>
@@ -1023,12 +1285,11 @@ export default function RotinaDiaria() {
       {pacienteEscaneado && (() => {
         const pInfo = resumoHoje[pacienteEscaneado.id] || {};
         const isFora = pInfo.ultimo_movimento === 'Saída';
-        const almocou = pInfo.almocou === true;
         const fotoUrl = getFotoUrl(pacienteEscaneado);
 
         return (
-          <div className="fixed inset-0 bg-gray-900/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
-            <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden">
+          <div className="carecore-modal-overlay fixed inset-0 bg-gray-900/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+            <div className="carecore-modal-panel bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden">
               <div className="bg-brand p-5 flex justify-between items-center text-white">
                 <h2 className="text-lg font-bold">Acolhido Identificado</h2>
                 <button
@@ -1089,14 +1350,30 @@ export default function RotinaDiaria() {
                     Registrar saída
                   </button>
 
-                  <button
-                    onClick={() => handleRegistrar(pacienteEscaneado.id, 'Almoço')}
-                    disabled={almocou || isFora}
-                    className={`py-3 rounded-xl font-bold transition-all flex justify-center items-center gap-2 text-sm shadow-md
-                      ${almocou || isFora ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : 'bg-blue-500 hover:bg-blue-600 text-white'}`}
-                  >
-                    {almocou ? 'Almoço já registrado' : 'Registrar almoço'}
-                  </button>
+                  <div className="rounded-2xl border border-blue-100 bg-blue-50 p-3 text-left">
+                    <label className="mb-2 block text-[10px] font-black uppercase tracking-wide text-blue-700">
+                      Registrar interação
+                    </label>
+                    <select
+                      value={interacaoSelecionada}
+                      onChange={(event) => setInteracaoSelecionada(event.target.value)}
+                      className="mb-2 min-h-11 w-full rounded-xl border border-blue-100 bg-white px-3 py-2 text-sm font-bold text-blue-800 outline-none"
+                    >
+                      {OPCOES_INTERACAO_ROTINA.map((opcao) => (
+                        <option key={opcao.valor} value={opcao.valor}>
+                          {opcao.label}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      onClick={() => solicitarRegistroInteracao(pacienteEscaneado)}
+                      disabled={isFora}
+                      className={`w-full py-3 rounded-xl font-bold transition-all flex justify-center items-center gap-2 text-sm shadow-md
+                        ${isFora ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : 'bg-blue-500 hover:bg-blue-600 text-white'}`}
+                    >
+                      Registrar interação selecionada
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1104,9 +1381,121 @@ export default function RotinaDiaria() {
         );
       })()}
 
+      {interacaoConfirmacao && (
+        <div className="carecore-modal-overlay fixed inset-0 bg-gray-900/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+          <div className="carecore-modal-panel bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden">
+            <div className="bg-blue-600 p-5 flex justify-between items-center text-white">
+              <h2 className="text-lg font-bold">Confirmar interação</h2>
+              <button
+                onClick={() => setInteracaoConfirmacao(null)}
+                className="text-white/80 hover:text-white text-xl"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <p className="text-sm text-gray-700 leading-relaxed">
+                {interacaoConfirmacao.ultima
+                  ? `Última movimentação de ${interacaoConfirmacao.grupo}: ${interacaoConfirmacao.ultima.tipo_registro} em ${new Date(interacaoConfirmacao.ultima.data_registro).toLocaleString('pt-BR')}.`
+                  : `Não há movimentação anterior de ${interacaoConfirmacao.grupo} hoje.`}
+              </p>
+              <p className="rounded-xl bg-blue-50 border border-blue-100 p-3 text-sm font-black text-blue-800">
+                Vou registrar: {interacaoConfirmacao.tipoRegistro}. Confirma?
+              </p>
+
+              <div className="flex justify-end gap-3 pt-2">
+                <button
+                  onClick={() => setInteracaoConfirmacao(null)}
+                  className="px-4 py-2 rounded-lg text-sm font-bold bg-gray-100 text-gray-600 hover:bg-gray-200"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={() => {
+                    handleRegistrar(
+                      interacaoConfirmacao.convivente.id,
+                      interacaoConfirmacao.tipoRegistro,
+                      interacaoConfirmacao.convivente,
+                    );
+                    setInteracaoConfirmacao(null);
+                  }}
+                  className="px-4 py-2 rounded-lg text-sm font-bold bg-blue-600 text-white hover:bg-blue-700 shadow-sm"
+                >
+                  Confirmar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {interacaoObservacaoPendente && (
+        <div className="carecore-modal-overlay fixed inset-0 bg-gray-900/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+          <div className="carecore-modal-panel bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden">
+            <div className="bg-slate-800 p-5 flex justify-between items-center text-white">
+              <h2 className="text-lg font-bold">Relato obrigatório</h2>
+              <button
+                onClick={() => {
+                  setInteracaoObservacaoPendente(null);
+                  setObservacaoInteracao('');
+                }}
+                className="text-white/80 hover:text-white text-xl"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <p className="text-sm font-semibold text-gray-700">
+                {interacaoObservacaoPendente.tipoRegistro}
+              </p>
+              <textarea
+                value={observacaoInteracao}
+                onChange={(e) => setObservacaoInteracao(e.target.value)}
+                rows={4}
+                className="w-full border border-gray-300 rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-brand"
+                placeholder="Descreva a movimentação ou especifique os documentos..."
+                autoFocus
+              />
+
+              <div className="flex justify-end gap-3 pt-2">
+                <button
+                  onClick={() => {
+                    setInteracaoObservacaoPendente(null);
+                    setObservacaoInteracao('');
+                  }}
+                  className="px-4 py-2 rounded-lg text-sm font-bold bg-gray-100 text-gray-600 hover:bg-gray-200"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={() => {
+                    const observacao = observacaoInteracao.trim();
+                    if (!observacao) return;
+                    handleRegistrar(
+                      interacaoObservacaoPendente.convivente.id,
+                      interacaoObservacaoPendente.tipoRegistro,
+                      interacaoObservacaoPendente.convivente,
+                      { observacao },
+                    );
+                    setInteracaoObservacaoPendente(null);
+                    setObservacaoInteracao('');
+                  }}
+                  disabled={!observacaoInteracao.trim()}
+                  className="px-4 py-2 rounded-lg text-sm font-bold bg-brand text-white hover:bg-brandDark shadow-sm disabled:opacity-50"
+                >
+                  Registrar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {retornoRapidoPendente && (
-        <div className="fixed inset-0 bg-gray-900/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
-          <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden">
+        <div className="carecore-modal-overlay fixed inset-0 bg-gray-900/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+          <div className="carecore-modal-panel bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden">
             <div className="bg-yellow-500 p-5 flex justify-between items-center text-white">
               <h2 className="text-lg font-bold">Retorno rápido detectado</h2>
               <button
@@ -1153,6 +1542,47 @@ export default function RotinaDiaria() {
                   Confirmar Entrada
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {resumoInteracoesAberto && (
+        <div className="carecore-modal-overlay fixed inset-0 bg-gray-900/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+          <div className="carecore-modal-panel bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden">
+            <div className="bg-blue-600 p-5 flex justify-between items-center text-white">
+              <div>
+                <h2 className="text-lg font-bold">Interações de rotina</h2>
+                <p className="text-xs text-blue-100 mt-1">Somas registradas hoje por tipo.</p>
+              </div>
+              <button
+                onClick={() => setResumoInteracoesAberto(false)}
+                className="text-white/80 hover:text-white text-xl"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="p-5">
+              <div className="rounded-2xl border border-blue-100 bg-blue-50 p-4 mb-4">
+                <p className="text-[10px] font-black uppercase tracking-wide text-blue-600">Total de interações</p>
+                <p className="text-3xl font-black text-blue-900 mt-1">{totalInteracoesRotina}</p>
+              </div>
+
+              {resumoInteracoesLista.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-gray-200 bg-gray-50 p-8 text-center text-sm font-semibold text-gray-500">
+                  Nenhuma interação de rotina registrada hoje.
+                </div>
+              ) : (
+                <div className="space-y-2 max-h-[50vh] overflow-y-auto">
+                  {resumoInteracoesLista.map(([tipo, total]) => (
+                    <div key={tipo} className="flex items-center justify-between rounded-xl border border-gray-100 bg-gray-50 px-4 py-3">
+                      <span className="text-sm font-bold text-gray-700">{tipo}</span>
+                      <span className="rounded-full bg-blue-100 px-3 py-1 text-sm font-black text-blue-700">{total}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </div>

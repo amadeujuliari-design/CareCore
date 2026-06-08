@@ -2,6 +2,27 @@ import zipfile
 from io import BytesIO
 from xml.sax.saxutils import escape
 
+DIREITOS_RESERVADOS_TITULO = "© 2026 CARECORE+. Todos os direitos reservados."
+DIREITOS_RESERVADOS_TEXTO = (
+    "Sistema, código-fonte, banco de dados, telas, fluxos operacionais, documentação, "
+    "relatórios e identidade visual protegidos pela Lei nº 9.610/1998 (Lei de Direitos Autorais), "
+    "pela Lei nº 9.609/1998 (Lei do Software) e pela legislação aplicável, sem prejuízo da "
+    "Lei nº 13.709/2018 (LGPD) quando houver tratamento de dados pessoais. "
+    "É proibida a cópia, reprodução, engenharia reversa, distribuição, modificação, cessão, "
+    "revenda ou utilização por terceiros sem autorização expressa e por escrito do titular."
+)
+DIREITOS_RESERVADOS_URL = "https://carecoreplus.com.br/direitos-reservados"
+
+
+def _adicionar_aviso_direitos_reservados(linhas: list[list]) -> list[list]:
+    return [
+        *linhas,
+        [],
+        [DIREITOS_RESERVADOS_TITULO],
+        [DIREITOS_RESERVADOS_TEXTO],
+        [f"Página pública: {DIREITOS_RESERVADOS_URL}"],
+    ]
+
 
 def _xlsx_coluna_nome(indice: int) -> str:
     nome = ""
@@ -89,6 +110,7 @@ def gerar_xlsx_historico(linhas_historico: list[dict]) -> bytes:
         "Registrado por",
         "Perfil",
         "Status",
+        "Complemento",
         "Retorno rápido",
         "Justificativa retorno rápido",
         "Editado",
@@ -114,6 +136,7 @@ def gerar_xlsx_historico(linhas_historico: list[dict]) -> bytes:
             item.get("usuario_nome") or "",
             item.get("usuario_perfil") or "",
             "Cancelado" if item.get("cancelado") else "Ativo",
+            item.get("observacao") or "",
             "Sim" if item.get("retorno_rapido") else "Não",
             item.get("justificativa_retorno_rapido") or "",
             "Sim" if item.get("foi_editado") else "Não",
@@ -137,7 +160,12 @@ def gerar_xlsx_historico(linhas_historico: list[dict]) -> bytes:
     linhas_resumo = [["Indicador", "Quantidade"]]
     linhas_resumo.extend([[chave, valor] for chave, valor in resumo.items()])
 
-    return _gerar_workbook_duas_abas("Historico", dados, "Resumo", linhas_resumo)
+    return _gerar_workbook_duas_abas(
+        "Historico",
+        _adicionar_aviso_direitos_reservados(dados),
+        "Resumo",
+        _adicionar_aviso_direitos_reservados(linhas_resumo),
+    )
 
 
 def gerar_xlsx_convenio_sisa_mensal(dados: dict) -> bytes:
@@ -151,6 +179,7 @@ def gerar_xlsx_convenio_sisa_mensal(dados: dict) -> bytes:
         ["Conviventes ativos", resumo.get("conviventes_ativos")],
         ["Total atendimentos", resumo.get("total_atendimentos")],
         ["Total almoços", resumo.get("total_almocos")],
+        ["Total banhos", resumo.get("total_banhos")],
         ["Total entradas", resumo.get("total_entradas")],
         ["Total saídas", resumo.get("total_saidas")],
         ["Retornos rápidos", resumo.get("total_retornos_rapidos")],
@@ -167,6 +196,7 @@ def gerar_xlsx_convenio_sisa_mensal(dados: dict) -> bytes:
         "Dias presentes",
         "Total atendimentos",
         "Almoços",
+        "Banhos",
         "Entradas",
         "Saídas",
         "Retornos rápidos",
@@ -185,6 +215,7 @@ def gerar_xlsx_convenio_sisa_mensal(dados: dict) -> bytes:
             item.get("dias_presentes") or 0,
             item.get("total_atendimentos") or 0,
             item.get("almocos") or 0,
+            item.get("banhos") or 0,
             item.get("entradas") or 0,
             item.get("saidas") or 0,
             item.get("retornos_rapidos") or 0,
@@ -195,4 +226,9 @@ def gerar_xlsx_convenio_sisa_mensal(dados: dict) -> bytes:
             ", ".join(item.get("dias_presentes_lista") or [])
         ])
 
-    return _gerar_workbook_duas_abas("Mensal", linhas_mensal, "Resumo", linhas_resumo)
+    return _gerar_workbook_duas_abas(
+        "Mensal",
+        _adicionar_aviso_direitos_reservados(linhas_mensal),
+        "Resumo",
+        _adicionar_aviso_direitos_reservados(linhas_resumo),
+    )

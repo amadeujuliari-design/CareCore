@@ -6,7 +6,7 @@ import {
   useState,
 } from 'react';
 
-import { limparSessaoLocal } from '../services/api';
+import { limparSessaoLocal, salvarSessaoLocal } from '../services/api';
 
 const AuthContext = createContext(null);
 
@@ -83,13 +83,7 @@ export function AuthProvider({ children }) {
   }, []);
 
   const login = ({ token, usuario }) => {
-    localStorage.setItem(STORAGE_TOKEN_KEY, token);
-    localStorage.setItem(STORAGE_USER_KEY, JSON.stringify(usuario));
-
-    // Compatibilidade temporária com código entregue anteriormente.
-    localStorage.setItem('token', token);
-    localStorage.setItem('usuario', JSON.stringify(usuario));
-
+    salvarSessaoLocal(token, usuario);
     setUsuario(usuario);
   };
 
@@ -110,8 +104,10 @@ export function AuthProvider({ children }) {
 
       isAuthenticated: !!usuario,
       isMaster: usuario?.is_master === true,
+      isGlobal: usuario?.is_global === true,
       perfil: usuario?.perfil_acesso || null,
       instituicaoId: usuario?.instituicao_id || null,
+      organizacaoId: usuario?.organizacao_id || null,
     };
   }, [usuario, loading]);
 

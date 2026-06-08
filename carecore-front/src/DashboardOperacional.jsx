@@ -2,11 +2,12 @@
 // ARQUIVO: src/DashboardOperacional.jsx
 // DASHBOARD OPERACIONAL DA ROTINA — CARECORE+
 // =====================================================================
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import Sidebar from './Sidebar';
 import { AppShell, MainShell, PageHeader, PremiumButton, ScrollArea } from './components/PremiumUI';
 import { API_ROOT } from './config/apiBase';
+import { criarHeadersAutenticados } from './utils/requestIdUtils';
 
 export default function DashboardOperacional() {
   const token = localStorage.getItem('@CareCore:token');
@@ -16,22 +17,28 @@ export default function DashboardOperacional() {
   const [erro, setErro] = useState('');
   const [abaLista, setAbaLista] = useState('presentes');
 
-  const headers = useMemo(() => ({
-    Authorization: `Bearer ${token}`
-  }), [token]);
+  const headers = useMemo(() => criarHeadersAutenticados(token), [token]);
 
-  const carregarDashboard = async () => {
+  const carregarDashboard = useCallback(async (signal) => {
     try {
       setErro('');
       setLoading(true);
 
       const response = await axios.get(
         `${API_ROOT}/rotina/dashboard-operacional`,
-        { headers }
+        {
+          headers,
+          params: { limite_listas: 80 },
+          signal,
+        }
       );
 
       setDados(response.data);
     } catch (error) {
+      if (axios.isCancel?.(error) || error.code === 'ERR_CANCELED') {
+        return;
+      }
+
       console.error(error);
       setErro(
         error.response?.data?.detail ||
@@ -40,11 +47,14 @@ export default function DashboardOperacional() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [headers]);
 
   useEffect(() => {
-    carregarDashboard();
-  }, []);
+    const controller = new AbortController();
+    carregarDashboard(controller.signal);
+
+    return () => controller.abort();
+  }, [carregarDashboard]);
 
   const formatarDataHora = (data) => {
     if (!data) return '-';
@@ -62,6 +72,7 @@ export default function DashboardOperacional() {
   };
 
   const resumo = dados?.resumo || {};
+  const limiteListaOperacional = 80;
 
   const listaAtual = useMemo(() => {
     if (!dados) return [];
@@ -70,6 +81,16 @@ export default function DashboardOperacional() {
     if (abaLista === 'fora') return dados.fora || [];
     return dados.sem_movimento || [];
   }, [dados, abaLista]);
+
+  const totalListaAtual = useMemo(() => {
+    if (abaLista === 'presentes') return dados?.listas_totais?.presentes ?? listaAtual.length;
+    if (abaLista === 'fora') return dados?.listas_totais?.fora ?? listaAtual.length;
+    return dados?.listas_totais?.sem_movimento ?? listaAtual.length;
+  }, [abaLista, dados, listaAtual.length]);
+
+  const listaAtualVisivel = useMemo(() => {
+    return listaAtual.slice(0, limiteListaOperacional);
+  }, [listaAtual]);
 
   const cardsPrincipais = [
     {
@@ -143,7 +164,7 @@ export default function DashboardOperacional() {
             <PremiumButton
               type="button"
               variant="brand"
-              onClick={carregarDashboard}
+              onClick={() => carregarDashboard()}
             >
               Atualizar
             </PremiumButton>
@@ -264,12 +285,12 @@ export default function DashboardOperacional() {
                 </div>
 
                 <div className="space-y-3 p-3 md:hidden">
-                  {listaAtual.length === 0 ? (
+                    {listaAtual.length === 0 ? (
                     <div className="rounded-2xl border border-gray-100 bg-gray-50 p-8 text-center text-sm font-semibold text-gray-500">
                       Nenhum convivente nesta visão.
                     </div>
                   ) : (
-                    listaAtual.map(item => (
+                    listaAtualVisivel.map(item => (
                       <article
                         key={item.convivente_id}
                         className="rounded-2xl border border-gray-100 bg-gray-50/70 p-4 shadow-sm"
@@ -305,6 +326,11 @@ export default function DashboardOperacional() {
                       </article>
                     ))
                   )}
+                  {totalListaAtual > listaAtualVisivel.length && (
+                    <div className="rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-center text-xs font-bold text-blue-700">
+                      Exibindo os primeiros {listaAtualVisivel.length} de {totalListaAtual}. Use os filtros da rotina para uma lista completa.
+                    </div>
+                  )}
                 </div>
 
                 <div className="hidden overflow-x-auto md:block">
@@ -327,7 +353,7 @@ export default function DashboardOperacional() {
                     </thead>
 
                     <tbody>
-                      {listaAtual.length === 0 ? (
+                        {listaAtual.length === 0 ? (
                         <tr>
                           <td
                             colSpan={4}
@@ -337,7 +363,7 @@ export default function DashboardOperacional() {
                           </td>
                         </tr>
                       ) : (
-                        listaAtual.map(item => (
+                        listaAtualVisivel.map(item => (
                           <tr
                             key={item.convivente_id}
                             className="border-b border-gray-50 hover:bg-gray-50"
@@ -371,6 +397,13 @@ export default function DashboardOperacional() {
                             </td>
                           </tr>
                         ))
+                      )}
+                      {totalListaAtual > listaAtualVisivel.length && (
+                        <tr>
+                          <td colSpan={4} className="px-4 py-4 text-center text-xs font-bold text-blue-700 bg-blue-50">
+                            Exibindo os primeiros {listaAtualVisivel.length} de {totalListaAtual}. Use os filtros da rotina para uma lista completa.
+                          </td>
+                        </tr>
                       )}
                     </tbody>
                   </table>

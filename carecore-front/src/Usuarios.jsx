@@ -9,6 +9,7 @@ import { useNavigate } from 'react-router-dom';
 
 import Sidebar from './Sidebar';
 import api from './services/api';
+import { consultarCep } from './services/cepService';
 import { AppShell, MainShell, PageHeader, PremiumButton, ScrollArea } from './components/PremiumUI';
 import UserAvatar from './components/UserAvatar';
 import {
@@ -31,6 +32,7 @@ import {
   PERFIS,
   UFS,
 } from './utils/usuariosConstantes';
+import { calcularIdade } from './utils/conviventesUtils';
 import {
   cepValido,
   cpfValido,
@@ -48,6 +50,102 @@ import {
   usuarioEhGestor,
 } from './utils/usuariosUtils';
 
+function usuarioLogadoEhGlobal() {
+  try {
+    const token = localStorage.getItem('@CareCore:token') || localStorage.getItem('token');
+    const payload = token ? JSON.parse(atob(token.split('.')[1])) : {};
+
+    return payload?.is_global === true;
+  } catch {
+    return false;
+  }
+}
+
+function dataLocalISO(data = new Date()) {
+  const ano = data.getFullYear();
+  const mes = String(data.getMonth() + 1).padStart(2, '0');
+  const dia = String(data.getDate()).padStart(2, '0');
+
+  return `${ano}-${mes}-${dia}`;
+}
+
+function formatarDataBR(dataISO) {
+  if (!dataISO) return '';
+
+  const [ano, mes, dia] = String(dataISO).slice(0, 10).split('-');
+
+  if (!ano || !mes || !dia) return dataISO;
+
+  return `${dia}/${mes}/${ano}`;
+}
+
+function dataBRParaISO(valor) {
+  const data = String(valor || '').trim();
+  const correspondencia = data.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+
+  if (!correspondencia) return '';
+
+  const [, dia, mes, ano] = correspondencia;
+  const dataTeste = new Date(Number(ano), Number(mes) - 1, Number(dia));
+
+  if (
+    dataTeste.getFullYear() !== Number(ano) ||
+    dataTeste.getMonth() !== Number(mes) - 1 ||
+    dataTeste.getDate() !== Number(dia)
+  ) {
+    return '';
+  }
+
+  return `${ano}-${mes}-${dia}`;
+}
+
+function obterRegrasSenha(senha = '') {
+  return {
+    minimo: senha.length >= 8,
+    maiuscula: /[A-Z]/.test(senha),
+    minuscula: /[a-z]/.test(senha),
+    numero: /\d/.test(senha),
+    especial: /[@$!%*?&_\-#]/.test(senha),
+    tamanhoMaximo: new Blob([senha]).size <= 72,
+  };
+}
+
+function senhaAtendePolitica(senha = '') {
+  return Object.values(obterRegrasSenha(senha)).every(Boolean);
+}
+
+function BadgeGlobal() {
+  return (
+    <span className="inline-flex items-center rounded-full border border-violet-100 bg-violet-50 px-2.5 py-1 text-xs font-black uppercase tracking-wide text-violet-700">
+      Global
+    </span>
+  );
+}
+
+function ListaRegrasSenha({ regras }) {
+  const itens = [
+    ['minimo', 'mínimo de 8 caracteres'],
+    ['maiuscula', '1 letra maiúscula'],
+    ['minuscula', '1 letra minúscula'],
+    ['numero', '1 número'],
+    ['especial', '1 caractere especial (@$!%*?&_-#)'],
+    ['tamanhoMaximo', 'até 72 bytes'],
+  ];
+
+  return (
+    <ul className="mt-2 space-y-1 text-xs font-semibold text-slate-500">
+      {itens.map(([chave, texto]) => (
+        <li
+          key={chave}
+          className={regras[chave] ? 'text-emerald-600' : 'text-slate-500'}
+        >
+          {regras[chave] ? 'OK' : '-'} {texto}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 export default function Usuarios() {
   const navigate = useNavigate();
   const deviceInfo = useDeviceInfo();
@@ -63,10 +161,14 @@ export default function Usuarios() {
 
   const [busca, setBusca] = useState('');
   const [filtroPerfil, setFiltroPerfil] = useState('');
-  const [filtroAtivo, setFiltroAtivo] = useState('');
+  const [filtroAtivo, setFiltroAtivo] = useState('true');
+  const [paginaUsuarios, setPaginaUsuarios] = useState(1);
+  const usuariosPorPagina = 15;
 
   const [form, setForm] = useState(FORM_INICIAL);
+  const [errosCampo, setErrosCampo] = useState({});
   const [senhaRedefinir, setSenhaRedefinir] = useState('');
+  const [erroSenhaRedefinir, setErroSenhaRedefinir] = useState('');
   const [usuarioSenha, setUsuarioSenha] = useState(null);
 
   const videoRef = useRef(null);
@@ -76,15 +178,29 @@ export default function Usuarios() {
   const [cameraAtiva, setCameraAtiva] = useState(false);
   const [processandoFoto, setProcessandoFoto] = useState(false);
 
-  const podeGerenciar = useMemo(() => usuarioEhGestor(), []);
+  const podeGerenciarGlobais = useMemo(() => usuarioLogadoEhGlobal(), []);
+  const podeGerenciar = useMemo(() => usuarioEhGestor() || podeGerenciarGlobais, [podeGerenciarGlobais]);
+  const perfisDisponiveis = useMemo(
+    () => PERFIS.filter((perfil) => podeGerenciarGlobais || perfil !== 'Global'),
+    [podeGerenciarGlobais]
+  );
+  const regrasSenhaInicial = useMemo(() => obterRegrasSenha(form.senha), [form.senha]);
+  const regrasSenhaRedefinicao = useMemo(() => obterRegrasSenha(senhaRedefinir), [senhaRedefinir]);
+  const exibindoApenasUsuariosAtivos = filtroAtivo === 'true';
+  const totalPaginasUsuarios = Math.max(1, Math.ceil(usuarios.length / usuariosPorPagina));
+  const paginaUsuariosSegura = Math.min(paginaUsuarios, totalPaginasUsuarios);
+  const indiceInicialUsuarios = (paginaUsuariosSegura - 1) * usuariosPorPagina;
+  const indiceFinalUsuarios = indiceInicialUsuarios + usuariosPorPagina;
+  const usuariosVisiveis = usuarios.slice(indiceInicialUsuarios, indiceFinalUsuarios);
+
+  const irParaPaginaUsuarios = (novaPagina) => {
+    setPaginaUsuarios(Math.min(Math.max(novaPagina, 1), totalPaginasUsuarios));
+  };
 
   useEffect(() => {
     if (!localStorage.getItem('@CareCore:token') && !localStorage.getItem('token')) {
       navigate('/');
-      return;
     }
-
-    carregarUsuarios();
   }, []);
 
   useEffect(() => {
@@ -107,6 +223,7 @@ export default function Usuarios() {
       const response = await api.get('/api/usuarios', { params });
 
       setUsuarios(response.data || []);
+      setPaginaUsuarios(1);
     } catch (error) {
       setErro(obterMensagemErro(error));
     } finally {
@@ -114,13 +231,69 @@ export default function Usuarios() {
     }
   };
 
+  useEffect(() => {
+    if (!localStorage.getItem('@CareCore:token') && !localStorage.getItem('token')) return;
+
+    const atrasoBusca = busca.trim() ? 350 : 0;
+    const timer = window.setTimeout(() => {
+      carregarUsuarios();
+    }, atrasoBusca);
+
+    return () => window.clearTimeout(timer);
+  }, [busca, filtroPerfil, filtroAtivo]);
+
   const limparAlertas = () => {
     setErro('');
     setSucesso('');
   };
 
+  const limparErroCampo = (campo) => {
+    setErrosCampo((atual) => ({ ...atual, [campo]: '' }));
+  };
+
+  const validarCampo = (campo, valorAtual = form[campo]) => {
+    const valor = String(valorAtual || '').trim();
+    let mensagem = '';
+
+    if (campo === 'nome' && !valor) {
+      mensagem = 'Informe o nome.';
+    }
+
+    if (campo === 'email') {
+      if (!valor) {
+        mensagem = 'Informe o e-mail.';
+      } else if (!emailValido(valor)) {
+        mensagem = 'Informe um e-mail válido.';
+      }
+    }
+
+    if (campo === 'senha' && !editandoId) {
+      if (!valor) {
+        mensagem = 'Informe uma senha inicial para o usuário.';
+      } else if (!senhaAtendePolitica(valor)) {
+        mensagem = 'A senha ainda não atende aos critérios mínimos.';
+      }
+    }
+
+    if (campo === 'cpf' && valor && !cpfValido(valor)) {
+      mensagem = 'CPF inválido.';
+    }
+
+    if (campo === 'telefone' && valor && !telefoneValido(valor)) {
+      mensagem = 'Telefone inválido. Use DDD + número.';
+    }
+
+    if (campo === 'cep' && valor && !cepValido(valor)) {
+      mensagem = 'CEP incompleto.';
+    }
+
+    setErrosCampo((atual) => ({ ...atual, [campo]: mensagem }));
+    return !mensagem;
+  };
+
   const abrirNovo = () => {
     limparAlertas();
+    setErrosCampo({});
     setForm(FORM_INICIAL);
     setEditandoId(null);
     setTela('form');
@@ -129,6 +302,7 @@ export default function Usuarios() {
   const abrirEdicao = async (usuarioId) => {
     try {
       limparAlertas();
+      setErrosCampo({});
       setLoading(true);
 
       const response = await api.get(`/api/usuarios/${usuarioId}`);
@@ -140,6 +314,8 @@ export default function Usuarios() {
         email: usuario.email || '',
         senha: '',
         perfil_acesso: usuario.perfil_acesso || 'Consulta',
+        is_global: usuario.is_global === true,
+        ativo: usuario.ativo !== false,
         cpf: formatarCPF(usuario.cpf || ''),
         telefone: formatarTelefone(usuario.telefone || ''),
         avatar_url: usuario.avatar_url || '',
@@ -185,42 +361,44 @@ export default function Usuarios() {
     if (campo === 'cep') valorFinal = formatarCEP(valor);
     if (campo === 'uf') valorFinal = valor.toUpperCase().slice(0, 2);
 
+    if (errosCampo[campo]) limparErroCampo(campo);
+
     setForm((atual) => ({
       ...atual,
       [campo]: valorFinal,
     }));
   };
 
-  const buscarEnderecoPorCEP = async () => {
-    const cep = limparMascara(form.cep);
+  const buscarEnderecoPorCEP = async (valor = form.cep) => {
+    const cep = limparMascara(valor);
 
     if (!cep) return;
 
     if (cep.length !== 8) {
-      setErro('CEP inválido. Informe 8 dígitos.');
+      setErrosCampo((atual) => ({ ...atual, cep: 'CEP incompleto.' }));
       return;
     }
 
     try {
       limparAlertas();
 
-      const response = await fetch(`https://viacep.com.br/ws/${cep}/json/`);
-      const data = await response.json();
+      const endereco = await consultarCep(cep);
 
-      if (data?.erro) {
-        setErro('CEP não encontrado.');
+      if (!endereco) {
+        setErrosCampo((atual) => ({ ...atual, cep: 'CEP não encontrado.' }));
         return;
       }
 
+      setErrosCampo((atual) => ({ ...atual, cep: '' }));
       setForm((atual) => ({
         ...atual,
-        logradouro: data.logradouro || atual.logradouro,
-        bairro: data.bairro || atual.bairro,
-        cidade: data.localidade || atual.cidade,
-        uf: data.uf || atual.uf,
+        logradouro: endereco.logradouro || atual.logradouro,
+        bairro: endereco.bairro || atual.bairro,
+        cidade: endereco.cidade || atual.cidade,
+        uf: endereco.uf || atual.uf,
       }));
     } catch {
-      setErro('Não foi possível consultar o CEP agora. Confira os dados manualmente.');
+      setErrosCampo((atual) => ({ ...atual, cep: 'Não foi possível consultar o CEP agora.' }));
     }
   };
 
@@ -358,22 +536,17 @@ export default function Usuarios() {
   };
 
   const validarForm = () => {
-    if (!form.nome.trim()) return 'Informe o nome.';
-    if (!form.email.trim()) return 'Informe o e-mail.';
-    if (!emailValido(form.email)) return 'Informe um e-mail válido.';
+    const camposValidos = [
+      validarCampo('nome'),
+      validarCampo('email'),
+      validarCampo('cpf'),
+      validarCampo('telefone'),
+      validarCampo('cep'),
+      validarCampo('senha'),
+    ].every(Boolean);
+
+    if (!camposValidos) return 'Corrija os campos destacados antes de salvar.';
     if (!form.perfil_acesso) return 'Selecione o perfil de acesso.';
-
-    if (form.cpf && !cpfValido(form.cpf)) {
-      return 'CPF inválido. Verifique os números informados.';
-    }
-
-    if (form.telefone && !telefoneValido(form.telefone)) {
-      return 'Telefone inválido. Informe DDD + número com 10 ou 11 dígitos.';
-    }
-
-    if (form.cep && !cepValido(form.cep)) {
-      return 'CEP inválido. Informe 8 dígitos.';
-    }
 
     if (form.uf && !UFS.includes(form.uf)) {
       return 'UF inválida. Selecione uma UF válida.';
@@ -389,18 +562,6 @@ export default function Usuarios() {
       form.data_desligamento < form.data_admissao
     ) {
       return 'Data de desligamento não pode ser anterior à data de admissão.';
-    }
-
-    if (!editandoId && !form.senha) {
-      return 'Informe uma senha inicial para o usuário.';
-    }
-
-    if (!editandoId && form.senha.length < 8) {
-      return 'A senha deve possuir no mínimo 8 caracteres.';
-    }
-
-    if (!editandoId && new Blob([form.senha]).size > 72) {
-      return 'A senha não pode ultrapassar 72 bytes.';
     }
 
     return '';
@@ -419,6 +580,11 @@ export default function Usuarios() {
     delete payload.conselho_profissional;
     delete payload.numero_conselho;
     delete payload.carga_horaria;
+    delete payload.ativo;
+
+    if (!podeGerenciarGlobais) {
+      delete payload.is_global;
+    }
 
     if (editandoId) {
       delete payload.senha;
@@ -459,6 +625,7 @@ export default function Usuarios() {
       setTela('lista');
       setEditandoId(null);
       setForm(FORM_INICIAL);
+      setErrosCampo({});
       await carregarUsuarios();
     } catch (error) {
       setErro(obterMensagemErro(error));
@@ -467,11 +634,88 @@ export default function Usuarios() {
     }
   };
 
-  const alterarStatus = async (usuario) => {
+  const montarDadosDesligamento = (usuario, dados = {}) => {
+    const dataAtual = dados.data_desligamento || usuario.data_desligamento || dataLocalISO();
+    const motivoAtual = dados.motivo_desligamento || usuario.motivo_desligamento || '';
+    const veioDoFormulario = Object.prototype.hasOwnProperty.call(dados, 'data_desligamento') ||
+      Object.prototype.hasOwnProperty.call(dados, 'motivo_desligamento');
+
+    if (veioDoFormulario) {
+      const dataDesligamento = (dados.data_desligamento || '').trim();
+      const motivoDesligamento = (dados.motivo_desligamento || '').trim();
+
+      if (!dataDesligamento) {
+        const mensagem = 'Preencha a data de desligamento antes de inativar o usuário.';
+        setErro(mensagem);
+        window.alert(mensagem);
+        return null;
+      }
+
+      if (!motivoDesligamento) {
+        const mensagem = 'Preencha o motivo do desligamento antes de inativar o usuário.';
+        setErro(mensagem);
+        window.alert(mensagem);
+        return null;
+      }
+
+      return {
+        data_desligamento: dataDesligamento,
+        motivo_desligamento: motivoDesligamento,
+      };
+    }
+
+    const dataInformada = window.prompt(
+      `Informe a data de desligamento de ${usuario.nome} (DD/MM/AAAA):`,
+      formatarDataBR(dataAtual)
+    );
+
+    if (dataInformada === null) return null;
+
+    const dataDesligamento = dataBRParaISO(dataInformada);
+
+    if (!dataDesligamento) {
+      const mensagem = 'Informe a data de desligamento no formato DD/MM/AAAA.';
+      setErro(mensagem);
+      window.alert(mensagem);
+      return null;
+    }
+
+    const motivoInformado = window.prompt(
+      `Informe o motivo do desligamento de ${usuario.nome}:`,
+      motivoAtual
+    );
+
+    if (motivoInformado === null) return null;
+
+    const motivoDesligamento = motivoInformado.trim();
+
+    if (!motivoDesligamento) {
+      const mensagem = 'Informe o motivo do desligamento.';
+      setErro(mensagem);
+      window.alert(mensagem);
+      return null;
+    }
+
+    return {
+      data_desligamento: dataDesligamento,
+      motivo_desligamento: motivoDesligamento,
+    };
+  };
+
+  const alterarStatus = async (usuario, dadosDesligamento = {}) => {
     if (!podeGerenciar) return;
 
     const novoStatus = !usuario.ativo;
     const texto = novoStatus ? 'ativar' : 'inativar';
+    const payload = { ativo: novoStatus };
+
+    if (!novoStatus) {
+      const dadosObrigatorios = montarDadosDesligamento(usuario, dadosDesligamento);
+
+      if (!dadosObrigatorios) return;
+
+      Object.assign(payload, dadosObrigatorios);
+    }
 
     const confirmar = window.confirm(
       `Deseja realmente ${texto} o usuário ${usuario.nome}?`
@@ -483,7 +727,7 @@ export default function Usuarios() {
       limparAlertas();
 
       await api.patch(`/api/usuarios/${usuario.id}/status`, {
-        ativo: novoStatus,
+        ...payload,
       });
 
       setSucesso(
@@ -493,6 +737,15 @@ export default function Usuarios() {
       );
 
       await carregarUsuarios();
+
+      if (editandoId === usuario.id) {
+        setForm((atual) => ({
+          ...atual,
+          ativo: novoStatus,
+          ...(payload.data_desligamento ? { data_desligamento: payload.data_desligamento } : {}),
+          ...(payload.motivo_desligamento ? { motivo_desligamento: payload.motivo_desligamento } : {}),
+        }));
+      }
     } catch (error) {
       setErro(obterMensagemErro(error));
     }
@@ -501,6 +754,7 @@ export default function Usuarios() {
   const abrirRedefinirSenha = (usuario) => {
     setUsuarioSenha(usuario);
     setSenhaRedefinir('');
+    setErroSenhaRedefinir('');
     limparAlertas();
   };
 
@@ -509,13 +763,9 @@ export default function Usuarios() {
 
     if (!usuarioSenha) return;
 
-    if (!senhaRedefinir || senhaRedefinir.length < 8) {
-      setErro('Informe uma nova senha forte com no mínimo 8 caracteres.');
-      return;
-    }
-
-    if (new Blob([senhaRedefinir]).size > 72) {
-      setErro('A senha não pode ultrapassar 72 bytes.');
+    if (!senhaAtendePolitica(senhaRedefinir)) {
+      setErroSenhaRedefinir('A senha ainda não atende aos critérios mínimos.');
+      setErro('Informe uma nova senha forte.');
       return;
     }
 
@@ -530,6 +780,7 @@ export default function Usuarios() {
       setSucesso('Senha redefinida com sucesso.');
       setUsuarioSenha(null);
       setSenhaRedefinir('');
+      setErroSenhaRedefinir('');
     } catch (error) {
       setErro(obterMensagemErro(error));
     } finally {
@@ -541,6 +792,7 @@ export default function Usuarios() {
     setTela('lista');
     setEditandoId(null);
     setForm(FORM_INICIAL);
+    setErrosCampo({});
     limparAlertas();
   };
 
@@ -603,14 +855,20 @@ export default function Usuarios() {
             <div className="mb-5 grid gap-3 md:grid-cols-4">
               <input
                 value={busca}
-                onChange={(e) => setBusca(e.target.value)}
+                onChange={(e) => {
+                  setBusca(e.target.value);
+                  setPaginaUsuarios(1);
+                }}
                 placeholder="Buscar por nome, e-mail, CPF, cargo ou setor"
                 className="rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400 md:col-span-2"
               />
 
               <select
                 value={filtroPerfil}
-                onChange={(e) => setFiltroPerfil(e.target.value)}
+                onChange={(e) => {
+                  setFiltroPerfil(e.target.value);
+                  setPaginaUsuarios(1);
+                }}
                 className="rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400"
               >
                 <option value="">Todos os perfis</option>
@@ -623,7 +881,10 @@ export default function Usuarios() {
 
               <select
                 value={filtroAtivo}
-                onChange={(e) => setFiltroAtivo(e.target.value)}
+                onChange={(e) => {
+                  setFiltroAtivo(e.target.value);
+                  setPaginaUsuarios(1);
+                }}
                 className="rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400"
               >
                 <option value="">Todos os status</option>
@@ -631,14 +892,13 @@ export default function Usuarios() {
                 <option value="false">Inativos</option>
               </select>
 
-              <button
-                type="button"
-                onClick={carregarUsuarios}
-                className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 md:col-span-4"
-              >
-                Aplicar filtros
-              </button>
             </div>
+
+            {exibindoApenasUsuariosAtivos && (
+              <p className="mb-5 rounded-xl border border-blue-100 bg-blue-50 px-4 py-2 text-xs font-medium text-blue-700">
+                Exibindo apenas usuários ativos. Para consultar históricos ou desligados, altere o filtro de status para Todos os status ou Inativos.
+              </p>
+            )}
 
             {loading ? (
               <div className="py-12 text-center text-sm text-slate-500">
@@ -651,7 +911,7 @@ export default function Usuarios() {
             ) : (
               <>
               <div className="space-y-3 md:hidden">
-                {usuarios.map((usuario) => (
+                {usuariosVisiveis.map((usuario) => (
                   <article
                     key={usuario.id}
                     className="rounded-3xl border border-slate-100 bg-slate-50 p-4 shadow-sm"
@@ -670,6 +930,7 @@ export default function Usuarios() {
                         <div className="mt-3 flex flex-wrap gap-2">
                           <BadgePerfil perfil={usuario.perfil_acesso} />
                           <BadgeStatus ativo={usuario.ativo} />
+                          {usuario.is_global && <BadgeGlobal />}
                         </div>
 
                         <div className="mt-3 rounded-2xl bg-white px-3 py-2 text-xs text-slate-500">
@@ -733,7 +994,7 @@ export default function Usuarios() {
                   </thead>
 
                   <tbody>
-                    {usuarios.map((usuario) => (
+                    {usuariosVisiveis.map((usuario) => (
                       <tr key={usuario.id} className="bg-slate-50">
                         <td className="rounded-l-xl px-3 py-3">
                           <div className="flex items-center gap-3">
@@ -742,6 +1003,11 @@ export default function Usuarios() {
                             <div>
                               <p className="font-semibold text-slate-900">
                                 {usuario.nome}
+                                {usuario.is_global && (
+                                  <span className="ml-2 align-middle">
+                                    <BadgeGlobal />
+                                  </span>
+                                )}
                               </p>
                               <p className="text-xs text-slate-500">
                                 {usuario.email}
@@ -805,6 +1071,49 @@ export default function Usuarios() {
                   </tbody>
                 </table>
               </div>
+
+              {usuarios.length > usuariosPorPagina && (
+                <div className="mt-5 flex flex-col gap-3 border-t border-slate-100 pt-4 text-sm text-slate-600 md:flex-row md:items-center md:justify-between">
+                  <span>
+                    Exibindo {indiceInicialUsuarios + 1} a {Math.min(indiceFinalUsuarios, usuarios.length)} de {usuarios.length} usuários
+                  </span>
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => irParaPaginaUsuarios(paginaUsuariosSegura - 1)}
+                      disabled={paginaUsuariosSegura === 1}
+                      className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      Anterior
+                    </button>
+
+                    {Array.from({ length: totalPaginasUsuarios }, (_, index) => index + 1).map((pagina) => (
+                      <button
+                        key={pagina}
+                        type="button"
+                        onClick={() => irParaPaginaUsuarios(pagina)}
+                        className={`h-8 min-w-8 rounded-xl border px-2 text-xs font-bold ${
+                          pagina === paginaUsuariosSegura
+                            ? 'border-slate-900 bg-slate-900 text-white'
+                            : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                        }`}
+                      >
+                        {pagina}
+                      </button>
+                    ))}
+
+                    <button
+                      type="button"
+                      onClick={() => irParaPaginaUsuarios(paginaUsuariosSegura + 1)}
+                      disabled={paginaUsuariosSegura === totalPaginasUsuarios}
+                      className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      Próxima
+                    </button>
+                  </div>
+                </div>
+              )}
               </>
             )}
           </section>
@@ -813,6 +1122,7 @@ export default function Usuarios() {
         {tela === 'form' && (
           <form
             onSubmit={salvarUsuario}
+            autoComplete="off"
             className="rounded-3xl border border-slate-100 bg-white p-5 shadow-sm"
           >
             <div className="mb-6">
@@ -831,8 +1141,28 @@ export default function Usuarios() {
                 </h3>
 
                 <div className="grid gap-4 md:grid-cols-3">
-                  <CampoTexto label="Nome" value={form.nome} onChange={(v) => atualizarCampo('nome', v)} required />
-                  <CampoTexto label="E-mail" type="email" value={form.email} onChange={(v) => atualizarCampo('email', v)} required />
+                  <CampoTexto
+                    label="Nome"
+                    name="novo_usuario_nome"
+                    autoComplete="off"
+                    value={form.nome}
+                    onChange={(v) => atualizarCampo('nome', v)}
+                    onBlur={() => validarCampo('nome')}
+                    erro={errosCampo.nome}
+                    required
+                  />
+                  <CampoTexto
+                    label="E-mail"
+                    name="novo_usuario_email"
+                    autoComplete="off"
+                    type="email"
+                    value={form.email}
+                    onChange={(v) => atualizarCampo('email', v)}
+                    onBlur={() => validarCampo('email')}
+                    erro={errosCampo.email}
+                    placeholder="usuario@email.com"
+                    required
+                  />
 
                   <div>
                     <label className="mb-1 block text-xs font-semibold text-slate-600">
@@ -844,7 +1174,7 @@ export default function Usuarios() {
                       className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400"
                       required
                     >
-                      {PERFIS.map((perfil) => (
+                      {perfisDisponiveis.map((perfil) => (
                         <option key={perfil} value={perfil}>
                           {perfil}
                         </option>
@@ -853,14 +1183,40 @@ export default function Usuarios() {
                   </div>
 
                   {!editandoId && (
-                    <CampoTexto
-                      label="Senha inicial"
-                      type="password"
-                      value={form.senha}
-                      onChange={(v) => atualizarCampo('senha', v)}
-                      required
-                      maxLength={72}
-                    />
+                    <div>
+                      <CampoTexto
+                        label="Senha inicial"
+                        name="nova_senha_usuario"
+                        autoComplete="new-password"
+                        type="password"
+                        value={form.senha}
+                        onChange={(v) => atualizarCampo('senha', v)}
+                        onBlur={() => validarCampo('senha')}
+                        erro={errosCampo.senha}
+                        required
+                        maxLength={72}
+                      />
+                      <ListaRegrasSenha regras={regrasSenhaInicial} />
+                    </div>
+                  )}
+
+                  {podeGerenciarGlobais && (
+                    <label className="flex min-h-[68px] cursor-pointer items-start gap-3 rounded-2xl border border-violet-100 bg-violet-50/70 p-3 md:col-span-3">
+                      <input
+                        type="checkbox"
+                        checked={form.is_global === true}
+                        onChange={(e) => atualizarCampo('is_global', e.target.checked)}
+                        className="mt-1 h-4 w-4 rounded border-violet-300 text-violet-600 focus:ring-violet-500"
+                      />
+                      <span>
+                        <span className="block text-sm font-black text-violet-950">
+                          Usuário global da organização
+                        </span>
+                        <span className="mt-1 block text-xs font-semibold text-violet-700">
+                          Pode acessar e alternar entre todos os projetos desta organização.
+                        </span>
+                      </span>
+                    </label>
                   )}
                 </div>
               </section>
@@ -871,9 +1227,39 @@ export default function Usuarios() {
                 </h3>
 
                 <div className="grid gap-4 md:grid-cols-4">
-                  <CampoTexto label="CPF" value={form.cpf} onChange={(v) => atualizarCampo('cpf', v)} />
-                  <CampoTexto label="Telefone" value={form.telefone} onChange={(v) => atualizarCampo('telefone', v)} />
-                  <CampoTexto label="Data de nascimento" type="date" value={form.data_nascimento} onChange={(v) => atualizarCampo('data_nascimento', v)} />
+                  <CampoTexto
+                    label="CPF"
+                    name="usuario_cpf"
+                    value={form.cpf}
+                    onChange={(v) => atualizarCampo('cpf', v)}
+                    onBlur={() => validarCampo('cpf')}
+                    erro={errosCampo.cpf}
+                    placeholder="000.000.000-00"
+                  />
+                  <CampoTexto
+                    label="Telefone"
+                    name="usuario_telefone"
+                    value={form.telefone}
+                    onChange={(v) => atualizarCampo('telefone', v)}
+                    onBlur={() => validarCampo('telefone')}
+                    erro={errosCampo.telefone}
+                    placeholder="(00) 00000-0000"
+                  />
+                  <CampoTexto
+                    label={(
+                      <>
+                        Data de nascimento
+                        {form.data_nascimento && (
+                          <span className="ml-1 rounded-md bg-blue-50 px-1.5 py-0.5 text-[10px] font-bold text-brand">
+                            {calcularIdade(form.data_nascimento)} anos
+                          </span>
+                        )}
+                      </>
+                    )}
+                    type="date"
+                    value={form.data_nascimento}
+                    onChange={(v) => atualizarCampo('data_nascimento', v)}
+                  />
 
                   <CampoSelect
                     label="Gênero"
@@ -933,7 +1319,13 @@ export default function Usuarios() {
                     label="CEP"
                     value={form.cep}
                     onChange={(v) => atualizarCampo('cep', v)}
-                    onBlur={buscarEnderecoPorCEP}
+                    onBlur={() => {
+                      if (validarCampo('cep')) {
+                        buscarEnderecoPorCEP();
+                      }
+                    }}
+                    erro={errosCampo.cep}
+                    placeholder="00000-000"
                   />
                   <CampoTexto label="Logradouro" value={form.logradouro} onChange={(v) => atualizarCampo('logradouro', v)} className="md:col-span-2" />
                   <CampoTexto label="Número" value={form.numero} onChange={(v) => atualizarCampo('numero', v)} />
@@ -997,6 +1389,30 @@ export default function Usuarios() {
                 Cancelar
               </PremiumButton>
 
+              {podeGerenciar && editandoId && (
+                <button
+                  type="button"
+                  onClick={() => alterarStatus(
+                    {
+                      id: editandoId,
+                      nome: form.nome,
+                      ativo: form.ativo,
+                    },
+                    {
+                      data_desligamento: form.data_desligamento,
+                      motivo_desligamento: form.motivo_desligamento,
+                    }
+                  )}
+                  className={`min-h-11 rounded-2xl border px-4 py-2 text-sm font-bold transition ${
+                    form.ativo
+                      ? 'border-red-100 bg-red-50 text-red-700 hover:bg-red-100'
+                      : 'border-emerald-100 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                  }`}
+                >
+                  {form.ativo ? 'Inativar usuário' : 'Reativar usuário'}
+                </button>
+              )}
+
               {podeGerenciar && (
                 <PremiumButton
                   type="submit"
@@ -1010,10 +1426,10 @@ export default function Usuarios() {
         )}
 
         {usuarioSenha && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
+          <div className="carecore-modal-overlay fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
             <form
               onSubmit={redefinirSenha}
-              className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl"
+              className="carecore-modal-panel w-full max-w-md rounded-2xl bg-white p-6 shadow-xl"
             >
               <h2 className="text-lg font-bold text-slate-900">
                 Redefinir senha
@@ -1028,10 +1444,22 @@ export default function Usuarios() {
                   label="Nova senha"
                   type="password"
                   value={senhaRedefinir}
-                  onChange={setSenhaRedefinir}
+                  onChange={(valor) => {
+                    setSenhaRedefinir(valor);
+                    setErroSenhaRedefinir('');
+                  }}
+                  onBlur={() => {
+                    if (senhaRedefinir && !senhaAtendePolitica(senhaRedefinir)) {
+                      setErroSenhaRedefinir('A senha ainda não atende aos critérios mínimos.');
+                    }
+                  }}
+                  erro={erroSenhaRedefinir}
+                  name="redefinir_senha_usuario"
+                  autoComplete="new-password"
                   required
                   maxLength={72}
                 />
+                <ListaRegrasSenha regras={regrasSenhaRedefinicao} />
               </div>
 
               <p className="mt-2 text-xs text-slate-500">

@@ -1,18 +1,25 @@
 import { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import Sidebar from './Sidebar';
-import { AppShell, MainShell, PageHeader, PremiumButton, ScrollArea } from './components/PremiumUI';
+import { AppShell, MainShell, PageHeader, ReportActionButton, ScrollArea } from './components/PremiumUI';
+import DireitosReservadosAviso from './components/DireitosReservadosAviso';
 import { API_ROOT } from './config/apiBase';
-import logoCarecore from './assets/logo.png';
 import {
   REGISTROS_POR_PAGINA,
+  TIPOS_REGISTRO_FILTRO,
+  TIPOS_REGISTRO_EDICAO,
   classeTipoRegistroRotina,
+  contarRegistrosPorTipo,
   filtrarRegistrosRotina,
   formatarDataHoraRotina,
   montarParamsFiltrosRotina,
   ordenarRegistrosRotina,
   resumirRegistrosRotina,
+  rotuloTipoRegistroFiltro,
 } from './utils/rotinaHistoricoUtils';
+import { imprimirRelatorio } from './utils/imprimirRelatorio';
+import { urlArquivoBackend } from './utils/arquivosApi';
+import { criarHeadersAutenticados } from './utils/requestIdUtils';
 
 export default function RotinaHistorico() {
 
@@ -22,6 +29,7 @@ export default function RotinaHistorico() {
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState('');
   const [sucesso, setSucesso] = useState('');
+  const [identidadeRelatorio, setIdentidadeRelatorio] = useState(null);
 
   // filtros
   const [tipoFiltro, setTipoFiltro] = useState('');
@@ -75,14 +83,17 @@ export default function RotinaHistorico() {
   // =====================================================================
 
   const montarParamsFiltros = () => {
-    return montarParamsFiltrosRotina({
+    return {
+      ...montarParamsFiltrosRotina({
       tipoFiltro,
       buscaFiltro,
       dataInicioFiltro,
       dataFimFiltro,
       statusFiltro,
       auditoriaFiltro,
-    });
+      }),
+      limite: 500,
+    };
   };
 
   const avisarErro = (mensagem) => {
@@ -93,6 +104,15 @@ export default function RotinaHistorico() {
   const avisarSucesso = (mensagem) => {
     setErro('');
     setSucesso(mensagem);
+  };
+
+  const montarObservacoesAuditoriaRegistro = (registro) => {
+    return [
+      registro.observacao ? `Complemento: ${registro.observacao}` : '',
+      registro.justificativa_retorno_rapido ? `Justificativa: ${registro.justificativa_retorno_rapido}` : '',
+      registro.motivo_edicao ? `Edição: ${registro.motivo_edicao}` : '',
+      registro.motivo_cancelamento ? `Cancelamento: ${registro.motivo_cancelamento}` : '',
+    ].filter(Boolean).join(' | ');
   };
 
   // =====================================================================
@@ -109,9 +129,7 @@ export default function RotinaHistorico() {
         `${API_ROOT}/rotina/historico`,
         {
           params: montarParamsFiltros(),
-          headers: {
-            Authorization: `Bearer ${token}`
-          }
+          headers: criarHeadersAutenticados(token)
         }
       );
 
@@ -134,9 +152,55 @@ export default function RotinaHistorico() {
     }
   };
 
+  const carregarIdentidadeRelatorio = async () => {
+    try {
+      const response = await axios.get(
+        `${API_ROOT}/organizacao/identidade-relatorios`,
+        {
+          headers: criarHeadersAutenticados(token)
+        }
+      );
+
+      setIdentidadeRelatorio(response.data || null);
+    } catch (error) {
+      console.error('Erro ao carregar identidade de relatório da rotina', error);
+      setIdentidadeRelatorio(null);
+    }
+  };
+
+  const obterLogoRelatorioParaImpressao = async () => {
+    if (!identidadeRelatorio?.relatorio_logo_url || !token) {
+      return '';
+    }
+
+    try {
+      const response = await fetch(
+        urlArquivoBackend(identidadeRelatorio.relatorio_logo_url),
+        {
+          headers: criarHeadersAutenticados(token)
+        }
+      );
+
+      if (!response.ok) return '';
+
+      const blob = await response.blob();
+
+      return await new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result || '');
+        reader.onerror = () => resolve('');
+        reader.readAsDataURL(blob);
+      });
+    } catch (error) {
+      console.error('Erro ao preparar logo do relatório da rotina', error);
+      return '';
+    }
+  };
+
   useEffect(() => {
 
     carregarHistorico();
+    carregarIdentidadeRelatorio();
 
   }, []);
 
@@ -177,9 +241,7 @@ export default function RotinaHistorico() {
           motivo_edicao: motivoEdicao
         },
         {
-          headers: {
-            Authorization: `Bearer ${token}`
-          }
+          headers: criarHeadersAutenticados(token)
         }
       );
 
@@ -237,9 +299,7 @@ export default function RotinaHistorico() {
             motivoCancelamento
         },
         {
-          headers: {
-            Authorization: `Bearer ${token}`
-          }
+          headers: criarHeadersAutenticados(token)
         }
       );
 
@@ -287,6 +347,26 @@ export default function RotinaHistorico() {
     auditoriaFiltro
   ]);
 
+  // Conjunto que ignora o filtro de Tipo: usado nos cards de resumo (totais do
+  // período) e na contagem dinâmica do tipo selecionado.
+  const registrosFiltradosSemTipo = useMemo(() => {
+    return filtrarRegistrosRotina(registros, {
+      tipoFiltro: '',
+      buscaFiltro,
+      dataInicioFiltro,
+      dataFimFiltro,
+      statusFiltro,
+      auditoriaFiltro,
+    });
+  }, [
+    registros,
+    buscaFiltro,
+    dataInicioFiltro,
+    dataFimFiltro,
+    statusFiltro,
+    auditoriaFiltro
+  ]);
+
   const registrosOrdenados = useMemo(() => {
     return ordenarRegistrosRotina(registrosFiltrados);
   }, [registrosFiltrados]);
@@ -302,8 +382,18 @@ export default function RotinaHistorico() {
   );
 
   const resumo = useMemo(() => {
-    return resumirRegistrosRotina(registrosFiltrados);
-  }, [registrosFiltrados]);
+    return resumirRegistrosRotina(registrosFiltradosSemTipo);
+  }, [registrosFiltradosSemTipo]);
+
+  const rotuloTipoSelecionado = useMemo(
+    () => rotuloTipoRegistroFiltro(tipoFiltro),
+    [tipoFiltro],
+  );
+
+  const totalTipoSelecionado = useMemo(
+    () => contarRegistrosPorTipo(registrosFiltradosSemTipo, tipoFiltro),
+    [registrosFiltradosSemTipo, tipoFiltro],
+  );
 
   const limparFiltros = () => {
 
@@ -329,9 +419,7 @@ export default function RotinaHistorico() {
         {
           params: montarParamsFiltros(),
           responseType: 'blob',
-          headers: {
-            Authorization: `Bearer ${token}`
-          }
+          headers: criarHeadersAutenticados(token)
         }
       );
 
@@ -366,203 +454,57 @@ export default function RotinaHistorico() {
     }
   };
 
-  const abrirRelatorioImpressao = () => {
+  const abrirRelatorioImpressao = async () => {
+    const logoRelatorioDataUrl = await obterLogoRelatorioParaImpressao();
+    const filtrosAtivos = [
+      tipoFiltro ? `Tipo: ${rotuloTipoRegistroFiltro(tipoFiltro)}` : '',
+      dataInicioFiltro ? `Data inicial: ${dataInicioFiltro}` : '',
+      dataFimFiltro ? `Data final: ${dataFimFiltro}` : '',
+      buscaFiltro.trim() ? `Busca: ${buscaFiltro.trim()}` : '',
+      statusFiltro ? `Status: ${statusFiltro}` : '',
+      auditoriaFiltro ? `Auditoria: ${auditoriaFiltro}` : '',
+    ].filter(Boolean);
 
-    const linhas = registrosOrdenados.map(registro => `
-      <tr>
-        <td>${formatarDataHoraRotina(registro.data_registro)}</td>
-        <td>
-          <strong>${registro.convivente_nome || '-'}</strong><br/>
-          <small>#${registro.numero_institucional || 'S/N'}</small>
-        </td>
-        <td>${registro.tipo_registro || '-'}</td>
-        <td>${registro.usuario_nome || '-'}</td>
-        <td>${registro.cancelado ? 'Cancelado' : 'Ativo'}${registro.foi_editado ? ' / Editado' : ''}${registro.retorno_rapido ? ' / Retorno rápido' : ''}</td>
-        <td>${registro.justificativa_retorno_rapido || registro.motivo_edicao || registro.motivo_cancelamento || ''}</td>
-      </tr>
-    `).join('');
+    const colunas = [
+      'Data/Hora',
+      'Convivente',
+      'Prontuário',
+      'Tipo',
+      'Operador',
+      'Status',
+      'Observações/Auditoria',
+    ];
 
-    const html = `
-      <!doctype html>
-      <html>
-        <head>
-          <meta charset="utf-8" />
-          <title>Relatório - Histórico da Rotina</title>
-          <style>
-            body {
-              font-family: Arial, sans-serif;
-              color: #111827;
-              padding: 24px;
-            }
+    const dados = registrosOrdenados.map((registro) => ({
+      'Data/Hora': formatarDataHoraRotina(registro.data_registro),
+      Convivente: registro.convivente_nome || '-',
+      Prontuário: `#${registro.numero_institucional || 'S/N'}`,
+      Tipo: registro.tipo_registro || '-',
+      Operador: registro.usuario_nome || '-',
+      Status: `${registro.cancelado ? 'Cancelado' : 'Ativo'}${registro.foi_editado ? ' / Editado' : ''}${registro.retorno_rapido ? ' / Retorno rápido' : ''}`,
+      'Observações/Auditoria': montarObservacoesAuditoriaRegistro(registro) || '-',
+    }));
 
-            h1 {
-              margin: 0;
-              font-size: 22px;
-            }
-
-            .cabecalho {
-              display: flex;
-              align-items: center;
-              justify-content: space-between;
-              gap: 24px;
-              border-bottom: 2px solid #e5e7eb;
-              padding-bottom: 16px;
-              margin-bottom: 18px;
-            }
-
-            .logo {
-              width: 220px;
-              max-height: 84px;
-              object-fit: contain;
-            }
-
-            .titulo {
-              text-align: right;
-            }
-
-            .subtitulo {
-              color: #6b7280;
-              margin-top: 4px;
-              margin-bottom: 18px;
-              font-size: 12px;
-            }
-
-            .resumo {
-              display: grid;
-              grid-template-columns: repeat(4, 1fr);
-              gap: 8px;
-              margin-bottom: 18px;
-            }
-
-            .card {
-              border: 1px solid #e5e7eb;
-              border-radius: 10px;
-              padding: 10px;
-            }
-
-            .card span {
-              color: #6b7280;
-              display: block;
-              font-size: 11px;
-              text-transform: uppercase;
-              font-weight: bold;
-            }
-
-            .card strong {
-              font-size: 20px;
-            }
-
-            table {
-              width: 100%;
-              border-collapse: collapse;
-              font-size: 11px;
-            }
-
-            th,
-            td {
-              border: 1px solid #e5e7eb;
-              padding: 7px;
-              vertical-align: top;
-              text-align: left;
-            }
-
-            th {
-              background: #f3f4f6;
-              text-transform: uppercase;
-              font-size: 10px;
-            }
-
-            .assinatura {
-              margin-top: 48px;
-              display: flex;
-              justify-content: flex-end;
-            }
-
-            .linha-assinatura {
-              width: 280px;
-              border-top: 1px solid #111827;
-              text-align: center;
-              padding-top: 8px;
-              font-size: 11px;
-            }
-
-            @media print {
-              body {
-                padding: 8px;
-              }
-
-              button {
-                display: none;
-              }
-            }
-          </style>
-        </head>
-
-        <body>
-          <button onclick="window.print()" style="margin-bottom: 16px; padding: 8px 14px; border-radius: 8px; border: 1px solid #d1d5db; background: #fff; cursor: pointer;">
-            Imprimir / Salvar PDF
-          </button>
-
-          <div class="cabecalho">
-            <img class="logo" src="${logoCarecore}" alt="CARECORE+" />
-
-            <div class="titulo">
-              <h1>Histórico Geral da Rotina</h1>
-
-              <div class="subtitulo">
-                Relatório operacional gerado em ${new Date().toLocaleString('pt-BR')}
-              </div>
-            </div>
-          </div>
-
-          <div class="resumo">
-            <div class="card"><span>Total</span><strong>${resumo.total}</strong></div>
-            <div class="card"><span>Entradas</span><strong>${resumo.entradas}</strong></div>
-            <div class="card"><span>Saídas</span><strong>${resumo.saidas}</strong></div>
-            <div class="card"><span>Almoços</span><strong>${resumo.almocos}</strong></div>
-            <div class="card"><span>Retorno rápido</span><strong>${resumo.retornosRapidos}</strong></div>
-            <div class="card"><span>Editados</span><strong>${resumo.editados}</strong></div>
-            <div class="card"><span>Cancelados</span><strong>${resumo.cancelados}</strong></div>
-          </div>
-
-          <table>
-            <thead>
-              <tr>
-                <th>Data/Hora</th>
-                <th>Convivente</th>
-                <th>Tipo</th>
-                <th>Operador</th>
-                <th>Status</th>
-                <th>Observações/Auditoria</th>
-              </tr>
-            </thead>
-
-            <tbody>
-              ${linhas || '<tr><td colspan="6">Nenhum registro encontrado.</td></tr>'}
-            </tbody>
-          </table>
-
-          <div class="assinatura">
-            <div class="linha-assinatura">
-              Responsável pela conferência
-            </div>
-          </div>
-        </body>
-      </html>
-    `;
-
-    const janela = window.open('', '_blank');
-
-    if (!janela) {
-      avisarErro('Permita pop-ups para abrir o relatório de impressão.');
-      return;
-    }
-
-    janela.document.open();
-
-    janela.document.write(html);
-
-    janela.document.close();
+    imprimirRelatorio({
+      titulo: 'Histórico Geral da Rotina',
+      subtitulo: `${registrosOrdenados.length} registro(s) filtrado(s). Filtros: ${filtrosAtivos.join(' | ') || 'Todos'}.`,
+      metricas: [
+        { label: 'Total', valor: resumo.total },
+        { label: 'Entradas', valor: resumo.entradas },
+        { label: 'Saídas', valor: resumo.saidas },
+        { label: rotuloTipoSelecionado, valor: totalTipoSelecionado },
+        { label: 'Retorno rápido', valor: resumo.retornosRapidos },
+        { label: 'Editados', valor: resumo.editados },
+        { label: 'Cancelados', valor: resumo.cancelados },
+      ],
+      conteudoExtraHtml: '',
+      colunas,
+      dados,
+      identidade: {
+        ...identidadeRelatorio,
+        logo_src: logoRelatorioDataUrl,
+      },
+    });
   };
 
   // =====================================================================
@@ -594,31 +536,30 @@ export default function RotinaHistorico() {
         <PageHeader
           eyebrow="Auditoria da rotina"
           title="Histórico Geral da Rotina"
-          subtitle="Entradas, saídas, alimentação e eventos de auditoria dos conviventes."
+          subtitle="Entradas, saídas, refeições, enxoval, bagagem, documentos e eventos de auditoria."
           icon="H"
           actions={(
             <>
-            <PremiumButton
-              type="button"
+            <ReportActionButton
+              action="export"
               onClick={exportarXLSX}
-              className="bg-emerald-600 hover:bg-emerald-700"
             >
-              Exportar XLSX
-            </PremiumButton>
+              Exportar
+            </ReportActionButton>
 
-            <PremiumButton
-              type="button"
-              variant="primary"
+            <ReportActionButton
+              action="print"
               onClick={abrirRelatorioImpressao}
             >
-              Relatório para impressão
-            </PremiumButton>
+              Imprimir
+            </ReportActionButton>
             </>
           )}
         />
 
         <ScrollArea className="pb-24">
           <div className="w-full max-w-7xl mx-auto">
+            <DireitosReservadosAviso className="mb-4" />
 
         {erro && (
           <div className="mb-5 rounded-2xl border border-red-100 bg-red-50 p-4 text-sm font-semibold text-red-700">
@@ -651,9 +592,11 @@ export default function RotinaHistorico() {
             <p className="text-2xl font-black text-orange-700">{resumo.saidas}</p>
           </div>
 
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-3 sm:p-4">
-            <p className="text-xs uppercase font-black text-gray-400">Almoços</p>
-            <p className="text-2xl font-black text-blue-700">{resumo.almocos}</p>
+          <div className="bg-violet-50 rounded-2xl border border-violet-100 shadow-sm p-3 sm:p-4">
+            <p className="text-xs uppercase font-black text-violet-400 truncate" title={rotuloTipoSelecionado}>
+              {rotuloTipoSelecionado}
+            </p>
+            <p className="text-2xl font-black text-violet-700">{totalTipoSelecionado}</p>
           </div>
 
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-3 sm:p-4">
@@ -737,7 +680,7 @@ export default function RotinaHistorico() {
             <div>
 
               <label className="block text-xs font-bold text-gray-500 uppercase mb-1">
-                Tipo
+                Tipo de registro
               </label>
 
               <select
@@ -748,10 +691,11 @@ export default function RotinaHistorico() {
                 }}
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
               >
-                <option value="">Todos</option>
-                <option value="Entrada">Entrada</option>
-                <option value="Saída">Saída</option>
-                <option value="Almoço">Almoço</option>
+                {TIPOS_REGISTRO_FILTRO.map((opcao) => (
+                  <option key={opcao.valor || 'todos'} value={opcao.valor}>
+                    {opcao.label}
+                  </option>
+                ))}
               </select>
 
             </div>
@@ -899,11 +843,9 @@ export default function RotinaHistorico() {
                     )}
                   </div>
 
-                  {(registro.justificativa_retorno_rapido || registro.motivo_edicao || registro.motivo_cancelamento) && (
+                  {montarObservacoesAuditoriaRegistro(registro) && (
                     <p className="mt-3 rounded-xl bg-white px-3 py-2 text-xs leading-relaxed text-gray-600">
-                      {registro.justificativa_retorno_rapido && <>Justificativa: {registro.justificativa_retorno_rapido}</>}
-                      {!registro.justificativa_retorno_rapido && registro.motivo_edicao && <>Edição: {registro.motivo_edicao}</>}
-                      {!registro.justificativa_retorno_rapido && !registro.motivo_edicao && registro.motivo_cancelamento && <>Cancelamento: {registro.motivo_cancelamento}</>}
+                      {montarObservacoesAuditoriaRegistro(registro)}
                     </p>
                   )}
 
@@ -1080,27 +1022,13 @@ export default function RotinaHistorico() {
 
                         </div>
 
-                        {(registro.justificativa_retorno_rapido || registro.motivo_edicao || registro.motivo_cancelamento) && (
+                        {montarObservacoesAuditoriaRegistro(registro) && (
 
                           <p
                             className="text-[11px] text-gray-500 mt-1 line-clamp-2 max-w-xl"
-                            title={
-                              registro.justificativa_retorno_rapido ||
-                              registro.motivo_edicao ||
-                              registro.motivo_cancelamento
-                            }
+                            title={montarObservacoesAuditoriaRegistro(registro)}
                           >
-                            {registro.justificativa_retorno_rapido && (
-                              <>Justificativa: {registro.justificativa_retorno_rapido}</>
-                            )}
-
-                            {!registro.justificativa_retorno_rapido && registro.motivo_edicao && (
-                              <>Edição: {registro.motivo_edicao}</>
-                            )}
-
-                            {!registro.justificativa_retorno_rapido && !registro.motivo_edicao && registro.motivo_cancelamento && (
-                              <>Cancelamento: {registro.motivo_cancelamento}</>
-                            )}
+                            {montarObservacoesAuditoriaRegistro(registro)}
                           </p>
 
                         )}
@@ -1203,9 +1131,9 @@ export default function RotinaHistorico() {
 
       {registroEditando && (
 
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+        <div className="carecore-modal-overlay fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
 
-          <div className="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl">
+          <div className="carecore-modal-panel bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl">
 
             <h2 className="text-xl font-black text-gray-800 mb-4">
               Editar Registro
@@ -1226,17 +1154,11 @@ export default function RotinaHistorico() {
                   }
                   className="w-full border border-gray-300 rounded-xl px-4 py-3"
                 >
-                  <option value="Entrada">
-                    Entrada
-                  </option>
-
-                  <option value="Saída">
-                    Saída
-                  </option>
-
-                  <option value="Almoço">
-                    Almoço
-                  </option>
+                  {TIPOS_REGISTRO_EDICAO.map((tipo) => (
+                    <option key={tipo} value={tipo}>
+                      {tipo}
+                    </option>
+                  ))}
 
                 </select>
 
@@ -1293,9 +1215,9 @@ export default function RotinaHistorico() {
 
       {registroCancelando && (
 
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+        <div className="carecore-modal-overlay fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
 
-          <div className="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl">
+          <div className="carecore-modal-panel bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl">
 
             <h2 className="text-xl font-black text-gray-800 mb-4">
               Cancelar Registro

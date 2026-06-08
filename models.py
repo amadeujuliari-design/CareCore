@@ -2,7 +2,7 @@
 # =====================================================================
 # ARQUIVO: models.py (COMPLETO E AUDITADO - COM AVISOS INTERNOS)
 # =====================================================================
-from sqlalchemy import Column, String, Boolean, ForeignKey, Integer, Date, Float, Text, DateTime
+from sqlalchemy import Column, String, Boolean, ForeignKey, Integer, Date, Float, Text, DateTime, Index, UniqueConstraint
 import uuid
 import datetime
 from database import Base
@@ -10,12 +10,40 @@ from database import Base
 def get_uuid():
     return str(uuid.uuid4())
 
+class OrganizacaoDB(Base):
+    __tablename__ = "organizacoes"
+    id = Column(String, primary_key=True, default=get_uuid)
+    nome = Column(String, nullable=False)
+    cnpj = Column(String, nullable=True)
+    telefone = Column(String, nullable=True)
+    email = Column(String, nullable=True)
+    cep = Column(String, nullable=True)
+    logradouro = Column(String, nullable=True)
+    numero = Column(String, nullable=True)
+    complemento = Column(String, nullable=True)
+    bairro = Column(String, nullable=True)
+    cidade = Column(String, nullable=True)
+    uf = Column(String, nullable=True)
+    is_active = Column(Boolean, default=True)
+    criado_em = Column(DateTime, default=datetime.datetime.utcnow)
+
 class InstituicaoDB(Base):
     __tablename__ = "instituicoes"
     id = Column(String, primary_key=True, default=get_uuid)
+    organizacao_id = Column(String, ForeignKey("organizacoes.id"), nullable=True, index=True)
     nome_fantasia = Column(String, nullable=False)
     cnpj = Column(String, nullable=True)
     telefone = Column(String, nullable=False)
+    email = Column(String, nullable=True)
+    cep = Column(String, nullable=True)
+    logradouro = Column(String, nullable=True)
+    numero = Column(String, nullable=True)
+    complemento = Column(String, nullable=True)
+    bairro = Column(String, nullable=True)
+    cidade = Column(String, nullable=True)
+    uf = Column(String, nullable=True)
+    tipo_projeto = Column(String, default="Projeto")
+    projeto_unico = Column(Boolean, default=True)
     is_active = Column(Boolean, default=True) 
     # Controle SaaS / assinatura da instituição
     status_assinatura = Column(String, default="Ativa")
@@ -23,6 +51,15 @@ class InstituicaoDB(Base):
     bloqueado = Column(Boolean, default=False)
     bloqueado_em = Column(DateTime, nullable=True)
     dias_tolerancia = Column(Integer, default=5)
+    # Identidade visual/documental dos relatórios do projeto
+    relatorio_logo_url = Column(String, nullable=True)
+    relatorio_nome_exibicao = Column(String, nullable=True)
+    relatorio_rodape_linha1 = Column(String, nullable=True)
+    relatorio_rodape_linha2 = Column(String, nullable=True)
+    relatorio_telefone = Column(String, nullable=True)
+    relatorio_email = Column(String, nullable=True)
+    relatorio_site = Column(String, nullable=True)
+    historico_legado_ativo = Column(Boolean, default=False)
 
 class UsuarioDB(Base):
     __tablename__ = "usuarios"
@@ -36,6 +73,13 @@ class UsuarioDB(Base):
         String,
         ForeignKey("instituicoes.id"),
         nullable=False,
+        index=True,
+    )
+
+    organizacao_id = Column(
+        String,
+        ForeignKey("organizacoes.id"),
+        nullable=True,
         index=True,
     )
 
@@ -70,6 +114,8 @@ class UsuarioDB(Base):
     perfil_acesso = Column(String, default="Consulta")
 
     is_master = Column(Boolean, default=False)
+
+    is_global = Column(Boolean, default=False)
 
     ativo = Column(Boolean, default=True)
 
@@ -205,6 +251,8 @@ class ConviventeDB(Base):
     
     numero_institucional = Column(Integer, nullable=True, index=True)
     status = Column(String, default="Ativo")
+    inativado_em = Column(DateTime, nullable=True)
+    ausencia_justificada_desde = Column(Date, nullable=True, index=True)
     motivo_inativacao_id = Column(String, ForeignKey("motivos_inativacao.id"), nullable=True)
     origem_encaminhamento_id = Column(String, ForeignKey("origens_encaminhamento.id"), nullable=True)
     data_entrada = Column(Date, nullable=True)
@@ -253,10 +301,44 @@ class ConviventeDB(Base):
     
     egresso_prisional = Column(Boolean, default=False)
     usa_tornozeleira = Column(Boolean, default=False)
+    tem_mandado_prisao = Column(Boolean, default=False)
     medidas_protetivas = Column(Text, nullable=True)
     acompanhamento_caps = Column(String, nullable=True)
     uso_substancias = Column(Text, nullable=True)
     transtorno_mental = Column(Text, nullable=True)
+
+class RegistroPIADB(Base):
+    __tablename__ = "registros_pia"
+
+    id = Column(String, primary_key=True, default=get_uuid)
+    instituicao_id = Column(String, ForeignKey("instituicoes.id"), nullable=False)
+    convivente_id = Column(String, ForeignKey("conviventes.id"), nullable=False)
+    usuario_id = Column(String, ForeignKey("usuarios.id"), nullable=False)
+    registro_pai_id = Column(String, ForeignKey("registros_pia.id"), nullable=True)
+
+    tipo_registro = Column(String, nullable=False, default="Evolução")
+    titulo = Column(String, nullable=False)
+    subtitulo = Column(String, nullable=True)
+    descricao = Column(Text, nullable=False)
+    objetivos = Column(Text, nullable=True)
+    encaminhamentos = Column(Text, nullable=True)
+    status = Column(String, nullable=False, default="Em acompanhamento")
+    data_registro = Column(DateTime, default=datetime.datetime.utcnow)
+
+class HistoricoConviventeDB(Base):
+    __tablename__ = "historicos_conviventes"
+
+    id = Column(String, primary_key=True, default=get_uuid)
+    instituicao_id = Column(String, ForeignKey("instituicoes.id"), nullable=False, index=True)
+    convivente_id = Column(String, ForeignKey("conviventes.id"), nullable=False, index=True)
+    usuario_id = Column(String, ForeignKey("usuarios.id"), nullable=False)
+    historico_legado_id = Column(String, ForeignKey("historico_legado_siat.id"), nullable=True)
+
+    origem_informacao = Column(String, nullable=False)
+    data_origem = Column(Date, nullable=False, index=True)
+    titulo = Column(String, nullable=True)
+    descricao = Column(Text, nullable=False)
+    criado_em = Column(DateTime, default=datetime.datetime.utcnow)
 
 class DocumentoConviventeDB(Base):
     __tablename__ = "documentos_conviventes"
@@ -265,6 +347,7 @@ class DocumentoConviventeDB(Base):
     nome_arquivo = Column(String, nullable=False) 
     caminho_arquivo = Column(String, nullable=False) 
     tipo_documento = Column(String, nullable=False)
+    sensivel = Column(Boolean, default=False)
     data_upload = Column(DateTime, default=datetime.datetime.utcnow)
 
 class OcorrenciaConviventeDB(Base):
@@ -276,6 +359,11 @@ class OcorrenciaConviventeDB(Base):
     
     usuario_criador_id = Column(String, ForeignKey("usuarios.id"), nullable=False)
     tecnico_responsavel_id = Column(String, ForeignKey("usuarios.id"), nullable=True)
+    convivente_autor_ocorrencia = Column(Boolean, default=False)
+    funcionario_envolvido_id = Column(String, ForeignKey("usuarios.id"), nullable=True)
+    assinatura_convivente_metodo = Column(String, nullable=True)
+    assinatura_convivente_codigo = Column(String, nullable=True)
+    assinatura_convivente_validada_em = Column(DateTime, nullable=True)
     
     tipo_ocorrencia = Column(String, nullable=False)
     motivo = Column(String, nullable=False) 
@@ -283,6 +371,7 @@ class OcorrenciaConviventeDB(Base):
     data_ocorrencia = Column(DateTime, default=datetime.datetime.utcnow)
     
     requer_acao_tecnica = Column(Boolean, default=False)
+    prioridade = Column(String, default="Média")
     status_resolucao = Column(String, default="Pendente")
     
     parecer_tecnico = Column(Text, nullable=True) 
@@ -319,6 +408,7 @@ class RegistroRotinaDB(Base):
     usuario_id = Column(String, ForeignKey("usuarios.id"), nullable=False)
     
     tipo_registro = Column(String, nullable=False)
+    observacao = Column(Text, nullable=True)
     data_registro = Column(DateTime, default=datetime.datetime.utcnow)
 
     # Retorno rápido: entrada registrada em menos de 10 minutos após uma saída
@@ -340,6 +430,89 @@ class RegistroRotinaDB(Base):
     cancelado_por_id = Column(String, ForeignKey("usuarios.id"), nullable=True)
     cancelado_em = Column(DateTime, nullable=True)
     motivo_cancelamento = Column(Text, nullable=True)
+
+class HistoricoLegadoSIATDB(Base):
+    __tablename__ = "historico_legado_siat"
+
+    id = Column(String, primary_key=True, default=get_uuid)
+    instituicao_id = Column(String, ForeignKey("instituicoes.id"), nullable=True, index=True)
+
+    origem_informacao = Column(String, default="SIAT II", nullable=False)
+    arquivo_origem = Column(String, nullable=False, index=True)
+    ano_origem = Column(Integer, nullable=True, index=True)
+    pagina_origem = Column(Integer, nullable=True)
+    sequencia_origem = Column(Integer, nullable=True)
+
+    data_original = Column(Date, nullable=True, index=True)
+    data_original_texto = Column(String, nullable=True)
+    operador_origem = Column(String, nullable=True, index=True)
+    titulo_original = Column(String, nullable=True)
+    nome_identificado = Column(String, nullable=True, index=True)
+
+    tipo_sugerido = Column(String, default="Não classificado", index=True)
+    status_revisao = Column(String, default="Pendente", index=True)
+    texto_original = Column(Text, nullable=False)
+    observacoes_revisao = Column(Text, nullable=True)
+
+    importado_em = Column(DateTime, default=datetime.datetime.utcnow)
+
+
+class HistoricoLegadoRotinaSIATDB(Base):
+    __tablename__ = "historico_legado_rotina_siat"
+    __table_args__ = (
+        UniqueConstraint("id_as_atendimento_serv_legado", name="uq_rotina_siat_atendimento_serv_legado"),
+        Index("ix_rotina_siat_instituicao_data", "instituicao_id", "data_servico"),
+        Index("ix_rotina_siat_instituicao_convivente_data", "instituicao_id", "convivente_id", "data_servico"),
+        Index("ix_rotina_siat_instituicao_sisa_data", "instituicao_id", "numero_sisa", "data_servico"),
+        Index("ix_rotina_siat_instituicao_servico_data", "instituicao_id", "servico_prestado", "data_servico"),
+        Index("ix_rotina_siat_instituicao_quarto_cama", "instituicao_id", "quarto", "cama"),
+        Index("ix_rotina_siat_instituicao_status", "instituicao_id", "status_revisao"),
+        Index("ix_rotina_siat_legado_atendimento", "id_as_atendimento_legado"),
+        Index("ix_rotina_siat_nome_convivente", "instituicao_id", "nome_convivente"),
+        Index("ix_rotina_siat_usuario_origem", "instituicao_id", "usuario_origem"),
+        Index("ix_rotina_siat_instituicao_identificado_data", "instituicao_id", "identificado", "data_servico"),
+    )
+
+    id = Column(String, primary_key=True, default=get_uuid)
+    instituicao_id = Column(String, ForeignKey("instituicoes.id"), nullable=False)
+    convivente_id = Column(String, ForeignKey("conviventes.id"), nullable=True)
+
+    origem_arquivo = Column(String, nullable=False)
+    linha_origem = Column(Integer, nullable=True)
+    id_as_atendimento_serv_legado = Column(String, nullable=False)
+    id_as_atendimento_legado = Column(String, nullable=True)
+    id_cr_clientes_legado = Column(String, nullable=True)
+
+    numero_sisa = Column(String, nullable=True)
+    numero_institucional_legado = Column(String, nullable=True)
+    nome_convivente = Column(String, nullable=True)
+    data_nascimento = Column(Date, nullable=True)
+    nome_mae = Column(String, nullable=True)
+
+    data_servico = Column(Date, nullable=False)
+    servico_prestado = Column(String, nullable=True)
+    id_servico_prestado_legado = Column(String, nullable=True)
+    atividade = Column(String, nullable=True)
+    id_atividade_legado = Column(String, nullable=True)
+
+    quarto = Column(String, nullable=True)
+    cama = Column(String, nullable=True)
+    periodo_acolhimento = Column(String, nullable=True)
+    data_entrada = Column(Date, nullable=True)
+    data_saida = Column(Date, nullable=True)
+    motivo_saida = Column(String, nullable=True)
+    gestante = Column(Boolean, nullable=True)
+    gestante_com_pre_natal = Column(Boolean, nullable=True)
+
+    auditoria_datahora = Column(DateTime, nullable=True)
+    usuario_origem = Column(String, nullable=True)
+    chave_natural_convivente = Column(String, nullable=True)
+    confianca_vinculo = Column(String, nullable=True)
+    identificado = Column(Boolean, default=False)
+    status_revisao = Column(String, default="Pendente")
+    observacoes = Column(Text, nullable=True)
+    importado_em = Column(DateTime, default=datetime.datetime.utcnow)
+
 
 class FechamentoMensalDB(Base):
     __tablename__ = "fechamentos_mensais"
@@ -380,6 +553,100 @@ class SisaLancamentoDB(Base):
     lancado_em = Column(DateTime, default=datetime.datetime.utcnow)
 
     observacoes = Column(Text, nullable=True)
+
+
+class SisaImportacaoDB(Base):
+    __tablename__ = "sisa_importacoes"
+
+    id = Column(String, primary_key=True, default=get_uuid)
+    instituicao_id = Column(String, ForeignKey("instituicoes.id"), nullable=False)
+    usuario_id = Column(String, ForeignKey("usuarios.id"), nullable=False)
+
+    nome_arquivo = Column(String, nullable=False)
+    servico = Column(String, nullable=True)
+    data_referencia = Column(Date, nullable=False)
+    importado_em = Column(DateTime, default=datetime.datetime.utcnow)
+
+    total_linhas = Column(Integer, default=0)
+    total_vinculados = Column(Integer, default=0)
+    total_nao_encontrados = Column(Integer, default=0)
+    total_divergencias = Column(Integer, default=0)
+    total_alertas_criticos = Column(Integer, default=0)
+
+
+class SisaPresencaImportadaDB(Base):
+    __tablename__ = "sisa_presencas_importadas"
+
+    id = Column(String, primary_key=True, default=get_uuid)
+    importacao_id = Column(String, ForeignKey("sisa_importacoes.id"), nullable=False)
+    instituicao_id = Column(String, ForeignKey("instituicoes.id"), nullable=False)
+    convivente_id = Column(String, ForeignKey("conviventes.id"), nullable=True)
+
+    numero_sisa = Column(String, nullable=False)
+    nome_planilha = Column(String, nullable=False)
+    nome_social_planilha = Column(String, nullable=True)
+    data_referencia = Column(Date, nullable=False)
+    data_nascimento = Column(Date, nullable=True)
+    sexo = Column(String, nullable=True)
+    data_vinculacao = Column(Date, nullable=True)
+    data_desligamento = Column(Date, nullable=True)
+    dias_permanencia = Column(Integer, nullable=False, default=0)
+    status_vinculo = Column(String, default="Vinculado")
+
+
+class AusenciaJustificadaConfirmacaoDB(Base):
+    __tablename__ = "ausencias_justificadas_confirmacoes"
+    __table_args__ = (
+        Index("ix_aus_just_conf_instituicao_id", "instituicao_id"),
+        Index("ix_aus_just_conf_convivente_id", "convivente_id"),
+        Index("ix_aus_just_conf_data_referencia", "data_referencia"),
+        Index(
+            "ux_aus_just_conf_convivente_data",
+            "instituicao_id",
+            "convivente_id",
+            "data_referencia",
+            unique=True,
+        ),
+    )
+
+    id = Column(String, primary_key=True, default=get_uuid)
+    instituicao_id = Column(String, ForeignKey("instituicoes.id"), nullable=False)
+    convivente_id = Column(String, ForeignKey("conviventes.id"), nullable=False)
+    usuario_id = Column(String, ForeignKey("usuarios.id"), nullable=False)
+
+    data_referencia = Column(Date, nullable=False)
+    continua_ausente = Column(Boolean, nullable=False)
+    status_atribuido = Column(String, nullable=True)
+    justificativa = Column(Text, nullable=True)
+    respondido_em = Column(DateTime, default=datetime.datetime.utcnow)
+
+
+class SisaDivergenciaDB(Base):
+    __tablename__ = "sisa_divergencias"
+
+    id = Column(String, primary_key=True, default=get_uuid)
+    importacao_id = Column(String, ForeignKey("sisa_importacoes.id"), nullable=False)
+    instituicao_id = Column(String, ForeignKey("instituicoes.id"), nullable=False)
+    convivente_id = Column(String, ForeignKey("conviventes.id"), nullable=True)
+
+    numero_sisa = Column(String, nullable=False)
+    nome_convivente = Column(String, nullable=False)
+    tipo = Column(String, nullable=False)
+    prioridade = Column(String, default="Normal")
+    status = Column(String, default="Pendente")
+
+    data_inicio = Column(Date, nullable=True)
+    data_fim = Column(Date, nullable=False)
+    dias_sisa_anterior = Column(Integer, nullable=True)
+    dias_sisa_atual = Column(Integer, nullable=False, default=0)
+    dias_sisa_delta = Column(Integer, nullable=True)
+    dias_carecore = Column(Integer, nullable=False, default=0)
+    diferenca = Column(Integer, nullable=True)
+
+    dias_carecore_lista = Column(Text, nullable=True)
+    resumo_carecore_json = Column(Text, nullable=True)
+    mensagem = Column(Text, nullable=True)
+    criado_em = Column(DateTime, default=datetime.datetime.utcnow)
 
 # =====================================================================
 # COMUNICAÇÃO INTERNA / AVISOS IMPORTANTES
@@ -437,6 +704,41 @@ class AvisoDestinatarioDB(Base):
     lido = Column(Boolean, default=False)
     lido_em = Column(DateTime, nullable=True)
     criado_em = Column(DateTime, default=datetime.datetime.utcnow)
+
+
+class ChatConversaDB(Base):
+    __tablename__ = "chat_conversas"
+
+    id = Column(String, primary_key=True, default=get_uuid)
+    instituicao_id = Column(String, ForeignKey("instituicoes.id"), nullable=False, index=True)
+    tipo = Column(String, default="direta", nullable=False)
+    titulo = Column(String, nullable=True)
+    criado_por_id = Column(String, ForeignKey("usuarios.id"), nullable=False)
+    criado_em = Column(DateTime, default=datetime.datetime.utcnow)
+    atualizado_em = Column(DateTime, default=datetime.datetime.utcnow)
+
+
+class ChatParticipanteDB(Base):
+    __tablename__ = "chat_participantes"
+
+    id = Column(String, primary_key=True, default=get_uuid)
+    conversa_id = Column(String, ForeignKey("chat_conversas.id"), nullable=False, index=True)
+    usuario_id = Column(String, ForeignKey("usuarios.id"), nullable=False, index=True)
+    instituicao_id = Column(String, ForeignKey("instituicoes.id"), nullable=False, index=True)
+    ativo = Column(Boolean, default=True)
+    ultimo_lido_em = Column(DateTime, nullable=True)
+    criado_em = Column(DateTime, default=datetime.datetime.utcnow)
+
+
+class ChatMensagemDB(Base):
+    __tablename__ = "chat_mensagens"
+
+    id = Column(String, primary_key=True, default=get_uuid)
+    conversa_id = Column(String, ForeignKey("chat_conversas.id"), nullable=False, index=True)
+    instituicao_id = Column(String, ForeignKey("instituicoes.id"), nullable=False, index=True)
+    remetente_id = Column(String, ForeignKey("usuarios.id"), nullable=False, index=True)
+    conteudo = Column(Text, nullable=False)
+    criado_em = Column(DateTime, default=datetime.datetime.utcnow, index=True)
 
 
 

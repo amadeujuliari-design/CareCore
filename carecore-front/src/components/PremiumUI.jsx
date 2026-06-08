@@ -3,12 +3,16 @@
 // Componentes visuais reutilizáveis CARECORE+ Premium UI
 // =====================================================================
 
+import { forwardRef } from 'react';
+import { Download, Printer } from 'lucide-react';
+import ProjetoAtualBadge from './ProjetoAtualBadge';
+
 export function PremiumPage({ title, subtitle, actions, children }) {
   return (
     <main className="carecore-page">
       <header className="carecore-topbar">
         <div className="flex-1 min-w-0">
-          <h1 className="text-2xl font-extrabold tracking-tight text-slate-900">
+          <h1 className="text-2xl font-bold tracking-tight text-slate-900">
             {title}
           </h1>
           {subtitle && (
@@ -39,7 +43,7 @@ export function PremiumCard({ title, subtitle, icon, children, footer, className
         <div className="mb-4 flex items-start justify-between gap-4">
           <div>
             {title && (
-              <h2 className="text-base font-extrabold text-slate-900">
+              <h2 className="text-base font-bold text-slate-900">
                 {title}
               </h2>
             )}
@@ -82,10 +86,10 @@ export function PremiumMetric({ label, value, helper, icon, tone = 'blue' }) {
     <div className="carecore-card p-5">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <p className="text-sm font-bold text-slate-500">
+          <p className="text-sm font-semibold text-slate-500">
             {label}
           </p>
-          <p className="mt-2 text-3xl font-extrabold tracking-tight text-slate-950">
+          <p className="mt-2 text-3xl font-bold tracking-tight text-slate-900">
             {value}
           </p>
           {helper && (
@@ -116,7 +120,7 @@ export function PremiumBadge({ children, variant = 'default' }) {
   };
 
   return (
-    <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-bold ${variants[variant] || variants.default}`}>
+    <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${variants[variant] || variants.default}`}>
       {children}
     </span>
   );
@@ -126,7 +130,7 @@ export function PremiumAlertTitle({ children }) {
   return (
     <div className="flex items-center gap-2">
       <span className="carecore-badge-alert">!</span>
-      <h2 className="text-base font-extrabold text-slate-900">
+      <h2 className="text-base font-bold text-slate-900">
         {children}
       </h2>
     </div>
@@ -181,23 +185,22 @@ export function PageHeader({ eyebrow, title, subtitle, icon, actions }) {
           </div>
         </div>
 
-        {actions && (
-          <div className="flex flex-wrap items-center gap-2">
-            {actions}
-          </div>
-        )}
+        <div className="flex flex-wrap items-center gap-2">
+          <ProjetoAtualBadge />
+          {actions}
+        </div>
       </div>
     </header>
   );
 }
 
-export function ScrollArea({ children, className = '' }) {
+export const ScrollArea = forwardRef(function ScrollArea({ children, className = '' }, ref) {
   return (
-    <main className={`carecore-scroll-area ${className}`}>
+    <main ref={ref} className={`carecore-scroll-area ${className}`}>
       {children}
     </main>
   );
-}
+});
 
 export function PremiumButton({
   children,
@@ -206,8 +209,8 @@ export function PremiumButton({
   ...props
 }) {
   const variants = {
-    primary: 'bg-slate-900 text-white shadow hover:bg-slate-800',
-    brand: 'bg-brand text-white shadow hover:bg-brandDark',
+    primary: 'bg-slate-900 text-white shadow-sm hover:bg-slate-800',
+    brand: 'bg-brand text-white shadow-sm hover:bg-brandDark',
     secondary: 'border border-slate-200 bg-white text-slate-700 shadow-sm hover:bg-slate-50',
     danger: 'border border-red-200 bg-red-50 text-red-700 hover:bg-red-100',
   };
@@ -222,6 +225,29 @@ export function PremiumButton({
   );
 }
 
+export function ReportActionButton({
+  action,
+  children,
+  className = '',
+  ...props
+}) {
+  const isExport = action === 'export';
+  const Icon = isExport ? Download : Printer;
+  const label = children || (isExport ? 'Exportar' : 'Imprimir');
+
+  return (
+    <PremiumButton
+      type="button"
+      variant={isExport ? 'brand' : 'secondary'}
+      className={`inline-flex items-center gap-2 text-xs font-black ${className}`}
+      {...props}
+    >
+      <Icon size={15} strokeWidth={2.4} />
+      <span>{label}</span>
+    </PremiumButton>
+  );
+}
+
 export function SectionCard({ title, subtitle, children, actions, className = '' }) {
   return (
     <section className={`rounded-3xl border border-slate-100 bg-white shadow-sm ${className}`}>
@@ -229,7 +255,7 @@ export function SectionCard({ title, subtitle, children, actions, className = ''
         <div className="border-b border-slate-100 px-5 py-4 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
           <div>
             {title && (
-              <h2 className="text-base font-black text-slate-900">
+              <h2 className="text-base font-bold text-slate-900">
                 {title}
               </h2>
             )}
@@ -258,7 +284,7 @@ export function SectionTitle({ title, subtitle, actions }) {
   return (
     <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
       <div>
-        <h2 className="text-base font-black text-slate-900">
+        <h2 className="text-base font-bold text-slate-900">
           {title}
         </h2>
 

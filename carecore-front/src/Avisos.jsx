@@ -6,17 +6,24 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Sidebar from "./Sidebar";
-import { AppShell, MainShell, PageHeader, PremiumButton, ScrollArea } from "./components/PremiumUI";
+import { AppShell, MainShell, PageHeader, PremiumButton, ReportActionButton, ScrollArea } from "./components/PremiumUI";
 import { exportarRelatorioXlsx } from "./utils/exportarRelatorioXlsx";
 import { imprimirRelatorio } from "./utils/imprimirRelatorio";
 import {
+  buscarIdentidadeRelatorios,
+  obterLogoRelatorioDataUrl,
+  obterLogoRelatorioSrc,
+} from "./utils/relatorioIdentidadePrint";
+import {
   criarAviso,
   listarMeusAvisos,
+  listarHistoricoAvisos,
   obterResumoAvisos,
   marcarAvisoComoLido,
   cancelarAviso,
 } from "./services/avisosService";
 import { API_ROOT } from "./config/apiBase";
+import { criarHeadersAutenticados } from "./utils/requestIdUtils";
 
 const CLASSIFICACOES = ["Informativo", "Atenção", "Urgente", "Comunicado", "Rotina", "Gestão"];
 
@@ -114,6 +121,16 @@ function prioridadeParaTipo(prioridade) {
   return "normal";
 }
 
+function dataValidadeParaFimDoDia(data) {
+  const valor = String(data || "").trim();
+
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(valor)) {
+    return null;
+  }
+
+  return `${valor}T23:59:59`;
+}
+
 const estadoInicialFormulario = {
   titulo: "",
   mensagem: "",
@@ -123,6 +140,16 @@ const estadoInicialFormulario = {
   destinatarios_ids: [],
   valido_ate: "",
 };
+
+const filtrosHistoricoInicial = {
+  status_filtro: "baixados",
+  busca: "",
+  classificacao: "Historico Orgsystem",
+  data_inicio: "",
+  data_fim: "",
+};
+
+const AVISOS_HISTORICO_POR_PAGINA = 10;
 
 
 function ModalAvisoCompleto({ aviso, onFechar, onMarcarLido }) {
@@ -134,8 +161,8 @@ function ModalAvisoCompleto({ aviso, onFechar, onMarcarLido }) {
   const mensagem = aviso.mensagem || aviso.mensagem_resumo || "Sem conteúdo informado.";
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-sm">
-      <div className="w-full max-w-3xl overflow-hidden rounded-[2rem] border border-white/70 bg-white shadow-2xl">
+    <div className="carecore-modal-overlay fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-sm">
+      <div className="carecore-modal-panel w-full max-w-3xl overflow-hidden rounded-[2rem] border border-white/70 bg-white shadow-2xl">
         <div className="border-b border-slate-100 bg-gradient-to-r from-purple-50 to-white p-5">
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
@@ -211,14 +238,18 @@ export default function Avisos() {
   const [erro, setErro] = useState("");
   const [sucesso, setSucesso] = useState("");
   const [avisoAberto, setAvisoAberto] = useState(null);
+  const [historicoAvisos, setHistoricoAvisos] = useState([]);
+  const [totalHistoricoAvisos, setTotalHistoricoAvisos] = useState(0);
+  const [paginaHistorico, setPaginaHistorico] = useState(1);
+  const [filtrosHistorico, setFiltrosHistorico] = useState(filtrosHistoricoInicial);
+  const [carregandoHistorico, setCarregandoHistorico] = useState(false);
+  const [identidadeRelatorio, setIdentidadeRelatorio] = useState(null);
 
   async function carregarUsuariosDestinatarios() {
     if (!usuario.token) return [];
 
     const resposta = await fetch(`${API_ROOT}/avisos/usuarios`, {
-      headers: {
-        Authorization: `Bearer ${usuario.token}`,
-      },
+      headers: criarHeadersAutenticados(usuario.token),
     });
 
     if (!resposta.ok) {
@@ -270,8 +301,35 @@ export default function Avisos() {
     }
   }
 
+  async function carregarHistoricoAvisos(filtros = filtrosHistorico, pagina = paginaHistorico) {
+    if (!usuario.token) return;
+
+    try {
+      setCarregandoHistorico(true);
+      setErro("");
+
+      const paginaSegura = Math.max(1, Number(pagina || 1));
+      const resultado = await listarHistoricoAvisos(usuario.token, {
+        ...filtros,
+        limite: AVISOS_HISTORICO_POR_PAGINA,
+        offset: (paginaSegura - 1) * AVISOS_HISTORICO_POR_PAGINA,
+      });
+
+      setHistoricoAvisos(Array.isArray(resultado.items) ? resultado.items : []);
+      setTotalHistoricoAvisos(Number(resultado.total || 0));
+      setPaginaHistorico(paginaSegura);
+    } catch (error) {
+      console.error("Erro ao carregar histórico de avisos", error);
+      setErro(error?.response?.data?.detail || "Não foi possível carregar o histórico de avisos.");
+    } finally {
+      setCarregandoHistorico(false);
+    }
+  }
+
   useEffect(() => {
     carregarAvisos();
+    carregarHistoricoAvisos(filtrosHistoricoInicial);
+    buscarIdentidadeRelatorios().then(setIdentidadeRelatorio);
   }, []);
 
   function atualizarCampo(campo, valor) {
@@ -345,7 +403,7 @@ export default function Avisos() {
       prioridade: formulario.prioridade,
       destino_tipo: formulario.destino_tipo,
       destinatarios_ids: destinatarios,
-      valido_ate: formulario.valido_ate || null,
+      valido_ate: dataValidadeParaFimDoDia(formulario.valido_ate),
     };
 
     try {
@@ -485,7 +543,9 @@ export default function Avisos() {
     });
   }
 
-  function abrirRelatorioImpressaoAvisos() {
+  async function abrirRelatorioImpressaoAvisos() {
+    const logoRelatorioDataUrl = await obterLogoRelatorioDataUrl(identidadeRelatorio);
+
     imprimirRelatorio({
       titulo: "Relatório de Comunicação Interna",
       subtitulo: `Total: ${relatorioAvisos.total} | Não lidos: ${relatorioAvisos.naoLidos} | Para todos: ${relatorioAvisos.paraTodos} | Direcionados: ${relatorioAvisos.direcionados}`,
@@ -500,6 +560,96 @@ export default function Avisos() {
         "Mensagem",
       ],
       dados: montarDadosRelatorioAvisos(),
+      identidade: {
+        ...identidadeRelatorio,
+        logo_src: obterLogoRelatorioSrc(logoRelatorioDataUrl),
+      },
+    });
+  }
+
+  function atualizarFiltroHistorico(campo, valor) {
+    setFiltrosHistorico((atual) => ({
+      ...atual,
+      [campo]: valor,
+    }));
+  }
+
+  function aplicarFiltrosHistorico(event) {
+    event?.preventDefault();
+    carregarHistoricoAvisos(filtrosHistorico, 1);
+  }
+
+  function limparFiltrosHistorico() {
+    setFiltrosHistorico(filtrosHistoricoInicial);
+    carregarHistoricoAvisos(filtrosHistoricoInicial, 1);
+  }
+
+  const totalPaginasHistorico = Math.max(
+    1,
+    Math.ceil(totalHistoricoAvisos / AVISOS_HISTORICO_POR_PAGINA)
+  );
+
+  const paginaHistoricoSegura = Math.min(paginaHistorico, totalPaginasHistorico);
+  const indiceInicialHistorico = totalHistoricoAvisos === 0
+    ? 0
+    : (paginaHistoricoSegura - 1) * AVISOS_HISTORICO_POR_PAGINA + 1;
+  const indiceFinalHistorico = Math.min(
+    paginaHistoricoSegura * AVISOS_HISTORICO_POR_PAGINA,
+    totalHistoricoAvisos
+  );
+  const primeiraPaginaHistoricoVisivel = Math.max(1, paginaHistoricoSegura - 2);
+  const ultimaPaginaHistoricoVisivel = Math.min(
+    totalPaginasHistorico,
+    primeiraPaginaHistoricoVisivel + 4
+  );
+  const paginasHistoricoVisiveis = Array.from(
+    { length: ultimaPaginaHistoricoVisivel - primeiraPaginaHistoricoVisivel + 1 },
+    (_, index) => primeiraPaginaHistoricoVisivel + index
+  );
+
+  function irParaPaginaHistorico(novaPagina) {
+    const pagina = Math.min(Math.max(novaPagina, 1), totalPaginasHistorico);
+    carregarHistoricoAvisos(filtrosHistorico, pagina);
+  }
+
+  function statusAvisoHistorico(aviso) {
+    if (aviso.ativo === false || aviso.cancelado_em) return "Baixado/Cancelado";
+    if (aviso.valido_ate && new Date(aviso.valido_ate) < new Date()) return "Expirado";
+    return "Ativo";
+  }
+
+  function montarDadosHistoricoAvisos() {
+    return (Array.isArray(historicoAvisos) ? historicoAvisos : []).map((item) => ({
+      Data: formatarDataHora(item.criado_em),
+      Título: item.titulo || "Aviso",
+      Classificação: item.classificacao || "-",
+      Prioridade: normalizarPrioridade(item.prioridade),
+      Status: statusAvisoHistorico(item),
+      "Baixado em": formatarDataHora(item.cancelado_em),
+      Mensagem: item.mensagem || "-",
+    }));
+  }
+
+  async function imprimirHistoricoAvisos() {
+    const logoRelatorioDataUrl = await obterLogoRelatorioDataUrl(identidadeRelatorio);
+
+    imprimirRelatorio({
+      titulo: "Histórico de Avisos Baixados",
+      subtitulo: `Página ${paginaHistoricoSegura} de ${totalPaginasHistorico} | Total filtrado: ${totalHistoricoAvisos} | Status: ${filtrosHistorico.status_filtro} | Classificação: ${filtrosHistorico.classificacao || "Todas"}`,
+      colunas: [
+        "Data",
+        "Título",
+        "Classificação",
+        "Prioridade",
+        "Status",
+        "Baixado em",
+        "Mensagem",
+      ],
+      dados: montarDadosHistoricoAvisos(),
+      identidade: {
+        ...identidadeRelatorio,
+        logo_src: obterLogoRelatorioSrc(logoRelatorioDataUrl),
+      },
     });
   }
 
@@ -716,11 +866,14 @@ export default function Avisos() {
                 <div>
                   <label className="mb-2 block text-xs font-black uppercase tracking-wide text-slate-500">Válido até</label>
                   <input
-                    type="datetime-local"
+                    type="date"
                     value={formulario.valido_ate}
                     onChange={(event) => atualizarCampo("valido_ate", event.target.value)}
                     className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm font-semibold outline-none focus:border-purple-300"
                   />
+                  <p className="mt-2 text-xs font-semibold text-slate-400">
+                    O aviso permanece ativo até 23:59 do dia escolhido.
+                  </p>
                 </div>
 
                 <button
@@ -743,21 +896,13 @@ export default function Avisos() {
                     </p>
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={exportarRelatorioAvisosXLSX}
-                    className="rounded-2xl border border-purple-100 bg-purple-50 px-4 py-3 text-xs font-black text-purple-700 hover:bg-purple-100"
-                  >
-                    Exportar XLSX
-                  </button>
+                  <ReportActionButton action="export" onClick={exportarRelatorioAvisosXLSX}>
+                    Exportar
+                  </ReportActionButton>
 
-                  <button
-                    type="button"
-                    onClick={abrirRelatorioImpressaoAvisos}
-                    className="rounded-2xl border border-slate-200 bg-slate-900 px-4 py-3 text-xs font-black text-white hover:bg-black"
-                  >
-                    Relatório para impressão
-                  </button>
+                  <ReportActionButton action="print" onClick={abrirRelatorioImpressaoAvisos}>
+                    Imprimir
+                  </ReportActionButton>
                 </div>
 
                 <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
@@ -908,6 +1053,169 @@ export default function Avisos() {
                   })}
                 </div>
               )}
+              </section>
+
+              <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+                <div className="mb-5 flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                  <div>
+                    <h2 className="text-xl font-black text-slate-900">Histórico de avisos baixados</h2>
+                    <p className="mt-1 text-sm text-slate-500">
+                      Consulte avisos cancelados, expirados ou importados como histórico. Esta lista não alimenta o dashboard.
+                    </p>
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    <Badge tipo="info">{totalHistoricoAvisos} filtrado(s)</Badge>
+                    <Badge tipo="roxo">10 por página</Badge>
+                    <ReportActionButton action="print" onClick={imprimirHistoricoAvisos}>
+                      Imprimir
+                    </ReportActionButton>
+                  </div>
+                </div>
+
+                <form onSubmit={aplicarFiltrosHistorico} className="mb-4 grid grid-cols-1 gap-3 lg:grid-cols-6">
+                  <div>
+                    <label className="mb-2 block text-xs font-black uppercase tracking-wide text-slate-500">Status</label>
+                    <select
+                      value={filtrosHistorico.status_filtro}
+                      onChange={(event) => atualizarFiltroHistorico("status_filtro", event.target.value)}
+                      className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-3 text-sm font-bold outline-none focus:border-purple-300"
+                    >
+                      <option value="baixados">Baixados</option>
+                      <option value="ativos">Ativos</option>
+                      <option value="todos">Todos</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="mb-2 block text-xs font-black uppercase tracking-wide text-slate-500">Classificação</label>
+                    <input
+                      value={filtrosHistorico.classificacao}
+                      onChange={(event) => atualizarFiltroHistorico("classificacao", event.target.value)}
+                      className="w-full rounded-2xl border border-slate-200 px-3 py-3 text-sm font-semibold outline-none focus:border-purple-300"
+                      placeholder="Ex.: Historico Orgsystem"
+                    />
+                  </div>
+
+                  <div className="lg:col-span-2">
+                    <label className="mb-2 block text-xs font-black uppercase tracking-wide text-slate-500">Buscar</label>
+                    <input
+                      value={filtrosHistorico.busca}
+                      onChange={(event) => atualizarFiltroHistorico("busca", event.target.value)}
+                      className="w-full rounded-2xl border border-slate-200 px-3 py-3 text-sm font-semibold outline-none focus:border-purple-300"
+                      placeholder="Título ou texto do aviso..."
+                    />
+                  </div>
+
+                  <div>
+                    <label className="mb-2 block text-xs font-black uppercase tracking-wide text-slate-500">Início</label>
+                    <input
+                      type="date"
+                      value={filtrosHistorico.data_inicio}
+                      onChange={(event) => atualizarFiltroHistorico("data_inicio", event.target.value)}
+                      className="w-full rounded-2xl border border-slate-200 px-3 py-3 text-sm font-semibold outline-none focus:border-purple-300"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="mb-2 block text-xs font-black uppercase tracking-wide text-slate-500">Fim</label>
+                    <input
+                      type="date"
+                      value={filtrosHistorico.data_fim}
+                      onChange={(event) => atualizarFiltroHistorico("data_fim", event.target.value)}
+                      className="w-full rounded-2xl border border-slate-200 px-3 py-3 text-sm font-semibold outline-none focus:border-purple-300"
+                    />
+                  </div>
+
+                  <div className="flex gap-2 lg:col-span-6">
+                    <button
+                      type="submit"
+                      className="rounded-2xl bg-purple-600 px-4 py-3 text-xs font-black text-white hover:bg-purple-700"
+                    >
+                      Aplicar filtros
+                    </button>
+                    <button
+                      type="button"
+                      onClick={limparFiltrosHistorico}
+                      className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-xs font-black text-slate-600 hover:bg-slate-50"
+                    >
+                      Limpar
+                    </button>
+                  </div>
+                </form>
+
+                {carregandoHistorico ? (
+                  <div className="rounded-3xl border border-slate-100 bg-slate-50 p-10 text-center text-sm font-bold text-slate-400">
+                    Carregando histórico...
+                  </div>
+                ) : historicoAvisos.length === 0 ? (
+                  <div className="rounded-3xl border border-slate-100 bg-slate-50 p-10 text-center text-sm font-bold text-slate-400">
+                    Nenhum aviso encontrado para os filtros atuais.
+                  </div>
+                ) : (
+                  <>
+                    <div className="max-h-[32rem] space-y-3 overflow-y-auto pr-1">
+                      {historicoAvisos.map((aviso) => (
+                        <article key={aviso.id} className="rounded-3xl border border-slate-100 bg-slate-50/60 p-4">
+                          <div className="mb-2 flex flex-wrap items-center gap-2">
+                            <Badge tipo="info">{aviso.classificacao || "Informativo"}</Badge>
+                            <Badge tipo={prioridadeParaTipo(aviso.prioridade)}>{normalizarPrioridade(aviso.prioridade)}</Badge>
+                            <Badge tipo={aviso.ativo === false ? "media" : "normal"}>{statusAvisoHistorico(aviso)}</Badge>
+                          </div>
+                          <h3 className="text-base font-black text-slate-900">{aviso.titulo || "Aviso"}</h3>
+                          <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-600">{aviso.mensagem || "Sem conteúdo."}</p>
+                          <div className="mt-3 flex flex-wrap gap-3 text-xs font-semibold text-slate-400">
+                            <span>Criado em: {formatarDataHora(aviso.criado_em)}</span>
+                            {aviso.cancelado_em && <span>Baixado em: {formatarDataHora(aviso.cancelado_em)}</span>}
+                            {aviso.valido_ate && <span>Válido até: {formatarDataHora(aviso.valido_ate)}</span>}
+                          </div>
+                        </article>
+                      ))}
+                    </div>
+
+                    <div className="mt-4 flex flex-col gap-3 border-t border-slate-100 pt-4 text-sm text-slate-600 md:flex-row md:items-center md:justify-between">
+                      <span className="font-semibold">
+                        Exibindo {indiceInicialHistorico} a {indiceFinalHistorico} de {totalHistoricoAvisos} avisos
+                      </span>
+
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => irParaPaginaHistorico(paginaHistoricoSegura - 1)}
+                          disabled={paginaHistoricoSegura === 1 || carregandoHistorico}
+                          className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                          Anterior
+                        </button>
+
+                        {paginasHistoricoVisiveis.map((pagina) => (
+                          <button
+                            key={pagina}
+                            type="button"
+                            onClick={() => irParaPaginaHistorico(pagina)}
+                            disabled={carregandoHistorico}
+                            className={`h-8 min-w-8 rounded-xl border px-2 text-xs font-bold ${
+                              pagina === paginaHistoricoSegura
+                                ? "border-slate-900 bg-slate-900 text-white"
+                                : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                            }`}
+                          >
+                            {pagina}
+                          </button>
+                        ))}
+
+                        <button
+                          type="button"
+                          onClick={() => irParaPaginaHistorico(paginaHistoricoSegura + 1)}
+                          disabled={paginaHistoricoSegura === totalPaginasHistorico || carregandoHistorico}
+                          className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                          Próxima
+                        </button>
+                      </div>
+                    </div>
+                  </>
+                )}
               </section>
             </div>
           </section>

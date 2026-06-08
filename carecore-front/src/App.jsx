@@ -3,32 +3,46 @@
 // Base visual global CARECORE+ Premium UI
 // =====================================================================
 
+import { lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 
 import './carecore-premium.css';
 
-import Login from './Login';
-import Dashboard from './Dashboard';
-import Quartos from './Quartos';
-import Cadastro from './Cadastro';
-import Conviventes from './Conviventes';
-import CentralOcorrencias from './CentralOcorrencias';
-import RotinaDiaria from './RotinaDiaria';
-import RotinaHistorico from './RotinaHistorico';
-import DashboardOperacional from './DashboardOperacional';
-import ConvenioSisa from './ConvenioSisa';
-import Avisos from './Avisos';
-import Usuarios from './Usuarios';
-import Relatorios from './Relatorios';
-
+import AusenciaJustificadaAlerta from './components/AusenciaJustificadaAlerta';
 import ProtectedRoute from './routes/ProtectedRoute';
+
+const Login = lazy(() => import('./Login'));
+const Dashboard = lazy(() => import('./Dashboard'));
+const Quartos = lazy(() => import('./Quartos'));
+const Cadastro = lazy(() => import('./Cadastro'));
+const Conviventes = lazy(() => import('./Conviventes'));
+const CentralOcorrencias = lazy(() => import('./CentralOcorrencias'));
+const RotinaDiaria = lazy(() => import('./RotinaDiaria'));
+const RotinaHistorico = lazy(() => import('./RotinaHistorico'));
+const DashboardOperacional = lazy(() => import('./DashboardOperacional'));
+const ConvenioSisa = lazy(() => import('./ConvenioSisa'));
+const Avisos = lazy(() => import('./Avisos'));
+const Usuarios = lazy(() => import('./Usuarios'));
+const Relatorios = lazy(() => import('./Relatorios'));
+const Organizacao = lazy(() => import('./Organizacao'));
+const GestaoGlobal = lazy(() => import('./GestaoGlobal'));
+const HistoricoLegado = lazy(() => import('./HistoricoLegado'));
+
+function PageFallback() {
+  return (
+    <div className="min-h-screen bg-slate-50 flex items-center justify-center text-sm font-semibold text-slate-500">
+      Carregando...
+    </div>
+  );
+}
 
 export default function App() {
   return (
     <BrowserRouter>
-      <Routes>
-        <Route path="/" element={<Login />} />
-        <Route path="/cadastro" element={<Cadastro />} />
+      <Suspense fallback={<PageFallback />}>
+        <Routes>
+          <Route path="/" element={<Login />} />
+          <Route path="/cadastro" element={<Cadastro />} />
 
         <Route
           path="/dashboard"
@@ -42,7 +56,7 @@ export default function App() {
         <Route
           path="/quartos"
           element={
-            <ProtectedRoute>
+            <ProtectedRoute perfis={['Gestor', 'Técnico', 'Orientador', 'Administrativo']}>
               <Quartos />
             </ProtectedRoute>
           }
@@ -51,7 +65,7 @@ export default function App() {
         <Route
           path="/conviventes"
           element={
-            <ProtectedRoute>
+            <ProtectedRoute perfis={['Gestor', 'Técnico', 'Orientador', 'Administrativo']}>
               <Conviventes />
             </ProtectedRoute>
           }
@@ -60,7 +74,7 @@ export default function App() {
         <Route
           path="/ocorrencias"
           element={
-            <ProtectedRoute>
+            <ProtectedRoute perfis={['Gestor', 'Técnico', 'Orientador', 'Administrativo']}>
               <CentralOcorrencias />
             </ProtectedRoute>
           }
@@ -69,7 +83,7 @@ export default function App() {
         <Route
           path="/rotina"
           element={
-            <ProtectedRoute>
+            <ProtectedRoute perfis={['Gestor', 'Técnico', 'Orientador', 'Administrativo']}>
               <RotinaDiaria />
             </ProtectedRoute>
           }
@@ -78,7 +92,7 @@ export default function App() {
         <Route
           path="/rotina/dashboard"
           element={
-            <ProtectedRoute>
+            <ProtectedRoute perfis={['Gestor', 'Técnico', 'Orientador', 'Administrativo']}>
               <DashboardOperacional />
             </ProtectedRoute>
           }
@@ -87,7 +101,7 @@ export default function App() {
         <Route
           path="/rotina/historico"
           element={
-            <ProtectedRoute>
+            <ProtectedRoute perfis={['Gestor', 'Técnico', 'Orientador', 'Administrativo']}>
               <RotinaHistorico />
             </ProtectedRoute>
           }
@@ -111,12 +125,47 @@ export default function App() {
           }
         />
 
+        <Route
+          path="/historico-legado"
+          element={
+            <ProtectedRoute perfis={['Gestor', 'Técnico', 'Orientador', 'Administrativo', 'Global']}>
+              <HistoricoLegado />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/historico-legado/rotina"
+          element={
+            <ProtectedRoute perfis={['Gestor', 'Técnico', 'Orientador', 'Administrativo', 'Global']}>
+              <HistoricoLegado />
+            </ProtectedRoute>
+          }
+        />
+
 
         <Route
           path="/usuarios"
           element={
-            <ProtectedRoute perfis={['Gestor']}>
+            <ProtectedRoute perfis={['Gestor', 'Global']}>
               <Usuarios />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/organizacao"
+          element={
+            <ProtectedRoute perfis={['Gestor', 'Global']}>
+              <Organizacao />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/gestao-global"
+          element={
+            <ProtectedRoute perfis={['Gestor', 'Global']}>
+              <GestaoGlobal />
             </ProtectedRoute>
           }
         />
@@ -124,12 +173,14 @@ export default function App() {
         <Route
           path="/convenio-sisa"
           element={
-            <ProtectedRoute>
+            <ProtectedRoute perfis={['Gestor', 'Técnico', 'Administrativo']}>
               <ConvenioSisa />
             </ProtectedRoute>
           }
         />
-      </Routes>
+        </Routes>
+        <AusenciaJustificadaAlerta />
+      </Suspense>
     </BrowserRouter>
   );
 }

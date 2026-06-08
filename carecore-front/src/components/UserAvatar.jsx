@@ -1,3 +1,5 @@
+import AuthenticatedImage from './AuthenticatedImage';
+
 export default function UserAvatar({
   usuario,
   nome,
@@ -7,6 +9,7 @@ export default function UserAvatar({
 }) {
   const nomeFinal = nome || usuario?.nome || usuario?.email || 'Usuário';
   const foto = avatarUrl || usuario?.avatar_url || '';
+  const fotoEhUpload = /^\/?uploads\//i.test(foto);
   const inicial = (nomeFinal || 'U').slice(0, 1).toUpperCase();
   const sizes = {
     sm: 'h-9 w-9 text-xs rounded-xl',
@@ -20,7 +23,13 @@ export default function UserAvatar({
       className={`inline-flex shrink-0 items-center justify-center overflow-hidden border border-violet-100 bg-violet-50 font-black text-violet-700 ${sizeClass} ${className}`}
       title={nomeFinal}
     >
-      {foto ? (
+      {fotoEhUpload ? (
+        <AuthenticatedImage
+          caminhoOuUrl={foto}
+          alt={nomeFinal}
+          className="h-full w-full object-cover"
+        />
+      ) : foto ? (
         <img
           src={foto}
           alt={nomeFinal}

@@ -1,5 +1,68 @@
 export const REGISTROS_POR_PAGINA = 20;
 
+// Agrupa os tipos armazenados (ex.: "Retirada de Cobertor" / "Entrega de Cobertor")
+// sob um rótulo único de filtro ("Cobertor").
+export const GRUPOS_TIPO_REGISTRO = {
+  Cobertor: ['Retirada de Cobertor', 'Entrega de Cobertor'],
+  Toalha: ['Retirada de Toalha', 'Entrega de Toalha'],
+  Documentos: ['Bipar documentos guardados', 'Bipar documentos retirados'],
+  Bagageiro: ['Movimentação de Bagageiro'],
+};
+
+// Opções do seletor "Tipo de registro" do histórico.
+export const TIPOS_REGISTRO_FILTRO = [
+  { valor: '', label: 'Todos os tipos' },
+  { valor: 'Entrada', label: 'Entrada' },
+  { valor: 'Saída', label: 'Saída' },
+  { valor: 'Café da manhã', label: 'Café da manhã' },
+  { valor: 'Almoço', label: 'Almoço' },
+  { valor: 'Jantar', label: 'Jantar' },
+  { valor: 'Lanche noturno', label: 'Lanche noturno' },
+  { valor: 'Banho', label: 'Banho' },
+  { valor: 'Cobertor', label: 'Cobertor (retirada/entrega)' },
+  { valor: 'Toalha', label: 'Toalha (retirada/entrega)' },
+  { valor: 'Bagageiro', label: 'Bagageiro' },
+  { valor: 'Documentos', label: 'Documentos (guardar/retirar)' },
+];
+
+// Valores reais usados na edição manual de um registro (sem agrupamento).
+export const TIPOS_REGISTRO_EDICAO = [
+  'Entrada',
+  'Saída',
+  'Café da manhã',
+  'Almoço',
+  'Jantar',
+  'Lanche noturno',
+  'Banho',
+  'Retirada de Cobertor',
+  'Entrega de Cobertor',
+  'Retirada de Toalha',
+  'Entrega de Toalha',
+  'Movimentação de Bagageiro',
+  'Bipar documentos guardados',
+  'Bipar documentos retirados',
+];
+
+export function tipoRegistroCorresponde(tipoRegistro, filtro) {
+  if (!filtro) return true;
+  const grupo = GRUPOS_TIPO_REGISTRO[filtro];
+  if (grupo) return grupo.includes(tipoRegistro);
+  return tipoRegistro === filtro;
+}
+
+export function rotuloTipoRegistroFiltro(filtro) {
+  const item = TIPOS_REGISTRO_FILTRO.find((t) => t.valor === filtro);
+  return item ? item.label : 'Todos os tipos';
+}
+
+export function contarRegistrosPorTipo(registros, filtro) {
+  if (!filtro) return registros.length;
+  return registros.reduce(
+    (acc, registro) => acc + (tipoRegistroCorresponde(registro.tipo_registro, filtro) ? 1 : 0),
+    0,
+  );
+}
+
 export function montarParamsFiltrosRotina({
   tipoFiltro,
   buscaFiltro,
@@ -32,7 +95,7 @@ export function filtrarRegistrosRotina(registros, filtros) {
   } = filtros;
 
   return registros.filter((registro) => {
-    if (tipoFiltro && registro.tipo_registro !== tipoFiltro) {
+    if (tipoFiltro && !tipoRegistroCorresponde(registro.tipo_registro, tipoFiltro)) {
       return false;
     }
 

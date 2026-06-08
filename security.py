@@ -37,7 +37,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 from database import get_db
-from models import UsuarioDB
+from models import InstituicaoDB, UsuarioDB
 
 
 # =====================================================================
@@ -68,6 +68,7 @@ bearer_scheme = HTTPBearer(auto_error=True)
 # =====================================================================
 
 PERFIL_GESTOR = "Gestor"
+PERFIL_GLOBAL = "Global"
 PERFIL_TECNICO = "Técnico"
 PERFIL_ORIENTADOR = "Orientador"
 PERFIL_ADMINISTRATIVO = "Administrativo"
@@ -75,6 +76,7 @@ PERFIL_CONSULTA = "Consulta"
 
 PERFIS_ACESSO_VALIDOS = {
     PERFIL_GESTOR,
+    PERFIL_GLOBAL,
     PERFIL_TECNICO,
     PERFIL_ORIENTADOR,
     PERFIL_ADMINISTRATIVO,
@@ -340,6 +342,21 @@ async def get_usuario_logado(
     perfil_acesso = normalizar_perfil_acesso(
         getattr(usuario, "perfil_acesso", None)
     )
+    instituicao_id = usuario.instituicao_id
+    organizacao_id = getattr(usuario, "organizacao_id", None)
+
+    if bool(getattr(usuario, "is_global", False)):
+        instituicao_token = payload.get("instituicao_id")
+        if instituicao_token:
+            resultado_projeto = await db.execute(
+                select(InstituicaoDB).where(
+                    InstituicaoDB.id == instituicao_token,
+                    InstituicaoDB.organizacao_id == organizacao_id,
+                )
+            )
+            projeto_token = resultado_projeto.scalar_one_or_none()
+            if projeto_token:
+                instituicao_id = projeto_token.id
 
     return {
         "id": usuario.id,
@@ -347,9 +364,11 @@ async def get_usuario_logado(
         "usuario_id": usuario.id,
         "nome": usuario.nome,
         "email": usuario.email,
-        "instituicao_id": usuario.instituicao_id,
+        "instituicao_id": instituicao_id,
+        "organizacao_id": organizacao_id,
         "perfil_acesso": perfil_acesso,
         "is_master": bool(getattr(usuario, "is_master", False)),
+        "is_global": bool(getattr(usuario, "is_global", False)),
         "ativo": bool(getattr(usuario, "ativo", True)),
     }
 
@@ -393,6 +412,24 @@ def usuario_eh_gestor(usuario: dict) -> bool:
         usuario.get("is_master")
         or usuario_tem_perfil(usuario, {PERFIL_GESTOR})
     )
+
+
+def usuario_eh_global_puro(usuario: dict) -> bool:
+    return bool(
+        (
+            usuario.get("is_global")
+            or usuario_tem_perfil(usuario, {PERFIL_GLOBAL})
+        )
+        and not usuario_eh_gestor(usuario)
+    )
+
+
+def bloquear_usuario_global_puro(usuario: dict) -> None:
+    if usuario_eh_global_puro(usuario):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Usuários globais não podem operar módulos do projeto.",
+        )
 
 
 def usuario_eh_tecnico_ou_superior(usuario: dict) -> bool:

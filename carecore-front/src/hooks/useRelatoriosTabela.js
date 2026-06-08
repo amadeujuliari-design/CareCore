@@ -1,0 +1,335 @@
+import { useMemo } from 'react';
+
+import {
+  contar,
+  formatarData,
+  formatarDataHora,
+  normalizarPrioridade,
+} from '../utils/relatoriosUtils';
+
+const COLUNAS_RESUMO_RELATORIOS = ['Relatório', 'Status', 'Métrica', 'Valor', 'Descrição'];
+
+export function useRelatoriosTabela({
+  aba,
+  conviventes,
+  conviventesFiltrados,
+  dadosEvolucao,
+  filtros,
+  historicoRotinaFiltrado,
+  leitosAcomodacoesFiltrados,
+  ocorrenciasFiltradas,
+  paginaTabela,
+  relatoriosAtuais,
+  resumoPendenciasTecnicasEvolucao,
+  setPaginaTabela,
+  tecnicoPendenciasSelecionadoNome,
+  tecnicos,
+  totalNovosAcolhimentosEvolucao,
+  quartos,
+  itensPorPaginaTabela = 20,
+}) {
+  const mapaTecnicos = useMemo(() => {
+    return new Map(tecnicos.map((tecnico) => [tecnico.id, tecnico.nome]));
+  }, [tecnicos]);
+
+  const mapaLeitos = useMemo(() => {
+    const mapa = new Map();
+
+    quartos.forEach((quarto) => {
+      (quarto.leitos || []).forEach((leito) => {
+        mapa.set(leito.id, `${quarto.nome} - ${leito.identificacao}`);
+      });
+    });
+
+    return mapa;
+  }, [quartos]);
+
+  const dadosDetalhados = useMemo(() => {
+    const contarOcorrenciasPendentesConvivente = (conviventeId) =>
+      contar(
+        ocorrenciasFiltradas,
+        (ocorrencia) =>
+          ocorrencia.convivente_id === conviventeId &&
+          ocorrencia.status_resolucao !== 'Resolvido',
+      );
+
+    const listarPendenciasConvivente = (convivente) => {
+      const pendencias = [];
+
+      if (!convivente.foto_url) pendencias.push('Foto');
+      if (!convivente.cpf) pendencias.push('CPF');
+      if (!convivente.contato_emergencia_nome || !convivente.contato_emergencia_telefone) pendencias.push('Contato');
+      if (!convivente.tecnico_id) pendencias.push('Técnico');
+      if (!convivente.numero_sisa) pendencias.push('SISA');
+
+      return pendencias;
+    };
+
+    const montarLinhaConvivente = (convivente) => {
+      const pendencias = listarPendenciasConvivente(convivente);
+
+      return {
+        Prontuário: convivente.numero_institucional ? `#${convivente.numero_institucional}` : 'S/N',
+        Nome: convivente.nome_social || convivente.nome_completo || '-',
+        Status: convivente.status || '-',
+        Técnico: mapaTecnicos.get(convivente.tecnico_id) || 'Sem técnico',
+        Entrada: formatarData(convivente.data_entrada),
+        Leito: mapaLeitos.get(convivente.leito_id) || 'Centro dia / sem leito',
+        CPF: convivente.cpf || '-',
+        Cidade: convivente.cidade || '-',
+        'Ocorrências pendentes': contarOcorrenciasPendentesConvivente(convivente.id),
+        'Pendências de cadastro': pendencias.length,
+        'Quais pendências': pendencias.length ? pendencias.join(', ') : 'Cadastro completo',
+      };
+    };
+
+    if (aba === 'conviventes') {
+      return {
+        titulo: 'Conviventes filtrados',
+        colunas: filtros.tecnicoId
+          ? ['Prontuário', 'Nome', 'Status', 'Entrada', 'Leito', 'CPF', 'Cidade', 'Ocorrências pendentes', 'Pendências de cadastro', 'Quais pendências']
+          : ['Prontuário', 'Nome', 'Status', 'Técnico', 'Entrada', 'Leito', 'CPF', 'Cidade', 'Ocorrências pendentes', 'Pendências de cadastro', 'Quais pendências'],
+        linhas: conviventesFiltrados.map(montarLinhaConvivente),
+      };
+    }
+
+    if (aba === 'ocorrencias') {
+      return {
+        titulo: 'Ocorrências filtradas',
+        colunas: ['Data', 'Convivente', 'Tipo', 'Motivo', 'Prioridade', 'Status', 'Técnico'],
+        linhas: ocorrenciasFiltradas.map((ocorrencia) => {
+          const convivente = conviventes.find((c) => c.id === ocorrencia.convivente_id);
+
+          return {
+            Data: formatarDataHora(ocorrencia.data_ocorrencia),
+            Convivente: convivente?.nome_social || convivente?.nome_completo || '-',
+            Tipo: ocorrencia.tipo_ocorrencia || '-',
+            Motivo: ocorrencia.motivo || '-',
+            Prioridade: normalizarPrioridade(ocorrencia.prioridade),
+            Status: ocorrencia.status_resolucao || '-',
+            Técnico: mapaTecnicos.get(ocorrencia.tecnico_responsavel_id) || 'Sem técnico',
+          };
+        }),
+      };
+    }
+
+    if (aba === 'rotina') {
+      return {
+        titulo: 'Histórico da rotina filtrado',
+        colunas: ['Data/Hora', 'Prontuário', 'Convivente', 'Tipo', 'Operador', 'Status', 'Retorno rápido', 'Auditoria/Observação'],
+        linhas: historicoRotinaFiltrado.map((registro) => {
+          const status = [
+            registro.cancelado ? 'Cancelado' : 'Ativo',
+            registro.foi_editado ? 'Editado' : '',
+          ].filter(Boolean).join(' / ');
+
+          return {
+            'Data/Hora': formatarDataHora(registro.data_registro),
+            Prontuário: registro.numero_institucional ? `#${registro.numero_institucional}` : 'S/N',
+            Convivente: registro.convivente_nome || registro.convivente_nome_completo || '-',
+            Tipo: registro.tipo_registro || '-',
+            Operador: registro.usuario_nome || '-',
+            Status: status || '-',
+            'Retorno rápido': registro.retorno_rapido ? 'Sim' : 'Não',
+            'Auditoria/Observação': registro.justificativa_retorno_rapido || registro.motivo_edicao || registro.motivo_cancelamento || '-',
+          };
+        }),
+      };
+    }
+
+    if (aba === 'acomodacoes') {
+      const colunas = filtros.tecnicoId
+        ? ['Quarto', 'Modalidade', 'Público', 'Leito', 'Status leito', 'Convivente', 'Prontuário', 'Status convivente']
+        : ['Quarto', 'Modalidade', 'Público', 'Leito', 'Status leito', 'Convivente', 'Prontuário', 'Status convivente', 'Técnico'];
+
+      return {
+        titulo: 'Acomodações e leitos',
+        colunas,
+        linhas: leitosAcomodacoesFiltrados.map(({ quarto, leito, convivente }) => {
+          const linha = {
+            Quarto: quarto.nome || '-',
+            Modalidade: quarto.modalidade === 'Transitorio' ? 'Transitório' : quarto.modalidade || '-',
+            Público: quarto.tipo_publico || '-',
+            Leito: leito.identificacao || '-',
+            'Status leito': leito.status || 'Livre',
+            Convivente: convivente?.nome_social || convivente?.nome_completo || leito.convivente_nome_completo || leito.convivente_nome || '-',
+            Prontuário: convivente?.numero_institucional || leito.numero_institucional
+              ? `#${convivente?.numero_institucional || leito.numero_institucional}`
+              : '-',
+            'Status convivente': convivente?.status || (leito.status === 'Ocupado' ? 'Ocupado sem vinculo cadastral' : '-'),
+          };
+
+          if (!filtros.tecnicoId) {
+            linha.Técnico = mapaTecnicos.get(convivente?.tecnico_id) || (convivente ? 'Sem técnico' : '-');
+          }
+
+          return linha;
+        }),
+      };
+    }
+
+    if (aba === 'documentacao') {
+      const colunas = filtros.tecnicoId
+        ? ['Prontuário', 'Nome', 'Status', 'N SISA', 'NIS', 'Sem foto', 'Sem CPF', 'Sem contato']
+        : ['Prontuário', 'Nome', 'Status', 'Técnico', 'N SISA', 'NIS', 'Sem foto', 'Sem CPF', 'Sem contato'];
+
+      return {
+        titulo: 'Pendências documentais filtradas',
+        colunas,
+        linhas: conviventesFiltrados.map((convivente) => {
+          const linha = {
+            Prontuário: convivente.numero_institucional ? `#${convivente.numero_institucional}` : 'S/N',
+            Nome: convivente.nome_social || convivente.nome_completo || '-',
+            Status: convivente.status || '-',
+            'N SISA': convivente.numero_sisa || '-',
+            NIS: convivente.numero_nis || '-',
+            'Sem foto': convivente.foto_url ? 'Não' : 'Sim',
+            'Sem CPF': convivente.cpf ? 'Não' : 'Sim',
+            'Sem contato': convivente.contato_emergencia_nome && convivente.contato_emergencia_telefone ? 'Não' : 'Sim',
+          };
+
+          if (!filtros.tecnicoId) {
+            linha.Técnico = mapaTecnicos.get(convivente.tecnico_id) || 'Sem técnico';
+          }
+
+          return linha;
+        }),
+      };
+    }
+
+    if (aba === 'equipe') {
+      return {
+        titulo: 'Equipe tecnica e carga de casos',
+        colunas: ['Técnico', 'Perfil', 'Conviventes vinculados', 'Ocorrências pendentes'],
+        linhas: tecnicos.map((tecnico) => ({
+          Técnico: tecnico.nome || '-',
+          Perfil: tecnico.perfil_acesso || '-',
+          'Conviventes vinculados': contar(conviventesFiltrados, (c) => c.tecnico_id === tecnico.id),
+          'Ocorrências pendentes': contar(ocorrenciasFiltradas, (o) => o.tecnico_responsavel_id === tecnico.id && o.status_resolucao !== 'Resolvido'),
+        })),
+      };
+    }
+
+    if (aba === 'auditoria') {
+      const colunas = filtros.tecnicoId
+        ? ['Data/Hora', 'Evento', 'Prontuário', 'Convivente', 'Registro', 'Operador', 'Justificativa/Motivo']
+        : ['Data/Hora', 'Evento', 'Prontuário', 'Convivente', 'Técnico', 'Registro', 'Operador', 'Justificativa/Motivo'];
+
+      const linhas = historicoRotinaFiltrado.flatMap((registro) => {
+        const convivente = conviventes.find((c) => c.id === registro.convivente_id);
+        const base = {
+          'Data/Hora': formatarDataHora(registro.data_registro),
+          Prontuário: registro.numero_institucional || convivente?.numero_institucional
+            ? `#${registro.numero_institucional || convivente?.numero_institucional}`
+            : 'S/N',
+          Convivente: registro.convivente_nome || registro.convivente_nome_completo || convivente?.nome_social || convivente?.nome_completo || '-',
+          Registro: registro.tipo_registro || '-',
+          Operador: registro.usuario_nome || '-',
+        };
+
+        if (!filtros.tecnicoId) {
+          base.Técnico = mapaTecnicos.get(convivente?.tecnico_id) || (convivente ? 'Sem técnico' : '-');
+        }
+
+        const eventos = [];
+
+        if (registro.foi_editado) {
+          eventos.push({
+            ...base,
+            Evento: 'Edição',
+            'Justificativa/Motivo': registro.motivo_edicao || '-',
+          });
+        }
+
+        if (registro.cancelado) {
+          eventos.push({
+            ...base,
+            Evento: 'Cancelamento',
+            'Justificativa/Motivo': registro.motivo_cancelamento || '-',
+          });
+        }
+
+        if (registro.retorno_rapido) {
+          eventos.push({
+            ...base,
+            Evento: 'Retorno rápido',
+            'Justificativa/Motivo': registro.justificativa_retorno_rapido || '-',
+          });
+        }
+
+        return eventos;
+      });
+
+      return {
+        titulo: 'Eventos de auditoria filtrados',
+        colunas,
+        linhas,
+      };
+    }
+
+    if (aba === 'evolucao') {
+      return {
+        titulo: 'Indicadores de evolução',
+        colunas: ['Indicador', 'Valor', 'Observação'],
+        linhas: [
+          { Indicador: 'Atendimentos no período', Valor: dadosEvolucao.totalAtendimentos, Observação: `Média diária ${dadosEvolucao.mediaDiaria}, pico ${dadosEvolucao.pico}` },
+          { Indicador: 'Tendência de atendimento', Valor: dadosEvolucao.tendencia, Observação: 'Comparação entre primeira e segunda metade do recorte' },
+          { Indicador: 'Novos acolhimentos', Valor: totalNovosAcolhimentosEvolucao, Observação: 'Entradas cadastrais no período filtrado' },
+          {
+            Indicador: 'Pendências técnicas',
+            Valor: resumoPendenciasTecnicasEvolucao.saldo,
+            Observação: `${resumoPendenciasTecnicasEvolucao.abertas} abertas e ${resumoPendenciasTecnicasEvolucao.resolvidas} resolvidas para ${tecnicoPendenciasSelecionadoNome}`,
+          },
+        ],
+      };
+    }
+
+    return {
+      titulo: 'Resumo da aba',
+      colunas: COLUNAS_RESUMO_RELATORIOS,
+      linhas: relatoriosAtuais.flatMap((relatorio) =>
+        (relatorio.metricas || []).map((metrica) => ({
+          Relatório: relatorio.titulo,
+          Status: relatorio.status,
+          Métrica: metrica.label,
+          Valor: metrica.valor,
+          Descrição: relatorio.descricao,
+        }))
+      ),
+    };
+  }, [aba, conviventes, conviventesFiltrados, dadosEvolucao.mediaDiaria, dadosEvolucao.pico, dadosEvolucao.tendencia, dadosEvolucao.totalAtendimentos, filtros.tecnicoId, historicoRotinaFiltrado, leitosAcomodacoesFiltrados, mapaLeitos, mapaTecnicos, ocorrenciasFiltradas, relatoriosAtuais, resumoPendenciasTecnicasEvolucao, tecnicoPendenciasSelecionadoNome, tecnicos, totalNovosAcolhimentosEvolucao]);
+
+  const linhasResumoMetricas = relatoriosAtuais.flatMap((relatorio) =>
+    (relatorio.metricas || []).map((metrica) => ({
+      Relatório: relatorio.titulo,
+      Status: relatorio.status,
+      Métrica: metrica.label,
+      Valor: metrica.valor,
+      Descrição: relatorio.descricao,
+    }))
+  );
+
+  const linhasExportacao = dadosDetalhados.linhas || linhasResumoMetricas;
+  const colunasExportacao = dadosDetalhados.colunas || COLUNAS_RESUMO_RELATORIOS;
+  const totalPaginasTabela = Math.max(1, Math.ceil(linhasExportacao.length / itensPorPaginaTabela));
+  const paginaTabelaSegura = Math.min(paginaTabela, totalPaginasTabela);
+  const inicioTabela = (paginaTabelaSegura - 1) * itensPorPaginaTabela;
+  const fimTabela = inicioTabela + itensPorPaginaTabela;
+  const linhasTabelaPaginadas = linhasExportacao.slice(inicioTabela, fimTabela);
+
+  const irParaPaginaTabela = (novaPagina) => {
+    setPaginaTabela(Math.min(Math.max(novaPagina, 1), totalPaginasTabela));
+  };
+
+  return {
+    colunasExportacao,
+    dadosDetalhados,
+    fimTabela,
+    inicioTabela,
+    irParaPaginaTabela,
+    linhasExportacao,
+    linhasTabelaPaginadas,
+    paginaTabelaSegura,
+    totalPaginasTabela,
+  };
+}

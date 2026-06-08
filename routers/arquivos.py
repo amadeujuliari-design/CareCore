@@ -11,8 +11,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import get_db
-from models import ConviventeDB, DocumentoConviventeDB
-from security import get_usuario_logado
+from models import ConviventeDB, DocumentoConviventeDB, InstituicaoDB
+from security import get_usuario_logado, usuario_eh_gestor
 
 router = APIRouter(prefix="/api", tags=["Arquivos"])
 
@@ -35,15 +35,15 @@ def candidatos_caminho_upload(relative_path: str) -> list[str]:
     ]
 
 
-async def arquivo_pertence_a_instituicao(
+async def obter_documento_do_upload(
     relative_path: str,
     instituicao_id: str,
     db: AsyncSession,
-) -> bool:
+):
     caminhos = candidatos_caminho_upload(relative_path)
 
     resultado_documento = await db.execute(
-        select(DocumentoConviventeDB.id)
+        select(DocumentoConviventeDB)
         .join(
             ConviventeDB,
             ConviventeDB.id == DocumentoConviventeDB.convivente_id,
@@ -55,7 +55,31 @@ async def arquivo_pertence_a_instituicao(
         .limit(1)
     )
 
-    if resultado_documento.scalar_one_or_none() is not None:
+    return resultado_documento.scalar_one_or_none()
+
+
+async def arquivo_pertence_a_instituicao(
+    relative_path: str,
+    instituicao_id: str,
+    db: AsyncSession,
+) -> bool:
+    documento = await obter_documento_do_upload(relative_path, instituicao_id, db)
+
+    if documento is not None:
+        return True
+
+    caminhos = candidatos_caminho_upload(relative_path)
+
+    resultado_logo_relatorio = await db.execute(
+        select(InstituicaoDB.id)
+        .where(
+            InstituicaoDB.id == instituicao_id,
+            InstituicaoDB.relatorio_logo_url.in_(caminhos),
+        )
+        .limit(1)
+    )
+
+    if resultado_logo_relatorio.scalar_one_or_none() is not None:
         return True
 
     resultado_foto = await db.execute(
@@ -87,11 +111,45 @@ async def servir_arquivo_upload(
     if caminho_normalizado.startswith("uploads/"):
         caminho_normalizado = caminho_normalizado[len("uploads/"):]
 
-    autorizado = await arquivo_pertence_a_instituicao(
+    documento = await obter_documento_do_upload(
         relative_path=caminho_normalizado,
         instituicao_id=usuario_atual["instituicao_id"],
         db=db,
     )
+
+    if documento and documento.sensivel and not usuario_eh_gestor(usuario_atual):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Arquivo não encontrado.",
+        )
+
+    if documento is None:
+        caminhos = candidatos_caminho_upload(caminho_normalizado)
+
+        resultado_logo_relatorio = await db.execute(
+            select(InstituicaoDB.id)
+            .where(
+                InstituicaoDB.id == usuario_atual["instituicao_id"],
+                InstituicaoDB.relatorio_logo_url.in_(caminhos),
+            )
+            .limit(1)
+        )
+
+        if resultado_logo_relatorio.scalar_one_or_none() is not None:
+            autorizado = True
+        else:
+            resultado_foto = await db.execute(
+                select(ConviventeDB.id)
+                .where(
+                    ConviventeDB.instituicao_id == usuario_atual["instituicao_id"],
+                    ConviventeDB.foto_url.in_(caminhos),
+                )
+                .limit(1)
+            )
+
+            autorizado = resultado_foto.scalar_one_or_none() is not None
+    else:
+        autorizado = True
 
     if not autorizado:
         raise HTTPException(
@@ -118,4 +176,7 @@ async def servir_arquivo_upload(
     return FileResponse(
         path=candidato,
         filename=candidato.name,
+        headers={
+            "Cache-Control": "private, max-age=86400",
+        },
     )

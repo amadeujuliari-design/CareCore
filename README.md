@@ -14,6 +14,8 @@ iniciar.bat
 
 O script confere Python, Node/npm, dependencias do backend e frontend, inicia a API na porta `8000`, inicia o Vite na porta `5173` e abre o sistema no navegador.
 
+Para evitar conflito entre computadores usando a mesma pasta sincronizada, o ambiente virtual Python e criado por maquina em `%LOCALAPPDATA%\CareCorePlus\venv`. Nao copie nem sincronize `venv/` entre computadores.
+
 Para acessar pelo celular ou tablet na mesma rede, use o endereco mostrado no final do script, por exemplo:
 
 ```text
@@ -27,8 +29,8 @@ Observacao importante: navegadores de celular geralmente bloqueiam camera em end
 ### Backend
 
 ```bash
-python -m venv venv
-venv\Scripts\activate
+python -m venv "%LOCALAPPDATA%\CareCorePlus\venv"
+"%LOCALAPPDATA%\CareCorePlus\venv\Scripts\activate"
 pip install -r requirements.txt
 copy env.example .env
 python -m uvicorn main:app --reload --host 0.0.0.0 --port 8000
@@ -96,6 +98,8 @@ alembic upgrade head
 ```
 
 Em ambiente local, `CARECORE_AUTO_CREATE_TABLES=true` mantém o fallback de criar tabelas no startup para facilitar desenvolvimento. Em produção, use `APP_ENV=production` e `CARECORE_AUTO_CREATE_TABLES=false`, deixando o schema sob controle do Alembic.
+
+Regra do projeto: toda alteração de schema em `models.py` ou em tabelas/índices do banco deve ser acompanhada por uma nova migration Alembic versionada. O fallback local de `create_all`/`ALTER TABLE` não substitui migration para produção.
 
 ## Licença
 

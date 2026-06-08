@@ -5,6 +5,7 @@
 import axios from "axios";
 
 import { API_ROOT } from "../config/apiBase";
+import { criarHeadersAutenticados } from "../utils/requestIdUtils";
 
 function authHeaders(token) {
   const tokenFinal = token || localStorage.getItem("@CareCore:token");
@@ -13,9 +14,7 @@ function authHeaders(token) {
     throw new Error("Token de autenticação não encontrado.");
   }
 
-  return {
-    Authorization: `Bearer ${tokenFinal}`,
-  };
+  return criarHeadersAutenticados(tokenFinal);
 }
 
 export async function listarMeusAvisos(token, opcoes = {}) {
@@ -42,6 +41,42 @@ export async function obterResumoAvisos(token) {
     total_visiveis: Number(response.data?.total_visiveis || 0),
     total_nao_lidos: Number(response.data?.total_nao_lidos || 0),
     total_alertas_ativos: Number(response.data?.total_alertas_ativos || 0),
+  };
+}
+
+export async function listarHistoricoAvisos(token, filtros = {}) {
+  const limite = Number(filtros.limite || 10);
+  const offset = Number(filtros.offset || 0);
+
+  const response = await axios.get(`${API_ROOT}/avisos/historico`, {
+    headers: authHeaders(token),
+    params: {
+      status_filtro: filtros.status_filtro || "baixados",
+      busca: filtros.busca || undefined,
+      classificacao: filtros.classificacao || undefined,
+      data_inicio: filtros.data_inicio || undefined,
+      data_fim: filtros.data_fim || undefined,
+      limite,
+      offset,
+    },
+  });
+
+  if (Array.isArray(response.data)) {
+    return {
+      items: response.data,
+      total: response.data.length,
+      limit: limite,
+      offset,
+      has_more: false,
+    };
+  }
+
+  return {
+    items: Array.isArray(response.data?.items) ? response.data.items : [],
+    total: Number(response.data?.total || 0),
+    limit: Number(response.data?.limit || limite),
+    offset: Number(response.data?.offset || offset),
+    has_more: Boolean(response.data?.has_more),
   };
 }
 

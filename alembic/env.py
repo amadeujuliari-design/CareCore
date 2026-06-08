@@ -28,6 +28,29 @@ from models import *
 
 target_metadata = Base.metadata
 
+INDICES_MANUAIS_PERFORMANCE = {
+    "ix_registros_rotina_sisa_periodo",
+    "ix_registros_rotina_ultimo_movimento",
+    "ix_conviventes_instituicao_status",
+    "ix_conviventes_lista_resumo",
+    "ix_sisa_lancamentos_instituicao_mes",
+    "ix_sisa_importacoes_instituicao_data",
+    "ix_instituicoes_organizacao",
+    "ix_usuarios_organizacao",
+    "ix_sisa_presencas_numero_data",
+    "ix_sisa_divergencias_importacao_tipo",
+    "ix_ocorrencias_dashboard",
+    "ix_historico_legado_filtros",
+    "ix_historico_legado_busca_nome",
+    "ix_historico_legado_ordem",
+    "ix_historicos_conviventes_lookup",
+    "ix_quartos_instituicao",
+    "ix_leitos_quarto_status",
+    "ix_chat_participantes_usuario",
+    "ix_chat_mensagens_conversa_data",
+    "ix_chat_conversas_ordem",
+}
+
 
 def _database_url_para_alembic() -> str:
     """
@@ -46,6 +69,28 @@ def _database_url_para_alembic() -> str:
 
 
 config.set_main_option("sqlalchemy.url", _database_url_para_alembic())
+
+
+def _dialect_name() -> str:
+    url = config.get_main_option("sqlalchemy.url")
+
+    if url.startswith("sqlite"):
+        return "sqlite"
+
+    if url.startswith("postgresql"):
+        return "postgresql"
+
+    return ""
+
+
+def include_object(objeto, nome, tipo, refletido, comparado):
+    if tipo == "index" and nome in INDICES_MANUAIS_PERFORMANCE:
+        return False
+
+    if _dialect_name() == "sqlite" and tipo == "foreign_key_constraint":
+        return False
+
+    return True
 
 # other values from the config, defined by the needs of env.py,
 # can be acquired:
@@ -69,6 +114,7 @@ def run_migrations_offline() -> None:
     context.configure(
         url=url,
         target_metadata=target_metadata,
+        include_object=include_object,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
     )
@@ -92,7 +138,9 @@ def run_migrations_online() -> None:
 
     with connectable.connect() as connection:
         context.configure(
-            connection=connection, target_metadata=target_metadata
+            connection=connection,
+            target_metadata=target_metadata,
+            include_object=include_object,
         )
 
         with context.begin_transaction():

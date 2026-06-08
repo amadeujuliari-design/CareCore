@@ -5,13 +5,16 @@
 # =====================================================================
 
 from datetime import timedelta, datetime, timezone
+import os
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
+from config_utils import env_bool, env_int
 from database import get_db
-from models import UsuarioDB, InstituicaoDB
+from audit_log import registrar_evento_auditoria
+from models import OrganizacaoDB, UsuarioDB, InstituicaoDB
 from schemas import (
     LoginPayload,
     OnboardingPayload,
@@ -31,6 +34,15 @@ router = APIRouter(
     tags=["Autenticação"],
 )
 
+APP_ENV = os.getenv("APP_ENV", "local").strip().lower()
+ONBOARDING_PUBLICO_PADRAO = "false" if APP_ENV in {"production", "prod"} else "true"
+ONBOARDING_PUBLICO = env_bool("CARECORE_ONBOARDING_PUBLICO", ONBOARDING_PUBLICO_PADRAO)
+LOGIN_MAX_TENTATIVAS = env_int("CARECORE_LOGIN_MAX_TENTATIVAS", 8, minimo=0)
+LOGIN_JANELA_SEGUNDOS = env_int("CARECORE_LOGIN_JANELA_SEGUNDOS", 900, minimo=1)
+LOGIN_BLOQUEIO_SEGUNDOS = env_int("CARECORE_LOGIN_BLOQUEIO_SEGUNDOS", 900, minimo=1)
+LOGIN_MAX_CHAVES_CACHE = env_int("CARECORE_LOGIN_MAX_CHAVES_CACHE", 5000, minimo=0)
+_tentativas_login: dict[str, list[datetime]] = {}
+
 
 # =====================================================================
 # HELPERS
@@ -38,6 +50,99 @@ router = APIRouter(
 
 def agora_utc_sem_timezone() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+def obter_ip_cliente(request: Request) -> str:
+    encaminhado = request.headers.get("x-forwarded-for", "")
+    if encaminhado:
+        return encaminhado.split(",", 1)[0].strip()
+
+    return request.client.host if request.client else "desconhecido"
+
+
+def dominio_email(email: str) -> str | None:
+    partes = email.lower().strip().rsplit("@", 1)
+    return partes[1] if len(partes) == 2 else None
+
+
+def chave_tentativa_login(request: Request, email: str) -> str:
+    return f"{obter_ip_cliente(request)}:{email.lower().strip()}"
+
+
+def limpar_tentativas_antigas(chave: str, agora: datetime) -> list[datetime]:
+    limite = agora - timedelta(seconds=LOGIN_JANELA_SEGUNDOS)
+    tentativas = [
+        tentativa
+        for tentativa in _tentativas_login.get(chave, [])
+        if tentativa >= limite
+    ]
+
+    if tentativas:
+        _tentativas_login[chave] = tentativas
+    else:
+        _tentativas_login.pop(chave, None)
+
+    return tentativas
+
+
+def limitar_cache_tentativas_login(agora: datetime) -> None:
+    if not _tentativas_login:
+        return
+
+    for chave in list(_tentativas_login.keys()):
+        limpar_tentativas_antigas(chave, agora)
+
+    if LOGIN_MAX_CHAVES_CACHE <= 0 or len(_tentativas_login) <= LOGIN_MAX_CHAVES_CACHE:
+        return
+
+    chaves_por_atividade = sorted(
+        _tentativas_login,
+        key=lambda chave: max(_tentativas_login[chave]) if _tentativas_login[chave] else datetime.min,
+    )
+    excedente = len(_tentativas_login) - LOGIN_MAX_CHAVES_CACHE
+
+    for chave in chaves_por_atividade[:excedente]:
+        _tentativas_login.pop(chave, None)
+
+
+def verificar_limite_login(request: Request, email: str) -> None:
+    if LOGIN_MAX_TENTATIVAS <= 0:
+        return
+
+    agora = agora_utc_sem_timezone()
+    limitar_cache_tentativas_login(agora)
+    chave = chave_tentativa_login(request, email)
+    tentativas = limpar_tentativas_antigas(chave, agora)
+
+    if len(tentativas) < LOGIN_MAX_TENTATIVAS:
+        return
+
+    ultima_tentativa = max(tentativas)
+    desbloqueio = ultima_tentativa + timedelta(seconds=LOGIN_BLOQUEIO_SEGUNDOS)
+
+    if agora < desbloqueio:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Muitas tentativas de login. Aguarde alguns minutos e tente novamente.",
+        )
+
+    _tentativas_login.pop(chave, None)
+
+
+def registrar_falha_login(request: Request, email: str) -> None:
+    if LOGIN_MAX_TENTATIVAS <= 0:
+        return
+
+    agora = agora_utc_sem_timezone()
+    limitar_cache_tentativas_login(agora)
+    chave = chave_tentativa_login(request, email)
+    tentativas = limpar_tentativas_antigas(chave, agora)
+    tentativas.append(agora)
+    _tentativas_login[chave] = tentativas
+
+
+def limpar_falhas_login(request: Request, email: str) -> None:
+    _tentativas_login.pop(chave_tentativa_login(request, email), None)
 
 
 async def verificar_email_unico(
@@ -81,7 +186,7 @@ async def verificar_cpf_unico(
         )
 
 
-def montar_payload_token(usuario: UsuarioDB) -> dict:
+def montar_payload_token(usuario: UsuarioDB, projeto: InstituicaoDB | None = None) -> dict:
     perfil_acesso = normalizar_perfil_acesso(
         getattr(usuario, "perfil_acesso", None)
     )
@@ -93,8 +198,11 @@ def montar_payload_token(usuario: UsuarioDB) -> dict:
         "nome": usuario.nome,
         "email": usuario.email,
         "instituicao_id": usuario.instituicao_id,
+        "organizacao_id": getattr(usuario, "organizacao_id", None),
+        "projeto_nome": getattr(projeto, "nome_fantasia", None),
         "perfil_acesso": perfil_acesso,
         "is_master": bool(getattr(usuario, "is_master", False)),
+        "is_global": bool(getattr(usuario, "is_global", False)),
         "ativo": bool(getattr(usuario, "ativo", True)),
     }
 
@@ -106,9 +214,11 @@ def montar_payload_token(usuario: UsuarioDB) -> dict:
 @router.post("/login", response_model=Token)
 async def login(
     payload: LoginPayload,
+    request: Request,
     db: AsyncSession = Depends(get_db),
 ):
     email = payload.email.lower().strip()
+    verificar_limite_login(request, email)
 
     resultado = await db.execute(
         select(UsuarioDB).where(
@@ -119,6 +229,13 @@ async def login(
     usuario = resultado.scalar_one_or_none()
 
     if not usuario:
+        registrar_falha_login(request, email)
+        registrar_evento_auditoria(
+            "login_falha",
+            ip=obter_ip_cliente(request),
+            email_dominio=dominio_email(email),
+            motivo="usuario_ou_senha_invalidos",
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Usuário ou senha inválidos.",
@@ -128,31 +245,64 @@ async def login(
         payload.senha,
         usuario.senha_hash,
     ):
+        registrar_falha_login(request, email)
+        registrar_evento_auditoria(
+            "login_falha",
+            ip=obter_ip_cliente(request),
+            email_dominio=dominio_email(email),
+            motivo="usuario_ou_senha_invalidos",
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Usuário ou senha inválidos.",
         )
 
     if not bool(getattr(usuario, "ativo", True)):
+        registrar_evento_auditoria(
+            "login_bloqueado_usuario_inativo",
+            usuario_id=usuario.id,
+            instituicao_id=usuario.instituicao_id,
+            organizacao_id=getattr(usuario, "organizacao_id", None),
+            perfil_acesso=getattr(usuario, "perfil_acesso", None),
+            ip=obter_ip_cliente(request),
+        )
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Usuário inativo. Acesso bloqueado.",
         )
 
     usuario.ultimo_login_em = agora_utc_sem_timezone()
+    limpar_falhas_login(request, email)
 
     await db.commit()
     await db.refresh(usuario)
 
+    projeto_resultado = await db.execute(
+        select(InstituicaoDB).where(InstituicaoDB.id == usuario.instituicao_id)
+    )
+    projeto = projeto_resultado.scalar_one_or_none()
+
+    registrar_evento_auditoria(
+        "login_sucesso",
+        usuario_id=usuario.id,
+        instituicao_id=usuario.instituicao_id,
+        organizacao_id=getattr(usuario, "organizacao_id", None),
+        perfil_acesso=getattr(usuario, "perfil_acesso", None),
+        ip=obter_ip_cliente(request),
+    )
+
     token = criar_access_token(
-        data=montar_payload_token(usuario),
+        data=montar_payload_token(usuario, projeto),
         expires_delta=timedelta(hours=12),
     )
 
     return {
         "access_token": token,
         "token_type": "bearer",
-        "usuario": usuario,
+        "usuario": {
+            **montar_payload_token(usuario, projeto),
+            "avatar_url": getattr(usuario, "avatar_url", None),
+        },
     }
 
 
@@ -165,23 +315,71 @@ async def onboarding(
     payload: OnboardingPayload,
     db: AsyncSession = Depends(get_db),
 ):
+    if not ONBOARDING_PUBLICO:
+        registrar_evento_auditoria("onboarding_publico_bloqueado")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Cadastro público indisponível neste ambiente.",
+        )
+
     email = payload.usuario_master.email.lower().strip()
     cpf = payload.usuario_master.cpf
 
     await verificar_email_unico(db, email)
     await verificar_cpf_unico(db, cpf)
 
+    organizacao_payload = payload.organizacao
+    projeto_payload = payload.projeto or payload.instituicao
+
+    if organizacao_payload is None and payload.instituicao is not None:
+        organizacao_payload = OrganizacaoDB(
+            nome=payload.instituicao.nome_fantasia,
+            cnpj=payload.instituicao.cnpj,
+            telefone=payload.instituicao.telefone,
+        )
+    else:
+        organizacao_payload = OrganizacaoDB(
+            nome=payload.organizacao.nome,
+            cnpj=payload.organizacao.cnpj,
+            telefone=payload.organizacao.telefone,
+            email=payload.organizacao.email,
+            cep=payload.organizacao.cep,
+            logradouro=payload.organizacao.logradouro,
+            numero=payload.organizacao.numero,
+            complemento=payload.organizacao.complemento,
+            bairro=payload.organizacao.bairro,
+            cidade=payload.organizacao.cidade,
+            uf=payload.organizacao.uf,
+        )
+
+    db.add(organizacao_payload)
+    await db.flush()
+
     instituicao = InstituicaoDB(
-        nome_fantasia=payload.instituicao.nome_fantasia,
-        cnpj=payload.instituicao.cnpj,
-        telefone=payload.instituicao.telefone,
+        organizacao_id=organizacao_payload.id,
+        nome_fantasia=projeto_payload.nome_fantasia,
+        cnpj=projeto_payload.cnpj,
+        telefone=projeto_payload.telefone,
+        email=projeto_payload.email,
+        cep=projeto_payload.cep,
+        logradouro=projeto_payload.logradouro,
+        numero=projeto_payload.numero,
+        complemento=projeto_payload.complemento,
+        bairro=projeto_payload.bairro,
+        cidade=projeto_payload.cidade,
+        uf=projeto_payload.uf,
+        tipo_projeto=projeto_payload.tipo_projeto or "Projeto",
+        projeto_unico=payload.projeto_unico,
     )
 
     db.add(instituicao)
     await db.flush()
 
+    perfil_usuario_inicial = "Gestor" if payload.projeto_unico else "Global"
+
     usuario_master = UsuarioDB(
         instituicao_id=instituicao.id,
+        organizacao_id=organizacao_payload.id,
         nome=payload.usuario_master.nome,
         email=email,
         cpf=payload.usuario_master.cpf,
@@ -190,8 +388,9 @@ async def onboarding(
         senha_hash=gerar_hash_senha(
             payload.usuario_master.senha
         ),
-        perfil_acesso="Gestor",
-        is_master=True,
+        perfil_acesso=perfil_usuario_inicial,
+        is_master=payload.projeto_unico,
+        is_global=True,
         ativo=True,
         data_nascimento=payload.usuario_master.data_nascimento,
         genero=payload.usuario_master.genero,
@@ -221,13 +420,20 @@ async def onboarding(
 
     try:
         await db.commit()
+        registrar_evento_auditoria(
+            "onboarding_sucesso",
+            organizacao_id=organizacao_payload.id,
+            instituicao_id=instituicao.id,
+            usuario_id=usuario_master.id,
+            projeto_unico=payload.projeto_unico,
+        )
 
     except Exception as erro:
         await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Erro ao realizar onboarding: {str(erro)}",
-        )
+            detail="Não foi possível realizar o onboarding. Verifique os dados informados.",
+        ) from erro
 
     return {
         "message": "Onboarding realizado com sucesso.",

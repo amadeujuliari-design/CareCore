@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import api from './services/api';
 import { useAuth } from './context/AuthContext';
-import logoCarecore from './assets/logo.png';
+import logoCarecore from './assets/logo.PNG';
 
 export default function Login() {
   const navigate = useNavigate();
@@ -314,6 +314,10 @@ export default function Login() {
                     <input
                       type="email"
                       autoComplete="email"
+                      inputMode="email"
+                      autoCapitalize="none"
+                      autoCorrect="off"
+                      spellCheck={false}
                       required
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
@@ -332,6 +336,9 @@ export default function Login() {
                     <input
                       type="password"
                       autoComplete="current-password"
+                      autoCapitalize="none"
+                      autoCorrect="off"
+                      spellCheck={false}
                       required
                       value={senha}
                       onChange={(e) => setSenha(e.target.value)}

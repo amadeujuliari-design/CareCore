@@ -1,7 +1,15 @@
 from types import SimpleNamespace
 
+import pytest
+from fastapi import HTTPException
+
 from routers.conviventes import usuario_pode_resolver_ocorrencia
-from security import usuario_eh_gestor, usuario_eh_tecnico_ou_superior
+from security import (
+    bloquear_usuario_global_puro,
+    usuario_eh_gestor,
+    usuario_eh_global_puro,
+    usuario_eh_tecnico_ou_superior,
+)
 
 
 def test_master_eh_tratado_como_gestor():
@@ -20,6 +28,43 @@ def test_gestor_legado_gerente_eh_normalizado_como_gestor():
             "is_master": False,
         }
     )
+
+
+def test_global_puro_nao_eh_tratado_como_gestor_operacional():
+    usuario = {
+        "perfil_acesso": "Global",
+        "is_global": True,
+        "is_master": False,
+    }
+
+    assert usuario_eh_global_puro(usuario)
+    assert not usuario_eh_gestor(usuario)
+    assert not usuario_eh_tecnico_ou_superior(usuario)
+
+
+def test_global_puro_eh_bloqueado_em_operacoes_de_projeto():
+    usuario = {
+        "perfil_acesso": "Global",
+        "is_global": True,
+        "is_master": False,
+    }
+
+    with pytest.raises(HTTPException) as erro:
+        bloquear_usuario_global_puro(usuario)
+
+    assert getattr(erro.value, "status_code", None) == 403
+
+
+def test_global_gestor_nao_eh_global_puro():
+    usuario = {
+        "perfil_acesso": "Gestor",
+        "is_global": True,
+        "is_master": True,
+    }
+
+    assert usuario_eh_gestor(usuario)
+    assert not usuario_eh_global_puro(usuario)
+    bloquear_usuario_global_puro(usuario)
 
 
 def test_tecnico_responsavel_pode_resolver_ocorrencia():

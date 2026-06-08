@@ -1,12 +1,17 @@
-import * as XLSX from "xlsx";
+import {
+  DIREITOS_RESERVADOS_TEXTO,
+  DIREITOS_RESERVADOS_TITULO,
+  obterUrlDireitosReservados,
+} from "./direitosReservados";
 
-export function exportarRelatorioXlsx({
+export async function exportarRelatorioXlsx({
   nomeArquivo = "relatorio",
   titulo = "RELATÓRIO",
   filtros = {},
   colunas = [],
   dados = [],
 }) {
+  const XLSX = await import("xlsx");
   const dataAtual = new Date().toLocaleString("pt-BR");
 
   const linhas = [];
@@ -32,6 +37,11 @@ export function exportarRelatorioXlsx({
       colunas.map((coluna) => item[coluna] ?? "")
     );
   });
+
+  linhas.push([]);
+  linhas.push([DIREITOS_RESERVADOS_TITULO]);
+  linhas.push([DIREITOS_RESERVADOS_TEXTO]);
+  linhas.push([`Página pública: ${obterUrlDireitosReservados()}`]);
 
   const worksheet = XLSX.utils.aoa_to_sheet(linhas);
 

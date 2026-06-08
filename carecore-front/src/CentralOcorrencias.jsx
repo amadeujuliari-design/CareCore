@@ -3,21 +3,31 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 import Sidebar from './Sidebar';
-import { AppShell, MainShell, PageHeader, PremiumButton, ScrollArea } from './components/PremiumUI';
+import { AppShell, MainShell, PageHeader, PremiumButton, ReportActionButton, ScrollArea } from './components/PremiumUI';
 import { exportarRelatorioXlsx } from './utils/exportarRelatorioXlsx';
-import { imprimirRelatorio } from './utils/imprimirRelatorio';
+import { abrirPreviewHtml, imprimirRelatorio } from './utils/imprimirRelatorio';
 import { API_ROOT } from './config/apiBase';
 import { BadgePrioridadeOcorrencia } from './components/OcorrenciasUI';
 import {
+  DIREITOS_RESERVADOS_TITULO,
+  obterUrlDireitosReservados,
+} from './utils/direitosReservados';
+import {
+  buscarIdentidadeRelatorios,
+  obterLogoRelatorioDataUrl,
+  obterLogoRelatorioSrc,
+} from './utils/relatorioIdentidadePrint';
+import {
   PRIORIDADES_OCORRENCIA,
   classesPrioridade,
-  filtrarOcorrencias,
   montarRelatorioOcorrencias,
   normalizarPrioridade,
-  ordenarOcorrencias,
   resumirPrioridadesOcorrencias,
 } from './utils/ocorrenciasUtils';
+import { criarHeadersAutenticados } from './utils/requestIdUtils';
 
+
+const TAMANHO_PAGINA_OCORRENCIAS = 50;
 
 export default function CentralOcorrencias() {
   const navigate = useNavigate();
@@ -39,6 +49,9 @@ export default function CentralOcorrencias() {
   const isGestor = ['Gestor', 'Gestao', 'Gestão', 'Gerente'].includes(perfilUsuario);
 
   const [ocorrencias, setOcorrencias] = useState([]);
+  const [totalOcorrencias, setTotalOcorrencias] = useState(0);
+  const [paginaAtual, setPaginaAtual] = useState(1);
+  const [resumoServidor, setResumoServidor] = useState(null);
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState('');
   const [sucesso, setSucesso] = useState('');
@@ -51,16 +64,21 @@ export default function CentralOcorrencias() {
   const [modalNovoAberto, setModalNovoAberto] = useState(false);
   const [listaConviventes, setListaConviventes] = useState([]);
   const [listaEquipe, setListaEquipe] = useState([]);
+  const [listaFuncionarios, setListaFuncionarios] = useState([]);
   const [enviandoNovo, setEnviandoNovo] = useState(false);
+  const [erroNovoChamado, setErroNovoChamado] = useState('');
 
   const [buscaPaciente, setBuscaPaciente] = useState('');
   const [mostrarDropdownPaciente, setMostrarDropdownPaciente] = useState(false);
+  const [scannerAssinaturaAberto, setScannerAssinaturaAberto] = useState(false);
+  const [scannerAssinaturaErro, setScannerAssinaturaErro] = useState('');
 
   const [filtroPrioridade, setFiltroPrioridade] = useState(searchParams.get('prioridade') || 'Todas');
   const [filtroStatus, setFiltroStatus] = useState(searchParams.get('status') || 'Todos');
 
   const [selecionados, setSelecionados] = useState([]);
   const [baixandoLote, setBaixandoLote] = useState(false);
+  const [identidadeRelatorio, setIdentidadeRelatorio] = useState(null);
 
   const estadoNovoChamado = {
     convivente_id: '',
@@ -69,23 +87,133 @@ export default function CentralOcorrencias() {
     descricao: '',
     requer_acao_tecnica: false,
     prioridade: 'Média',
+    convivente_autor_ocorrencia: false,
+    funcionario_envolvido_id: '',
+    assinatura_convivente_metodo: 'Carteirinha',
+    assinatura_convivente_codigo: '',
     observadores_ids: []
   };
   const [formNovo, setFormNovo] = useState(estadoNovoChamado);
 
   useEffect(() => {
     if (!token) { navigate('/'); return; }
-    carregarOcorrencias();
     carregarDadosFormularioNovo();
+    buscarIdentidadeRelatorios().then(setIdentidadeRelatorio);
   }, [token]);
 
-  const carregarOcorrencias = async () => {
+  useEffect(() => {
+    if (!token) return;
+    setPaginaAtual(1);
+    carregarOcorrencias(1);
+  }, [token, filtroPrioridade, filtroStatus]);
+
+  useEffect(() => {
+    let leitor = null;
+    let ativo = true;
+
+    const iniciarCameraAssinatura = async () => {
+      if (!scannerAssinaturaAberto) return;
+
+      try {
+        setScannerAssinaturaErro('');
+
+        if (!navigator.mediaDevices?.getUserMedia) {
+          setScannerAssinaturaErro('Este navegador não liberou acesso à câmera. Use o campo manual.');
+          return;
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, 150));
+        if (!ativo) return;
+
+        const elementoLeitor = document.getElementById('leitor-camera-assinatura-ocorrencia');
+        if (!elementoLeitor) {
+          setScannerAssinaturaErro('Não foi possível preparar o leitor. Feche e tente novamente.');
+          return;
+        }
+
+        const { Html5Qrcode } = await import('html5-qrcode');
+        if (!ativo) return;
+
+        const cameras = await Html5Qrcode.getCameras();
+        if (!cameras?.length) {
+          setScannerAssinaturaErro('Nenhuma câmera foi encontrada neste dispositivo.');
+          return;
+        }
+
+        const cameraPreferida = cameras.find((camera) => {
+          const label = String(camera.label || '').toLowerCase();
+          return /back|rear|environment|traseira/.test(label);
+        }) || cameras[0];
+
+        leitor = new Html5Qrcode('leitor-camera-assinatura-ocorrencia');
+        await leitor.start(
+          cameraPreferida.id,
+          {
+            fps: 10,
+            qrbox: { width: 250, height: 250 },
+          },
+          (codigoLido) => {
+            if (!ativo) return;
+            setFormNovo((atual) => ({
+              ...atual,
+              assinatura_convivente_codigo: String(codigoLido || '').trim(),
+              assinatura_convivente_metodo: 'QR Code da carteirinha',
+            }));
+            setScannerAssinaturaAberto(false);
+          },
+          () => {},
+        );
+      } catch (error) {
+        console.error('Erro ao iniciar câmera para assinatura:', error);
+        const nomeErro = error?.name || '';
+        const detalhe = nomeErro === 'NotAllowedError'
+          ? 'A câmera foi bloqueada pelo navegador ou pelo Windows.'
+          : nomeErro === 'NotReadableError'
+            ? 'A câmera pode estar em uso por outro aplicativo.'
+            : 'Verifique se a câmera está disponível e permitida.';
+        setScannerAssinaturaErro(`Não foi possível iniciar a câmera. ${detalhe}`);
+      }
+    };
+
+    iniciarCameraAssinatura();
+
+    return () => {
+      ativo = false;
+      if (leitor) {
+        try {
+          leitor.stop?.();
+          leitor.clear();
+        } catch {
+          // Leitor pode já ter sido encerrado pelo navegador.
+        }
+      }
+    };
+  }, [scannerAssinaturaAberto]);
+
+  const carregarOcorrencias = async (pagina = paginaAtual) => {
     setLoading(true);
     try {
+      const paginaNormalizada = Math.max(1, Number(pagina) || 1);
       const response = await axios.get(`${API_ROOT}/ocorrencias`, {
-        headers: { Authorization: `Bearer ${token}` }
+        headers: criarHeadersAutenticados(token),
+        params: {
+          limit: TAMANHO_PAGINA_OCORRENCIAS,
+          offset: (paginaNormalizada - 1) * TAMANHO_PAGINA_OCORRENCIAS,
+          prioridade: filtroPrioridade,
+          status: filtroStatus,
+        },
       });
-      setOcorrencias(response.data);
+      const dados = response.data;
+      if (Array.isArray(dados)) {
+        setOcorrencias(dados);
+        setTotalOcorrencias(dados.length);
+        setResumoServidor(null);
+      } else {
+        setOcorrencias(dados.items || []);
+        setTotalOcorrencias(dados.total || 0);
+        setResumoServidor(dados.resumo || null);
+      }
+      setPaginaAtual(paginaNormalizada);
       setSelecionados([]);
     } catch {
       setErro('Erro ao carregar a fila de ocorrências.');
@@ -96,31 +224,61 @@ export default function CentralOcorrencias() {
 
   const carregarDadosFormularioNovo = async () => {
     try {
-      const config = { headers: { Authorization: `Bearer ${token}` } };
+      const config = { headers: criarHeadersAutenticados(token) };
       const [resConv, resEquipe] = await Promise.all([
         axios.get(`${API_ROOT}/conviventes`, config),
         axios.get(`${API_ROOT}/tecnicos`, config) 
       ]);
       setListaConviventes(resConv.data);
+      setListaFuncionarios(resEquipe.data);
       setListaEquipe(resEquipe.data.filter(u => u.id !== idUsuarioLogado)); 
     } catch (error) {
       console.error("Erro ao carregar dados complementares", error);
     }
   };
 
-  const ocorrenciasFiltradas = filtrarOcorrencias(ocorrencias, filtroPrioridade, filtroStatus);
-  const ocorrenciasOrdenadas = ordenarOcorrencias(ocorrenciasFiltradas, idUsuarioLogado);
-  const resumoPrioridades = resumirPrioridadesOcorrencias(ocorrencias);
-  const relatorioOcorrencias = montarRelatorioOcorrencias(ocorrencias, ocorrenciasFiltradas);
+  const ocorrenciasFiltradas = ocorrencias;
+  const ocorrenciasOrdenadas = ocorrencias;
+  const resumoPrioridades = resumoServidor?.porPrioridade || resumirPrioridadesOcorrencias(ocorrencias);
+  const relatorioOcorrencias = resumoServidor
+    ? {
+      geral: {
+        total: resumoServidor.total || 0,
+        pendentes: resumoServidor.pendentes || 0,
+        resolvidas: resumoServidor.resolvidas || 0,
+        altaCriticaPendentes: resumoServidor.altaCriticaPendentes || 0,
+        porPrioridade: Object.fromEntries(
+          Object.entries(resumoServidor.porPrioridade || {}).map(([chave, valor]) => [chave, valor?.total || 0]),
+        ),
+        porTipo: {},
+        porTecnico: {},
+      },
+      filtrado: {
+        total: resumoServidor.total || 0,
+        pendentes: resumoServidor.pendentes || 0,
+        resolvidas: resumoServidor.resolvidas || 0,
+        altaCriticaPendentes: resumoServidor.altaCriticaPendentes || 0,
+        porPrioridade: Object.fromEntries(
+          Object.entries(resumoServidor.porPrioridade || {}).map(([chave, valor]) => [chave, valor?.total || 0]),
+        ),
+        porTipo: {},
+        porTecnico: {},
+      },
+    }
+    : montarRelatorioOcorrencias(ocorrencias, ocorrenciasFiltradas);
+  const totalPaginas = Math.max(1, Math.ceil(totalOcorrencias / TAMANHO_PAGINA_OCORRENCIAS));
 
   const montarDadosRelatorioOcorrencias = () => {
     return (Array.isArray(ocorrenciasFiltradas) ? ocorrenciasFiltradas : []).map((oc) => {
       const paciente = listaConviventes.find((c) => c.id === oc.convivente_id);
-      const nomePaciente = paciente ? (paciente.nome_social || paciente.nome_completo) : "-";
+      const nomePaciente = oc.convivente_nome || (paciente ? (paciente.nome_social || paciente.nome_completo) : "-");
+      const funcionario = listaFuncionarios.find((u) => u.id === oc.funcionario_envolvido_id);
 
       return {
         Data: oc.data_ocorrencia ? new Date(oc.data_ocorrencia).toLocaleString("pt-BR") : "-",
         Convivente: nomePaciente,
+        "Autor convivente": oc.convivente_autor_ocorrencia ? "Sim" : "Não",
+        "Funcionário citado": funcionario?.nome || "-",
         Tipo: oc.tipo_ocorrencia || "-",
         Motivo: oc.motivo || "-",
         Prioridade: normalizarPrioridade(oc.prioridade),
@@ -135,6 +293,8 @@ export default function CentralOcorrencias() {
   const colunasRelatorioOcorrencias = [
     "Data",
     "Convivente",
+    "Autor convivente",
+    "Funcionário citado",
     "Tipo",
     "Motivo",
     "Prioridade",
@@ -161,12 +321,18 @@ export default function CentralOcorrencias() {
     });
   };
 
-  const abrirRelatorioImpressaoOcorrencias = () => {
+  const abrirRelatorioImpressaoOcorrencias = async () => {
+    const logoRelatorioDataUrl = await obterLogoRelatorioDataUrl(identidadeRelatorio);
+
     imprimirRelatorio({
       titulo: "Relatório de Ocorrências",
       subtitulo: `Prioridade: ${filtroPrioridade} | Status: ${filtroStatus} | Total filtrado: ${relatorioOcorrencias.filtrado.total} | Pendentes: ${relatorioOcorrencias.filtrado.pendentes}`,
       colunas: colunasRelatorioOcorrencias,
       dados: montarDadosRelatorioOcorrencias(),
+      identidade: {
+        ...identidadeRelatorio,
+        logo_src: obterLogoRelatorioSrc(logoRelatorioDataUrl),
+      },
     });
   };
 
@@ -193,18 +359,18 @@ export default function CentralOcorrencias() {
       await Promise.all(
         selecionados.map(id => 
           axios.post(`${API_ROOT}/ocorrencias/${id}/interacoes`, payloadPadrao, {
-            headers: { Authorization: `Bearer ${token}` }
+            headers: criarHeadersAutenticados(token)
           })
         )
       );
 
-      await carregarOcorrencias();
+      await carregarOcorrencias(paginaAtual);
       setErro('');
       setSucesso("Baixa em lote concluída com sucesso!");
     } catch {
       setSucesso('');
       setErro("Ocorreu um erro ao tentar dar baixa em alguns chamados. A tela será recarregada.");
-      carregarOcorrencias();
+      carregarOcorrencias(paginaAtual);
     } finally {
       setBaixandoLote(false);
     }
@@ -220,14 +386,157 @@ export default function CentralOcorrencias() {
     setChamadoSelecionado(null);
     setNovaMensagem('');
     setEncerrarChamado(false);
-    carregarOcorrencias();
+    carregarOcorrencias(paginaAtual);
   };
 
   const abrirFormularioNovo = () => {
     setFormNovo(estadoNovoChamado);
     setBuscaPaciente('');
     setMostrarDropdownPaciente(false);
+    setErroNovoChamado('');
     setModalNovoAberto(true);
+  };
+
+  const escaparHtml = (valor) => String(valor ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#039;');
+
+  const gerarTermoReclamacaoHtml = ({
+    ocorrenciaId = '',
+    dadosOcorrencia = formNovo,
+    logoRelatorioDataUrl = '',
+  } = {}) => {
+    const convivente = listaConviventes.find(c => c.id === dadosOcorrencia.convivente_id);
+    const funcionario = listaFuncionarios.find(u => u.id === dadosOcorrencia.funcionario_envolvido_id);
+    const dataAtual = new Date().toLocaleString('pt-BR');
+    const logoSrc = obterLogoRelatorioSrc(logoRelatorioDataUrl);
+    const nomeExibicao = identidadeRelatorio?.relatorio_nome_exibicao || 'CARECORE+';
+    const rodapeItens = [
+      identidadeRelatorio?.relatorio_rodape_linha1,
+      identidadeRelatorio?.relatorio_rodape_linha2,
+      identidadeRelatorio?.relatorio_telefone ? `Telefone: ${identidadeRelatorio.relatorio_telefone}` : '',
+      identidadeRelatorio?.relatorio_email ? `E-mail: ${identidadeRelatorio.relatorio_email}` : '',
+      identidadeRelatorio?.relatorio_site ? `Site: ${identidadeRelatorio.relatorio_site}` : '',
+    ].filter(Boolean);
+    const direitosUrl = obterUrlDireitosReservados();
+
+    return `
+      <!doctype html>
+      <html>
+        <head>
+          <meta charset="utf-8" />
+          <title>Termo de reclamação do convivente</title>
+          <style>
+            body { font-family: Arial, sans-serif; color: #111827; margin: 0; padding: 32px; line-height: 1.5; }
+            header { display: flex; align-items: center; justify-content: space-between; gap: 24px; border-bottom: 2px solid #e5e7eb; padding-bottom: 16px; margin-bottom: 24px; }
+            .logo { width: 180px; max-height: 68px; object-fit: contain; }
+            .identidade-nome { margin-top: 6px; color: #374151; font-size: 11px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; }
+            h1 { margin: 0; font-size: 22px; }
+            .titulo { text-align: right; }
+            .muted { color: #64748b; font-size: 12px; }
+            .box { border: 1px solid #e5e7eb; border-radius: 12px; padding: 16px; margin: 14px 0; }
+            .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+            .label { font-size: 10px; font-weight: 700; color: #64748b; text-transform: uppercase; }
+            .value { font-size: 14px; font-weight: 700; margin-top: 2px; }
+            .relato { white-space: pre-wrap; font-size: 14px; }
+            .assinaturas { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin-top: 64px; }
+            .linha { border-top: 1px solid #111827; padding-top: 8px; text-align: center; font-size: 12px; }
+            .rodape-relatorio { margin-top: 32px; border-top: 1px solid #e5e7eb; padding-top: 8px; color: #6b7280; font-size: 10px; line-height: 1.4; text-align: center; }
+            .direitos-reservados { margin-top: 5px; font-size: 9px; font-weight: 700; }
+            .direitos-reservados a { color: #4f46e5; text-decoration: none; }
+            @media print { body { padding: 20px; } }
+          </style>
+        </head>
+        <body>
+          <header>
+            <div>
+              <img class="logo" src="${logoSrc}" alt="${escaparHtml(nomeExibicao)}" />
+              <div class="identidade-nome">${escaparHtml(nomeExibicao)}</div>
+            </div>
+            <div class="titulo">
+              <h1>Termo de Reclamação / Manifestação do Convivente</h1>
+              <p class="muted">Documento gerado para assinatura física e posterior anexação ao prontuário.</p>
+            </div>
+          </header>
+
+          <div class="box grid">
+            <div>
+              <div class="label">Ocorrência</div>
+              <div class="value">${escaparHtml(ocorrenciaId || 'Gerada no sistema')}</div>
+            </div>
+            <div>
+              <div class="label">Data de emissão</div>
+              <div class="value">${escaparHtml(dataAtual)}</div>
+            </div>
+            <div>
+              <div class="label">Convivente autor/reclamante</div>
+              <div class="value">${escaparHtml(convivente?.nome_social || convivente?.nome_completo || '-')}</div>
+            </div>
+            <div>
+              <div class="label">Prontuário / CPF</div>
+              <div class="value">#${escaparHtml(convivente?.numero_institucional || 'S/N')} · ${escaparHtml(convivente?.cpf || 'Não informado')}</div>
+            </div>
+            <div>
+              <div class="label">Funcionário citado</div>
+              <div class="value">${escaparHtml(funcionario?.nome || '-')}</div>
+            </div>
+            <div>
+              <div class="label">Validação digital</div>
+              <div class="value">${escaparHtml(dadosOcorrencia.assinatura_convivente_metodo || 'Carteirinha')} registrada na abertura</div>
+            </div>
+          </div>
+
+          <div class="box">
+            <div class="label">Título / motivo</div>
+            <div class="value">${escaparHtml(dadosOcorrencia.motivo || '-')}</div>
+          </div>
+
+          <div class="box">
+            <div class="label">Relato do convivente</div>
+            <p class="relato">${escaparHtml(dadosOcorrencia.descricao || '-')}</p>
+          </div>
+
+          <p class="muted">
+            Declaro que o relato acima foi registrado conforme manifestação apresentada, ficando ciente de que este documento será anexado ao prontuário institucional após assinatura física.
+          </p>
+
+          <div class="assinaturas">
+            <div class="linha">Assinatura do convivente autor/reclamante</div>
+            <div class="linha">Assinatura do técnico/funcionário que registrou</div>
+          </div>
+
+          <footer class="rodape-relatorio">
+            ${
+              rodapeItens.length
+                ? rodapeItens.map(item => `<div>${escaparHtml(item)}</div>`).join('')
+                : '<div>Relatório gerado pelo CareCore+</div>'
+            }
+            <div class="direitos-reservados">
+              <a href="${escaparHtml(direitosUrl)}" target="_blank" rel="noopener noreferrer">
+                ${escaparHtml(DIREITOS_RESERVADOS_TITULO)}
+              </a>
+            </div>
+          </footer>
+        </body>
+      </html>
+    `;
+  };
+
+  const imprimirTermoReclamacao = async (ocorrencia = null) => {
+    const dadosOcorrencia = ocorrencia || formNovo;
+    const logoRelatorioDataUrl = await obterLogoRelatorioDataUrl(identidadeRelatorio);
+
+    abrirPreviewHtml({
+      titulo: 'Termo de reclamação do convivente',
+      html: gerarTermoReclamacaoHtml({
+        ocorrenciaId: ocorrencia?.id || '',
+        dadosOcorrencia,
+        logoRelatorioDataUrl,
+      }),
+    });
   };
 
   const handleToggleObservador = (id) => {
@@ -251,9 +560,20 @@ export default function CentralOcorrencias() {
 
   const handleSalvarNovoChamado = async (e) => {
     e.preventDefault();
+    setErroNovoChamado('');
     if (!formNovo.convivente_id || !formNovo.motivo.trim() || !formNovo.descricao.trim()) {
-      setErro("Preencha o acolhido, o título e a descrição da ocorrência.");
+      setErroNovoChamado("Preencha o acolhido, o título e a descrição da ocorrência.");
       return;
+    }
+    if (formNovo.convivente_autor_ocorrencia) {
+      if (!formNovo.funcionario_envolvido_id) {
+        setErroNovoChamado("Selecione o funcionário citado na reclamação do convivente.");
+        return;
+      }
+      if (!formNovo.assinatura_convivente_codigo.trim()) {
+        setErroNovoChamado("Faça a leitura da carteirinha ou informe o código do prontuário para validar a assinatura digital.");
+        return;
+      }
     }
 
     setEnviandoNovo(true);
@@ -261,20 +581,30 @@ export default function CentralOcorrencias() {
       const paciente = listaConviventes.find(c => c.id === formNovo.convivente_id);
       const payload = {
         ...formNovo,
+        tipo_ocorrencia: formNovo.convivente_autor_ocorrencia ? 'Reclamação do convivente' : formNovo.tipo_ocorrencia,
+        funcionario_envolvido_id: formNovo.convivente_autor_ocorrencia ? formNovo.funcionario_envolvido_id : null,
+        assinatura_convivente_metodo: formNovo.convivente_autor_ocorrencia ? formNovo.assinatura_convivente_metodo : null,
+        assinatura_convivente_codigo: formNovo.convivente_autor_ocorrencia ? formNovo.assinatura_convivente_codigo : null,
         tecnico_responsavel_id: paciente?.tecnico_id || null
       };
 
-      await axios.post(`${API_ROOT}/ocorrencias`, payload, {
-        headers: { Authorization: `Bearer ${token}` }
+      const resposta = await axios.post(`${API_ROOT}/ocorrencias`, payload, {
+        headers: criarHeadersAutenticados(token)
       });
 
       setModalNovoAberto(false);
       setErro('');
       setSucesso('Chamado criado com sucesso.');
-      carregarOcorrencias();
-    } catch {
+      if (formNovo.convivente_autor_ocorrencia) {
+        imprimirTermoReclamacao({
+          ...payload,
+          id: resposta.data?.id,
+        });
+      }
+      carregarOcorrencias(1);
+    } catch (error) {
       setSucesso('');
-      setErro('Erro ao criar o chamado. Verifique a conexão com o servidor.');
+      setErroNovoChamado(error.response?.data?.detail || 'Erro ao criar o chamado. Verifique a conexão com o servidor.');
     } finally {
       setEnviandoNovo(false);
     }
@@ -292,18 +622,27 @@ export default function CentralOcorrencias() {
       };
 
       await axios.post(`${API_ROOT}/ocorrencias/${chamadoSelecionado.id}/interacoes`, payload, {
-        headers: { Authorization: `Bearer ${token}` }
+        headers: criarHeadersAutenticados(token)
       });
 
-      await carregarOcorrencias();
+      await carregarOcorrencias(paginaAtual);
       
       if (encerrarChamado) {
         fecharChamado();
       } else {
         setNovaMensagem('');
-        const response = await axios.get(`${API_ROOT}/ocorrencias`, { headers: { Authorization: `Bearer ${token}` } });
-        setOcorrencias(response.data);
-        setChamadoSelecionado(response.data.find(o => o.id === chamadoSelecionado.id));
+        const response = await axios.get(`${API_ROOT}/ocorrencias`, {
+          headers: criarHeadersAutenticados(token),
+          params: {
+            limit: TAMANHO_PAGINA_OCORRENCIAS,
+            offset: (paginaAtual - 1) * TAMANHO_PAGINA_OCORRENCIAS,
+            prioridade: filtroPrioridade,
+            status: filtroStatus,
+          },
+        });
+        const itens = Array.isArray(response.data) ? response.data : (response.data.items || []);
+        setOcorrencias(itens);
+        setChamadoSelecionado(itens.find(o => o.id === chamadoSelecionado.id) || null);
       }
     } catch {
       setErro('Erro ao enviar a mensagem.');
@@ -399,21 +738,13 @@ export default function CentralOcorrencias() {
               </div>
 
               <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={exportarRelatorioOcorrenciasXLSX}
-                  className="px-4 py-2 rounded-xl bg-brand text-white text-xs font-black hover:bg-brandDark"
-                >
-                  Exportar XLSX
-                </button>
+                <ReportActionButton action="export" onClick={exportarRelatorioOcorrenciasXLSX}>
+                  Exportar
+                </ReportActionButton>
 
-                <button
-                  type="button"
-                  onClick={abrirRelatorioImpressaoOcorrencias}
-                  className="px-4 py-2 rounded-xl bg-gray-900 text-white text-xs font-black hover:bg-black"
-                >
-                  Relatório para impressão
-                </button>
+                <ReportActionButton action="print" onClick={abrirRelatorioImpressaoOcorrencias}>
+                  Imprimir
+                </ReportActionButton>
               </div>
             </div>
 
@@ -491,6 +822,35 @@ export default function CentralOcorrencias() {
               </div>
             ) : (
               <div className="flex flex-col gap-3">
+                <div className="flex flex-col gap-2 rounded-2xl border border-gray-100 bg-gray-50 px-4 py-3 text-xs font-bold text-gray-600 md:flex-row md:items-center md:justify-between">
+                  <span>
+                    Exibindo {((paginaAtual - 1) * TAMANHO_PAGINA_OCORRENCIAS) + 1}
+                    {' '}a {Math.min(paginaAtual * TAMANHO_PAGINA_OCORRENCIAS, totalOcorrencias)}
+                    {' '}de {totalOcorrencias} ocorrência(s)
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={paginaAtual <= 1 || loading}
+                      onClick={() => carregarOcorrencias(paginaAtual - 1)}
+                      className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-black text-gray-700 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      Anterior
+                    </button>
+                    <span className="px-2 text-[11px] font-black text-gray-500">
+                      Página {paginaAtual} de {totalPaginas}
+                    </span>
+                    <button
+                      type="button"
+                      disabled={paginaAtual >= totalPaginas || loading}
+                      onClick={() => carregarOcorrencias(paginaAtual + 1)}
+                      className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-black text-gray-700 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      Próxima
+                    </button>
+                  </div>
+                </div>
+
                 {ocorrenciasOrdenadas.map(oc => {
                   const isResolvido = oc.status_resolucao === 'Resolvido';
                   const isMeuCaso = oc.tecnico_responsavel_id === idUsuarioLogado;
@@ -498,11 +858,14 @@ export default function CentralOcorrencias() {
                   const temPermissaoBaixa = !isResolvido && (isGestor || (perfilUsuario === 'Técnico' && isMeuCaso));
 
                   const paciente = listaConviventes.find(c => c.id === oc.convivente_id);
-                  const nomePaciente = paciente ? (paciente.nome_social || paciente.nome_completo) : 'Acolhido não encontrado';
+                  const nomePaciente = oc.convivente_nome || (paciente ? (paciente.nome_social || paciente.nome_completo) : 'Acolhido não encontrado');
+                  const funcionarioCitado = listaFuncionarios.find(u => u.id === oc.funcionario_envolvido_id);
                   
                   // Dados de identificação exibidos na listagem principal.
-                  const prontuarioInfo = paciente?.numero_institucional ? `#${paciente.numero_institucional}` : 'S/N';
-                  const cpfInfo = paciente?.cpf || 'Não informado';
+                  const prontuarioInfo = oc.convivente_numero_institucional
+                    ? `#${oc.convivente_numero_institucional}`
+                    : (paciente?.numero_institucional ? `#${paciente.numero_institucional}` : 'S/N');
+                  const cpfInfo = oc.convivente_cpf || paciente?.cpf || 'Não informado';
 
                   return (
                     <div 
@@ -549,10 +912,20 @@ export default function CentralOcorrencias() {
                                 Sua Ação
                               </span>
                             )}
+                            {oc.convivente_autor_ocorrencia && (
+                              <span className="text-[9px] bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full uppercase font-bold shadow-sm flex-shrink-0">
+                                Reclamação do convivente
+                              </span>
+                            )}
                           </div>
                           
                           <h3 className="font-bold text-gray-800 text-sm truncate mb-0.5">{oc.motivo}</h3>
-                          <p className="text-xs text-gray-500 truncate">{oc.descricao}</p>
+                          <p className="text-xs text-gray-500 truncate">
+                            {oc.convivente_autor_ocorrencia && funcionarioCitado
+                              ? `Funcionário citado: ${funcionarioCitado.nome} · `
+                              : ''}
+                            {oc.descricao}
+                          </p>
                         </div>
                       </div>
 
@@ -571,6 +944,27 @@ export default function CentralOcorrencias() {
                     </div>
                   );
                 })}
+
+                {totalPaginas > 1 && (
+                  <div className="flex items-center justify-end gap-2 pt-2">
+                    <button
+                      type="button"
+                      disabled={paginaAtual <= 1 || loading}
+                      onClick={() => carregarOcorrencias(paginaAtual - 1)}
+                      className="rounded-xl bg-gray-100 px-4 py-2 text-xs font-black text-gray-700 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      Anterior
+                    </button>
+                    <button
+                      type="button"
+                      disabled={paginaAtual >= totalPaginas || loading}
+                      onClick={() => carregarOcorrencias(paginaAtual + 1)}
+                      className="rounded-xl bg-brand px-4 py-2 text-xs font-black text-white disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      Próxima página
+                    </button>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -604,8 +998,8 @@ export default function CentralOcorrencias() {
 
       {/* --- MODAL DA THREAD (CHAT DO CHAMADO) --- */}
       {chamadoSelecionado && (
-        <div className="fixed inset-0 bg-gray-900/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
-          <div className="bg-white w-full max-w-3xl rounded-2xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden">
+        <div className="carecore-modal-overlay fixed inset-0 bg-gray-900/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+          <div className="carecore-modal-panel bg-white w-full max-w-3xl rounded-2xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden">
             
             <div className="bg-gray-800 p-5 flex justify-between items-start text-white">
               <div>
@@ -643,12 +1037,39 @@ export default function CentralOcorrencias() {
                   Aberto em: {new Date(chamadoSelecionado.data_ocorrencia).toLocaleString('pt-BR')}
                 </p>
               </div>
-              <button onClick={fecharChamado} className="text-gray-400 hover:text-white bg-gray-700 hover:bg-gray-600 rounded-lg p-2 transition-colors">
-                ✕ Fechar
-              </button>
+              <div className="flex flex-col gap-2">
+                {chamadoSelecionado.convivente_autor_ocorrencia && (
+                  <ReportActionButton action="print" onClick={() => imprimirTermoReclamacao(chamadoSelecionado)}>
+                    Imprimir
+                  </ReportActionButton>
+                )}
+                <button onClick={fecharChamado} className="text-gray-400 hover:text-white bg-gray-700 hover:bg-gray-600 rounded-lg p-2 transition-colors">
+                  ✕ Fechar
+                </button>
+              </div>
             </div>
 
             <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-gray-50">
+              {chamadoSelecionado.convivente_autor_ocorrencia && (() => {
+                const funcionario = listaFuncionarios.find(u => u.id === chamadoSelecionado.funcionario_envolvido_id);
+
+                return (
+                  <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
+                    <p className="text-[10px] font-black uppercase text-amber-700">Reclamação formal do convivente</p>
+                    <p className="mt-1 text-sm font-bold text-amber-950">
+                      Funcionário citado: {funcionario?.nome || 'Não identificado'}
+                    </p>
+                    <p className="mt-1 text-xs font-semibold text-amber-800">
+                      Assinatura digital: {chamadoSelecionado.assinatura_convivente_validada_em
+                        ? `validada em ${new Date(chamadoSelecionado.assinatura_convivente_validada_em).toLocaleString('pt-BR')}`
+                        : 'pendente'}
+                    </p>
+                    <p className="mt-2 text-xs text-amber-700">
+                      Imprima o termo para assinatura física e anexe o documento escaneado ao prontuário do convivente.
+                    </p>
+                  </div>
+                );
+              })()}
               
               <div className="flex flex-col">
                 <span className="text-[10px] font-bold text-gray-400 ml-4 mb-1">RELATO INICIAL (ABERTURA)</span>
@@ -725,8 +1146,8 @@ export default function CentralOcorrencias() {
 
       {/* --- MODAL DE CRIAÇÃO DE NOVO CHAMADO --- */}
       {modalNovoAberto && (
-        <div className="fixed inset-0 bg-gray-900/60 z-50 flex items-start justify-center p-4 sm:p-8 backdrop-blur-sm animate-fadeIn overflow-y-auto">
-          <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl flex flex-col my-auto relative">
+        <div className="carecore-modal-overlay fixed inset-0 bg-gray-900/60 z-50 flex items-start justify-center p-4 sm:p-8 backdrop-blur-sm overflow-y-auto">
+          <div className="carecore-modal-panel bg-white w-full max-w-2xl rounded-2xl shadow-2xl flex flex-col my-auto relative">
             
             <div className="bg-brand p-5 flex justify-between items-center text-white rounded-t-2xl">
               <h2 className="text-lg font-bold">Abrir Novo Chamado de Ocorrência</h2>
@@ -737,6 +1158,11 @@ export default function CentralOcorrencias() {
 
             <div className="p-6 bg-gray-50">
               <form id="formNovoChamado" onSubmit={handleSalvarNovoChamado} className="space-y-6">
+                {erroNovoChamado && (
+                  <div className="rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
+                    {erroNovoChamado}
+                  </div>
+                )}
                 
                 <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
                   <label className="block text-xs font-bold text-gray-700 uppercase mb-2">1. Selecione o Acolhido *</label>
@@ -786,6 +1212,106 @@ export default function CentralOcorrencias() {
                   )}
                 </div>
 
+                <div className="bg-white p-5 rounded-xl border border-amber-200 shadow-sm space-y-4">
+                  <label className="flex items-start gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={formNovo.convivente_autor_ocorrencia}
+                      onChange={(e) => setFormNovo({
+                        ...formNovo,
+                        convivente_autor_ocorrencia: e.target.checked,
+                        requer_acao_tecnica: e.target.checked ? true : formNovo.requer_acao_tecnica,
+                        tipo_ocorrencia: e.target.checked ? 'Reclamação do convivente' : 'Comportamental',
+                        funcionario_envolvido_id: e.target.checked ? formNovo.funcionario_envolvido_id : '',
+                        assinatura_convivente_codigo: e.target.checked ? formNovo.assinatura_convivente_codigo : '',
+                      })}
+                      className="mt-1 w-4 h-4 text-amber-600 focus:ring-amber-500 rounded"
+                    />
+                    <div>
+                      <span className="block text-sm font-black text-amber-900">
+                        Este convivente é o autor/reclamante da ocorrência
+                      </span>
+                      <span className="block text-[11px] font-semibold text-amber-700 mt-1">
+                        Use quando o convivente registrar uma reclamação formal contra funcionário ou equipe.
+                      </span>
+                    </div>
+                  </label>
+
+                  {formNovo.convivente_autor_ocorrencia && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border-t border-amber-100 pt-4">
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-600 mb-1">Funcionário citado *</label>
+                        <select
+                          value={formNovo.funcionario_envolvido_id}
+                          onChange={(e) => setFormNovo({ ...formNovo, funcionario_envolvido_id: e.target.value })}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none bg-white text-sm"
+                          required={formNovo.convivente_autor_ocorrencia}
+                        >
+                          <option value="">Selecione o funcionário</option>
+                          {listaFuncionarios.map((usuario) => (
+                            <option key={usuario.id} value={usuario.id}>
+                              {usuario.nome} ({usuario.perfil_acesso || 'Equipe'})
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-600 mb-1">Assinatura digital do convivente *</label>
+                        <div className="flex flex-col gap-2 sm:flex-row">
+                          <input
+                            type="text"
+                            value={formNovo.assinatura_convivente_codigo}
+                            onChange={(e) => {
+                              setFormNovo({ ...formNovo, assinatura_convivente_codigo: e.target.value });
+                              setErroNovoChamado('');
+                            }}
+                            placeholder="Leia o QR Code ou digite o código do prontuário"
+                            className={`min-h-10 flex-1 px-3 py-2 border rounded-lg focus:ring-2 outline-none text-sm ${
+                              erroNovoChamado && formNovo.convivente_autor_ocorrencia
+                                ? 'border-red-300 focus:ring-red-200'
+                                : 'border-gray-300 focus:ring-brand'
+                            }`}
+                            required={formNovo.convivente_autor_ocorrencia}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setScannerAssinaturaAberto(true)}
+                            className="min-h-10 rounded-lg bg-gray-900 px-3 py-2 text-xs font-black text-white hover:bg-black"
+                          >
+                            Abrir câmera
+                          </button>
+                        </div>
+                        <p className="text-[11px] text-gray-500 mt-1">
+                          O sistema valida contra o QR Code, código do prontuário ou CPF.
+                        </p>
+                        {erroNovoChamado && formNovo.convivente_autor_ocorrencia && (
+                          <p className="mt-2 rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-[11px] font-semibold text-red-700">
+                            {erroNovoChamado}
+                          </p>
+                        )}
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-600 mb-1">Método de validação</label>
+                        <select
+                          value={formNovo.assinatura_convivente_metodo}
+                          onChange={(e) => setFormNovo({ ...formNovo, assinatura_convivente_metodo: e.target.value })}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none bg-white text-sm"
+                        >
+                          <option value="QR Code da carteirinha">QR Code da carteirinha</option>
+                          <option value="Código de barras da carteirinha">Código de barras da carteirinha</option>
+                          <option value="Código digitado manualmente">Código digitado manualmente</option>
+                        </select>
+                      </div>
+
+                      <div className="rounded-xl border border-amber-100 bg-amber-50 p-3 text-[11px] font-semibold text-amber-800">
+                        Após salvar, será gerado um termo para impressão e assinatura física. Depois o técnico pode escanear e anexar aos documentos do convivente.
+                      </div>
+                    </div>
+                  )}
+                </div>
+
                 <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm space-y-4">
                   <h3 className="text-xs font-bold text-gray-700 uppercase">2. Detalhes da Situação</h3>
                   
@@ -797,6 +1323,9 @@ export default function CentralOcorrencias() {
                         onChange={(e) => setFormNovo({...formNovo, tipo_ocorrencia: e.target.value})}
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none bg-white text-sm"
                       >
+                        {formNovo.convivente_autor_ocorrencia && (
+                          <option value="Reclamação do convivente">Reclamação do convivente</option>
+                        )}
                         <option value="Comportamental">Comportamental / Convivência</option>
                         <option value="Saúde">Saúde / Crise Médica</option>
                         <option value="Administrativo">Administrativo / Regras</option>
@@ -912,6 +1441,67 @@ export default function CentralOcorrencias() {
               </button>
             </div>
 
+          </div>
+        </div>
+      )}
+
+      {scannerAssinaturaAberto && (
+        <div className="carecore-modal-overlay fixed inset-0 bg-gray-900/70 z-[70] flex items-center justify-center p-4 backdrop-blur-sm">
+          <div className="carecore-modal-panel bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden">
+            <div className="bg-gray-900 p-5 flex justify-between items-center text-white">
+              <div>
+                <h2 className="text-lg font-bold">Ler carteirinha</h2>
+                <p className="text-xs text-gray-300 mt-1">Aponte a câmera para o QR Code ou digite o código do prontuário.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setScannerAssinaturaAberto(false)}
+                className="text-white/80 hover:text-white bg-white/10 hover:bg-white/20 rounded-lg p-2 transition-colors"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="p-4 space-y-4">
+              <div
+                id="leitor-camera-assinatura-ocorrencia"
+                className="min-h-[280px] overflow-hidden rounded-2xl border border-gray-200 bg-gray-950"
+              />
+
+              {scannerAssinaturaErro && (
+                <div className="rounded-xl border border-red-100 bg-red-50 p-3 text-sm font-semibold text-red-700">
+                  {scannerAssinaturaErro}
+                </div>
+              )}
+
+              <form
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  setScannerAssinaturaAberto(false);
+                }}
+                className="space-y-2"
+              >
+                <label className="block text-xs font-bold uppercase tracking-wide text-gray-500">
+                  Alternativa manual
+                </label>
+                <input
+                  value={formNovo.assinatura_convivente_codigo}
+                  onChange={(event) => setFormNovo({
+                    ...formNovo,
+                    assinatura_convivente_codigo: event.target.value,
+                    assinatura_convivente_metodo: 'Código digitado manualmente',
+                  })}
+                  className="min-h-11 w-full rounded-xl border border-gray-200 px-3 py-2 text-sm outline-none focus:border-brand"
+                  placeholder="Digite o código do prontuário, CPF ou QR Code"
+                />
+                <button
+                  type="submit"
+                  className="min-h-11 w-full rounded-xl bg-brand px-4 py-2 text-sm font-bold text-white"
+                >
+                  Usar este código
+                </button>
+              </form>
+            </div>
           </div>
         </div>
       )}

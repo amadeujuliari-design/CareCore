@@ -102,17 +102,19 @@ export function exigeJustificativaRetornoRapidoRotina(resumoHoje, conviventeId, 
 }
 
 export function filtrarConviventesRotina(conviventes, busca) {
-  const termo = busca.toLowerCase();
+  const termo = String(busca || '').trim().toLowerCase();
+  const termoNumerico = normalizarCpf(termo);
 
   return conviventes.filter((convivente) => {
     const nome = (convivente.nome_social || convivente.nome_completo || '').toLowerCase();
-    const cpf = convivente.cpf || '';
+    const cpf = normalizarCpf(convivente.cpf);
     const prontuario = convivente.numero_institucional ? String(convivente.numero_institucional) : '';
 
     return (
       nome.includes(termo) ||
-      cpf.includes(busca) ||
-      prontuario.includes(busca)
+      (termoNumerico && cpf.includes(termoNumerico)) ||
+      (termoNumerico && prontuario.includes(termoNumerico)) ||
+      prontuario.includes(termo)
     );
   });
 }
@@ -122,11 +124,16 @@ export function calcularResumoRotinaDiaria(conviventes, resumoHoje) {
   const totalFora = Object.values(resumoHoje).filter((r) => r.ultimo_movimento === 'Saída').length;
   const totalDentro = totalAtivos - totalFora;
   const totalAlmocos = Object.values(resumoHoje).filter((r) => r.almocou).length;
+  const totalInteracoesRotina = Object.values(resumoHoje).reduce((total, resumo) => {
+    const presencas = Array.isArray(resumo?.presencas) ? resumo.presencas : [];
+    return total + presencas.filter((registro) => !['Entrada', 'Saída'].includes(registro.tipo_registro)).length;
+  }, 0);
 
   return {
     totalAtivos,
     totalFora,
     totalDentro,
     totalAlmocos,
+    totalInteracoesRotina,
   };
 }
