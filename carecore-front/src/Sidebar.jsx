@@ -11,9 +11,11 @@ import {
   KeyRound,
   LayoutDashboard,
   MessageSquareWarning,
+  PackageOpen,
   PanelsTopLeft,
   Users,
   UserRoundCog,
+  WashingMachine,
 } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import logoCarecore from './assets/logo.PNG';
@@ -217,6 +219,16 @@ export default function Sidebar() {
               path: '/rotina',
               icon: CalendarClock,
               label: 'Registro da Rotina'
+            },
+            {
+              path: '/rotina/lavanderia',
+              icon: WashingMachine,
+              label: 'Lavanderia'
+            },
+            {
+              path: '/rotina/pertences-recolhidos',
+              icon: PackageOpen,
+              label: 'Pertences Recolhidos'
             },
             {
               path: '/rotina/dashboard',

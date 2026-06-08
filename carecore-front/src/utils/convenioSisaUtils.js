@@ -134,6 +134,7 @@ export function calcularResumoMensalSisa(items = []) {
       acc.total_almocos += Number(item.almocos || 0);
       acc.total_jantares += Number(item.jantares || 0);
       acc.total_lanches += Number(item.lanches || 0);
+      acc.total_refeicoes_extras += Number(item.refeicoes_extras || 0);
       acc.total_banhos += Number(item.banhos || 0);
       acc.total_entradas += Number(item.entradas || 0);
       acc.total_saidas += Number(item.saidas || 0);
@@ -148,6 +149,7 @@ export function calcularResumoMensalSisa(items = []) {
       total_almocos: 0,
       total_jantares: 0,
       total_lanches: 0,
+      total_refeicoes_extras: 0,
       total_banhos: 0,
       total_entradas: 0,
       total_saidas: 0,
@@ -165,10 +167,11 @@ export function calcularResumoDiarioSisa(items = []) {
       if (item.presenca === 'Sim') acc.presentes += 1;
       if (item.presenca !== 'Sim') acc.ausentes += 1;
       if (item.presenca_por_justificativa === 'Sim') acc.presentes_por_justificativa += 1;
-      if (item.cafe === 'Sim') acc.cafes += 1;
-      if (item.almoco === 'Sim') acc.almocos += 1;
-      if (item.jantar === 'Sim') acc.jantares += 1;
-      if (item.lanche === 'Sim') acc.lanches += 1;
+      acc.cafes += Number(item.cafes || (item.cafe === 'Sim' ? 1 : 0));
+      acc.almocos += Number(item.almocos || (item.almoco === 'Sim' ? 1 : 0));
+      acc.jantares += Number(item.jantares || (item.jantar === 'Sim' ? 1 : 0));
+      acc.lanches += Number(item.lanches || (item.lanche === 'Sim' ? 1 : 0));
+      acc.refeicoes_extras += Number(item.refeicoes_extras || 0);
       if (item.banho === 'Sim') acc.banhos += 1;
       if (item.entrada) acc.entradas += 1;
       if (item.saida) acc.saidas += 1;
@@ -183,6 +186,7 @@ export function calcularResumoDiarioSisa(items = []) {
       almocos: 0,
       jantares: 0,
       lanches: 0,
+      refeicoes_extras: 0,
       banhos: 0,
       entradas: 0,
       saidas: 0,
@@ -202,6 +206,7 @@ export function montarResumoCardsDiariosSisa(resumoDiario, dataDiariaFormatada, 
     { titulo: 'Almoços', valor: resumoDiario.almocos, detalhe: dataDiariaFormatada },
     { titulo: 'Jantares', valor: resumoDiario.jantares, detalhe: dataDiariaFormatada },
     { titulo: 'Lanches', valor: resumoDiario.lanches, detalhe: dataDiariaFormatada },
+    { titulo: 'Extras', valor: resumoDiario.refeicoes_extras, detalhe: 'Refeições repetidas' },
     { titulo: 'Banhos', valor: resumoDiario.banhos, detalhe: dataDiariaFormatada },
   ];
 }

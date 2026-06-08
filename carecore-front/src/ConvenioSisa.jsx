@@ -301,6 +301,16 @@ export default function ConvenioSisa() {
     return new Date(valor).toLocaleString('pt-BR');
   };
 
+  const formatarRefeicaoRelatorio = (valorSimNao, quantidade = 0, extras = 0) => {
+    const total = Number(quantidade || 0);
+    const totalExtras = Number(extras || Math.max(total - 1, 0));
+
+    if (total <= 0 && valorSimNao !== 'Sim') return valorSimNao || '-';
+    if (total <= 1) return 'Sim';
+
+    return `Sim (${total}, ${totalExtras} extra${totalExtras === 1 ? '' : 's'})`;
+  };
+
   const exportarMensalXlsx = async () => {
     try {
       const dataBase = new Date(`${dataInicio}T00:00:00`);
@@ -499,12 +509,13 @@ export default function ConvenioSisa() {
         { titulo: 'Almoços', valor: resumoMensalFiltrado.total_almocos },
         { titulo: 'Jantares', valor: resumoMensalFiltrado.total_jantares },
         { titulo: 'Lanches', valor: resumoMensalFiltrado.total_lanches },
+        { titulo: 'Extras', valor: resumoMensalFiltrado.total_refeicoes_extras },
         { titulo: 'Banhos', valor: resumoMensalFiltrado.total_banhos },
       ]
       : resumoCardsDiarios;
     const colunas = !periodoEhDia
-      ? ['Pront.', 'Nº SISA', 'Convivente', 'Presenças', 'Justificativas', 'Entradas', 'Saídas', 'Cafés', 'Almoços', 'Jantares', 'Lanches', 'Banhos']
-      : ['Pront.', 'Nº SISA', 'Convivente', 'Presença', 'Justificativa', 'Entrada', 'Saída', 'Café', 'Almoço', 'Jantar', 'Lanche', 'Banho', 'Observações'];
+      ? ['Pront.', 'Nº SISA', 'Convivente', 'Presenças', 'Justificativas', 'Entradas', 'Saídas', 'Cafés', 'Almoços', 'Jantares', 'Lanches', 'Extras', 'Banhos']
+      : ['Pront.', 'Nº SISA', 'Convivente', 'Presença', 'Justificativa', 'Entrada', 'Saída', 'Café', 'Almoço', 'Jantar', 'Lanche', 'Extras', 'Banho', 'Observações'];
     const linhas = !periodoEhDia
       ? itensMensaisFiltrados.map(item => [
         `#${item.prontuario || 'S/N'}`,
@@ -518,6 +529,7 @@ export default function ConvenioSisa() {
         item.almocos ?? 0,
         item.jantares ?? 0,
         item.lanches ?? 0,
+        item.refeicoes_extras ?? 0,
         item.banhos ?? 0,
       ])
       : itensDiariosFiltrados.map(item => [
@@ -528,10 +540,11 @@ export default function ConvenioSisa() {
         item.presenca_por_justificativa || 'Não',
         formatarDataHora(item.entrada),
         formatarDataHora(item.saida),
-        item.cafe || '-',
-        item.almoco || '-',
-        item.jantar || '-',
-        item.lanche || '-',
+        formatarRefeicaoRelatorio(item.cafe, item.cafes, item.cafes_extras),
+        formatarRefeicaoRelatorio(item.almoco, item.almocos, item.almocos_extras),
+        formatarRefeicaoRelatorio(item.jantar, item.jantares, item.jantares_extras),
+        formatarRefeicaoRelatorio(item.lanche, item.lanches, item.lanches_extras),
+        item.refeicoes_extras || 0,
         item.banho || '-',
         item.observacoes || '-',
       ]);
@@ -1178,6 +1191,7 @@ export default function ConvenioSisa() {
                 <ResumoCard titulo="Almoços" valor={resumoMensalFiltrado.total_almocos} />
                 <ResumoCard titulo="Jantares" valor={resumoMensalFiltrado.total_jantares} />
                 <ResumoCard titulo="Lanches" valor={resumoMensalFiltrado.total_lanches} />
+                <ResumoCard titulo="Extras" valor={resumoMensalFiltrado.total_refeicoes_extras} detalhe="Refeições repetidas" />
                 <ResumoCard titulo="Banhos" valor={resumoMensalFiltrado.total_banhos} />
 
               </div>
@@ -1289,6 +1303,10 @@ export default function ConvenioSisa() {
                           <p className="text-lg font-black text-gray-800">{Number(item.cafes || 0) + Number(item.almocos || 0) + Number(item.jantares || 0) + Number(item.lanches || 0)}</p>
                         </div>
                         <div className="rounded-xl bg-white px-2 py-2">
+                          <p className="text-[10px] font-black uppercase text-gray-400">Extras</p>
+                          <p className="text-lg font-black text-amber-700">{Number(item.refeicoes_extras || 0)}</p>
+                        </div>
+                        <div className="rounded-xl bg-white px-2 py-2">
                           <p className="text-[10px] font-black uppercase text-gray-400">Banhos</p>
                           <p className="text-lg font-black text-gray-800">{Number(item.banhos || 0)}</p>
                         </div>
@@ -1316,6 +1334,7 @@ export default function ConvenioSisa() {
                       <Th>Almoços</Th>
                       <Th>Jantares</Th>
                       <Th>Lanches</Th>
+                      <Th>Extras</Th>
                       <Th>Banhos</Th>
                     </tr>
                   </thead>
@@ -1334,6 +1353,7 @@ export default function ConvenioSisa() {
                         <Td>{item.almocos}</Td>
                         <Td>{item.jantares || 0}</Td>
                         <Td>{item.lanches || 0}</Td>
+                        <Td>{item.refeicoes_extras || 0}</Td>
                         <Td>{item.banhos || 0}</Td>
                       </tr>
                     ))}
@@ -1350,6 +1370,7 @@ export default function ConvenioSisa() {
                         <Td>{item.almocos}</Td>
                         <Td>{item.jantares || 0}</Td>
                         <Td>{item.lanches || 0}</Td>
+                        <Td>{item.refeicoes_extras || 0}</Td>
                         <Td>{item.banhos || 0}</Td>
                       </tr>
                     ))}
@@ -1445,7 +1466,13 @@ export default function ConvenioSisa() {
                         </div>
                         <div className="rounded-xl bg-white px-2 py-2">
                           <p className="text-[10px] font-black uppercase text-gray-400">Almoço</p>
-                          <p className="text-xs font-bold text-gray-800">{item.almoco}</p>
+                          <p className="text-xs font-bold text-gray-800">
+                            {formatarRefeicaoRelatorio(item.almoco, item.almocos, item.almocos_extras)}
+                          </p>
+                        </div>
+                        <div className="rounded-xl bg-white px-2 py-2">
+                          <p className="text-[10px] font-black uppercase text-gray-400">Extras</p>
+                          <p className="text-xs font-bold text-amber-700">{item.refeicoes_extras || 0}</p>
                         </div>
                         <div className="rounded-xl bg-white px-2 py-2">
                           <p className="text-[10px] font-black uppercase text-gray-400">Banho</p>
@@ -1480,6 +1507,7 @@ export default function ConvenioSisa() {
                       <Th>Almoço</Th>
                       <Th>Jantar</Th>
                       <Th>Lanche</Th>
+                      <Th>Extras</Th>
                       <Th>Banho</Th>
                       <Th>Observações</Th>
                     </tr>
@@ -1505,10 +1533,11 @@ export default function ConvenioSisa() {
                         <Td>{item.presenca_por_justificativa || 'Não'}</Td>
                         <Td>{formatarDataHora(item.entrada)}</Td>
                         <Td>{formatarDataHora(item.saida)}</Td>
-                        <Td>{item.cafe || '-'}</Td>
-                        <Td>{item.almoco}</Td>
-                        <Td>{item.jantar || '-'}</Td>
-                        <Td>{item.lanche || '-'}</Td>
+                        <Td>{formatarRefeicaoRelatorio(item.cafe, item.cafes, item.cafes_extras)}</Td>
+                        <Td>{formatarRefeicaoRelatorio(item.almoco, item.almocos, item.almocos_extras)}</Td>
+                        <Td>{formatarRefeicaoRelatorio(item.jantar, item.jantares, item.jantares_extras)}</Td>
+                        <Td>{formatarRefeicaoRelatorio(item.lanche, item.lanches, item.lanches_extras)}</Td>
+                        <Td>{item.refeicoes_extras || 0}</Td>
                         <Td>{item.banho || '-'}</Td>
                         <Td>{item.observacoes || '-'}</Td>
                       </tr>
@@ -1532,10 +1561,11 @@ export default function ConvenioSisa() {
                         <Td>{item.presenca_por_justificativa || 'Não'}</Td>
                         <Td>{formatarDataHora(item.entrada)}</Td>
                         <Td>{formatarDataHora(item.saida)}</Td>
-                        <Td>{item.cafe || '-'}</Td>
-                        <Td>{item.almoco}</Td>
-                        <Td>{item.jantar || '-'}</Td>
-                        <Td>{item.lanche || '-'}</Td>
+                        <Td>{formatarRefeicaoRelatorio(item.cafe, item.cafes, item.cafes_extras)}</Td>
+                        <Td>{formatarRefeicaoRelatorio(item.almoco, item.almocos, item.almocos_extras)}</Td>
+                        <Td>{formatarRefeicaoRelatorio(item.jantar, item.jantares, item.jantares_extras)}</Td>
+                        <Td>{formatarRefeicaoRelatorio(item.lanche, item.lanches, item.lanches_extras)}</Td>
+                        <Td>{item.refeicoes_extras || 0}</Td>
                         <Td>{item.banho || '-'}</Td>
                         <Td>{item.observacoes || '-'}</Td>
                       </tr>

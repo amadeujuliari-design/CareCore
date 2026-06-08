@@ -368,8 +368,8 @@ export default function RotinaHistorico() {
   ]);
 
   const registrosOrdenados = useMemo(() => {
-    return ordenarRegistrosRotina(registrosFiltrados);
-  }, [registrosFiltrados]);
+    return ordenarRegistrosRotina(registrosFiltrados, buscaFiltro);
+  }, [buscaFiltro, registrosFiltrados]);
 
   const totalPaginas = Math.max(
     1,

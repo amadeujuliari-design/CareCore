@@ -1197,6 +1197,7 @@ class RegistroRotinaBase(BaseModel):
 class RegistroRotinaCreate(RegistroRotinaBase):
     convivente_id: str
     justificativa_retorno_rapido: Optional[str] = None
+    confirmar_refeicao_extra: bool = False
 
 
 class RegistroRotinaResponse(RegistroRotinaBase):
@@ -1240,6 +1241,124 @@ class RegistroRotinaCancelamento(BaseModel):
 
 class RegistroRotinaDesfazerRapido(BaseModel):
     pass
+
+
+class LavanderiaRegistroCreate(BaseModel):
+    convivente_id: str
+    quantidade_entregue: int
+    observacao_entrega: Optional[str] = None
+
+    @field_validator("quantidade_entregue")
+    @classmethod
+    def validar_quantidade_entregue(cls, valor: int):
+        if valor <= 0:
+            raise ValueError("Informe uma quantidade de peças maior que zero.")
+        return valor
+
+
+class LavanderiaRetirada(BaseModel):
+    quantidade_retirada: int
+    observacao_retirada: Optional[str] = None
+
+    @field_validator("quantidade_retirada")
+    @classmethod
+    def validar_quantidade_retirada(cls, valor: int):
+        if valor <= 0:
+            raise ValueError("Informe uma quantidade retirada maior que zero.")
+        return valor
+
+
+class LavanderiaCancelamento(BaseModel):
+    motivo_cancelamento: str
+
+
+class LavanderiaRegistroResponse(BaseModel):
+    id: str
+    instituicao_id: str
+    convivente_id: str
+    convivente_nome: Optional[str] = None
+    prontuario: Optional[int] = None
+    usuario_entrega_nome: Optional[str] = None
+    usuario_retirada_nome: Optional[str] = None
+    quantidade_entregue: int
+    quantidade_retirada: Optional[int] = None
+    entregue_em: datetime
+    prazo_retirada_em: datetime
+    retirado_em: Optional[datetime] = None
+    observacao_entrega: Optional[str] = None
+    observacao_retirada: Optional[str] = None
+    status: str
+    atrasado: bool = False
+    horas_restantes: Optional[float] = None
+
+
+class PertenceRecolhidoCreate(BaseModel):
+    quarto_id: str
+    quantidade_recolhida: int
+    observacao: Optional[str] = None
+
+    @field_validator("quantidade_recolhida")
+    @classmethod
+    def validar_quantidade_recolhida(cls, valor: int):
+        if valor <= 0:
+            raise ValueError("Informe uma quantidade recolhida maior que zero.")
+        return valor
+
+
+class PertenceRecolhidoRetirada(BaseModel):
+    convivente_id: str
+    quantidade: int
+    justificativa: Optional[str] = None
+
+    @field_validator("quantidade")
+    @classmethod
+    def validar_quantidade_retirada_pertence(cls, valor: int):
+        if valor <= 0:
+            raise ValueError("Informe uma quantidade retirada maior que zero.")
+        return valor
+
+
+class PertenceRecolhidoBaixaAdministrativa(BaseModel):
+    quantidade: int
+    justificativa: str
+    destino: str
+
+    @field_validator("quantidade")
+    @classmethod
+    def validar_quantidade_baixa(cls, valor: int):
+        if valor <= 0:
+            raise ValueError("Informe uma quantidade para baixa maior que zero.")
+        return valor
+
+
+class PertenceRecolhidoBaixaResponse(BaseModel):
+    id: str
+    pertence_recolhido_id: str
+    convivente_id: Optional[str] = None
+    convivente_nome: Optional[str] = None
+    usuario_nome: Optional[str] = None
+    quantidade: int
+    tipo_baixa: str
+    justificativa: Optional[str] = None
+    destino: Optional[str] = None
+    baixado_em: datetime
+
+
+class PertenceRecolhidoResponse(BaseModel):
+    id: str
+    instituicao_id: str
+    quarto_id: str
+    quarto_nome: Optional[str] = None
+    usuario_recolha_nome: Optional[str] = None
+    quantidade_recolhida: int
+    quantidade_disponivel: int
+    recolhido_em: datetime
+    observacao: Optional[str] = None
+    status: str
+    encerrado_em: Optional[datetime] = None
+    justificativa_encerramento: Optional[str] = None
+    destino_encerramento: Optional[str] = None
+    baixas: List[PertenceRecolhidoBaixaResponse] = []
 
 
 # =====================================================================

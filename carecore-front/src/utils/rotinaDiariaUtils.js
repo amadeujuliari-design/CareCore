@@ -1,3 +1,5 @@
+import { filtrarOrdenarConviventesPorBusca } from './conviventeBuscaUtils';
+
 export function normalizarCodigo(codigo) {
   return String(codigo || '').trim();
 }
@@ -102,28 +104,25 @@ export function exigeJustificativaRetornoRapidoRotina(resumoHoje, conviventeId, 
 }
 
 export function filtrarConviventesRotina(conviventes, busca) {
-  const termo = String(busca || '').trim().toLowerCase();
-  const termoNumerico = normalizarCpf(termo);
-
-  return conviventes.filter((convivente) => {
-    const nome = (convivente.nome_social || convivente.nome_completo || '').toLowerCase();
-    const cpf = normalizarCpf(convivente.cpf);
-    const prontuario = convivente.numero_institucional ? String(convivente.numero_institucional) : '';
-
-    return (
-      nome.includes(termo) ||
-      (termoNumerico && cpf.includes(termoNumerico)) ||
-      (termoNumerico && prontuario.includes(termoNumerico)) ||
-      prontuario.includes(termo)
-    );
-  });
+  return filtrarOrdenarConviventesPorBusca(conviventes, busca);
 }
 
 export function calcularResumoRotinaDiaria(conviventes, resumoHoje) {
   const totalAtivos = conviventes.length;
   const totalFora = Object.values(resumoHoje).filter((r) => r.ultimo_movimento === 'Saída').length;
   const totalDentro = totalAtivos - totalFora;
-  const totalAlmocos = Object.values(resumoHoje).filter((r) => r.almocou).length;
+  const totalAlmocos = Object.values(resumoHoje).reduce((total, resumo) => {
+    const almoco = resumo?.refeicoes?.Almoço;
+    const registros = Array.isArray(almoco?.registros) ? almoco.registros : [];
+    const quantidade = Number(almoco?.quantidade ?? registros.length);
+
+    if (quantidade > 0) {
+      return total + quantidade;
+    }
+
+    const presencas = Array.isArray(resumo?.presencas) ? resumo.presencas : [];
+    return total + presencas.filter((registro) => registro.tipo_registro === 'Almoço').length;
+  }, 0);
   const totalInteracoesRotina = Object.values(resumoHoje).reduce((total, resumo) => {
     const presencas = Array.isArray(resumo?.presencas) ? resumo.presencas : [];
     return total + presencas.filter((registro) => !['Entrada', 'Saída'].includes(registro.tipo_registro)).length;

@@ -432,6 +432,66 @@ class RegistroRotinaDB(Base):
     cancelado_em = Column(DateTime, nullable=True)
     motivo_cancelamento = Column(Text, nullable=True)
 
+
+class LavanderiaRegistroDB(Base):
+    __tablename__ = "lavanderia_registros"
+
+    id = Column(String, primary_key=True, default=get_uuid)
+    instituicao_id = Column(String, ForeignKey("instituicoes.id"), nullable=False, index=True)
+    convivente_id = Column(String, ForeignKey("conviventes.id"), nullable=False, index=True)
+
+    usuario_entrega_id = Column(String, ForeignKey("usuarios.id"), nullable=False)
+    quantidade_entregue = Column(Integer, nullable=False)
+    entregue_em = Column(DateTime, default=datetime.datetime.utcnow, index=True)
+    prazo_retirada_em = Column(DateTime, nullable=False, index=True)
+    observacao_entrega = Column(Text, nullable=True)
+
+    status = Column(String, default="Em lavanderia", index=True)
+    quantidade_retirada = Column(Integer, nullable=True)
+    usuario_retirada_id = Column(String, ForeignKey("usuarios.id"), nullable=True)
+    retirado_em = Column(DateTime, nullable=True)
+    observacao_retirada = Column(Text, nullable=True)
+
+    cancelado_por_id = Column(String, ForeignKey("usuarios.id"), nullable=True)
+    cancelado_em = Column(DateTime, nullable=True)
+    motivo_cancelamento = Column(Text, nullable=True)
+
+
+class PertenceRecolhidoDB(Base):
+    __tablename__ = "pertences_recolhidos"
+
+    id = Column(String, primary_key=True, default=get_uuid)
+    instituicao_id = Column(String, ForeignKey("instituicoes.id"), nullable=False, index=True)
+    quarto_id = Column(String, ForeignKey("quartos.id"), nullable=False, index=True)
+    usuario_recolha_id = Column(String, ForeignKey("usuarios.id"), nullable=False)
+
+    quantidade_recolhida = Column(Integer, nullable=False)
+    quantidade_disponivel = Column(Integer, nullable=False)
+    recolhido_em = Column(DateTime, default=datetime.datetime.utcnow, index=True)
+    observacao = Column(Text, nullable=True)
+    status = Column(String, default="Com saldo", index=True)
+
+    encerrado_por_id = Column(String, ForeignKey("usuarios.id"), nullable=True)
+    encerrado_em = Column(DateTime, nullable=True)
+    justificativa_encerramento = Column(Text, nullable=True)
+    destino_encerramento = Column(String, nullable=True)
+
+
+class PertenceRecolhidoBaixaDB(Base):
+    __tablename__ = "pertences_recolhidos_baixas"
+
+    id = Column(String, primary_key=True, default=get_uuid)
+    instituicao_id = Column(String, ForeignKey("instituicoes.id"), nullable=False, index=True)
+    pertence_recolhido_id = Column(String, ForeignKey("pertences_recolhidos.id"), nullable=False, index=True)
+    convivente_id = Column(String, ForeignKey("conviventes.id"), nullable=True, index=True)
+    usuario_id = Column(String, ForeignKey("usuarios.id"), nullable=False)
+
+    quantidade = Column(Integer, nullable=False)
+    tipo_baixa = Column(String, nullable=False)
+    justificativa = Column(Text, nullable=True)
+    destino = Column(String, nullable=True)
+    baixado_em = Column(DateTime, default=datetime.datetime.utcnow, index=True)
+
 class HistoricoLegadoSIATDB(Base):
     __tablename__ = "historico_legado_siat"
 

@@ -37,6 +37,15 @@ const OPCOES_INTERACAO_ROTINA = [
   { valor: 'Bipar documentos retirados', label: 'Documentos retirados', grupo: 'observacao' },
 ];
 
+const TIPOS_ROTINA_REFEICOES = ['Café da manhã', 'Almoço', 'Jantar', 'Lanche noturno'];
+
+const ROTULOS_REFEICAO_EXTRA = {
+  'Café da manhã': 'café da manhã',
+  Almoço: 'almoço',
+  Jantar: 'jantar',
+  'Lanche noturno': 'lanche noturno',
+};
+
 export default function RotinaDiaria() {
   const navigate = useNavigate();
   const token = localStorage.getItem('@CareCore:token');
@@ -58,6 +67,7 @@ export default function RotinaDiaria() {
   const [tipoBipagemAutomatica, setTipoBipagemAutomatica] = useState('fluxo');
   const [interacaoSelecionada, setInteracaoSelecionada] = useState('Almoço');
   const [interacaoConfirmacao, setInteracaoConfirmacao] = useState(null);
+  const [refeicaoExtraPendente, setRefeicaoExtraPendente] = useState(null);
   const [interacaoObservacaoPendente, setInteracaoObservacaoPendente] = useState(null);
   const [observacaoInteracao, setObservacaoInteracao] = useState('');
   const [resumoInteracoesAberto, setResumoInteracoesAberto] = useState(false);
@@ -322,6 +332,39 @@ export default function RotinaDiaria() {
 
   const conviventeEstaFora = (conviventeId) => resumoHoje[conviventeId]?.ultimo_movimento === 'Saída';
 
+  const obterResumoRefeicao = (conviventeId, tipoRegistro) => {
+    const resumo = resumoHoje[conviventeId] || {};
+    const refeicao = resumo.refeicoes?.[tipoRegistro] || null;
+    const registros = Array.isArray(refeicao?.registros)
+      ? refeicao.registros
+      : (refeicao ? [refeicao] : []);
+    const quantidade = Number(refeicao?.quantidade ?? registros.length);
+
+    if (quantidade > 0) {
+      return {
+        quantidade,
+        ultimoRegistro: refeicao?.ultimo_registro || registros[registros.length - 1] || refeicao,
+      };
+    }
+
+    const presencas = Array.isArray(resumo.presencas) ? resumo.presencas : [];
+    const registrosDoTipo = presencas.filter(registro => registro.tipo_registro === tipoRegistro);
+
+    return {
+      quantidade: registrosDoTipo.length,
+      ultimoRegistro: registrosDoTipo[registrosDoTipo.length - 1] || null,
+    };
+  };
+
+  const abrirConfirmacaoRefeicaoExtra = (convivente, tipoRegistro, resumoRefeicao) => {
+    setRefeicaoExtraPendente({
+      convivente,
+      tipoRegistro,
+      quantidadeAtual: resumoRefeicao.quantidade,
+      ultimoRegistro: resumoRefeicao.ultimoRegistro,
+    });
+  };
+
   const avisarConviventeFora = (convivente, tipoRegistro = 'Interação') => {
     const mensagem = 'Convivente está fora da unidade. Registre uma entrada antes de qualquer interação.';
 
@@ -366,6 +409,15 @@ export default function RotinaDiaria() {
       setInteracaoObservacaoPendente({ convivente, tipoRegistro: opcao.valor });
       setObservacaoInteracao('');
       return;
+    }
+
+    if (opcao.grupo === 'refeicao') {
+      const resumoRefeicao = obterResumoRefeicao(convivente.id, opcao.valor);
+
+      if (resumoRefeicao.quantidade > 0) {
+        abrirConfirmacaoRefeicaoExtra(convivente, opcao.valor, resumoRefeicao);
+        return;
+      }
     }
 
     handleRegistrar(convivente.id, opcao.valor, convivente);
@@ -469,6 +521,18 @@ export default function RotinaDiaria() {
       return;
     }
 
+    if (
+      TIPOS_ROTINA_REFEICOES.includes(tipoRegistro) &&
+      !opcoes.confirmarRefeicaoExtra
+    ) {
+      const resumoRefeicao = obterResumoRefeicao(conviventeId, tipoRegistro);
+
+      if (resumoRefeicao.quantidade > 0) {
+        abrirConfirmacaoRefeicaoExtra(convivente, tipoRegistro, resumoRefeicao);
+        return;
+      }
+    }
+
     setProcessandoAcao(`${conviventeId}-${tipoRegistro}`);
 
     if (
@@ -499,6 +563,10 @@ export default function RotinaDiaria() {
         payload.justificativa_retorno_rapido = opcoes.justificativaRetornoRapido;
       }
 
+      if (opcoes.confirmarRefeicaoExtra) {
+        payload.confirmar_refeicao_extra = true;
+      }
+
       const resposta = await axios.post(`${API_ROOT}/rotina`, payload, {
         headers: criarHeadersAutenticados(token)
       });
@@ -523,12 +591,25 @@ export default function RotinaDiaria() {
           novoResumo.almocou = true;
         }
 
-        if (['Café da manhã', 'Almoço', 'Jantar', 'Lanche noturno'].includes(tipoRegistro)) {
+        if (TIPOS_ROTINA_REFEICOES.includes(tipoRegistro)) {
+          const refeicaoAtual = novoResumo.refeicoes?.[tipoRegistro] || {};
+          const registrosAtuais = Array.isArray(refeicaoAtual.registros)
+            ? refeicaoAtual.registros
+            : (refeicaoAtual.id ? [refeicaoAtual] : []);
+          const novoItemRefeicao = {
+            id: registroCriado.id || null,
+            data_registro: registroCriado.data_registro || new Date().toISOString(),
+          };
+
           novoResumo.refeicoes = {
             ...(novoResumo.refeicoes || {}),
             [tipoRegistro]: {
-              id: registroCriado.id || null,
-              data_registro: registroCriado.data_registro || new Date().toISOString(),
+              quantidade: registrosAtuais.length + 1,
+              registros: [...registrosAtuais, novoItemRefeicao],
+              primeiro_registro: refeicaoAtual.primeiro_registro || registrosAtuais[0] || novoItemRefeicao,
+              ultimo_registro: novoItemRefeicao,
+              id: novoItemRefeicao.id,
+              data_registro: novoItemRefeicao.data_registro,
             },
           };
         }
@@ -574,6 +655,7 @@ export default function RotinaDiaria() {
 
       setPacienteEscaneado(null);
       setRetornoRapidoPendente(null);
+      setRefeicaoExtraPendente(null);
       setJustificativaRetornoRapido('');
 
       const nome = convivente?.nome_social || convivente?.nome_completo || 'Acolhido';
@@ -957,7 +1039,7 @@ export default function RotinaDiaria() {
                       </select>
                     </div>
                     <p className="rounded-xl bg-white px-3 py-2 text-xs font-semibold text-blue-700 border border-blue-100">
-                      Refeições bloqueiam duplicidade no dia; toalha/cobertor sugerem a próxima ação.
+                      Refeições repetidas pedem confirmação e entram como extras; toalha/cobertor sugerem a próxima ação.
                     </p>
                   </div>
                 )}
@@ -1423,6 +1505,66 @@ export default function RotinaDiaria() {
                   className="px-4 py-2 rounded-lg text-sm font-bold bg-blue-600 text-white hover:bg-blue-700 shadow-sm"
                 >
                   Confirmar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {refeicaoExtraPendente && (
+        <div className="carecore-modal-overlay fixed inset-0 bg-gray-900/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+          <div className="carecore-modal-panel bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden">
+            <div className="bg-amber-600 p-5 flex justify-between items-center text-white">
+              <h2 className="text-lg font-bold">Confirmar refeição extra</h2>
+              <button
+                onClick={() => setRefeicaoExtraPendente(null)}
+                className="text-white/80 hover:text-white text-xl"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <p className="text-sm text-gray-700 leading-relaxed">
+                {refeicaoExtraPendente.convivente?.nome_social ||
+                  refeicaoExtraPendente.convivente?.nome_completo ||
+                  'Este convivente'} já teve{' '}
+                {refeicaoExtraPendente.quantidadeAtual}{' '}
+                {ROTULOS_REFEICAO_EXTRA[refeicaoExtraPendente.tipoRegistro] ||
+                  refeicaoExtraPendente.tipoRegistro.toLowerCase()}{' '}
+                registrado hoje.
+              </p>
+              <p className="rounded-xl bg-amber-50 border border-amber-100 p-3 text-sm font-black text-amber-800">
+                Deseja registrar mais uma refeição como extra?
+              </p>
+
+              {refeicaoExtraPendente.ultimoRegistro?.data_registro && (
+                <p className="text-xs font-semibold text-gray-500">
+                  Último registro:{' '}
+                  {new Date(refeicaoExtraPendente.ultimoRegistro.data_registro).toLocaleString('pt-BR')}
+                </p>
+              )}
+
+              <div className="flex justify-end gap-3 pt-2">
+                <button
+                  onClick={() => setRefeicaoExtraPendente(null)}
+                  className="px-4 py-2 rounded-lg text-sm font-bold bg-gray-100 text-gray-600 hover:bg-gray-200"
+                >
+                  Não
+                </button>
+                <button
+                  onClick={() => {
+                    handleRegistrar(
+                      refeicaoExtraPendente.convivente.id,
+                      refeicaoExtraPendente.tipoRegistro,
+                      refeicaoExtraPendente.convivente,
+                      { confirmarRefeicaoExtra: true },
+                    );
+                  }}
+                  className="px-4 py-2 rounded-lg text-sm font-bold bg-amber-600 text-white hover:bg-amber-700 shadow-sm"
+                >
+                  Sim, registrar extra
                 </button>
               </div>
             </div>

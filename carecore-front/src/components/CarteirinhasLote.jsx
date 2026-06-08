@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import CarteirinhaCard from './CarteirinhaCard';
 import { imprimirCarteirinhasLote } from '../utils/carteirinhaPrint';
+import { filtrarOrdenarConviventesPorBusca } from '../utils/conviventeBuscaUtils';
 
 const LAYOUTS = {
   '4': { porFolha: 4, colunas: 2, orientacao: 'portrait', escala: 1, label: '4 por folha · A4 retrato' },
@@ -17,23 +18,7 @@ export default function CarteirinhasLote({ conviventes = [], quartos = [], tecni
   const layout = LAYOUTS[layoutKey] || LAYOUTS['6'];
 
   const conviventesFiltradosBusca = useMemo(() => {
-    const termo = busca.trim().toLowerCase();
-    if (!termo) return conviventes;
-
-    return conviventes.filter((c) => {
-      const alvo = [
-        c.nome_social,
-        c.nome_completo,
-        c.numero_institucional,
-        c.numero_sisa,
-        c.cpf,
-      ]
-        .filter(Boolean)
-        .join(' ')
-        .toLowerCase();
-
-      return alvo.includes(termo);
-    });
+    return filtrarOrdenarConviventesPorBusca(conviventes, busca);
   }, [conviventes, busca]);
 
   const selecionadosLista = useMemo(

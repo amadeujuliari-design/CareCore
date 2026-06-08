@@ -1,3 +1,9 @@
+import {
+  compararConviventesPorBusca,
+  conviventeCorrespondeBusca,
+  normalizarTextoBusca,
+} from './conviventeBuscaUtils';
+
 export const REGISTROS_POR_PAGINA = 20;
 
 // Agrupa os tipos armazenados (ex.: "Retirada de Cobertor" / "Entrega de Cobertor")
@@ -100,11 +106,13 @@ export function filtrarRegistrosRotina(registros, filtros) {
     }
 
     if (buscaFiltro.trim()) {
-      const termo = buscaFiltro.trim().toLowerCase();
-      const nome = String(registro.convivente_nome || '').toLowerCase();
-      const prontuario = String(registro.numero_institucional || '').toLowerCase();
+      const conviventeBusca = {
+        nome_social: registro.convivente_nome,
+        nome_completo: registro.convivente_nome_completo || registro.convivente_nome,
+        numero_institucional: registro.numero_institucional,
+      };
 
-      if (!nome.includes(termo) && !prontuario.includes(termo)) {
+      if (!conviventeCorrespondeBusca(conviventeBusca, buscaFiltro)) {
         return false;
       }
     }
@@ -143,8 +151,30 @@ export function filtrarRegistrosRotina(registros, filtros) {
   });
 }
 
-export function ordenarRegistrosRotina(registros) {
-  return [...registros].sort((a, b) => new Date(b.data_registro) - new Date(a.data_registro));
+function conviventeDoRegistroRotina(registro) {
+  return {
+    nome_social: registro.convivente_nome,
+    nome_completo: registro.convivente_nome_completo || registro.convivente_nome,
+    numero_institucional: registro.numero_institucional,
+  };
+}
+
+export function ordenarRegistrosRotina(registros, busca = '') {
+  const termo = normalizarTextoBusca(busca);
+
+  return [...registros].sort((a, b) => {
+    if (termo) {
+      const comparacaoBusca = compararConviventesPorBusca(
+        conviventeDoRegistroRotina(a),
+        conviventeDoRegistroRotina(b),
+        busca,
+      );
+
+      if (comparacaoBusca !== 0) return comparacaoBusca;
+    }
+
+    return new Date(b.data_registro) - new Date(a.data_registro);
+  });
 }
 
 export function resumirRegistrosRotina(registros) {

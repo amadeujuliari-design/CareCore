@@ -1,24 +1,23 @@
 import { useMemo } from 'react';
 
+import {
+  compararConviventesPorBusca,
+  conviventeCorrespondeBusca,
+} from '../utils/conviventeBuscaUtils.js';
 import { statusNaoAtivo } from '../utils/conviventesProntuarioUtils.js';
 
 export const CONVIVENTES_POR_PAGINA = 20;
 
 function conviventeCorrespondePesquisa(convivente, termoPesquisa) {
   const termo = termoPesquisa.toLowerCase().trim();
-  const termoNumerico = termo.replace(/\D/g, '');
-  const prontuario = convivente.numero_institucional ? String(convivente.numero_institucional) : '';
-  const cpfNumerico = String(convivente.cpf || '').replace(/\D/g, '');
-  const buscaPorProntuario = termo.startsWith('#');
 
-  return (
-    !termo ||
-    (buscaPorProntuario && prontuario === termoNumerico) ||
-    (convivente.nome_completo || '').toLowerCase().includes(termo) ||
-    (convivente.nome_social || '').toLowerCase().includes(termo) ||
-    (termoNumerico && prontuario.includes(termoNumerico)) ||
-    (termoNumerico && cpfNumerico.includes(termoNumerico))
-  );
+  if (termo.startsWith('#')) {
+    const termoNumerico = termo.replace(/\D/g, '');
+    const prontuario = convivente.numero_institucional ? String(convivente.numero_institucional) : '';
+    return Boolean(termoNumerico && prontuario === termoNumerico);
+  }
+
+  return conviventeCorrespondeBusca(convivente, termoPesquisa);
 }
 
 function conviventeCorrespondeStatus(convivente, filtroStatus) {
@@ -43,28 +42,7 @@ function ordenarConviventes(a, b, termoPesquisa, idUsuarioLogado) {
   if (isMeuCasoA && !isMeuCasoB) return -1;
   if (!isMeuCasoA && isMeuCasoB) return 1;
 
-  const termo = termoPesquisa.toLowerCase().trim();
-  const nomeA = (a.nome_social || a.nome_completo || '').toLowerCase();
-  const nomeB = (b.nome_social || b.nome_completo || '').toLowerCase();
-
-  if (termo) {
-    const termoNumerico = termo.replace(/\D/g, '');
-    const prontuarioA = a.numero_institucional ? String(a.numero_institucional) : '';
-    const prontuarioB = b.numero_institucional ? String(b.numero_institucional) : '';
-    const aProntuarioExato = termoNumerico && prontuarioA === termoNumerico;
-    const bProntuarioExato = termoNumerico && prontuarioB === termoNumerico;
-
-    if (aProntuarioExato && !bProntuarioExato) return -1;
-    if (!aProntuarioExato && bProntuarioExato) return 1;
-
-    const aComeca = nomeA.startsWith(termo);
-    const bComeca = nomeB.startsWith(termo);
-
-    if (aComeca && !bComeca) return -1;
-    if (!aComeca && bComeca) return 1;
-  }
-
-  return nomeA.localeCompare(nomeB);
+  return compararConviventesPorBusca(a, b, termoPesquisa);
 }
 
 export function filtrarOrdenarConviventes({

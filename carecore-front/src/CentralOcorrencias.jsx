@@ -1,5 +1,5 @@
 // =====================================================================
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 import Sidebar from './Sidebar';
@@ -24,6 +24,7 @@ import {
   normalizarPrioridade,
   resumirPrioridadesOcorrencias,
 } from './utils/ocorrenciasUtils';
+import { filtrarOrdenarConviventesPorBusca } from './utils/conviventeBuscaUtils';
 import { criarHeadersAutenticados } from './utils/requestIdUtils';
 
 
@@ -239,6 +240,10 @@ export default function CentralOcorrencias() {
 
   const ocorrenciasFiltradas = ocorrencias;
   const ocorrenciasOrdenadas = ocorrencias;
+  const conviventesPacienteFiltrados = useMemo(
+    () => filtrarOrdenarConviventesPorBusca(listaConviventes, buscaPaciente),
+    [listaConviventes, buscaPaciente],
+  );
   const resumoPrioridades = resumoServidor?.porPrioridade || resumirPrioridadesOcorrencias(ocorrencias);
   const relatorioOcorrencias = resumoServidor
     ? {
@@ -1178,15 +1183,13 @@ export default function CentralOcorrencias() {
                         setFormNovo({...formNovo, convivente_id: ''}); 
                       }}
                       onFocus={() => setMostrarDropdownPaciente(true)}
-                      placeholder="Digite o nome ou CPF para buscar..."
+                      placeholder="Digite nome, prontuário ou CPF para buscar..."
                       className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none bg-white text-sm font-medium"
                     />
                     
                     {mostrarDropdownPaciente && (
                       <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
-                        {listaConviventes
-                          .filter(c => (c.nome_completo || '').toLowerCase().includes(buscaPaciente.toLowerCase()) || (c.nome_social || '').toLowerCase().includes(buscaPaciente.toLowerCase()) || (c.cpf || '').includes(buscaPaciente))
-                          .map(c => (
+                        {conviventesPacienteFiltrados.map(c => (
                             <div
                               key={c.id}
                               onClick={() => {
@@ -1200,7 +1203,7 @@ export default function CentralOcorrencias() {
                               <span className="text-[10px] text-gray-500 block mt-0.5">CPF: {c.cpf || 'Não informado'}</span>
                             </div>
                         ))}
-                        {listaConviventes.filter(c => (c.nome_completo || '').toLowerCase().includes(buscaPaciente.toLowerCase()) || (c.cpf || '').includes(buscaPaciente)).length === 0 && (
+                        {conviventesPacienteFiltrados.length === 0 && (
                           <div className="p-3 text-sm text-gray-500 text-center">Nenhum acolhido encontrado.</div>
                         )}
                       </div>

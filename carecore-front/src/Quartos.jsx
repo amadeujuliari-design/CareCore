@@ -1,12 +1,13 @@
 // =====================================================================
 // ARQUIVO: src/Quartos.jsx (COMPLETO)
 // =====================================================================
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import Sidebar from './Sidebar';
 import { AppShell, MainShell, PageHeader, ScrollArea } from './components/PremiumUI';
 import { API_ROOT } from './config/apiBase';
+import { filtrarOrdenarConviventesPorBusca } from './utils/conviventeBuscaUtils';
 import { criarHeadersAutenticados } from './utils/requestIdUtils';
 
 export default function Quartos() {
@@ -21,6 +22,7 @@ export default function Quartos() {
   const [tooltipLeito, setTooltipLeito] = useState(null);
   const [conviventeSelecionadoId, setConviventeSelecionadoId] = useState('');
   const [buscaConvivente, setBuscaConvivente] = useState('');
+  const [mostrarDropdownConvivente, setMostrarDropdownConvivente] = useState(false);
   const [salvandoAlocacao, setSalvandoAlocacao] = useState(false);
 
   let perfilUsuario = '';
@@ -183,19 +185,12 @@ useEffect(() => {
     }
   };
 
-  const conviventesElegiveis = conviventes
-    .filter(c => c.status === 'Ativo')
-    .filter(c => {
-      const termo = buscaConvivente.trim().toLowerCase();
-      if (!termo) return true;
-
-      return [
-        c.nome_social,
-        c.nome_completo,
-        c.numero_institucional,
-        c.cpf
-      ].join(' ').toLowerCase().includes(termo);
-    });
+  const conviventesElegiveis = useMemo(() => (
+    filtrarOrdenarConviventesPorBusca(
+      conviventes.filter(c => c.status === 'Ativo'),
+      buscaConvivente,
+    )
+  ), [buscaConvivente, conviventes]);
 
   const abrirModalLeito = (quarto, leito) => {
     if (!podeGerenciarQuartos) return;
@@ -203,7 +198,16 @@ useEffect(() => {
     setModalLeito({ quarto, leito });
     setConviventeSelecionadoId('');
     setBuscaConvivente('');
+    setMostrarDropdownConvivente(false);
     setErro('');
+  };
+
+  const selecionarConviventeParaLeito = (convivente) => {
+    setConviventeSelecionadoId(convivente.id);
+    setBuscaConvivente(
+      `#${convivente.numero_institucional || 'S/N'} - ${convivente.nome_social || convivente.nome_completo}`
+    );
+    setMostrarDropdownConvivente(false);
   };
 
   const alocarConviventeNoLeito = async () => {
@@ -522,27 +526,56 @@ useEffect(() => {
                   </div>
                 ) : (
                   <div className="mt-5 space-y-4">
-                    <input
-                      type="text"
-                      value={buscaConvivente}
-                      onChange={(e) => setBuscaConvivente(e.target.value)}
-                      placeholder="Buscar por nome, prontuário ou CPF"
-                      className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-brand"
-                    />
+                    <div className="relative">
+                      <input
+                        type="text"
+                        value={buscaConvivente}
+                        onChange={(e) => {
+                          setBuscaConvivente(e.target.value);
+                          setConviventeSelecionadoId('');
+                          setMostrarDropdownConvivente(true);
+                        }}
+                        onFocus={() => setMostrarDropdownConvivente(true)}
+                        placeholder="Digite nome, prontuário ou CPF para buscar..."
+                        className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-brand"
+                      />
 
-                    <select
-                      value={conviventeSelecionadoId}
-                      onChange={(e) => setConviventeSelecionadoId(e.target.value)}
-                      className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm font-semibold outline-none focus:ring-2 focus:ring-brand"
-                    >
-                      <option value="">Selecione um convivente ativo...</option>
-                      {conviventesElegiveis.map(c => (
-                        <option key={c.id} value={c.id}>
-                          #{c.numero_institucional || 'S/N'} - {c.nome_social || c.nome_completo}
-                          {c.leito_id ? ' (transferir de outro leito)' : ''}
-                        </option>
-                      ))}
-                    </select>
+                      {mostrarDropdownConvivente && (
+                        <div className="absolute z-20 mt-1 max-h-56 w-full overflow-y-auto rounded-2xl border border-slate-200 bg-white shadow-xl">
+                          {conviventesElegiveis.map(c => (
+                            <button
+                              type="button"
+                              key={c.id}
+                              onMouseDown={(event) => {
+                                event.preventDefault();
+                                selecionarConviventeParaLeito(c);
+                              }}
+                              className="w-full border-b border-slate-50 px-4 py-3 text-left text-sm hover:bg-brand/10"
+                            >
+                              <span className="block font-black text-slate-800">
+                                {c.nome_social || c.nome_completo}
+                              </span>
+                              <span className="mt-0.5 block text-xs font-semibold text-slate-500">
+                                Pront. #{c.numero_institucional || 'S/N'} · CPF {c.cpf || 'Não informado'}
+                                {c.leito_id ? ' · atualmente em outro leito' : ''}
+                              </span>
+                            </button>
+                          ))}
+
+                          {conviventesElegiveis.length === 0 && (
+                            <div className="p-4 text-center text-sm font-semibold text-slate-500">
+                              Nenhum convivente ativo encontrado.
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    {conviventeSelecionadoId && (
+                      <p className="rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-xs font-black text-emerald-700">
+                        Convivente selecionado para alocação.
+                      </p>
+                    )}
 
                     <button
                       type="button"

@@ -112,6 +112,13 @@ TIPOS_ROTINA_VALIDOS = (
     | TIPOS_ROTINA_COM_OBSERVACAO_OBRIGATORIA
 )
 
+ROTULOS_REFEICOES_EXTRAS = {
+    "Café da manhã": "café da manhã",
+    "Almoço": "almoço",
+    "Jantar": "jantar",
+    "Lanche noturno": "lanche noturno",
+}
+
 
 async def validar_leito_do_projeto(
     db: AsyncSession,
@@ -1706,11 +1713,10 @@ async def registar_rotina(
         )
     ).scalars().all()
 
-    refeicoes_registradas = {
-        registro.tipo_registro: registro
-        for registro in registros_hoje
-        if registro.tipo_registro in TIPOS_ROTINA_REFEICOES
-    }
+    refeicoes_registradas = {}
+    for registro in registros_hoje:
+        if registro.tipo_registro in TIPOS_ROTINA_REFEICOES:
+            refeicoes_registradas.setdefault(registro.tipo_registro, []).append(registro)
 
     # Entrada/Saída não podem resetar na virada do dia.
     # Por isso o último movimento precisa ser histórico, não apenas de hoje.
@@ -1759,13 +1765,23 @@ async def registar_rotina(
     if payload.tipo_registro in TIPOS_ROTINA_REFEICOES:
 
         if payload.tipo_registro in refeicoes_registradas:
-            registro_anterior = refeicoes_registradas[payload.tipo_registro]
-            horario = registro_anterior.data_registro.strftime("%H:%M")
+            registros_refeicao = refeicoes_registradas[payload.tipo_registro]
 
-            raise HTTPException(
-                status_code=400,
-                detail=f"{payload.tipo_registro} já foi registrado hoje para este convivente às {horario}."
-            )
+            if not payload.confirmar_refeicao_extra:
+                registro_anterior = registros_refeicao[-1]
+                horario = registro_anterior.data_registro.strftime("%H:%M")
+                rotulo_refeicao = ROTULOS_REFEICOES_EXTRAS.get(
+                    payload.tipo_registro,
+                    payload.tipo_registro.lower(),
+                )
+
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=(
+                        f"Este convivente já teve {rotulo_refeicao} registrado hoje às {horario}. "
+                        f"Confirme para registrar mais um(a) {rotulo_refeicao} como refeição extra."
+                    ),
+                )
 
     if payload.tipo_registro in TIPOS_ROTINA_PARES:
         if "Cobertor" in payload.tipo_registro:
@@ -1967,10 +1983,23 @@ async def resumo_rotina_hoje(
             resumo[r.convivente_id]["almocou"] = True
 
         if r.tipo_registro in TIPOS_ROTINA_REFEICOES:
-            resumo[r.convivente_id]["refeicoes"][r.tipo_registro] = {
+            refeicao = resumo[r.convivente_id]["refeicoes"].setdefault(
+                r.tipo_registro,
+                {
+                    "quantidade": 0,
+                    "registros": [],
+                    "primeiro_registro": None,
+                    "ultimo_registro": None,
+                },
+            )
+            item_refeicao = {
                 "id": r.id,
                 "data_registro": r.data_registro.isoformat(),
             }
+            refeicao["quantidade"] += 1
+            refeicao["registros"].append(item_refeicao)
+            refeicao["primeiro_registro"] = refeicao["primeiro_registro"] or item_refeicao
+            refeicao["ultimo_registro"] = item_refeicao
 
         if r.tipo_registro in TIPOS_ROTINA_PARES:
             grupo_interacao = "Cobertor" if "Cobertor" in r.tipo_registro else "Toalha"
@@ -2819,6 +2848,10 @@ def _texto_planilha(valor):
     return texto or None
 
 
+def _quantidade_extra_refeicao(registros: list) -> int:
+    return max(len(registros) - 1, 0)
+
+
 def _data_br_para_date(valor):
     texto = _texto_planilha(valor)
     if not texto or texto == "---":
@@ -3543,6 +3576,24 @@ async def relatorio_sisa_diario(
         if any(r["retorno_rapido"] for r in regs):
             observacoes.append("Retorno rápido")
 
+        extras_cafe = _quantidade_extra_refeicao(cafes)
+        extras_almoco = _quantidade_extra_refeicao(almocos)
+        extras_jantar = _quantidade_extra_refeicao(jantares)
+        extras_lanche = _quantidade_extra_refeicao(lanches)
+        extras_refeicoes = (
+            extras_cafe
+            + extras_almoco
+            + extras_jantar
+            + extras_lanche
+        )
+
+        if extras_refeicoes:
+            observacoes.append(
+                "Refeições extras: "
+                f"café {extras_cafe}, almoço {extras_almoco}, "
+                f"jantar {extras_jantar}, lanche {extras_lanche}"
+            )
+
         linhas.append({
             "convivente_id": convivente.id,
             "nome": _nome_convivente_relatorio(convivente),
@@ -3557,6 +3608,15 @@ async def relatorio_sisa_diario(
             "cafe": "Sim" if cafes else "Não",
             "jantar": "Sim" if jantares else "Não",
             "lanche": "Sim" if lanches else "Não",
+            "cafes": len(cafes),
+            "almocos": len(almocos),
+            "jantares": len(jantares),
+            "lanches": len(lanches),
+            "cafes_extras": extras_cafe,
+            "almocos_extras": extras_almoco,
+            "jantares_extras": extras_jantar,
+            "lanches_extras": extras_lanche,
+            "refeicoes_extras": extras_refeicoes,
             "banho": "Sim" if banhos else "Não",
             "total_movimentos": len(regs),
             "observacoes": ", ".join(observacoes)
@@ -3568,10 +3628,15 @@ async def relatorio_sisa_diario(
         "presentes": sum(1 for item in linhas if item["presenca"] == "Sim"),
         "presentes_por_justificativa": sum(1 for item in linhas if item.get("presenca_por_justificativa") == "Sim"),
         "ausentes": sum(1 for item in linhas if item["presenca"] == "Não"),
-        "cafes": sum(1 for item in linhas if item["cafe"] == "Sim"),
-        "almocos": sum(1 for item in linhas if item["almoco"] == "Sim"),
-        "jantares": sum(1 for item in linhas if item["jantar"] == "Sim"),
-        "lanches": sum(1 for item in linhas if item["lanche"] == "Sim"),
+        "cafes": sum(item["cafes"] for item in linhas),
+        "almocos": sum(item["almocos"] for item in linhas),
+        "jantares": sum(item["jantares"] for item in linhas),
+        "lanches": sum(item["lanches"] for item in linhas),
+        "cafes_extras": sum(item["cafes_extras"] for item in linhas),
+        "almocos_extras": sum(item["almocos_extras"] for item in linhas),
+        "jantares_extras": sum(item["jantares_extras"] for item in linhas),
+        "lanches_extras": sum(item["lanches_extras"] for item in linhas),
+        "refeicoes_extras": sum(item["refeicoes_extras"] for item in linhas),
         "banhos": sum(1 for item in linhas if item["banho"] == "Sim"),
         "entradas": sum(len([
             r for r in regs
@@ -3775,6 +3840,16 @@ async def relatorio_sisa_mensal(
         ]
 
         lancamento_sisa = lancamentos_por_convivente.get(convivente.id)
+        extras_cafe = _quantidade_extra_refeicao(cafes)
+        extras_almoco = _quantidade_extra_refeicao(almocos)
+        extras_jantar = _quantidade_extra_refeicao(jantares)
+        extras_lanche = _quantidade_extra_refeicao(lanches)
+        extras_refeicoes = (
+            extras_cafe
+            + extras_almoco
+            + extras_jantar
+            + extras_lanche
+        )
 
         linhas.append({
             "convivente_id": convivente.id,
@@ -3792,6 +3867,11 @@ async def relatorio_sisa_mensal(
             "almocos": len(almocos),
             "jantares": len(jantares),
             "lanches": len(lanches),
+            "cafes_extras": extras_cafe,
+            "almocos_extras": extras_almoco,
+            "jantares_extras": extras_jantar,
+            "lanches_extras": extras_lanche,
+            "refeicoes_extras": extras_refeicoes,
             "banhos": len(banhos),
             "total_atendimentos": len(dias_presentes),
             "total_movimentos": len(regs),
@@ -3834,6 +3914,11 @@ async def relatorio_sisa_mensal(
         "total_almocos": sum(item["almocos"] for item in linhas_filtradas),
         "total_jantares": sum(item["jantares"] for item in linhas_filtradas),
         "total_lanches": sum(item["lanches"] for item in linhas_filtradas),
+        "total_cafes_extras": sum(item["cafes_extras"] for item in linhas_filtradas),
+        "total_almocos_extras": sum(item["almocos_extras"] for item in linhas_filtradas),
+        "total_jantares_extras": sum(item["jantares_extras"] for item in linhas_filtradas),
+        "total_lanches_extras": sum(item["lanches_extras"] for item in linhas_filtradas),
+        "total_refeicoes_extras": sum(item["refeicoes_extras"] for item in linhas_filtradas),
         "total_banhos": sum(item["banhos"] for item in linhas_filtradas),
         "total_entradas": sum(item["entradas"] for item in linhas_filtradas),
         "total_saidas": sum(item["saidas"] for item in linhas_filtradas),

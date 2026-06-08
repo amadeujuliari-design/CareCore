@@ -29,6 +29,7 @@ from routers import arquivos
 from routers import organizacoes
 from routers import historico_legado
 from routers import chat
+from routers import rotina_operacional
 
 
 configurar_logging_carecore()
@@ -409,6 +410,7 @@ app.include_router(auth.router)
 app.include_router(arquivos.router)
 app.include_router(quartos.router)
 app.include_router(conviventes.router)
+app.include_router(rotina_operacional.router)
 app.include_router(avisos.router)
 app.include_router(organizacoes.router)
 app.include_router(historico_legado.router)
