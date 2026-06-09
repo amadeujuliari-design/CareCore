@@ -25,7 +25,7 @@ def upgrade() -> None:
     op.execute(
         """
         UPDATE historico_legado_rotina_siat
-        SET identificado = 1
+        SET identificado = TRUE
         WHERE convivente_id IS NOT NULL
            OR (nome_convivente IS NOT NULL AND TRIM(nome_convivente) <> '')
            OR (numero_sisa IS NOT NULL AND TRIM(numero_sisa) <> '')

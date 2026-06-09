@@ -270,7 +270,7 @@ def upgrade() -> None:
         ") WHERE organizacao_id IS NULL"
     )
     op.execute(
-        "UPDATE usuarios SET is_global = 1 "
+        "UPDATE usuarios SET is_global = TRUE "
         "WHERE lower(email) = 'diretor@carecore.com'"
     )
     op.create_index('ix_registros_rotina_sisa_periodo', 'registros_rotina', ['instituicao_id', 'cancelado', 'data_registro', 'convivente_id', 'tipo_registro'], unique=False)

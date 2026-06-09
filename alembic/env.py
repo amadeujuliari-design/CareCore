@@ -60,10 +60,15 @@ def _database_url_para_alembic() -> str:
     url = os.getenv("DATABASE_URL") or config.get_main_option("sqlalchemy.url")
 
     if url.startswith("sqlite+aiosqlite://"):
-        return url.replace("sqlite+aiosqlite://", "sqlite://", 1)
+        url = url.replace("sqlite+aiosqlite://", "sqlite://", 1)
+        return url
 
     if url.startswith("postgresql+asyncpg://"):
-        return url.replace("postgresql+asyncpg://", "postgresql://", 1)
+        url = url.replace("postgresql+asyncpg://", "postgresql://", 1)
+
+    if url.startswith("postgresql"):
+        url = url.replace("?ssl=require", "?sslmode=require")
+        url = url.replace("&ssl=require", "&sslmode=require")
 
     return url
 
