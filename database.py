@@ -42,10 +42,25 @@ if DATABASE_URL.startswith("postgresql+psycopg2://"):
 elif DATABASE_URL.startswith("postgresql://"):
     DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
 
-engine = create_async_engine(
-    DATABASE_URL,
-    echo=os.getenv("SQLALCHEMY_ECHO", "false").lower() == "true"
-)
+engine_kwargs = {
+    "echo": os.getenv("SQLALCHEMY_ECHO", "false").lower() == "true",
+}
+
+if DATABASE_URL.startswith("postgresql+asyncpg://"):
+    engine_kwargs.update(
+        {
+            "pool_size": int(os.getenv("SQLALCHEMY_POOL_SIZE", "8")),
+            "max_overflow": int(os.getenv("SQLALCHEMY_MAX_OVERFLOW", "2")),
+            "pool_timeout": int(os.getenv("SQLALCHEMY_POOL_TIMEOUT", "15")),
+            "pool_recycle": int(os.getenv("SQLALCHEMY_POOL_RECYCLE", "1800")),
+            "pool_pre_ping": True,
+            "connect_args": {
+                "statement_cache_size": int(os.getenv("SQLALCHEMY_STATEMENT_CACHE_SIZE", "0")),
+            },
+        }
+    )
+
+engine = create_async_engine(DATABASE_URL, **engine_kwargs)
 
 AsyncSessionLocal = async_sessionmaker(
     engine,

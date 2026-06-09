@@ -15,6 +15,8 @@ import {
   obterLogoRelatorioDataUrl,
 } from './utils/relatorioIdentidadePrint';
 import { filtrarOrdenarConviventesPorBusca } from './utils/conviventeBuscaUtils';
+import LeitorCarteirinhaModal from './components/LeitorCarteirinhaModal';
+import { encontrarConviventePorCodigo } from './utils/conviventeIdentificacaoUtils';
 
 function formatarDataHora(valor) {
   if (!valor) return '-';
@@ -46,6 +48,7 @@ export default function PertencesRecolhidos() {
   const [erroRetirada, setErroRetirada] = useState('');
   const [buscaConviventeRetirada, setBuscaConviventeRetirada] = useState('');
   const [mostrarDropdownRetirada, setMostrarDropdownRetirada] = useState(false);
+  const [scannerRetiradaAberto, setScannerRetiradaAberto] = useState(false);
   const [baixaAdmin, setBaixaAdmin] = useState(null);
   const [erroBaixaAdmin, setErroBaixaAdmin] = useState('');
 
@@ -151,6 +154,32 @@ export default function PertencesRecolhidos() {
     setForm(prev => ({ ...prev, [campo]: valor }));
   };
 
+  const selecionarConviventeRetirada = useCallback((convivente, carteirinhaConferida = false) => {
+    setErroRetirada('');
+    setRetirada(prev => ({
+      ...prev,
+      convivente_id: convivente.id,
+      carteirinha_conferida: carteirinhaConferida,
+    }));
+    setBuscaConviventeRetirada(nomeConvivente(convivente));
+    setMostrarDropdownRetirada(false);
+  }, []);
+
+  const processarCodigoRetirada = useCallback((codigo) => {
+    if (!retirada) return false;
+
+    const conviventesDoQuarto = conviventesPorQuarto.get(retirada.quarto_id) || [];
+    const convivente = encontrarConviventePorCodigo(conviventesDoQuarto, codigo);
+
+    if (!convivente) {
+      setErroRetirada('Carteirinha não encontrada entre os conviventes atualmente alocados neste quarto.');
+      return false;
+    }
+
+    selecionarConviventeRetirada(convivente, true);
+    return true;
+  }, [conviventesPorQuarto, retirada, selecionarConviventeRetirada]);
+
   const exportarXlsx = () => {
     exportarRelatorioXlsx({
       nomeArquivo: `pertences-recolhidos-${new Date().toISOString().slice(0, 10)}`,
@@ -247,6 +276,7 @@ export default function PertencesRecolhidos() {
       convivente_id: '',
       quantidade: '',
       justificativa: '',
+      carteirinha_conferida: false,
     });
   };
 
@@ -256,6 +286,10 @@ export default function PertencesRecolhidos() {
     const quantidade = Number(retirada.quantidade || 0);
     if (!retirada.convivente_id) {
       setErroRetirada('Selecione o convivente que está retirando os pertences.');
+      return;
+    }
+    if (!retirada.carteirinha_conferida) {
+      setErroRetirada('Leia a carteirinha do convivente antes de confirmar a retirada.');
       return;
     }
     if (quantidade <= 0) {
@@ -594,10 +628,7 @@ export default function PertencesRecolhidos() {
                           type="button"
                           key={convivente.id}
                           onClick={() => {
-                            setErroRetirada('');
-                            setRetirada(prev => ({ ...prev, convivente_id: convivente.id }));
-                            setBuscaConviventeRetirada(nomeConvivente(convivente));
-                            setMostrarDropdownRetirada(false);
+                            selecionarConviventeRetirada(convivente);
                           }}
                           className="block w-full border-b border-gray-50 px-3 py-3 text-left text-sm text-gray-700 hover:bg-brand/10"
                         >
@@ -618,8 +649,10 @@ export default function PertencesRecolhidos() {
                 </div>
 
                 {retirada.convivente_id && (
-                  <span className="mt-2 block text-[10px] font-bold text-green-600">
-                    ✓ Convivente selecionado com sucesso.
+                  <span className={`mt-2 block text-[10px] font-bold ${retirada.carteirinha_conferida ? 'text-green-600' : 'text-amber-600'}`}>
+                    {retirada.carteirinha_conferida
+                      ? '✓ Convivente selecionado e carteirinha conferida.'
+                      : 'Convivente selecionado. Leia a carteirinha para confirmar a retirada.'}
                   </span>
                 )}
               </label>
@@ -663,9 +696,20 @@ export default function PertencesRecolhidos() {
                   setErroRetirada('');
                   setBuscaConviventeRetirada('');
                   setMostrarDropdownRetirada(false);
+                  setScannerRetiradaAberto(false);
                   setRetirada(null);
                 }} className="rounded-lg bg-gray-100 px-4 py-2 text-sm font-bold text-gray-600">
                   Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setErroRetirada('');
+                    setScannerRetiradaAberto(true);
+                  }}
+                  className="rounded-lg bg-blue-50 px-4 py-2 text-sm font-bold text-blue-700 hover:bg-blue-100"
+                >
+                  Ler carteirinha
                 </button>
                 <button type="button" onClick={confirmarRetirada} disabled={salvando} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-bold text-white disabled:opacity-50">
                   Confirmar retirada
@@ -754,6 +798,14 @@ export default function PertencesRecolhidos() {
           </div>
         </div>
       )}
+
+      <LeitorCarteirinhaModal
+        aberto={scannerRetiradaAberto}
+        titulo="Ler carteirinha para retirada"
+        subtitulo="A leitura só aceita conviventes atualmente alocados no quarto da recolha."
+        onCodigoLido={processarCodigoRetirada}
+        onClose={() => setScannerRetiradaAberto(false)}
+      />
     </AppShell>
   );
 }

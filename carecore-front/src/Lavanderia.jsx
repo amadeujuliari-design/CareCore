@@ -15,6 +15,8 @@ import {
   obterLogoRelatorioDataUrl,
 } from './utils/relatorioIdentidadePrint';
 import { filtrarOrdenarConviventesPorBusca } from './utils/conviventeBuscaUtils';
+import LeitorCarteirinhaModal from './components/LeitorCarteirinhaModal';
+import { encontrarConviventePorCodigo } from './utils/conviventeIdentificacaoUtils';
 
 function nomeConvivente(convivente) {
   return convivente?.nome_social || convivente?.nome_completo || 'Convivente';
@@ -29,8 +31,14 @@ function statusClasse(registro) {
   if (registro.status === 'Atrasado') return 'bg-rose-50 text-rose-700 border-rose-100';
   if (registro.status === 'Retirado') return 'bg-emerald-50 text-emerald-700 border-emerald-100';
   if (registro.status === 'Retirado com divergência') return 'bg-amber-50 text-amber-700 border-amber-100';
+  if (registro.status === 'Baixa com divergência') return 'bg-amber-50 text-amber-700 border-amber-100';
   if (registro.status === 'Cancelado') return 'bg-gray-100 text-gray-600 border-gray-200';
   return 'bg-blue-50 text-blue-700 border-blue-100';
+}
+
+function saldoPendenteLavanderia(registro) {
+  const jaRetiradas = registro?.quantidade_ja_retirada ?? registro?.quantidade_retirada ?? 0;
+  return Math.max(Number(registro?.quantidade_entregue || 0) - Number(jaRetiradas || 0), 0);
 }
 
 export default function Lavanderia() {
@@ -46,6 +54,7 @@ export default function Lavanderia() {
   const [cancelamento, setCancelamento] = useState(null);
   const [buscaConvivente, setBuscaConvivente] = useState('');
   const [mostrarDropdownConvivente, setMostrarDropdownConvivente] = useState(false);
+  const [scannerContexto, setScannerContexto] = useState(null);
 
   const [form, setForm] = useState({
     convivente_id: '',
@@ -113,6 +122,39 @@ export default function Lavanderia() {
   const atualizarCampo = (campo, valor) => {
     setForm(prev => ({ ...prev, [campo]: valor }));
   };
+
+  const selecionarConviventeEntrega = useCallback((convivente) => {
+    atualizarCampo('convivente_id', convivente.id);
+    setBuscaConvivente(nomeConvivente(convivente));
+    setMostrarDropdownConvivente(false);
+  }, []);
+
+  const processarCodigoCarteirinha = useCallback((codigo) => {
+    const convivente = encontrarConviventePorCodigo(
+      (conviventes || []).filter(item => item.status === 'Ativo'),
+      codigo,
+    );
+
+    if (!convivente) return false;
+
+    if (scannerContexto === 'retirada') {
+      if (!retirada || convivente.id !== retirada.convivente_id) {
+        setErro(`Carteirinha lida pertence a ${nomeConvivente(convivente)}, mas esta retirada é de ${retirada?.convivente_nome || 'outro convivente'}.`);
+        return false;
+      }
+
+      setRetirada(prev => ({
+        ...prev,
+        carteirinha_conferida: true,
+      }));
+      setSucesso(`Carteirinha conferida para ${retirada.convivente_nome}.`);
+      return true;
+    }
+
+    selecionarConviventeEntrega(convivente);
+    setSucesso(`Convivente identificado: ${nomeConvivente(convivente)}.`);
+    return true;
+  }, [conviventes, retirada, scannerContexto, selecionarConviventeEntrega]);
 
   const exportarXlsx = () => {
     exportarRelatorioXlsx({
@@ -210,13 +252,33 @@ export default function Lavanderia() {
     if (!retirada) return;
 
     const quantidade = Number(retirada.quantidade_retirada || 0);
-    if (quantidade <= 0) {
-      setErro('Informe a quantidade retirada.');
+    if (quantidade > 0 && !retirada.carteirinha_conferida) {
+      setErro('Leia a carteirinha do convivente antes de confirmar a retirada.');
       return;
     }
 
-    if (quantidade !== Number(retirada.quantidade_entregue) && !retirada.observacao_retirada.trim()) {
-      setErro('Retirada com quantidade divergente exige observação.');
+    if (quantidade <= 0 && !retirada.encerrar_pendencia) {
+      setErro('Informe a quantidade retirada ou marque a baixa da pendência.');
+      return;
+    }
+
+    const saldoPendente = saldoPendenteLavanderia(retirada);
+    if (quantidade > saldoPendente) {
+      setErro(`Há apenas ${saldoPendente} peça(s) pendente(s) neste registro.`);
+      return;
+    }
+
+    if (retirada.encerrar_pendencia && !retirada.motivo_baixa.trim()) {
+      setErro('Informe o motivo para baixar a pendência.');
+      return;
+    }
+
+    if (
+      retirada.encerrar_pendencia
+      && quantidade < saldoPendente
+      && !retirada.observacao_retirada.trim()
+    ) {
+      setErro('Baixa com diferença exige observação.');
       return;
     }
 
@@ -225,10 +287,16 @@ export default function Lavanderia() {
       await retirarLavanderia(retirada.id, {
         quantidade_retirada: quantidade,
         observacao_retirada: retirada.observacao_retirada.trim() || null,
+        encerrar_pendencia: retirada.encerrar_pendencia === true,
+        motivo_baixa: retirada.motivo_baixa?.trim() || null,
       });
 
       setRetirada(null);
-      setSucesso('Retirada registrada com conferência.');
+      setSucesso(
+        retirada.encerrar_pendencia || quantidade >= saldoPendente
+          ? 'Retirada registrada e pendência encerrada.'
+          : 'Retirada parcial registrada. O saldo permanece pendente na lavanderia.',
+      );
       await carregarDados();
     } catch (error) {
       console.error(error);
@@ -347,9 +415,7 @@ export default function Lavanderia() {
                             type="button"
                             key={convivente.id}
                             onClick={() => {
-                              atualizarCampo('convivente_id', convivente.id);
-                              setBuscaConvivente(nomeConvivente(convivente));
-                              setMostrarDropdownConvivente(false);
+                              selecionarConviventeEntrega(convivente);
                             }}
                             className="block w-full border-b border-gray-50 px-3 py-3 text-left text-sm text-gray-700 hover:bg-brand/10"
                           >
@@ -401,6 +467,16 @@ export default function Lavanderia() {
               </div>
 
               <div className="mt-4 flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setErro('');
+                    setScannerContexto('entrega');
+                  }}
+                  className="mr-2 rounded-xl border border-blue-100 bg-blue-50 px-4 py-2 text-sm font-black text-blue-700 hover:bg-blue-100"
+                >
+                  Ler carteirinha
+                </button>
                 <PremiumButton type="submit" variant="brand" disabled={salvando}>
                   Registrar entrega
                 </PremiumButton>
@@ -424,6 +500,7 @@ export default function Lavanderia() {
                   <option value="todos">Todos</option>
                   <option value="Retirado">Retirados</option>
                   <option value="Retirado com divergência">Retirados com divergência</option>
+                  <option value="Baixa com divergência">Baixas com divergência</option>
                   <option value="Cancelado">Cancelados</option>
                 </select>
               </div>
@@ -471,8 +548,10 @@ export default function Lavanderia() {
                             )}
                           </td>
                           <td className="px-4 py-3 font-black text-gray-800">
-                            {registro.quantidade_entregue}
-                            {registro.quantidade_retirada ? ` / retiradas ${registro.quantidade_retirada}` : ''}
+                            <p>{registro.quantidade_entregue} entregue(s)</p>
+                            <p className="text-xs font-semibold text-gray-500">
+                              {registro.quantidade_retirada || 0} retirada(s) · {saldoPendenteLavanderia(registro)} pendente(s)
+                            </p>
                           </td>
                           <td className="px-4 py-3">
                             <span className={`rounded-full border px-3 py-1 text-xs font-black ${statusClasse(registro)}`}>
@@ -480,14 +559,33 @@ export default function Lavanderia() {
                             </span>
                           </td>
                           <td className="px-4 py-3">
+                            {(registro.observacao_entrega || registro.observacao_retirada) && (
+                              <details className="mb-2 rounded-lg bg-gray-50 px-3 py-2 text-xs text-gray-600">
+                                <summary className="cursor-pointer font-black text-gray-700">Observações</summary>
+                                {registro.observacao_entrega && (
+                                  <p className="mt-2">
+                                    <span className="font-bold">Entrega:</span> {registro.observacao_entrega}
+                                  </p>
+                                )}
+                                {registro.observacao_retirada && (
+                                  <p className="mt-1 whitespace-pre-line">
+                                    <span className="font-bold">Retirada/baixa:</span> {registro.observacao_retirada}
+                                  </p>
+                                )}
+                              </details>
+                            )}
                             {registro.status === 'Em lavanderia' || registro.status === 'Atrasado' ? (
                               <div className="flex flex-wrap gap-2">
                                 <button
                                   type="button"
                                   onClick={() => setRetirada({
                                     ...registro,
-                                    quantidade_retirada: registro.quantidade_entregue,
+                                    quantidade_ja_retirada: Number(registro.quantidade_retirada || 0),
+                                    quantidade_retirada: saldoPendenteLavanderia(registro),
                                     observacao_retirada: '',
+                                    encerrar_pendencia: false,
+                                    motivo_baixa: '',
+                                    carteirinha_conferida: false,
                                   })}
                                   className="rounded-lg bg-emerald-50 px-3 py-2 text-xs font-black text-emerald-700 hover:bg-emerald-100"
                                 >
@@ -524,16 +622,56 @@ export default function Lavanderia() {
               <p className="text-sm text-emerald-50">{retirada.convivente_nome}</p>
             </div>
             <div className="space-y-4 p-6">
+              <div className="rounded-xl border border-blue-100 bg-blue-50 px-3 py-2 text-sm font-semibold text-blue-800">
+                Leia a carteirinha do convivente para confirmar que a retirada corresponde a este registro.
+              </div>
+              {retirada.carteirinha_conferida && (
+                <div className="rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-sm font-bold text-emerald-700">
+                  Carteirinha conferida com sucesso.
+                </div>
+              )}
               <label className="block">
-                <span className="mb-1 block text-xs font-black uppercase text-gray-500">Quantidade retirada</span>
+                <span className="mb-1 block text-xs font-black uppercase text-gray-500">Quantidade retirada agora</span>
                 <input
                   type="number"
-                  min="1"
+                  min="0"
+                  max={saldoPendenteLavanderia(retirada)}
                   value={retirada.quantidade_retirada}
                   onChange={(event) => setRetirada(prev => ({ ...prev, quantidade_retirada: event.target.value }))}
                   className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm font-semibold"
                 />
+                <span className="mt-1 block text-xs font-semibold text-gray-500">
+                  Entregues: {retirada.quantidade_entregue}. Já retiradas: {retirada.quantidade_ja_retirada || 0}. Saldo pendente: {saldoPendenteLavanderia(retirada)}.
+                </span>
               </label>
+              <label className="flex items-start gap-2 rounded-xl border border-amber-100 bg-amber-50 p-3 text-sm text-amber-900">
+                <input
+                  type="checkbox"
+                  checked={retirada.encerrar_pendencia === true}
+                  onChange={(event) => setRetirada(prev => ({
+                    ...prev,
+                    encerrar_pendencia: event.target.checked,
+                  }))}
+                  className="mt-1"
+                />
+                <span>
+                  <span className="block font-black">Dar baixa e encerrar pendência mesmo com saldo restante</span>
+                  <span className="text-xs font-semibold">
+                    Use quando as peças restantes forem descartadas, entregues por outro fluxo, perdidas, ou quando não haverá nova retirada.
+                  </span>
+                </span>
+              </label>
+              {retirada.encerrar_pendencia && (
+                <label className="block">
+                  <span className="mb-1 block text-xs font-black uppercase text-gray-500">Motivo da baixa</span>
+                  <input
+                    value={retirada.motivo_baixa}
+                    onChange={(event) => setRetirada(prev => ({ ...prev, motivo_baixa: event.target.value }))}
+                    className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm font-semibold"
+                    placeholder="Ex.: peças não retiradas, descarte autorizado, divergência conferida..."
+                  />
+                </label>
+              )}
               <label className="block">
                 <span className="mb-1 block text-xs font-black uppercase text-gray-500">Observação</span>
                 <textarea
@@ -541,12 +679,22 @@ export default function Lavanderia() {
                   value={retirada.observacao_retirada}
                   onChange={(event) => setRetirada(prev => ({ ...prev, observacao_retirada: event.target.value }))}
                   className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm"
-                  placeholder="Obrigatória se a quantidade retirada for diferente da entregue."
+                  placeholder="Ex.: retirada parcial porque parte das peças ainda não secou."
                 />
               </label>
               <div className="flex justify-end gap-2">
                 <button type="button" onClick={() => setRetirada(null)} className="rounded-lg bg-gray-100 px-4 py-2 text-sm font-bold text-gray-600">
                   Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setErro('');
+                    setScannerContexto('retirada');
+                  }}
+                  className="rounded-lg bg-blue-50 px-4 py-2 text-sm font-bold text-blue-700 hover:bg-blue-100"
+                >
+                  Ler carteirinha
                 </button>
                 <button type="button" onClick={confirmarRetirada} disabled={salvando} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-bold text-white disabled:opacity-50">
                   Confirmar retirada
@@ -583,6 +731,14 @@ export default function Lavanderia() {
           </div>
         </div>
       )}
+
+      <LeitorCarteirinhaModal
+        aberto={Boolean(scannerContexto)}
+        titulo={scannerContexto === 'retirada' ? 'Conferir carteirinha na retirada' : 'Ler carteirinha na entrega'}
+        subtitulo="Aponte para o QR Code ou código de barras da carteirinha do convivente."
+        onCodigoLido={processarCodigoCarteirinha}
+        onClose={() => setScannerContexto(null)}
+      />
     </AppShell>
   );
 }

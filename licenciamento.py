@@ -132,24 +132,24 @@ async def middleware_licenciamento(request: Request, call_next):
 
         bloqueada, motivo = _licenca_esta_bloqueada(instituicao)
 
-        if bloqueada and bloqueio_ativo:
-            return JSONResponse(
-                status_code=402,
-                content={
-                    "detail": "Sistema bloqueado por pendência de assinatura.",
-                    "motivo": motivo,
-                    "codigo": "LICENCA_BLOQUEADA",
-                },
-            )
-
-        response = await call_next(request)
-
-        response.headers["X-CareCore-Licenca-Status"] = (
-            "bloqueada" if bloqueada else "ativa"
-        )
-        response.headers["X-CareCore-Licenca-Motivo"] = motivo[:180]
-        response.headers["X-CareCore-Bloqueio-Ativo"] = (
-            "true" if bloqueio_ativo else "false"
+    if bloqueada and bloqueio_ativo:
+        return JSONResponse(
+            status_code=402,
+            content={
+                "detail": "Sistema bloqueado por pendência de assinatura.",
+                "motivo": motivo,
+                "codigo": "LICENCA_BLOQUEADA",
+            },
         )
 
-        return response
+    response = await call_next(request)
+
+    response.headers["X-CareCore-Licenca-Status"] = (
+        "bloqueada" if bloqueada else "ativa"
+    )
+    response.headers["X-CareCore-Licenca-Motivo"] = motivo[:180]
+    response.headers["X-CareCore-Bloqueio-Ativo"] = (
+        "true" if bloqueio_ativo else "false"
+    )
+
+    return response

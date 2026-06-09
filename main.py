@@ -336,7 +336,20 @@ async def cors_seguro_carecore(request: Request, call_next):
     if request.method == "OPTIONS":
         response = Response(status_code=204)
     else:
-        response = await call_next(request)
+        try:
+            response = await call_next(request)
+        except Exception:
+            logger.exception(
+                "Erro inesperado antes da aplicação dos headers CORS",
+                extra={
+                    "path": request.url.path,
+                    "method": request.method,
+                },
+            )
+            response = JSONResponse(
+                status_code=500,
+                content={"detail": "Erro interno do servidor."},
+            )
 
     origem_regex_ok = origem_corresponde_regex(ORIGEM_LAN_REGEX, origin)
     origem_extra_ok = origem_corresponde_regex(ORIGEM_EXTRA_REGEX, origin)

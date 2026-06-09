@@ -54,6 +54,15 @@ def _horas_restantes_lavanderia(registro: LavanderiaRegistroDB):
     return round((registro.prazo_retirada_em - agora_sao_paulo()).total_seconds() / 3600, 1)
 
 
+def _append_observacao_lavanderia(atual: str | None, nova: str | None) -> str | None:
+    nova = (nova or "").strip()
+    if not nova:
+        return atual
+    if not atual:
+        return nova
+    return f"{atual}\n{agora_sao_paulo().strftime('%d/%m/%Y %H:%M')} - {nova}"
+
+
 def _registrar_historico_convivente(
     db: AsyncSession,
     *,
@@ -351,21 +360,57 @@ async def retirar_lavanderia(
     if registro.status != "Em lavanderia":
         raise HTTPException(status_code=400, detail="Este registro de lavanderia já foi encerrado.")
 
-    if payload.quantidade_retirada != registro.quantidade_entregue and not (payload.observacao_retirada or "").strip():
+    total_ja_retirado = int(registro.quantidade_retirada or 0)
+    saldo_pendente = max(int(registro.quantidade_entregue or 0) - total_ja_retirado, 0)
+    quantidade_nova = int(payload.quantidade_retirada or 0)
+    total_retirado = total_ja_retirado + quantidade_nova
+    observacao = (payload.observacao_retirada or "").strip()
+    motivo_baixa = (payload.motivo_baixa or "").strip()
+
+    if quantidade_nova <= 0 and not payload.encerrar_pendencia:
         raise HTTPException(
             status_code=400,
-            detail="Retirada com quantidade divergente exige observação.",
+            detail="Informe a quantidade retirada ou marque a baixa da pendência com motivo.",
         )
 
-    registro.quantidade_retirada = payload.quantidade_retirada
-    registro.observacao_retirada = (payload.observacao_retirada or "").strip() or None
+    if quantidade_nova > saldo_pendente:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Há apenas {saldo_pendente} peça(s) pendente(s) neste registro.",
+        )
+
+    if payload.encerrar_pendencia and not motivo_baixa:
+        raise HTTPException(
+            status_code=400,
+            detail="Informe o motivo para baixar a pendência da lavanderia.",
+        )
+
+    if total_retirado < registro.quantidade_entregue and payload.encerrar_pendencia and not observacao:
+        raise HTTPException(
+            status_code=400,
+            detail="Baixa com quantidade divergente exige observação.",
+        )
+
+    registro.quantidade_retirada = total_retirado
+    registro.observacao_retirada = _append_observacao_lavanderia(
+        registro.observacao_retirada,
+        observacao,
+    )
     registro.usuario_retirada_id = usuario_atual["sub"]
     registro.retirado_em = agora_sao_paulo()
-    registro.status = (
-        "Retirado"
-        if payload.quantidade_retirada == registro.quantidade_entregue
-        else "Retirado com divergência"
-    )
+
+    if total_retirado >= registro.quantidade_entregue:
+        registro.status = "Retirado"
+    elif payload.encerrar_pendencia:
+        registro.status = "Baixa com divergência"
+        registro.observacao_retirada = _append_observacao_lavanderia(
+            registro.observacao_retirada,
+            f"Baixa da pendência: {motivo_baixa}",
+        )
+    else:
+        registro.status = "Em lavanderia"
+
+    saldo_restante = max(registro.quantidade_entregue - total_retirado, 0)
     _registrar_historico_convivente(
         db,
         instituicao_id=instituicao_id,
@@ -373,8 +418,9 @@ async def retirar_lavanderia(
         usuario_id=usuario_atual["sub"],
         titulo="Lavanderia - retirada de peças",
         descricao=(
-            f"Retirada de {payload.quantidade_retirada} peça(s) da lavanderia. "
-            f"Quantidade entregue: {registro.quantidade_entregue}. Status: {registro.status}."
+            f"Retirada de {quantidade_nova} peça(s) da lavanderia. "
+            f"Total retirado: {total_retirado}/{registro.quantidade_entregue}. "
+            f"Saldo pendente: {saldo_restante}. Status: {registro.status}."
             + (f" Observação: {registro.observacao_retirada}" if registro.observacao_retirada else "")
         ),
     )

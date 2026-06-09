@@ -214,17 +214,21 @@ def _aplicar_filtros_rotina(
 async def _opcoes_filtros(db: AsyncSession, usuario_atual: dict):
     filtro = _filtro_base(usuario_atual)
 
-    async def distintos(coluna):
+    async def distintos(coluna, remover_vazios: bool = True):
+        filtros = [filtro, coluna.is_not(None)]
+        if remover_vazios:
+            filtros.append(coluna != "")
+
         resultado = await db.execute(
             select(coluna)
-            .where(and_(filtro, coluna.is_not(None), coluna != ""))
+            .where(and_(*filtros))
             .distinct()
             .order_by(coluna.asc())
         )
         return list(resultado.scalars().all())
 
     return {
-        "anos": await distintos(HistoricoLegadoSIATDB.ano_origem),
+        "anos": await distintos(HistoricoLegadoSIATDB.ano_origem, remover_vazios=False),
         "arquivos": await distintos(HistoricoLegadoSIATDB.arquivo_origem),
         "tipos": await distintos(HistoricoLegadoSIATDB.tipo_sugerido),
         "status": await distintos(HistoricoLegadoSIATDB.status_revisao),

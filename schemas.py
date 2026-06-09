@@ -1259,12 +1259,14 @@ class LavanderiaRegistroCreate(BaseModel):
 class LavanderiaRetirada(BaseModel):
     quantidade_retirada: int
     observacao_retirada: Optional[str] = None
+    encerrar_pendencia: bool = False
+    motivo_baixa: Optional[str] = None
 
     @field_validator("quantidade_retirada")
     @classmethod
     def validar_quantidade_retirada(cls, valor: int):
-        if valor <= 0:
-            raise ValueError("Informe uma quantidade retirada maior que zero.")
+        if valor < 0:
+            raise ValueError("Informe uma quantidade retirada igual ou maior que zero.")
         return valor
 
 
