@@ -1,7 +1,7 @@
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import get_db
@@ -296,41 +296,32 @@ async def _resumo_rotina(db: AsyncSession, usuario_atual: dict):
     inst_id = _instituicao_id(usuario_atual)
     filtro = HistoricoLegadoRotinaSIATDB.instituicao_id == inst_id
 
-    total = (
-        await db.execute(select(func.count(HistoricoLegadoRotinaSIATDB.id)).where(filtro))
-    ).scalar_one()
-    revisados = (
+    total, revisados, pendentes, com_vinculo, sem_identificacao = (
         await db.execute(
-            select(func.count(HistoricoLegadoRotinaSIATDB.id)).where(
-                filtro,
-                HistoricoLegadoRotinaSIATDB.status_revisao == "Revisado",
-            )
+            select(
+                func.count(HistoricoLegadoRotinaSIATDB.id),
+                func.sum(
+                    case(
+                        (HistoricoLegadoRotinaSIATDB.status_revisao == "Revisado", 1),
+                        else_=0,
+                    )
+                ),
+                func.sum(
+                    case(
+                        (HistoricoLegadoRotinaSIATDB.status_revisao == "Pendente", 1),
+                        else_=0,
+                    )
+                ),
+                func.count(HistoricoLegadoRotinaSIATDB.convivente_id),
+                func.sum(
+                    case(
+                        (HistoricoLegadoRotinaSIATDB.identificado.is_(False), 1),
+                        else_=0,
+                    )
+                ),
+            ).where(filtro)
         )
-    ).scalar_one()
-    pendentes = (
-        await db.execute(
-            select(func.count(HistoricoLegadoRotinaSIATDB.id)).where(
-                filtro,
-                HistoricoLegadoRotinaSIATDB.status_revisao == "Pendente",
-            )
-        )
-    ).scalar_one()
-    com_vinculo = (
-        await db.execute(
-            select(func.count(HistoricoLegadoRotinaSIATDB.id)).where(
-                filtro,
-                HistoricoLegadoRotinaSIATDB.convivente_id.is_not(None),
-            )
-        )
-    ).scalar_one()
-    sem_identificacao = (
-        await db.execute(
-            select(func.count(HistoricoLegadoRotinaSIATDB.id)).where(
-                filtro,
-                HistoricoLegadoRotinaSIATDB.identificado.is_(False),
-            )
-        )
-    ).scalar_one()
+    ).one()
 
     return {
         "total": int(total or 0),
