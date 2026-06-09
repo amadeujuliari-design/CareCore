@@ -509,8 +509,75 @@ export default function PertencesRecolhidos() {
                   Nenhuma recolha encontrada.
                 </div>
               ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full min-w-[1000px] text-sm">
+                <>
+                  <div className="space-y-3 p-3 md:hidden">
+                    {registros.map(registro => (
+                      <div key={registro.id} className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="font-black text-gray-900">{registro.quarto_nome}</p>
+                            <p className="text-xs font-semibold text-gray-500">ID {registro.quarto_id.slice(0, 8)}</p>
+                          </div>
+                          <span className={`shrink-0 rounded-full border px-3 py-1 text-[10px] font-black ${statusClasse(registro.status)}`}>
+                            {registro.status}
+                          </span>
+                        </div>
+
+                        <div className="mt-3 grid grid-cols-2 gap-2 text-xs font-semibold text-gray-600">
+                          <div className="rounded-xl bg-gray-50 p-2">
+                            <span className="block text-[10px] font-black uppercase text-gray-400">Recolha</span>
+                            {formatarDataHora(registro.recolhido_em)}
+                          </div>
+                          <div className="rounded-xl bg-blue-50 p-2 text-blue-900">
+                            <span className="block text-[10px] font-black uppercase text-blue-500">Saldo</span>
+                            {registro.quantidade_disponivel} de {registro.quantidade_recolhida}
+                          </div>
+                        </div>
+
+                        {registro.observacao && (
+                          <details className="mt-3 rounded-xl bg-gray-50 px-3 py-2 text-xs text-gray-600">
+                            <summary className="cursor-pointer font-black text-gray-700">Observação da recolha</summary>
+                            <p className="mt-2">{registro.observacao}</p>
+                          </details>
+                        )}
+
+                        {registro.baixas?.length ? (
+                          <div className="mt-3 rounded-xl bg-gray-50 px-3 py-2">
+                            <p className="text-[10px] font-black uppercase text-gray-400">Últimas baixas</p>
+                            {registro.baixas.slice(0, 2).map(baixa => (
+                              <p key={baixa.id} className="mt-1 text-xs font-semibold text-gray-600">
+                                {baixa.quantidade} item(ns) · {baixa.convivente_nome || baixa.tipo_baixa}
+                              </p>
+                            ))}
+                          </div>
+                        ) : null}
+
+                        {Number(registro.quantidade_disponivel || 0) > 0 ? (
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            <button
+                              type="button"
+                              onClick={() => abrirRetirada(registro)}
+                              className="flex-1 rounded-xl bg-emerald-50 px-3 py-2 text-xs font-black text-emerald-700"
+                            >
+                              Retirar
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => abrirBaixaAdministrativa(registro)}
+                              className="flex-1 rounded-xl bg-amber-50 px-3 py-2 text-xs font-black text-amber-700"
+                            >
+                              Baixa admin.
+                            </button>
+                          </div>
+                        ) : (
+                          <p className="mt-3 text-xs font-semibold text-gray-400">Sem saldo disponível.</p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="hidden overflow-x-auto md:block">
+                    <table className="w-full min-w-[1000px] text-sm">
                     <thead className="bg-gray-50 text-xs font-black uppercase text-gray-500">
                       <tr>
                         <th className="px-4 py-3 text-left">Quarto</th>
@@ -579,8 +646,9 @@ export default function PertencesRecolhidos() {
                         </tr>
                       ))}
                     </tbody>
-                  </table>
-                </div>
+                    </table>
+                  </div>
+                </>
               )}
             </div>
           </div>
@@ -709,7 +777,7 @@ export default function PertencesRecolhidos() {
                   }}
                   className="rounded-lg bg-blue-50 px-4 py-2 text-sm font-bold text-blue-700 hover:bg-blue-100"
                 >
-                  Ler carteirinha
+                  Abrir câmera
                 </button>
                 <button type="button" onClick={confirmarRetirada} disabled={salvando} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-bold text-white disabled:opacity-50">
                   Confirmar retirada
@@ -801,7 +869,7 @@ export default function PertencesRecolhidos() {
 
       <LeitorCarteirinhaModal
         aberto={scannerRetiradaAberto}
-        titulo="Ler carteirinha para retirada"
+        titulo="Abrir câmera"
         subtitulo="A leitura só aceita conviventes atualmente alocados no quarto da recolha."
         onCodigoLido={processarCodigoRetirada}
         onClose={() => setScannerRetiradaAberto(false)}

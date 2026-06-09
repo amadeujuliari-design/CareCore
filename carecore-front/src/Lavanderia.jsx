@@ -475,7 +475,7 @@ export default function Lavanderia() {
                   }}
                   className="mr-2 rounded-xl border border-blue-100 bg-blue-50 px-4 py-2 text-sm font-black text-blue-700 hover:bg-blue-100"
                 >
-                  Ler carteirinha
+                  Abrir câmera
                 </button>
                 <PremiumButton type="submit" variant="brand" disabled={salvando}>
                   Registrar entrega
@@ -514,8 +514,85 @@ export default function Lavanderia() {
                   Nenhum registro encontrado.
                 </div>
               ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full min-w-[980px] text-sm">
+                <>
+                  <div className="space-y-3 p-3 md:hidden">
+                    {registros.map(registro => (
+                      <div key={registro.id} className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="font-black text-gray-900">{registro.convivente_nome}</p>
+                            <p className="text-xs font-semibold text-gray-500">Pront. #{registro.prontuario || 'S/N'}</p>
+                          </div>
+                          <span className={`shrink-0 rounded-full border px-3 py-1 text-[10px] font-black ${statusClasse(registro)}`}>
+                            {registro.status}
+                          </span>
+                        </div>
+
+                        <div className="mt-3 grid grid-cols-2 gap-2 text-xs font-semibold text-gray-600">
+                          <div className="rounded-xl bg-gray-50 p-2">
+                            <span className="block text-[10px] font-black uppercase text-gray-400">Entrega</span>
+                            {formatarDataHora(registro.entregue_em)}
+                          </div>
+                          <div className="rounded-xl bg-gray-50 p-2">
+                            <span className="block text-[10px] font-black uppercase text-gray-400">Prazo</span>
+                            {formatarDataHora(registro.prazo_retirada_em)}
+                          </div>
+                          <div className="col-span-2 rounded-xl bg-blue-50 p-2 text-blue-900">
+                            <span className="block text-[10px] font-black uppercase text-blue-500">Peças</span>
+                            {registro.quantidade_entregue} entregue(s) · {registro.quantidade_retirada || 0} retirada(s) · {saldoPendenteLavanderia(registro)} pendente(s)
+                          </div>
+                        </div>
+
+                        {(registro.observacao_entrega || registro.observacao_retirada) && (
+                          <details className="mt-3 rounded-xl bg-gray-50 px-3 py-2 text-xs text-gray-600">
+                            <summary className="cursor-pointer font-black text-gray-700">Observações</summary>
+                            {registro.observacao_entrega && (
+                              <p className="mt-2">
+                                <span className="font-bold">Entrega:</span> {registro.observacao_entrega}
+                              </p>
+                            )}
+                            {registro.observacao_retirada && (
+                              <p className="mt-1 whitespace-pre-line">
+                                <span className="font-bold">Retirada/baixa:</span> {registro.observacao_retirada}
+                              </p>
+                            )}
+                          </details>
+                        )}
+
+                        {registro.status === 'Em lavanderia' || registro.status === 'Atrasado' ? (
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setRetirada({
+                                ...registro,
+                                quantidade_ja_retirada: Number(registro.quantidade_retirada || 0),
+                                quantidade_retirada: saldoPendenteLavanderia(registro),
+                                observacao_retirada: '',
+                                encerrar_pendencia: false,
+                                motivo_baixa: '',
+                                carteirinha_conferida: false,
+                              })}
+                              className="flex-1 rounded-xl bg-emerald-50 px-3 py-2 text-xs font-black text-emerald-700"
+                            >
+                              Retirar
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setCancelamento({ ...registro, motivo_cancelamento: '' })}
+                              className="flex-1 rounded-xl bg-red-50 px-3 py-2 text-xs font-black text-red-700"
+                            >
+                              Cancelar
+                            </button>
+                          </div>
+                        ) : (
+                          <p className="mt-3 text-xs font-semibold text-gray-400">Registro encerrado.</p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="hidden overflow-x-auto md:block">
+                    <table className="w-full min-w-[980px] text-sm">
                     <thead className="bg-gray-50 text-xs font-black uppercase text-gray-500">
                       <tr>
                         <th className="px-4 py-3 text-left">Convivente</th>
@@ -606,8 +683,9 @@ export default function Lavanderia() {
                         </tr>
                       ))}
                     </tbody>
-                  </table>
-                </div>
+                    </table>
+                  </div>
+                </>
               )}
             </div>
           </div>
@@ -694,7 +772,7 @@ export default function Lavanderia() {
                   }}
                   className="rounded-lg bg-blue-50 px-4 py-2 text-sm font-bold text-blue-700 hover:bg-blue-100"
                 >
-                  Ler carteirinha
+                  Abrir câmera
                 </button>
                 <button type="button" onClick={confirmarRetirada} disabled={salvando} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-bold text-white disabled:opacity-50">
                   Confirmar retirada
@@ -734,7 +812,7 @@ export default function Lavanderia() {
 
       <LeitorCarteirinhaModal
         aberto={Boolean(scannerContexto)}
-        titulo={scannerContexto === 'retirada' ? 'Conferir carteirinha na retirada' : 'Ler carteirinha na entrega'}
+        titulo={scannerContexto === 'retirada' ? 'Conferir carteirinha na retirada' : 'Abrir câmera'}
         subtitulo="Aponte para o QR Code ou código de barras da carteirinha do convivente."
         onCodigoLido={processarCodigoCarteirinha}
         onClose={() => setScannerContexto(null)}
