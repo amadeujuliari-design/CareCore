@@ -575,8 +575,8 @@ export default function ChatFlutuante() {
         type="button"
         onPointerDown={iniciarArrasto}
         onClick={abrirPainel}
-        className={`fixed z-[10000] flex h-16 w-16 items-center justify-center rounded-full bg-slate-900 text-white shadow-2xl shadow-slate-900/30 transition hover:scale-105 hover:bg-slate-800 ${
-          totalNaoLidas > 0 ? 'animate-pulse ring-4 ring-red-300/70' : ''
+        className={`fixed z-[10000] flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-[#1f9a92] via-[#4bb3d3] to-[#d9c465] text-white shadow-2xl shadow-teal-700/30 ring-1 ring-white/40 transition hover:scale-105 hover:shadow-teal-700/40 ${
+          totalNaoLidas > 0 ? 'animate-pulse ring-4 ring-amber-300/70' : ''
         }`}
         style={{ left: posicao.x, top: posicao.y }}
         title={totalNaoLidas > 0 ? `${totalNaoLidas} mensagem(ns) não lida(s)` : 'Chat interno'}
@@ -600,11 +600,11 @@ export default function ChatFlutuante() {
     >
       <header
         onPointerDown={iniciarArrasto}
-        className="flex cursor-move items-center justify-between bg-slate-900 px-4 py-3 text-white"
+        className="flex cursor-move items-center justify-between bg-gradient-to-r from-[#1f9a92] via-[#4bb3d3] to-[#d9c465] px-4 py-3 text-white shadow-lg shadow-teal-700/20"
       >
         <div>
           <p className="text-sm font-black">Comunicação interna</p>
-          <p className="text-xs text-slate-300">Arraste para reposicionar</p>
+          <p className="text-xs font-semibold text-white/85">Arraste para reposicionar</p>
         </div>
 
         <div className="flex items-center gap-2">
@@ -616,7 +616,7 @@ export default function ChatFlutuante() {
           <button
             type="button"
             onClick={recolherParaCanto}
-            className="rounded-full p-1.5 text-slate-200 hover:bg-white/10 hover:text-white"
+            className="rounded-full p-1.5 text-white/85 hover:bg-white/15 hover:text-white"
             title="Recolher"
           >
             <Minus size={18} />
@@ -627,7 +627,7 @@ export default function ChatFlutuante() {
               setConversaAtiva(null);
               recolherParaCanto();
             }}
-            className="rounded-full p-1.5 text-slate-200 hover:bg-white/10 hover:text-white"
+            className="rounded-full p-1.5 text-white/85 hover:bg-white/15 hover:text-white"
             title="Fechar"
           >
             <X size={18} />
