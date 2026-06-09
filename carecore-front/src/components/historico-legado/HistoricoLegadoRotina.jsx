@@ -18,7 +18,7 @@ const filtrosIniciais = {
   cama: '',
   periodo_acolhimento: '',
   usuario_origem: '',
-  identificacao: 'identificados',
+  identificacao: '',
 };
 
 function formatarData(data) {
