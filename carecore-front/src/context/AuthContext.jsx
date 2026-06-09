@@ -6,7 +6,14 @@ import {
   useState,
 } from 'react';
 
-import { limparSessaoLocal, salvarSessaoLocal } from '../services/api';
+import {
+  limparSessaoLocal,
+  salvarSessaoLocal,
+} from '../services/api';
+import {
+  registrarAtividadeSessao,
+  sessaoExpiradaPorInatividade,
+} from '../utils/sessionInatividadeUtils';
 
 const AuthContext = createContext(null);
 
@@ -59,7 +66,12 @@ export function AuthProvider({ children }) {
       try {
         const { token, usuarioRaw } = obterSessaoLocal();
 
-        if (!token || !usuarioRaw || tokenExpirado(token)) {
+        if (
+          !token ||
+          !usuarioRaw ||
+          tokenExpirado(token) ||
+          sessaoExpiradaPorInatividade()
+        ) {
           limparSessaoLocal();
           setUsuario(null);
           return;
@@ -92,6 +104,77 @@ export function AuthProvider({ children }) {
     setUsuario(null);
     window.location.href = '/';
   };
+
+  useEffect(() => {
+    if (!usuario) {
+      return undefined;
+    }
+
+    let ultimaAtualizacao = 0;
+
+    const encerrarSeExpirada = () => {
+      if (!sessaoExpiradaPorInatividade()) {
+        return false;
+      }
+
+      limparSessaoLocal();
+      setUsuario(null);
+
+      if (window.location.pathname !== '/') {
+        window.location.href = '/';
+      }
+
+      return true;
+    };
+
+    const registrarAtividade = () => {
+      if (encerrarSeExpirada()) {
+        return;
+      }
+
+      const agora = Date.now();
+
+      if (agora - ultimaAtualizacao < 30000) {
+        return;
+      }
+
+      ultimaAtualizacao = agora;
+      registrarAtividadeSessao();
+    };
+
+    const eventosAtividade = [
+      'click',
+      'keydown',
+      'mousemove',
+      'scroll',
+      'touchstart',
+    ];
+
+    eventosAtividade.forEach((evento) => {
+      window.addEventListener(evento, registrarAtividade, { passive: true });
+    });
+
+    const intervalo = window.setInterval(encerrarSeExpirada, 60000);
+
+    const sincronizarEntreAbas = (event) => {
+      if (
+        event.key === '@CareCore:token' &&
+        !event.newValue
+      ) {
+        setUsuario(null);
+      }
+    };
+
+    window.addEventListener('storage', sincronizarEntreAbas);
+
+    return () => {
+      eventosAtividade.forEach((evento) => {
+        window.removeEventListener(evento, registrarAtividade);
+      });
+      window.clearInterval(intervalo);
+      window.removeEventListener('storage', sincronizarEntreAbas);
+    };
+  }, [usuario]);
 
   const value = useMemo(() => {
     return {

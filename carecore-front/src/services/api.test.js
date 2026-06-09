@@ -7,6 +7,36 @@ import {
   criarHeadersCareCore,
   gerarCareCoreRequestId,
 } from '../utils/requestIdUtils.js';
+import {
+  registrarAtividadeSessao,
+  sessaoExpiradaPorInatividade,
+  SESSION_INACTIVITY_LIMIT_MS,
+  STORAGE_TOKEN_KEY,
+} from '../utils/sessionInatividadeUtils.js';
+
+class LocalStorageMock {
+  constructor() {
+    this.store = new Map();
+  }
+
+  getItem(key) {
+    return this.store.has(key) ? this.store.get(key) : null;
+  }
+
+  setItem(key, value) {
+    this.store.set(key, String(value));
+  }
+
+  removeItem(key) {
+    this.store.delete(key);
+  }
+
+  clear() {
+    this.store.clear();
+  }
+}
+
+globalThis.localStorage = new LocalStorageMock();
 
 describe('api request id helpers', () => {
   it('gera identificador de rastreio', () => {
@@ -45,5 +75,41 @@ describe('api request id helpers', () => {
 
     assert.equal(headers.Authorization, 'Bearer token-teste');
     assert.equal(typeof headers['X-CareCore-Request-Id'], 'string');
+  });
+});
+
+describe('api session inactivity helpers', () => {
+  it('mantém sessão ativa abaixo de 40 minutos de inatividade', () => {
+    const dateNowOriginal = Date.now;
+
+    try {
+      Date.now = () => 100000;
+      localStorage.setItem(STORAGE_TOKEN_KEY, 'token-teste');
+      registrarAtividadeSessao();
+
+      Date.now = () => 100000 + SESSION_INACTIVITY_LIMIT_MS - 1000;
+
+      assert.equal(sessaoExpiradaPorInatividade(), false);
+    } finally {
+      Date.now = dateNowOriginal;
+      localStorage.clear();
+    }
+  });
+
+  it('expira sessão acima de 40 minutos de inatividade', () => {
+    const dateNowOriginal = Date.now;
+
+    try {
+      Date.now = () => 100000;
+      localStorage.setItem(STORAGE_TOKEN_KEY, 'token-teste');
+      registrarAtividadeSessao();
+
+      Date.now = () => 100000 + SESSION_INACTIVITY_LIMIT_MS + 1000;
+
+      assert.equal(sessaoExpiradaPorInatividade(), true);
+    } finally {
+      Date.now = dateNowOriginal;
+      localStorage.clear();
+    }
   });
 });
