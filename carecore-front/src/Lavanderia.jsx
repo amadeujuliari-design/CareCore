@@ -440,6 +440,17 @@ export default function Lavanderia() {
                       ✓ Convivente selecionado com sucesso.
                     </p>
                   )}
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setErro('');
+                      setScannerContexto('entrega');
+                    }}
+                    className="mt-3 min-h-11 w-full rounded-xl bg-gray-900 px-4 py-2 text-sm font-black text-white hover:bg-black md:w-auto"
+                  >
+                    Abrir câmera
+                  </button>
                 </div>
 
                 <div>
@@ -467,16 +478,6 @@ export default function Lavanderia() {
               </div>
 
               <div className="mt-4 flex justify-end">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setErro('');
-                    setScannerContexto('entrega');
-                  }}
-                  className="mr-2 rounded-xl border border-blue-100 bg-blue-50 px-4 py-2 text-sm font-black text-blue-700 hover:bg-blue-100"
-                >
-                  Abrir câmera
-                </button>
                 <PremiumButton type="submit" variant="brand" disabled={salvando}>
                   Registrar entrega
                 </PremiumButton>
@@ -708,6 +709,16 @@ export default function Lavanderia() {
                   Carteirinha conferida com sucesso.
                 </div>
               )}
+              <button
+                type="button"
+                onClick={() => {
+                  setErro('');
+                  setScannerContexto('retirada');
+                }}
+                className="min-h-11 w-full rounded-xl bg-gray-900 px-4 py-2 text-sm font-black text-white hover:bg-black"
+              >
+                Abrir câmera
+              </button>
               <label className="block">
                 <span className="mb-1 block text-xs font-black uppercase text-gray-500">Quantidade retirada agora</span>
                 <input
@@ -763,16 +774,6 @@ export default function Lavanderia() {
               <div className="flex justify-end gap-2">
                 <button type="button" onClick={() => setRetirada(null)} className="rounded-lg bg-gray-100 px-4 py-2 text-sm font-bold text-gray-600">
                   Cancelar
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setErro('');
-                    setScannerContexto('retirada');
-                  }}
-                  className="rounded-lg bg-blue-50 px-4 py-2 text-sm font-bold text-blue-700 hover:bg-blue-100"
-                >
-                  Abrir câmera
                 </button>
                 <button type="button" onClick={confirmarRetirada} disabled={salvando} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-bold text-white disabled:opacity-50">
                   Confirmar retirada

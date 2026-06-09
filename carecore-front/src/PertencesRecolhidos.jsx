@@ -671,6 +671,17 @@ export default function PertencesRecolhidos() {
                 </div>
               )}
 
+              <button
+                type="button"
+                onClick={() => {
+                  setErroRetirada('');
+                  setScannerRetiradaAberto(true);
+                }}
+                className="min-h-11 w-full rounded-xl bg-gray-900 px-4 py-2 text-sm font-black text-white hover:bg-black"
+              >
+                Abrir câmera
+              </button>
+
               <label className="block">
                 <span className="mb-1 block text-xs font-black uppercase text-gray-500">Convivente do quarto</span>
                 <div className="relative">
@@ -768,16 +779,6 @@ export default function PertencesRecolhidos() {
                   setRetirada(null);
                 }} className="rounded-lg bg-gray-100 px-4 py-2 text-sm font-bold text-gray-600">
                   Cancelar
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setErroRetirada('');
-                    setScannerRetiradaAberto(true);
-                  }}
-                  className="rounded-lg bg-blue-50 px-4 py-2 text-sm font-bold text-blue-700 hover:bg-blue-100"
-                >
-                  Abrir câmera
                 </button>
                 <button type="button" onClick={confirmarRetirada} disabled={salvando} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-bold text-white disabled:opacity-50">
                   Confirmar retirada
