@@ -8,13 +8,13 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import or_
+from sqlalchemy import or_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 from audit_log import registrar_evento_auditoria
 from database import get_db
-from models import UsuarioDB
+from models import ConviventeDB, UsuarioDB
 from tenant_scope import obter_instituicao_escopo
 from schemas import (
     UsuarioCreate,
@@ -240,6 +240,24 @@ def aplicar_dados_usuario(
             valor = valor.lower().strip()
 
         setattr(usuario, campo, valor)
+
+
+async def desvincular_conviventes_do_usuario_inativo(
+    db: AsyncSession,
+    *,
+    usuario_id: str,
+    instituicao_id: str,
+) -> int:
+    resultado = await db.execute(
+        update(ConviventeDB)
+        .where(
+            ConviventeDB.instituicao_id == instituicao_id,
+            ConviventeDB.tecnico_id == usuario_id,
+        )
+        .values(tecnico_id=None)
+    )
+
+    return int(resultado.rowcount or 0)
 
 
 def usuario_para_response(usuario: UsuarioDB) -> UsuarioResponse:
@@ -522,9 +540,16 @@ async def editar_usuario(
     usuario.atualizado_em = agora_utc()
     usuario.atualizado_por_id = obter_usuario_id(usuario_atual)
 
+    conviventes_desvinculados = 0
+
     if ativo_anterior and ativo_novo is False:
         usuario.inativado_em = agora_utc()
         usuario.inativado_por_id = obter_usuario_id(usuario_atual)
+        conviventes_desvinculados = await desvincular_conviventes_do_usuario_inativo(
+            db,
+            usuario_id=usuario.id,
+            instituicao_id=obter_instituicao_escopo(usuario_atual),
+        )
 
     if not ativo_anterior and ativo_novo is True:
         usuario.inativado_em = None
@@ -540,6 +565,7 @@ async def editar_usuario(
             campos_alterados=",".join(sorted(dados.keys())),
             ativo_anterior=ativo_anterior,
             ativo_novo=bool(getattr(usuario, "ativo", True)),
+            conviventes_desvinculados=conviventes_desvinculados,
         )
 
     except Exception as erro:
@@ -592,6 +618,11 @@ async def alterar_status_usuario(
         usuario.inativado_por_id = usuario_logado_id
         usuario.data_desligamento = payload.data_desligamento or agora.date()
         usuario.motivo_desligamento = payload.motivo_desligamento.strip()
+        conviventes_desvinculados = await desvincular_conviventes_do_usuario_inativo(
+            db,
+            usuario_id=usuario.id,
+            instituicao_id=obter_instituicao_escopo(usuario_atual),
+        )
 
     try:
         await db.commit()
@@ -601,6 +632,7 @@ async def alterar_status_usuario(
             usuario_atual=usuario_atual,
             usuario_alvo_id=usuario.id,
             ativo=bool(usuario.ativo),
+            conviventes_desvinculados=conviventes_desvinculados if not payload.ativo else 0,
         )
 
     except Exception as erro:

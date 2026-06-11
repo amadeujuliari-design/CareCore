@@ -149,16 +149,21 @@ async def validar_usuario_do_projeto(
     instituicao_id: str,
     *,
     detail: str = "Usuário não encontrado neste projeto.",
+    exigir_ativo: bool = False,
 ) -> None:
     if not usuario_id:
         return
 
+    filtros = [
+        UsuarioDB.id == usuario_id,
+        UsuarioDB.instituicao_id == instituicao_id,
+    ]
+    if exigir_ativo:
+        filtros.append(UsuarioDB.ativo == True)  # noqa: E712
+
     usuario = (
         await db.execute(
-            select(UsuarioDB.id).where(
-                UsuarioDB.id == usuario_id,
-                UsuarioDB.instituicao_id == instituicao_id,
-            )
+            select(UsuarioDB.id).where(*filtros)
         )
     ).scalar_one_or_none()
 
@@ -200,7 +205,8 @@ async def validar_referencias_convivente_do_projeto(
         db,
         dados.get("tecnico_id"),
         instituicao_id,
-        detail="Técnico responsável não encontrado neste projeto.",
+        detail="Técnico responsável não está ativo neste projeto.",
+        exigir_ativo=True,
     )
 
     motivo_id = dados.get("motivo_inativacao_id")
@@ -273,7 +279,8 @@ async def listar_tecnicos(db: AsyncSession = Depends(get_db), usuario_atual: dic
         UsuarioDB.perfil_acesso,
         UsuarioDB.avatar_url,
     ).where(
-        UsuarioDB.instituicao_id == obter_instituicao_escopo(usuario_atual)
+        UsuarioDB.instituicao_id == obter_instituicao_escopo(usuario_atual),
+        UsuarioDB.ativo == True,  # noqa: E712
     )
     result = await db.execute(query)
     return [
@@ -1319,7 +1326,8 @@ async def criar_ocorrencia_manual(payload: OcorrenciaCreate, db: AsyncSession = 
         db,
         payload.tecnico_responsavel_id,
         obter_instituicao_escopo(usuario_atual),
-        detail="Técnico responsável não encontrado neste projeto.",
+        detail="Técnico responsável não está ativo neste projeto.",
+        exigir_ativo=True,
     )
     await validar_usuarios_do_projeto(
         db,
