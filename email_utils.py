@@ -50,6 +50,7 @@ def enviar_email_smtp(*, assunto: str, corpo: str, para: str | None = None) -> R
         or usuario
         or destinatario
     )
+    responder_para = os.getenv("CARECORE_SMTP_REPLY_TO", "").strip()
 
     if not destinatario:
         return ResultadoEnvioEmail(False, "Destinatário de suporte não configurado.")
@@ -61,6 +62,8 @@ def enviar_email_smtp(*, assunto: str, corpo: str, para: str | None = None) -> R
     mensagem["Subject"] = assunto
     mensagem["From"] = remetente
     mensagem["To"] = destinatario
+    if responder_para:
+        mensagem["Reply-To"] = responder_para
     mensagem.set_content(corpo)
 
     try:
