@@ -70,6 +70,8 @@ export function montarHtmlFichaCompletaConvivente({
         <meta charset="utf-8" />
         <title>Ficha completa - ${escaparHtml(convivente.nome_social || convivente.nome_completo || 'Convivente')}</title>
         <style>
+          @page { size: A4; margin: 6mm; }
+          * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
           body { font-family: Arial, sans-serif; color: #111827; padding: 28px; }
           header { display: flex; align-items: center; justify-content: space-between; gap: 24px; border-bottom: 2px solid #e5e7eb; margin-bottom: 20px; padding-bottom: 16px; }
           .logo { width: 190px; max-height: 72px; object-fit: contain; }
@@ -88,7 +90,24 @@ export function montarHtmlFichaCompletaConvivente({
           .direitos-reservados { margin-top: 5px; font-size: 9px; font-weight: 700; }
           .direitos-reservados a { color: #4f46e5; text-decoration: none; }
           button { margin-bottom: 16px; padding: 8px 14px; border-radius: 8px; border: 1px solid #d1d5db; background: white; cursor: pointer; }
-          @media print { body { padding: 8px; } button { display: none; } .grid { grid-template-columns: 1fr 1fr; } }
+          @media print {
+            body { margin: 0; padding: 0; }
+            button { display: none; }
+            header { gap: 14px; margin-bottom: 8px; padding-bottom: 7px; border-bottom-width: 1px; }
+            .logo { width: 120px; max-height: 42px; }
+            .identidade-nome { margin-top: 3px; font-size: 8px; }
+            h1 { font-size: 16px; }
+            h2 { margin: 8px 0 3px; font-size: 10px; letter-spacing: .03em; }
+            p { margin: 1px 0; font-size: 9px; }
+            table { margin-bottom: 3px; }
+            th, td { padding: 3px 5px; font-size: 9px; line-height: 1.15; }
+            th { width: 31%; }
+            .grid { grid-template-columns: 1fr 1fr; gap: 6px; }
+            .assinatura { margin-top: 14px; }
+            .linha { width: 230px; padding-top: 4px; font-size: 9px; }
+            .rodape-relatorio { margin-top: 10px; padding-top: 4px; font-size: 8px; line-height: 1.2; }
+            .direitos-reservados { margin-top: 3px; font-size: 8px; }
+          }
         </style>
       </head>
       <body>

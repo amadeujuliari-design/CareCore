@@ -150,6 +150,7 @@ async def validar_usuario_do_projeto(
     *,
     detail: str = "Usuário não encontrado neste projeto.",
     exigir_ativo: bool = False,
+    perfis_permitidos: list[str] | None = None,
 ) -> None:
     if not usuario_id:
         return
@@ -160,6 +161,8 @@ async def validar_usuario_do_projeto(
     ]
     if exigir_ativo:
         filtros.append(UsuarioDB.ativo == True)  # noqa: E712
+    if perfis_permitidos:
+        filtros.append(UsuarioDB.perfil_acesso.in_(perfis_permitidos))
 
     usuario = (
         await db.execute(
@@ -207,6 +210,7 @@ async def validar_referencias_convivente_do_projeto(
         instituicao_id,
         detail="Técnico responsável não está ativo neste projeto.",
         exigir_ativo=True,
+        perfis_permitidos=["Técnico", "Gestor"],
     )
 
     motivo_id = dados.get("motivo_inativacao_id")
@@ -281,6 +285,7 @@ async def listar_tecnicos(db: AsyncSession = Depends(get_db), usuario_atual: dic
     ).where(
         UsuarioDB.instituicao_id == obter_instituicao_escopo(usuario_atual),
         UsuarioDB.ativo == True,  # noqa: E712
+        UsuarioDB.perfil_acesso.in_(["Técnico", "Gestor"]),
     )
     result = await db.execute(query)
     return [
@@ -1328,6 +1333,7 @@ async def criar_ocorrencia_manual(payload: OcorrenciaCreate, db: AsyncSession = 
         obter_instituicao_escopo(usuario_atual),
         detail="Técnico responsável não está ativo neste projeto.",
         exigir_ativo=True,
+        perfis_permitidos=["Técnico", "Gestor"],
     )
     await validar_usuarios_do_projeto(
         db,
