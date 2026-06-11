@@ -1228,7 +1228,7 @@ export default function RotinaDiaria() {
                         )}
                       </div>
 
-                      <div className="grid w-full grid-cols-3 gap-2 md:mt-0 md:flex md:w-[380px] md:flex-shrink-0 md:items-center md:justify-end">
+                      <div className="grid w-full grid-cols-1 gap-2 sm:grid-cols-3 md:mt-0 md:flex md:w-[380px] md:flex-shrink-0 md:items-center md:justify-end">
                         <button
                           onClick={() => handleRegistrar(c.id, 'Entrada')}
                           disabled={!isFora || processandoAcao === `${c.id}-Entrada`}
@@ -1267,8 +1267,8 @@ export default function RotinaDiaria() {
         </ScrollArea>
       {scannerAberto && (
         <div className="carecore-modal-overlay fixed inset-0 bg-gray-900/90 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
-          <div className="carecore-modal-panel bg-white w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden flex flex-col">
-            <div className="bg-gray-800 p-4 flex justify-between items-center text-white">
+          <div className="carecore-modal-panel bg-white w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden flex max-h-[calc(100vh-2rem)] flex-col">
+            <div className="bg-gray-800 p-4 flex items-center justify-between gap-3 text-white">
               <h2 className="font-bold">Posicione o QR Code na câmera</h2>
               <button
                 onClick={() => {
@@ -1281,6 +1281,7 @@ export default function RotinaDiaria() {
               </button>
             </div>
 
+            <div className="min-h-0 overflow-y-auto">
             <div className="p-4 bg-black flex justify-center">
               <div
                 id="leitor-camera"
@@ -1360,6 +1361,7 @@ export default function RotinaDiaria() {
                   : 'Modo automático ativo: a leitura registra Entrada ou Saída automaticamente.'
                 : 'Modo manual ativo: a leitura abre o painel de ações.'}
             </div>
+            </div>
           </div>
         </div>
       )}
@@ -1371,8 +1373,8 @@ export default function RotinaDiaria() {
 
         return (
           <div className="carecore-modal-overlay fixed inset-0 bg-gray-900/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
-            <div className="carecore-modal-panel bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden">
-              <div className="bg-brand p-5 flex justify-between items-center text-white">
+            <div className="carecore-modal-panel bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden max-h-[calc(100vh-2rem)] flex flex-col">
+              <div className="bg-brand p-5 flex justify-between items-center gap-3 text-white">
                 <h2 className="text-lg font-bold">Acolhido Identificado</h2>
                 <button
                   onClick={() => setPacienteEscaneado(null)}
@@ -1382,7 +1384,7 @@ export default function RotinaDiaria() {
                 </button>
               </div>
 
-              <div className="p-6 text-center space-y-4">
+              <div className="min-h-0 overflow-y-auto p-4 text-center space-y-4 sm:p-6">
                 <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center text-3xl mx-auto shadow-inner border border-gray-200 overflow-hidden">
                   {fotoUrl ? (
                     <AuthenticatedImage
@@ -1465,8 +1467,8 @@ export default function RotinaDiaria() {
 
       {interacaoConfirmacao && (
         <div className="carecore-modal-overlay fixed inset-0 bg-gray-900/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
-          <div className="carecore-modal-panel bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden">
-            <div className="bg-blue-600 p-5 flex justify-between items-center text-white">
+          <div className="carecore-modal-panel bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden max-h-[calc(100vh-2rem)] flex flex-col">
+            <div className="bg-blue-600 p-5 flex justify-between items-center gap-3 text-white">
               <h2 className="text-lg font-bold">Confirmar interação</h2>
               <button
                 onClick={() => setInteracaoConfirmacao(null)}
@@ -1476,7 +1478,7 @@ export default function RotinaDiaria() {
               </button>
             </div>
 
-            <div className="p-6 space-y-4">
+            <div className="min-h-0 overflow-y-auto p-4 space-y-4 sm:p-6">
               <p className="text-sm text-gray-700 leading-relaxed">
                 {interacaoConfirmacao.ultima
                   ? `Última movimentação de ${interacaoConfirmacao.grupo}: ${interacaoConfirmacao.ultima.tipo_registro} em ${new Date(interacaoConfirmacao.ultima.data_registro).toLocaleString('pt-BR')}.`
@@ -1486,7 +1488,7 @@ export default function RotinaDiaria() {
                 Vou registrar: {interacaoConfirmacao.tipoRegistro}. Confirma?
               </p>
 
-              <div className="flex justify-end gap-3 pt-2">
+              <div className="grid grid-cols-1 gap-2 pt-2 sm:flex sm:justify-end sm:gap-3">
                 <button
                   onClick={() => setInteracaoConfirmacao(null)}
                   className="px-4 py-2 rounded-lg text-sm font-bold bg-gray-100 text-gray-600 hover:bg-gray-200"
@@ -1514,8 +1516,8 @@ export default function RotinaDiaria() {
 
       {refeicaoExtraPendente && (
         <div className="carecore-modal-overlay fixed inset-0 bg-gray-900/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
-          <div className="carecore-modal-panel bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden">
-            <div className="bg-amber-600 p-5 flex justify-between items-center text-white">
+          <div className="carecore-modal-panel bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden max-h-[calc(100vh-2rem)] flex flex-col">
+            <div className="bg-amber-600 p-5 flex justify-between items-center gap-3 text-white">
               <h2 className="text-lg font-bold">Confirmar refeição extra</h2>
               <button
                 onClick={() => setRefeicaoExtraPendente(null)}
@@ -1525,7 +1527,7 @@ export default function RotinaDiaria() {
               </button>
             </div>
 
-            <div className="p-6 space-y-4">
+            <div className="min-h-0 overflow-y-auto p-4 space-y-4 sm:p-6">
               <p className="text-sm text-gray-700 leading-relaxed">
                 {refeicaoExtraPendente.convivente?.nome_social ||
                   refeicaoExtraPendente.convivente?.nome_completo ||
@@ -1546,7 +1548,7 @@ export default function RotinaDiaria() {
                 </p>
               )}
 
-              <div className="flex justify-end gap-3 pt-2">
+              <div className="grid grid-cols-1 gap-2 pt-2 sm:flex sm:justify-end sm:gap-3">
                 <button
                   onClick={() => setRefeicaoExtraPendente(null)}
                   className="px-4 py-2 rounded-lg text-sm font-bold bg-gray-100 text-gray-600 hover:bg-gray-200"
@@ -1574,8 +1576,8 @@ export default function RotinaDiaria() {
 
       {interacaoObservacaoPendente && (
         <div className="carecore-modal-overlay fixed inset-0 bg-gray-900/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
-          <div className="carecore-modal-panel bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden">
-            <div className="bg-slate-800 p-5 flex justify-between items-center text-white">
+          <div className="carecore-modal-panel bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden max-h-[calc(100vh-2rem)] flex flex-col">
+            <div className="bg-slate-800 p-5 flex justify-between items-center gap-3 text-white">
               <h2 className="text-lg font-bold">Relato obrigatório</h2>
               <button
                 onClick={() => {
@@ -1588,7 +1590,7 @@ export default function RotinaDiaria() {
               </button>
             </div>
 
-            <div className="p-6 space-y-4">
+            <div className="min-h-0 overflow-y-auto p-4 space-y-4 sm:p-6">
               <p className="text-sm font-semibold text-gray-700">
                 {interacaoObservacaoPendente.tipoRegistro}
               </p>
@@ -1601,7 +1603,7 @@ export default function RotinaDiaria() {
                 autoFocus
               />
 
-              <div className="flex justify-end gap-3 pt-2">
+              <div className="grid grid-cols-1 gap-2 pt-2 sm:flex sm:justify-end sm:gap-3">
                 <button
                   onClick={() => {
                     setInteracaoObservacaoPendente(null);
@@ -1637,8 +1639,8 @@ export default function RotinaDiaria() {
 
       {retornoRapidoPendente && (
         <div className="carecore-modal-overlay fixed inset-0 bg-gray-900/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
-          <div className="carecore-modal-panel bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden">
-            <div className="bg-yellow-500 p-5 flex justify-between items-center text-white">
+          <div className="carecore-modal-panel bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden max-h-[calc(100vh-2rem)] flex flex-col">
+            <div className="bg-yellow-500 p-5 flex justify-between items-center gap-3 text-white">
               <h2 className="text-lg font-bold">Retorno rápido detectado</h2>
               <button
                 onClick={() => {
@@ -1651,7 +1653,7 @@ export default function RotinaDiaria() {
               </button>
             </div>
 
-            <div className="p-6 space-y-4">
+            <div className="min-h-0 overflow-y-auto p-4 space-y-4 sm:p-6">
               <p className="text-sm text-gray-700 leading-relaxed">
                 Este acolhido está retornando em menos de 10 minutos após a saída.
                 Informe a justificativa operacional para registrar a entrada.
@@ -1666,7 +1668,7 @@ export default function RotinaDiaria() {
                 autoFocus
               />
 
-              <div className="flex justify-end gap-3 pt-2">
+              <div className="grid grid-cols-1 gap-2 pt-2 sm:flex sm:justify-end sm:gap-3">
                 <button
                   onClick={() => {
                     setRetornoRapidoPendente(null);
@@ -1691,8 +1693,8 @@ export default function RotinaDiaria() {
 
       {resumoInteracoesAberto && (
         <div className="carecore-modal-overlay fixed inset-0 bg-gray-900/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
-          <div className="carecore-modal-panel bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden">
-            <div className="bg-blue-600 p-5 flex justify-between items-center text-white">
+          <div className="carecore-modal-panel bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden max-h-[calc(100vh-2rem)] flex flex-col">
+            <div className="bg-blue-600 p-5 flex justify-between items-center gap-3 text-white">
               <div>
                 <h2 className="text-lg font-bold">Interações de rotina</h2>
                 <p className="text-xs text-blue-100 mt-1">Somas registradas hoje por tipo.</p>
@@ -1705,7 +1707,7 @@ export default function RotinaDiaria() {
               </button>
             </div>
 
-            <div className="p-5">
+            <div className="min-h-0 overflow-y-auto p-4 sm:p-5">
               <div className="rounded-2xl border border-blue-100 bg-blue-50 p-4 mb-4">
                 <p className="text-[10px] font-black uppercase tracking-wide text-blue-600">Total de interações</p>
                 <p className="text-3xl font-black text-blue-900 mt-1">{totalInteracoesRotina}</p>

@@ -34,7 +34,7 @@ export default function ProjetoAtualBadge() {
 
   const conteudo = (
     <span
-      className={`inline-flex max-w-[310px] items-center gap-2 rounded-full border px-3 py-2 text-xs font-black shadow-sm ${
+      className={`inline-flex max-w-[min(310px,calc(100vw-2rem))] items-center gap-2 rounded-full border px-3 py-2 text-xs font-black shadow-sm ${
         isGlobal
           ? 'border-violet-100 bg-violet-50 text-violet-950'
           : 'border-blue-100 bg-blue-50 text-blue-900'

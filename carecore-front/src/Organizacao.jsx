@@ -262,8 +262,8 @@ export default function Organizacao() {
         />
 
         <ScrollArea className="pb-24">
-          <div className="mx-auto grid max-w-6xl gap-6 lg:grid-cols-[1fr_420px]">
-            <section className="rounded-3xl border border-gray-100 bg-white p-5 shadow-sm">
+          <div className="mx-auto grid w-full min-w-0 max-w-6xl gap-6 lg:grid-cols-[1fr_420px]">
+            <section className="min-w-0 rounded-3xl border border-gray-100 bg-white p-4 shadow-sm sm:p-5">
               <h2 className="text-lg font-black text-gray-900">Projetos cadastrados</h2>
               <p className="mt-1 text-sm text-gray-500">
                 Cada projeto funciona como operação separada, mas fica vinculado à mesma organização.
@@ -278,10 +278,10 @@ export default function Organizacao() {
               ) : (
                 <div className="mt-5 space-y-3">
                   {projetos.map((projeto) => (
-                    <article key={projeto.id} className="rounded-2xl border border-gray-100 bg-gray-50 p-4">
-                      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                        <div>
-                          <h3 className="font-black text-gray-900">{projeto.nome_fantasia}</h3>
+                    <article key={projeto.id} className="min-w-0 rounded-2xl border border-gray-100 bg-gray-50 p-4">
+                      <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                        <div className="min-w-0">
+                          <h3 className="break-words font-black text-gray-900">{projeto.nome_fantasia}</h3>
                           <p className="mt-1 text-xs font-semibold text-gray-500">
                             CNPJ: {projeto.cnpj || 'Não informado'} · Telefone: {projeto.telefone || '-'}
                           </p>
@@ -302,7 +302,7 @@ export default function Organizacao() {
                               type="button"
                               onClick={() => selecionarProjeto(projeto.id)}
                               disabled={selecionandoProjetoId === projeto.id}
-                              className="rounded-full bg-slate-950 px-4 py-2 text-xs font-black text-white shadow-sm transition hover:bg-slate-800 disabled:opacity-60"
+                              className="w-full rounded-full bg-slate-950 px-4 py-2 text-xs font-black text-white shadow-sm transition hover:bg-slate-800 disabled:opacity-60 sm:w-auto"
                             >
                               {selecionandoProjetoId === projeto.id ? 'Entrando...' : 'Entrar neste projeto'}
                             </button>
@@ -315,7 +315,7 @@ export default function Organizacao() {
               )}
             </section>
 
-            <section className="rounded-3xl border border-gray-100 bg-white p-5 shadow-sm">
+            <section className="min-w-0 rounded-3xl border border-gray-100 bg-white p-4 shadow-sm sm:p-5">
               <h2 className="text-lg font-black text-gray-900">Adicionar projeto</h2>
               <p className="mt-1 text-sm text-gray-500">
                 Use para implantar Projeto B, filial ou unidade vinculada à organização atual.
@@ -417,7 +417,7 @@ export default function Organizacao() {
                   </Campo>
                 </div>
 
-                <div className="grid grid-cols-[1fr_80px] gap-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_80px]">
                   <Campo label="Cidade">
                     <input className={`${inputClassName} w-full`} value={form.cidade} onChange={(e) => atualizarCampo('cidade', e.target.value)} placeholder="Cidade" />
                   </Campo>

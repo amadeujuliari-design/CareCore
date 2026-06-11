@@ -979,7 +979,7 @@ export default function CentralOcorrencias() {
 
       {/* Barra flutuante de baixa em lote */}
       {selecionados.length > 0 && (
-        <div className="fixed bottom-8 left-1/2 transform -translate-x-1/2 bg-gray-900 text-white px-6 py-4 rounded-full shadow-2xl flex items-center gap-6 z-40 animate-fadeIn">
+        <div className="fixed bottom-4 left-3 right-3 z-40 flex animate-fadeIn flex-col items-stretch gap-3 rounded-3xl bg-gray-900 px-4 py-4 text-white shadow-2xl sm:bottom-8 sm:left-1/2 sm:right-auto sm:-translate-x-1/2 sm:flex-row sm:items-center sm:gap-6 sm:rounded-full sm:px-6">
           <span className="text-sm font-bold bg-gray-800 px-3 py-1 rounded-full text-brand">
             {selecionados.length} selecionado(s)
           </span>
@@ -1004,11 +1004,11 @@ export default function CentralOcorrencias() {
 
       {/* --- MODAL DA THREAD (CHAT DO CHAMADO) --- */}
       {chamadoSelecionado && (
-        <div className="carecore-modal-overlay fixed inset-0 bg-gray-900/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
-          <div className="carecore-modal-panel bg-white w-full max-w-3xl rounded-2xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden">
+        <div className="carecore-modal-overlay fixed inset-0 bg-gray-900/60 z-50 flex items-center justify-center p-3 backdrop-blur-sm sm:p-4">
+          <div className="carecore-modal-panel bg-white w-full max-w-3xl rounded-2xl shadow-2xl flex flex-col max-h-[calc(100vh-1.5rem)] sm:max-h-[90vh] overflow-hidden">
             
-            <div className="bg-gray-800 p-5 flex justify-between items-start text-white">
-              <div>
+            <div className="bg-gray-800 p-4 sm:p-5 flex flex-col gap-4 sm:flex-row sm:justify-between sm:items-start text-white">
+              <div className="min-w-0">
                 <div className="flex flex-wrap gap-2">
                   <BadgePrioridadeOcorrencia prioridade={chamadoSelecionado.prioridade} />
                   <span className={`text-[10px] font-bold px-2 py-1 rounded-md uppercase tracking-wider ${
@@ -1017,7 +1017,7 @@ export default function CentralOcorrencias() {
                     Status: {chamadoSelecionado.status_resolucao}
                   </span>
                 </div>
-                <h2 className="text-lg font-bold mt-2 leading-tight">{chamadoSelecionado.motivo}</h2>
+                <h2 className="text-lg font-bold mt-2 leading-tight break-words">{chamadoSelecionado.motivo}</h2>
                 
                 {(() => {
                   const pModal = listaConviventes.find(c => c.id === chamadoSelecionado.convivente_id);
@@ -1043,19 +1043,19 @@ export default function CentralOcorrencias() {
                   Aberto em: {new Date(chamadoSelecionado.data_ocorrencia).toLocaleString('pt-BR')}
                 </p>
               </div>
-              <div className="flex flex-col gap-2">
+              <div className="flex flex-col gap-2 sm:items-end">
                 {chamadoSelecionado.convivente_autor_ocorrencia && (
                   <ReportActionButton action="print" onClick={() => imprimirTermoReclamacao(chamadoSelecionado)}>
                     Imprimir
                   </ReportActionButton>
                 )}
-                <button onClick={fecharChamado} className="text-gray-400 hover:text-white bg-gray-700 hover:bg-gray-600 rounded-lg p-2 transition-colors">
+                <button onClick={fecharChamado} className="text-gray-200 hover:text-white bg-gray-700 hover:bg-gray-600 rounded-lg p-2 transition-colors">
                   ✕ Fechar
                 </button>
               </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-gray-50">
+            <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6 bg-gray-50">
               {chamadoSelecionado.convivente_autor_ocorrencia && (() => {
                 const funcionario = listaFuncionarios.find(u => u.id === chamadoSelecionado.funcionario_envolvido_id);
 
@@ -1079,7 +1079,7 @@ export default function CentralOcorrencias() {
               
               <div className="flex flex-col">
                 <span className="text-[10px] font-bold text-gray-400 ml-4 mb-1">RELATO INICIAL (ABERTURA)</span>
-                <div className="bg-white p-4 rounded-2xl rounded-tl-none border border-gray-200 shadow-sm self-start max-w-[85%]">
+                <div className="bg-white p-4 rounded-2xl rounded-tl-none border border-gray-200 shadow-sm self-start max-w-full sm:max-w-[85%]">
                   <p className="text-sm text-gray-700 whitespace-pre-wrap">{chamadoSelecionado.descricao}</p>
                 </div>
               </div>
@@ -1093,7 +1093,7 @@ export default function CentralOcorrencias() {
                     <span className={`text-[10px] font-bold text-gray-400 mb-1 ${souEu ? 'mr-4' : 'ml-4'}`}>
                       {new Date(int.data_interacao).toLocaleString('pt-BR')} {isParecer && ' • PARECER TÉCNICO'}
                     </span>
-                    <div className={`p-4 rounded-2xl max-w-[85%] shadow-sm ${
+                    <div className={`p-4 rounded-2xl max-w-full sm:max-w-[85%] shadow-sm ${
                       isParecer ? 'bg-green-50 border border-green-200 text-green-900 w-full' : 
                       souEu ? 'bg-brand text-white rounded-tr-none' : 'bg-white border border-gray-200 text-gray-700 rounded-tl-none'
                     }`}>
@@ -1104,7 +1104,7 @@ export default function CentralOcorrencias() {
               })}
             </div>
 
-            <div className="p-5 border-t border-gray-200 bg-white">
+            <div className="p-4 sm:p-5 border-t border-gray-200 bg-white">
               {chamadoSelecionado.status_resolucao === 'Resolvido' ? (
                 <div className="text-center p-3 bg-gray-50 rounded-xl border border-gray-200 text-gray-500 text-sm font-semibold">
                   Este chamado já recebeu o parecer técnico e foi encerrado.
@@ -1120,7 +1120,7 @@ export default function CentralOcorrencias() {
                     required
                   ></textarea>
 
-                  <div className="flex justify-between items-center">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     {(isGestor || (perfilUsuario === 'Técnico' && chamadoSelecionado.tecnico_responsavel_id === idUsuarioLogado)) ? (
                       <label className="flex items-center gap-2 cursor-pointer bg-red-50 px-3 py-2 rounded-lg border border-red-100 hover:bg-red-100 transition-colors">
                         <input 
@@ -1138,7 +1138,7 @@ export default function CentralOcorrencias() {
                     <button 
                       type="submit" 
                       disabled={enviando || !novaMensagem.trim()}
-                      className="px-6 py-2.5 bg-brand text-white font-bold text-sm rounded-xl hover:bg-brandDark disabled:opacity-50 transition-all shadow-md"
+                      className="w-full px-6 py-2.5 bg-brand text-white font-bold text-sm rounded-xl hover:bg-brandDark disabled:opacity-50 transition-all shadow-md sm:w-auto"
                     >
                       {enviando ? 'Enviando...' : 'Enviar Mensagem'}
                     </button>
@@ -1153,16 +1153,16 @@ export default function CentralOcorrencias() {
       {/* --- MODAL DE CRIAÇÃO DE NOVO CHAMADO --- */}
       {modalNovoAberto && (
         <div className="carecore-modal-overlay fixed inset-0 bg-gray-900/60 z-50 flex items-start justify-center p-4 sm:p-8 backdrop-blur-sm overflow-y-auto">
-          <div className="carecore-modal-panel bg-white w-full max-w-2xl rounded-2xl shadow-2xl flex flex-col my-auto relative">
+          <div className="carecore-modal-panel bg-white w-full max-w-2xl rounded-2xl shadow-2xl flex max-h-[calc(100vh-2rem)] flex-col my-auto relative overflow-hidden">
             
-            <div className="bg-brand p-5 flex justify-between items-center text-white rounded-t-2xl">
+            <div className="bg-brand p-4 sm:p-5 flex flex-col gap-3 sm:flex-row sm:justify-between sm:items-center text-white rounded-t-2xl">
               <h2 className="text-lg font-bold">Abrir Novo Chamado de Ocorrência</h2>
-              <button type="button" onClick={() => setModalNovoAberto(false)} className="text-white/80 hover:text-white bg-white/10 hover:bg-white/20 rounded-lg p-2 transition-colors">
+              <button type="button" onClick={() => setModalNovoAberto(false)} className="text-white/80 hover:text-white bg-white/10 hover:bg-white/20 rounded-lg p-2 transition-colors sm:self-auto self-start">
                 ✕ Cancelar
               </button>
             </div>
 
-            <div className="p-6 bg-gray-50">
+            <div className="min-h-0 overflow-y-auto p-4 sm:p-6 bg-gray-50">
               <form id="formNovoChamado" onSubmit={handleSalvarNovoChamado} className="space-y-6">
                 {erroNovoChamado && (
                   <div className="rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
@@ -1170,7 +1170,7 @@ export default function CentralOcorrencias() {
                   </div>
                 )}
                 
-                <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
+                <div className="bg-white p-4 sm:p-5 rounded-xl border border-gray-200 shadow-sm">
                   <label className="block text-xs font-bold text-gray-700 uppercase mb-2">1. Selecione o Acolhido *</label>
                   
                   <div className="relative">
@@ -1216,7 +1216,7 @@ export default function CentralOcorrencias() {
                   )}
                 </div>
 
-                <div className="bg-white p-5 rounded-xl border border-amber-200 shadow-sm space-y-4">
+                <div className="bg-white p-4 sm:p-5 rounded-xl border border-amber-200 shadow-sm space-y-4">
                   <label className="flex items-start gap-3 cursor-pointer">
                     <input
                       type="checkbox"
@@ -1395,8 +1395,8 @@ export default function CentralOcorrencias() {
                   </label>
                 </div>
 
-                <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
-                  <div className="flex justify-between items-center mb-3">
+                <div className="bg-white p-4 sm:p-5 rounded-xl border border-gray-200 shadow-sm">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:justify-between sm:items-center mb-3">
                     <h3 className="text-xs font-bold text-gray-700 uppercase">3. Copiar Equipe (@Menções)</h3>
                     <button 
                       type="button" 

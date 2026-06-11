@@ -106,10 +106,10 @@ export default function PasskeysModal({ onClose }) {
   const suporte = passkeysDisponiveis();
 
   return (
-    <div className="fixed inset-0 z-[10020] flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm">
-      <div className="w-full max-w-lg overflow-hidden rounded-3xl bg-white shadow-2xl">
-        <div className="flex items-start justify-between gap-4 bg-gradient-to-r from-teal-600 via-sky-500 to-amber-400 p-5 text-white">
-          <div>
+    <div className="fixed inset-0 z-[10020] flex items-center justify-center bg-slate-950/60 p-3 backdrop-blur-sm sm:p-4">
+      <div className="flex max-h-[calc(100vh-1.5rem)] w-full max-w-lg flex-col overflow-hidden rounded-3xl bg-white shadow-2xl sm:max-h-[calc(100vh-2rem)]">
+        <div className="flex shrink-0 items-start justify-between gap-4 bg-gradient-to-r from-teal-600 via-sky-500 to-amber-400 p-5 text-white">
+          <div className="min-w-0">
             <div className="flex items-center gap-2">
               <Fingerprint size={22} />
               <h2 className="text-lg font-black">Acesso biométrico</h2>
@@ -129,7 +129,7 @@ export default function PasskeysModal({ onClose }) {
           </button>
         </div>
 
-        <div className="space-y-4 p-5">
+        <div className="min-h-0 space-y-4 overflow-y-auto p-4 sm:p-5">
           {!suporte && (
             <div className="rounded-2xl border border-amber-100 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-800">
               Este navegador ou conexão não suporta passkeys. Use HTTPS e um aparelho com bloqueio de tela ativo.
@@ -180,7 +180,7 @@ export default function PasskeysModal({ onClose }) {
                 {passkeys.map((passkey) => (
                   <div
                     key={passkey.id}
-                    className="flex items-center justify-between gap-3 rounded-2xl border border-slate-100 bg-white p-4"
+                    className="flex min-w-0 items-center justify-between gap-3 rounded-2xl border border-slate-100 bg-white p-4"
                   >
                     <div className="min-w-0">
                       <p className="truncate text-sm font-black text-slate-800">

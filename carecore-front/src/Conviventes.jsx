@@ -698,9 +698,9 @@ export default function Conviventes() {
                   )}
                 </div>
 
-                <div className="bg-gray-100 p-4 border-t flex flex-col sm:flex-row items-center justify-between gap-4 rounded-b-xl">
+                <div className="bg-gray-100 p-4 border-t flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 rounded-b-xl">
                   <div className="flex-1 w-full text-left">{erro && telaAtual === 'form' && (<span className="text-red-600 font-bold text-xs bg-red-100 px-3 py-1.5 rounded flex items-center w-fit animate-pulse shadow-sm">! {erro}</span>)}</div>
-                  <div className="flex gap-3 w-full sm:w-auto"><button type="button" onClick={() => setTelaAtual('lista')} className="px-5 py-2 bg-white border border-gray-300 rounded-lg text-gray-700 text-sm font-semibold hover:bg-gray-50 transition-colors">Cancelar</button><button type="submit" disabled={salvandoProntuario} className="px-6 py-2 bg-brand text-white rounded-lg text-sm font-bold hover:bg-brandDark shadow transition-all disabled:opacity-60">{salvandoProntuario ? 'Salvando...' : (editandoId ? 'Atualizar prontuário' : 'Salvar prontuário')}</button></div>
+                  <div className="grid w-full grid-cols-1 gap-2 sm:flex sm:w-auto sm:gap-3"><button type="button" onClick={() => setTelaAtual('lista')} className="px-5 py-2 bg-white border border-gray-300 rounded-lg text-gray-700 text-sm font-semibold hover:bg-gray-50 transition-colors">Cancelar</button><button type="submit" disabled={salvandoProntuario} className="px-6 py-2 bg-brand text-white rounded-lg text-sm font-bold hover:bg-brandDark shadow transition-all disabled:opacity-60">{salvandoProntuario ? 'Salvando...' : (editandoId ? 'Atualizar prontuário' : 'Salvar prontuário')}</button></div>
                 </div>
               </form>
             </div>

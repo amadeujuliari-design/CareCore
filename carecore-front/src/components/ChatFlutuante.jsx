@@ -120,6 +120,7 @@ export default function ChatFlutuante() {
   const [carregando, setCarregando] = useState(false);
   const [enviando, setEnviando] = useState(false);
   const [erro, setErro] = useState('');
+  const [viewportMobile, setViewportMobile] = useState(() => window.innerWidth < 640);
   const arrastouRef = useRef(false);
   const mensagensRef = useRef(null);
   const audioContextRef = useRef(null);
@@ -344,6 +345,7 @@ export default function ChatFlutuante() {
 
   useEffect(() => {
     const ajustar = () => {
+      setViewportMobile(window.innerWidth < 640);
       setPosicao((atual) => {
         const ajustada = limitarPosicao(atual, aberto);
         salvarPosicao(ajustada);
@@ -593,10 +595,14 @@ export default function ChatFlutuante() {
     );
   }
 
+  const estiloPainelAberto = viewportMobile
+    ? { left: 12, right: 12, bottom: 12, top: 'auto', width: 'auto' }
+    : { left: posicao.x, top: posicao.y };
+
   return createPortal(
     <section
       className="fixed z-[10000] flex h-[min(560px,calc(100vh-24px))] w-[min(380px,calc(100vw-24px))] flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl shadow-slate-900/25"
-      style={{ left: posicao.x, top: posicao.y }}
+      style={estiloPainelAberto}
       aria-label="Chat interno"
     >
       <header

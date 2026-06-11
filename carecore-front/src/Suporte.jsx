@@ -420,12 +420,12 @@ export default function Suporte() {
                   <p className="text-xs font-black uppercase tracking-wide text-slate-400">Acompanhamento</p>
                   <h2 className="text-xl font-black text-slate-950">Meus chamados</h2>
                 </div>
-                <div className="flex gap-2">
+                <div className="grid w-full grid-cols-1 gap-2 sm:flex sm:w-auto">
                   {usuario.isGestor && (
                     <select
                       value={escopo}
                       onChange={(event) => setEscopo(event.target.value)}
-                      className="rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-600"
+                      className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-600 sm:w-auto"
                     >
                       <option value="meus">Meus</option>
                       <option value="todos">Todos</option>
@@ -438,7 +438,7 @@ export default function Suporte() {
                       if (event.key === 'Enter') carregarChamados();
                     }}
                     placeholder="Buscar ticket"
-                    className="w-36 rounded-2xl border border-slate-200 px-3 py-2 text-xs font-bold"
+                    className="w-full rounded-2xl border border-slate-200 px-3 py-2 text-xs font-bold sm:w-36"
                   />
                 </div>
               </div>

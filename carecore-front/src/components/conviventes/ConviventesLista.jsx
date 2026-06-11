@@ -23,10 +23,10 @@ export default function ConviventesLista({
   statusConviventeClasse,
 }) {
   return (
-    <div className="bg-white p-8 rounded-2xl shadow-sm border border-gray-100">
-      <div className="flex justify-between items-center mb-8 border-b pb-4">
+    <div className="bg-white p-4 sm:p-8 rounded-2xl shadow-sm border border-gray-100">
+      <div className="flex flex-col gap-3 sm:flex-row sm:justify-between sm:items-center mb-8 border-b pb-4">
         <h2 className="text-2xl font-bold text-gray-800">População Acolhida</h2>
-        <button onClick={abrirFormulario} className="bg-brand text-white px-6 py-2.5 rounded-xl hover:bg-brandDark font-semibold transition-all shadow-md transform hover:-translate-y-0.5">
+        <button onClick={abrirFormulario} className="w-full bg-brand text-white px-6 py-2.5 rounded-xl hover:bg-brandDark font-semibold transition-all shadow-md transform hover:-translate-y-0.5 sm:w-auto">
           + Novo Acolhimento
         </button>
       </div>

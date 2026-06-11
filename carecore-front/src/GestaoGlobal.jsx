@@ -83,7 +83,7 @@ function ToneBadge({ tone = 'slate', children }) {
   };
 
   return (
-    <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${classes[tone] || classes.slate}`}>
+    <span className={`inline-flex max-w-full items-center whitespace-normal break-words rounded-full border px-2.5 py-1 text-center text-xs font-semibold ${classes[tone] || classes.slate}`}>
       {children}
     </span>
   );
@@ -91,10 +91,10 @@ function ToneBadge({ tone = 'slate', children }) {
 
 function MetricCard({ title, value, helper, tone = 'blue' }) {
   return (
-    <article className="rounded-3xl border border-slate-100 bg-white p-5 shadow-sm">
+    <article className="min-w-0 rounded-3xl border border-slate-100 bg-white p-4 shadow-sm sm:p-5">
       <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{title}</p>
-      <div className="mt-3 flex items-end justify-between gap-3">
-        <strong className="text-3xl font-bold tracking-tight text-slate-900">{value}</strong>
+      <div className="mt-3 flex min-w-0 flex-col items-start gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <strong className="min-w-0 break-words text-3xl font-bold tracking-tight text-slate-900">{value}</strong>
         {helper ? <ToneBadge tone={tone}>{helper}</ToneBadge> : null}
       </div>
     </article>
@@ -112,9 +112,9 @@ function Barra({ label, value, tone = 'blue' }) {
 
   return (
     <div>
-      <div className="mb-1 flex items-center justify-between text-xs font-medium text-slate-500">
-        <span>{label}</span>
-        <span>{percentual(value)}</span>
+      <div className="mb-1 flex min-w-0 flex-col gap-1 text-xs font-medium text-slate-500 sm:flex-row sm:items-center sm:justify-between">
+        <span className="min-w-0 break-words">{label}</span>
+        <span className="shrink-0">{percentual(value)}</span>
       </div>
       <div className="h-2.5 overflow-hidden rounded-full bg-slate-100">
         <div className={`h-full rounded-full ${cores[tone] || cores.blue}`} style={{ width: `${Math.min(100, Number(value || 0))}%` }} />
@@ -135,9 +135,9 @@ function BarraQuantidade({ label, value, maxValue, tone = 'emerald', helper }) {
 
   return (
     <div>
-      <div className="mb-1 flex items-center justify-between gap-3 text-xs font-medium text-slate-500">
-        <span>{label}</span>
-        <span>{numero(value)}{helper ? ` · ${helper}` : ''}</span>
+      <div className="mb-1 flex min-w-0 flex-col gap-1 text-xs font-medium text-slate-500 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
+        <span className="min-w-0 break-words">{label}</span>
+        <span className="shrink-0 break-words sm:text-right">{numero(value)}{helper ? ` · ${helper}` : ''}</span>
       </div>
       <div className="h-2.5 overflow-hidden rounded-full bg-slate-100">
         <div className={`h-full rounded-full ${cores[tone] || cores.emerald}`} style={{ width: `${largura}%` }} />
@@ -148,7 +148,7 @@ function BarraQuantidade({ label, value, maxValue, tone = 'emerald', helper }) {
 
 function MenuGestaoGlobal({ secaoAtiva, onChange }) {
   return (
-    <section className="rounded-3xl border border-slate-100 bg-white p-3 shadow-sm">
+    <section className="min-w-0 overflow-hidden rounded-3xl border border-slate-100 bg-white p-3 shadow-sm">
       <div className="mb-3 flex flex-col gap-1 px-2 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
           Navegação gerencial
@@ -158,7 +158,7 @@ function MenuGestaoGlobal({ secaoAtiva, onChange }) {
         </p>
       </div>
 
-      <nav className="flex gap-2 overflow-x-auto pb-1">
+      <nav className="flex max-w-full gap-2 overflow-x-auto pb-1">
         {secoes.map(({ id, label, icon: Icon }) => {
           const ativo = secaoAtiva === id;
 
@@ -185,9 +185,9 @@ function MenuGestaoGlobal({ secaoAtiva, onChange }) {
 
 function FiltroPeriodo({ dataInicio, dataFim, onChangeInicio, onChangeFim, onLimpar }) {
   return (
-    <section className="rounded-3xl border border-slate-100 bg-white p-4 shadow-sm">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-        <div>
+    <section className="min-w-0 overflow-hidden rounded-3xl border border-slate-100 bg-white p-4 shadow-sm">
+      <div className="flex min-w-0 flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <div className="min-w-0">
           <p className="text-[11px] font-semibold uppercase tracking-wide text-emerald-600">
             Período do indicador
           </p>
@@ -199,7 +199,7 @@ function FiltroPeriodo({ dataInicio, dataFim, onChangeInicio, onChangeFim, onLim
           </p>
         </div>
 
-        <div className="grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
+        <div className="grid min-w-0 gap-2 sm:grid-cols-[1fr_1fr_auto]">
           <label className="block">
             <span className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-slate-400">Início</span>
             <input
@@ -236,7 +236,7 @@ function VisaoGeral({ resumo, projetosComSaude }) {
   const projetosCriticos = projetosComSaude.filter(({ saude }) => saude.tone === 'rose').length;
 
   return (
-    <div className="grid gap-5">
+    <div className="grid min-w-0 gap-5">
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <MetricCard title="Projetos da organização" value={numero(totais.projetos)} helper="ativos e vinculados" tone="violet" />
         <MetricCard title="Conviventes ativos" value={numero(totais.conviventes_ativos)} helper={`${numero(totais.conviventes_total)} no total`} />
@@ -244,9 +244,9 @@ function VisaoGeral({ resumo, projetosComSaude }) {
         <MetricCard title="Saídas qualificadas" value={numero(totais.saidas_qualificadas_periodo)} helper={`${percentual(totais.taxa_sucesso_periodo)} de sucesso`} tone="emerald" />
       </div>
 
-      <section className="rounded-3xl border border-slate-100 bg-white p-5 shadow-sm">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-          <div>
+      <section className="min-w-0 overflow-hidden rounded-3xl border border-slate-100 bg-white p-4 shadow-sm sm:p-5">
+        <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          <div className="min-w-0">
             <p className="text-[11px] font-semibold uppercase tracking-wide text-violet-600">Painel executivo</p>
             <h2 className="mt-1 text-xl font-bold text-slate-900">Resumo consolidado da organização</h2>
             <p className="mt-1 text-sm text-slate-500">
@@ -256,7 +256,7 @@ function VisaoGeral({ resumo, projetosComSaude }) {
           <ToneBadge tone="violet">{resumo?.organizacao_nome || 'Organização'}</ToneBadge>
         </div>
 
-        <div className="mt-5 grid gap-4 lg:grid-cols-3">
+        <div className="mt-5 grid min-w-0 gap-4 lg:grid-cols-3">
           {[
             ['Rotina registrada', numero(totais.rotina_registros), 'Registros válidos em todos os projetos'],
             ['Ocorrências pendentes', numero(totais.ocorrencias_pendentes), 'Chamados ainda não resolvidos'],
@@ -264,7 +264,7 @@ function VisaoGeral({ resumo, projetosComSaude }) {
             ['Pendências críticas', numero(totais.ocorrencias_alta_critica), `${projetosCriticos} projeto(s) crítico(s)`],
             ['Histórico qualificado', numero(totais.saidas_qualificadas), 'Total acumulado de saídas qualificadas'],
           ].map(([titulo, valor, texto]) => (
-            <article key={titulo} className="rounded-2xl border border-slate-100 bg-slate-50/80 p-4">
+            <article key={titulo} className="min-w-0 rounded-2xl border border-slate-100 bg-slate-50/80 p-4">
               <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{titulo}</p>
               <strong className="mt-2 block text-2xl font-bold text-slate-900">{valor}</strong>
               <p className="mt-1 text-sm text-slate-500">{texto}</p>
@@ -283,10 +283,10 @@ function Comparativos({ projetosComSaude }) {
   const maxSaidas = Math.max(1, ...rankingSaidas.map(({ projeto }) => projeto.saidas_qualificadas_periodo || 0));
 
   return (
-    <div className="grid gap-5">
-      <section className="rounded-3xl border border-slate-100 bg-white p-5 shadow-sm">
-        <div className="mb-5 flex items-start justify-between gap-3">
-          <div>
+    <div className="grid min-w-0 gap-5">
+      <section className="min-w-0 overflow-hidden rounded-3xl border border-slate-100 bg-white p-4 shadow-sm sm:p-5">
+        <div className="mb-5 flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0">
             <p className="text-[11px] font-semibold uppercase tracking-wide text-emerald-600">Saídas qualificadas</p>
             <h2 className="mt-1 text-xl font-bold text-slate-900">Ranking por projeto no período</h2>
             <p className="mt-1 text-sm text-slate-500">
@@ -296,9 +296,9 @@ function Comparativos({ projetosComSaude }) {
           <ToneBadge tone="emerald">Indicador gerencial</ToneBadge>
         </div>
 
-        <div className="grid gap-4">
+        <div className="grid min-w-0 gap-4">
           {rankingSaidas.map(({ projeto }) => (
-            <article key={projeto.id} className="rounded-2xl border border-slate-100 bg-slate-50/70 p-4">
+            <article key={projeto.id} className="min-w-0 rounded-2xl border border-slate-100 bg-slate-50/70 p-4">
               <BarraQuantidade
                 label={projeto.nome}
                 value={projeto.saidas_qualificadas_periodo}
@@ -313,9 +313,9 @@ function Comparativos({ projetosComSaude }) {
         </div>
       </section>
 
-      <section className="rounded-3xl border border-slate-100 bg-white p-5 shadow-sm">
-        <div className="mb-5 flex items-start justify-between gap-3">
-          <div>
+      <section className="min-w-0 overflow-hidden rounded-3xl border border-slate-100 bg-white p-4 shadow-sm sm:p-5">
+        <div className="mb-5 flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0">
             <p className="text-[11px] font-semibold uppercase tracking-wide text-blue-600">Comparativos</p>
             <h2 className="mt-1 text-xl font-bold text-slate-900">Projetos lado a lado</h2>
             <p className="mt-1 text-sm text-slate-500">
@@ -325,7 +325,7 @@ function Comparativos({ projetosComSaude }) {
           <BarChart3 className="text-blue-400" size={26} />
         </div>
 
-        <div className="grid gap-4 xl:grid-cols-2">
+        <div className="grid min-w-0 gap-4 xl:grid-cols-2">
           {projetosComSaude.map(({ projeto, saude }) => {
             const rotinaBase = Math.max(1, projeto.conviventes_ativos);
             const regularidade = Math.min(100, (projeto.rotina_registros / rotinaBase) * 4);
@@ -333,9 +333,9 @@ function Comparativos({ projetosComSaude }) {
             const coberturaSisa = Math.min(100, (projeto.sisa_lancamentos / sisaBase) * 100);
 
             return (
-              <article key={projeto.id} className="rounded-3xl border border-slate-100 bg-slate-50/70 p-5">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                  <div>
+              <article key={projeto.id} className="min-w-0 rounded-3xl border border-slate-100 bg-slate-50/70 p-4 sm:p-5">
+                <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0">
                     <h3 className="text-base font-bold text-slate-900">{projeto.nome}</h3>
                     <p className="mt-1 text-xs text-slate-500">
                       {numero(projeto.conviventes_ativos)} conviventes ativos · {numero(projeto.saidas_qualificadas_periodo)} saída(s) qualificada(s) no período
@@ -372,16 +372,16 @@ function SaudeOperacional({ projetosComSaude }) {
   });
 
   return (
-    <div className="grid gap-5 xl:grid-cols-[1fr_0.9fr]">
-      <section className="rounded-3xl border border-slate-100 bg-white p-5 shadow-sm">
+    <div className="grid min-w-0 gap-5 xl:grid-cols-[1fr_0.9fr]">
+      <section className="min-w-0 overflow-hidden rounded-3xl border border-slate-100 bg-white p-4 shadow-sm sm:p-5">
         <p className="text-[11px] font-semibold uppercase tracking-wide text-emerald-600">Saúde operacional</p>
         <h2 className="mt-1 text-xl font-bold text-slate-900">Índice por projeto</h2>
 
         <div className="mt-5 space-y-4">
           {projetosComSaude.map(({ projeto, saude }) => (
-            <article key={projeto.id} className="rounded-2xl border border-slate-100 bg-slate-50/70 p-4">
-              <div className="mb-3 flex items-center justify-between gap-3">
-                <div>
+            <article key={projeto.id} className="min-w-0 rounded-2xl border border-slate-100 bg-slate-50/70 p-4">
+              <div className="mb-3 flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="min-w-0">
                   <h3 className="font-bold text-slate-900">{projeto.nome}</h3>
                   <p className="text-xs text-slate-500">
                     {numero(projeto.ocorrencias_pendentes)} ocorrência(s) pendente(s) · {numero(projeto.avisos_ativos)} aviso(s) ativo(s)
@@ -395,7 +395,7 @@ function SaudeOperacional({ projetosComSaude }) {
         </div>
       </section>
 
-      <section className="rounded-3xl border border-slate-100 bg-white p-5 shadow-sm">
+      <section className="min-w-0 overflow-hidden rounded-3xl border border-slate-100 bg-white p-4 shadow-sm sm:p-5">
         <p className="text-[11px] font-semibold uppercase tracking-wide text-rose-600">Alertas gerenciais</p>
         <h2 className="mt-1 text-xl font-bold text-slate-900">Pontos que exigem atenção</h2>
 
@@ -406,10 +406,10 @@ function SaudeOperacional({ projetosComSaude }) {
             </div>
           ) : (
             alertas.map(([projeto, texto, nivel], index) => (
-              <div key={`${projeto}-${index}`} className="rounded-2xl border border-slate-100 bg-slate-50/70 p-4">
-                <div className="flex items-start gap-3">
+              <div key={`${projeto}-${index}`} className="min-w-0 rounded-2xl border border-slate-100 bg-slate-50/70 p-4">
+                <div className="flex min-w-0 items-start gap-3">
                   <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-violet-400" />
-                  <div>
+                  <div className="min-w-0">
                     <p className="text-sm font-semibold text-slate-800">{projeto}</p>
                     <p className="mt-1 text-sm text-slate-600">{texto}</p>
                     <p className="mt-1 text-xs font-semibold text-slate-400">{nivel}</p>
@@ -428,14 +428,14 @@ function RelatoriosConsolidados({ resumo }) {
   const totais = resumo?.totais || {};
 
   return (
-    <section className="rounded-3xl border border-slate-100 bg-white p-5 shadow-sm">
+    <section className="min-w-0 overflow-hidden rounded-3xl border border-slate-100 bg-white p-4 shadow-sm sm:p-5">
       <p className="text-[11px] font-semibold uppercase tracking-wide text-violet-600">Relatórios consolidados</p>
       <h2 className="mt-1 text-xl font-bold text-slate-900">Base executiva da organização</h2>
       <p className="mt-1 text-sm text-slate-500">
         Esta seção organiza os números consolidados para acompanhamento gerencial. Exportações podem ser conectadas aqui depois.
       </p>
 
-      <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+      <div className="mt-5 grid min-w-0 gap-4 md:grid-cols-2 xl:grid-cols-3">
         {[
           ['Operação', `${numero(totais.conviventes_ativos)} conviventes ativos`, `${percentual(totais.ocupacao_percentual)} de ocupação consolidada`],
           ['Saídas qualificadas', `${numero(totais.saidas_qualificadas_periodo)} no período`, `${percentual(totais.taxa_sucesso_periodo)} de sucesso nas inativações`],
@@ -446,7 +446,7 @@ function RelatoriosConsolidados({ resumo }) {
           ['Equipe', `${numero(totais.usuarios_ativos)} usuários ativos`, 'Somatório da equipe dos projetos'],
           ['Projetos', `${numero(totais.projetos)} projeto(s)`, 'Unidades vinculadas à organização'],
         ].map(([titulo, valor, detalhe]) => (
-          <article key={titulo} className="rounded-2xl border border-slate-100 bg-slate-50/70 p-4">
+          <article key={titulo} className="min-w-0 rounded-2xl border border-slate-100 bg-slate-50/70 p-4">
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{titulo}</p>
             <strong className="mt-2 block text-lg font-bold text-slate-900">{valor}</strong>
             <p className="mt-1 text-sm text-slate-500">{detalhe}</p>
@@ -459,20 +459,20 @@ function RelatoriosConsolidados({ resumo }) {
 
 function ProjetosGestao({ projetosComSaude, projetoAtualId, selecionandoProjetoId, onSelecionarProjeto }) {
   return (
-    <section className="rounded-3xl border border-slate-100 bg-white p-5 shadow-sm">
+    <section className="min-w-0 overflow-hidden rounded-3xl border border-slate-100 bg-white p-4 shadow-sm sm:p-5">
       <p className="text-[11px] font-semibold uppercase tracking-wide text-blue-600">Projetos</p>
       <h2 className="mt-1 text-xl font-bold text-slate-900">Projetos da organização</h2>
       <p className="mt-1 text-sm text-slate-500">
         Consulte indicadores e alterne o projeto operacional ativo quando precisar atuar em uma unidade.
       </p>
 
-      <div className="mt-5 grid gap-3">
+      <div className="mt-5 grid min-w-0 gap-3">
         {projetosComSaude.map(({ projeto, saude }) => (
-          <article key={projeto.id} className="rounded-2xl border border-slate-100 bg-slate-50/70 p-4">
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-              <div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <h3 className="font-bold text-slate-900">{projeto.nome}</h3>
+          <article key={projeto.id} className="min-w-0 rounded-2xl border border-slate-100 bg-slate-50/70 p-4">
+            <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <div className="min-w-0">
+                <div className="flex min-w-0 flex-wrap items-center gap-2">
+                  <h3 className="min-w-0 break-words font-bold text-slate-900">{projeto.nome}</h3>
                   {projetoAtualId === projeto.id ? <ToneBadge tone="violet">Projeto ativo</ToneBadge> : null}
                   <ToneBadge tone={saude.tone}>{saude.label}</ToneBadge>
                 </div>
@@ -481,13 +481,13 @@ function ProjetosGestao({ projetosComSaude, projetoAtualId, selecionandoProjetoI
                 </p>
               </div>
 
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
                 <ToneBadge tone="blue">{percentual(projeto.ocupacao_percentual)} ocupação</ToneBadge>
                 <button
                   type="button"
                   onClick={() => onSelecionarProjeto(projeto.id)}
                   disabled={projetoAtualId === projeto.id || selecionandoProjetoId === projeto.id}
-                  className="rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="w-full rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
                 >
                   {projetoAtualId === projeto.id
                     ? 'Em operação'
@@ -632,7 +632,7 @@ export default function GestaoGlobal() {
         />
 
         <ScrollArea className="pb-24">
-          <div className="mx-auto grid max-w-7xl gap-5">
+          <div className="mx-auto grid w-full min-w-0 max-w-7xl gap-5 overflow-hidden">
             <MenuGestaoGlobal secaoAtiva={secaoAtiva} onChange={setSecaoAtiva} />
 
             <FiltroPeriodo
