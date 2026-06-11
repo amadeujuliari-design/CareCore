@@ -39,6 +39,13 @@ from security import (
     usuario_eh_manutencao,
 )
 from imagem_upload import eh_arquivo_imagem, padronizar_upload_imagem
+from storage_uploads import (
+    StorageErro,
+    extrair_bucket_caminho_storage,
+    remover_supabase_storage,
+    storage_supabase_configurado,
+    upload_supabase_storage,
+)
 
 
 router = APIRouter(
@@ -48,6 +55,41 @@ router = APIRouter(
 
 _UPLOADS_RELATORIOS = Path("uploads/relatorios")
 _TAMANHO_MAXIMO_LOGO_BYTES = 2 * 1024 * 1024
+
+
+def _content_type_logo(extensao: str) -> str:
+    return "image/png" if extensao == ".png" else "image/jpeg"
+
+
+def _remover_logo_relatorio_armazenado(caminho_logo: str | None) -> None:
+    if not caminho_logo:
+        return
+
+    storage_ref = extrair_bucket_caminho_storage(caminho_logo)
+    if storage_ref and storage_supabase_configurado():
+        bucket, caminho = storage_ref
+        try:
+            remover_supabase_storage(bucket, caminho)
+        except StorageErro:
+            pass
+        return
+
+    caminho_normalizado = caminho_logo.strip().replace("\\", "/")
+    if caminho_normalizado.startswith("/uploads/relatorios/"):
+        caminho_relativo = caminho_normalizado.removeprefix("/uploads/relatorios/")
+    elif caminho_normalizado.startswith("uploads/relatorios/"):
+        caminho_relativo = caminho_normalizado.removeprefix("uploads/relatorios/")
+    else:
+        return
+
+    candidato = (_UPLOADS_RELATORIOS / caminho_relativo).resolve()
+    try:
+        candidato.relative_to(_UPLOADS_RELATORIOS.resolve())
+    except ValueError:
+        return
+
+    if candidato.is_file():
+        candidato.unlink()
 
 
 def exigir_usuario_global(usuario_atual: dict) -> None:
@@ -498,15 +540,31 @@ async def enviar_logo_identidade_relatorios(
             detail="Não foi possível processar a imagem enviada.",
         ) from exc
 
-    pasta_projeto = _UPLOADS_RELATORIOS / projeto.id
-    pasta_projeto.mkdir(parents=True, exist_ok=True)
     nome_arquivo = f"logo_{uuid.uuid4().hex}{extensao_final}"
-    caminho = pasta_projeto / nome_arquivo
-    caminho.write_bytes(conteudo)
+    caminho_anterior = projeto.relatorio_logo_url
 
-    projeto.relatorio_logo_url = f"/uploads/relatorios/{projeto.id}/{nome_arquivo}"
+    if storage_supabase_configurado():
+        try:
+            projeto.relatorio_logo_url = upload_supabase_storage(
+                f"relatorios/{projeto.id}/{nome_arquivo}",
+                conteudo,
+                content_type=_content_type_logo(extensao_final),
+            )
+        except StorageErro as exc:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Não foi possível salvar o logotipo no storage persistente.",
+            ) from exc
+    else:
+        pasta_projeto = _UPLOADS_RELATORIOS / projeto.id
+        pasta_projeto.mkdir(parents=True, exist_ok=True)
+        caminho = pasta_projeto / nome_arquivo
+        caminho.write_bytes(conteudo)
+        projeto.relatorio_logo_url = f"/uploads/relatorios/{projeto.id}/{nome_arquivo}"
+
     await db.commit()
     await db.refresh(projeto)
+    _remover_logo_relatorio_armazenado(caminho_anterior)
     return montar_identidade_relatorio(projeto)
 
 
@@ -517,9 +575,11 @@ async def remover_logo_identidade_relatorios(
 ):
     exigir_gestor_projeto(usuario_atual)
     projeto = await obter_projeto_da_sessao(db, usuario_atual)
+    caminho_anterior = projeto.relatorio_logo_url
     projeto.relatorio_logo_url = None
     await db.commit()
     await db.refresh(projeto)
+    _remover_logo_relatorio_armazenado(caminho_anterior)
     return montar_identidade_relatorio(projeto)
 
 

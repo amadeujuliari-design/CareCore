@@ -20,3 +20,9 @@ def test_candidatos_caminho_upload_normaliza_barras_windows():
     assert candidatos_caminho_upload(r"uploads\documentos\foto.png")[0] == (
         "/uploads/documentos/foto.png"
     )
+
+
+def test_candidatos_caminho_upload_inclui_caminho_storage():
+    assert "/storage/carecore/relatorios/projeto/logo.png" in candidatos_caminho_upload(
+        "/storage/carecore/relatorios/projeto/logo.png"
+    )

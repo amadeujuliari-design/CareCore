@@ -4,6 +4,8 @@ from PIL import Image
 
 from imagem_upload import (
     FOTO_PERFIL_TAMANHO,
+    LOGO_RELATORIO_TAMANHO_MAX,
+    padronizar_logo_relatorio_bytes,
     padronizar_foto_perfil_bytes,
     padronizar_imagem_documento_bytes,
     padronizar_upload_imagem,
@@ -44,3 +46,27 @@ def test_padronizar_upload_imagem_retorna_jpg_para_foto_perfil():
 
     assert extensao == ".jpg"
     assert conteudo.startswith(b"\xff\xd8")
+
+
+def test_padronizar_logo_relatorio_limita_dimensoes():
+    original = _criar_imagem_teste(2400, 900)
+    padronizada = padronizar_logo_relatorio_bytes(original)
+
+    with Image.open(BytesIO(padronizada)) as img:
+        largura_max, altura_max = LOGO_RELATORIO_TAMANHO_MAX
+        assert img.width <= largura_max
+        assert img.height <= altura_max
+
+
+def test_padronizar_upload_imagem_retorna_png_para_logo_transparente():
+    img = Image.new("RGBA", (900, 300), color=(120, 80, 200, 120))
+    buffer = BytesIO()
+    img.save(buffer, format="PNG")
+
+    conteudo, extensao = padronizar_upload_imagem(
+        buffer.getvalue(),
+        tipo_documento="Logo de Relatório",
+    )
+
+    assert extensao == ".png"
+    assert conteudo.startswith(b"\x89PNG")

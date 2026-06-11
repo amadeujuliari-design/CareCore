@@ -6,13 +6,19 @@
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import get_db
 from models import ConviventeDB, DocumentoConviventeDB, InstituicaoDB
 from security import get_usuario_logado, usuario_eh_gestor
+from storage_uploads import (
+    StorageErro,
+    baixar_supabase_storage,
+    extrair_bucket_caminho_storage,
+    storage_supabase_configurado,
+)
 
 router = APIRouter(prefix="/api", tags=["Arquivos"])
 
@@ -155,6 +161,32 @@ async def servir_arquivo_upload(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Arquivo não encontrado.",
+        )
+
+    storage_ref = extrair_bucket_caminho_storage(caminho_normalizado)
+    if storage_ref is not None:
+        if not storage_supabase_configurado():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Arquivo não encontrado.",
+            )
+
+        bucket, caminho_storage = storage_ref
+        try:
+            arquivo = baixar_supabase_storage(bucket, caminho_storage)
+        except StorageErro as exc:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Arquivo não encontrado.",
+            ) from exc
+
+        return Response(
+            content=arquivo.conteudo,
+            media_type=arquivo.content_type,
+            headers={
+                "Cache-Control": "private, max-age=3600",
+                "Content-Disposition": f'inline; filename="{Path(caminho_storage).name}"',
+            },
         )
 
     candidato = (_UPLOADS_ROOT / caminho_normalizado).resolve()
