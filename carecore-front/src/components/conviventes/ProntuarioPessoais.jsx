@@ -113,7 +113,26 @@ export default function ProntuarioPessoais({
         <div><label className="block text-xs font-semibold text-gray-700 mb-1">Identidade de Gênero</label><select name="identidade_genero" value={formData.identidade_genero} onChange={handleChange} className="w-full px-3 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none bg-white text-sm"><option value="">Selecione...</option><option value="Homem Cisgênero">Homem Cisgênero</option><option value="Mulher Cisgênero">Mulher Cisgênero</option><option value="Homem Transgênero">Homem Transgênero</option><option value="Mulher Transgênero">Mulher Transgênero</option><option value="Não-Binário">Não-Binário</option><option value="Outro">Outro</option></select></div>
         <div><label className="block text-xs font-semibold text-gray-700 mb-1">Estado Civil</label><select name="estado_civil" value={formData.estado_civil} onChange={handleChange} className="w-full px-3 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none bg-white text-sm"><option value="">Selecione...</option><option value="Solteiro(a)">Solteiro(a)</option><option value="Casado(a)">Casado(a)</option><option value="Divorciado(a)">Divorciado(a)</option><option value="Viúvo(a)">Viúvo(a)</option><option value="União Estável">União Estável</option></select></div>
         <div><label className="block text-xs font-semibold text-gray-700 mb-1">Telefone / Celular</label><input type="text" name="telefone_celular" value={formData.telefone_celular} onChange={handleChange} onBlur={handleBlur} className={`w-full px-3 py-1.5 border rounded-lg outline-none text-sm ${errosValidacao.telefone_celular ? 'border-red-500 focus:ring-red-500 bg-red-50' : 'border-gray-300 focus:ring-brand'}`} placeholder="(00) 00000-0000" />{errosValidacao.telefone_celular && <p className="text-red-500 text-[10px] mt-0.5 font-bold">{errosValidacao.telefone_celular}</p>}</div>
-        <div className="lg:col-span-3"><label className="block text-xs font-bold text-brand mb-1">Alocação de Quarto / Cama</label><select name="leito_id" value={formData.leito_id} onChange={handleChange} className="w-full px-3 py-1.5 border border-brand/50 rounded-lg outline-none bg-white focus:ring-2 focus:ring-brand text-sm"><option value="">Apenas Convivência Diurna (Sem Pernoite)</option>{quartos.map(q => <optgroup key={q.id} label={`${q.nome} - [${q.tipo_publico} / ${q.modalidade === 'Transitorio' ? 'Transitório' : 'Fixo'}]`}>{q.leitos?.map(l => {if (l.status === 'Livre' || l.id === formData.leito_id) {return <option key={l.id} value={l.id}>{l.identificacao} {l.id === formData.leito_id ? ' (Cama Atual)' : ' (Livre)'}</option>;}return null;})}</optgroup>)}</select></div>
+        <div className="lg:col-span-3">
+          <label className="block text-xs font-bold text-brand mb-1">Alocação de Quarto / Cama</label>
+          <select name="leito_id" value={formData.leito_id} onChange={handleChange} className="w-full px-3 py-1.5 border border-brand/50 rounded-lg outline-none bg-white focus:ring-2 focus:ring-brand text-sm">
+            <option value="">Apenas Convivência Diurna (Sem Pernoite)</option>
+            {quartos.map(q => (
+              <optgroup key={q.id} label={`${q.nome} - [${q.tipo_publico} / ${q.modalidade === 'Transitorio' ? 'Transitório' : 'Fixo'}]`}>
+                {q.leitos?.map(l => {
+                  if (l.status === 'Livre' || l.id === formData.leito_id) {
+                    return (
+                      <option key={l.id} value={l.id}>
+                        {q.nome} - {l.identificacao} {l.id === formData.leito_id ? '(Cama Atual)' : '(Livre)'}
+                      </option>
+                    );
+                  }
+                  return null;
+                })}
+              </optgroup>
+            ))}
+          </select>
+        </div>
       </div>
 
       <div className="pt-4 border-t border-gray-200">
