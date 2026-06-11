@@ -57,8 +57,6 @@ from schemas import (
 from security import (
     bloquear_usuario_global_puro,
     get_usuario_logado,
-    normalizar_perfil_acesso,
-    PERFIL_GESTOR,
     PERFIL_TECNICO,
     usuario_tem_perfil,
     usuario_eh_gestor,
@@ -488,12 +486,13 @@ async def responder_ausencia_justificada(
         if status_atribuido not in {"Ativo", "Inativado"}:
             raise HTTPException(status_code=400, detail="Escolha Ativo ou Inativado para encerrar a ausência justificada.")
 
-        perfil_token = normalizar_perfil_acesso(usuario_atual.get("perfil_acesso"))
-        mesmo_tecnico = str(usuario_atual.get("sub")) == str(convivente.tecnico_id)
-        if perfil_token != PERFIL_GESTOR and not mesmo_tecnico:
+        if not usuario_pode_alterar_status_convivente(usuario_atual, convivente):
             raise HTTPException(
                 status_code=403,
-                detail="Apenas um Gestor ou o Técnico responsável podem encerrar a ausência justificada.",
+                detail=(
+                    "Apenas Gestores, o Técnico responsável ou um Técnico quando "
+                    "o convivente estiver sem técnico atrelado podem encerrar a ausência justificada."
+                ),
             )
 
         if status_atribuido == "Inativado" and not justificativa:
@@ -735,6 +734,17 @@ def usuario_pode_editar_historico_convivente(usuario_atual: dict, convivente: Co
     )
 
 
+def usuario_pode_alterar_status_convivente(usuario_atual: dict, convivente: ConviventeDB) -> bool:
+    if usuario_eh_gestor(usuario_atual):
+        return True
+
+    if not usuario_tem_perfil(usuario_atual, {PERFIL_TECNICO}):
+        return False
+
+    tecnico_id = getattr(convivente, "tecnico_id", None)
+    return not tecnico_id or str(tecnico_id) == str(usuario_atual.get("sub"))
+
+
 @router.get("/conviventes/{convivente_id}/historicos", response_model=List[HistoricoConviventeResponse])
 async def listar_historicos_convivente(
     convivente_id: str,
@@ -951,15 +961,13 @@ async def atualizar_convivente(convivente_id: str, dados_atualizacao: Convivente
     dados = dados_atualizacao.model_dump(exclude_unset=True, exclude={"observacao_status"})
 
     if status_antigo != dados.get("status", status_antigo):
-        perfil_token = normalizar_perfil_acesso(usuario_atual.get("perfil_acesso"))
-        mesmo_tecnico = str(usuario_atual.get("sub")) == str(convivente.tecnico_id)
-
-        if perfil_token != PERFIL_GESTOR and not mesmo_tecnico:
+        if not usuario_pode_alterar_status_convivente(usuario_atual, convivente):
             raise HTTPException(
                 status_code=403,
                 detail=(
                     "Operação negada. "
-                    "Apenas um Gestor ou o Técnico responsável podem alterar o status."
+                    "Apenas Gestores, o Técnico responsável ou um Técnico quando "
+                    "o convivente estiver sem técnico atrelado podem alterar o status."
                 ),
             )
 

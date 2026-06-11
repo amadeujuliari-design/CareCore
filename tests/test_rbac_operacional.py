@@ -3,7 +3,10 @@ from types import SimpleNamespace
 import pytest
 from fastapi import HTTPException
 
-from routers.conviventes import usuario_pode_resolver_ocorrencia
+from routers.conviventes import (
+    usuario_pode_alterar_status_convivente,
+    usuario_pode_resolver_ocorrencia,
+)
 from security import (
     bloquear_usuario_global_puro,
     usuario_eh_gestor,
@@ -87,6 +90,28 @@ def test_tecnico_nao_responsavel_nao_pode_resolver_ocorrencia():
     ocorrencia = SimpleNamespace(tecnico_responsavel_id="tecnico-1")
 
     assert not usuario_pode_resolver_ocorrencia(usuario, ocorrencia)
+
+
+def test_tecnico_pode_alterar_status_de_convivente_sem_tecnico_atrelado():
+    usuario = {
+        "sub": "tecnico-2",
+        "perfil_acesso": "Técnico",
+        "is_master": False,
+    }
+    convivente = SimpleNamespace(tecnico_id=None)
+
+    assert usuario_pode_alterar_status_convivente(usuario, convivente)
+
+
+def test_tecnico_nao_responsavel_nao_pode_alterar_status_com_tecnico_atrelado():
+    usuario = {
+        "sub": "tecnico-2",
+        "perfil_acesso": "Técnico",
+        "is_master": False,
+    }
+    convivente = SimpleNamespace(tecnico_id="tecnico-1")
+
+    assert not usuario_pode_alterar_status_convivente(usuario, convivente)
 
 
 def test_gestor_pode_resolver_ocorrencia_de_qualquer_tecnico():
