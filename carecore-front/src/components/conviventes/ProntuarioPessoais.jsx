@@ -67,7 +67,7 @@ export default function ProntuarioPessoais({
             >
               <option value="Ativo">Ativo (Presente)</option><option value="Ausência justificada">Ausência justificada</option><option value="Inativado">Inativado (Evadiu/Alta)</option><option value="Saída qualificada">Saída qualificada</option><option value="Bloqueado">Bloqueado (Suspensão)</option>
             </select>
-            {!podeMudarStatus && <p className="text-[9px] text-red-500 font-bold mt-1">Apenas o Gerente ou Técnico Responsável podem alterar.</p>}
+            {!podeMudarStatus && <p className="text-[9px] text-red-500 font-bold mt-1">Apenas Gestor, Técnico Responsável ou Técnico em atendimento geral podem alterar.</p>}
           </div>
 
           <div className="md:col-span-1">

@@ -14,12 +14,14 @@ export function usePermissoesProntuario({
     const usuarioPodeGerenciarDocumentosRestritos = PERFIS_DOCUMENTOS_RESTRITOS.includes(perfilUsuario);
     const usuarioEhTecnico = PERFIS_TECNICOS.includes(perfilUsuario);
     const usuarioEhGestao = PERFIS_GESTAO.includes(perfilUsuario);
+    const conviventeSemTecnicoAtrelado = !tecnicoId;
     const usuarioEhTecnicoResponsavel = usuarioEhTecnico && tecnicoId === idUsuarioLogado;
+    const tecnicoPodeMudarStatus = usuarioEhTecnico && (conviventeSemTecnicoAtrelado || usuarioEhTecnicoResponsavel);
 
     return {
       usuarioPodeGerenciarDocumentosRestritos,
       usuarioPodeEnviarDocumentosRestritos: usuarioPodeGerenciarDocumentosRestritos || usuarioEhTecnico,
-      podeMudarStatus: !editandoId || usuarioEhGestao || usuarioEhTecnicoResponsavel,
+      podeMudarStatus: !editandoId || usuarioEhGestao || tecnicoPodeMudarStatus,
       podeCriarHistoricoConvivente: usuarioEhGestao || usuarioEhTecnico,
       podeEditarHistoricoConvivente: usuarioEhGestao || usuarioEhTecnicoResponsavel,
       usuarioPodeImprimirSensiveisConvivente: (convivente) => (
