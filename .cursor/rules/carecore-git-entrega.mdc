@@ -1,0 +1,17 @@
+---
+description: Processo de commit, push e entrega no CareCore+
+alwaysApply: true
+---
+
+# Git, Commit e Entrega
+
+Ao commitar no CareCore+, seja conservador: inclua somente arquivos relacionados a tarefa e deixe artefatos locais fora do commit.
+
+- Antes de commit, revisar `git status`, `git diff` e mensagens recentes.
+- Nunca adicionar `.env`, secrets, backups, checkpoints, caches, `__pycache__`, relatorios temporarios ou arquivos gerados locais.
+- Commit deve ter mensagem curta em portugues e refletir o motivo da mudanca.
+- Nao usar comandos destrutivos de Git sem autorizacao explicita.
+- Se houver mudancas do usuario na arvore de trabalho, preserve-as e nao reverta.
+- Push deve ir para o remoto correto apos commit bem sucedido.
+- Quando o usuario pedir "commitar e subir", interpretar como: commit, push e, se necessario para a arquitetura online, deploy do backend e validacao basica.
+- Se a alteracao exigir Vercel/Fly/secrets/migration, narrar claramente o que foi feito e o que ainda depende do provedor.

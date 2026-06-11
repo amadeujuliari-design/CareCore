@@ -1,0 +1,18 @@
+---
+description: Padroes backend FastAPI, dados e seguranca SaaS
+globs: **/*.py
+alwaysApply: false
+---
+
+# Backend CareCore+
+
+O backend usa FastAPI, SQLAlchemy async e Alembic. Trate dados assistenciais como sensiveis e preserve isolamento SaaS por instituicao.
+
+- Toda query operacional deve respeitar `instituicao_id` ou o escopo equivalente do usuario atual.
+- Valide permissao, perfil, status ativo e escopo antes de criar, editar ou vincular registros.
+- Usuarios inativos nao devem aparecer em fluxos operacionais nem receber novos vinculos; preserve historico sem manter vinculos ativos indevidos.
+- Nao exponha segredos, tokens, senhas, chaves Fernet, dados criptografados ou detalhes internos em logs/respostas.
+- Alteracoes de schema exigem migration Alembic. Alteracoes de regra que limpam dados existentes podem exigir migration de dados.
+- Prefira invariantes claras no backend a correcoes apenas no frontend.
+- Evite consultas N+1 e filtros em memoria quando o banco puder filtrar com seguranca.
+- Antes de deploy com migration, confirme que a migration e reversivel ou que o risco foi explicado.

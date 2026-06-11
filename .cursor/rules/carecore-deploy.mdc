@@ -1,0 +1,18 @@
+---
+description: Processo online CareCore+ com Fly.io, Vercel e migrations
+alwaysApply: true
+---
+
+# Deploy e Ambientes
+
+O CareCore+ tem ambientes separados. Local usa `.env`; backend online usa secrets/env da Fly.io; frontend online usa env da Vercel.
+
+- Commit e push nao garantem que o backend online foi publicado.
+- Backend online: publicar com `fly deploy -a carecoreplus-api` a partir da raiz do projeto.
+- Depois de deploy backend, validar `https://carecoreplus-api.fly.dev/api/health`.
+- Se houver migration Alembic nova, aplicar no ambiente online e confirmar `alembic current`.
+- Frontend online e publicado pela Vercel apos push, mas pode levar alguns minutos.
+- Variaveis sensiveis devem ser configuradas como secrets/env no provedor, nunca no Git.
+- `DATABASE_URL` local e online normalmente devem ser diferentes.
+- Chaves de criptografia que protegem dados persistidos, como `CREDENCIAIS_CONVIVENTE_KEY`, precisam ser consistentes no ambiente que le aqueles dados.
+- Antes de dizer que esta "subido", diferencie: commit local, push GitHub, deploy Fly, deploy Vercel e migration aplicada.

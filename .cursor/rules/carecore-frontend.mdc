@@ -1,0 +1,18 @@
+---
+description: Padroes frontend React/Vite do CareCore+
+globs: carecore-front/src/**/*.{js,jsx}
+alwaysApply: false
+---
+
+# Frontend CareCore+
+
+O frontend usa React/Vite. Mantenha interfaces simples, claras, institucionais e coerentes com os fluxos assistenciais.
+
+- Use `API_BASE_URL` e os servicos/utilitarios existentes para chamadas HTTP.
+- Nao hardcode backend local em telas ou servicos. Producao deve apontar para a API online correta.
+- Nao confie apenas no frontend para regras de seguranca; o backend deve validar novamente.
+- Em listas operacionais, respeite filtros vindos do backend para status ativo, perfil e escopo.
+- Mensagens de erro devem ajudar o usuario sem expor stack trace, token, chave, payload sensivel ou detalhe interno.
+- Preserve consistencia visual e evite refatoracoes amplas quando a correcao for localizada.
+- Para telas de impressao, priorize legibilidade, A4, economia de espaco e informacao essencial.
+- Ao mexer em autenticacao, passkeys, tokens ou contexto de usuario, avalie impacto no login local e online.

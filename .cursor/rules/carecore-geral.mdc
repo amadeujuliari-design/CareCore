@@ -1,0 +1,16 @@
+---
+description: Contexto geral e padrao senior para o CareCore+
+alwaysApply: true
+---
+
+# CareCore+ - Regra Geral
+
+O CareCore+ e um SaaS institucional de gestao assistencial. Trate cada mudanca com criterio senior, buscando nota minima 9/10 em arquitetura, seguranca, performance, manutencao e clareza operacional.
+
+- Antes de alterar codigo, entenda o fluxo existente e siga os padroes locais.
+- Preserve separacao entre ambientes local e online. `.env` local nao representa automaticamente Fly.io ou Vercel.
+- Nunca commite segredos, `.env`, dumps, backups, `__pycache__`, relatorios temporarios, checkpoints, `.docx` ou artefatos locais.
+- Nao reverta alteracoes existentes sem pedido explicito do usuario.
+- Prefira mudancas pequenas, rastreaveis e alinhadas ao dominio do sistema.
+- Em duvida entre rapidez e seguranca de dados, privilegie seguranca e consistencia.
+- Explique riscos reais de producao quando a decisao envolver banco, autenticacao, criptografia, deploy ou dados sensiveis.
