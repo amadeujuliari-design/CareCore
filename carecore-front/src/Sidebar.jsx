@@ -6,10 +6,11 @@ import {
   ChartNoAxesColumnIncreasing,
   ChevronDown,
   ClipboardList,
-  Cloud,
   FileBarChart,
+  Fingerprint,
   KeyRound,
   LayoutDashboard,
+  LifeBuoy,
   MessageSquareWarning,
   PackageOpen,
   PanelsTopLeft,
@@ -19,9 +20,11 @@ import {
 } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import logoCarecore from './assets/logo.PNG';
+import PasskeysModal from './components/PasskeysModal';
 import UserAvatar from './components/UserAvatar';
 import api, { limparSessaoLocal } from './services/api';
 import { API_ROOT } from './config/apiBase';
+import { decodificarPayloadJwt } from './utils/jwtUtils';
 import {
   DIREITOS_RESERVADOS_TITULO,
   obterUrlDireitosReservados,
@@ -99,6 +102,7 @@ export default function Sidebar() {
   const [menusExpandidos, setMenusExpandidos] = useState({});
   const [historicoLegadoAtivo, setHistoricoLegadoAtivo] = useState(false);
   const [modalSenhaAberto, setModalSenhaAberto] = useState(false);
+  const [modalPasskeysAberto, setModalPasskeysAberto] = useState(false);
   const [senhaAtual, setSenhaAtual] = useState('');
   const [novaSenha, setNovaSenha] = useState('');
   const [confirmarSenha, setConfirmarSenha] = useState('');
@@ -111,6 +115,7 @@ export default function Sidebar() {
   let nomeUsuario = 'Usuário';
   let usuarioSessao = null;
   let isGlobal = false;
+  let isManutencao = false;
 
   try {
     const usuarioRaw = localStorage.getItem('@CareCore:user') || localStorage.getItem('usuario');
@@ -120,10 +125,11 @@ export default function Sidebar() {
     }
 
     if (token) {
-      const payload = JSON.parse(atob(token.split('.')[1]));
+      const payload = decodificarPayloadJwt(token) || {};
       perfilUsuario = payload.perfil_acesso || '';
       nomeUsuario = usuarioSessao?.nome || payload.nome || payload.email || 'Usuário';
       isGlobal = usuarioSessao?.is_global === true || payload.is_global === true;
+      isManutencao = usuarioSessao?.is_manutencao === true || payload.is_manutencao === true || perfilUsuario === 'Manutenção';
     }
   } catch (e) {
     console.error('Erro ao ler perfil no menu lateral', e);
@@ -135,6 +141,7 @@ export default function Sidebar() {
     Gerente: 'Gestor',
     Tecnico: 'Técnico',
     Executivo: 'Global',
+    Manutencao: 'Manutenção',
   }[perfilUsuario] || perfilUsuario;
 
   const nomeExibicao = nomeExibicaoSidebar(nomeUsuario);
@@ -278,6 +285,11 @@ export default function Sidebar() {
           label: 'Usuários',
           perfis: ['Gestor', 'Global']
         },
+        {
+          path: '/suporte',
+          icon: LifeBuoy,
+          label: 'Suporte'
+        },
       ]
     },
     {
@@ -299,17 +311,6 @@ export default function Sidebar() {
         }
       ]
     },
-    {
-      title: 'Suporte',
-      items: [
-        {
-          path: '/backup',
-          icon: Cloud,
-          label: 'Backup',
-          disabled: true
-        }
-      ]
-    }
   ];
 
   const handleLogout = () => {
@@ -394,6 +395,8 @@ export default function Sidebar() {
   };
 
   const usuarioPodeVerItem = (item) => {
+    if (isManutencao) return true;
+
     const perfilPermitido = !item.perfis || item.perfis.includes(perfilNormalizado);
     const globalPermitido = !item.globalOnly || isGlobal;
     const featurePermitida = item.feature !== 'historicoLegado' || historicoLegadoAtivo;
@@ -600,6 +603,18 @@ export default function Sidebar() {
                 Alterar senha
               </button>
 
+              <button
+                type="button"
+                onClick={() => {
+                  setMenuMobileAberto(false);
+                  setModalPasskeysAberto(true);
+                }}
+                className="carecore-logout-button"
+              >
+                <Fingerprint size={14} />
+                Acesso biométrico
+              </button>
+
               <div className="carecore-version-card">
                 <p>
                   <strong>CARECORE+</strong> <span>v1.0.0</span>
@@ -665,6 +680,15 @@ export default function Sidebar() {
         >
           <KeyRound size={14} />
           Alterar senha
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setModalPasskeysAberto(true)}
+          className="carecore-logout-button"
+        >
+          <Fingerprint size={14} />
+          Acesso biométrico
         </button>
 
         <div className="carecore-version-card">
@@ -801,6 +825,10 @@ export default function Sidebar() {
             </div>
           </form>
         </div>
+      )}
+
+      {modalPasskeysAberto && (
+        <PasskeysModal onClose={() => setModalPasskeysAberto(false)} />
       )}
     </>
   );

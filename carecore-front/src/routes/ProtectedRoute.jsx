@@ -46,6 +46,7 @@ export default function ProtectedRoute({
 
   if (
     perfis.length > 0 &&
+    usuario.is_manutencao !== true &&
     !perfis.map(normalizarPerfil).includes(normalizarPerfil(usuario.perfil_acesso))
   ) {
     return (

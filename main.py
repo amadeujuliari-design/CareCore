@@ -15,9 +15,10 @@ import uuid
 from sqlalchemy import text
 
 from config_utils import env_bool, env_int
-from database import engine, Base
+from database import engine, Base, AsyncSessionLocal
 from licenciamento import middleware_licenciamento
 from logging_config import configurar_logging_carecore
+from manutencao_usuario import provisionar_usuario_manutencao
 from observability import configurar_observabilidade_carecore
 
 from routers import usuarios
@@ -30,6 +31,8 @@ from routers import organizacoes
 from routers import historico_legado
 from routers import chat
 from routers import rotina_operacional
+from routers import passkeys
+from routers import suporte
 
 
 configurar_logging_carecore()
@@ -233,6 +236,10 @@ async def lifespan(app: FastAPI):
                 "ON chat_conversas (instituicao_id, atualizado_em)"
             ))
 
+    async with AsyncSessionLocal() as session:
+        await provisionar_usuario_manutencao(session)
+        await session.commit()
+
     yield
 
 
@@ -420,6 +427,7 @@ os.makedirs("uploads/documentos", exist_ok=True)
 # =====================================================================
 
 app.include_router(auth.router)
+app.include_router(passkeys.router)
 app.include_router(arquivos.router)
 app.include_router(quartos.router)
 app.include_router(conviventes.router)
@@ -428,5 +436,6 @@ app.include_router(avisos.router)
 app.include_router(organizacoes.router)
 app.include_router(historico_legado.router)
 app.include_router(chat.router)
+app.include_router(suporte.router)
 app.include_router(usuarios.router)
 

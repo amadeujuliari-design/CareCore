@@ -216,6 +216,82 @@ class UsuarioDB(Base):
         nullable=True,
     )
 
+class UsuarioPasskeyDB(Base):
+    __tablename__ = "usuarios_passkeys"
+    __table_args__ = (
+        Index("ix_usuarios_passkeys_usuario_ativo", "usuario_id", "ativo"),
+        Index("ix_usuarios_passkeys_credential_id", "credential_id"),
+    )
+
+    id = Column(String, primary_key=True, default=get_uuid)
+    usuario_id = Column(String, ForeignKey("usuarios.id"), nullable=False, index=True)
+    instituicao_id = Column(String, ForeignKey("instituicoes.id"), nullable=False, index=True)
+    organizacao_id = Column(String, ForeignKey("organizacoes.id"), nullable=True, index=True)
+
+    credential_id = Column(String, nullable=False, unique=True)
+    public_key = Column(Text, nullable=False)
+    sign_count = Column(Integer, default=0, nullable=False)
+    transports = Column(Text, nullable=True)
+
+    nome_dispositivo = Column(String, nullable=True)
+    user_agent = Column(Text, nullable=True)
+    ativo = Column(Boolean, default=True, nullable=False)
+    criado_em = Column(DateTime, default=datetime.datetime.utcnow)
+    ultimo_uso_em = Column(DateTime, nullable=True)
+    revogado_em = Column(DateTime, nullable=True)
+
+
+class SuporteChamadoDB(Base):
+    __tablename__ = "suporte_chamados"
+    __table_args__ = (
+        Index("ix_suporte_chamados_instituicao_status", "instituicao_id", "status"),
+        Index("ix_suporte_chamados_instituicao_criado", "instituicao_id", "criado_em"),
+        Index("ix_suporte_chamados_usuario_criado", "usuario_id", "criado_em"),
+        UniqueConstraint("numero_ticket", name="uq_suporte_chamados_numero_ticket"),
+    )
+
+    id = Column(String, primary_key=True, default=get_uuid)
+    numero_ticket = Column(String, nullable=False, index=True)
+    instituicao_id = Column(String, ForeignKey("instituicoes.id"), nullable=False, index=True)
+    organizacao_id = Column(String, ForeignKey("organizacoes.id"), nullable=True, index=True)
+    usuario_id = Column(String, ForeignKey("usuarios.id"), nullable=False, index=True)
+
+    modulo = Column(String, nullable=False)
+    tela = Column(String, nullable=False)
+    tipo_problema = Column(String, nullable=False)
+    caminho_sistema = Column(String, nullable=False)
+    url_origem = Column(Text, nullable=True)
+
+    prioridade = Column(String, default="normal", nullable=False)
+    status = Column(String, default="Aberto", nullable=False, index=True)
+    assunto = Column(String, nullable=False)
+    relato = Column(Text, nullable=False)
+
+    email_notificacao_enviado = Column(Boolean, default=False, nullable=False)
+    email_notificacao_erro = Column(Text, nullable=True)
+
+    criado_em = Column(DateTime, default=datetime.datetime.utcnow, index=True)
+    atualizado_em = Column(DateTime, nullable=True)
+    resolvido_em = Column(DateTime, nullable=True)
+
+
+class SuporteChamadoMensagemDB(Base):
+    __tablename__ = "suporte_chamados_mensagens"
+    __table_args__ = (
+        Index("ix_suporte_mensagens_chamado_criado", "chamado_id", "criado_em"),
+    )
+
+    id = Column(String, primary_key=True, default=get_uuid)
+    chamado_id = Column(String, ForeignKey("suporte_chamados.id"), nullable=False, index=True)
+    instituicao_id = Column(String, ForeignKey("instituicoes.id"), nullable=False, index=True)
+    usuario_id = Column(String, ForeignKey("usuarios.id"), nullable=True, index=True)
+
+    autor_nome = Column(String, nullable=False)
+    autor_tipo = Column(String, default="usuario", nullable=False)
+    mensagem = Column(Text, nullable=False)
+    publico = Column(Boolean, default=True, nullable=False)
+    criado_em = Column(DateTime, default=datetime.datetime.utcnow, index=True)
+
 class QuartoDB(Base):
     __tablename__ = "quartos"
     id = Column(String, primary_key=True, default=get_uuid)

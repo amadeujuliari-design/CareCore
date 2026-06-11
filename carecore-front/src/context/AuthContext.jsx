@@ -14,6 +14,7 @@ import {
   registrarAtividadeSessao,
   sessaoExpiradaPorInatividade,
 } from '../utils/sessionInatividadeUtils';
+import { decodificarPayloadJwt } from '../utils/jwtUtils';
 
 const AuthContext = createContext(null);
 
@@ -37,13 +38,11 @@ function obterSessaoLocal() {
 
 function tokenExpirado(token) {
   try {
-    const partes = token.split('.');
+    const payload = decodificarPayloadJwt(token);
 
-    if (partes.length !== 3) {
+    if (!payload) {
       return true;
     }
-
-    const payload = JSON.parse(atob(partes[1]));
 
     if (!payload.exp) {
       return false;

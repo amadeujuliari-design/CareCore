@@ -23,6 +23,7 @@ import {
   cancelarAviso,
 } from "./services/avisosService";
 import { API_ROOT } from "./config/apiBase";
+import { decodificarPayloadJwt } from "./utils/jwtUtils";
 import { criarHeadersAutenticados } from "./utils/requestIdUtils";
 
 const CLASSIFICACOES = ["Informativo", "Atenção", "Urgente", "Comunicado", "Rotina", "Gestão"];
@@ -48,7 +49,7 @@ function lerUsuarioLogado() {
       };
     }
 
-    const payload = JSON.parse(atob(token.split(".")[1]));
+    const payload = decodificarPayloadJwt(token) || {};
 
     return {
       token,

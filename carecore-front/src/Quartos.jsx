@@ -8,6 +8,7 @@ import Sidebar from './Sidebar';
 import { AppShell, MainShell, PageHeader, ScrollArea } from './components/PremiumUI';
 import { API_ROOT } from './config/apiBase';
 import { filtrarOrdenarConviventesPorBusca } from './utils/conviventeBuscaUtils';
+import { decodificarPayloadJwt } from './utils/jwtUtils';
 import { criarHeadersAutenticados } from './utils/requestIdUtils';
 
 export default function Quartos() {
@@ -30,7 +31,7 @@ export default function Quartos() {
 
   try {
     if (token) {
-      const payload = JSON.parse(atob(token.split('.')[1]));
+      const payload = decodificarPayloadJwt(token) || {};
       perfilUsuario = payload.perfil_acesso || '';
       usuarioMaster = Boolean(payload.is_master);
     }

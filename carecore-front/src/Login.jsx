@@ -3,6 +3,15 @@ import { useNavigate, Link } from 'react-router-dom';
 import api from './services/api';
 import { useAuth } from './context/AuthContext';
 import logoCarecore from './assets/logo.PNG';
+import {
+  criarOpcoesLoginPasskey,
+  verificarLoginPasskey,
+} from './services/passkeysService';
+import {
+  obterCredencialPasskey,
+  passkeysDisponiveis,
+} from './utils/passkeysUtils';
+import { decodificarPayloadJwt } from './utils/jwtUtils';
 
 export default function Login() {
   const navigate = useNavigate();
@@ -13,6 +22,7 @@ export default function Login() {
 
   const [erro, setErro] = useState('');
   const [loading, setLoading] = useState(false);
+  const [loadingBiometria, setLoadingBiometria] = useState(false);
 
   // =========================================================
   // LIMPA SESSÕES INVÁLIDAS ANTIGAS
@@ -24,17 +34,13 @@ export default function Login() {
 
       if (!token) return;
 
-      const partesToken = token.split('.');
+      const payload = decodificarPayloadJwt(token);
 
-      if (partesToken.length !== 3) {
+      if (!payload) {
         localStorage.removeItem('token');
         localStorage.removeItem('usuario');
         return;
       }
-
-      const payload = JSON.parse(
-        atob(partesToken[1])
-      );
 
       const exp = payload.exp;
 
@@ -161,6 +167,50 @@ export default function Login() {
 
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleLoginBiometria = async () => {
+    setErro('');
+
+    const emailNormalizado = email
+      .trim()
+      .toLowerCase();
+
+    if (!validarEmail(emailNormalizado)) {
+      setErro('Informe seu e-mail para entrar com biometria neste aparelho.');
+      return;
+    }
+
+    try {
+      setLoadingBiometria(true);
+
+      const opcoes = await criarOpcoesLoginPasskey(emailNormalizado);
+      const credential = await obterCredencialPasskey(opcoes.publicKey);
+      const data = await verificarLoginPasskey({
+        email: emailNormalizado,
+        credential,
+        challenge_token: opcoes.challenge_token,
+      });
+
+      if (!data?.access_token || !data?.usuario) {
+        throw new Error('Resposta de autenticação inválida.');
+      }
+
+      login({
+        token: data.access_token,
+        usuario: data.usuario,
+      });
+
+      navigate('/dashboard');
+    } catch (error) {
+      setErro(
+        error?.response?.data?.detail ||
+        error?.message ||
+        'Não foi possível entrar com biometria.'
+      );
+    } finally {
+      setLoadingBiometria(false);
     }
   };
 
@@ -350,11 +400,22 @@ export default function Login() {
 
                 <button
                   type="submit"
-                  disabled={loading}
+                  disabled={loading || loadingBiometria}
                   className="flex w-full justify-center rounded-2xl bg-gradient-to-r from-blue-600 to-violet-700 px-4 py-3 text-sm font-black text-white shadow-lg shadow-blue-500/20 transition-all hover:from-blue-700 hover:to-violet-800 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {loading ? 'Entrando no sistema...' : 'Entrar'}
                 </button>
+
+                {passkeysDisponiveis() && (
+                  <button
+                    type="button"
+                    onClick={handleLoginBiometria}
+                    disabled={loading || loadingBiometria}
+                    className="flex w-full justify-center rounded-2xl border border-teal-100 bg-gradient-to-r from-teal-50 via-sky-50 to-amber-50 px-4 py-3 text-sm font-black text-teal-800 shadow-sm transition hover:border-teal-200 hover:from-teal-100 hover:to-amber-100 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {loadingBiometria ? 'Validando biometria...' : 'Entrar com biometria neste aparelho'}
+                  </button>
+                )}
               </form>
 
               <div className="mt-8">

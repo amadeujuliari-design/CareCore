@@ -29,6 +29,7 @@ from security import (
     get_usuario_logado,
     gerar_hash_senha,
     usuario_eh_gestor,
+    usuario_eh_manutencao,
     verificar_senha,
 )
 
@@ -46,6 +47,7 @@ router = APIRouter(
 PERFIS_ACESSO_VALIDOS = {
     "Gestor",
     "Global",
+    "Manutenção",
     "Técnico",
     "Orientador",
     "Administrativo",
@@ -56,6 +58,8 @@ PERFIS_LEGADOS_MAPEAMENTO = {
     "Gestao": "Gestor",
     "Gestão": "Gestor",
     "Tecnico": "Técnico",
+    "Manutencao": "Manutenção",
+    "Manutenção": "Manutenção",
 }
 
 
@@ -73,6 +77,18 @@ def obter_usuario_id(usuario_atual: dict) -> Optional[str]:
         or usuario_atual.get("sub")
         or usuario_atual.get("usuario_id")
     )
+
+
+def usuario_sistemico_manutencao(usuario: UsuarioDB | dict | None) -> bool:
+    return usuario_eh_manutencao(usuario)
+
+
+def exigir_nao_manutencao(usuario: UsuarioDB) -> None:
+    if usuario_sistemico_manutencao(usuario):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Usuário sistêmico de manutenção não pode ser alterado pela gestão do cliente.",
+        )
 
 
 def normalizar_perfil_acesso(perfil: Optional[str]) -> str:
@@ -94,7 +110,7 @@ def normalizar_perfil_acesso(perfil: Optional[str]) -> str:
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=(
                 "Perfil de acesso inválido. "
-                "Use: Gestor, Global, Técnico, Orientador, Administrativo ou Consulta."
+                "Use: Gestor, Global, Manutenção, Técnico, Orientador, Administrativo ou Consulta."
             ),
         )
 
@@ -311,6 +327,7 @@ async def listar_usuarios(
     instituicao_id = obter_instituicao_escopo(usuario_atual)
     filtros = [
         UsuarioDB.instituicao_id == instituicao_id,
+        UsuarioDB.perfil_acesso != "Manutenção",
     ]
 
     if ativo is not None:
@@ -361,6 +378,7 @@ async def obter_usuario(
         usuario_id=usuario_id,
         instituicao_id=obter_instituicao_escopo(usuario_atual),
     )
+    exigir_nao_manutencao(usuario)
 
     return usuario_para_response(usuario)
 
@@ -472,6 +490,7 @@ async def editar_usuario(
         usuario_id=usuario_id,
         instituicao_id=obter_instituicao_escopo(usuario_atual),
     )
+    exigir_nao_manutencao(usuario)
 
     dados = payload.model_dump(exclude_unset=True)
     validar_alteracao_global(usuario_atual, dados.get("is_global"))
@@ -550,6 +569,7 @@ async def alterar_status_usuario(
         usuario_id=usuario_id,
         instituicao_id=obter_instituicao_escopo(usuario_atual),
     )
+    exigir_nao_manutencao(usuario)
 
     usuario_logado_id = obter_usuario_id(usuario_atual)
 
@@ -610,6 +630,7 @@ async def redefinir_senha_usuario(
         usuario_id=usuario_id,
         instituicao_id=obter_instituicao_escopo(usuario_atual),
     )
+    exigir_nao_manutencao(usuario)
 
     usuario.senha_hash = gerar_hash_senha(payload.nova_senha)
     incrementar_token_version(usuario)

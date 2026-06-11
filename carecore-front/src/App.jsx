@@ -29,6 +29,7 @@ const Relatorios = lazy(() => import('./Relatorios'));
 const Organizacao = lazy(() => import('./Organizacao'));
 const GestaoGlobal = lazy(() => import('./GestaoGlobal'));
 const HistoricoLegado = lazy(() => import('./HistoricoLegado'));
+const Suporte = lazy(() => import('./Suporte'));
 
 function PageFallback() {
   return (
@@ -195,6 +196,14 @@ export default function App() {
           element={
             <ProtectedRoute perfis={['Gestor', 'Técnico', 'Administrativo']}>
               <ConvenioSisa />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/suporte"
+          element={
+            <ProtectedRoute>
+              <Suporte />
             </ProtectedRoute>
           }
         />

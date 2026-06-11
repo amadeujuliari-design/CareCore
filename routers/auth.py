@@ -28,6 +28,7 @@ from security import (
     gerar_hash_senha,
     criar_access_token,
     normalizar_perfil_acesso,
+    usuario_eh_manutencao,
 )
 
 try:
@@ -332,6 +333,7 @@ def montar_payload_token(usuario: UsuarioDB, projeto: InstituicaoDB | None = Non
         "perfil_acesso": perfil_acesso,
         "is_master": bool(getattr(usuario, "is_master", False)),
         "is_global": bool(getattr(usuario, "is_global", False)),
+        "is_manutencao": usuario_eh_manutencao(usuario),
         "ativo": bool(getattr(usuario, "ativo", True)),
         "token_version": int(getattr(usuario, "token_version", 0) or 0),
     }

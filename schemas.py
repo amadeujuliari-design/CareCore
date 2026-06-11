@@ -251,6 +251,7 @@ class GestaoGlobalResumoResponse(BaseModel):
 PERFIS_ACESSO_VALIDOS = {
     "Gestor",
     "Global",
+    "Manutenção",
     "Técnico",
     "Orientador",
     "Administrativo",
@@ -261,6 +262,8 @@ MAPEAMENTO_PERFIS_LEGADOS = {
     "Gestao": "Gestor",
     "Gestão": "Gestor",
     "Tecnico": "Técnico",
+    "Manutencao": "Manutenção",
+    "Manutenção": "Manutenção",
 }
 
 
@@ -468,7 +471,7 @@ def normalizar_perfil_acesso(valor: Optional[str]) -> str:
     if perfil not in PERFIS_ACESSO_VALIDOS:
         raise ValueError(
             "Perfil de acesso inválido. "
-            "Use: Gestor, Global, Técnico, Orientador, Administrativo ou Consulta."
+            "Use: Gestor, Global, Manutenção, Técnico, Orientador, Administrativo ou Consulta."
         )
 
     return perfil
@@ -784,6 +787,7 @@ class UsuarioSessaoResponse(BaseModel):
     perfil_acesso: str
     is_master: bool = False
     is_global: bool = False
+    is_manutencao: bool = False
     ativo: bool = True
     avatar_url: Optional[str] = None
     token_version: Optional[int] = None
@@ -833,6 +837,45 @@ class Token(BaseModel):
     access_token: str
     token_type: str
     usuario: UsuarioSessaoResponse
+
+
+class PasskeyOptionsResponse(BaseModel):
+    publicKey: dict
+    challenge_token: str
+
+
+class PasskeyRegistroVerifyPayload(BaseModel):
+    credential: dict
+    challenge_token: str
+    nome_dispositivo: Optional[str] = None
+
+
+class PasskeyLoginOptionsPayload(BaseModel):
+    email: str
+
+    @field_validator("email")
+    @classmethod
+    def validar_email(cls, valor: str):
+        email = normalizar_email(valor)
+
+        if not email:
+            raise ValueError("E-mail obrigatório.")
+
+        return email
+
+
+class PasskeyLoginVerifyPayload(PasskeyLoginOptionsPayload):
+    credential: dict
+    challenge_token: str
+
+
+class PasskeyDispositivoResponse(BaseModel):
+    id: str
+    nome_dispositivo: Optional[str] = None
+    criado_em: Optional[datetime] = None
+    ultimo_uso_em: Optional[datetime] = None
+
+    model_config = ConfigDict(from_attributes=True)
 
 # --- QUARTOS E LEITOS ---
 
@@ -1739,4 +1782,134 @@ class ChatMensagensListResponse(BaseModel):
 class ChatResumoResponse(BaseModel):
     total_nao_lidas: int
     total_conversas: int
+
+
+# =====================================================================
+# SUPORTE / CHAMADOS
+# =====================================================================
+
+class SuporteChamadoCreate(BaseModel):
+    modulo: str
+    tela: str
+    tipo_problema: str
+    caminho_sistema: str
+    assunto: str
+    relato: str
+    prioridade: str = "normal"
+    url_origem: Optional[str] = None
+
+    @field_validator("modulo", "tela", "tipo_problema", "caminho_sistema", "assunto", "relato")
+    @classmethod
+    def validar_texto_obrigatorio(cls, valor: str):
+        texto = (valor or "").strip()
+        if not texto:
+            raise ValueError("Campo obrigatório.")
+        return texto
+
+    @field_validator("assunto")
+    @classmethod
+    def validar_assunto(cls, valor: str):
+        texto = valor.strip()
+        if len(texto) > 160:
+            raise ValueError("Assunto muito longo. Limite de 160 caracteres.")
+        return texto
+
+    @field_validator("relato")
+    @classmethod
+    def validar_relato(cls, valor: str):
+        texto = valor.strip()
+        if len(texto) < 10:
+            raise ValueError("Descreva o problema com um pouco mais de detalhe.")
+        if len(texto) > 6000:
+            raise ValueError("Relato muito longo. Limite de 6000 caracteres.")
+        return texto
+
+    @field_validator("prioridade")
+    @classmethod
+    def validar_prioridade(cls, valor: str):
+        prioridade = (valor or "normal").strip().lower()
+        if prioridade not in {"baixa", "normal", "media", "média", "alta", "critica", "crítica"}:
+            raise ValueError("Prioridade inválida.")
+        return "critica" if prioridade == "crítica" else "media" if prioridade == "média" else prioridade
+
+
+class SuporteChamadoMensagemCreate(BaseModel):
+    mensagem: str
+
+    @field_validator("mensagem")
+    @classmethod
+    def validar_mensagem(cls, valor: str):
+        texto = (valor or "").strip()
+        if not texto:
+            raise ValueError("Digite uma resposta.")
+        if len(texto) > 6000:
+            raise ValueError("Mensagem muito longa. Limite de 6000 caracteres.")
+        return texto
+
+
+class SuporteChamadoStatusUpdate(BaseModel):
+    status: str
+
+    @field_validator("status")
+    @classmethod
+    def validar_status(cls, valor: str):
+        status = (valor or "").strip()
+        permitidos = {
+            "Aberto",
+            "Em análise",
+            "Aguardando usuário",
+            "Em desenvolvimento",
+            "Resolvido",
+            "Cancelado",
+        }
+        if status not in permitidos:
+            raise ValueError("Status inválido.")
+        return status
+
+
+class SuporteChamadoMensagemResponse(BaseModel):
+    id: str
+    chamado_id: str
+    usuario_id: Optional[str] = None
+    autor_nome: str
+    autor_tipo: str
+    mensagem: str
+    publico: bool = True
+    criado_em: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class SuporteChamadoResponse(BaseModel):
+    id: str
+    numero_ticket: str
+    instituicao_id: str
+    organizacao_id: Optional[str] = None
+    usuario_id: str
+    usuario_nome: Optional[str] = None
+    usuario_email: Optional[str] = None
+    modulo: str
+    tela: str
+    tipo_problema: str
+    caminho_sistema: str
+    url_origem: Optional[str] = None
+    prioridade: str
+    status: str
+    assunto: str
+    relato: str
+    email_notificacao_enviado: bool = False
+    criado_em: datetime
+    atualizado_em: Optional[datetime] = None
+    resolvido_em: Optional[datetime] = None
+    mensagens: List[SuporteChamadoMensagemResponse] = []
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class SuporteChamadosListResponse(BaseModel):
+    items: List[SuporteChamadoResponse]
+    total: int
+    limit: int
+    offset: int
+    has_more: bool
 

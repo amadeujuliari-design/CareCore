@@ -49,11 +49,12 @@ import {
   telefoneValido,
   usuarioEhGestor,
 } from './utils/usuariosUtils';
+import { decodificarPayloadJwt } from './utils/jwtUtils';
 
 function usuarioLogadoEhGlobal() {
   try {
     const token = localStorage.getItem('@CareCore:token') || localStorage.getItem('token');
-    const payload = token ? JSON.parse(atob(token.split('.')[1])) : {};
+    const payload = decodificarPayloadJwt(token) || {};
 
     return payload?.is_global === true;
   } catch {

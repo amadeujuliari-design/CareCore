@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { decodificarPayloadJwt } from '../utils/jwtUtils';
 
 export function useTokenIdentity(token) {
   return useMemo(() => {
@@ -11,12 +12,12 @@ export function useTokenIdentity(token) {
     }
 
     try {
-      const payload = JSON.parse(atob(token.split('.')[1]));
+      const payload = decodificarPayloadJwt(token);
 
       return {
         payload,
-        perfilUsuario: payload.perfil_acesso || payload.perfil || '',
-        idUsuarioLogado: payload.sub || payload.id || payload.usuario_id || '',
+        perfilUsuario: payload?.perfil_acesso || payload?.perfil || '',
+        idUsuarioLogado: payload?.sub || payload?.id || payload?.usuario_id || '',
       };
     } catch (error) {
       console.error('Erro ao ler dados do token', error);

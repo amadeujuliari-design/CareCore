@@ -11,6 +11,7 @@ import {
   listarUsuariosChat,
   obterResumoChat,
 } from '../services/chatService';
+import { decodificarPayloadJwt } from '../utils/jwtUtils';
 
 const STORAGE_POSICAO = '@CareCore:chat-posicao';
 const LARGURA_BOLHA = 64;
@@ -94,7 +95,7 @@ function obterUsuarioIdSessao(usuario) {
 
   try {
     const token = localStorage.getItem('@CareCore:token') || localStorage.getItem('token');
-    const payload = token ? JSON.parse(atob(token.split('.')[1])) : null;
+    const payload = decodificarPayloadJwt(token);
     return payload?.id || payload?.sub || payload?.usuario_id || '';
   } catch {
     return '';

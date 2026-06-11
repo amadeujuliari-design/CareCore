@@ -6,6 +6,7 @@ import Sidebar from './Sidebar';
 import { AppShell, MainShell, PageHeader, PremiumButton, ScrollArea } from './components/PremiumUI';
 import HistoricoLegadoRotina from './components/historico-legado/HistoricoLegadoRotina';
 import { API_ROOT } from './config/apiBase';
+import { decodificarPayloadJwt } from './utils/jwtUtils';
 import { criarHeadersAutenticados } from './utils/requestIdUtils';
 
 const LIMITE_PADRAO = 10;
@@ -71,7 +72,7 @@ export default function HistoricoLegado() {
   const perfilUsuario = useMemo(() => {
     try {
       if (!token) return '';
-      return JSON.parse(atob(token.split('.')[1]))?.perfil_acesso || '';
+      return decodificarPayloadJwt(token)?.perfil_acesso || '';
     } catch {
       return '';
     }

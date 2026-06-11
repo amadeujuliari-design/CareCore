@@ -69,6 +69,7 @@ bearer_scheme = HTTPBearer(auto_error=True)
 
 PERFIL_GESTOR = "Gestor"
 PERFIL_GLOBAL = "Global"
+PERFIL_MANUTENCAO = "Manutenção"
 PERFIL_TECNICO = "Técnico"
 PERFIL_ORIENTADOR = "Orientador"
 PERFIL_ADMINISTRATIVO = "Administrativo"
@@ -77,6 +78,7 @@ PERFIL_CONSULTA = "Consulta"
 PERFIS_ACESSO_VALIDOS = {
     PERFIL_GESTOR,
     PERFIL_GLOBAL,
+    PERFIL_MANUTENCAO,
     PERFIL_TECNICO,
     PERFIL_ORIENTADOR,
     PERFIL_ADMINISTRATIVO,
@@ -88,6 +90,8 @@ PERFIS_LEGADOS_MAPEAMENTO = {
     "Gestão": PERFIL_GESTOR,
     "Gerente": PERFIL_GESTOR,
     "Tecnico": PERFIL_TECNICO,
+    "Manutencao": PERFIL_MANUTENCAO,
+    "Manutenção": PERFIL_MANUTENCAO,
 }
 
 
@@ -122,6 +126,27 @@ def obter_usuario_id_de_dict(usuario: dict) -> Optional[str]:
         or usuario.get("sub")
         or usuario.get("usuario_id")
     )
+
+
+def email_usuario_manutencao() -> str:
+    return os.getenv(
+        "CARECORE_MANUTENCAO_EMAIL",
+        "manutencao@carecoreplus.com.br",
+    ).strip().lower()
+
+
+def usuario_eh_manutencao(usuario: dict | UsuarioDB | None) -> bool:
+    if not usuario:
+        return False
+
+    if isinstance(usuario, dict):
+        email = (usuario.get("email") or "").strip().lower()
+        perfil = normalizar_perfil_acesso(usuario.get("perfil_acesso"))
+        return bool(usuario.get("is_manutencao")) or perfil == PERFIL_MANUTENCAO or email == email_usuario_manutencao()
+
+    email = (getattr(usuario, "email", None) or "").strip().lower()
+    perfil = normalizar_perfil_acesso(getattr(usuario, "perfil_acesso", None))
+    return perfil == PERFIL_MANUTENCAO or email == email_usuario_manutencao()
 
 
 # =====================================================================
@@ -368,7 +393,18 @@ async def get_usuario_logado(
     instituicao_id = usuario.instituicao_id
     organizacao_id = getattr(usuario, "organizacao_id", None)
 
-    if bool(getattr(usuario, "is_global", False)):
+    if usuario_eh_manutencao(usuario):
+        instituicao_token = payload.get("instituicao_id")
+        if instituicao_token:
+            resultado_projeto = await db.execute(
+                select(InstituicaoDB).where(InstituicaoDB.id == instituicao_token)
+            )
+            projeto_token = resultado_projeto.scalar_one_or_none()
+            if projeto_token:
+                instituicao_id = projeto_token.id
+                organizacao_id = getattr(projeto_token, "organizacao_id", organizacao_id)
+
+    elif bool(getattr(usuario, "is_global", False)):
         instituicao_token = payload.get("instituicao_id")
         if instituicao_token:
             resultado_projeto = await db.execute(
@@ -392,6 +428,7 @@ async def get_usuario_logado(
         "perfil_acesso": perfil_acesso,
         "is_master": bool(getattr(usuario, "is_master", False)),
         "is_global": bool(getattr(usuario, "is_global", False)),
+        "is_manutencao": usuario_eh_manutencao(usuario),
         "ativo": bool(getattr(usuario, "ativo", True)),
         "token_version": int(getattr(usuario, "token_version", 0) or 0),
     }
@@ -446,6 +483,10 @@ def usuario_eh_global_puro(usuario: dict) -> bool:
         )
         and not usuario_eh_gestor(usuario)
     )
+
+
+def usuario_eh_suporte_manutencao(usuario: dict) -> bool:
+    return usuario_eh_manutencao(usuario)
 
 
 def bloquear_usuario_global_puro(usuario: dict) -> None:

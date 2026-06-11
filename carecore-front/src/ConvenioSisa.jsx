@@ -43,6 +43,7 @@ import {
   obterLogoRelatorioDataUrl,
   obterLogoRelatorioSrc,
 } from './utils/relatorioIdentidadePrint';
+import { decodificarPayloadJwt } from './utils/jwtUtils';
 
 export default function ConvenioSisa() {
   const token = localStorage.getItem('@CareCore:token');
@@ -51,7 +52,7 @@ export default function ConvenioSisa() {
 
   try {
     if (token) {
-      const payload = JSON.parse(atob(token.split('.')[1]));
+      const payload = decodificarPayloadJwt(token) || {};
       perfilUsuario = payload.perfil_acesso || '';
       usuarioMaster = Boolean(payload.is_master);
     }

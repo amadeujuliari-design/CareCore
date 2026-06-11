@@ -31,7 +31,13 @@ from schemas import (
     InstituicaoResponse,
     Token,
 )
-from security import criar_access_token, get_usuario_logado, normalizar_perfil_acesso, usuario_eh_gestor
+from security import (
+    criar_access_token,
+    get_usuario_logado,
+    normalizar_perfil_acesso,
+    usuario_eh_gestor,
+    usuario_eh_manutencao,
+)
 from imagem_upload import eh_arquivo_imagem, padronizar_upload_imagem
 
 
@@ -75,6 +81,7 @@ def montar_payload_token(usuario: UsuarioDB, projeto: InstituicaoDB | None = Non
         "perfil_acesso": perfil_acesso,
         "is_master": bool(getattr(usuario, "is_master", False)),
         "is_global": bool(getattr(usuario, "is_global", False)),
+        "is_manutencao": usuario_eh_manutencao(usuario),
         "ativo": bool(getattr(usuario, "ativo", True)),
     }
 
@@ -118,6 +125,12 @@ async def listar_projetos_organizacao(
     usuario_atual: dict = Depends(get_usuario_logado),
 ):
     exigir_usuario_global(usuario_atual)
+
+    if usuario_eh_manutencao(usuario_atual):
+        resultado = await db.execute(
+            select(InstituicaoDB).order_by(InstituicaoDB.nome_fantasia)
+        )
+        return resultado.scalars().all()
 
     organizacao_id = usuario_atual.get("organizacao_id")
     if not organizacao_id:
@@ -558,6 +571,47 @@ async def selecionar_projeto_organizacao(
     exigir_usuario_global(usuario_atual)
 
     organizacao_id = usuario_atual.get("organizacao_id")
+
+    if usuario_eh_manutencao(usuario_atual):
+        resultado_projeto = await db.execute(
+            select(InstituicaoDB).where(InstituicaoDB.id == projeto_id)
+        )
+        projeto = resultado_projeto.scalar_one_or_none()
+
+        if not projeto:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Projeto não encontrado.",
+            )
+
+        resultado_usuario = await db.execute(
+            select(UsuarioDB).where(
+                UsuarioDB.id == usuario_atual["id"],
+                UsuarioDB.is_global == True,  # noqa: E712
+            )
+        )
+        usuario = resultado_usuario.scalar_one_or_none()
+
+        if not usuario:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Usuário de manutenção não autorizado.",
+            )
+
+        token = criar_access_token(
+            data=montar_payload_token(usuario, projeto),
+            expires_delta=timedelta(hours=12),
+        )
+
+        return {
+            "access_token": token,
+            "token_type": "bearer",
+            "usuario": {
+                **montar_payload_token(usuario, projeto),
+                "avatar_url": getattr(usuario, "avatar_url", None),
+            },
+        }
+
     resultado_projeto = await db.execute(
         select(InstituicaoDB).where(
             InstituicaoDB.id == projeto_id,

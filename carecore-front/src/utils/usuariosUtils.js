@@ -1,3 +1,5 @@
+import { decodificarPayloadJwt } from './jwtUtils';
+
 export {
   imagemParaBase64Padronizada,
   imagemParaArquivoPadronizado,
@@ -26,11 +28,7 @@ export function obterPayloadToken() {
 
     if (!token) return null;
 
-    const partes = token.split('.');
-
-    if (partes.length !== 3) return null;
-
-    return JSON.parse(atob(partes[1]));
+    return decodificarPayloadJwt(token);
   } catch {
     return null;
   }

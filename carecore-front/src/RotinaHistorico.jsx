@@ -19,6 +19,7 @@ import {
 } from './utils/rotinaHistoricoUtils';
 import { imprimirRelatorio } from './utils/imprimirRelatorio';
 import { urlArquivoBackend } from './utils/arquivosApi';
+import { decodificarPayloadJwt } from './utils/jwtUtils';
 import { criarHeadersAutenticados } from './utils/requestIdUtils';
 
 export default function RotinaHistorico() {
@@ -57,9 +58,7 @@ export default function RotinaHistorico() {
 
     if (token) {
 
-      const payload = JSON.parse(
-        atob(token.split('.')[1])
-      );
+      const payload = decodificarPayloadJwt(token) || {};
 
       perfilUsuario =
         payload?.perfil_acesso || '';

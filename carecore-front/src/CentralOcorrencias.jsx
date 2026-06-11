@@ -25,6 +25,7 @@ import {
   resumirPrioridadesOcorrencias,
 } from './utils/ocorrenciasUtils';
 import { filtrarOrdenarConviventesPorBusca } from './utils/conviventeBuscaUtils';
+import { decodificarPayloadJwt } from './utils/jwtUtils';
 import { criarHeadersAutenticados } from './utils/requestIdUtils';
 
 
@@ -39,7 +40,7 @@ export default function CentralOcorrencias() {
   let idUsuarioLogado = '';
   try {
     if (token) {
-      const payload = JSON.parse(atob(token.split('.')[1]));
+      const payload = decodificarPayloadJwt(token) || {};
       perfilUsuario = payload.perfil_acesso || '';
       idUsuarioLogado = payload.sub || '';
     }
