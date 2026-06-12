@@ -182,7 +182,7 @@ function ModalAvisoCompleto({ aviso, onFechar, onMarcarLido }) {
       <div className="carecore-modal-panel flex max-h-[calc(100vh-1.5rem)] w-full max-w-3xl flex-col overflow-hidden rounded-[2rem] border border-white/70 bg-white shadow-2xl sm:max-h-[calc(100vh-2rem)]">
         <div className="shrink-0 border-b border-slate-100 bg-gradient-to-r from-purple-50 to-white p-4 sm:p-5">
           <div className="flex items-start justify-between gap-4">
-            <div className="min-w-0">
+            <div className="min-w-0 max-w-full">
               <div className="mb-3 flex flex-wrap items-center gap-2">
                 <Badge tipo="info">{aviso.classificacao || "Informativo"}</Badge>
                 <Badge tipo={tipo}>{prioridadeLabel}</Badge>
@@ -192,8 +192,8 @@ function ModalAvisoCompleto({ aviso, onFechar, onMarcarLido }) {
                 {!aviso.lido && <Badge tipo="critica">Não lido</Badge>}
               </div>
 
-              <h3 className="text-xl font-black leading-tight text-slate-950">{titulo}</h3>
-              <p className="mt-2 text-sm font-semibold text-slate-500">
+              <h3 className="break-words text-xl font-black leading-tight text-slate-950">{titulo}</h3>
+              <p className="mt-2 break-words text-sm font-semibold text-slate-500">
                 Remetente: {aviso.remetente_nome || aviso.remetente_id || "Usuário"} • {formatarDataHora(aviso.criado_em)}
               </p>
             </div>
@@ -210,7 +210,7 @@ function ModalAvisoCompleto({ aviso, onFechar, onMarcarLido }) {
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-5">
-          <p className="whitespace-pre-wrap text-sm leading-7 text-slate-700">{mensagem}</p>
+          <p className="whitespace-pre-wrap break-words text-sm leading-7 text-slate-700">{mensagem}</p>
         </div>
 
         <div className="flex shrink-0 flex-col gap-2 border-t border-slate-100 bg-slate-50 p-4 sm:flex-row sm:justify-end">
@@ -1019,13 +1019,13 @@ export default function Avisos() {
                       <article
                         key={aviso.id}
                         onClick={() => handleAbrirAviso(aviso)}
-                        className={`cursor-pointer rounded-3xl border p-4 transition hover:bg-slate-50 ${
+                        className={`max-w-full cursor-pointer overflow-hidden rounded-3xl border p-4 transition hover:bg-slate-50 ${
                           aviso.lido ? "border-slate-100 bg-white" : "border-purple-100 bg-purple-50/40"
                         }`}
                         title="Clique para ler a mensagem completa"
                       >
-                        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                          <div className="min-w-0">
+                        <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                          <div className="min-w-0 max-w-full flex-1">
                             <div className="mb-2 flex flex-wrap items-center gap-2">
                               <Badge tipo="info">{aviso.classificacao || "Informativo"}</Badge>
                               <Badge tipo={tipo}>{prioridadeLabel}</Badge>
@@ -1035,24 +1035,24 @@ export default function Avisos() {
                               {!aviso.lido && <Badge tipo="critica">Não lido</Badge>}
                             </div>
 
-                            <h3 className="truncate text-lg font-black text-slate-900">
+                            <h3 className="break-words text-lg font-black text-slate-900">
                               {aviso.pode_exibir_titulo === false ? "Você tem uma mensagem" : aviso.titulo}
                             </h3>
 
-                            <p className="mt-2 text-sm leading-6 text-slate-600">
+                            <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-6 text-slate-600">
                               {aviso.mensagem_resumo || aviso.mensagem || "Sem conteúdo."}
                             </p>
 
                             <p className="mt-2 text-xs font-black text-purple-600">Clique para ler a mensagem completa</p>
 
-                            <div className="mt-3 flex flex-wrap gap-3 text-xs font-semibold text-slate-400">
+                            <div className="mt-3 flex min-w-0 flex-wrap gap-3 text-xs font-semibold text-slate-400">
                               <span>Remetente: {aviso.remetente_nome || aviso.remetente_id || "Usuário"}</span>
                               <span>Criado em: {formatarDataHora(aviso.criado_em)}</span>
                               {aviso.valido_ate && <span>Válido até: {formatarDataHora(aviso.valido_ate)}</span>}
                             </div>
                           </div>
 
-                          <div className="flex shrink-0 flex-wrap gap-2">
+                          <div className="flex shrink-0 flex-wrap justify-end gap-2">
                             {!aviso.lido && (
                               <button
                                 type="button"
@@ -1182,15 +1182,15 @@ export default function Avisos() {
                   <>
                     <div className="max-h-[32rem] space-y-3 overflow-y-auto pr-1">
                       {historicoAvisos.map((aviso) => (
-                        <article key={aviso.id} className="rounded-3xl border border-slate-100 bg-slate-50/60 p-4">
+                        <article key={aviso.id} className="max-w-full overflow-hidden rounded-3xl border border-slate-100 bg-slate-50/60 p-4">
                           <div className="mb-2 flex flex-wrap items-center gap-2">
                             <Badge tipo="info">{aviso.classificacao || "Informativo"}</Badge>
                             <Badge tipo={prioridadeParaTipo(aviso.prioridade)}>{normalizarPrioridade(aviso.prioridade)}</Badge>
                             <Badge tipo={aviso.ativo === false ? "media" : "normal"}>{statusAvisoHistorico(aviso)}</Badge>
                           </div>
-                          <h3 className="text-base font-black text-slate-900">{aviso.titulo || "Aviso"}</h3>
-                          <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-600">{aviso.mensagem || "Sem conteúdo."}</p>
-                          <div className="mt-3 flex flex-wrap gap-3 text-xs font-semibold text-slate-400">
+                          <h3 className="break-words text-base font-black text-slate-900">{aviso.titulo || "Aviso"}</h3>
+                          <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-6 text-slate-600">{aviso.mensagem || "Sem conteúdo."}</p>
+                          <div className="mt-3 flex min-w-0 flex-wrap gap-3 text-xs font-semibold text-slate-400">
                             <span>Criado em: {formatarDataHora(aviso.criado_em)}</span>
                             {aviso.cancelado_em && <span>Baixado em: {formatarDataHora(aviso.cancelado_em)}</span>}
                             {aviso.valido_ate && <span>Válido até: {formatarDataHora(aviso.valido_ate)}</span>}
