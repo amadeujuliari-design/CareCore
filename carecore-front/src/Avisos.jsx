@@ -69,6 +69,22 @@ function lerUsuarioLogado() {
   }
 }
 
+function usuarioPodeGerenciarAvisos(usuario) {
+  const perfil = String(usuario?.perfil || "").toLowerCase();
+
+  return Boolean(usuario?.isMaster) || [
+    "gestor",
+    "gestora",
+    "gestao",
+    "gestão",
+    "gerente",
+    "administrador",
+    "admin",
+    "coordenador",
+    "coordenadora",
+  ].includes(perfil);
+}
+
 function formatarDataHora(valor) {
   if (!valor) return "-";
 
@@ -455,18 +471,24 @@ export default function Avisos() {
   }
 
   async function handleCancelar(avisoId) {
-    const confirmar = window.confirm("Deseja cancelar este aviso? Ele deixará de aparecer para os usuários.");
+    const confirmar = window.confirm(
+      "Deseja excluir este aviso da lista ativa? Ele deixará de aparecer para os usuários e ficará registrado no histórico.",
+    );
     if (!confirmar) return;
 
     try {
       setErro("");
       setSucesso("");
       await cancelarAviso(usuario.token, avisoId);
-      setSucesso("Aviso cancelado com sucesso.");
+      setSucesso("Aviso excluído da lista ativa com sucesso.");
+      if (avisoAberto?.id === avisoId) {
+        setAvisoAberto(null);
+      }
       await carregarAvisos();
+      await carregarHistoricoAvisos(filtrosHistorico, paginaHistorico);
     } catch (error) {
-      console.error("Erro ao cancelar aviso", error);
-      setErro(error?.response?.data?.detail || "Não foi possível cancelar o aviso.");
+      console.error("Erro ao excluir aviso", error);
+      setErro(error?.response?.data?.detail || "Não foi possível excluir o aviso.");
     }
   }
 
@@ -607,6 +629,7 @@ export default function Avisos() {
     { length: ultimaPaginaHistoricoVisivel - primeiraPaginaHistoricoVisivel + 1 },
     (_, index) => primeiraPaginaHistoricoVisivel + index
   );
+  const podeGerenciarAvisos = usuarioPodeGerenciarAvisos(usuario);
 
   function irParaPaginaHistorico(novaPagina) {
     const pagina = Math.min(Math.max(novaPagina, 1), totalPaginasHistorico);
@@ -1040,13 +1063,15 @@ export default function Avisos() {
                               </button>
                             )}
 
-                            <button
-                              type="button"
-                              onClick={(event) => { event.stopPropagation(); handleCancelar(aviso.id); }}
-                              className="rounded-2xl border border-red-100 bg-red-50 px-4 py-2 text-xs font-black text-red-700 hover:bg-red-100"
-                            >
-                              Cancelar
-                            </button>
+                            {podeGerenciarAvisos && (
+                              <button
+                                type="button"
+                                onClick={(event) => { event.stopPropagation(); handleCancelar(aviso.id); }}
+                                className="rounded-2xl border border-red-100 bg-red-50 px-4 py-2 text-xs font-black text-red-700 hover:bg-red-100"
+                              >
+                                Excluir
+                              </button>
+                            )}
                           </div>
                         </div>
                       </article>
