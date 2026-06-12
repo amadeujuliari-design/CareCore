@@ -8,6 +8,22 @@ import { statusNaoAtivo } from '../utils/conviventesProntuarioUtils.js';
 
 export const CONVIVENTES_POR_PAGINA = 20;
 
+function normalizarPerfil(valor) {
+  return String(valor || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .toLowerCase();
+}
+
+export function usuarioEhTecnico(perfilUsuario) {
+  return normalizarPerfil(perfilUsuario) === 'tecnico';
+}
+
+export function conviventeEhMeuCaso(convivente, idUsuarioLogado, usuarioTecnico) {
+  return Boolean(usuarioTecnico && idUsuarioLogado && convivente?.tecnico_id && convivente.tecnico_id === idUsuarioLogado);
+}
+
 function conviventeCorrespondePesquisa(convivente, termoPesquisa) {
   const termo = termoPesquisa.toLowerCase().trim();
 
@@ -35,9 +51,9 @@ function conviventeCorrespondeLeito(convivente, filtroLeito) {
   return true;
 }
 
-function ordenarConviventes(a, b, termoPesquisa, idUsuarioLogado) {
-  const isMeuCasoA = a.tecnico_id === idUsuarioLogado;
-  const isMeuCasoB = b.tecnico_id === idUsuarioLogado;
+function ordenarConviventes(a, b, termoPesquisa, idUsuarioLogado, usuarioTecnico) {
+  const isMeuCasoA = conviventeEhMeuCaso(a, idUsuarioLogado, usuarioTecnico);
+  const isMeuCasoB = conviventeEhMeuCaso(b, idUsuarioLogado, usuarioTecnico);
 
   if (isMeuCasoA && !isMeuCasoB) return -1;
   if (!isMeuCasoA && isMeuCasoB) return 1;
@@ -51,14 +67,17 @@ export function filtrarOrdenarConviventes({
   filtroStatus,
   filtroLeito,
   idUsuarioLogado,
+  perfilUsuario,
 }) {
+  const usuarioTecnico = usuarioEhTecnico(perfilUsuario);
+
   return conviventes
     .filter((convivente) => (
       conviventeCorrespondePesquisa(convivente, termoPesquisa) &&
       conviventeCorrespondeStatus(convivente, filtroStatus) &&
       conviventeCorrespondeLeito(convivente, filtroLeito)
     ))
-    .sort((a, b) => ordenarConviventes(a, b, termoPesquisa, idUsuarioLogado));
+    .sort((a, b) => ordenarConviventes(a, b, termoPesquisa, idUsuarioLogado, usuarioTecnico));
 }
 
 export function paginarConviventes(conviventesFiltrados, paginaConviventes) {
@@ -87,6 +106,7 @@ export function useConviventesLista({
   paginaConviventes,
   setPaginaConviventes,
   idUsuarioLogado,
+  perfilUsuario,
 }) {
   const conviventesFiltrados = useMemo(
     () => filtrarOrdenarConviventes({
@@ -95,8 +115,9 @@ export function useConviventesLista({
       filtroStatus,
       filtroLeito,
       idUsuarioLogado,
+      perfilUsuario,
     }),
-    [conviventes, filtroLeito, filtroStatus, idUsuarioLogado, termoPesquisa],
+    [conviventes, filtroLeito, filtroStatus, idUsuarioLogado, perfilUsuario, termoPesquisa],
   );
 
   const {

@@ -28,7 +28,7 @@ import {
 import {
   useDeviceInfo,
 } from './hooks/useDeviceInfo';
-import { useConviventesLista } from './hooks/useConviventesLista';
+import { useConviventesLista, usuarioEhTecnico } from './hooks/useConviventesLista';
 import { usePermissoesProntuario } from './hooks/usePermissoesProntuario';
 import { useProntuarioDocumentos } from './hooks/useProntuarioDocumentos';
 import { useProntuarioHistorico } from './hooks/useProntuarioHistorico';
@@ -163,6 +163,7 @@ export default function Conviventes() {
     carregarDadosIniciais,
   });
   const fotoPerfilUrl = fotoPerfilData?.caminho_arquivo || formData.foto_url || null;
+  const usuarioLogadoEhTecnico = usuarioEhTecnico(perfilUsuario);
   const {
     abrirCarteirinha,
     abrirFichaCompleta,
@@ -497,6 +498,7 @@ export default function Conviventes() {
     paginaConviventes,
     setPaginaConviventes,
     idUsuarioLogado,
+    perfilUsuario,
   });
   const conviventeAtual = editandoId ? conviventes.find(c => c.id === editandoId) : null;
 
@@ -536,6 +538,7 @@ export default function Conviventes() {
               totalPaginasConviventes={totalPaginasConviventes}
               irParaPaginaConviventes={irParaPaginaConviventes}
               idUsuarioLogado={idUsuarioLogado}
+              usuarioTecnico={usuarioLogadoEhTecnico}
               abrirFormulario={abrirFormulario}
               abrirParaEdicao={abrirParaEdicao}
               obterLocalizacaoLeito={obterLocalizacaoLeito}

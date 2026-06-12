@@ -2,8 +2,10 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import {
+  conviventeEhMeuCaso,
   filtrarOrdenarConviventes,
   paginarConviventes,
+  usuarioEhTecnico,
 } from './useConviventesLista.js';
 
 const conviventes = [
@@ -46,6 +48,7 @@ function filtrar(overrides = {}) {
     filtroStatus: 'Todos',
     filtroLeito: 'Todos',
     idUsuarioLogado: 'tecnico-1',
+    perfilUsuario: 'Técnico',
     ...overrides,
   });
 }
@@ -53,6 +56,40 @@ function filtrar(overrides = {}) {
 describe('useConviventesLista helpers', () => {
   it('prioriza conviventes do tecnico logado e ordena os demais por nome', () => {
     assert.deepEqual(filtrar().map((convivente) => convivente.id), ['2', '3', '1']);
+  });
+
+  it('nao prioriza casos quando o usuario logado e orientador', () => {
+    const resultado = filtrar({
+      idUsuarioLogado: 'tecnico-2',
+      perfilUsuario: 'Orientador',
+    });
+
+    assert.deepEqual(resultado.map((convivente) => convivente.id), ['2', '3', '1']);
+  });
+
+  it('reconhece apenas perfil tecnico como responsavel por casos', () => {
+    assert.equal(usuarioEhTecnico('Técnico'), true);
+    assert.equal(usuarioEhTecnico('Tecnico'), true);
+    assert.equal(usuarioEhTecnico('Orientador'), false);
+  });
+
+  it('so marca meu caso quando tecnico logado tem vinculo real com o convivente', () => {
+    assert.equal(
+      conviventeEhMeuCaso({ tecnico_id: 'tecnico-1' }, 'tecnico-1', true),
+      true,
+    );
+    assert.equal(
+      conviventeEhMeuCaso({ tecnico_id: '' }, 'tecnico-1', true),
+      false,
+    );
+    assert.equal(
+      conviventeEhMeuCaso({ tecnico_id: null }, 'tecnico-1', true),
+      false,
+    );
+    assert.equal(
+      conviventeEhMeuCaso({ tecnico_id: 'tecnico-1' }, 'tecnico-1', false),
+      false,
+    );
   });
 
   it('filtra por prontuario exato quando pesquisa inicia com #', () => {

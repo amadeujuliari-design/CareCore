@@ -1,4 +1,5 @@
 import { formatarCPF } from '../../utils/conviventesUtils';
+import { conviventeEhMeuCaso } from '../../hooks/useConviventesLista';
 
 export default function ConviventesLista({
   loading,
@@ -17,6 +18,7 @@ export default function ConviventesLista({
   totalPaginasConviventes,
   irParaPaginaConviventes,
   idUsuarioLogado,
+  usuarioTecnico,
   abrirFormulario,
   abrirParaEdicao,
   obterLocalizacaoLeito,
@@ -63,7 +65,7 @@ export default function ConviventesLista({
         <>
           <div className="space-y-3 md:hidden">
             {conviventesVisiveis.map((c) => {
-              const isMeuCaso = c.tecnico_id === idUsuarioLogado;
+              const isMeuCaso = conviventeEhMeuCaso(c, idUsuarioLogado, usuarioTecnico);
               return (
                 <article
                   key={c.id}
@@ -120,7 +122,7 @@ export default function ConviventesLista({
               </thead>
               <tbody className="bg-white">
                 {conviventesVisiveis.map((c) => {
-                  const isMeuCaso = c.tecnico_id === idUsuarioLogado;
+                  const isMeuCaso = conviventeEhMeuCaso(c, idUsuarioLogado, usuarioTecnico);
                   return (
                     <tr key={c.id} className={`transition-colors group border-b border-gray-100 last:border-0 ${isMeuCaso ? 'bg-blue-50/30 hover:bg-blue-50/70' : 'hover:bg-gray-50'}`}>
                       <td className="p-4 text-brand font-bold text-sm">
