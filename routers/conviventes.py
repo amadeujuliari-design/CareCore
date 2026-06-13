@@ -196,9 +196,16 @@ async def validar_usuarios_do_projeto(
         raise HTTPException(status_code=400, detail=detail)
 
 
+def normalizar_id_tecnico_ocorrencia(valor: str | None) -> str | None:
+    tecnico_id = str(valor or "").strip()
+    if not tecnico_id or tecnico_id.lower() in {"null", "none", "undefined"}:
+        return None
+    return tecnico_id
+
+
 def tecnico_responsavel_ocorrencia_convivente(convivente: ConviventeDB, tecnico_responsavel_id: str | None) -> str | None:
-    tecnico_convivente = getattr(convivente, "tecnico_id", None)
-    tecnico_informado = str(tecnico_responsavel_id or "").strip() or None
+    tecnico_convivente = normalizar_id_tecnico_ocorrencia(getattr(convivente, "tecnico_id", None))
+    tecnico_informado = normalizar_id_tecnico_ocorrencia(tecnico_responsavel_id)
 
     if not tecnico_convivente:
         return None
@@ -214,6 +221,33 @@ def tecnico_responsavel_ocorrencia_convivente(convivente: ConviventeDB, tecnico_
 
 def status_inicial_ocorrencia_manual() -> str:
     return "Pendente"
+
+
+async def validar_tecnico_responsavel_ocorrencia(
+    db: AsyncSession,
+    convivente: ConviventeDB,
+    tecnico_responsavel_id: str | None,
+    instituicao_id: str,
+) -> str | None:
+    tecnico_id = tecnico_responsavel_ocorrencia_convivente(
+        convivente,
+        tecnico_responsavel_id,
+    )
+    if not tecnico_id:
+        return None
+
+    tecnico_ativo = (
+        await db.execute(
+            select(UsuarioDB.id).where(
+                UsuarioDB.id == tecnico_id,
+                UsuarioDB.instituicao_id == instituicao_id,
+                UsuarioDB.ativo == True,  # noqa: E712
+                UsuarioDB.perfil_acesso.in_(["Técnico", "Gestor"]),
+            )
+        )
+    ).scalar_one_or_none()
+
+    return str(tecnico_ativo) if tecnico_ativo else None
 
 
 async def validar_referencias_convivente_do_projeto(
@@ -1355,18 +1389,11 @@ async def criar_ocorrencia_manual(payload: OcorrenciaCreate, db: AsyncSession = 
     if not convivente:
         raise HTTPException(status_code=404, detail="Convivente não encontrado.")
 
-    tecnico_responsavel_id = tecnico_responsavel_ocorrencia_convivente(
+    tecnico_responsavel_id = await validar_tecnico_responsavel_ocorrencia(
+        db,
         convivente,
         payload.tecnico_responsavel_id,
-    )
-
-    await validar_usuario_do_projeto(
-        db,
-        tecnico_responsavel_id,
         obter_instituicao_escopo(usuario_atual),
-        detail="Técnico responsável não está ativo neste projeto.",
-        exigir_ativo=True,
-        perfis_permitidos=["Técnico", "Gestor"],
     )
     await validar_usuarios_do_projeto(
         db,
