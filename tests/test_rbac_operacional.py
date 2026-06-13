@@ -92,6 +92,28 @@ def test_tecnico_nao_responsavel_nao_pode_resolver_ocorrencia():
     assert not usuario_pode_resolver_ocorrencia(usuario, ocorrencia)
 
 
+def test_tecnico_pode_resolver_ocorrencia_sem_responsavel():
+    usuario = {
+        "sub": "tecnico-2",
+        "perfil_acesso": "Técnico",
+        "is_master": False,
+    }
+    ocorrencia = SimpleNamespace(tecnico_responsavel_id=None)
+
+    assert usuario_pode_resolver_ocorrencia(usuario, ocorrencia)
+
+
+def test_orientador_nao_pode_resolver_ocorrencia_sem_responsavel():
+    usuario = {
+        "sub": "orientador-1",
+        "perfil_acesso": "Orientador",
+        "is_master": False,
+    }
+    ocorrencia = SimpleNamespace(tecnico_responsavel_id=None)
+
+    assert not usuario_pode_resolver_ocorrencia(usuario, ocorrencia)
+
+
 def test_tecnico_pode_alterar_status_de_convivente_sem_tecnico_atrelado():
     usuario = {
         "sub": "tecnico-2",

@@ -203,6 +203,11 @@ useEffect(() => {
     setErro('');
   };
 
+  const handleCliqueLeito = (quarto, leito) => {
+    if (!podeGerenciarQuartos) return;
+    abrirModalLeito(quarto, leito);
+  };
+
   const selecionarConviventeParaLeito = (convivente) => {
     setConviventeSelecionadoId(convivente.id);
     setBuscaConvivente(
@@ -345,12 +350,11 @@ useEffect(() => {
                               <button
                                 type="button"
                                 key={l.id}
-                                onClick={() => abrirModalLeito(q, l)}
+                                onClick={() => handleCliqueLeito(q, l)}
                                 onMouseEnter={(event) => atualizarTooltipLeito(event, l)}
                                 onMouseMove={(event) => atualizarTooltipLeito(event, l)}
                                 onMouseLeave={() => setTooltipLeito(null)}
-                                disabled={!podeGerenciarQuartos}
-                                className={`group relative rounded-2xl border px-3 py-2.5 text-center transition-all min-h-[104px] disabled:cursor-default ${
+                                className={`group relative rounded-2xl border px-3 py-2.5 text-center transition-all min-h-[104px] ${podeGerenciarQuartos ? 'cursor-pointer' : 'cursor-default'} ${
                                   ocupado
                                     ? 'bg-amber-50/80 border-amber-200 hover:bg-amber-100/80'
                                     : 'bg-white border-slate-200 hover:bg-slate-50'

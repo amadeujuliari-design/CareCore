@@ -72,10 +72,14 @@ def usuario_pode_resolver_ocorrencia(
 
     perfil = normalizar_perfil_acesso(usuario_atual.get("perfil_acesso"))
 
-    return (
-        perfil == PERFIL_TECNICO
-        and str(usuario_atual.get("sub")) == str(ocorrencia.tecnico_responsavel_id)
-    )
+    if perfil != PERFIL_TECNICO:
+        return False
+
+    tecnico_responsavel_id = getattr(ocorrencia, "tecnico_responsavel_id", None)
+    if not tecnico_responsavel_id:
+        return True
+
+    return str(usuario_atual.get("sub")) == str(tecnico_responsavel_id)
 
 
 def convivente_para_response(

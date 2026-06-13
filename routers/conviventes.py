@@ -196,6 +196,26 @@ async def validar_usuarios_do_projeto(
         raise HTTPException(status_code=400, detail=detail)
 
 
+def tecnico_responsavel_ocorrencia_convivente(convivente: ConviventeDB, tecnico_responsavel_id: str | None) -> str | None:
+    tecnico_convivente = getattr(convivente, "tecnico_id", None)
+    tecnico_informado = str(tecnico_responsavel_id or "").strip() or None
+
+    if not tecnico_convivente:
+        return None
+
+    if tecnico_informado and str(tecnico_informado) != str(tecnico_convivente):
+        raise HTTPException(
+            status_code=400,
+            detail="Técnico responsável da ocorrência deve ser o técnico vinculado ao convivente.",
+        )
+
+    return str(tecnico_convivente)
+
+
+def status_inicial_ocorrencia_manual() -> str:
+    return "Pendente"
+
+
 async def validar_referencias_convivente_do_projeto(
     db: AsyncSession,
     dados: dict,
@@ -1335,9 +1355,14 @@ async def criar_ocorrencia_manual(payload: OcorrenciaCreate, db: AsyncSession = 
     if not convivente:
         raise HTTPException(status_code=404, detail="Convivente não encontrado.")
 
+    tecnico_responsavel_id = tecnico_responsavel_ocorrencia_convivente(
+        convivente,
+        payload.tecnico_responsavel_id,
+    )
+
     await validar_usuario_do_projeto(
         db,
-        payload.tecnico_responsavel_id,
+        tecnico_responsavel_id,
         obter_instituicao_escopo(usuario_atual),
         detail="Técnico responsável não está ativo neste projeto.",
         exigir_ativo=True,
@@ -1392,7 +1417,7 @@ async def criar_ocorrencia_manual(payload: OcorrenciaCreate, db: AsyncSession = 
         instituicao_id=obter_instituicao_escopo(usuario_atual),
         convivente_id=payload.convivente_id,
         usuario_criador_id=usuario_atual["sub"],
-        tecnico_responsavel_id=payload.tecnico_responsavel_id,
+        tecnico_responsavel_id=tecnico_responsavel_id,
         convivente_autor_ocorrencia=payload.convivente_autor_ocorrencia,
         funcionario_envolvido_id=payload.funcionario_envolvido_id if payload.convivente_autor_ocorrencia else None,
         assinatura_convivente_metodo=payload.assinatura_convivente_metodo if payload.convivente_autor_ocorrencia else None,
@@ -1403,7 +1428,7 @@ async def criar_ocorrencia_manual(payload: OcorrenciaCreate, db: AsyncSession = 
         descricao=payload.descricao,
         requer_acao_tecnica=requer_acao_tecnica,
         prioridade=prioridade,
-        status_resolucao="Pendente" if requer_acao_tecnica else "Resolvido"
+        status_resolucao=status_inicial_ocorrencia_manual()
     )
     db.add(nova_oc)
     await db.flush()
