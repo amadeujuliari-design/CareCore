@@ -16,6 +16,7 @@ from sqlalchemy.future import select
 from config_utils import env_bool, env_int
 from database import get_db
 from audit_log import registrar_evento_auditoria
+from manutencao_usuario import nome_manutencao_configurado
 from models import OrganizacaoDB, UsuarioDB, InstituicaoDB
 from schemas import (
     LoginPayload,
@@ -320,12 +321,13 @@ def montar_payload_token(usuario: UsuarioDB, projeto: InstituicaoDB | None = Non
     perfil_acesso = normalizar_perfil_acesso(
         getattr(usuario, "perfil_acesso", None)
     )
+    manutencao = usuario_eh_manutencao(usuario)
 
     return {
         "sub": usuario.id,
         "id": usuario.id,
         "usuario_id": usuario.id,
-        "nome": usuario.nome,
+        "nome": nome_manutencao_configurado() if manutencao else usuario.nome,
         "email": usuario.email,
         "instituicao_id": usuario.instituicao_id,
         "organizacao_id": getattr(usuario, "organizacao_id", None),
@@ -333,7 +335,7 @@ def montar_payload_token(usuario: UsuarioDB, projeto: InstituicaoDB | None = Non
         "perfil_acesso": perfil_acesso,
         "is_master": bool(getattr(usuario, "is_master", False)),
         "is_global": bool(getattr(usuario, "is_global", False)),
-        "is_manutencao": usuario_eh_manutencao(usuario),
+        "is_manutencao": manutencao,
         "ativo": bool(getattr(usuario, "ativo", True)),
         "token_version": int(getattr(usuario, "token_version", 0) or 0),
     }

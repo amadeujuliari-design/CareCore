@@ -10,6 +10,7 @@ from security import PERFIL_MANUTENCAO, email_usuario_manutencao, gerar_hash_sen
 
 
 logger = logging.getLogger("carecore.manutencao")
+NOME_MANUTENCAO_PADRAO = "Manutenção CareCore+"
 
 
 def manutencao_habilitada() -> bool:
@@ -23,6 +24,18 @@ def manutencao_habilitada() -> bool:
 
 def senha_manutencao_configurada() -> str:
     return os.getenv("CARECORE_MANUTENCAO_PASSWORD", "").strip()
+
+
+def nome_manutencao_configurado() -> str:
+    nome = os.getenv("CARECORE_MANUTENCAO_NOME", NOME_MANUTENCAO_PADRAO).strip()
+    if not nome:
+        return NOME_MANUTENCAO_PADRAO
+
+    # Protege contra secrets/variáveis gravadas com encoding quebrado.
+    if "�" in nome or "Ã" in nome:
+        return NOME_MANUTENCAO_PADRAO
+
+    return nome
 
 
 async def provisionar_usuario_manutencao(db: AsyncSession) -> None:
@@ -52,7 +65,7 @@ async def provisionar_usuario_manutencao(db: AsyncSession) -> None:
     usuario = resultado_usuario.scalar_one_or_none()
 
     if usuario:
-        usuario.nome = os.getenv("CARECORE_MANUTENCAO_NOME", "Manutenção CareCore+").strip()
+        usuario.nome = nome_manutencao_configurado()
         usuario.instituicao_id = projeto_base.id
         usuario.organizacao_id = getattr(projeto_base, "organizacao_id", None)
         usuario.perfil_acesso = PERFIL_MANUTENCAO
@@ -66,7 +79,7 @@ async def provisionar_usuario_manutencao(db: AsyncSession) -> None:
         UsuarioDB(
             instituicao_id=projeto_base.id,
             organizacao_id=getattr(projeto_base, "organizacao_id", None),
-            nome=os.getenv("CARECORE_MANUTENCAO_NOME", "Manutenção CareCore+").strip(),
+            nome=nome_manutencao_configurado(),
             email=email,
             senha_hash=gerar_hash_senha(senha),
             perfil_acesso=PERFIL_MANUTENCAO,

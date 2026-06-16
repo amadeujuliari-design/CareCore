@@ -137,6 +137,14 @@ export default function Sidebar() {
     console.error('Erro ao ler perfil no menu lateral', e);
   }
 
+  if (isManutencao) {
+    nomeUsuario = 'Manutenção CareCore+';
+    usuarioSessao = {
+      ...(usuarioSessao || {}),
+      nome: nomeUsuario,
+    };
+  }
+
   const perfilNormalizado = {
     Gestao: 'Gestor',
     Gestão: 'Gestor',
