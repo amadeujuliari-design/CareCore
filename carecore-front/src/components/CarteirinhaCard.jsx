@@ -4,6 +4,7 @@ import logoCarecore from '../assets/logo.PNG';
 // Bibliotecas brutas
 import QRCodeLib from 'react-qr-code';
 import BarcodeLib from 'react-barcode';
+import { obterCodigoCarteirinhaConvivente } from '../utils/rotinaDiariaUtils';
 
 // Blindagem: aceita funções e objetos React (como forwardRef do QRCode)
 const getValidComponent = (Lib) => {
@@ -48,13 +49,7 @@ export default function CarteirinhaCard({
     }
   }
 
-  const codigoBarrasValor = convivente.numero_institucional
-    ? String(convivente.numero_institucional)
-    : (
-        convivente.cpf
-          ? convivente.cpf.replace(/\D/g, '')
-          : String(convivente.id || '').substring(0, 8)
-      );
+  const codigoBarrasValor = obterCodigoCarteirinhaConvivente(convivente);
 
   const dataEntradaFormatada = convivente.data_entrada
     ? new Date(convivente.data_entrada).toLocaleDateString('pt-BR')
@@ -201,12 +196,12 @@ export default function CarteirinhaCard({
             </p>
           </div>
 
-          <div className="flex justify-center overflow-visible" style={{ lineHeight: 0 }}>
+          <div className="flex justify-center overflow-visible px-2" style={{ lineHeight: 0 }}>
             <Barcode
               value={codigoBarrasValor}
-              width={1.2}
-              height={18}
-              margin={0}
+              width={1.35}
+              height={32}
+              margin={8}
               displayValue={false}
               background="transparent"
             />

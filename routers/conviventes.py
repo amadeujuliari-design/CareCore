@@ -57,6 +57,7 @@ from schemas import (
 from security import (
     bloquear_usuario_global_puro,
     get_usuario_logado,
+    PERFIL_ORIENTADOR,
     PERFIL_TECNICO,
     usuario_tem_perfil,
     usuario_eh_gestor,
@@ -1014,6 +1015,16 @@ async def atualizar_convivente(convivente_id: str, dados_atualizacao: Convivente
     obs_status = getattr(dados_atualizacao, "observacao_status", None)
     dados = dados_atualizacao.model_dump(exclude_unset=True, exclude={"observacao_status"})
 
+    if (
+        "leito_id" in dados
+        and str(dados.get("leito_id") or "") != str(leito_id_antigo or "")
+        and usuario_tem_perfil(usuario_atual, {PERFIL_ORIENTADOR})
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail="Orientadores devem alterar a cama do convivente pelo módulo Acomodações.",
+        )
+
     if status_antigo != dados.get("status", status_antigo):
         if not usuario_pode_alterar_status_convivente(usuario_atual, convivente):
             raise HTTPException(
@@ -1896,7 +1907,7 @@ async def registar_rotina(
             )
 
     # ============================================================
-    # RETORNO RÁPIDO (<10 MIN)
+    # MOVIMENTO RÁPIDO (<10 MIN)
     # ============================================================
 
     retorno_rapido = False
@@ -1904,9 +1915,10 @@ async def registar_rotina(
     justificativa_retorno_rapido = None
 
     if (
-        payload.tipo_registro == "Entrada"
+        payload.tipo_registro in {"Entrada", "Saída"}
         and ultimo_movimento
-        and ultimo_movimento.tipo_registro == "Saída"
+        and ultimo_movimento.tipo_registro in {"Entrada", "Saída"}
+        and ultimo_movimento.tipo_registro != payload.tipo_registro
     ):
 
         diferenca = (
@@ -1925,7 +1937,7 @@ async def registar_rotina(
 
                 raise HTTPException(
                     status_code=400,
-                    detail="Retorno em menos de 10 minutos exige justificativa."
+                    detail="Movimento em menos de 10 minutos exige justificativa."
                 )
 
             justificativa_retorno_rapido = (

@@ -1,4 +1,4 @@
-import { filtrarOrdenarConviventesPorBusca } from './conviventeBuscaUtils';
+import { filtrarOrdenarConviventesPorBusca } from './conviventeBuscaUtils.js';
 
 export function normalizarCodigo(codigo) {
   return String(codigo || '').trim();
@@ -6,6 +6,20 @@ export function normalizarCodigo(codigo) {
 
 export function normalizarCpf(cpf) {
   return String(cpf || '').replace(/\D/g, '');
+}
+
+export function obterCodigoCarteirinhaConvivente(convivente) {
+  if (!convivente) return '';
+
+  if (convivente.numero_institucional) {
+    return String(convivente.numero_institucional);
+  }
+
+  if (convivente.cpf) {
+    return normalizarCpf(convivente.cpf);
+  }
+
+  return String(convivente.id || '').substring(0, 8);
 }
 
 export function tocarBeep() {
@@ -86,11 +100,15 @@ export function registroAindaPodeSerDesfeitoRotina(dataRegistro, agora = Date.no
 }
 
 export function exigeJustificativaRetornoRapidoRotina(resumoHoje, conviventeId, tipoRegistro) {
-  if (tipoRegistro !== 'Entrada') return false;
+  if (!['Entrada', 'Saída'].includes(tipoRegistro)) return false;
 
   const resumo = resumoHoje[conviventeId] || {};
 
-  if (resumo.ultimo_movimento !== 'Saída' || !resumo.ultimo_movimento_data) {
+  if (
+    !['Entrada', 'Saída'].includes(resumo.ultimo_movimento) ||
+    resumo.ultimo_movimento === tipoRegistro ||
+    !resumo.ultimo_movimento_data
+  ) {
     return false;
   }
 

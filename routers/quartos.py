@@ -4,10 +4,12 @@ from sqlalchemy.future import select
 from database import get_db
 from models import QuartoDB, LeitoDB, ConviventeDB
 from schemas import LeitoAlocacaoPayload, QuartoCreate, QuartoUpdate
-from security import exigir_tecnico_ou_gestor, get_usuario_logado
+from security import exigir_perfis, exigir_tecnico_ou_gestor, get_usuario_logado
 from tenant_scope import obter_instituicao_escopo
 
 router = APIRouter(prefix="/api/quartos", tags=["Quartos e Leitos"])
+
+exigir_alocacao_leito = exigir_perfis("Gestor", "Técnico", "Administrativo", "Orientador")
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
@@ -141,7 +143,7 @@ async def alocar_convivente_leito(
     leito_id: str,
     payload: LeitoAlocacaoPayload,
     db: AsyncSession = Depends(get_db),
-    usuario_atual: dict = Depends(exigir_tecnico_ou_gestor)
+    usuario_atual: dict = Depends(exigir_alocacao_leito)
 ):
     instituicao_id = obter_instituicao_escopo(usuario_atual)
     leito = (
@@ -215,7 +217,7 @@ async def alocar_convivente_leito(
 async def liberar_leito(
     leito_id: str,
     db: AsyncSession = Depends(get_db),
-    usuario_atual: dict = Depends(exigir_tecnico_ou_gestor)
+    usuario_atual: dict = Depends(exigir_alocacao_leito)
 ):
     instituicao_id = obter_instituicao_escopo(usuario_atual)
     leito = (

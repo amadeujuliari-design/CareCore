@@ -42,6 +42,9 @@ export default function Quartos() {
   const podeGerenciarQuartos =
     usuarioMaster ||
     ['Gestor', 'Gestao', 'Gestão', 'Gerente', 'Técnico', 'Tecnico'].includes(perfilUsuario);
+  const podeAlocarLeitos =
+    podeGerenciarQuartos ||
+    ['Orientador'].includes(perfilUsuario);
   // Formulário de Quarto
   const [nome, setNome] = useState('');
   const [tipoPublico, setTipoPublico] = useState('Masculino');
@@ -194,7 +197,7 @@ useEffect(() => {
   ), [buscaConvivente, conviventes]);
 
   const abrirModalLeito = (quarto, leito) => {
-    if (!podeGerenciarQuartos) return;
+    if (!podeAlocarLeitos) return;
 
     setModalLeito({ quarto, leito });
     setConviventeSelecionadoId('');
@@ -204,7 +207,7 @@ useEffect(() => {
   };
 
   const handleCliqueLeito = (quarto, leito) => {
-    if (!podeGerenciarQuartos) return;
+    if (!podeAlocarLeitos) return;
     abrirModalLeito(quarto, leito);
   };
 
@@ -354,7 +357,7 @@ useEffect(() => {
                                 onMouseEnter={(event) => atualizarTooltipLeito(event, l)}
                                 onMouseMove={(event) => atualizarTooltipLeito(event, l)}
                                 onMouseLeave={() => setTooltipLeito(null)}
-                                className={`group relative rounded-2xl border px-3 py-2.5 text-center transition-all min-h-[104px] ${podeGerenciarQuartos ? 'cursor-pointer' : 'cursor-default'} ${
+                                className={`group relative rounded-2xl border px-3 py-2.5 text-center transition-all min-h-[104px] ${podeAlocarLeitos ? 'cursor-pointer' : 'cursor-default'} ${
                                   ocupado
                                     ? 'bg-amber-50/80 border-amber-200 hover:bg-amber-100/80'
                                     : 'bg-white border-slate-200 hover:bg-slate-50'

@@ -80,6 +80,8 @@ export default function RotinaDiaria() {
   const ultimaLeituraTempoRef = useRef(0);
   const assinaturaSyncRotinaRef = useRef(null);
   const processarCodigoLidoRef = useRef(null);
+  const leituraUsbBufferRef = useRef('');
+  const leituraUsbUltimaTeclaRef = useRef(0);
 
   useEffect(() => {
     if (!token) {
@@ -500,6 +502,43 @@ export default function RotinaDiaria() {
     processarCodigoLidoRef.current = processarCodigoLido;
   });
 
+  useEffect(() => {
+    const handleLeitorUsbGlobal = (event) => {
+      const alvo = event.target;
+      const tag = alvo?.tagName?.toLowerCase();
+      const editandoTexto =
+        tag === 'input' ||
+        tag === 'textarea' ||
+        tag === 'select' ||
+        alvo?.isContentEditable;
+
+      if (editandoTexto || event.ctrlKey || event.altKey || event.metaKey) return;
+
+      const agora = Date.now();
+      if (agora - leituraUsbUltimaTeclaRef.current > 120) {
+        leituraUsbBufferRef.current = '';
+      }
+      leituraUsbUltimaTeclaRef.current = agora;
+
+      if (event.key === 'Enter') {
+        const codigo = leituraUsbBufferRef.current.trim();
+        leituraUsbBufferRef.current = '';
+        if (codigo) {
+          event.preventDefault();
+          processarCodigoLidoRef.current?.(codigo);
+        }
+        return;
+      }
+
+      if (event.key?.length === 1) {
+        leituraUsbBufferRef.current += event.key;
+      }
+    };
+
+    window.addEventListener('keydown', handleLeitorUsbGlobal);
+    return () => window.removeEventListener('keydown', handleLeitorUsbGlobal);
+  }, []);
+
   const handleBuscaKeyDown = (e) => {
     if (e.key === 'Enter' && busca.trim() !== '') {
       processarCodigoLido(busca.trim());
@@ -688,6 +727,20 @@ export default function RotinaDiaria() {
       const mensagem =
         error.response?.data?.detail ||
         'Erro ao registrar a ação.';
+
+      if (
+        !opcoes.ignorarChecagemRetornoRapido &&
+        typeof mensagem === 'string' &&
+        mensagem.toLowerCase().includes('menos de 10 minutos')
+      ) {
+        setRetornoRapidoPendente({
+          conviventeId,
+          tipoRegistro,
+          convivente
+        });
+        setJustificativaRetornoRapido('');
+        return;
+      }
 
       setFeedback({
         tipo: 'Erro',
@@ -1641,7 +1694,7 @@ export default function RotinaDiaria() {
         <div className="carecore-modal-overlay fixed inset-0 bg-gray-900/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
           <div className="carecore-modal-panel bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden max-h-[calc(100vh-2rem)] flex flex-col">
             <div className="bg-yellow-500 p-5 flex justify-between items-center gap-3 text-white">
-              <h2 className="text-lg font-bold">Retorno rápido detectado</h2>
+              <h2 className="text-lg font-bold">Movimento rápido detectado</h2>
               <button
                 onClick={() => {
                   setRetornoRapidoPendente(null);
@@ -1655,8 +1708,8 @@ export default function RotinaDiaria() {
 
             <div className="min-h-0 overflow-y-auto p-4 space-y-4 sm:p-6">
               <p className="text-sm text-gray-700 leading-relaxed">
-                Este acolhido está retornando em menos de 10 minutos após a saída.
-                Informe a justificativa operacional para registrar a entrada.
+                Este acolhido está registrando {retornoRapidoPendente.tipoRegistro?.toLowerCase() || 'movimento'} em menos de 10 minutos após o movimento anterior.
+                Informe a justificativa operacional para permitir o registro.
               </p>
 
               <textarea
@@ -1664,7 +1717,7 @@ export default function RotinaDiaria() {
                 onChange={(e) => setJustificativaRetornoRapido(e.target.value)}
                 rows={4}
                 className="w-full border border-gray-300 rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-yellow-400"
-                placeholder="Ex.: saiu por engano, retorno por orientação da equipe, correção de fluxo..."
+                placeholder="Ex.: saída/entrada registrada por engano, retorno por orientação da equipe, correção de fluxo..."
                 autoFocus
               />
 
@@ -1683,7 +1736,7 @@ export default function RotinaDiaria() {
                   onClick={handleConfirmarRetornoRapido}
                   className="px-4 py-2 rounded-lg text-sm font-bold bg-yellow-500 text-white hover:bg-yellow-600 shadow-sm"
                 >
-                  Confirmar Entrada
+                  Confirmar {retornoRapidoPendente.tipoRegistro || 'movimento'}
                 </button>
               </div>
             </div>

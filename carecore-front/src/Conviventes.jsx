@@ -164,6 +164,7 @@ export default function Conviventes() {
   });
   const fotoPerfilUrl = fotoPerfilData?.caminho_arquivo || formData.foto_url || null;
   const usuarioLogadoEhTecnico = usuarioEhTecnico(perfilUsuario);
+  const usuarioLogadoEhOrientador = perfilUsuario === 'Orientador';
   const {
     abrirCarteirinha,
     abrirFichaCompleta,
@@ -583,6 +584,7 @@ export default function Conviventes() {
                       podeMudarStatus={podeMudarStatus}
                       errosValidacao={errosValidacao}
                       quartos={quartos}
+                      podeEditarLeitoPeloProntuario={!usuarioLogadoEhOrientador}
                       handleChange={handleChange}
                       handleBlur={handleBlur}
                       handleRemoverFotoPerfil={handleRemoverFotoPerfil}

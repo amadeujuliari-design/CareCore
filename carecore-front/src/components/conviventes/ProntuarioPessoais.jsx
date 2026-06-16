@@ -12,6 +12,7 @@ export default function ProntuarioPessoais({
   podeMudarStatus,
   errosValidacao,
   quartos,
+  podeEditarLeitoPeloProntuario = true,
   handleChange,
   handleBlur,
   handleRemoverFotoPerfil,
@@ -115,7 +116,13 @@ export default function ProntuarioPessoais({
         <div><label className="block text-xs font-semibold text-gray-700 mb-1">Telefone / Celular</label><input type="text" name="telefone_celular" value={formData.telefone_celular} onChange={handleChange} onBlur={handleBlur} className={`w-full px-3 py-1.5 border rounded-lg outline-none text-sm ${errosValidacao.telefone_celular ? 'border-red-500 focus:ring-red-500 bg-red-50' : 'border-gray-300 focus:ring-brand'}`} placeholder="(00) 00000-0000" />{errosValidacao.telefone_celular && <p className="text-red-500 text-[10px] mt-0.5 font-bold">{errosValidacao.telefone_celular}</p>}</div>
         <div className="lg:col-span-3">
           <label className="block text-xs font-bold text-brand mb-1">Alocação de Quarto / Cama</label>
-          <select name="leito_id" value={formData.leito_id} onChange={handleChange} className="w-full px-3 py-1.5 border border-brand/50 rounded-lg outline-none bg-white focus:ring-2 focus:ring-brand text-sm">
+          <select
+            name="leito_id"
+            value={formData.leito_id}
+            onChange={handleChange}
+            disabled={!podeEditarLeitoPeloProntuario}
+            className={`w-full px-3 py-1.5 border border-brand/50 rounded-lg outline-none text-sm ${podeEditarLeitoPeloProntuario ? 'bg-white focus:ring-2 focus:ring-brand' : 'bg-gray-100 cursor-not-allowed text-gray-500'}`}
+          >
             <option value="">Apenas Convivência Diurna (Sem Pernoite)</option>
             {quartos.map(q => (
               <optgroup key={q.id} label={`${q.nome} - [${q.tipo_publico} / ${q.modalidade === 'Transitorio' ? 'Transitório' : 'Fixo'}]`}>
@@ -132,6 +139,11 @@ export default function ProntuarioPessoais({
               </optgroup>
             ))}
           </select>
+          {!podeEditarLeitoPeloProntuario && (
+            <p className="mt-1 text-[10px] font-bold text-slate-500">
+              Orientadores alteram quarto/cama pelo módulo Acomodações. A informação aqui é atualizada automaticamente.
+            </p>
+          )}
         </div>
       </div>
 
