@@ -4,6 +4,8 @@ import pytest
 from fastapi import HTTPException
 
 from routers.conviventes import (
+    convivente_esta_ativo,
+    exigir_convivente_ativo_para_registro,
     usuario_pode_excluir_convivente_sem_vinculos,
     usuario_pode_alterar_status_convivente,
     usuario_pode_gerenciar_pia_convivente,
@@ -207,3 +209,21 @@ def test_orientador_nao_pode_gerenciar_pia_convivente():
         "perfil_acesso": "Orientador",
         "is_master": False,
     })
+
+
+def test_convivente_ativo_pode_receber_registro_operacional():
+    convivente = SimpleNamespace(status="Ativo")
+
+    assert convivente_esta_ativo(convivente)
+    exigir_convivente_ativo_para_registro(convivente)
+
+
+def test_convivente_inativo_bloqueia_registro_operacional():
+    convivente = SimpleNamespace(status="Inativado")
+
+    assert not convivente_esta_ativo(convivente)
+    with pytest.raises(HTTPException) as erro:
+        exigir_convivente_ativo_para_registro(convivente)
+
+    assert getattr(erro.value, "status_code", None) == 409
+    assert "Ative o convivente" in str(erro.value.detail)

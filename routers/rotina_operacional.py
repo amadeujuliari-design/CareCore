@@ -27,7 +27,13 @@ from schemas import (
     PertenceRecolhidoResponse,
     PertenceRecolhidoRetirada,
 )
-from security import get_usuario_logado
+from security import (
+    PERFIL_TECNICO,
+    get_usuario_logado,
+    usuario_eh_gestor,
+    usuario_eh_manutencao,
+    usuario_tem_perfil,
+)
 from tenant_scope import obter_instituicao_escopo
 
 
@@ -38,6 +44,14 @@ def _nome_convivente(convivente: ConviventeDB | None) -> str | None:
     if not convivente:
         return None
     return convivente.nome_social or convivente.nome_completo
+
+
+def usuario_pode_baixa_administrativa_pertences(usuario_atual: dict) -> bool:
+    return (
+        usuario_eh_manutencao(usuario_atual)
+        or usuario_eh_gestor(usuario_atual)
+        or usuario_tem_perfil(usuario_atual, {PERFIL_TECNICO})
+    )
 
 
 def _status_lavanderia(registro: LavanderiaRegistroDB):
@@ -683,6 +697,12 @@ async def baixa_administrativa_pertences_recolhidos(
     db: AsyncSession = Depends(get_db),
     usuario_atual: dict = Depends(get_usuario_logado),
 ):
+    if not usuario_pode_baixa_administrativa_pertences(usuario_atual):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Baixa administrativa de pertences é restrita a Gestores, Técnicos e Manutenção.",
+        )
+
     instituicao_id = obter_instituicao_escopo(usuario_atual)
     linha = (
         await db.execute(

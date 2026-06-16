@@ -231,7 +231,7 @@ export default function CentralOcorrencias() {
         axios.get(`${API_ROOT}/conviventes`, config),
         axios.get(`${API_ROOT}/tecnicos`, config) 
       ]);
-      setListaConviventes(resConv.data);
+      setListaConviventes((resConv.data || []).filter((convivente) => convivente.status === 'Ativo'));
       setListaFuncionarios(resEquipe.data);
       setListaEquipe(resEquipe.data.filter(u => u.id !== idUsuarioLogado)); 
     } catch (error) {
@@ -585,6 +585,11 @@ export default function CentralOcorrencias() {
     setEnviandoNovo(true);
     try {
       const paciente = listaConviventes.find(c => c.id === formNovo.convivente_id);
+      if (!paciente || paciente.status !== 'Ativo') {
+        setErroNovoChamado('Convivente inativo. Ative o convivente antes de registrar ocorrências ou interações.');
+        return;
+      }
+
       const payload = {
         ...formNovo,
         tipo_ocorrencia: formNovo.convivente_autor_ocorrencia ? 'Reclamação do convivente' : formNovo.tipo_ocorrencia,

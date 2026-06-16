@@ -751,6 +751,8 @@ async def criar_registro_pia(
     if not convivente:
         raise HTTPException(status_code=404, detail="Convivente não encontrado.")
 
+    exigir_convivente_ativo_para_registro(convivente)
+
     if not payload.titulo.strip() or not payload.descricao.strip():
         raise HTTPException(status_code=400, detail="Informe título e descrição do registro PIA.")
 
@@ -831,6 +833,23 @@ def usuario_pode_alterar_status_convivente(usuario_atual: dict, convivente: Conv
 
 def usuario_pode_excluir_convivente_sem_vinculos(usuario_atual: dict) -> bool:
     return usuario_eh_gestor(usuario_atual) or usuario_eh_manutencao(usuario_atual)
+
+
+def convivente_esta_ativo(convivente: ConviventeDB) -> bool:
+    return getattr(convivente, "status", None) == "Ativo"
+
+
+def exigir_convivente_ativo_para_registro(convivente: ConviventeDB) -> None:
+    if convivente_esta_ativo(convivente):
+        return
+
+    raise HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail=(
+            "Convivente inativo. Ative o convivente antes de registrar "
+            "movimentações, ocorrências, interações ou novos registros."
+        ),
+    )
 
 
 async def listar_bloqueios_exclusao_convivente(
@@ -919,6 +938,8 @@ async def criar_historico_convivente(
 
     if not convivente:
         raise HTTPException(status_code=404, detail="Convivente não encontrado.")
+
+    exigir_convivente_ativo_para_registro(convivente)
 
     historico_legado_id = payload.historico_legado_id or None
     if historico_legado_id:
@@ -1519,6 +1540,8 @@ async def criar_ocorrencia_manual(payload: OcorrenciaCreate, db: AsyncSession = 
     if not convivente:
         raise HTTPException(status_code=404, detail="Convivente não encontrado.")
 
+    exigir_convivente_ativo_para_registro(convivente)
+
     tecnico_responsavel_id = await validar_tecnico_responsavel_ocorrencia(
         db,
         convivente,
@@ -1614,6 +1637,18 @@ async def adicionar_interacao(ocorrencia_id: str, payload: InteracaoOcorrenciaCr
     
     if not oc: 
         raise HTTPException(status_code=404, detail="Ocorrência não encontrada.")
+
+    convivente = (
+        await db.execute(
+            select(ConviventeDB).where(
+                ConviventeDB.id == oc.convivente_id,
+                ConviventeDB.instituicao_id == obter_instituicao_escopo(usuario_atual),
+            )
+        )
+    ).scalar_one_or_none()
+
+    if convivente:
+        exigir_convivente_ativo_para_registro(convivente)
     
     if payload.tipo_interacao == "Parecer Técnico":
         if not usuario_pode_resolver_ocorrencia(usuario_atual, oc):
@@ -1696,6 +1731,7 @@ async def upload_documento(
 
     if not convivente:
         raise HTTPException(status_code=404, detail="Convivente não encontrado.")
+    exigir_convivente_ativo_para_registro(convivente)
     if sensivel and not (
         usuario_eh_gestor(usuario_atual)
         or usuario_tem_perfil(usuario_atual, {PERFIL_TECNICO})
@@ -1886,7 +1922,6 @@ async def registar_rotina(
             select(ConviventeDB).where(
                 ConviventeDB.id == payload.convivente_id,
                 ConviventeDB.instituicao_id == obter_instituicao_escopo(usuario_atual),
-                ConviventeDB.status == "Ativo"
             )
         )
     ).scalar_one_or_none()
@@ -1896,6 +1931,8 @@ async def registar_rotina(
             status_code=404,
             detail="Convivente não encontrado."
         )
+
+    exigir_convivente_ativo_para_registro(convivente)
 
     hoje = agora_sao_paulo().date()
 
@@ -2342,7 +2379,7 @@ async def dashboard_operacional_rotina(
         )
     ).all()
 
-    # Estado atual real: busca apenas o último movimento por convivente.
+    # Estado atual real: busca apenas o último movimento de fluxo por convivente.
     ultimo_movimento_subq = (
         select(
             RegistroRotinaDB.convivente_id.label("convivente_id"),
@@ -2390,46 +2427,85 @@ async def dashboard_operacional_rotina(
             "origem_estado": "ultimo_movimento_historico"
         }
 
-    presentes = []
-    fora_por_saida = []
-    sem_movimento = []
-    fora_agora_lista = []
+    ultimo_registro_subq = (
+        select(
+            RegistroRotinaDB.convivente_id.label("convivente_id"),
+            func.max(RegistroRotinaDB.data_registro).label("ultima_data")
+        )
+        .where(
+            RegistroRotinaDB.instituicao_id == inst_id,
+            RegistroRotinaDB.cancelado != True,
+        )
+        .group_by(RegistroRotinaDB.convivente_id)
+        .subquery()
+    )
 
-    for convivente in conviventes_ativos:
-        ultimo = ultimo_movimento_por_convivente.get(convivente.id)
+    ultimos_registros_historicos = (
+        await db.execute(
+            select(RegistroRotinaDB)
+            .join(
+                ultimo_registro_subq,
+                and_(
+                    RegistroRotinaDB.convivente_id == ultimo_registro_subq.c.convivente_id,
+                    RegistroRotinaDB.data_registro == ultimo_registro_subq.c.ultima_data,
+                )
+            )
+            .where(RegistroRotinaDB.instituicao_id == inst_id)
+        )
+    ).scalars().all()
 
-        if ultimo and ultimo["tipo_registro"] == "Entrada":
-            presentes.append(ultimo)
-            continue
-
-        if ultimo and ultimo["tipo_registro"] == "Saída":
-            item_fora = {
-                **ultimo,
-                "origem_estado": "saida_registrada"
-            }
-            fora_por_saida.append(item_fora)
-            fora_agora_lista.append(item_fora)
-            continue
-
-        # Sem movimento de entrada/saída também não pode ser contado como presente.
-        # Portanto entra em "fora agora" e também fica destacado como pendência.
-        item_sem_movimento = {
-            "id": None,
-            "convivente_id": convivente.id,
-            "convivente_nome": convivente.nome_social or convivente.nome_completo,
-            "numero_institucional": convivente.numero_institucional,
-            "tipo_registro": None,
-            "data_registro": None,
-            "origem_estado": "sem_movimento"
-        }
-
-        sem_movimento.append(item_sem_movimento)
-        fora_agora_lista.append(item_sem_movimento)
+    ultimo_registro_por_convivente = {
+        registro.convivente_id: registro
+        for registro in ultimos_registros_historicos
+    }
 
     registros_validos_hoje = [
         registro for registro, *_ in registros_hoje
         if not registro.cancelado
     ]
+    convivente_ids_com_registro_hoje = {
+        registro.convivente_id
+        for registro in registros_validos_hoje
+    }
+
+    presentes = []
+    fora_por_saida = []
+    sem_movimento = []
+
+    for convivente in conviventes_ativos:
+        ultimo = ultimo_movimento_por_convivente.get(convivente.id)
+        ultimo_registro = ultimo_registro_por_convivente.get(convivente.id)
+
+        if ultimo and ultimo["tipo_registro"] == "Entrada":
+            presentes.append(ultimo)
+        elif ultimo and ultimo["tipo_registro"] == "Saída":
+            item_fora = {
+                **ultimo,
+                "origem_estado": "saida_registrada"
+            }
+            fora_por_saida.append(item_fora)
+        else:
+            presentes.append({
+                "id": None,
+                "convivente_id": convivente.id,
+                "convivente_nome": convivente.nome_social or convivente.nome_completo,
+                "numero_institucional": convivente.numero_institucional,
+                "tipo_registro": None,
+                "data_registro": None,
+                "origem_estado": "cadastro_ativo_sem_saida",
+            })
+
+        if convivente.id not in convivente_ids_com_registro_hoje:
+            item_sem_movimento = {
+                "id": getattr(ultimo_registro, "id", None),
+                "convivente_id": convivente.id,
+                "convivente_nome": convivente.nome_social or convivente.nome_completo,
+                "numero_institucional": convivente.numero_institucional,
+                "tipo_registro": getattr(ultimo_registro, "tipo_registro", None),
+                "data_registro": getattr(ultimo_registro, "data_registro", None),
+                "origem_estado": "sem_movimento_hoje"
+            }
+            sem_movimento.append(item_sem_movimento)
 
     entradas_hoje = sum(
         1 for registro in registros_validos_hoje
@@ -2444,6 +2520,21 @@ async def dashboard_operacional_rotina(
     almocos_hoje = sum(
         1 for registro in registros_validos_hoje
         if registro.tipo_registro == "Almoço"
+    )
+
+    cafes_hoje = sum(
+        1 for registro in registros_validos_hoje
+        if registro.tipo_registro == "Café da manhã"
+    )
+
+    jantares_hoje = sum(
+        1 for registro in registros_validos_hoje
+        if registro.tipo_registro == "Jantar"
+    )
+
+    lanches_noturnos_hoje = sum(
+        1 for registro in registros_validos_hoje
+        if registro.tipo_registro == "Lanche noturno"
     )
 
     retornos_rapidos_hoje = sum(
@@ -2497,8 +2588,8 @@ async def dashboard_operacional_rotina(
     if sem_movimento:
         alertas.append({
             "tipo": "sem_movimento",
-            "titulo": "Conviventes ativos sem entrada/saída",
-            "descricao": f"{len(sem_movimento)} convivente(s) ativo(s) ainda não possuem movimento histórico de entrada/saída e foram considerados fora agora."
+            "titulo": "Conviventes ativos sem movimentação hoje",
+            "descricao": f"{len(sem_movimento)} convivente(s) ativo(s) ainda não possuem registro de rotina hoje."
         })
 
     capacidade_operacional = len(conviventes_ativos)
@@ -2517,7 +2608,9 @@ async def dashboard_operacional_rotina(
 
             # Estado real atual.
             "presentes_agora": len(presentes),
-            "fora_agora": len(fora_agora_lista),
+            "fora_agora": len(fora_por_saida),
+            "dentro_projeto": len(presentes),
+            "fora_projeto": len(fora_por_saida),
             "fora_com_saida": len(fora_por_saida),
             "sem_movimento": len(sem_movimento),
             "percentual_presentes": percentual_presentes,
@@ -2525,7 +2618,10 @@ async def dashboard_operacional_rotina(
             # Movimento diário.
             "entradas_hoje": entradas_hoje,
             "saidas_hoje": saidas_hoje,
+            "cafes_hoje": cafes_hoje,
             "almocos_hoje": almocos_hoje,
+            "jantares_hoje": jantares_hoje,
+            "lanches_noturnos_hoje": lanches_noturnos_hoje,
             "retornos_rapidos_hoje": retornos_rapidos_hoje,
             "cancelados_hoje": cancelados_hoje,
             "editados_hoje": editados_hoje,
@@ -2533,13 +2629,13 @@ async def dashboard_operacional_rotina(
         },
         "listas_totais": {
             "presentes": len(presentes),
-            "fora": len(fora_agora_lista),
+            "fora": len(fora_por_saida),
             "fora_com_saida": len(fora_por_saida),
             "sem_movimento": len(sem_movimento)
         },
         "limite_listas": limite_listas_seguro,
         "presentes": presentes[:limite_listas_seguro],
-        "fora": fora_agora_lista[:limite_listas_seguro],
+        "fora": fora_por_saida[:limite_listas_seguro],
         "fora_com_saida": fora_por_saida[:limite_listas_seguro],
         "sem_movimento": sem_movimento[:limite_listas_seguro],
         "ultimos_registros": ultimos_registros,
@@ -4319,6 +4415,8 @@ async def marcar_lancamento_sisa(
             status_code=404,
             detail="Convivente não encontrado."
         )
+
+    exigir_convivente_ativo_para_registro(convivente)
 
     existente = (
         await db.execute(

@@ -45,6 +45,13 @@ export default function ProntuarioFluxo({
 
   return (
     <div className="space-y-5">
+      <section className="rounded-xl border border-emerald-100 bg-emerald-50/50 p-4">
+        <h2 className="text-base font-black text-emerald-950">Fluxo Diário</h2>
+        <p className="mt-1 text-xs font-semibold text-emerald-700">
+          Movimentações operacionais do convivente: entradas, saídas, alimentação, banho e interações simples da rotina.
+        </p>
+      </section>
+
       <div className="space-y-4">
         {historicoFluxo.map((registro, idx) => (
           <div
@@ -100,6 +107,35 @@ export default function ProntuarioFluxo({
                 </p>
               </div>
             </div>
+
+            {registro.observacao && (
+              <p className="mt-3 whitespace-pre-wrap rounded-lg border border-slate-100 bg-slate-50 p-3 text-sm text-slate-700">
+                {registro.observacao}
+              </p>
+            )}
+
+            {(registro.motivo_edicao || registro.motivo_cancelamento || registro.justificativa_retorno_rapido) && (
+              <div className="mt-3 grid grid-cols-1 gap-2 text-xs md:grid-cols-3">
+                {registro.justificativa_retorno_rapido && (
+                  <div className="rounded-lg border border-amber-100 bg-amber-50 p-3 text-amber-800">
+                    <p className="font-black uppercase">Retorno rápido</p>
+                    <p className="mt-1 whitespace-pre-wrap">{registro.justificativa_retorno_rapido}</p>
+                  </div>
+                )}
+                {registro.motivo_edicao && (
+                  <div className="rounded-lg border border-yellow-100 bg-yellow-50 p-3 text-yellow-800">
+                    <p className="font-black uppercase">Motivo da edição</p>
+                    <p className="mt-1 whitespace-pre-wrap">{registro.motivo_edicao}</p>
+                  </div>
+                )}
+                {registro.motivo_cancelamento && (
+                  <div className="rounded-lg border border-red-100 bg-red-50 p-3 text-red-800">
+                    <p className="font-black uppercase">Motivo do cancelamento</p>
+                    <p className="mt-1 whitespace-pre-wrap">{registro.motivo_cancelamento}</p>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         ))}
       </div>

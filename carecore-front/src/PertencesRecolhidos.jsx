@@ -17,6 +17,7 @@ import {
 import { filtrarOrdenarConviventesPorBusca } from './utils/conviventeBuscaUtils';
 import LeitorCarteirinhaModal from './components/LeitorCarteirinhaModal';
 import { encontrarConviventePorCodigo } from './utils/conviventeIdentificacaoUtils';
+import { decodificarPayloadJwt } from './utils/jwtUtils';
 
 function formatarDataHora(valor) {
   if (!valor) return '-';
@@ -35,6 +36,23 @@ function statusClasse(status) {
 }
 
 export default function PertencesRecolhidos() {
+  const token = localStorage.getItem('@CareCore:token');
+  let perfilUsuario = '';
+  let usuarioMaster = false;
+
+  try {
+    if (token) {
+      const payload = decodificarPayloadJwt(token) || {};
+      perfilUsuario = payload.perfil_acesso || '';
+      usuarioMaster = Boolean(payload.is_master);
+      usuarioMaster = usuarioMaster || payload.is_manutencao === true;
+    }
+  } catch (error) {
+    console.error('Erro ao ler token em pertences recolhidos', error);
+  }
+
+  const podeBaixaAdministrativa = usuarioMaster || ['Gestor', 'Gestao', 'Gestão', 'Gerente', 'Técnico', 'Tecnico', 'Manutenção', 'Manutencao'].includes(perfilUsuario);
+
   const [registros, setRegistros] = useState([]);
   const [quartos, setQuartos] = useState([]);
   const [conviventes, setConviventes] = useState([]);
@@ -324,6 +342,11 @@ export default function PertencesRecolhidos() {
   };
 
   const abrirBaixaAdministrativa = (registro) => {
+    if (!podeBaixaAdministrativa) {
+      setErro('Baixa administrativa de pertences é restrita a Gestores, Técnicos e Manutenção.');
+      return;
+    }
+
     setErro('');
     setErroBaixaAdmin('');
     setBaixaAdmin({
@@ -561,13 +584,15 @@ export default function PertencesRecolhidos() {
                             >
                               Retirar
                             </button>
-                            <button
-                              type="button"
-                              onClick={() => abrirBaixaAdministrativa(registro)}
-                              className="flex-1 rounded-xl bg-amber-50 px-3 py-2 text-xs font-black text-amber-700"
-                            >
-                              Baixa admin.
-                            </button>
+                            {podeBaixaAdministrativa && (
+                              <button
+                                type="button"
+                                onClick={() => abrirBaixaAdministrativa(registro)}
+                                className="flex-1 rounded-xl bg-amber-50 px-3 py-2 text-xs font-black text-amber-700"
+                              >
+                                Baixa admin.
+                              </button>
+                            )}
                           </div>
                         ) : (
                           <p className="mt-3 text-xs font-semibold text-gray-400">Sem saldo disponível.</p>
@@ -631,13 +656,15 @@ export default function PertencesRecolhidos() {
                                 >
                                   Retirar
                                 </button>
-                                <button
-                                  type="button"
-                                  onClick={() => abrirBaixaAdministrativa(registro)}
-                                  className="rounded-lg bg-amber-50 px-3 py-2 text-xs font-black text-amber-700 hover:bg-amber-100"
-                                >
-                                  Baixa admin.
-                                </button>
+                                {podeBaixaAdministrativa && (
+                                  <button
+                                    type="button"
+                                    onClick={() => abrirBaixaAdministrativa(registro)}
+                                    className="rounded-lg bg-amber-50 px-3 py-2 text-xs font-black text-amber-700 hover:bg-amber-100"
+                                  >
+                                    Baixa admin.
+                                  </button>
+                                )}
                               </div>
                             ) : (
                               <span className="text-xs font-semibold text-gray-400">Sem saldo</span>

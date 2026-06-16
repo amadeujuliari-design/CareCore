@@ -8,12 +8,9 @@ export default function ProntuarioHistorico({
   podeEditarHistoricoConvivente,
   loadingHistoricosConvivente,
   historicosConvivente,
-  loadingHistoricoFluxo,
-  historicoFluxo,
   loadingOcorrencias,
   ocorrencias,
   carregarHistoricosConvivente,
-  carregarHistoricoFluxo,
   cancelarEdicaoHistoricoConvivente,
   handleSalvarHistoricoConvivente,
   iniciarEdicaoHistoricoConvivente,
@@ -35,9 +32,9 @@ export default function ProntuarioHistorico({
       <section className="rounded-xl border border-blue-100 bg-blue-50/50 p-4">
         <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
           <div>
-            <h3 className="text-sm font-black text-blue-950">Histórico do convivente</h3>
+            <h3 className="text-sm font-black text-blue-950">Histórico técnico do convivente</h3>
             <p className="mt-1 text-xs font-semibold text-blue-700">
-              Histórico manual digitado pela equipe, com origem e data obrigatórias. Informações do legado SIAT podem ser promovidas para cá após validação.
+              Registros narrativos relevantes do prontuário. Movimentações de entrada, saída e interações simples ficam na aba Fluxo Diário.
             </p>
           </div>
           <button
@@ -175,126 +172,14 @@ export default function ProntuarioHistorico({
         )}
       </section>
 
-      <section className="rounded-xl border border-emerald-100 bg-emerald-50/50 p-4">
-        <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
-          <div>
-            <h3 className="text-sm font-black text-emerald-950">Registros da rotina diária</h3>
-            <p className="mt-1 text-xs font-semibold text-emerald-700">
-              Entrada, saída e interações registradas no controle de fluxo. Estes apontamentos são somente leitura neste histórico.
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={() => carregarHistoricoFluxo(editandoId)}
-            className="rounded-lg border border-emerald-200 bg-white px-3 py-2 text-xs font-black text-emerald-700"
-          >
-            Atualizar rotina
-          </button>
-        </div>
-
-        {loadingHistoricoFluxo ? (
-          <div className="mt-4 flex justify-center p-6">
-            <p className="text-sm font-bold text-emerald-700 animate-pulse">Carregando rotina diária...</p>
-          </div>
-        ) : historicoFluxo.length === 0 ? (
-          <div className="mt-4 rounded-xl border-2 border-dashed border-emerald-100 bg-white p-8 text-center">
-            <p className="text-sm font-semibold text-slate-500">Nenhum registro de rotina encontrado para este convivente.</p>
-          </div>
-        ) : (
-          <div className="mt-4 space-y-3">
-            {historicoFluxo.map((registro, idx) => (
-              <article key={registro.id || idx} className="rounded-xl border border-emerald-100 bg-white p-4 shadow-sm">
-                <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                  <div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span
-                        className={`
-                          rounded-full border px-3 py-1 text-[10px] font-black uppercase
-                          ${
-                            registro.tipo_registro === 'Entrada'
-                              ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                              : registro.tipo_registro === 'Saída'
-                                ? 'bg-orange-50 text-orange-700 border-orange-200'
-                                : 'bg-blue-50 text-blue-700 border-blue-200'
-                          }
-                        `}
-                      >
-                        {registro.tipo_registro}
-                      </span>
-
-                      {registro.foi_editado && (
-                        <span className="rounded-full border border-yellow-300 bg-yellow-100 px-2 py-1 text-[10px] font-black text-yellow-800">
-                          EDITADO
-                        </span>
-                      )}
-
-                      {registro.cancelado && (
-                        <span className="rounded-full border border-red-300 bg-red-100 px-2 py-1 text-[10px] font-black text-red-700">
-                          CANCELADO
-                        </span>
-                      )}
-
-                      <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-[10px] font-black uppercase text-slate-500">
-                        Sistema
-                      </span>
-                    </div>
-
-                    <p className="mt-3 text-sm text-slate-700">
-                      Registrado por <span className="font-bold">{registro.usuario_nome || 'usuário'}</span>
-                    </p>
-                    {registro.usuario_perfil && (
-                      <p className="mt-1 text-xs text-slate-500">Perfil: {registro.usuario_perfil}</p>
-                    )}
-                  </div>
-
-                  <div className="text-xs text-slate-500 md:text-right">
-                    <p className="font-bold text-slate-800">{new Date(registro.data_registro).toLocaleString('pt-BR')}</p>
-                    <p>Registro operacional</p>
-                  </div>
-                </div>
-
-                {registro.observacao && (
-                  <p className="mt-3 whitespace-pre-wrap rounded-lg border border-slate-100 bg-slate-50 p-3 text-sm text-slate-700">
-                    {registro.observacao}
-                  </p>
-                )}
-
-                {(registro.motivo_edicao || registro.motivo_cancelamento || registro.justificativa_retorno_rapido) && (
-                  <div className="mt-3 grid grid-cols-1 gap-2 text-xs md:grid-cols-3">
-                    {registro.justificativa_retorno_rapido && (
-                      <div className="rounded-lg border border-amber-100 bg-amber-50 p-3 text-amber-800">
-                        <p className="font-black uppercase">Retorno rápido</p>
-                        <p className="mt-1 whitespace-pre-wrap">{registro.justificativa_retorno_rapido}</p>
-                      </div>
-                    )}
-                    {registro.motivo_edicao && (
-                      <div className="rounded-lg border border-yellow-100 bg-yellow-50 p-3 text-yellow-800">
-                        <p className="font-black uppercase">Motivo da edição</p>
-                        <p className="mt-1 whitespace-pre-wrap">{registro.motivo_edicao}</p>
-                      </div>
-                    )}
-                    {registro.motivo_cancelamento && (
-                      <div className="rounded-lg border border-red-100 bg-red-50 p-3 text-red-800">
-                        <p className="font-black uppercase">Motivo do cancelamento</p>
-                        <p className="mt-1 whitespace-pre-wrap">{registro.motivo_cancelamento}</p>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </article>
-            ))}
-          </div>
-        )}
-      </section>
-
       {loadingOcorrencias ? (
-        <div className="flex justify-center p-8"><p className="text-brand font-bold animate-pulse text-sm">Carregando linha do tempo...</p></div>
+        <div className="flex justify-center p-8"><p className="text-brand font-bold animate-pulse text-sm">Carregando ocorrências...</p></div>
       ) : ocorrencias.length === 0 ? (
         <section className="rounded-xl border border-violet-100 bg-violet-50/50 p-4">
           <div>
-            <h3 className="text-sm font-black text-violet-950">Ocorrências</h3>
+            <h3 className="text-sm font-black text-violet-950">Ocorrências e pareceres</h3>
             <p className="mt-1 text-xs font-semibold text-violet-700">
-              Chamados e eventos técnicos registrados na central de ocorrências.
+              Chamados, interações e pareceres técnicos registrados na central de ocorrências.
             </p>
           </div>
           <div className="mt-4 text-center py-8 bg-white border-2 border-dashed border-violet-100 rounded-xl">
@@ -304,9 +189,9 @@ export default function ProntuarioHistorico({
       ) : (
         <section className="rounded-xl border border-violet-100 bg-violet-50/50 p-4">
           <div>
-            <h3 className="text-sm font-black text-violet-950">Ocorrências</h3>
+            <h3 className="text-sm font-black text-violet-950">Ocorrências e pareceres</h3>
             <p className="mt-1 text-xs font-semibold text-violet-700">
-              Chamados e eventos técnicos registrados na central de ocorrências.
+              Chamados, interações e pareceres técnicos registrados na central de ocorrências.
             </p>
           </div>
           <div className="relative border-l-2 border-violet-200 ml-3 md:ml-6 mt-4 space-y-6">
@@ -327,14 +212,41 @@ export default function ProntuarioHistorico({
                   </div>
                   <h4 className="text-sm font-bold text-gray-800 mb-1">{ocorrencia.motivo}</h4>
                   <p className="text-xs text-gray-600 mb-3 bg-gray-50 p-3 rounded-lg border border-gray-100">{ocorrencia.descricao}</p>
-                  {ocorrencia.requer_acao_tecnica && (
-                    <div className="mt-3 pt-3 border-t border-gray-100 flex items-center justify-between">
-                      <span className={`text-[10px] font-bold px-2 py-1 rounded-md uppercase ${ocorrencia.status_resolucao === 'Pendente' ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600'}`}>
-                        Técnico: {ocorrencia.status_resolucao}
+                  <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-gray-100 pt-3">
+                    <span className={`text-[10px] font-bold px-2 py-1 rounded-md uppercase ${ocorrencia.status_resolucao === 'Resolvido' ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-600'}`}>
+                      Status: {ocorrencia.status_resolucao || 'Pendente'}
+                    </span>
+                    {ocorrencia.prioridade && (
+                      <span className="text-[10px] font-bold px-2 py-1 rounded-md uppercase bg-amber-50 text-amber-700">
+                        Prioridade: {ocorrencia.prioridade}
                       </span>
-                      {ocorrencia.parecer_tecnico && (
-                        <p className="text-[11px] text-gray-500 flex-1 ml-3 truncate">Parecer: {ocorrencia.parecer_tecnico}</p>
-                      )}
+                    )}
+                    {ocorrencia.requer_acao_tecnica && (
+                      <span className="text-[10px] font-bold px-2 py-1 rounded-md uppercase bg-red-50 text-red-600">
+                        Requer ação técnica
+                      </span>
+                    )}
+                  </div>
+
+                  {ocorrencia.parecer_tecnico && (
+                    <p className="mt-3 whitespace-pre-wrap rounded-lg border border-green-100 bg-green-50 p-3 text-xs text-green-800">
+                      <span className="font-black uppercase">Parecer técnico: </span>{ocorrencia.parecer_tecnico}
+                    </p>
+                  )}
+
+                  {ocorrencia.interacoes?.length > 0 && (
+                    <div className="mt-3 space-y-2">
+                      {ocorrencia.interacoes.map((interacao) => (
+                        <div key={interacao.id} className="rounded-lg border border-violet-100 bg-violet-50/60 p-3 text-xs text-violet-900">
+                          <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                            <span className="font-black uppercase">{interacao.tipo_interacao || 'Interação'}</span>
+                            <span className="text-[11px] font-semibold text-violet-600">
+                              {new Date(interacao.data_interacao).toLocaleString('pt-BR')}
+                            </span>
+                          </div>
+                          <p className="mt-2 whitespace-pre-wrap">{interacao.mensagem}</p>
+                        </div>
+                      ))}
                     </div>
                   )}
                 </div>

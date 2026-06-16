@@ -71,6 +71,25 @@ export default function DashboardOperacional() {
     });
   };
 
+  const formatarTempoDesde = (data) => {
+    if (!data) return 'Sem registro anterior';
+
+    const dataRegistro = new Date(data).getTime();
+    if (Number.isNaN(dataRegistro)) return 'Sem registro anterior';
+
+    const diferencaMs = Math.max(Date.now() - dataRegistro, 0);
+    const minutos = Math.floor(diferencaMs / (60 * 1000));
+
+    if (minutos < 1) return 'agora há pouco';
+    if (minutos < 60) return `há ${minutos} min`;
+
+    const horas = Math.floor(minutos / 60);
+    if (horas < 24) return `há ${horas} h`;
+
+    const dias = Math.floor(horas / 24);
+    return `há ${dias} dia${dias === 1 ? '' : 's'}`;
+  };
+
   const resumo = dados?.resumo || {};
   const limiteListaOperacional = 80;
 
@@ -94,15 +113,15 @@ export default function DashboardOperacional() {
 
   const cardsPrincipais = [
     {
-      label: 'Presentes agora',
-      valor: resumo.presentes_agora || 0,
-      detalhe: `${resumo.percentual_presentes || 0}% dos ativos / estado real`,
+      label: 'Dentro do projeto',
+      valor: resumo.dentro_projeto ?? resumo.presentes_agora ?? 0,
+      detalhe: `${resumo.percentual_presentes || 0}% dos ativos sem saída vigente`,
       classe: 'bg-emerald-50 text-emerald-700 border-emerald-100'
     },
     {
-      label: 'Fora agora',
-      valor: resumo.fora_agora || 0,
-      detalhe: 'saída registrada ou sem entrada',
+      label: 'Fora do projeto',
+      valor: resumo.fora_projeto ?? resumo.fora_agora ?? 0,
+      detalhe: 'último fluxo confirmado como saída',
       classe: 'bg-orange-50 text-orange-700 border-orange-100'
     },
     {
@@ -112,33 +131,37 @@ export default function DashboardOperacional() {
       classe: 'bg-blue-50 text-blue-700 border-blue-100'
     },
     {
-      label: 'Almoços hoje',
-      valor: resumo.almocos_hoje || 0,
-      detalhe: 'refeições registradas',
-      classe: 'bg-indigo-50 text-indigo-700 border-indigo-100'
+      label: 'Saídas hoje',
+      valor: resumo.saidas_hoje || 0,
+      detalhe: 'registros válidos',
+      classe: 'bg-sky-50 text-sky-700 border-sky-100'
     }
   ];
 
-  const cardsAuditoria = [
+  const cardsSecundarios = [
     {
-      label: 'Saídas hoje',
-      valor: resumo.saidas_hoje || 0
+      label: 'Cafés da manhã hoje',
+      valor: resumo.cafes_hoje || 0
     },
     {
-      label: 'Retornos rápidos',
-      valor: resumo.retornos_rapidos_hoje || 0
+      label: 'Almoços hoje',
+      valor: resumo.almocos_hoje || 0
     },
     {
-      label: 'Cancelados',
-      valor: resumo.cancelados_hoje || 0
+      label: 'Jantares hoje',
+      valor: resumo.jantares_hoje || 0
     },
     {
-      label: 'Editados',
-      valor: resumo.editados_hoje || 0
+      label: 'Lanches noturnos hoje',
+      valor: resumo.lanches_noturnos_hoje || 0
     },
     {
-      label: 'Ativos cadastrados',
+      label: 'Total de conviventes ativos',
       valor: resumo.conviventes_ativos || 0
+    },
+    {
+      label: 'Sem movimentação hoje',
+      valor: resumo.sem_movimento || 0
     }
   ];
 
@@ -212,9 +235,9 @@ export default function DashboardOperacional() {
 
             </div>
 
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-2 sm:gap-3 mb-5">
+            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-2 sm:gap-3 mb-5">
 
-              {cardsAuditoria.map(card => (
+              {cardsSecundarios.map(card => (
                 <div
                   key={card.label}
                   className="bg-white rounded-2xl border border-gray-100 shadow-sm p-3 sm:p-4"
@@ -241,7 +264,7 @@ export default function DashboardOperacional() {
                       Situação dos conviventes
                     </h2>
                     <p className="text-xs text-gray-500 mt-1">
-                      Estado calculado pelo último movimento histórico válido.
+                      Ativos sem saída registrada são considerados dentro do projeto.
                     </p>
                   </div>
 
@@ -255,7 +278,7 @@ export default function DashboardOperacional() {
                           : 'bg-white text-gray-600 border-gray-200'
                       }`}
                     >
-                      Presentes
+                      Dentro do projeto
                     </button>
 
                     <button
@@ -267,7 +290,7 @@ export default function DashboardOperacional() {
                           : 'bg-white text-gray-600 border-gray-200'
                       }`}
                     >
-                      Fora agora
+                      Fora do projeto
                     </button>
 
                     <button
@@ -279,7 +302,7 @@ export default function DashboardOperacional() {
                           : 'bg-white text-gray-600 border-gray-200'
                       }`}
                     >
-                      Sem entrada/saída
+                      Sem movimentação
                     </button>
                   </div>
                 </div>
@@ -305,7 +328,7 @@ export default function DashboardOperacional() {
                             </p>
                           </div>
 
-                          {item.tipo_registro ? (
+                          {abaLista !== 'sem_movimento' && item.tipo_registro ? (
                             <span className={`shrink-0 rounded-full border px-3 py-1 text-xs font-black ${
                               item.tipo_registro === 'Entrada'
                                 ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
@@ -315,13 +338,15 @@ export default function DashboardOperacional() {
                             </span>
                           ) : (
                             <span className="shrink-0 rounded-full border border-gray-200 bg-white px-3 py-1 text-[10px] font-black text-gray-500">
-                              Sem mov.
+                              {abaLista === 'presentes' ? 'Ativo sem saída' : 'Sem mov. hoje'}
                             </span>
                           )}
                         </div>
 
                         <div className="mt-3 rounded-xl bg-white px-3 py-2 text-xs font-semibold text-gray-600">
-                          Último movimento: {formatarDataHora(item.data_registro)}
+                          {abaLista === 'sem_movimento'
+                            ? `Último registro: ${formatarDataHora(item.data_registro)} (${formatarTempoDesde(item.data_registro)})`
+                            : `Último fluxo: ${formatarDataHora(item.data_registro)}`}
                         </div>
                       </article>
                     ))
@@ -347,7 +372,7 @@ export default function DashboardOperacional() {
                           Estado
                         </th>
                         <th className="px-4 py-3 text-left text-xs font-black text-gray-500 uppercase">
-                          Horário
+                          Último registro
                         </th>
                       </tr>
                     </thead>
@@ -377,7 +402,7 @@ export default function DashboardOperacional() {
                             </td>
 
                             <td className="px-4 py-3">
-                              {item.tipo_registro ? (
+                              {abaLista !== 'sem_movimento' && item.tipo_registro ? (
                                 <span className={`text-xs font-black px-3 py-1 rounded-full border ${
                                   item.tipo_registro === 'Entrada'
                                     ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
@@ -387,13 +412,18 @@ export default function DashboardOperacional() {
                                 </span>
                               ) : (
                                 <span className="text-xs font-black px-3 py-1 rounded-full bg-gray-50 text-gray-500 border border-gray-200">
-                                  Sem entrada/saída
+                                  {abaLista === 'presentes' ? 'Ativo sem saída' : 'Sem movimentação hoje'}
                                 </span>
                               )}
                             </td>
 
                             <td className="px-4 py-3 text-sm text-gray-600">
-                              {formatarDataHora(item.data_registro)}
+                              <span className="font-semibold">{formatarDataHora(item.data_registro)}</span>
+                              {abaLista === 'sem_movimento' && (
+                                <span className="ml-2 text-xs font-bold text-gray-400">
+                                  {formatarTempoDesde(item.data_registro)}
+                                </span>
+                              )}
                             </td>
                           </tr>
                         ))

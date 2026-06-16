@@ -323,7 +323,7 @@ export default function Conviventes() {
       carregarHistoricosConvivente(editandoId);
     }
 
-    if ((abaAtual === 'historico' || abaAtual === 'fluxo') && fluxoCarregadoPara !== editandoId) {
+    if (abaAtual === 'fluxo' && fluxoCarregadoPara !== editandoId) {
       carregarHistoricoFluxo(editandoId);
     }
 
@@ -660,12 +660,9 @@ export default function Conviventes() {
                       podeEditarHistoricoConvivente={podeEditarHistoricoConvivente}
                       loadingHistoricosConvivente={loadingHistoricosConvivente}
                       historicosConvivente={historicosConvivente}
-                      loadingHistoricoFluxo={loadingHistoricoFluxo}
-                      historicoFluxo={historicoFluxo}
                       loadingOcorrencias={loadingOcorrencias}
                       ocorrencias={ocorrencias}
                       carregarHistoricosConvivente={carregarHistoricosConvivente}
-                      carregarHistoricoFluxo={carregarHistoricoFluxo}
                       cancelarEdicaoHistoricoConvivente={cancelarEdicaoHistoricoConvivente}
                       handleSalvarHistoricoConvivente={handleSalvarHistoricoConvivente}
                       iniciarEdicaoHistoricoConvivente={iniciarEdicaoHistoricoConvivente}

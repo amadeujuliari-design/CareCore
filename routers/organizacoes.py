@@ -1,4 +1,5 @@
 from datetime import date, datetime, time, timedelta
+import os
 from pathlib import Path
 import uuid
 
@@ -55,6 +56,12 @@ router = APIRouter(
 
 _UPLOADS_RELATORIOS = Path("uploads/relatorios")
 _TAMANHO_MAXIMO_LOGO_BYTES = 2 * 1024 * 1024
+_AMBIENTES_COM_UPLOAD_LOCAL = {"local", "development", "dev", "test", "testing"}
+
+
+def _upload_local_relatorios_permitido() -> bool:
+    app_env = os.getenv("APP_ENV", "local").strip().lower()
+    return app_env in _AMBIENTES_COM_UPLOAD_LOCAL
 
 
 def _content_type_logo(extensao: str) -> str:
@@ -556,6 +563,15 @@ async def enviar_logo_identidade_relatorios(
                 detail="Não foi possível salvar o logotipo no storage persistente.",
             ) from exc
     else:
+        if not _upload_local_relatorios_permitido():
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=(
+                    "Storage persistente não configurado para logotipos. "
+                    "Configure CARECORE_SUPABASE_URL e CARECORE_SUPABASE_SERVICE_ROLE_KEY no backend."
+                ),
+            )
+
         pasta_projeto = _UPLOADS_RELATORIOS / projeto.id
         pasta_projeto.mkdir(parents=True, exist_ok=True)
         caminho = pasta_projeto / nome_arquivo
