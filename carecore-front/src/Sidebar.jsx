@@ -102,6 +102,7 @@ export default function Sidebar() {
   const [menuMobileAberto, setMenuMobileAberto] = useState(false);
   const [menusExpandidos, setMenusExpandidos] = useState({});
   const [historicoLegadoAtivo, setHistoricoLegadoAtivo] = useState(false);
+  const [cobrancasClienteVisivel, setCobrancasClienteVisivel] = useState(false);
   const [modalSenhaAberto, setModalSenhaAberto] = useState(false);
   const [modalPasskeysAberto, setModalPasskeysAberto] = useState(false);
   const [senhaAtual, setSenhaAtual] = useState('');
@@ -151,6 +152,7 @@ export default function Sidebar() {
   useEffect(() => {
     if (!token) {
       setHistoricoLegadoAtivo(false);
+      setCobrancasClienteVisivel(false);
       return;
     }
 
@@ -161,6 +163,14 @@ export default function Sidebar() {
       })
       .catch(() => {
         if (ativo) setHistoricoLegadoAtivo(false);
+      });
+
+    api.get(`${API_ROOT}/cobrancas/modulo/status`)
+      .then((response) => {
+        if (ativo) setCobrancasClienteVisivel(response.data?.cliente_visivel === true);
+      })
+      .catch(() => {
+        if (ativo) setCobrancasClienteVisivel(false);
       });
 
     return () => {
@@ -314,7 +324,8 @@ export default function Sidebar() {
           path: '/cobrancas',
           icon: CreditCard,
           label: 'Cobranças',
-          perfis: ['Gestor', 'Global']
+          perfis: ['Gestor', 'Global'],
+          feature: 'cobrancasCliente'
         },
         {
           path: '/admin/cobrancas',
@@ -412,7 +423,9 @@ export default function Sidebar() {
 
     const perfilPermitido = !item.perfis || item.perfis.includes(perfilNormalizado);
     const globalPermitido = !item.globalOnly || isGlobal;
-    const featurePermitida = item.feature !== 'historicoLegado' || historicoLegadoAtivo;
+    const featurePermitida =
+      (item.feature !== 'historicoLegado' || historicoLegadoAtivo) &&
+      (item.feature !== 'cobrancasCliente' || cobrancasClienteVisivel);
     return perfilPermitido && globalPermitido && featurePermitida;
   };
 

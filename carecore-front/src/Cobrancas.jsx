@@ -49,6 +49,7 @@ export default function Cobrancas() {
   const [simulandoStatusCicloId, setSimulandoStatusCicloId] = useState(null);
   const [alertaCobrancas, setAlertaCobrancas] = useState(null);
   const [bloqueioLicenca, setBloqueioLicenca] = useState(obterBloqueioLicencaLocal);
+  const [moduloClienteVisivel, setModuloClienteVisivel] = useState(true);
   const [erro, setErro] = useState('');
   const [resultadoTeste, setResultadoTeste] = useState(null);
   const [cobrancaTeste, setCobrancaTeste] = useState(null);
@@ -59,6 +60,16 @@ export default function Cobrancas() {
     setCobrancaTeste(null);
     try {
       setCarregando(true);
+      const moduloResponse = await api.get('/api/cobrancas/modulo/status');
+      const clienteVisivel = moduloResponse.data?.cliente_visivel === true;
+      setModuloClienteVisivel(clienteVisivel);
+      if (!clienteVisivel && !podeAdministrarAsaas) {
+        setResumoCobranca(null);
+        setHistoricoCobrancas([]);
+        setAlertaCobrancas(null);
+        return;
+      }
+
       const resumoResponse = await api.get('/api/cobrancas/organizacao/resumo');
       setResumoCobranca(resumoResponse.data);
       const historicoResponse = await api.get('/api/cobrancas/organizacao/historico');
@@ -200,6 +211,20 @@ export default function Cobrancas() {
             </div>
           ) : null}
 
+          {!moduloClienteVisivel && !podeAdministrarAsaas ? (
+            <section className="rounded-3xl border border-blue-100 bg-blue-50 p-6 shadow-sm">
+              <div className="flex items-start gap-3 text-sm font-semibold text-blue-800">
+                <AlertTriangle className="mt-0.5 shrink-0" size={18} />
+                <div>
+                  <h2 className="text-lg font-black text-blue-950">Módulo de cobranças em preparação</h2>
+                  <p className="mt-2">
+                    Esta área ficará disponível quando a cobrança automática for ativada pela manutenção.
+                  </p>
+                </div>
+              </div>
+            </section>
+          ) : null}
+
           {bloqueioLicenca ? (
             <div className="flex items-start gap-3 rounded-2xl border border-red-100 bg-red-50 p-4 text-sm font-semibold text-red-700">
               <AlertTriangle className="mt-0.5 shrink-0" size={18} />
@@ -218,7 +243,7 @@ export default function Cobrancas() {
             </div>
           ) : null}
 
-          {carregando && !resumoCobranca ? (
+          {carregando && !resumoCobranca && (moduloClienteVisivel || podeAdministrarAsaas) ? (
             <section className="rounded-3xl border border-slate-100 bg-white p-6 shadow-sm">
               <div className="flex items-center gap-3 text-sm font-black text-slate-500">
                 <RefreshCw className="animate-spin" size={18} />
@@ -227,7 +252,7 @@ export default function Cobrancas() {
             </section>
           ) : null}
 
-          {!carregando || resumoCobranca ? (
+          {(!carregando || resumoCobranca) && (moduloClienteVisivel || podeAdministrarAsaas) ? (
           <section className="rounded-3xl border border-slate-100 bg-white p-5 shadow-sm">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div>
@@ -320,7 +345,7 @@ export default function Cobrancas() {
           </section>
           ) : null}
 
-          {!carregando || historicoCobrancas.length ? (
+          {(!carregando || historicoCobrancas.length) && (moduloClienteVisivel || podeAdministrarAsaas) ? (
           <section className="rounded-3xl border border-slate-100 bg-white p-5 shadow-sm">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div>

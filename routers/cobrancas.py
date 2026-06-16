@@ -140,16 +140,26 @@ def env_int_cobrancas(nome: str, padrao: int, minimo: int = 1, maximo: int = 31)
 
 
 def cobrancas_automacao_config() -> dict:
+    fechamento_automatico_ativo = os.getenv(
+        "CARECORE_COBRANCAS_FECHAMENTO_AUTOMATICO_ATIVO",
+        "false",
+    ).strip().lower() in {"1", "true", "sim", "yes", "on"}
+    geracao_asaas_automatica = os.getenv(
+        "CARECORE_COBRANCAS_GERACAO_ASAAS_AUTOMATICA",
+        "false",
+    ).strip().lower() in {"1", "true", "sim", "yes", "on"}
+    visibilidade_cliente = os.getenv("CARECORE_COBRANCAS_MODULO_CLIENTE_VISIVEL")
+    modulo_cliente_visivel = (
+        visibilidade_cliente.strip().lower() in {"1", "true", "sim", "yes", "on"}
+        if visibilidade_cliente is not None
+        else fechamento_automatico_ativo
+    )
+
     return {
         "preparado": True,
-        "fechamento_automatico_ativo": os.getenv(
-            "CARECORE_COBRANCAS_FECHAMENTO_AUTOMATICO_ATIVO",
-            "false",
-        ).strip().lower() in {"1", "true", "sim", "yes", "on"},
-        "geracao_asaas_automatica": os.getenv(
-            "CARECORE_COBRANCAS_GERACAO_ASAAS_AUTOMATICA",
-            "false",
-        ).strip().lower() in {"1", "true", "sim", "yes", "on"},
+        "fechamento_automatico_ativo": fechamento_automatico_ativo,
+        "geracao_asaas_automatica": geracao_asaas_automatica,
+        "modulo_cliente_visivel": modulo_cliente_visivel,
         "dia_fechamento": env_int_cobrancas("CARECORE_COBRANCAS_DIA_FECHAMENTO", 25),
         "dia_vencimento": env_int_cobrancas("CARECORE_COBRANCAS_DIA_VENCIMENTO", 5),
         "modo": "preparado_desligado",
@@ -588,6 +598,21 @@ async def resumo_cobranca_organizacao(
         data_fechamento,
         organizacao_id,
     )
+
+
+@router.get("/modulo/status")
+async def status_modulo_cobrancas(
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    config = cobrancas_automacao_config()
+    manutencao = usuario_eh_manutencao(usuario_atual)
+    return {
+        "preparado": config["preparado"],
+        "cliente_visivel": bool(config["modulo_cliente_visivel"]),
+        "manutencao_visivel": manutencao,
+        "fechamento_automatico_ativo": config["fechamento_automatico_ativo"],
+        "geracao_asaas_automatica": config["geracao_asaas_automatica"],
+    }
 
 
 @router.post("/asaas/webhook")

@@ -103,12 +103,14 @@ def test_simulacoes_cobranca_ativas_por_flag(monkeypatch):
 def test_automacao_cobrancas_fica_desligada_por_padrao(monkeypatch):
     monkeypatch.delenv("CARECORE_COBRANCAS_FECHAMENTO_AUTOMATICO_ATIVO", raising=False)
     monkeypatch.delenv("CARECORE_COBRANCAS_GERACAO_ASAAS_AUTOMATICA", raising=False)
+    monkeypatch.delenv("CARECORE_COBRANCAS_MODULO_CLIENTE_VISIVEL", raising=False)
 
     config = cobrancas_automacao_config()
 
     assert config["preparado"] is True
     assert config["fechamento_automatico_ativo"] is False
     assert config["geracao_asaas_automatica"] is False
+    assert config["modulo_cliente_visivel"] is False
 
 
 def test_automacao_cobrancas_liga_apenas_por_flag(monkeypatch):
@@ -120,7 +122,18 @@ def test_automacao_cobrancas_liga_apenas_por_flag(monkeypatch):
 
     assert config["fechamento_automatico_ativo"] is True
     assert config["geracao_asaas_automatica"] is True
+    assert config["modulo_cliente_visivel"] is True
     assert config["dia_fechamento"] == 31
+
+
+def test_modulo_cliente_cobrancas_pode_ser_ligado_por_flag_explicita(monkeypatch):
+    monkeypatch.setenv("CARECORE_COBRANCAS_FECHAMENTO_AUTOMATICO_ATIVO", "false")
+    monkeypatch.setenv("CARECORE_COBRANCAS_MODULO_CLIENTE_VISIVEL", "true")
+
+    config = cobrancas_automacao_config()
+
+    assert config["fechamento_automatico_ativo"] is False
+    assert config["modulo_cliente_visivel"] is True
 
 
 def test_payload_simular_status_normaliza_status_asaas():
