@@ -162,7 +162,6 @@ export default function Suporte() {
 
   useEffect(() => {
     carregarChamados();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [escopo]);
 
   function atualizarFormulario(campo, valor) {

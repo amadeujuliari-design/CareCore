@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -48,7 +48,7 @@ def _instituicao_id(usuario_atual: dict) -> str:
 
 
 def _agora() -> datetime:
-    return datetime.utcnow()
+    return datetime.now(UTC).replace(tzinfo=None)
 
 
 async def _obter_participacao(

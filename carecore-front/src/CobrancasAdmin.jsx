@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, CreditCard, RefreshCw, ShieldCheck } from 'lucide-react';
+import { AlertTriangle, RefreshCw, ShieldCheck } from 'lucide-react';
 
 import Sidebar from './Sidebar';
 import { AppShell, MainShell, PageHeader, ScrollArea } from './components/PremiumUI';

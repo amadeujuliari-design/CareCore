@@ -58,13 +58,17 @@ documentos_teste/
 # Materiais de apoio locais / continuidade de chat
 CHAT_*.txt
 CHECKPOINT_CHAT_*.txt
+CHECKPOINT_COMPLETO_*.txt
 PROMPT_*.txt
 estrutura_projeto.txt
 diretrizes.txt
 DEPLOY_CHECKLIST.md
+minuta_contrato_carecore_aeb*
 
 # Artefatos locais de análise/importação histórica
 /scripts/
+relatorios_importacao/
+preencher_organizacao.py
 RelatorioCidadaoVinculado.xls
 comparacao_conviventes_*.csv
 analise_*.csv

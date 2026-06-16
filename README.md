@@ -108,6 +108,8 @@ Regra do projeto: toda alteração de schema em `models.py` ou em tabelas/índic
 
 ## Checklist De Produção
 
+Use também o guia versionado `docs/operacao-producao.md` antes de deploys, migrations ou manutenções em dados reais.
+
 Antes de publicar uma nova versão:
 
 ```bash

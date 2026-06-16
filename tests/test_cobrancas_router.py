@@ -1,16 +1,18 @@
 import pytest
 from fastapi import HTTPException
 
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 from routers.cobrancas import (
     CobrancaTesteAsaasRequest,
     LiberacaoTemporariaRequest,
     SimularStatusCobrancaRequest,
     cobrancas_automacao_config,
+    ciclo_cobranca_no_escopo_usuario,
     classificar_status_operacao_financeira,
     data_fechamento_padrao,
     data_vencimento_ciclo,
+    exigir_modulo_cliente_cobrancas_visivel,
     exigir_usuario_manutencao_financeira,
     exigir_usuario_pode_ver_cobrancas,
     extrair_referencia_ciclo_asaas,
@@ -20,6 +22,10 @@ from routers.cobrancas import (
     status_asaas_do_webhook,
     status_pagamento_asaas_para_carecore,
 )
+
+
+def agora_utc_naive() -> datetime:
+    return datetime.now(UTC).replace(tzinfo=None)
 
 
 def test_payload_cobranca_teste_limpa_documento():
@@ -136,6 +142,28 @@ def test_modulo_cliente_cobrancas_pode_ser_ligado_por_flag_explicita(monkeypatch
     assert config["modulo_cliente_visivel"] is True
 
 
+def test_modulo_cliente_cobrancas_bloqueia_cliente_quando_flag_desligada(monkeypatch):
+    monkeypatch.setenv("CARECORE_COBRANCAS_MODULO_CLIENTE_VISIVEL", "false")
+
+    with pytest.raises(HTTPException):
+        exigir_modulo_cliente_cobrancas_visivel({"perfil_acesso": "Gestor"})
+
+
+def test_modulo_cliente_cobrancas_manutencao_ignora_flag_desligada(monkeypatch):
+    monkeypatch.setenv("CARECORE_COBRANCAS_MODULO_CLIENTE_VISIVEL", "false")
+
+    exigir_modulo_cliente_cobrancas_visivel({"perfil_acesso": "Manutenção"})
+
+
+def test_ciclo_cobranca_respeita_escopo_da_organizacao():
+    class Ciclo:
+        organizacao_id = "org-1"
+
+    assert ciclo_cobranca_no_escopo_usuario(Ciclo(), {"perfil_acesso": "Global"}, "org-1") is True
+    assert ciclo_cobranca_no_escopo_usuario(Ciclo(), {"perfil_acesso": "Global"}, "org-2") is False
+    assert ciclo_cobranca_no_escopo_usuario(Ciclo(), {"perfil_acesso": "Manutenção"}, "org-2") is True
+
+
 def test_payload_simular_status_normaliza_status_asaas():
     payload = SimularStatusCobrancaRequest(status_asaas="received")
 
@@ -187,7 +215,7 @@ def test_classificar_status_operacao_financeira_bloqueada_por_vencida():
 def test_classificar_status_operacao_financeira_liberada_temporariamente():
     class Liberacao:
         ativo = True
-        liberado_ate = datetime.utcnow() + timedelta(days=2)
+        liberado_ate = agora_utc_naive() + timedelta(days=2)
 
     status = classificar_status_operacao_financeira([], Liberacao())
 

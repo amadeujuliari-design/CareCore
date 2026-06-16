@@ -44,6 +44,7 @@ import {
   atualizarConviventeProntuario,
   carregarDadosIniciaisProntuario,
   criarConviventeProntuario,
+  excluirConviventeSemVinculos,
   obterConviventeProntuario,
 } from './services/conviventesProntuarioService';
 import { consultarCep } from './services/cepService';
@@ -55,7 +56,7 @@ export default function Conviventes() {
   const navigate = useNavigate();
   const token = localStorage.getItem('@CareCore:token');
   const deviceInfo = useDeviceInfo();
-  const { perfilUsuario, idUsuarioLogado } = useTokenIdentity(token);
+  const { payload: usuarioPayload, perfilUsuario, idUsuarioLogado } = useTokenIdentity(token);
 
   // Dados Principais
   const [conviventes, setConviventes] = useState([]);
@@ -118,6 +119,7 @@ export default function Conviventes() {
     podeMudarStatus,
     podeCriarHistoricoConvivente,
     podeEditarHistoricoConvivente,
+    podeGerenciarPiaConvivente,
     usuarioPodeImprimirSensiveisConvivente,
   } = usePermissoesProntuario({
     perfilUsuario,
@@ -165,6 +167,11 @@ export default function Conviventes() {
   const fotoPerfilUrl = fotoPerfilData?.caminho_arquivo || formData.foto_url || null;
   const usuarioLogadoEhTecnico = usuarioEhTecnico(perfilUsuario);
   const usuarioLogadoEhOrientador = perfilUsuario === 'Orientador';
+  const podeExcluirConviventeSemVinculos =
+    perfilUsuario === 'Gestor' ||
+    perfilUsuario === 'Manutenção' ||
+    usuarioPayload?.is_manutencao === true ||
+    usuarioPayload?.is_master === true;
   const {
     abrirCarteirinha,
     abrirFichaCompleta,
@@ -303,6 +310,11 @@ export default function Conviventes() {
   useEffect(() => {
     if (!editandoId || telaAtual !== 'form') return;
 
+    if (abaAtual === 'pia' && !podeGerenciarPiaConvivente) {
+      setAbaAtual('pessoais');
+      return;
+    }
+
     if (abaAtual === 'historico' && ocorrenciasCarregadasPara !== editandoId) {
       carregarOcorrencias(editandoId);
     }
@@ -315,10 +327,10 @@ export default function Conviventes() {
       carregarHistoricoFluxo(editandoId);
     }
 
-    if (abaAtual === 'pia' && piaCarregadoPara !== editandoId) {
+    if (abaAtual === 'pia' && podeGerenciarPiaConvivente && piaCarregadoPara !== editandoId) {
       carregarRegistrosPia(editandoId);
     }
-  }, [abaAtual, editandoId, telaAtual, ocorrenciasCarregadasPara, historicosCarregadosPara, fluxoCarregadoPara, piaCarregadoPara]);
+  }, [abaAtual, editandoId, telaAtual, ocorrenciasCarregadasPara, historicosCarregadosPara, fluxoCarregadoPara, piaCarregadoPara, podeGerenciarPiaConvivente]);
 
   useEffect(() => {
     if (telaAtual !== 'form') return;
@@ -450,6 +462,42 @@ export default function Conviventes() {
     await salvarProntuario();
   };
 
+  const handleExcluirConviventeSemVinculos = async () => {
+    if (!editandoId || !podeExcluirConviventeSemVinculos) return;
+
+    const nomeConvivente = formData.nome_social || formData.nome_completo || 'este convivente';
+    const confirmou = window.confirm(
+      `Excluir definitivamente o cadastro de ${nomeConvivente}?\n\n` +
+      'Esta ação só será aceita se o cadastro não possuir rotina, ocorrências, PIA, documentos, SISA, histórico ou outros vínculos operacionais. ' +
+      'Se houver qualquer vínculo, o sistema bloqueará a exclusão e você deve usar a inativação/alteração de status.'
+    );
+
+    if (!confirmou) return;
+
+    setErro('');
+    setSucesso('');
+
+    try {
+      setSalvandoProntuario(true);
+      await excluirConviventeSemVinculos(editandoId);
+      setSucesso('Cadastro sem vínculos excluído com sucesso.');
+      setTelaAtual('lista');
+      setEditandoId(null);
+      setAbaAtual('pessoais');
+      setFormData(estadoInicial);
+      setStatusOriginal('Ativo');
+      snapshotSalvoRef.current = null;
+      resetarDocumentosProntuario();
+      resetarHistoricoProntuario();
+      resetarPia();
+      await carregarDadosIniciais();
+    } catch (error) {
+      setErro(error.response?.data?.detail || 'Não foi possível excluir o cadastro.');
+    } finally {
+      setSalvandoProntuario(false);
+    }
+  };
+
   const trocarAbaComSalvamento = async (novaAba) => {
     if (novaAba === abaAtual || salvandoProntuario) return;
 
@@ -561,10 +609,13 @@ export default function Conviventes() {
                 editandoId={editandoId}
                 formData={formData}
                 perfilUsuario={perfilUsuario}
+                podeGerenciarPiaConvivente={podeGerenciarPiaConvivente}
                 salvandoProntuario={salvandoProntuario}
                 conviventeAtual={conviventeAtual}
                 abrirCarteirinha={abrirCarteirinha}
                 solicitarImpressaoFichaCompleta={solicitarImpressaoFichaCompleta}
+                podeExcluirConviventeSemVinculos={podeExcluirConviventeSemVinculos}
+                excluirConviventeSemVinculos={handleExcluirConviventeSemVinculos}
                 setTelaAtual={setTelaAtual}
                 trocarAbaComSalvamento={trocarAbaComSalvamento}
               />
@@ -630,7 +681,7 @@ export default function Conviventes() {
                     />
                   )}
 
-                  {abaAtual === 'pia' && (
+                  {abaAtual === 'pia' && podeGerenciarPiaConvivente && (
                     <ProntuarioPia
                       editandoId={editandoId}
                       formPia={formPia}

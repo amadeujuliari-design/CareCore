@@ -4,7 +4,9 @@ import pytest
 from fastapi import HTTPException
 
 from routers.conviventes import (
+    usuario_pode_excluir_convivente_sem_vinculos,
     usuario_pode_alterar_status_convivente,
+    usuario_pode_gerenciar_pia_convivente,
     usuario_pode_resolver_ocorrencia,
 )
 from security import (
@@ -163,3 +165,45 @@ def test_orientador_nao_pode_gerenciar_quartos_e_leitos():
             "is_master": False,
         }
     )
+
+
+def test_gestor_pode_excluir_convivente_sem_vinculos():
+    assert usuario_pode_excluir_convivente_sem_vinculos({
+        "perfil_acesso": "Gestor",
+        "is_master": False,
+    })
+
+
+def test_manutencao_pode_excluir_convivente_sem_vinculos():
+    assert usuario_pode_excluir_convivente_sem_vinculos({
+        "perfil_acesso": "Manutenção",
+        "is_manutencao": True,
+    })
+
+
+def test_tecnico_nao_pode_excluir_convivente_sem_vinculos():
+    assert not usuario_pode_excluir_convivente_sem_vinculos({
+        "perfil_acesso": "Técnico",
+        "is_master": False,
+    })
+
+
+def test_gestor_pode_gerenciar_pia_convivente():
+    assert usuario_pode_gerenciar_pia_convivente({
+        "perfil_acesso": "Gestor",
+        "is_master": False,
+    })
+
+
+def test_tecnico_pode_gerenciar_pia_convivente():
+    assert usuario_pode_gerenciar_pia_convivente({
+        "perfil_acesso": "Técnico",
+        "is_master": False,
+    })
+
+
+def test_orientador_nao_pode_gerenciar_pia_convivente():
+    assert not usuario_pode_gerenciar_pia_convivente({
+        "perfil_acesso": "Orientador",
+        "is_master": False,
+    })

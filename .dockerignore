@@ -21,11 +21,15 @@ codigo_completo.txt
 documentos_teste/
 CHAT_*.txt
 CHECKPOINT_CHAT_*.txt
+CHECKPOINT_COMPLETO_*.txt
 PROMPT_*.txt
 estrutura_projeto.txt
 diretrizes.txt
 DEPLOY_CHECKLIST.md
+minuta_contrato_carecore_aeb*
 /scripts/
+relatorios_importacao/
+preencher_organizacao.py
 RelatorioCidadaoVinculado.xls
 *.xlsx
 adicionar_mais_usuarios.py

@@ -14,3 +14,12 @@ O CareCore+ e um SaaS institucional de gestao assistencial. Trate cada mudanca c
 - Prefira mudancas pequenas, rastreaveis e alinhadas ao dominio do sistema.
 - Em duvida entre rapidez e seguranca de dados, privilegie seguranca e consistencia.
 - Explique riscos reais de producao quando a decisao envolver banco, autenticacao, criptografia, deploy ou dados sensiveis.
+
+# Operação CareCore+
+
+Antes de alterações sensíveis, deploys, migrations, cobrança, RBAC, autenticação, uploads ou dados reais, consultar `docs/operacao-producao.md`.
+
+Nunca commitar artefatos locais de continuidade, contrato, importação ou manutenção manual:
+`CHECKPOINT_COMPLETO_*.txt`, `relatorios_importacao/`, `minuta_contrato_carecore_aeb*`, `preencher_organizacao.py`.
+
+Diferenciar sempre: commit local, push GitHub, deploy Fly, deploy Vercel e migration aplicada.

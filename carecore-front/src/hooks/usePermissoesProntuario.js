@@ -24,6 +24,7 @@ export function usePermissoesProntuario({
       podeMudarStatus: !editandoId || usuarioEhGestao || tecnicoPodeMudarStatus,
       podeCriarHistoricoConvivente: usuarioEhGestao || usuarioEhTecnico,
       podeEditarHistoricoConvivente: usuarioEhGestao || usuarioEhTecnicoResponsavel,
+      podeGerenciarPiaConvivente: usuarioEhGestao || usuarioEhTecnico,
       usuarioPodeImprimirSensiveisConvivente: (convivente) => (
         usuarioEhGestao ||
         (usuarioEhTecnico && convivente?.tecnico_id === idUsuarioLogado)

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 import hmac
 import json
 import os
@@ -45,6 +45,10 @@ router = APIRouter(
     prefix="/api/cobrancas",
     tags=["Cobranças"],
 )
+
+
+def agora_utc_naive() -> datetime:
+    return datetime.now(UTC).replace(tzinfo=None)
 
 
 class CobrancaTesteAsaasRequest(BaseModel):
@@ -180,6 +184,30 @@ def exigir_usuario_pode_ver_cobrancas(usuario_atual: dict) -> None:
     )
 
 
+def exigir_modulo_cliente_cobrancas_visivel(usuario_atual: dict) -> None:
+    if usuario_eh_manutencao(usuario_atual):
+        return
+
+    if cobrancas_automacao_config()["modulo_cliente_visivel"]:
+        return
+
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Módulo de cobranças em preparação para esta organização.",
+    )
+
+
+def ciclo_cobranca_no_escopo_usuario(
+    ciclo: CobrancaCicloDB,
+    usuario_atual: dict,
+    organizacao_id_escopo: str,
+) -> bool:
+    if usuario_eh_manutencao(usuario_atual):
+        return True
+
+    return str(ciclo.organizacao_id) == str(organizacao_id_escopo)
+
+
 async def obter_organizacao_cobranca_id(
     db: AsyncSession,
     usuario_atual: dict,
@@ -207,6 +235,33 @@ async def obter_organizacao_cobranca_id(
         status_code=status.HTTP_400_BAD_REQUEST,
         detail="Organização não identificada para cálculo de cobrança.",
     )
+
+
+async def obter_ciclo_cobranca_autorizado(
+    db: AsyncSession,
+    usuario_atual: dict,
+    ciclo_id: str,
+) -> CobrancaCicloDB:
+    ciclo = (
+        await db.execute(select(CobrancaCicloDB).where(CobrancaCicloDB.id == ciclo_id))
+    ).scalar_one_or_none()
+    if not ciclo:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Ciclo de cobrança não encontrado.",
+        )
+
+    if usuario_eh_manutencao(usuario_atual):
+        return ciclo
+
+    organizacao_id_escopo = await obter_organizacao_cobranca_id(db, usuario_atual, None)
+    if not ciclo_cobranca_no_escopo_usuario(ciclo, usuario_atual, organizacao_id_escopo):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Ciclo de cobrança não encontrado.",
+        )
+
+    return ciclo
 
 
 def data_fechamento_padrao(hoje: date | None = None) -> date:
@@ -300,7 +355,7 @@ def extrair_referencia_ciclo_asaas(payment: dict) -> str | None:
 
 def aplicar_status_asaas_no_ciclo(ciclo: CobrancaCicloDB, status_asaas: str) -> None:
     status_carecore = status_pagamento_asaas_para_carecore(status_asaas)
-    agora = datetime.utcnow()
+    agora = agora_utc_naive()
 
     ciclo.status_pagamento = status_carecore
     ciclo.atualizado_em = agora
@@ -346,7 +401,7 @@ def liberacao_temporaria_ativa(liberacao: CobrancaLiberacaoTemporariaDB | None) 
         liberacao
         and liberacao.ativo
         and liberacao.liberado_ate
-        and liberacao.liberado_ate > datetime.utcnow()
+        and liberacao.liberado_ate > agora_utc_naive()
     )
 
 
@@ -592,6 +647,7 @@ async def resumo_cobranca_organizacao(
     usuario_atual: dict = Depends(get_usuario_logado),
 ):
     exigir_usuario_pode_ver_cobrancas(usuario_atual)
+    exigir_modulo_cliente_cobrancas_visivel(usuario_atual)
     return await calcular_resumo_cobranca_organizacao(
         db,
         usuario_atual,
@@ -675,7 +731,7 @@ async def webhook_asaas_cobrancas(
             asaas_event_id=evento_id_sem_ciclo,
             evento_tipo=evento_tipo,
             payload=json.dumps(payload, ensure_ascii=False),
-            recebido_em=datetime.utcnow(),
+            recebido_em=agora_utc_naive(),
         )
         db.add(evento)
         await db.commit()
@@ -703,7 +759,7 @@ async def webhook_asaas_cobrancas(
             asaas_event_id=evento_id,
             evento_tipo=evento_tipo,
             payload=json.dumps(payload, ensure_ascii=False),
-            recebido_em=datetime.utcnow(),
+            recebido_em=agora_utc_naive(),
         )
         db.add(evento)
 
@@ -827,7 +883,7 @@ async def criar_liberacao_temporaria_cobranca(
     if not organizacao:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organização não encontrada.")
 
-    agora = datetime.utcnow()
+    agora = agora_utc_naive()
     liberacoes_ativas = (
         await db.execute(
             select(CobrancaLiberacaoTemporariaDB).where(
@@ -880,7 +936,7 @@ async def revogar_liberacao_temporaria_cobranca(
 
     liberacao.ativo = False
     liberacao.revogado_por_id = usuario_atual.get("sub") or usuario_atual.get("id")
-    liberacao.revogado_em = datetime.utcnow()
+    liberacao.revogado_em = agora_utc_naive()
     liberacao.observacao_revogacao = payload.motivo.strip()
 
     await db.commit()
@@ -900,6 +956,7 @@ async def listar_historico_cobrancas_organizacao(
     usuario_atual: dict = Depends(get_usuario_logado),
 ):
     exigir_usuario_pode_ver_cobrancas(usuario_atual)
+    exigir_modulo_cliente_cobrancas_visivel(usuario_atual)
     organizacao_id_escopo = await obter_organizacao_cobranca_id(db, usuario_atual, organizacao_id)
 
     ciclos = (
@@ -937,6 +994,7 @@ async def fechar_ciclo_cobranca_organizacao(
     usuario_atual: dict = Depends(get_usuario_logado),
 ):
     exigir_usuario_financeiro_global(usuario_atual)
+    exigir_modulo_cliente_cobrancas_visivel(usuario_atual)
     resumo = await calcular_resumo_cobranca_organizacao(
         db,
         usuario_atual,
@@ -953,7 +1011,7 @@ async def fechar_ciclo_cobranca_organizacao(
         )
     ).scalar_one_or_none()
 
-    agora = datetime.utcnow()
+    agora = agora_utc_naive()
     if not ciclo:
         ciclo = CobrancaCicloDB(
             organizacao_id=resumo["organizacao_id"],
@@ -1013,15 +1071,9 @@ async def gerar_cobranca_asaas_ciclo(
     usuario_atual: dict = Depends(get_usuario_logado),
 ):
     exigir_usuario_financeiro_global(usuario_atual)
+    exigir_modulo_cliente_cobrancas_visivel(usuario_atual)
 
-    ciclo = (
-        await db.execute(select(CobrancaCicloDB).where(CobrancaCicloDB.id == ciclo_id))
-    ).scalar_one_or_none()
-    if not ciclo:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Ciclo de cobrança não encontrado.",
-        )
+    ciclo = await obter_ciclo_cobranca_autorizado(db, usuario_atual, ciclo_id)
     if ciclo.asaas_payment_id:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -1094,7 +1146,7 @@ async def gerar_cobranca_asaas_ciclo(
     ciclo.asaas_bank_slip_url = cobranca_asaas.get("bankSlipUrl")
     ciclo.status = "CobrancaGerada"
     ciclo.status_pagamento = status_pagamento_asaas_para_carecore(cobranca_asaas.get("status"))
-    ciclo.atualizado_em = datetime.utcnow()
+    ciclo.atualizado_em = agora_utc_naive()
 
     await db.commit()
     await db.refresh(ciclo)
@@ -1131,20 +1183,14 @@ async def simular_status_cobranca_ciclo(
     usuario_atual: dict = Depends(get_usuario_logado),
 ):
     exigir_usuario_financeiro_global(usuario_atual)
+    exigir_modulo_cliente_cobrancas_visivel(usuario_atual)
     if not simulacoes_cobranca_ativas():
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Simulação de status desativada neste ambiente.",
         )
 
-    ciclo = (
-        await db.execute(select(CobrancaCicloDB).where(CobrancaCicloDB.id == ciclo_id))
-    ).scalar_one_or_none()
-    if not ciclo:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Ciclo de cobrança não encontrado.",
-        )
+    ciclo = await obter_ciclo_cobranca_autorizado(db, usuario_atual, ciclo_id)
 
     aplicar_status_asaas_no_ciclo(ciclo, payload.status_asaas)
 
@@ -1163,7 +1209,7 @@ async def simular_status_cobranca_ciclo(
         asaas_event_id=f"sim-{ciclo.id}-{payload.status_asaas.lower()}-{uuid.uuid4()}",
         evento_tipo=f"PAYMENT_{payload.status_asaas}",
         payload=json.dumps(evento_payload, ensure_ascii=False),
-        recebido_em=datetime.utcnow(),
+        recebido_em=agora_utc_naive(),
     )
     db.add(evento)
 

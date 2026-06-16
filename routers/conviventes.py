@@ -27,7 +27,10 @@ from models import (
     RegistroPIADB,
     HistoricoConviventeDB,
     HistoricoLegadoSIATDB,
+    HistoricoLegadoRotinaSIATDB,
     AusenciaJustificadaConfirmacaoDB,
+    LavanderiaRegistroDB,
+    PertenceRecolhidoBaixaDB,
 )
 from schemas import (
     ConviventeCreate, ConviventeUpdate, ConviventeResponse,
@@ -61,6 +64,7 @@ from security import (
     PERFIL_TECNICO,
     usuario_tem_perfil,
     usuario_eh_gestor,
+    usuario_eh_manutencao,
 )
 from routers.conviventes_helpers import (
     PESO_PRIORIDADE,
@@ -109,6 +113,20 @@ TIPOS_ROTINA_VALIDOS = (
     | TIPOS_ROTINA_INTERACOES_SIMPLES
     | TIPOS_ROTINA_PARES
     | TIPOS_ROTINA_COM_OBSERVACAO_OBRIGATORIA
+)
+DEPENDENCIAS_EXCLUSAO_CONVIVENTE = (
+    (RegistroRotinaDB, "registros de rotina"),
+    (OcorrenciaConviventeDB, "ocorrências"),
+    (HistoricoConviventeDB, "históricos do prontuário"),
+    (RegistroPIADB, "registros PIA"),
+    (DocumentoConviventeDB, "documentos/anexos"),
+    (LavanderiaRegistroDB, "registros de lavanderia"),
+    (PertenceRecolhidoBaixaDB, "baixas de pertences"),
+    (HistoricoLegadoRotinaSIATDB, "histórico legado de rotina"),
+    (SisaLancamentoDB, "lançamentos SISA"),
+    (SisaPresencaImportadaDB, "presenças SISA importadas"),
+    (SisaDivergenciaDB, "divergências SISA"),
+    (AusenciaJustificadaConfirmacaoDB, "confirmações de ausência justificada"),
 )
 
 ROTULOS_REFEICOES_EXTRAS = {
@@ -714,6 +732,13 @@ async def criar_registro_pia(
     usuario_atual: dict = Depends(get_usuario_logado)
 ):
     bloquear_usuario_global_puro(usuario_atual)
+
+    if not usuario_pode_gerenciar_pia_convivente(usuario_atual):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Apenas Gestores e Técnicos podem criar ou evoluir PIA.",
+        )
+
     convivente = (
         await db.execute(
             select(ConviventeDB).where(
@@ -779,6 +804,10 @@ def usuario_pode_criar_historico_convivente(usuario_atual: dict) -> bool:
     return usuario_eh_gestor(usuario_atual) or usuario_tem_perfil(usuario_atual, {PERFIL_TECNICO})
 
 
+def usuario_pode_gerenciar_pia_convivente(usuario_atual: dict) -> bool:
+    return usuario_eh_gestor(usuario_atual) or usuario_tem_perfil(usuario_atual, {PERFIL_TECNICO})
+
+
 def usuario_pode_editar_historico_convivente(usuario_atual: dict, convivente: ConviventeDB) -> bool:
     return bool(
         usuario_eh_gestor(usuario_atual)
@@ -798,6 +827,28 @@ def usuario_pode_alterar_status_convivente(usuario_atual: dict, convivente: Conv
 
     tecnico_id = getattr(convivente, "tecnico_id", None)
     return not tecnico_id or str(tecnico_id) == str(usuario_atual.get("sub"))
+
+
+def usuario_pode_excluir_convivente_sem_vinculos(usuario_atual: dict) -> bool:
+    return usuario_eh_gestor(usuario_atual) or usuario_eh_manutencao(usuario_atual)
+
+
+async def listar_bloqueios_exclusao_convivente(
+    db: AsyncSession,
+    convivente_id: str,
+) -> list[str]:
+    bloqueios = []
+
+    for modelo, rotulo in DEPENDENCIAS_EXCLUSAO_CONVIVENTE:
+        total = (
+            await db.execute(
+                select(func.count(modelo.id)).where(modelo.convivente_id == convivente_id)
+            )
+        ).scalar_one()
+        if total:
+            bloqueios.append(rotulo)
+
+    return bloqueios
 
 
 @router.get("/conviventes/{convivente_id}/historicos", response_model=List[HistoricoConviventeResponse])
@@ -1100,6 +1151,74 @@ async def atualizar_convivente(convivente_id: str, dados_atualizacao: Convivente
             status_code=400,
             detail="Não foi possível atualizar o convivente.",
         ) from e
+
+
+@router.delete("/conviventes/{convivente_id}")
+async def excluir_convivente_sem_vinculos(
+    convivente_id: str,
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    bloquear_usuario_global_puro(usuario_atual)
+
+    if not usuario_pode_excluir_convivente_sem_vinculos(usuario_atual):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Apenas Gestores ou Manutenção podem excluir cadastro sem vínculos.",
+        )
+
+    instituicao_id = obter_instituicao_escopo(usuario_atual)
+    convivente = (
+        await db.execute(
+            select(ConviventeDB).where(
+                ConviventeDB.id == convivente_id,
+                ConviventeDB.instituicao_id == instituicao_id,
+            )
+        )
+    ).scalar_one_or_none()
+
+    if not convivente:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Convivente não encontrado.")
+
+    bloqueios = await listar_bloqueios_exclusao_convivente(db, convivente_id)
+    if bloqueios:
+        bloqueios_texto = ", ".join(bloqueios[:8])
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Este cadastro já possui vínculos operacionais e não pode ser excluído. "
+                f"Vínculos encontrados: {bloqueios_texto}. "
+                "Use inativação/alteração de status para preservar histórico assistencial."
+            ),
+        )
+
+    leito_id = convivente.leito_id
+    try:
+        if leito_id:
+            leito = (
+                await db.execute(select(LeitoDB).where(LeitoDB.id == leito_id))
+            ).scalar_one_or_none()
+            if leito:
+                leito.status = "Livre"
+
+        await db.delete(convivente)
+        await db.commit()
+        registrar_evento_auditoria(
+            "convivente_excluido_sem_vinculos",
+            usuario_atual=usuario_atual,
+            convivente_id=convivente_id,
+            leito_liberado=bool(leito_id),
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Não foi possível excluir o convivente.",
+        ) from e
+
+    return {"status": "sucesso", "mensagem": "Cadastro sem vínculos excluído com sucesso."}
 
 # =====================================================================
 # ROTAS DO SISTEMA DE TICKETS / OCORRÊNCIAS

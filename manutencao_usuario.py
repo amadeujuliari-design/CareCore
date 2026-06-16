@@ -1,6 +1,6 @@
 import logging
 import os
-from datetime import datetime
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,6 +11,10 @@ from security import PERFIL_MANUTENCAO, email_usuario_manutencao, gerar_hash_sen
 
 logger = logging.getLogger("carecore.manutencao")
 NOME_MANUTENCAO_PADRAO = "Manutenção CareCore+"
+
+
+def agora_utc_naive() -> datetime:
+    return datetime.now(UTC).replace(tzinfo=None)
 
 
 def manutencao_habilitada() -> bool:
@@ -72,7 +76,7 @@ async def provisionar_usuario_manutencao(db: AsyncSession) -> None:
         usuario.is_master = True
         usuario.is_global = True
         usuario.ativo = True
-        usuario.atualizado_em = datetime.utcnow()
+        usuario.atualizado_em = agora_utc_naive()
         return
 
     db.add(
@@ -88,6 +92,6 @@ async def provisionar_usuario_manutencao(db: AsyncSession) -> None:
             ativo=True,
             cargo="Suporte técnico CareCore+",
             setor="Manutenção",
-            criado_em=datetime.utcnow(),
+            criado_em=agora_utc_naive(),
         )
     )

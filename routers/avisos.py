@@ -85,6 +85,10 @@ def _agora_operacional_naive() -> datetime:
     return datetime.now(_FUSO_OPERACIONAL).replace(tzinfo=None)
 
 
+def _agora_utc_naive() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
 def _aviso_ativo_e_valido():
     agora = _agora_operacional_naive()
     return and_(
@@ -512,12 +516,12 @@ async def marcar_aviso_como_lido(
             aviso_id=aviso_id,
             usuario_id=usuario_id,
             lido=True,
-            lido_em=datetime.utcnow(),
+            lido_em=_agora_utc_naive(),
         )
         db.add(registro)
     else:
         registro.lido = True
-        registro.lido_em = datetime.utcnow()
+        registro.lido_em = _agora_utc_naive()
 
     await db.commit()
 
@@ -658,7 +662,7 @@ async def atualizar_aviso(
                     )
                 )
 
-    aviso.atualizado_em = datetime.utcnow()
+    aviso.atualizado_em = _agora_utc_naive()
     await db.commit()
     await db.refresh(aviso)
 
@@ -695,7 +699,7 @@ async def cancelar_aviso(
         )
 
     aviso.ativo = False
-    aviso.cancelado_em = datetime.utcnow()
+    aviso.cancelado_em = _agora_utc_naive()
     aviso.cancelado_por_id = usuario_id
 
     await db.commit()

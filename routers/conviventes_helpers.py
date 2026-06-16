@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 from models import ConviventeDB, OcorrenciaConviventeDB
 from schemas import ConviventeResponse
@@ -104,4 +104,4 @@ def agora_sao_paulo():
     Retorna data/hora local de São Paulo sem depender da base IANA/tzdata.
     São Paulo atualmente opera em UTC-3 sem horário de verão.
     """
-    return datetime.utcnow() - timedelta(hours=3)
+    return datetime.now(UTC).replace(tzinfo=None) - timedelta(hours=3)

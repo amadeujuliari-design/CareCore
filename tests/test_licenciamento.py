@@ -1,4 +1,4 @@
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 from licenciamento import (
     _cobranca_esta_bloqueada,
@@ -6,6 +6,10 @@ from licenciamento import (
     _payload_usuario_manutencao,
     _rota_livre,
 )
+
+
+def agora_utc_naive() -> datetime:
+    return datetime.now(UTC).replace(tzinfo=None)
 
 
 class CicloFake:
@@ -71,7 +75,7 @@ def test_cobranca_paga_nao_bloqueia():
 def test_liberacao_temporaria_ativa_libera_bloqueio():
     class LiberacaoFake:
         ativo = True
-        liberado_ate = datetime.utcnow() + timedelta(days=1)
+        liberado_ate = agora_utc_naive() + timedelta(days=1)
 
     ativa, motivo = _liberacao_temporaria_ativa(LiberacaoFake())
 
@@ -82,7 +86,7 @@ def test_liberacao_temporaria_ativa_libera_bloqueio():
 def test_liberacao_temporaria_expirada_nao_libera_bloqueio():
     class LiberacaoFake:
         ativo = True
-        liberado_ate = datetime.utcnow() - timedelta(minutes=1)
+        liberado_ate = agora_utc_naive() - timedelta(minutes=1)
 
     ativa, _ = _liberacao_temporaria_ativa(LiberacaoFake())
 

@@ -98,3 +98,8 @@ export async function atualizarConviventeProntuario(conviventeId, payload) {
   const response = await api.put(`/api/conviventes/${conviventeId}`, payload);
   return response.data;
 }
+
+export async function excluirConviventeSemVinculos(conviventeId) {
+  const response = await api.delete(`/api/conviventes/${conviventeId}`);
+  return response.data;
+}

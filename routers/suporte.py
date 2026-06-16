@@ -1,5 +1,5 @@
 import os
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -56,7 +56,7 @@ def _pode_gerenciar_suporte(usuario_atual: dict) -> bool:
 
 
 def _agora() -> datetime:
-    return datetime.utcnow()
+    return datetime.now(UTC).replace(tzinfo=None)
 
 
 async def _gerar_numero_ticket(db: AsyncSession) -> str:

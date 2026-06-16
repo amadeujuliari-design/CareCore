@@ -2,7 +2,7 @@
 # ARQUIVO: licenciamento.py
 # Middleware SaaS/local para controle de licença/assinatura institucional
 # =====================================================================
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 import os
 
 import jwt
@@ -13,6 +13,10 @@ from sqlalchemy import select
 from database import AsyncSessionLocal
 from models import CobrancaCicloDB, CobrancaLiberacaoTemporariaDB, InstituicaoDB
 from security import SECRET_KEY, ALGORITHM
+
+
+def agora_utc_naive() -> datetime:
+    return datetime.now(UTC).replace(tzinfo=None)
 
 
 ROTAS_LIVRES = (
@@ -134,7 +138,7 @@ def _liberacao_temporaria_ativa(
     if not liberacao:
         return False, ""
 
-    referencia = agora or datetime.utcnow()
+    referencia = agora or agora_utc_naive()
     if not getattr(liberacao, "ativo", False):
         return False, ""
 
@@ -202,7 +206,7 @@ async def middleware_licenciamento(request: Request, call_next):
                     .where(
                         CobrancaLiberacaoTemporariaDB.organizacao_id == instituicao.organizacao_id,
                         CobrancaLiberacaoTemporariaDB.ativo == True,  # noqa: E712
-                        CobrancaLiberacaoTemporariaDB.liberado_ate > datetime.utcnow(),
+                        CobrancaLiberacaoTemporariaDB.liberado_ate > agora_utc_naive(),
                     )
                     .order_by(CobrancaLiberacaoTemporariaDB.liberado_ate.desc())
                 )
