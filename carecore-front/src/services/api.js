@@ -20,6 +20,8 @@ const api = axios.create({
   baseURL: API_BASE_URL,
 });
 
+const STORAGE_BLOQUEIO_LICENCA_KEY = '@CareCore:bloqueioLicenca';
+
 function limparSessaoLocal() {
   limparFotoCache();
 
@@ -80,6 +82,22 @@ api.interceptors.response.use(
       redirecionarLoginSeNecessario();
     }
 
+    if (error?.response?.status === 402) {
+      const payload = error.response.data || {};
+      localStorage.setItem(
+        STORAGE_BLOQUEIO_LICENCA_KEY,
+        JSON.stringify({
+          detail: payload.detail || 'Sistema bloqueado por pendência de assinatura.',
+          motivo: payload.motivo || '',
+          codigo: payload.codigo || 'LICENCA_BLOQUEADA',
+        })
+      );
+
+      if (window.location.pathname !== '/cobrancas') {
+        window.location.href = '/cobrancas?bloqueio=assinatura';
+      }
+    }
+
     return Promise.reject(error);
   }
 );
@@ -92,6 +110,7 @@ export {
   registrarAtividadeSessao,
   salvarSessaoLocal,
   sessaoExpiradaPorInatividade,
+  STORAGE_BLOQUEIO_LICENCA_KEY,
   SESSION_INACTIVITY_LIMIT_MS,
 };
 export default api;

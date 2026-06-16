@@ -3,13 +3,14 @@
 export const PRECIFICACAO = {
   blocoCadastros: 100,
   valorBloco: 500,
-  tetoDesconto: 1000,
-  /** 1º degrau acima de 1.000 cadastros faturáveis. */
-  descontoInicialPercentual: 20,
-  /** +6,1111 p.p. a cada novo bloco de 100 acima de 1.000, até atingir 75%. */
-  incrementoDescontoPorBloco: 55 / 9,
+  cadastrosSemDesconto: 500,
+  cadastrosTetoDesconto: 3000,
+  /** 1º bloco com desconto: 501 a 600 cadastros faturáveis. */
+  descontoInicialPercentual: 5,
   /** Teto do desconto progressivo (acima deste % o bloco mantém o mesmo valor). */
   descontoMaximoPercentual: 75,
+  /** Curva calibrada para 3.000 cadastros fecharem em R$ 8.875. */
+  expoenteCurvaDesconto: 0.5746292138076721,
   /**
    * Inativo só deixa de entrar na conta se foi inativado há >= 15 dias antes do fechamento.
    * Inativado há 14 dias ou menos antes do fechamento ainda compõe o valor.
@@ -57,9 +58,26 @@ export function contarCadastrosFaturaveis(cadastros, dataFechamento) {
 }
 
 export function descontoPercentualDegrau(indiceDegrau) {
+  if (indiceDegrau <= 0) {
+    return 0;
+  }
+
+  const blocoInicioDesconto = Math.floor(PRECIFICACAO.cadastrosSemDesconto / PRECIFICACAO.blocoCadastros) + 1;
+  const blocoTetoDesconto = Math.floor(PRECIFICACAO.cadastrosTetoDesconto / PRECIFICACAO.blocoCadastros);
+
+  if (indiceDegrau < blocoInicioDesconto) {
+    return 0;
+  }
+
+  if (indiceDegrau >= blocoTetoDesconto) {
+    return PRECIFICACAO.descontoMaximoPercentual;
+  }
+
+  const progresso = (indiceDegrau - blocoInicioDesconto) / (blocoTetoDesconto - blocoInicioDesconto);
   const desconto =
     PRECIFICACAO.descontoInicialPercentual +
-    (indiceDegrau - 1) * PRECIFICACAO.incrementoDescontoPorBloco;
+    (PRECIFICACAO.descontoMaximoPercentual - PRECIFICACAO.descontoInicialPercentual) *
+      progresso ** PRECIFICACAO.expoenteCurvaDesconto;
 
   return Math.min(PRECIFICACAO.descontoMaximoPercentual, desconto);
 }
@@ -77,35 +95,28 @@ export function calcularMensalidade(totalCadastrosFaturaveis) {
     return 0;
   }
 
-  if (total <= PRECIFICACAO.tetoDesconto) {
-    return Math.ceil(total / PRECIFICACAO.blocoCadastros) * PRECIFICACAO.valorBloco;
+  const totalBlocos = Math.ceil(total / PRECIFICACAO.blocoCadastros);
+  let mensalidade = 0;
+
+  for (let bloco = 1; bloco <= totalBlocos; bloco += 1) {
+    mensalidade += valorBlocoDegrau(bloco);
   }
 
-  const blocosExtras = Math.ceil((total - PRECIFICACAO.tetoDesconto) / PRECIFICACAO.blocoCadastros);
-  const baseAteMil =
-    (PRECIFICACAO.tetoDesconto / PRECIFICACAO.blocoCadastros) * PRECIFICACAO.valorBloco;
-
-  let extras = 0;
-
-  for (let degrau = 1; degrau <= blocosExtras; degrau += 1) {
-    extras += valorBlocoDegrau(degrau);
-  }
-
-  return baseAteMil + extras;
+  return Math.round(mensalidade * 100) / 100;
 }
 
 export function formatarMoeda(valor) {
   return valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
 
-function descreverComposicaoAcimaMil(total) {
-  const blocosExtras = Math.ceil((total - PRECIFICACAO.tetoDesconto) / PRECIFICACAO.blocoCadastros);
-  const partes = [`R$ 5.000 (até 1.000)`];
+function descreverComposicaoTabela(total) {
+  const totalBlocos = Math.ceil(total / PRECIFICACAO.blocoCadastros);
+  const partes = [];
 
-  for (let degrau = 1; degrau <= blocosExtras; degrau += 1) {
-    const desconto = descontoPercentualDegrau(degrau);
+  for (let bloco = 1; bloco <= totalBlocos; bloco += 1) {
+    const desconto = descontoPercentualDegrau(bloco);
     partes.push(
-      `bloco ${degrau}: ${desconto}% → ${formatarMoeda(valorBlocoDegrau(degrau))}`,
+      `bloco ${bloco}: ${desconto.toFixed(2)}% → ${formatarMoeda(valorBlocoDegrau(bloco))}`,
     );
   }
 
@@ -172,9 +183,9 @@ export function gerarLinhasTabelaPrecos() {
     totalCadastros: ate,
     mensalidade: calcularMensalidade(ate),
     observacao:
-      ate <= PRECIFICACAO.tetoDesconto
+      ate <= PRECIFICACAO.cadastrosSemDesconto
         ? `${Math.ceil(ate / PRECIFICACAO.blocoCadastros)} blocos × R$ 500`
-        : descreverComposicaoAcimaMil(ate),
+        : descreverComposicaoTabela(ate),
   }));
 }
 
@@ -182,8 +193,9 @@ export function gerarLinhasTabelaPrecos() {
 export function gerarDegrausDescontoProgressivo(quantidade = 8) {
   return Array.from({ length: quantidade }, (_, index) => {
     const degrau = index + 1;
-    const inicio = PRECIFICACAO.tetoDesconto + (degrau - 1) * PRECIFICACAO.blocoCadastros + 1;
-    const fim = PRECIFICACAO.tetoDesconto + degrau * PRECIFICACAO.blocoCadastros;
+    const bloco = Math.floor(PRECIFICACAO.cadastrosSemDesconto / PRECIFICACAO.blocoCadastros) + degrau;
+    const inicio = (bloco - 1) * PRECIFICACAO.blocoCadastros + 1;
+    const fim = bloco * PRECIFICACAO.blocoCadastros;
 
     return {
       degrau,

@@ -843,6 +843,92 @@ class AvisoDestinatarioDB(Base):
     criado_em = Column(DateTime, default=datetime.datetime.utcnow)
 
 
+class CobrancaCicloDB(Base):
+    __tablename__ = "cobranca_ciclos"
+    __table_args__ = (
+        UniqueConstraint("organizacao_id", "data_fechamento", name="uq_cobranca_ciclo_organizacao_fechamento"),
+        Index("ix_cobranca_ciclos_organizacao_fechamento", "organizacao_id", "data_fechamento"),
+        Index("ix_cobranca_ciclos_organizacao_status", "organizacao_id", "status_pagamento"),
+    )
+
+    id = Column(String, primary_key=True, default=get_uuid)
+    organizacao_id = Column(String, ForeignKey("organizacoes.id"), nullable=False, index=True)
+    data_fechamento = Column(Date, nullable=False)
+    data_corte_inativacao = Column(Date, nullable=False)
+    data_vencimento = Column(Date, nullable=False)
+
+    modo = Column(String, nullable=False)
+    total_cadastros_faturaveis = Column(Integer, default=0, nullable=False)
+    valor_total_mensalidade = Column(Float, default=0, nullable=False)
+    status = Column(String, default="Calculado", nullable=False)
+    status_pagamento = Column(String, default="Pendente", nullable=False)
+
+    asaas_customer_id = Column(String, nullable=True)
+    asaas_payment_id = Column(String, nullable=True, index=True)
+    asaas_invoice_url = Column(String, nullable=True)
+    asaas_bank_slip_url = Column(String, nullable=True)
+    asaas_pix_qr_code = Column(Text, nullable=True)
+
+    criado_por_id = Column(String, ForeignKey("usuarios.id"), nullable=True)
+    criado_em = Column(DateTime, default=datetime.datetime.utcnow)
+    atualizado_em = Column(DateTime, nullable=True)
+    pago_em = Column(DateTime, nullable=True)
+    cancelado_em = Column(DateTime, nullable=True)
+
+
+class CobrancaProjetoRateioDB(Base):
+    __tablename__ = "cobranca_projetos_rateio"
+    __table_args__ = (
+        UniqueConstraint("ciclo_id", "instituicao_id", name="uq_cobranca_rateio_ciclo_projeto"),
+    )
+
+    id = Column(String, primary_key=True, default=get_uuid)
+    ciclo_id = Column(String, ForeignKey("cobranca_ciclos.id"), nullable=False, index=True)
+    organizacao_id = Column(String, ForeignKey("organizacoes.id"), nullable=False, index=True)
+    instituicao_id = Column(String, ForeignKey("instituicoes.id"), nullable=False, index=True)
+    projeto_nome = Column(String, nullable=False)
+
+    conviventes_faturaveis = Column(Integer, default=0, nullable=False)
+    usuarios_faturaveis = Column(Integer, default=0, nullable=False)
+    cadastros_faturaveis = Column(Integer, default=0, nullable=False)
+    percentual_rateio = Column(Float, nullable=True)
+    valor_mensalidade = Column(Float, default=0, nullable=False)
+
+    criado_em = Column(DateTime, default=datetime.datetime.utcnow)
+
+
+class CobrancaEventoAsaasDB(Base):
+    __tablename__ = "cobranca_eventos_asaas"
+
+    id = Column(String, primary_key=True, default=get_uuid)
+    ciclo_id = Column(String, ForeignKey("cobranca_ciclos.id"), nullable=True, index=True)
+    organizacao_id = Column(String, ForeignKey("organizacoes.id"), nullable=True, index=True)
+    asaas_event_id = Column(String, nullable=True, unique=True)
+    evento_tipo = Column(String, nullable=False)
+    payload = Column(Text, nullable=False)
+    recebido_em = Column(DateTime, default=datetime.datetime.utcnow)
+
+
+class CobrancaLiberacaoTemporariaDB(Base):
+    __tablename__ = "cobranca_liberacoes_temporarias"
+    __table_args__ = (
+        Index("ix_cobranca_liberacoes_organizacao_ativo", "organizacao_id", "ativo"),
+        Index("ix_cobranca_liberacoes_organizacao_prazo", "organizacao_id", "liberado_ate"),
+    )
+
+    id = Column(String, primary_key=True, default=get_uuid)
+    organizacao_id = Column(String, ForeignKey("organizacoes.id"), nullable=False, index=True)
+    motivo = Column(Text, nullable=False)
+    liberado_ate = Column(DateTime, nullable=False)
+    ativo = Column(Boolean, default=True, nullable=False)
+
+    criado_por_id = Column(String, ForeignKey("usuarios.id"), nullable=True)
+    criado_em = Column(DateTime, default=datetime.datetime.utcnow)
+    revogado_por_id = Column(String, ForeignKey("usuarios.id"), nullable=True)
+    revogado_em = Column(DateTime, nullable=True)
+    observacao_revogacao = Column(Text, nullable=True)
+
+
 class ChatConversaDB(Base):
     __tablename__ = "chat_conversas"
 

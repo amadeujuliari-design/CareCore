@@ -6,6 +6,7 @@ import {
   ChartNoAxesColumnIncreasing,
   ChevronDown,
   ClipboardList,
+  CreditCard,
   FileBarChart,
   Fingerprint,
   KeyRound,
@@ -308,6 +309,18 @@ export default function Sidebar() {
           label: 'Projetos',
           perfis: ['Gestor', 'Global'],
           globalOnly: true
+        },
+        {
+          path: '/cobrancas',
+          icon: CreditCard,
+          label: 'Cobranças',
+          perfis: ['Gestor', 'Global']
+        },
+        {
+          path: '/admin/cobrancas',
+          icon: CreditCard,
+          label: 'Operação Financeira',
+          perfis: ['Manutenção']
         }
       ]
     },

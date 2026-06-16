@@ -11,7 +11,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import select
 
 from database import AsyncSessionLocal
-from models import InstituicaoDB
+from models import CobrancaCicloDB, CobrancaLiberacaoTemporariaDB, InstituicaoDB
 from security import SECRET_KEY, ALGORITHM
 
 
@@ -19,6 +19,8 @@ ROTAS_LIVRES = (
     "/",
     "/api/login",
     "/api/onboarding",
+    "/api/cobrancas",
+    "/api/suporte",
     "/docs",
     "/redoc",
     "/openapi.json",
@@ -59,6 +61,17 @@ def _extrair_token(request: Request) -> str | None:
     return token
 
 
+def _payload_usuario_manutencao(payload: dict) -> bool:
+    perfil = (payload.get("perfil_acesso") or "").strip()
+    email = (payload.get("email") or "").strip().lower()
+    email_manutencao = os.getenv(
+        "CARECORE_MANUTENCAO_EMAIL",
+        "manutencao@carecoreplus.com.br",
+    ).strip().lower()
+
+    return bool(payload.get("is_manutencao")) or perfil == "Manutenção" or email == email_manutencao
+
+
 def _licenca_esta_bloqueada(instituicao: InstituicaoDB) -> tuple[bool, str]:
     if getattr(instituicao, "bloqueado", False):
         return True, "Instituição bloqueada administrativamente."
@@ -83,6 +96,53 @@ def _licenca_esta_bloqueada(instituicao: InstituicaoDB) -> tuple[bool, str]:
         )
 
     return False, "Licença ativa dentro do prazo/tolerância."
+
+
+def _cobranca_esta_bloqueada(
+    ciclos: list[CobrancaCicloDB],
+    dias_tolerancia: int,
+    hoje: date | None = None,
+) -> tuple[bool, str]:
+    referencia = hoje or date.today()
+    tolerancia = dias_tolerancia if dias_tolerancia >= 0 else 0
+
+    for ciclo in sorted(ciclos, key=lambda item: item.data_vencimento or date.max):
+        status_pagamento = (getattr(ciclo, "status_pagamento", "") or "").strip()
+        vencimento = getattr(ciclo, "data_vencimento", None)
+
+        if status_pagamento == "Vencido":
+            vencimento_txt = vencimento.strftime("%d/%m/%Y") if vencimento else "não informado"
+            return True, f"Fatura vencida em {vencimento_txt}."
+
+        if status_pagamento != "Pendente" or not vencimento:
+            continue
+
+        limite = vencimento + timedelta(days=tolerancia)
+        if referencia > limite:
+            return True, (
+                f"Fatura pendente vencida em {vencimento.strftime('%d/%m/%Y')} "
+                f"e tolerância de {tolerancia} dia(s) expirada."
+            )
+
+    return False, "Cobranças sem pendência bloqueante."
+
+
+def _liberacao_temporaria_ativa(
+    liberacao: CobrancaLiberacaoTemporariaDB | None,
+    agora: datetime | None = None,
+) -> tuple[bool, str]:
+    if not liberacao:
+        return False, ""
+
+    referencia = agora or datetime.utcnow()
+    if not getattr(liberacao, "ativo", False):
+        return False, ""
+
+    liberado_ate = getattr(liberacao, "liberado_ate", None)
+    if not liberado_ate or liberado_ate <= referencia:
+        return False, ""
+
+    return True, f"Liberação temporária ativa até {liberado_ate.strftime('%d/%m/%Y %H:%M')}."
 
 
 async def middleware_licenciamento(request: Request, call_next):
@@ -111,6 +171,9 @@ async def middleware_licenciamento(request: Request, call_next):
     except Exception:
         return await call_next(request)
 
+    if _payload_usuario_manutencao(payload):
+        return await call_next(request)
+
     instituicao_id = payload.get("instituicao_id")
 
     if not instituicao_id:
@@ -132,6 +195,38 @@ async def middleware_licenciamento(request: Request, call_next):
 
         bloqueada, motivo = _licenca_esta_bloqueada(instituicao)
 
+        if not bloqueada and getattr(instituicao, "organizacao_id", None):
+            liberacao = (
+                await db.execute(
+                    select(CobrancaLiberacaoTemporariaDB)
+                    .where(
+                        CobrancaLiberacaoTemporariaDB.organizacao_id == instituicao.organizacao_id,
+                        CobrancaLiberacaoTemporariaDB.ativo == True,  # noqa: E712
+                        CobrancaLiberacaoTemporariaDB.liberado_ate > datetime.utcnow(),
+                    )
+                    .order_by(CobrancaLiberacaoTemporariaDB.liberado_ate.desc())
+                )
+            ).scalars().first()
+            liberada_temporariamente, motivo_liberacao = _liberacao_temporaria_ativa(liberacao)
+
+            ciclos_em_aberto = (
+                await db.execute(
+                    select(CobrancaCicloDB).where(
+                        CobrancaCicloDB.organizacao_id == instituicao.organizacao_id,
+                        CobrancaCicloDB.status_pagamento.in_(["Pendente", "Vencido"]),
+                    )
+                )
+            ).scalars().all()
+            bloqueada, motivo_cobranca = _cobranca_esta_bloqueada(
+                list(ciclos_em_aberto),
+                getattr(instituicao, "dias_tolerancia", 5) or 5,
+            )
+            if bloqueada:
+                motivo = motivo_cobranca
+            if bloqueada and liberada_temporariamente:
+                bloqueada = False
+                motivo = motivo_liberacao
+
     if bloqueada and bloqueio_ativo:
         return JSONResponse(
             status_code=402,
@@ -139,6 +234,7 @@ async def middleware_licenciamento(request: Request, call_next):
                 "detail": "Sistema bloqueado por pendência de assinatura.",
                 "motivo": motivo,
                 "codigo": "LICENCA_BLOQUEADA",
+                "rotas_liberadas": ["/cobrancas", "/suporte"],
             },
         )
 

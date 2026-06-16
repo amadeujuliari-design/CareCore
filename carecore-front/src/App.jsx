@@ -30,6 +30,8 @@ const Organizacao = lazy(() => import('./Organizacao'));
 const GestaoGlobal = lazy(() => import('./GestaoGlobal'));
 const HistoricoLegado = lazy(() => import('./HistoricoLegado'));
 const Suporte = lazy(() => import('./Suporte'));
+const Cobrancas = lazy(() => import('./Cobrancas'));
+const CobrancasAdmin = lazy(() => import('./CobrancasAdmin'));
 
 function PageFallback() {
   return (
@@ -187,6 +189,24 @@ export default function App() {
           element={
             <ProtectedRoute perfis={['Gestor', 'Global']}>
               <GestaoGlobal />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/cobrancas"
+          element={
+            <ProtectedRoute perfis={['Gestor', 'Global']}>
+              <Cobrancas />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/admin/cobrancas"
+          element={
+            <ProtectedRoute perfis={['Manutenção']}>
+              <CobrancasAdmin />
             </ProtectedRoute>
           }
         />
