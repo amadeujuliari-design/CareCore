@@ -7,6 +7,7 @@ export default function ProntuarioPia({
   registrosPia,
   registrosPiaPrincipais,
   evolucoesPorRegistroPia,
+  imprimirPiaCompleto,
   loadingPia,
   salvandoPia,
   temasEvolucaoPia,
@@ -151,9 +152,20 @@ export default function ProntuarioPia({
         </div>
 
         <div className="lg:col-span-2">
-          <div className="flex items-center justify-between mb-3">
+          <div className="flex flex-col gap-2 mb-3 sm:flex-row sm:items-center sm:justify-between">
             <h3 className="text-xs font-semibold text-gray-700 uppercase">Histórico do PIA ({registrosPia.length})</h3>
-            <button type="button" onClick={() => carregarRegistrosPia(editandoId)} className="text-[11px] font-bold text-indigo-600 hover:underline">Atualizar</button>
+            <div className="flex flex-wrap gap-2">
+              {registrosPiaPrincipais.length > 0 && (
+                <button
+                  type="button"
+                  onClick={imprimirPiaCompleto}
+                  className="rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-[11px] font-black text-indigo-700 hover:bg-indigo-100"
+                >
+                  Imprimir PIA completo
+                </button>
+              )}
+              <button type="button" onClick={() => carregarRegistrosPia(editandoId)} className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-[11px] font-bold text-indigo-600 hover:bg-gray-50">Atualizar</button>
+            </div>
           </div>
 
           {loadingPia ? (

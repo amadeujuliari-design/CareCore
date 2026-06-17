@@ -40,6 +40,9 @@ import {
   formatarCPF,
   formatarTelefone,
 } from './utils/conviventesUtils';
+import { abrirPreviewHtml } from './utils/imprimirRelatorio';
+import { montarHtmlPiaCompleto } from './utils/piaCompletoPrint';
+import { obterLogoRelatorioDataUrl } from './utils/relatorioIdentidadePrint';
 import {
   atualizarConviventeProntuario,
   carregarDadosIniciaisProntuario,
@@ -359,6 +362,29 @@ export default function Conviventes() {
         setErrosValidacao(prev => ({ ...prev, cep: 'NÃO FOI POSSÍVEL CONSULTAR O CEP' }));
       }
     }
+  };
+
+  const imprimirPiaCompleto = async () => {
+    if (!editandoId || registrosPiaPrincipais.length === 0) {
+      setErro('Nenhum PIA principal disponível para impressão.');
+      return;
+    }
+
+    const logoRelatorioDataUrl = await obterLogoRelatorioDataUrl(identidadeRelatorio);
+    const html = montarHtmlPiaCompleto({
+      convivente: formData,
+      registrosPiaPrincipais,
+      evolucoesPorRegistroPia,
+      listaTecnicos,
+      identidadeRelatorio,
+      logoRelatorioDataUrl,
+    });
+
+    abrirPreviewHtml({
+      titulo: `PIA completo - ${formData.nome_social || formData.nome_completo || 'Convivente'}`,
+      html,
+      orientacaoInicial: 'portrait',
+    });
   };
 
   const handleChange = (e) => {
@@ -688,6 +714,7 @@ export default function Conviventes() {
                       registrosPia={registrosPia}
                       registrosPiaPrincipais={registrosPiaPrincipais}
                       evolucoesPorRegistroPia={evolucoesPorRegistroPia}
+                      imprimirPiaCompleto={imprimirPiaCompleto}
                       loadingPia={loadingPia}
                       salvandoPia={salvandoPia}
                       temasEvolucaoPia={temasEvolucaoPia}
