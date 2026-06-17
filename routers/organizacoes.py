@@ -64,6 +64,14 @@ def _upload_local_relatorios_permitido() -> bool:
     return app_env in _AMBIENTES_COM_UPLOAD_LOCAL
 
 
+def _logo_relatorio_local_indisponivel(caminho_logo: str | None) -> bool:
+    if _upload_local_relatorios_permitido():
+        return False
+
+    caminho_normalizado = (caminho_logo or "").strip().replace("\\", "/")
+    return caminho_normalizado.startswith(("/uploads/relatorios/", "uploads/relatorios/"))
+
+
 def _content_type_logo(extensao: str) -> str:
     return "image/png" if extensao == ".png" else "image/jpeg"
 
@@ -458,8 +466,12 @@ async def obter_projeto_atual(
 
 
 def montar_identidade_relatorio(projeto: InstituicaoDB) -> IdentidadeRelatorioResponse:
+    logo_url = projeto.relatorio_logo_url
+    if _logo_relatorio_local_indisponivel(logo_url):
+        logo_url = None
+
     return IdentidadeRelatorioResponse(
-        relatorio_logo_url=projeto.relatorio_logo_url,
+        relatorio_logo_url=logo_url,
         relatorio_nome_exibicao=projeto.relatorio_nome_exibicao or projeto.nome_fantasia,
         relatorio_rodape_linha1=projeto.relatorio_rodape_linha1,
         relatorio_rodape_linha2=projeto.relatorio_rodape_linha2,

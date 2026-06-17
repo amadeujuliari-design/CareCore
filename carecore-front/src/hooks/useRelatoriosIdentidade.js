@@ -6,6 +6,7 @@ import {
   salvarIdentidadeRelatorios,
 } from '../services/relatoriosService';
 import { urlArquivoBackend } from '../utils/arquivosApi';
+import { limparFotoCache } from '../utils/fotoCache';
 import { criarHeadersAutenticados } from '../utils/requestIdUtils';
 import { emailValido, formatarTelefone, telefoneValido } from '../utils/usuariosUtils';
 
@@ -107,6 +108,7 @@ export function useRelatoriosIdentidade(token) {
     setMensagemIdentidade('');
     try {
       const identidadeAtualizada = await enviarLogoIdentidadeRelatorios(formData);
+      limparFotoCache();
       setIdentidadeRelatorio(identidadeAtualizada);
       setMensagemIdentidade('Logotipo atualizado com sucesso.');
     } catch (error) {
@@ -123,6 +125,7 @@ export function useRelatoriosIdentidade(token) {
     setMensagemIdentidade('');
     try {
       const identidadeAtualizada = await removerLogoIdentidadeRelatorios();
+      limparFotoCache();
       setIdentidadeRelatorio(identidadeAtualizada);
       setMensagemIdentidade('Logotipo removido.');
     } catch (error) {
