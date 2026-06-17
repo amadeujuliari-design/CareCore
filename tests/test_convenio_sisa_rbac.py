@@ -1,5 +1,6 @@
 from routers.conviventes import (
     usuario_pode_excluir_importacao_sisa,
+    usuario_pode_gerenciar_pia_convivente,
     usuario_visivel_como_equipe,
 )
 
@@ -38,3 +39,9 @@ def test_usuario_global_nao_aparece_como_equipe_operacional():
     usuario = {"perfil_acesso": "Gestor", "is_global": True}
 
     assert not usuario_visivel_como_equipe(usuario)
+
+
+def test_manutencao_pode_gerenciar_pia_convivente():
+    usuario = {"perfil_acesso": "Manutenção"}
+
+    assert usuario_pode_gerenciar_pia_convivente(usuario)

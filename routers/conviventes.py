@@ -767,7 +767,7 @@ async def criar_registro_pia(
     if not usuario_pode_gerenciar_pia_convivente(usuario_atual):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Apenas Gestores e Técnicos podem criar ou evoluir PIA.",
+            detail="Apenas Gestores, Técnicos ou Manutenção podem criar ou evoluir PIA.",
         )
 
     convivente = (
@@ -838,7 +838,11 @@ def usuario_pode_criar_historico_convivente(usuario_atual: dict) -> bool:
 
 
 def usuario_pode_gerenciar_pia_convivente(usuario_atual: dict) -> bool:
-    return usuario_eh_gestor(usuario_atual) or usuario_tem_perfil(usuario_atual, {PERFIL_TECNICO})
+    return (
+        usuario_eh_gestor(usuario_atual)
+        or usuario_eh_manutencao(usuario_atual)
+        or usuario_tem_perfil(usuario_atual, {PERFIL_TECNICO})
+    )
 
 
 def usuario_pode_editar_historico_convivente(usuario_atual: dict, convivente: ConviventeDB) -> bool:
