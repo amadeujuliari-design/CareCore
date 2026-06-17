@@ -13,6 +13,7 @@ import {
   buscarFechamentosSisa,
   buscarRelatorioDiarioSisa,
   buscarRelatorioMensalSisa,
+  excluirImportacaoSisa,
   exportarMensalSisaXlsx,
   fecharMesSisa,
   importarPlanilhaConvenioSisa,
@@ -63,6 +64,9 @@ export default function ConvenioSisa() {
   const podeFecharOuReabrirMes =
     usuarioMaster ||
     ['Gestor', 'Gestao', 'Gestão', 'Gerente'].includes(perfilUsuario);
+  const podeExcluirImportacoesSisa =
+    usuarioMaster ||
+    ['Gestor', 'Gestao', 'Gestão', 'Gerente', 'Manutenção', 'Manutencao'].includes(perfilUsuario);
 
   const hoje = new Date();
   const dataHoje = dataLocalISO(hoje);
@@ -85,6 +89,7 @@ export default function ConvenioSisa() {
   const [importacaoSelecionada, setImportacaoSelecionada] = useState(null);
   const [arquivoSisa, setArquivoSisa] = useState(null);
   const [importandoSisa, setImportandoSisa] = useState(false);
+  const [excluindoImportacaoId, setExcluindoImportacaoId] = useState('');
   const [filtrosDivergencia, setFiltrosDivergencia] = useState(FILTROS_DIVERGENCIA_PADRAO);
   const arquivoSisaInputRef = useRef(null);
 
@@ -282,6 +287,42 @@ export default function ConvenioSisa() {
         error.response?.data?.detail ||
         'Erro ao atualizar a tratativa da divergência.'
       );
+    }
+  };
+
+  const excluirImportacaoSelecionada = async (importacao) => {
+    if (!importacao?.id) return;
+
+    const confirmado = window.confirm(
+      `Excluir a importação SISA de ${formatarDataPt(importacao.data_referencia)}?\n\n` +
+      'Esta ação remove a conferência importada, suas presenças e divergências vinculadas. ' +
+      'Os cadastros de conviventes e lançamentos manuais do CareCore+ não serão alterados.'
+    );
+
+    if (!confirmado) return;
+
+    try {
+      setExcluindoImportacaoId(importacao.id);
+      await excluirImportacaoSisa(importacao.id);
+
+      const importacoesAtualizadas = await listarImportacoesSisa();
+      setImportacoes(importacoesAtualizadas);
+
+      if ((importacoesAtualizadas || []).length > 0) {
+        await carregarDetalheImportacao(importacoesAtualizadas[0].id);
+      } else {
+        setImportacaoSelecionada(null);
+      }
+
+      avisarSucesso('Importação SISA excluída com sucesso.');
+    } catch (error) {
+      console.error(error);
+      avisarErro(
+        error.response?.data?.detail ||
+        'Erro ao excluir importação SISA.'
+      );
+    } finally {
+      setExcluindoImportacaoId('');
     }
   };
 
@@ -1597,7 +1638,10 @@ export default function ConvenioSisa() {
           <ImportacoesSisa
             importacoes={importacoes}
             importacaoSelecionada={importacaoSelecionada}
+            podeExcluirImportacoes={podeExcluirImportacoesSisa}
+            excluindoImportacaoId={excluindoImportacaoId}
             onSelecionarImportacao={carregarDetalheImportacao}
+            onExcluirImportacao={excluirImportacaoSelecionada}
             filtros={filtrosDivergencia}
             onAlterarFiltros={setFiltrosDivergencia}
             divergenciasFiltradas={divergenciasImportacaoFiltradas}

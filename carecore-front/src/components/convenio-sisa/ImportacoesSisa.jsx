@@ -15,7 +15,10 @@ import { FiltroSelect, ResumoCard, Td, Th } from './ConvenioSisaUI';
 export function ImportacoesSisa({
   importacoes,
   importacaoSelecionada,
+  podeExcluirImportacoes,
+  excluindoImportacaoId,
   onSelecionarImportacao,
+  onExcluirImportacao,
   filtros,
   onAlterarFiltros,
   divergenciasFiltradas,
@@ -82,22 +85,37 @@ export function ImportacoesSisa({
             </p>
           ) : (
             importacoes.map((importacao) => (
-              <button
+              <div
                 key={importacao.id}
-                type="button"
-                onClick={() => onSelecionarImportacao(importacao.id)}
                 className={`min-w-[220px] rounded-xl border px-3 py-2 text-left text-xs transition ${
                   importacaoSelecionada?.id === importacao.id
                     ? 'border-brand bg-brand/5'
                     : 'border-gray-100 bg-gray-50 hover:bg-gray-100'
                 }`}
               >
-                <p className="font-black text-gray-800">{formatarDataPt(importacao.data_referencia)}</p>
-                <p className="mt-0.5 truncate text-[11px] font-semibold text-gray-500">{importacao.nome_arquivo}</p>
-                <p className="mt-1 text-[10px] font-bold text-gray-500">
-                  {importacao.total_vinculados} vinculados · {importacao.total_alertas_criticos} críticos
-                </p>
-              </button>
+                <button
+                  type="button"
+                  onClick={() => onSelecionarImportacao(importacao.id)}
+                  className="block w-full text-left"
+                >
+                  <p className="font-black text-gray-800">{formatarDataPt(importacao.data_referencia)}</p>
+                  <p className="mt-0.5 truncate text-[11px] font-semibold text-gray-500">{importacao.nome_arquivo}</p>
+                  <p className="mt-1 text-[10px] font-bold text-gray-500">
+                    {importacao.total_vinculados} vinculados · {importacao.total_alertas_criticos} críticos
+                  </p>
+                </button>
+
+                {podeExcluirImportacoes && (
+                  <button
+                    type="button"
+                    onClick={() => onExcluirImportacao(importacao)}
+                    disabled={excluindoImportacaoId === importacao.id}
+                    className="mt-2 rounded-lg border border-red-100 bg-red-50 px-2 py-1 text-[10px] font-black uppercase text-red-700 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {excluindoImportacaoId === importacao.id ? 'Excluindo...' : 'Excluir importação'}
+                  </button>
+                )}
+              </div>
             ))
           )}
         </div>

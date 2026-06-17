@@ -36,6 +36,11 @@ export async function buscarDetalheImportacaoSisa(importacaoId) {
   return response.data;
 }
 
+export async function excluirImportacaoSisa(importacaoId) {
+  const response = await api.delete(`${BASE_CONVENIO_SISA}/importacoes/${importacaoId}`);
+  return response.data;
+}
+
 export async function importarPlanilhaConvenioSisa(formData) {
   const response = await api.post(
     `${BASE_CONVENIO_SISA}/importacoes`,

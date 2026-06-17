@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, File, UploadFile, Form, s
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from sqlalchemy import and_, case, cast, func, or_, String
+from sqlalchemy import and_, case, cast, delete, func, or_, String
 
 from audit_log import registrar_evento_auditoria
 from database import get_db
@@ -832,6 +832,10 @@ def usuario_pode_alterar_status_convivente(usuario_atual: dict, convivente: Conv
 
 
 def usuario_pode_excluir_convivente_sem_vinculos(usuario_atual: dict) -> bool:
+    return usuario_eh_gestor(usuario_atual) or usuario_eh_manutencao(usuario_atual)
+
+
+def usuario_pode_excluir_importacao_sisa(usuario_atual: dict) -> bool:
     return usuario_eh_gestor(usuario_atual) or usuario_eh_manutencao(usuario_atual)
 
 
@@ -3474,6 +3478,64 @@ async def listar_importacoes_sisa(
     )
 
     return resultado.scalars().all()
+
+
+@router.delete("/convenio-sisa/importacoes/{importacao_id}")
+async def excluir_importacao_sisa(
+    importacao_id: str,
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    bloquear_usuario_global_puro(usuario_atual)
+
+    if not usuario_pode_excluir_importacao_sisa(usuario_atual):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Apenas Gestores ou Manutenção podem excluir importações SISA.",
+        )
+
+    instituicao_id = obter_instituicao_escopo(usuario_atual)
+    importacao = (
+        await db.execute(
+            select(SisaImportacaoDB).where(
+                SisaImportacaoDB.id == importacao_id,
+                SisaImportacaoDB.instituicao_id == instituicao_id,
+            )
+        )
+    ).scalar_one_or_none()
+
+    if not importacao:
+        raise HTTPException(status_code=404, detail="Importação SISA não encontrada.")
+
+    resumo_auditoria = {
+        "importacao_id": importacao.id,
+        "nome_arquivo": importacao.nome_arquivo,
+        "data_referencia": importacao.data_referencia.isoformat(),
+        "total_linhas": importacao.total_linhas,
+    }
+
+    await db.execute(
+        delete(SisaDivergenciaDB).where(
+            SisaDivergenciaDB.importacao_id == importacao_id,
+            SisaDivergenciaDB.instituicao_id == instituicao_id,
+        )
+    )
+    await db.execute(
+        delete(SisaPresencaImportadaDB).where(
+            SisaPresencaImportadaDB.importacao_id == importacao_id,
+            SisaPresencaImportadaDB.instituicao_id == instituicao_id,
+        )
+    )
+    await db.delete(importacao)
+    await db.commit()
+
+    registrar_evento_auditoria(
+        "sisa_importacao_excluida",
+        usuario_atual=usuario_atual,
+        **resumo_auditoria,
+    )
+
+    return {"status": "sucesso", "mensagem": "Importação SISA excluída com sucesso."}
 
 
 @router.get("/convenio-sisa/importacoes/{importacao_id}", response_model=SisaImportacaoDetalheResponse)
