@@ -10,7 +10,8 @@ import { RelatoriosPersonalizacao } from './components/relatorios/RelatoriosPers
 import { RelatoriosCardsAba, RelatoriosMetricasTopo } from './components/relatorios/RelatoriosResumoAba';
 import { RelatoriosTabelaDados } from './components/relatorios/RelatoriosTabelaDados';
 import { exportarRelatorioXlsx } from './utils/exportarRelatorioXlsx';
-import { imprimirRelatorio } from './utils/imprimirRelatorio';
+import { abrirPreviewHtml, imprimirRelatorio } from './utils/imprimirRelatorio';
+import { montarHtmlPiasCompletosLote } from './utils/piaCompletoPrint';
 import { gerarGraficosEvolucaoHtml } from './utils/relatoriosGraficosHtml';
 import { useRelatoriosFiltros } from './hooks/useRelatoriosFiltros';
 import { useRelatoriosIndicadores } from './hooks/useRelatoriosIndicadores';
@@ -558,6 +559,86 @@ export default function Relatorios() {
     });
   }
 
+  async function imprimirPiasCompletosFiltrados() {
+    const conviventeIdsSelecionados = Array.from(
+      new Set(registrosPiaFiltrados.map((registro) => registro.convivente_id).filter(Boolean)),
+    );
+
+    if (conviventeIdsSelecionados.length === 0) {
+      setErro('Nenhum convivente com PIA foi encontrado nos filtros atuais.');
+      return;
+    }
+
+    if (conviventeIdsSelecionados.length > 25) {
+      const confirmado = window.confirm(
+        `Você está prestes a imprimir ${conviventeIdsSelecionados.length} PIAs completos. Deseja continuar?`
+      );
+
+      if (!confirmado) return;
+    }
+
+    const registrosPorConvivente = new Map();
+    registrosPia.forEach((registro) => {
+      if (!conviventeIdsSelecionados.includes(registro.convivente_id)) return;
+      const lista = registrosPorConvivente.get(registro.convivente_id) || [];
+      lista.push(registro);
+      registrosPorConvivente.set(registro.convivente_id, lista);
+    });
+
+    const itens = conviventeIdsSelecionados
+      .map((conviventeId) => {
+        const registrosDoConvivente = registrosPorConvivente.get(conviventeId) || [];
+        const registroReferencia = registrosPiaFiltrados.find((registro) => registro.convivente_id === conviventeId);
+        const conviventeCompleto = conviventes.find((convivente) => convivente.id === conviventeId);
+        const convivente = conviventeCompleto || {
+          id: conviventeId,
+          nome_completo: registroReferencia?.convivente_nome_completo,
+          nome_social: registroReferencia?.convivente_nome_social,
+          numero_institucional: registroReferencia?.convivente_numero_institucional,
+          status: registroReferencia?.convivente_status,
+          tecnico_id: registroReferencia?.convivente_tecnico_id,
+        };
+        const registrosPiaPrincipais = registrosDoConvivente
+          .filter((registro) => !registro.registro_pai_id)
+          .sort((a, b) => new Date(b.data_registro) - new Date(a.data_registro));
+        const evolucoesPorRegistroPia = registrosDoConvivente
+          .filter((registro) => registro.registro_pai_id)
+          .reduce((acc, registro) => {
+            const chave = registro.registro_pai_id;
+            acc[chave] = [...(acc[chave] || []), registro];
+            return acc;
+          }, {});
+
+        Object.keys(evolucoesPorRegistroPia).forEach((chave) => {
+          evolucoesPorRegistroPia[chave].sort((a, b) => new Date(b.data_registro) - new Date(a.data_registro));
+        });
+
+        return {
+          convivente,
+          registrosPiaPrincipais,
+          evolucoesPorRegistroPia,
+        };
+      })
+      .sort((a, b) => String(a.convivente.nome_social || a.convivente.nome_completo || '').localeCompare(
+        String(b.convivente.nome_social || b.convivente.nome_completo || ''),
+      ));
+
+    const logoRelatorioDataUrl = await obterLogoRelatorioParaImpressao();
+    const html = montarHtmlPiasCompletosLote({
+      itens,
+      listaTecnicos: tecnicos,
+      identidadeRelatorio,
+      logoRelatorioDataUrl,
+      descricaoFiltros: filtrosAtivos.join(' | ') || 'Todos os filtros',
+    });
+
+    abrirPreviewHtml({
+      titulo: `PIAs completos filtrados (${itens.length})`,
+      html,
+      orientacaoInicial: 'portrait',
+    });
+  }
+
   async function imprimirAbaAtual({ incluirGraficos = null } = {}) {
     if (aba === 'evolucao' && incluirGraficos === null) {
       setOpcoesImpressaoEvolucaoAbertas(true);
@@ -649,6 +730,16 @@ export default function Relatorios() {
               >
                 Imprimir
               </ReportActionButton>
+
+              {aba === 'pia' && (
+                <ReportActionButton
+                  action="print"
+                  onClick={imprimirPiasCompletosFiltrados}
+                  disabled={loading || registrosPiaFiltrados.length === 0}
+                >
+                  Imprimir PIAs completos
+                </ReportActionButton>
+              )}
             </>
           )}
         />
