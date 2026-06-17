@@ -29,6 +29,10 @@ def upgrade() -> None:
         "usuarios",
         sa.Column("token_version", sa.Integer(), nullable=False, server_default="0"),
     )
+
+    if bind.dialect.name == "sqlite":
+        return
+
     op.alter_column("usuarios", "token_version", server_default=None)
 
 

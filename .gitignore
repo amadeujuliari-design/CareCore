@@ -67,6 +67,11 @@ minuta_contrato_carecore_aeb*
 
 # Artefatos locais de análise/importação histórica
 /scripts/
+!/scripts/
+/scripts/*
+!/scripts/importar_conviventes_sisa_vinculados.py
+!/scripts/preparar_base_producao_aeb.py
+!/scripts/validar_base_producao_aeb.py
 relatorios_importacao/
 preencher_organizacao.py
 RelatorioCidadaoVinculado.xls
