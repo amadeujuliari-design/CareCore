@@ -182,6 +182,7 @@ function estilosPiaCompleto() {
     .direitos-reservados a { color: #4f46e5; text-decoration: none; }
     .quebra-pia { break-after: page; page-break-after: always; }
     .quebra-pia:last-child { break-after: auto; page-break-after: auto; }
+    .quebra-pia .pia-principal:last-child { margin-bottom: 0; }
     @media print {
       body { padding: 0; }
       .cabecalho { margin-bottom: 12px; padding-bottom: 9px; }
@@ -260,8 +261,6 @@ export function montarHtmlPiasCompletosLote({
 }) {
   const logoSrc = obterLogoRelatorioSrc(logoRelatorioDataUrl);
   const nomeExibicao = identidadeRelatorio?.relatorio_nome_exibicao || 'CARECORE+';
-  const direitosUrl = obterUrlDireitosReservados();
-  const rodapeItens = montarRodapeItens(identidadeRelatorio);
 
   return `
     <!doctype html>
@@ -292,7 +291,6 @@ export function montarHtmlPiasCompletosLote({
                 )).join('')
                 : '<p class="vazio">Nenhum PIA principal registrado para este convivente.</p>'
             }
-            ${montarRodapeRelatorio(rodapeItens, direitosUrl)}
           </section>
         `).join('')}
       </body>
