@@ -31,6 +31,9 @@ jobs:
       - name: Run backend tests
         run: pytest -q
 
+      - name: Apply Alembic migrations
+        run: alembic upgrade head
+
       - name: Check Alembic schema drift
         run: alembic check
 

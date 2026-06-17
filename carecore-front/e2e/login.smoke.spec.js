@@ -21,7 +21,7 @@ test('carrega login e trata falha de autenticacao sem backend real', async ({ pa
 
   await page.getByPlaceholder('usuario@instituicao.org').fill('usuario@carecore.test');
   await page.getByPlaceholder('Digite sua senha').fill('SenhaInvalida@123');
-  await page.getByRole('button', { name: 'Entrar' }).click();
+  await page.getByRole('button', { name: 'Entrar', exact: true }).click();
 
   await expect(page.getByText('Credenciais inválidas.')).toBeVisible();
 });
