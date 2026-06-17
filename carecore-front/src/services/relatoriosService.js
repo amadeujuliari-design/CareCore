@@ -24,6 +24,8 @@ export async function carregarDadosRelatorios({ aba, filtros, carregarIdentidade
     quartos,
     ocorrencias,
     tecnicos,
+    equipe,
+    registrosPia,
     rotina,
     historicoRotina,
     resumoRotinaEvolucao,
@@ -47,6 +49,8 @@ export async function carregarDadosRelatorios({ aba, filtros, carregarIdentidade
       },
     }),
     api.get('/api/tecnicos'),
+    api.get('/api/equipe'),
+    api.get('/api/relatorios/pia').catch(() => ({ data: [] })),
     carregarHistoricoRotina
       ? api.get('/api/rotina/dashboard-operacional').catch(() => ({ data: null }))
       : Promise.resolve(null),
@@ -81,6 +85,8 @@ export async function carregarDadosRelatorios({ aba, filtros, carregarIdentidade
     quartos: quartos.data || [],
     ocorrencias: ocorrencias.data,
     tecnicos: tecnicos.data || [],
+    equipe: equipe.data || [],
+    registrosPia: registrosPia.data || [],
     rotina: rotina?.data || null,
     historicoRotina: historicoRotina?.data || [],
     resumoRotinaEvolucao: resumoRotinaEvolucao?.data || [],

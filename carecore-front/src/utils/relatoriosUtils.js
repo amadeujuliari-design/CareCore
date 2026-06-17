@@ -2,6 +2,7 @@ export const ABAS_RELATORIOS = [
   { id: 'conviventes', label: 'Conviventes' },
   { id: 'rotina', label: 'Rotina' },
   { id: 'ocorrencias', label: 'Ocorrências' },
+  { id: 'pia', label: 'PIA' },
   { id: 'acomodacoes', label: 'Acomodações' },
   { id: 'documentacao', label: 'Documentação' },
   { id: 'carteirinhas', label: 'Carteirinhas' },
@@ -20,6 +21,9 @@ export function criarFiltrosRelatoriosIniciais() {
     statusOcorrencia: 'Todos',
     prioridadeOcorrencia: 'Todas',
     somentePendencias: false,
+    tipoPia: 'Todos',
+    statusPia: 'Todos',
+    temaPia: '',
     acomodacaoStatusLeito: 'Todos',
     acomodacaoModalidade: 'Todas',
     acomodacaoPublico: 'Todos',
@@ -37,13 +41,24 @@ export function descreverFiltrosAtivosRelatorios({ aba, filtros, tecnicos }) {
     lista.push(`Técnico: ${tecnico?.nome || filtros.tecnicoId}`);
   }
   if (filtros.statusConvivente !== 'Todos') lista.push(`Status convivente: ${filtros.statusConvivente}`);
-  if (filtros.statusOcorrencia !== 'Todos') lista.push(`Status ocorrência: ${filtros.statusOcorrencia}`);
-  if (filtros.prioridadeOcorrencia !== 'Todas') lista.push(`Prioridade: ${filtros.prioridadeOcorrencia}`);
-  if (filtros.somentePendencias) lista.push('Somente pendências');
+  if (aba === 'ocorrencias') {
+    if (filtros.statusOcorrencia !== 'Todos') lista.push(`Status ocorrência: ${filtros.statusOcorrencia}`);
+    if (filtros.prioridadeOcorrencia !== 'Todas') lista.push(`Prioridade: ${filtros.prioridadeOcorrencia}`);
+    if (filtros.somentePendencias) lista.push('Somente ocorrências pendentes');
+  }
+  if (['rotina', 'auditoria'].includes(aba) && filtros.somentePendencias) {
+    lista.push('Somente registros com ajuste');
+  }
+  if (aba === 'pia') {
+    if (filtros.tipoPia !== 'Todos') lista.push(`Tipo PIA: ${filtros.tipoPia}`);
+    if (filtros.statusPia !== 'Todos') lista.push(`Status PIA: ${filtros.statusPia}`);
+    if (filtros.temaPia.trim()) lista.push(`Tema PIA: ${filtros.temaPia.trim()}`);
+  }
   if (aba === 'acomodacoes') {
     if (filtros.acomodacaoStatusLeito !== 'Todos') lista.push(`Status leito: ${filtros.acomodacaoStatusLeito}`);
     if (filtros.acomodacaoModalidade !== 'Todas') lista.push(`Modalidade: ${filtros.acomodacaoModalidade}`);
     if (filtros.acomodacaoPublico !== 'Todos') lista.push(`Público: ${filtros.acomodacaoPublico}`);
+    if (filtros.somentePendencias) lista.push('Somente leitos livres');
   }
   if (filtros.busca.trim()) lista.push(`Busca: ${filtros.busca.trim()}`);
 

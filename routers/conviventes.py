@@ -369,6 +369,37 @@ async def listar_tecnicos(db: AsyncSession = Depends(get_db), usuario_atual: dic
         for t in result.all()
     ]
 
+
+@router.get("/equipe")
+async def listar_equipe_operacional(
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    query = select(
+        UsuarioDB.id,
+        UsuarioDB.nome,
+        UsuarioDB.perfil_acesso,
+        UsuarioDB.avatar_url,
+        UsuarioDB.email,
+    ).where(
+        UsuarioDB.instituicao_id == obter_instituicao_escopo(usuario_atual),
+        UsuarioDB.ativo == True,  # noqa: E712
+        UsuarioDB.is_global == False,  # noqa: E712
+        ~UsuarioDB.perfil_acesso.in_(["Global", "Manutenção", "Manutencao"]),
+    ).order_by(UsuarioDB.nome.asc())
+    result = await db.execute(query)
+    return [
+        {
+            "id": usuario.id,
+            "nome": usuario.nome,
+            "perfil_acesso": usuario.perfil_acesso,
+            "avatar_url": usuario.avatar_url,
+            "email": usuario.email,
+        }
+        for usuario in result.all()
+    ]
+
+
 @router.get("/motivos-inteligentes")
 async def listar_motivos_inteligentes(db: AsyncSession = Depends(get_db), usuario_atual: dict = Depends(get_usuario_logado)):
     query = select(OcorrenciaConviventeDB.motivo).where(OcorrenciaConviventeDB.instituicao_id == obter_instituicao_escopo(usuario_atual)).distinct()
@@ -837,6 +868,20 @@ def usuario_pode_excluir_convivente_sem_vinculos(usuario_atual: dict) -> bool:
 
 def usuario_pode_excluir_importacao_sisa(usuario_atual: dict) -> bool:
     return usuario_eh_gestor(usuario_atual) or usuario_eh_manutencao(usuario_atual)
+
+
+def usuario_visivel_como_equipe(usuario: UsuarioDB | dict | None) -> bool:
+    if not usuario:
+        return False
+
+    perfil = getattr(usuario, "perfil_acesso", None)
+    is_global = getattr(usuario, "is_global", False)
+    if isinstance(usuario, dict):
+        perfil = usuario.get("perfil_acesso")
+        is_global = usuario.get("is_global", False)
+
+    perfil_normalizado = str(perfil or "").strip()
+    return not is_global and perfil_normalizado not in {"Global", "Manutenção", "Manutencao"}
 
 
 def convivente_esta_ativo(convivente: ConviventeDB) -> bool:
@@ -3463,6 +3508,55 @@ async def _criar_divergencia_sisa(
         resumo_carecore_json=json.dumps(_resumo_registros_carecore(registros), ensure_ascii=False),
         mensagem=mensagem,
     )
+
+
+@router.get("/relatorios/pia")
+async def listar_registros_pia_relatorios(
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    instituicao_id = obter_instituicao_escopo(usuario_atual)
+    registros = (
+        await db.execute(
+            select(
+                RegistroPIADB,
+                ConviventeDB.nome_completo.label("convivente_nome_completo"),
+                ConviventeDB.nome_social.label("convivente_nome_social"),
+                ConviventeDB.numero_institucional.label("convivente_numero_institucional"),
+                ConviventeDB.status.label("convivente_status"),
+                ConviventeDB.tecnico_id.label("convivente_tecnico_id"),
+                UsuarioDB.nome.label("usuario_nome"),
+            )
+            .join(ConviventeDB, ConviventeDB.id == RegistroPIADB.convivente_id)
+            .join(UsuarioDB, UsuarioDB.id == RegistroPIADB.usuario_id)
+            .where(
+                RegistroPIADB.instituicao_id == instituicao_id,
+                ConviventeDB.instituicao_id == instituicao_id,
+            )
+            .order_by(RegistroPIADB.data_registro.desc())
+        )
+    ).all()
+
+    return [
+        {
+            **{coluna.name: getattr(registro, coluna.name) for coluna in registro.__table__.columns},
+            "convivente_nome_completo": convivente_nome_completo,
+            "convivente_nome_social": convivente_nome_social,
+            "convivente_numero_institucional": convivente_numero_institucional,
+            "convivente_status": convivente_status,
+            "convivente_tecnico_id": convivente_tecnico_id,
+            "usuario_nome": usuario_nome,
+        }
+        for (
+            registro,
+            convivente_nome_completo,
+            convivente_nome_social,
+            convivente_numero_institucional,
+            convivente_status,
+            convivente_tecnico_id,
+            usuario_nome,
+        ) in registros
+    ]
 
 
 @router.get("/convenio-sisa/importacoes", response_model=List[SisaImportacaoResponse])

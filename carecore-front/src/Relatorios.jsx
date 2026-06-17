@@ -61,6 +61,8 @@ export default function Relatorios() {
   const [ocorrencias, setOcorrencias] = useState([]);
   const [resumoOcorrencias, setResumoOcorrencias] = useState(null);
   const [tecnicos, setTecnicos] = useState([]);
+  const [equipe, setEquipe] = useState([]);
+  const [registrosPia, setRegistrosPia] = useState([]);
   const [rotinaOperacional, setRotinaOperacional] = useState(null);
   const [historicoRotina, setHistoricoRotina] = useState([]);
   const [resumoRotinaEvolucao, setResumoRotinaEvolucao] = useState([]);
@@ -114,6 +116,8 @@ export default function Relatorios() {
           setResumoOcorrencias(dadosRelatorios.ocorrencias?.resumo || null);
         }
         setTecnicos(dadosRelatorios.tecnicos);
+        setEquipe(dadosRelatorios.equipe);
+        setRegistrosPia(dadosRelatorios.registrosPia);
         if (dadosRelatorios.rotina) setRotinaOperacional(dadosRelatorios.rotina);
         if (dadosRelatorios.historicoRotina) setHistoricoRotina(dadosRelatorios.historicoRotina);
         if (dadosRelatorios.resumoRotinaEvolucao) setResumoRotinaEvolucao(dadosRelatorios.resumoRotinaEvolucao);
@@ -165,14 +169,18 @@ export default function Relatorios() {
     idsConviventesFiltrados,
     leitosAcomodacoesFiltrados,
     ocorrenciasFiltradas,
+    registrosPiaFiltrados,
   } = useRelatoriosFiltros({
     avisos,
     conviventes,
+    equipe,
     filtros,
     historicoRotina,
     ocorrencias,
     ordenacaoAcomodacoes,
     quartos,
+    registrosPia,
+    tecnicos,
   });
 
   const {
@@ -186,12 +194,14 @@ export default function Relatorios() {
     idsConviventesFiltrados,
     leitosAcomodacoesFiltrados,
     ocorrenciasFiltradas,
+    registrosPiaFiltrados,
     quartos,
     resumoAvisos,
     resumoOcorrencias,
     rotinaOperacional,
     tecnicoId: filtros.tecnicoId,
     tecnicos,
+    equipe,
   });
 
   const dadosEvolucao = useMemo(() => {
@@ -487,6 +497,7 @@ export default function Relatorios() {
     conviventes,
     conviventesFiltrados,
     dadosEvolucao,
+    equipe,
     filtros,
     historicoRotinaFiltrado,
     itensPorPaginaTabela,
@@ -494,6 +505,7 @@ export default function Relatorios() {
     ocorrenciasFiltradas,
     paginaTabela,
     quartos,
+    registrosPiaFiltrados,
     relatoriosAtuais,
     resumoPendenciasTecnicasEvolucao,
     setPaginaTabela,
@@ -503,25 +515,44 @@ export default function Relatorios() {
   });
 
   function exportarAbaAtual() {
+    const filtrosExportacao = {
+      Aba: ABAS_RELATORIOS.find((a) => a.id === aba)?.label || aba,
+      'Relatórios listados': relatoriosAtuais.length,
+      Período: filtros.dataInicio || filtros.dataFim
+        ? `${filtros.dataInicio ? formatarData(filtros.dataInicio) : 'início'} a ${filtros.dataFim ? formatarData(filtros.dataFim) : 'hoje'}`
+        : 'Todos',
+      Técnico: tecnicos.find((t) => t.id === filtros.tecnicoId)?.nome || 'Todos',
+      'Status convivente': filtros.statusConvivente,
+      Busca: filtros.busca || '-',
+    };
+
+    if (aba === 'ocorrencias') {
+      filtrosExportacao['Status ocorrência'] = filtros.statusOcorrencia;
+      filtrosExportacao.Prioridade = filtros.prioridadeOcorrencia;
+      filtrosExportacao['Somente ocorrências pendentes'] = filtros.somentePendencias ? 'Sim' : 'Não';
+    }
+
+    if (['rotina', 'auditoria'].includes(aba)) {
+      filtrosExportacao['Somente registros com ajuste'] = filtros.somentePendencias ? 'Sim' : 'Não';
+    }
+
+    if (aba === 'pia') {
+      filtrosExportacao['Tipo PIA'] = filtros.tipoPia;
+      filtrosExportacao['Status PIA'] = filtros.statusPia;
+      filtrosExportacao['Tema PIA'] = filtros.temaPia || '-';
+    }
+
+    if (aba === 'acomodacoes') {
+      filtrosExportacao['Status leito'] = filtros.acomodacaoStatusLeito;
+      filtrosExportacao['Modalidade acomodação'] = filtros.acomodacaoModalidade;
+      filtrosExportacao['Público acomodação'] = filtros.acomodacaoPublico;
+      filtrosExportacao['Somente leitos livres'] = filtros.somentePendencias ? 'Sim' : 'Não';
+    }
+
     exportarRelatorioXlsx({
       nomeArquivo: `central-relatorios-${aba}-${new Date().toISOString().slice(0, 10)}`,
       titulo: `Central de Relatórios - ${ABAS_RELATORIOS.find((a) => a.id === aba)?.label || aba}`,
-      filtros: {
-        Aba: ABAS_RELATORIOS.find((a) => a.id === aba)?.label || aba,
-        'Relatórios listados': relatoriosAtuais.length,
-        Período: filtros.dataInicio || filtros.dataFim
-          ? `${filtros.dataInicio ? formatarData(filtros.dataInicio) : 'início'} a ${filtros.dataFim ? formatarData(filtros.dataFim) : 'hoje'}`
-          : 'Todos',
-        Técnico: tecnicos.find((t) => t.id === filtros.tecnicoId)?.nome || 'Todos',
-        'Status convivente': filtros.statusConvivente,
-        'Status ocorrência': filtros.statusOcorrencia,
-        Prioridade: filtros.prioridadeOcorrencia,
-        Pendências: filtros.somentePendencias ? 'Sim' : 'Não',
-        'Status leito': filtros.acomodacaoStatusLeito,
-        'Modalidade acomodação': filtros.acomodacaoModalidade,
-        'Público acomodação': filtros.acomodacaoPublico,
-        Busca: filtros.busca || '-',
-      },
+      filtros: filtrosExportacao,
       colunas: colunasExportacao,
       dados: linhasExportacao,
     });

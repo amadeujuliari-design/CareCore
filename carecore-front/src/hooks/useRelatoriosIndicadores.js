@@ -14,12 +14,14 @@ export function useRelatoriosIndicadores({
   idsConviventesFiltrados,
   leitosAcomodacoesFiltrados,
   ocorrenciasFiltradas,
+  registrosPiaFiltrados = [],
   quartos,
   resumoAvisos,
   resumoOcorrencias,
   rotinaOperacional,
   tecnicoId,
   tecnicos,
+  equipe = [],
 }) {
   const dados = useMemo(() => {
     const totalConviventes = conviventesFiltrados.length;
@@ -57,6 +59,10 @@ export function useRelatoriosIndicadores({
       ocorrenciasFiltradas,
       (o) => ['Alta', 'Crítica'].includes(normalizarPrioridade(o.prioridade)) && o.status_resolucao !== 'Resolvido',
     );
+    const piaPrincipais = contar(registrosPiaFiltrados, (registro) => !registro.registro_pai_id);
+    const piaEvolucoes = contar(registrosPiaFiltrados, (registro) => Boolean(registro.registro_pai_id));
+    const piaEmAcompanhamento = contar(registrosPiaFiltrados, (registro) => registro.status === 'Em acompanhamento');
+    const piaPendentesOuRevisar = contar(registrosPiaFiltrados, (registro) => ['Pendente', 'Revisar'].includes(registro.status));
 
     const rotinaResumo = rotinaOperacional?.resumo || {};
     const rotinaFiltradaResumo = {
@@ -103,14 +109,20 @@ export function useRelatoriosIndicadores({
       ocorrenciasResolvidas,
       ocorrenciasAltaCritica,
       tecnicos: tecnicoId ? 1 : tecnicos.length,
+      equipe: equipe.length,
       tecnicosComCasos,
+      piaTotal: registrosPiaFiltrados.length,
+      piaPrincipais,
+      piaEvolucoes,
+      piaEmAcompanhamento,
+      piaPendentesOuRevisar,
       rotinaResumo,
       rotinaFiltradaResumo,
       auditoriaRotinaTotal: rotinaFiltradaResumo.editados + rotinaFiltradaResumo.cancelados + rotinaFiltradaResumo.retornosRapidos,
       avisosTotal: avisosFiltrados.length || resumoAvisos?.total_visiveis || 0,
       avisosNaoLidos: contar(avisosFiltrados, (a) => !a.lido),
     };
-  }, [avisosFiltrados, conviventesFiltrados, historicoRotinaFiltrado, idsConviventesFiltrados, leitosAcomodacoesFiltrados, ocorrenciasFiltradas, quartos, resumoAvisos, resumoOcorrencias, rotinaOperacional, tecnicoId, tecnicos]);
+  }, [avisosFiltrados, conviventesFiltrados, equipe.length, historicoRotinaFiltrado, idsConviventesFiltrados, leitosAcomodacoesFiltrados, ocorrenciasFiltradas, quartos, registrosPiaFiltrados, resumoAvisos, resumoOcorrencias, rotinaOperacional, tecnicoId, tecnicos]);
 
   const relatoriosPorAba = useMemo(() => {
     return {
@@ -191,6 +203,19 @@ export function useRelatoriosIndicadores({
           ],
         },
       ],
+      pia: [
+        {
+          titulo: 'Relatório de PIA',
+          descricao: 'Planos individuais, evoluções, objetivos, encaminhamentos e status de acompanhamento.',
+          status: 'pronto',
+          metricas: [
+            { label: 'Registros', valor: dados.piaTotal },
+            { label: 'PIA principal', valor: dados.piaPrincipais },
+            { label: 'Evoluções', valor: dados.piaEvolucoes },
+            { label: 'Pendentes/Revisar', valor: dados.piaPendentesOuRevisar },
+          ],
+        },
+      ],
       acomodacoes: [
         {
           titulo: 'Relatório de acomodações',
@@ -222,10 +247,10 @@ export function useRelatoriosIndicadores({
       equipe: [
         {
           titulo: 'Relatório de equipe',
-          descricao: 'Usuários por perfil, técnicos ativos, carga de casos e estrutura institucional.',
+          descricao: 'Usuários ativos do projeto por perfil, carga de casos e estrutura institucional.',
           status: 'pronto',
           metricas: [
-            { label: 'Técnicos', valor: dados.tecnicos },
+            { label: 'Equipe', valor: dados.equipe },
             { label: 'Conviventes', valor: dados.totalConviventes },
             { label: 'Sem técnico', valor: dados.semTecnico },
             { label: 'Técnicos c/ casos', valor: dados.tecnicosComCasos },
@@ -284,6 +309,12 @@ export function useRelatoriosIndicadores({
         { label: 'Resolvidas', valor: dados.ocorrenciasResolvidas, detalhe: 'Com baixa técnica' },
         { label: 'Técnicos', valor: dados.tecnicos, detalhe: `${dados.tecnicosComCasos} com casos vinculados` },
       ],
+      pia: [
+        { label: 'Registros PIA', valor: dados.piaTotal, detalhe: `${dados.piaPrincipais} principais` },
+        { label: 'Evoluções', valor: dados.piaEvolucoes, detalhe: 'Vinculadas a PIA principal' },
+        { label: 'Em acompanhamento', valor: dados.piaEmAcompanhamento, detalhe: 'Status atual' },
+        { label: 'Pendentes/Revisar', valor: dados.piaPendentesOuRevisar, detalhe: 'Demandam atenção técnica' },
+      ],
       acomodacoes: [
         { label: 'Quartos filtrados', valor: dados.quartosAcomodacoes, detalhe: 'Conforme modalidade/público' },
         { label: 'Leitos filtrados', valor: dados.leitosAcomodacoesTotal, detalhe: `${dados.leitosAcomodacoesOcupados} ocupados` },
@@ -297,7 +328,7 @@ export function useRelatoriosIndicadores({
         { label: 'Sem SISA/NIS', valor: dados.semSisa + dados.semNis, detalhe: `${dados.semSisa} sem SISA, ${dados.semNis} sem NIS` },
       ],
       equipe: [
-        { label: 'Técnicos/equipe', valor: dados.tecnicos, detalhe: 'Usuários técnicos visíveis' },
+        { label: 'Equipe', valor: dados.equipe, detalhe: 'Ativos, sem Global/Manutenção' },
         { label: 'Com casos', valor: dados.tecnicosComCasos, detalhe: 'Técnicos vinculados a conviventes' },
         { label: 'Conviventes', valor: dados.totalConviventes, detalhe: 'No recorte atual' },
         { label: 'Sem técnico', valor: dados.semTecnico, detalhe: 'Aguardam vinculação' },

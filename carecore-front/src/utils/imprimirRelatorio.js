@@ -16,6 +16,7 @@ function escaparHtml(valor) {
 export function abrirPreviewHtml({
   titulo = "Relatório",
   html = "",
+  orientacaoInicial = "portrait",
 }) {
   const previewExistente = document.getElementById("carecore-relatorio-preview");
   if (previewExistente) {
@@ -49,8 +50,31 @@ export function abrirPreviewHtml({
 
   const acoes = document.createElement("div");
   acoes.style.display = "flex";
+  acoes.style.alignItems = "center";
   acoes.style.gap = "8px";
   acoes.style.flexWrap = "wrap";
+
+  const grupoOrientacao = document.createElement("label");
+  grupoOrientacao.style.display = "flex";
+  grupoOrientacao.style.alignItems = "center";
+  grupoOrientacao.style.gap = "6px";
+  grupoOrientacao.style.fontSize = "12px";
+  grupoOrientacao.style.fontWeight = "800";
+  grupoOrientacao.style.color = "#475569";
+  grupoOrientacao.textContent = "Orientação";
+
+  const seletorOrientacao = document.createElement("select");
+  seletorOrientacao.value = orientacaoInicial === "landscape" ? "landscape" : "portrait";
+  seletorOrientacao.style.border = "1px solid #d1d5db";
+  seletorOrientacao.style.borderRadius = "10px";
+  seletorOrientacao.style.padding = "8px 10px";
+  seletorOrientacao.style.fontWeight = "800";
+  seletorOrientacao.style.background = "#ffffff";
+  seletorOrientacao.innerHTML = `
+    <option value="portrait">Retrato</option>
+    <option value="landscape">Paisagem</option>
+  `;
+  grupoOrientacao.appendChild(seletorOrientacao);
 
   const botaoVoltar = document.createElement("button");
   botaoVoltar.type = "button";
@@ -83,12 +107,35 @@ export function abrirPreviewHtml({
   iframe.style.background = "#ffffff";
   iframe.srcdoc = html;
 
+  const aplicarOrientacaoImpressao = () => {
+    const documento = iframe.contentDocument;
+    if (!documento) return;
+
+    let estilo = documento.getElementById("carecore-print-orientation-style");
+    if (!estilo) {
+      estilo = documento.createElement("style");
+      estilo.id = "carecore-print-orientation-style";
+      documento.head.appendChild(estilo);
+    }
+
+    const orientacao = seletorOrientacao.value === "landscape" ? "landscape" : "portrait";
+    estilo.textContent = `
+      @page {
+        size: A4 ${orientacao} !important;
+      }
+    `;
+  };
+
+  iframe.addEventListener("load", aplicarOrientacaoImpressao);
+  seletorOrientacao.onchange = aplicarOrientacaoImpressao;
+
   botaoImprimir.onclick = () => {
+    aplicarOrientacaoImpressao();
     iframe.contentWindow?.focus();
     iframe.contentWindow?.print();
   };
 
-  acoes.append(botaoVoltar, botaoImprimir);
+  acoes.append(grupoOrientacao, botaoVoltar, botaoImprimir);
   barra.append(tituloEl, acoes);
   container.append(barra, iframe);
   document.body.appendChild(container);
@@ -102,6 +149,7 @@ export function imprimirRelatorio({
   colunas = [],
   dados = [],
   identidade = null,
+  orientacao = null,
 }) {
   const dataAtual = new Date().toLocaleString("pt-BR");
   const tituloSeguro = escaparHtml(titulo);
@@ -116,6 +164,7 @@ export function imprimirRelatorio({
     identidade?.relatorio_email ? `E-mail: ${identidade.relatorio_email}` : "",
     identidade?.relatorio_site ? `Site: ${identidade.relatorio_site}` : "",
   ].filter(Boolean);
+  const orientacaoInicial = orientacao || (colunas.length > 6 ? "landscape" : "portrait");
 
   const tabelaCabecalho = colunas
     .map(
@@ -420,5 +469,6 @@ export function imprimirRelatorio({
   abrirPreviewHtml({
     titulo,
     html,
+    orientacaoInicial,
   });
 }

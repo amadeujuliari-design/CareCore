@@ -14,12 +14,14 @@ export function useRelatoriosTabela({
   conviventes,
   conviventesFiltrados,
   dadosEvolucao,
+  equipe = [],
   filtros,
   historicoRotinaFiltrado,
   leitosAcomodacoesFiltrados,
   ocorrenciasFiltradas,
   paginaTabela,
   relatoriosAtuais,
+  registrosPiaFiltrados = [],
   resumoPendenciasTecnicasEvolucao,
   setPaginaTabela,
   tecnicoPendenciasSelecionadoNome,
@@ -31,6 +33,10 @@ export function useRelatoriosTabela({
   const mapaTecnicos = useMemo(() => {
     return new Map(tecnicos.map((tecnico) => [tecnico.id, tecnico.nome]));
   }, [tecnicos]);
+
+  const mapaEquipe = useMemo(() => {
+    return new Map([...tecnicos, ...equipe].map((usuario) => [usuario.id, usuario.nome]));
+  }, [equipe, tecnicos]);
 
   const mapaLeitos = useMemo(() => {
     const mapa = new Map();
@@ -109,6 +115,38 @@ export function useRelatoriosTabela({
             Status: ocorrencia.status_resolucao || '-',
             Técnico: mapaTecnicos.get(ocorrencia.tecnico_responsavel_id) || 'Sem técnico',
           };
+        }),
+      };
+    }
+
+    if (aba === 'pia') {
+      const colunas = filtros.tecnicoId
+        ? ['Data/Hora', 'Prontuário', 'Convivente', 'Tipo', 'Título/Tema', 'Status', 'Registrado por', 'Descrição', 'Objetivos', 'Encaminhamentos']
+        : ['Data/Hora', 'Prontuário', 'Convivente', 'Técnico', 'Tipo', 'Título/Tema', 'Status', 'Registrado por', 'Descrição', 'Objetivos', 'Encaminhamentos'];
+
+      return {
+        titulo: 'Registros PIA filtrados',
+        colunas,
+        linhas: registrosPiaFiltrados.map((registro) => {
+          const tipo = registro.registro_pai_id ? 'Evolução' : 'PIA principal';
+          const linha = {
+            'Data/Hora': formatarDataHora(registro.data_registro),
+            Prontuário: registro.convivente_numero_institucional ? `#${registro.convivente_numero_institucional}` : 'S/N',
+            Convivente: registro.convivente_nome_social || registro.convivente_nome_completo || '-',
+            Tipo: tipo,
+            'Título/Tema': registro.registro_pai_id ? (registro.subtitulo || '-') : (registro.titulo || '-'),
+            Status: registro.status || '-',
+            'Registrado por': registro.usuario_nome || mapaEquipe.get(registro.usuario_id) || '-',
+            Descrição: registro.descricao || '-',
+            Objetivos: registro.objetivos || '-',
+            Encaminhamentos: registro.encaminhamentos || '-',
+          };
+
+          if (!filtros.tecnicoId) {
+            linha.Técnico = mapaEquipe.get(registro.convivente_tecnico_id) || 'Sem técnico';
+          }
+
+          return linha;
         }),
       };
     }
@@ -198,14 +236,23 @@ export function useRelatoriosTabela({
     }
 
     if (aba === 'equipe') {
+      const termoEquipe = filtros.busca.trim().toLowerCase();
+      const equipeVisivel = termoEquipe
+        ? equipe.filter((usuario) => [
+          usuario.nome,
+          usuario.perfil_acesso,
+          usuario.email,
+        ].join(' ').toLowerCase().includes(termoEquipe))
+        : equipe;
+
       return {
-        titulo: 'Equipe tecnica e carga de casos',
-        colunas: ['Técnico', 'Perfil', 'Conviventes vinculados', 'Ocorrências pendentes'],
-        linhas: tecnicos.map((tecnico) => ({
-          Técnico: tecnico.nome || '-',
-          Perfil: tecnico.perfil_acesso || '-',
-          'Conviventes vinculados': contar(conviventesFiltrados, (c) => c.tecnico_id === tecnico.id),
-          'Ocorrências pendentes': contar(ocorrenciasFiltradas, (o) => o.tecnico_responsavel_id === tecnico.id && o.status_resolucao !== 'Resolvido'),
+        titulo: 'Equipe e carga de casos',
+        colunas: ['Usuário', 'Perfil', 'Conviventes vinculados', 'Ocorrências pendentes'],
+        linhas: equipeVisivel.map((usuario) => ({
+          Usuário: usuario.nome || '-',
+          Perfil: usuario.perfil_acesso || '-',
+          'Conviventes vinculados': contar(conviventesFiltrados, (c) => c.tecnico_id === usuario.id),
+          'Ocorrências pendentes': contar(ocorrenciasFiltradas, (o) => o.tecnico_responsavel_id === usuario.id && o.status_resolucao !== 'Resolvido'),
         })),
       };
     }
@@ -297,7 +344,7 @@ export function useRelatoriosTabela({
         }))
       ),
     };
-  }, [aba, conviventes, conviventesFiltrados, dadosEvolucao.mediaDiaria, dadosEvolucao.pico, dadosEvolucao.tendencia, dadosEvolucao.totalAtendimentos, filtros.tecnicoId, historicoRotinaFiltrado, leitosAcomodacoesFiltrados, mapaLeitos, mapaTecnicos, ocorrenciasFiltradas, relatoriosAtuais, resumoPendenciasTecnicasEvolucao, tecnicoPendenciasSelecionadoNome, tecnicos, totalNovosAcolhimentosEvolucao]);
+  }, [aba, conviventes, conviventesFiltrados, dadosEvolucao.mediaDiaria, dadosEvolucao.pico, dadosEvolucao.tendencia, dadosEvolucao.totalAtendimentos, equipe, filtros.tecnicoId, historicoRotinaFiltrado, leitosAcomodacoesFiltrados, mapaEquipe, mapaLeitos, mapaTecnicos, ocorrenciasFiltradas, registrosPiaFiltrados, relatoriosAtuais, resumoPendenciasTecnicasEvolucao, tecnicoPendenciasSelecionadoNome, tecnicos, totalNovosAcolhimentosEvolucao]);
 
   const linhasResumoMetricas = relatoriosAtuais.flatMap((relatorio) =>
     (relatorio.metricas || []).map((metrica) => ({

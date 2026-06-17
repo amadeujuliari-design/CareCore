@@ -534,7 +534,7 @@ export default function ConvenioSisa() {
         </html>
       `;
 
-      abrirPreviewHtml({ titulo, html });
+      abrirPreviewHtml({ titulo, html, orientacaoInicial: 'landscape' });
       return;
     }
 
@@ -655,6 +655,7 @@ export default function ConvenioSisa() {
     abrirPreviewHtml({
       titulo,
       html,
+      orientacaoInicial: 'landscape',
     });
   };
 

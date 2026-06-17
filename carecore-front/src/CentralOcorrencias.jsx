@@ -229,7 +229,7 @@ export default function CentralOcorrencias() {
       const config = { headers: criarHeadersAutenticados(token) };
       const [resConv, resEquipe] = await Promise.all([
         axios.get(`${API_ROOT}/conviventes`, config),
-        axios.get(`${API_ROOT}/tecnicos`, config) 
+        axios.get(`${API_ROOT}/equipe`, config)
       ]);
       setListaConviventes((resConv.data || []).filter((convivente) => convivente.status === 'Ativo'));
       setListaFuncionarios(resEquipe.data);
