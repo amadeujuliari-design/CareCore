@@ -4,6 +4,7 @@ import os
 import re
 import uuid
 import calendar
+import unicodedata
 from io import BytesIO
 from datetime import date, datetime, timedelta
 from typing import List, Optional
@@ -52,6 +53,8 @@ from schemas import (
     SisaLancamentoResponse,
     SisaImportacaoResponse,
     SisaImportacaoDetalheResponse,
+    SisaPreviaImportacaoResponse,
+    SisaAcoesImportacao,
     SisaDivergenciaResponse,
     SisaDivergenciaStatusUpdate,
     AusenciaJustificadaPendenteResponse,
@@ -60,6 +63,9 @@ from schemas import (
 from security import (
     bloquear_usuario_global_puro,
     get_usuario_logado,
+    normalizar_perfil_acesso,
+    PERFIL_GLOBAL,
+    PERFIL_MANUTENCAO,
     PERFIL_ORIENTADOR,
     PERFIL_TECNICO,
     usuario_tem_perfil,
@@ -385,7 +391,9 @@ async def listar_equipe_operacional(
         UsuarioDB.instituicao_id == obter_instituicao_escopo(usuario_atual),
         UsuarioDB.ativo == True,  # noqa: E712
         UsuarioDB.is_global == False,  # noqa: E712
-        ~UsuarioDB.perfil_acesso.in_(["Global", "Manutenção", "Manutencao"]),
+        ~func.lower(func.trim(UsuarioDB.perfil_acesso)).in_(
+            ["global", "executivo", "manutenção", "manutencao"]
+        ),
     ).order_by(UsuarioDB.nome.asc())
     result = await db.execute(query)
     return [
@@ -397,6 +405,7 @@ async def listar_equipe_operacional(
             "email": usuario.email,
         }
         for usuario in result.all()
+        if usuario_visivel_como_equipe(usuario)
     ]
 
 
@@ -884,8 +893,13 @@ def usuario_visivel_como_equipe(usuario: UsuarioDB | dict | None) -> bool:
         perfil = usuario.get("perfil_acesso")
         is_global = usuario.get("is_global", False)
 
-    perfil_normalizado = str(perfil or "").strip()
-    return not is_global and perfil_normalizado not in {"Global", "Manutenção", "Manutencao"}
+    perfil_normalizado = normalizar_perfil_acesso(str(perfil or "").strip())
+    perfil_chave = perfil_normalizado.lower()
+    return (
+        not bool(is_global)
+        and perfil_normalizado not in {PERFIL_GLOBAL, PERFIL_MANUTENCAO}
+        and perfil_chave not in {"global", "executivo", "manutenção", "manutencao"}
+    )
 
 
 def convivente_esta_ativo(convivente: ConviventeDB) -> bool:
@@ -1626,6 +1640,11 @@ async def criar_ocorrencia_manual(payload: OcorrenciaCreate, db: AsyncSession = 
         ).scalar_one_or_none()
         if not funcionario:
             raise HTTPException(status_code=404, detail="Funcionário citado não encontrado.")
+        if not usuario_visivel_como_equipe(funcionario):
+            raise HTTPException(
+                status_code=400,
+                detail="Funcionário citado não pode ser usuário Global ou Manutenção.",
+            )
 
         def normalizar_codigo_assinatura(valor):
             return "".join(ch for ch in str(valor or "").strip().lower() if ch.isalnum())
@@ -3228,6 +3247,21 @@ def _extrair_primeira_data(texto):
     return _data_br_para_date(match.group(1))
 
 
+def _extrair_periodo_referencia_sisa(texto):
+    datas = [
+        _data_br_para_date(data)
+        for data in re.findall(r"\d{2}/\d{2}/\d{4}", str(texto or ""))
+    ]
+    datas = [data for data in datas if data]
+
+    if len(datas) >= 2:
+        return datas[0], datas[1]
+    if datas:
+        return datas[0], datas[0]
+
+    return None, None
+
+
 def _normalizar_numero_sisa(valor):
     texto = _texto_planilha(valor)
     if not texto:
@@ -3270,6 +3304,58 @@ def _linha_planilha_para_registro_sisa(sheet, indice_linha):
     }
 
 
+def _dias_sisa_no_recorte(
+    *,
+    data_inicio_recorte: date,
+    data_fim_recorte: date,
+    data_vinculacao: date | None,
+    data_desligamento: date | None,
+    dias_permanencia_acumulado: int,
+) -> int:
+    inicio = max(data_inicio_recorte, data_vinculacao or data_inicio_recorte)
+    fim = min(data_fim_recorte, data_desligamento or data_fim_recorte)
+
+    if fim < inicio:
+        return 0
+
+    dias_no_recorte = (fim - inicio).days + 1
+    return max(0, min(dias_no_recorte, int(dias_permanencia_acumulado or 0)))
+
+
+def _desligamento_valido_no_recorte(data_desligamento: date | None, data_referencia: date) -> bool:
+    return bool(data_desligamento and data_desligamento <= data_referencia)
+
+
+def _chave_ultimo_movimento_sisa(linha: dict, data_referencia: date):
+    movimentos = []
+    if linha.get("data_vinculacao") and linha["data_vinculacao"] <= data_referencia:
+        movimentos.append((linha["data_vinculacao"], 1))
+    if linha.get("data_desligamento") and linha["data_desligamento"] <= data_referencia:
+        movimentos.append((linha["data_desligamento"], 2))
+
+    if not movimentos:
+        return date.min, 0
+
+    return max(movimentos)
+
+
+def _consolidar_linhas_sisa_por_ultimo_movimento(linhas: list[dict], data_referencia: date) -> list[dict]:
+    linhas_por_numero = {}
+
+    for linha in linhas:
+        numero_sisa = linha["numero_sisa"]
+        chave_movimento = _chave_ultimo_movimento_sisa(linha, data_referencia)
+        if numero_sisa not in linhas_por_numero or chave_movimento > linhas_por_numero[numero_sisa][0]:
+            linhas_por_numero[numero_sisa] = (chave_movimento, linha)
+
+    return [linha for _, linha in linhas_por_numero.values()]
+
+
+def _linha_sisa_ativa_no_recorte(linha: dict, data_referencia: date) -> bool:
+    chave_movimento = _chave_ultimo_movimento_sisa(linha, data_referencia)
+    return chave_movimento[1] != 2
+
+
 def _ler_planilha_sisa(conteudo: bytes, nome_arquivo: str):
     extensao = os.path.splitext(nome_arquivo.lower())[1]
 
@@ -3286,6 +3372,7 @@ def _ler_planilha_sisa(conteudo: bytes, nome_arquivo: str):
         sheet = workbook.sheet_by_index(0)
 
         linhas = []
+        data_inicio_referencia = None
         data_referencia = None
         servico = None
 
@@ -3295,7 +3382,10 @@ def _ler_planilha_sisa(conteudo: bytes, nome_arquivo: str):
                 for coluna in range(sheet.ncols)
             ]
             texto_linha = " ".join(valor for valor in valores if valor)
-            data_referencia = data_referencia or _extrair_primeira_data(texto_linha)
+            inicio_linha, fim_linha = _extrair_periodo_referencia_sisa(texto_linha)
+            if inicio_linha and fim_linha and not data_referencia:
+                data_inicio_referencia = inicio_linha
+                data_referencia = fim_linha
             if "Tipo de Servi" in texto_linha or "SIAT" in texto_linha:
                 servico = texto_linha
 
@@ -3305,6 +3395,7 @@ def _ler_planilha_sisa(conteudo: bytes, nome_arquivo: str):
                 linhas.append(registro)
 
         return {
+            "data_inicio_referencia": data_inicio_referencia or data_referencia,
             "data_referencia": data_referencia,
             "servico": servico,
             "linhas": linhas,
@@ -3322,13 +3413,17 @@ def _ler_planilha_sisa(conteudo: bytes, nome_arquivo: str):
         workbook = load_workbook(BytesIO(conteudo), data_only=True)
         sheet = workbook.active
         rows = list(sheet.iter_rows(values_only=True))
+        data_inicio_referencia = None
         data_referencia = None
         servico = None
         linhas = []
 
         for row in rows[:12]:
             texto_linha = " ".join(_texto_planilha(valor) or "" for valor in row)
-            data_referencia = data_referencia or _extrair_primeira_data(texto_linha)
+            inicio_linha, fim_linha = _extrair_periodo_referencia_sisa(texto_linha)
+            if inicio_linha and fim_linha and not data_referencia:
+                data_inicio_referencia = inicio_linha
+                data_referencia = fim_linha
             if "Tipo de Servi" in texto_linha or "SIAT" in texto_linha:
                 servico = texto_linha.strip()
 
@@ -3348,6 +3443,7 @@ def _ler_planilha_sisa(conteudo: bytes, nome_arquivo: str):
                 linhas.append(registro)
 
         return {
+            "data_inicio_referencia": data_inicio_referencia or data_referencia,
             "data_referencia": data_referencia,
             "servico": servico,
             "linhas": linhas,
@@ -3357,6 +3453,396 @@ def _ler_planilha_sisa(conteudo: bytes, nome_arquivo: str):
         status_code=400,
         detail="Envie uma planilha .xls ou .xlsx exportada do SISA."
     )
+
+
+def _normalizar_chave_nome_sisa(nome: str | None):
+    texto = unicodedata.normalize("NFKD", str(nome or ""))
+    texto = "".join(ch for ch in texto if not unicodedata.combining(ch))
+    texto = re.sub(r"[^a-zA-Z0-9]+", " ", texto).strip().lower()
+    return re.sub(r"\s+", " ", texto)
+
+
+def _linha_previa_sisa(linha: dict, **extras):
+    return {
+        "numero_sisa": linha["numero_sisa"],
+        "nome": linha["nome_planilha"],
+        "nome_social": linha["nome_social_planilha"],
+        "data_nascimento": linha["data_nascimento"],
+        "data_vinculacao": linha["data_vinculacao"],
+        "data_desligamento": linha["data_desligamento"],
+        "dias_permanencia": linha["dias_permanencia"],
+        **extras,
+    }
+
+
+async def _montar_contexto_previa_sisa(
+    db: AsyncSession,
+    *,
+    instituicao_id: str,
+    linhas: list[dict],
+    data_referencia: date,
+):
+    conviventes = (
+        await db.execute(
+            select(ConviventeDB).where(
+                ConviventeDB.instituicao_id == instituicao_id,
+            )
+        )
+    ).scalars().all()
+    conviventes_por_sisa = {}
+    for convivente in conviventes:
+        if convivente.numero_sisa:
+            conviventes_por_sisa.setdefault(str(convivente.numero_sisa), []).append(convivente)
+    conviventes_por_nome_data = {}
+    for convivente in conviventes:
+        chave = (_normalizar_chave_nome_sisa(convivente.nome_completo), convivente.data_nascimento)
+        if chave[0] and chave[1]:
+            conviventes_por_nome_data.setdefault(chave, []).append(convivente)
+
+    numeros_sisa_planilha = {linha["numero_sisa"] for linha in linhas}
+    criar_ativos = []
+    criar_inativos = []
+    possiveis_duplicidades = []
+    reativar_existentes = []
+    inativar_existentes = []
+    vinculados = 0
+
+    for linha in linhas:
+        conviventes_sisa = conviventes_por_sisa.get(linha["numero_sisa"], [])
+        desligamento_no_recorte = _desligamento_valido_no_recorte(
+            linha["data_desligamento"],
+            data_referencia,
+        )
+        if conviventes_sisa:
+            vinculados += 1
+            for convivente in conviventes_sisa:
+                if not desligamento_no_recorte and convivente.status != "Ativo":
+                    reativar_existentes.append(_linha_previa_sisa(
+                        linha,
+                        status_sugerido="Ativo",
+                        convivente_id=convivente.id,
+                        convivente_nome=convivente.nome_social or convivente.nome_completo,
+                        motivo="Aparece no SISA como ativo neste recorte, mas está inativo no CareCore+.",
+                    ))
+                elif desligamento_no_recorte and convivente.status == "Ativo":
+                    inativar_existentes.append(_linha_previa_sisa(
+                        linha,
+                        status_sugerido="Inativado",
+                        convivente_id=convivente.id,
+                        convivente_nome=convivente.nome_social or convivente.nome_completo,
+                        motivo="Aparece no SISA com desligamento já vigente neste recorte.",
+                    ))
+            continue
+
+        chave = (_normalizar_chave_nome_sisa(linha["nome_planilha"]), linha["data_nascimento"])
+        duplicidades = conviventes_por_nome_data.get(chave, [])
+        if duplicidades:
+            nomes = ", ".join(
+                duplicidade.nome_social or duplicidade.nome_completo
+                for duplicidade in duplicidades[:3]
+            )
+            duplicidade_unica = duplicidades[0] if len(duplicidades) == 1 else None
+            possiveis_duplicidades.append(_linha_previa_sisa(
+                linha,
+                status_sugerido="Mesclar" if duplicidade_unica else "Revisar",
+                convivente_id=duplicidade_unica.id if duplicidade_unica else None,
+                convivente_nome=(
+                    duplicidade_unica.nome_social or duplicidade_unica.nome_completo
+                    if duplicidade_unica else None
+                ),
+                motivo=(
+                    f"Nome e nascimento parecidos com cadastro existente: {nomes}. "
+                    "Ao mesclar, o número SISA da planilha substituirá o número cadastrado no CareCore+."
+                    if duplicidade_unica
+                    else f"Nome e nascimento parecidos com mais de um cadastro existente: {nomes}."
+                ),
+            ))
+            continue
+
+        if desligamento_no_recorte:
+            criar_inativos.append(_linha_previa_sisa(
+                linha,
+                status_sugerido="Inativado",
+                motivo="Não existe no CareCore+ e já possui desligamento vigente neste recorte SISA.",
+            ))
+        else:
+            criar_ativos.append(_linha_previa_sisa(
+                linha,
+                status_sugerido="Ativo",
+                motivo="Não existe no CareCore+ e está ativo no recorte SISA.",
+            ))
+
+    for convivente in conviventes:
+        if (
+            (
+                not convivente.numero_sisa
+                or str(convivente.numero_sisa) not in numeros_sisa_planilha
+            )
+            and convivente.status == "Ativo"
+        ):
+            inativar_existentes.append({
+                "numero_sisa": str(convivente.numero_sisa or f"SEM-SISA-{convivente.id}"),
+                "nome": convivente.nome_social or convivente.nome_completo,
+                "nome_social": convivente.nome_social,
+                "data_nascimento": convivente.data_nascimento,
+                "data_vinculacao": None,
+                "data_desligamento": None,
+                "dias_permanencia": 0,
+                "status_sugerido": "Inativado",
+                "convivente_id": convivente.id,
+                "convivente_nome": convivente.nome_social or convivente.nome_completo,
+                "motivo": (
+                    "Convivente ativo no CareCore+ sem número SISA. Confirme se deve permanecer ativo "
+                    "ou se deve ser inativado por não ter vínculo na planilha importada."
+                    if not convivente.numero_sisa
+                    else "Convivente ativo no CareCore+ não apareceu na planilha SISA importada."
+                ),
+            })
+
+    return {
+        "conviventes_por_sisa": conviventes_por_sisa,
+        "criar_ativos": criar_ativos,
+        "criar_inativos": criar_inativos,
+        "possiveis_duplicidades": possiveis_duplicidades,
+        "inativar_existentes": inativar_existentes,
+        "reativar_existentes": reativar_existentes,
+        "vinculados": vinculados,
+    }
+
+
+def _parse_acoes_importacao_sisa(acoes_json: str | None) -> SisaAcoesImportacao:
+    if not acoes_json:
+        return SisaAcoesImportacao()
+
+    try:
+        dados = json.loads(acoes_json)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=400, detail="Ações da importação SISA inválidas.") from exc
+
+    return SisaAcoesImportacao(**dados)
+
+
+async def _proximo_numero_institucional(db: AsyncSession, instituicao_id: str) -> int:
+    maior_numero = (
+        await db.execute(
+            select(func.max(ConviventeDB.numero_institucional)).where(
+                ConviventeDB.instituicao_id == instituicao_id
+            )
+        )
+    ).scalar()
+    return (maior_numero or 0) + 1
+
+
+async def _registrar_historico_importacao_sisa(
+    db: AsyncSession,
+    *,
+    instituicao_id: str,
+    convivente_id: str,
+    usuario_id: str,
+    data_referencia: date,
+    titulo: str,
+    descricao: str,
+):
+    db.add(HistoricoConviventeDB(
+        instituicao_id=instituicao_id,
+        convivente_id=convivente_id,
+        usuario_id=usuario_id,
+        origem_informacao="Importação SISA",
+        data_origem=data_referencia,
+        titulo=titulo,
+        descricao=descricao,
+    ))
+
+
+async def _aplicar_acoes_cadastros_sisa(
+    db: AsyncSession,
+    *,
+    instituicao_id: str,
+    usuario_id: str,
+    linhas: list[dict],
+    data_inicio_referencia: date,
+    data_referencia: date,
+    acoes: SisaAcoesImportacao,
+):
+    linhas_por_numero = {linha["numero_sisa"]: linha for linha in linhas}
+    criar_ativos = set(acoes.criar_ativos or [])
+    criar_inativos = set(acoes.criar_inativos or [])
+
+    for chave_mesclagem in set(acoes.mesclar_duplicidades or []):
+        numero_sisa, _, convivente_id = str(chave_mesclagem).partition(":")
+        if not numero_sisa or not convivente_id:
+            continue
+
+        linha = linhas_por_numero.get(numero_sisa)
+        if not linha:
+            continue
+
+        convivente = (
+            await db.execute(
+                select(ConviventeDB).where(
+                    ConviventeDB.instituicao_id == instituicao_id,
+                    ConviventeDB.id == convivente_id,
+                )
+            )
+        ).scalar_one_or_none()
+        if not convivente or convivente.numero_sisa:
+            if convivente and convivente.numero_sisa and str(convivente.numero_sisa) != numero_sisa:
+                sisa_anterior = convivente.numero_sisa
+                convivente.numero_sisa = numero_sisa
+                reativou = False
+                if _linha_sisa_ativa_no_recorte(linha, data_referencia) and convivente.status != "Ativo":
+                    convivente.status = "Ativo"
+                    convivente.inativado_em = None
+                    reativou = True
+                if not convivente.data_nascimento:
+                    convivente.data_nascimento = linha["data_nascimento"]
+                if not convivente.data_entrada:
+                    convivente.data_entrada = linha["data_vinculacao"]
+                if not convivente.nome_social:
+                    convivente.nome_social = linha["nome_social_planilha"]
+
+                await _registrar_historico_importacao_sisa(
+                    db,
+                    instituicao_id=instituicao_id,
+                    convivente_id=convivente.id,
+                    usuario_id=usuario_id,
+                    data_referencia=data_referencia,
+                    titulo="Número SISA corrigido pela importação",
+                    descricao=(
+                        f"Número SISA anterior {sisa_anterior} substituído por {numero_sisa} "
+                        "após confirmação manual na prévia da importação. A planilha SISA "
+                        "foi considerada a fonte oficial do número."
+                        + (" Cadastro também reativado por estar ativo no recorte SISA." if reativou else "")
+                    ),
+                )
+            continue
+
+        convivente.numero_sisa = numero_sisa
+        if _linha_sisa_ativa_no_recorte(linha, data_referencia) and convivente.status != "Ativo":
+            convivente.status = "Ativo"
+            convivente.inativado_em = None
+        if not convivente.data_nascimento:
+            convivente.data_nascimento = linha["data_nascimento"]
+        if not convivente.data_entrada:
+            convivente.data_entrada = linha["data_vinculacao"]
+        if not convivente.nome_social:
+            convivente.nome_social = linha["nome_social_planilha"]
+
+        await _registrar_historico_importacao_sisa(
+            db,
+            instituicao_id=instituicao_id,
+            convivente_id=convivente.id,
+            usuario_id=usuario_id,
+            data_referencia=data_referencia,
+            titulo="Cadastro mesclado pela importação SISA",
+            descricao=(
+                f"Número SISA {numero_sisa} vinculado ao cadastro existente após confirmação manual "
+                f"na prévia da importação do recorte {data_inicio_referencia.strftime('%d/%m/%Y')} "
+                f"a {data_referencia.strftime('%d/%m/%Y')}."
+            ),
+        )
+
+    for numero_sisa in list(criar_ativos | criar_inativos):
+        linha = linhas_por_numero.get(numero_sisa)
+        if not linha:
+            continue
+
+        existente = (
+            await db.execute(
+                select(ConviventeDB.id).where(
+                    ConviventeDB.instituicao_id == instituicao_id,
+                    ConviventeDB.numero_sisa == numero_sisa,
+                )
+            )
+        ).scalar_one_or_none()
+        if existente:
+            continue
+
+        status = "Inativado" if numero_sisa in criar_inativos else "Ativo"
+        novo_convivente = ConviventeDB(
+            instituicao_id=instituicao_id,
+            numero_institucional=await _proximo_numero_institucional(db, instituicao_id),
+            status=status,
+            inativado_em=agora_sao_paulo() if status == "Inativado" else None,
+            data_entrada=linha["data_vinculacao"],
+            nome_completo=linha["nome_planilha"],
+            nome_social=linha["nome_social_planilha"],
+            data_nascimento=linha["data_nascimento"],
+            identidade_genero=linha["sexo"],
+            numero_sisa=linha["numero_sisa"],
+        )
+        db.add(novo_convivente)
+        await db.flush()
+
+        await _registrar_historico_importacao_sisa(
+            db,
+            instituicao_id=instituicao_id,
+            convivente_id=novo_convivente.id,
+            usuario_id=usuario_id,
+            data_referencia=data_referencia,
+            titulo="Cadastro criado pela importação SISA",
+            descricao=(
+                f"Cadastro criado automaticamente a partir da planilha SISA "
+                f"do recorte {data_inicio_referencia.strftime('%d/%m/%Y')} a "
+                f"{data_referencia.strftime('%d/%m/%Y')}. Status inicial: {status}."
+            ),
+        )
+
+    if acoes.inativar_existentes:
+        conviventes_para_inativar = (
+            await db.execute(
+                select(ConviventeDB).where(
+                    ConviventeDB.instituicao_id == instituicao_id,
+                    ConviventeDB.id.in_(acoes.inativar_existentes),
+                    ConviventeDB.status == "Ativo",
+                )
+            )
+        ).scalars().all()
+
+        for convivente in conviventes_para_inativar:
+            convivente.status = "Inativado"
+            convivente.inativado_em = agora_sao_paulo()
+            await _registrar_historico_importacao_sisa(
+                db,
+                instituicao_id=instituicao_id,
+                convivente_id=convivente.id,
+                usuario_id=usuario_id,
+                data_referencia=data_referencia,
+                titulo="Inativação sugerida pela importação SISA",
+                descricao=(
+                    "Convivente inativado após confirmação manual porque não apareceu "
+                    f"na planilha SISA do recorte {data_inicio_referencia.strftime('%d/%m/%Y')} "
+                    f"a {data_referencia.strftime('%d/%m/%Y')}."
+                ),
+            )
+
+    if acoes.reativar_existentes:
+        conviventes_para_reativar = (
+            await db.execute(
+                select(ConviventeDB).where(
+                    ConviventeDB.instituicao_id == instituicao_id,
+                    ConviventeDB.id.in_(acoes.reativar_existentes),
+                    ConviventeDB.status != "Ativo",
+                )
+            )
+        ).scalars().all()
+
+        for convivente in conviventes_para_reativar:
+            convivente.status = "Ativo"
+            convivente.inativado_em = None
+            await _registrar_historico_importacao_sisa(
+                db,
+                instituicao_id=instituicao_id,
+                convivente_id=convivente.id,
+                usuario_id=usuario_id,
+                data_referencia=data_referencia,
+                titulo="Reativação sugerida pela importação SISA",
+                descricao=(
+                    "Convivente reativado após confirmação manual porque apareceu "
+                    f"sem desligamento na planilha SISA do recorte {data_inicio_referencia.strftime('%d/%m/%Y')} "
+                    f"a {data_referencia.strftime('%d/%m/%Y')}."
+                ),
+            )
 
 
 def _resumo_registros_carecore(registros):
@@ -3406,8 +3892,17 @@ async def _criar_divergencia_sisa(
     importacao: SisaImportacaoDB,
     presenca: SisaPresencaImportadaDB,
     convivente: ConviventeDB | None,
+    data_inicio_referencia: date,
     data_referencia: date,
 ):
+    dias_sisa_periodo = _dias_sisa_no_recorte(
+        data_inicio_recorte=data_inicio_referencia,
+        data_fim_recorte=data_referencia,
+        data_vinculacao=presenca.data_vinculacao,
+        data_desligamento=presenca.data_desligamento,
+        dias_permanencia_acumulado=presenca.dias_permanencia,
+    )
+
     if not convivente:
         return SisaDivergenciaDB(
             importacao_id=importacao.id,
@@ -3417,8 +3912,10 @@ async def _criar_divergencia_sisa(
             nome_convivente=presenca.nome_planilha,
             tipo="CONVIVENTE_NAO_ENCONTRADO",
             prioridade="Alta",
+            data_inicio=data_inicio_referencia,
             data_fim=data_referencia,
             dias_sisa_atual=presenca.dias_permanencia,
+            dias_sisa_delta=dias_sisa_periodo,
             dias_carecore=0,
             mensagem="Código SISA não encontrado no cadastro de conviventes.",
         )
@@ -3435,23 +3932,7 @@ async def _criar_divergencia_sisa(
         )
     ).scalars().first()
 
-    if not anterior:
-        return SisaDivergenciaDB(
-            importacao_id=importacao.id,
-            instituicao_id=importacao.instituicao_id,
-            convivente_id=convivente.id,
-            numero_sisa=presenca.numero_sisa,
-            nome_convivente=_nome_convivente_relatorio(convivente),
-            tipo="SEM_BASE_ANTERIOR",
-            prioridade="Baixa",
-            data_fim=data_referencia,
-            dias_sisa_atual=presenca.dias_permanencia,
-            dias_carecore=0,
-            mensagem="Primeira importação deste convivente. Sem base anterior para comparar.",
-        )
-
-    data_inicio = anterior.data_referencia + timedelta(days=1)
-    inicio_periodo = datetime.combine(data_inicio, datetime.min.time())
+    inicio_periodo = datetime.combine(data_inicio_referencia, datetime.min.time())
     fim_periodo = datetime.combine(data_referencia, datetime.max.time())
 
     registros = (
@@ -3474,7 +3955,7 @@ async def _criar_divergencia_sisa(
         for registro in registros
     })
     dias_carecore = len(dias_carecore_lista)
-    dias_sisa_delta = presenca.dias_permanencia - anterior.dias_permanencia
+    dias_sisa_delta = dias_sisa_periodo
     diferenca = dias_sisa_delta - dias_carecore
 
     if diferenca == 0:
@@ -3493,6 +3974,12 @@ async def _criar_divergencia_sisa(
         prioridade = "Média"
         mensagem = "SISA reconheceu mais dias do que os registros encontrados no CareCore+."
 
+    if not anterior:
+        mensagem = (
+            f"{mensagem} Primeira importação deste convivente; "
+            "dias do SISA calculados pelo recorte do relatório."
+        )
+
     return SisaDivergenciaDB(
         importacao_id=importacao.id,
         instituicao_id=importacao.instituicao_id,
@@ -3501,9 +3988,9 @@ async def _criar_divergencia_sisa(
         nome_convivente=_nome_convivente_relatorio(convivente),
         tipo=tipo,
         prioridade=prioridade,
-        data_inicio=data_inicio,
+        data_inicio=data_inicio_referencia,
         data_fim=data_referencia,
-        dias_sisa_anterior=anterior.dias_permanencia,
+        dias_sisa_anterior=anterior.dias_permanencia if anterior else None,
         dias_sisa_atual=presenca.dias_permanencia,
         dias_sisa_delta=dias_sisa_delta,
         dias_carecore=dias_carecore,
@@ -3778,27 +4265,84 @@ async def atualizar_status_divergencia_sisa(
     )
 
 
+@router.post("/convenio-sisa/importacoes/previsualizar", response_model=SisaPreviaImportacaoResponse)
+async def previsualizar_importacao_sisa(
+    arquivo: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    bloquear_usuario_global_puro(usuario_atual)
+    conteudo = await arquivo.read()
+    dados = _ler_planilha_sisa(conteudo, arquivo.filename or "")
+    data_inicio_referencia = dados["data_inicio_referencia"]
+    data_referencia = dados["data_referencia"]
+    linhas = dados["linhas"]
+
+    if not data_inicio_referencia or not data_referencia:
+        raise HTTPException(status_code=400, detail="Não foi possível identificar o recorte de referência da planilha SISA.")
+
+    if not linhas:
+        raise HTTPException(status_code=400, detail="Nenhum cidadão foi encontrado na planilha SISA.")
+
+    linhas_cadastros = _consolidar_linhas_sisa_por_ultimo_movimento(linhas, data_referencia)
+    contexto = await _montar_contexto_previa_sisa(
+        db,
+        instituicao_id=obter_instituicao_escopo(usuario_atual),
+        linhas=linhas_cadastros,
+        data_referencia=data_referencia,
+    )
+
+    return {
+        "nome_arquivo": arquivo.filename or "planilha_sisa.xls",
+        "servico": dados["servico"],
+        "data_inicio_referencia": data_inicio_referencia,
+        "data_referencia": data_referencia,
+        "total_linhas": len(linhas),
+        "vinculados": contexto["vinculados"],
+        "criar_ativos": contexto["criar_ativos"],
+        "criar_inativos": contexto["criar_inativos"],
+        "possiveis_duplicidades": contexto["possiveis_duplicidades"],
+        "inativar_existentes": contexto["inativar_existentes"],
+        "reativar_existentes": contexto["reativar_existentes"],
+    }
+
+
 @router.post("/convenio-sisa/importacoes", response_model=SisaImportacaoDetalheResponse)
 async def importar_planilha_sisa(
     arquivo: UploadFile = File(...),
+    acoes_json: str | None = Form(None),
     db: AsyncSession = Depends(get_db),
     usuario_atual: dict = Depends(get_usuario_logado)
 ):
     bloquear_usuario_global_puro(usuario_atual)
     conteudo = await arquivo.read()
     dados = _ler_planilha_sisa(conteudo, arquivo.filename or "")
+    data_inicio_referencia = dados["data_inicio_referencia"]
     data_referencia = dados["data_referencia"]
     linhas = dados["linhas"]
 
-    if not data_referencia:
-        raise HTTPException(status_code=400, detail="Não foi possível identificar a data de referência da planilha SISA.")
+    if not data_inicio_referencia or not data_referencia:
+        raise HTTPException(status_code=400, detail="Não foi possível identificar o recorte de referência da planilha SISA.")
 
     if not linhas:
         raise HTTPException(status_code=400, detail="Nenhum cidadão foi encontrado na planilha SISA.")
 
+    instituicao_id = obter_instituicao_escopo(usuario_atual)
+    acoes = _parse_acoes_importacao_sisa(acoes_json)
+    await _aplicar_acoes_cadastros_sisa(
+        db,
+        instituicao_id=instituicao_id,
+        usuario_id=usuario_atual["sub"],
+        linhas=_consolidar_linhas_sisa_por_ultimo_movimento(linhas, data_referencia),
+        data_inicio_referencia=data_inicio_referencia,
+        data_referencia=data_referencia,
+        acoes=acoes,
+    )
+    await db.flush()
+
     conviventes_resultado = await db.execute(
         select(ConviventeDB).where(
-            ConviventeDB.instituicao_id == obter_instituicao_escopo(usuario_atual),
+            ConviventeDB.instituicao_id == instituicao_id,
             ConviventeDB.numero_sisa.is_not(None),
         )
     )
@@ -3808,7 +4352,7 @@ async def importar_planilha_sisa(
     }
 
     importacao = SisaImportacaoDB(
-        instituicao_id=obter_instituicao_escopo(usuario_atual),
+        instituicao_id=instituicao_id,
         usuario_id=usuario_atual["sub"],
         nome_arquivo=arquivo.filename or "planilha_sisa.xls",
         servico=dados["servico"],
@@ -3838,7 +4382,7 @@ async def importar_planilha_sisa(
 
         presenca = SisaPresencaImportadaDB(
             importacao_id=importacao.id,
-            instituicao_id=obter_instituicao_escopo(usuario_atual),
+            instituicao_id=instituicao_id,
             convivente_id=convivente.id if convivente else None,
             numero_sisa=linha["numero_sisa"],
             nome_planilha=linha["nome_planilha"],
@@ -3859,6 +4403,7 @@ async def importar_planilha_sisa(
             importacao=importacao,
             presenca=presenca,
             convivente=convivente,
+            data_inicio_referencia=data_inicio_referencia,
             data_referencia=data_referencia,
         )
         db.add(divergencia)

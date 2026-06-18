@@ -38,6 +38,7 @@ const OPCOES_INTERACAO_ROTINA = [
 ];
 
 const TIPOS_ROTINA_REFEICOES = ['Café da manhã', 'Almoço', 'Jantar', 'Lanche noturno'];
+const JANELA_IGNORAR_LEITURA_REPETIDA_MS = 7000;
 
 const ROTULOS_REFEICAO_EXTRA = {
   'Café da manhã': 'café da manhã',
@@ -82,6 +83,7 @@ export default function RotinaDiaria() {
   const processarCodigoLidoRef = useRef(null);
   const leituraUsbBufferRef = useRef('');
   const leituraUsbUltimaTeclaRef = useRef(0);
+  const campoLeitorPistolaRef = useRef(null);
 
   useEffect(() => {
     if (!token) {
@@ -434,7 +436,7 @@ export default function RotinaDiaria() {
 
     if (
       ultimaLeituraRef.current === codigo &&
-      agora - ultimaLeituraTempoRef.current < 1800
+      agora - ultimaLeituraTempoRef.current < JANELA_IGNORAR_LEITURA_REPETIDA_MS
     ) {
       return;
     }
@@ -503,6 +505,16 @@ export default function RotinaDiaria() {
   });
 
   useEffect(() => {
+    if (!scannerAberto) return;
+
+    const timer = setTimeout(() => {
+      campoLeitorPistolaRef.current?.focus();
+    }, 180);
+
+    return () => clearTimeout(timer);
+  }, [scannerAberto]);
+
+  useEffect(() => {
     const handleLeitorUsbGlobal = (event) => {
       const alvo = event.target;
       const tag = alvo?.tagName?.toLowerCase();
@@ -512,7 +524,11 @@ export default function RotinaDiaria() {
         tag === 'select' ||
         alvo?.isContentEditable;
 
-      if (editandoTexto || event.ctrlKey || event.altKey || event.metaKey) return;
+      if (
+        editandoTexto &&
+        alvo !== campoLeitorPistolaRef.current
+      ) return;
+      if (event.ctrlKey || event.altKey || event.metaKey) return;
 
       const agora = Date.now();
       if (agora - leituraUsbUltimaTeclaRef.current > 120) {
@@ -1384,19 +1400,20 @@ export default function RotinaDiaria() {
                 if (!codigoManualScanner.trim()) return;
                 processarCodigoLido(codigoManualScanner);
                 setCodigoManualScanner('');
-                setScannerAberto(false);
+                setTimeout(() => campoLeitorPistolaRef.current?.focus(), 0);
               }}
             >
               <label className="mb-2 block text-xs font-bold uppercase tracking-wide text-gray-500">
-                Alternativa manual
+                Leitor de pistola ou digitação manual
               </label>
 
               <div className="flex flex-col gap-2 sm:flex-row">
                 <input
+                  ref={campoLeitorPistolaRef}
                   value={codigoManualScanner}
                   onChange={(event) => setCodigoManualScanner(event.target.value)}
                   className="min-h-11 flex-1 rounded-xl border border-gray-200 px-3 py-2 text-sm outline-none focus:border-brand"
-                  placeholder="Digite o código do prontuário, CPF ou QR Code"
+                  placeholder="Aponte a pistola ou digite o prontuário, CPF ou QR Code"
                 />
                 <button
                   type="submit"

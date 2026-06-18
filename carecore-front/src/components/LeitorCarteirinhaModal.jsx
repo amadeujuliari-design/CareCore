@@ -1,4 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+
+const JANELA_IGNORAR_LEITURA_REPETIDA_MS = 7000;
 
 export default function LeitorCarteirinhaModal({
   aberto,
@@ -10,6 +12,7 @@ export default function LeitorCarteirinhaModal({
 }) {
   const [erro, setErro] = useState('');
   const [codigoManual, setCodigoManual] = useState('');
+  const ultimaLeituraRef = useRef({ codigo: '', horario: 0 });
 
   useEffect(() => {
     if (!aberto) {
@@ -69,7 +72,17 @@ export default function LeitorCarteirinhaModal({
           },
           async (codigoLido) => {
             if (!ativo) return;
-            const aceito = await onCodigoLido?.(String(codigoLido || '').trim());
+            const codigo = String(codigoLido || '').trim();
+            const agora = Date.now();
+            if (
+              ultimaLeituraRef.current.codigo === codigo &&
+              agora - ultimaLeituraRef.current.horario < JANELA_IGNORAR_LEITURA_REPETIDA_MS
+            ) {
+              return;
+            }
+            ultimaLeituraRef.current = { codigo, horario: agora };
+
+            const aceito = await onCodigoLido?.(codigo);
             if (aceito === false) {
               setErro('Código lido, mas nenhum convivente correspondente foi encontrado.');
               return;

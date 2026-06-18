@@ -50,6 +50,15 @@ export async function importarPlanilhaConvenioSisa(formData) {
   return response.data;
 }
 
+export async function previsualizarImportacaoConvenioSisa(formData) {
+  const response = await api.post(
+    `${BASE_CONVENIO_SISA}/importacoes/previsualizar`,
+    formData,
+    { headers: { 'Content-Type': 'multipart/form-data' } },
+  );
+  return response.data;
+}
+
 export async function atualizarTratativaDivergenciaSisa(divergenciaId, status) {
   const response = await api.patch(
     `${BASE_CONVENIO_SISA}/divergencias/${divergenciaId}`,

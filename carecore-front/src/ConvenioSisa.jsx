@@ -18,6 +18,7 @@ import {
   fecharMesSisa,
   importarPlanilhaConvenioSisa,
   listarImportacoesSisa,
+  previsualizarImportacaoConvenioSisa,
   reabrirMesSisa,
 } from './services/convenioSisaService';
 import {
@@ -88,6 +89,14 @@ export default function ConvenioSisa() {
   const [importacoes, setImportacoes] = useState([]);
   const [importacaoSelecionada, setImportacaoSelecionada] = useState(null);
   const [arquivoSisa, setArquivoSisa] = useState(null);
+  const [previaImportacaoSisa, setPreviaImportacaoSisa] = useState(null);
+  const [selecoesPreviaSisa, setSelecoesPreviaSisa] = useState({
+    criar_ativos: [],
+    criar_inativos: [],
+    inativar_existentes: [],
+    mesclar_duplicidades: [],
+    reativar_existentes: [],
+  });
   const [importandoSisa, setImportandoSisa] = useState(false);
   const [excluindoImportacaoId, setExcluindoImportacaoId] = useState('');
   const [filtrosDivergencia, setFiltrosDivergencia] = useState(FILTROS_DIVERGENCIA_PADRAO);
@@ -240,7 +249,19 @@ export default function ConvenioSisa() {
     }
   };
 
-  const importarPlanilhaSisa = async () => {
+  const atualizarArquivoSisa = (arquivo) => {
+    setArquivoSisa(arquivo);
+    setPreviaImportacaoSisa(null);
+    setSelecoesPreviaSisa({
+      criar_ativos: [],
+      criar_inativos: [],
+      inativar_existentes: [],
+      mesclar_duplicidades: [],
+      reativar_existentes: [],
+    });
+  };
+
+  const previsualizarPlanilhaSisa = async () => {
     if (!arquivoSisa) {
       avisarErro('Selecione a planilha .xls ou .xlsx exportada do SISA.');
       return;
@@ -251,12 +272,92 @@ export default function ConvenioSisa() {
       const formData = new FormData();
       formData.append('arquivo', arquivoSisa);
 
+      const previa = await previsualizarImportacaoConvenioSisa(formData);
+
+      setPreviaImportacaoSisa(previa);
+      setSelecoesPreviaSisa({
+        criar_ativos: (previa.criar_ativos || []).map((item) => item.numero_sisa),
+        criar_inativos: (previa.criar_inativos || []).map((item) => item.numero_sisa),
+        inativar_existentes: (previa.inativar_existentes || []).map((item) => item.convivente_id).filter(Boolean),
+        mesclar_duplicidades: (previa.possiveis_duplicidades || [])
+          .filter((item) => item.convivente_id)
+          .map((item) => `${item.numero_sisa}:${item.convivente_id}`),
+        reativar_existentes: (previa.reativar_existentes || []).map((item) => item.convivente_id).filter(Boolean),
+      });
+      avisarSucesso('Prévia SISA gerada. Revise as ações sugeridas antes de confirmar.');
+    } catch (error) {
+      console.error(error);
+      avisarErro(
+        error.response?.data?.detail ||
+        'Erro ao analisar planilha SISA.'
+      );
+    } finally {
+      setImportandoSisa(false);
+    }
+  };
+
+  const alternarSelecaoPreviaSisa = (grupo, id) => {
+    setSelecoesPreviaSisa((atual) => {
+      const selecionados = new Set(atual[grupo] || []);
+      if (selecionados.has(id)) {
+        selecionados.delete(id);
+      } else {
+        selecionados.add(id);
+      }
+
+      return {
+        ...atual,
+        [grupo]: Array.from(selecionados),
+      };
+    });
+  };
+
+  const obterIdAcaoPreviaSisa = (item, grupo) => {
+    if (grupo === 'inativar_existentes') return item.convivente_id;
+    if (grupo === 'reativar_existentes') return item.convivente_id;
+    if (grupo === 'mesclar_duplicidades') return `${item.numero_sisa}:${item.convivente_id}`;
+    return item.numero_sisa;
+  };
+
+  const selecionarTodosPreviaSisa = (grupo, itens = []) => {
+    const ids = itens
+      .map((item) => obterIdAcaoPreviaSisa(item, grupo))
+      .filter(Boolean);
+
+    setSelecoesPreviaSisa((atual) => ({
+      ...atual,
+      [grupo]: ids,
+    }));
+  };
+
+  const limparSelecaoPreviaSisa = (grupo) => {
+    setSelecoesPreviaSisa((atual) => ({
+      ...atual,
+      [grupo]: [],
+    }));
+  };
+
+  const confirmarImportacaoSisa = async () => {
+    if (!arquivoSisa || !previaImportacaoSisa) {
+      avisarErro('Gere a prévia da planilha antes de confirmar a importação.');
+      return;
+    }
+
+    try {
+      setImportandoSisa(true);
+      const formData = new FormData();
+      formData.append('arquivo', arquivoSisa);
+      formData.append('acoes_json', JSON.stringify(selecoesPreviaSisa));
+
       const importacao = await importarPlanilhaConvenioSisa(formData);
 
-      setArquivoSisa(null);
+      atualizarArquivoSisa(null);
+      if (arquivoSisaInputRef.current) {
+        arquivoSisaInputRef.current.value = '';
+      }
       setImportacaoSelecionada(importacao);
       await carregarImportacoes();
-      avisarSucesso('Planilha SISA importada e conferida com sucesso.');
+      avisarSucesso('Planilha SISA importada, conferida e ações selecionadas aplicadas com sucesso.');
     } catch (error) {
       console.error(error);
       avisarErro(
@@ -266,6 +367,101 @@ export default function ConvenioSisa() {
     } finally {
       setImportandoSisa(false);
     }
+  };
+
+  const renderLinhaPreviaSisa = (item, grupo, selecionavel = true) => {
+    const id = obterIdAcaoPreviaSisa(item, grupo);
+    const selecionado = (selecoesPreviaSisa[grupo] || []).includes(id);
+
+    return (
+      <label
+        key={`${grupo}-${id || item.numero_sisa}`}
+        className={`flex gap-3 rounded-xl border p-3 text-sm ${
+          selecionavel ? 'cursor-pointer border-gray-200 bg-white hover:bg-gray-50' : 'border-amber-100 bg-amber-50'
+        }`}
+      >
+        {selecionavel && (
+          <input
+            type="checkbox"
+            checked={selecionado}
+            onChange={() => alternarSelecaoPreviaSisa(grupo, id)}
+            className="mt-1 h-4 w-4 rounded border-gray-300"
+          />
+        )}
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <strong className="text-gray-900">{item.nome || item.convivente_nome}</strong>
+            <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-black uppercase text-gray-600">
+              SISA {item.numero_sisa || '-'}
+            </span>
+            {item.status_sugerido && (
+              <span className="rounded-full bg-brand/10 px-2 py-0.5 text-[10px] font-black uppercase text-brand">
+                {item.status_sugerido}
+              </span>
+            )}
+          </div>
+          <p className="mt-1 text-xs font-semibold text-gray-500">
+            Nasc.: {formatarDataPt(item.data_nascimento)} · Vinc.: {formatarDataPt(item.data_vinculacao)} · Deslig.: {formatarDataPt(item.data_desligamento)}
+          </p>
+          {item.motivo && (
+            <p className="mt-1 text-xs font-semibold text-gray-600">{item.motivo}</p>
+          )}
+          {grupo === 'mesclar_duplicidades' && item.convivente_nome && (
+            <p className="mt-1 text-xs font-black text-emerald-700">
+              Mesclar com: {item.convivente_nome}
+            </p>
+          )}
+        </div>
+      </label>
+    );
+  };
+
+  const renderGrupoPreviaSisa = ({ titulo, descricao, itens, grupo, selecionavel = true }) => {
+    if (!itens?.length) return null;
+
+    const selecionados = selecionavel
+      ? itens.filter((item) => {
+        const id = obterIdAcaoPreviaSisa(item, grupo);
+        return (selecoesPreviaSisa[grupo] || []).includes(id);
+      }).length
+      : 0;
+
+    return (
+      <section className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
+        <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h4 className="text-sm font-black uppercase text-gray-700">{titulo}</h4>
+            <p className="text-xs font-semibold text-gray-500">{descricao}</p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-black text-gray-700">
+              {selecionavel ? `${selecionados}/${itens.length} selecionado(s)` : `${itens.length} para revisão`}
+            </span>
+            {selecionavel && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => selecionarTodosPreviaSisa(grupo, itens)}
+                  className="rounded-lg border border-gray-200 bg-white px-3 py-1 text-[11px] font-black uppercase text-gray-600 hover:bg-gray-50"
+                >
+                  Selecionar todos
+                </button>
+                <button
+                  type="button"
+                  onClick={() => limparSelecaoPreviaSisa(grupo)}
+                  className="rounded-lg border border-gray-200 bg-white px-3 py-1 text-[11px] font-black uppercase text-gray-600 hover:bg-gray-50"
+                >
+                  Limpar
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+        <div className="grid gap-2 lg:grid-cols-2">
+          {itens.map((item) => renderLinhaPreviaSisa(item, grupo, selecionavel))}
+        </div>
+      </section>
+    );
   };
 
   const atualizarStatusDivergencia = async (divergenciaId, novoStatus) => {
@@ -1133,7 +1329,7 @@ export default function ConvenioSisa() {
                   type="file"
                   accept=".xls,.xlsx"
                   ref={arquivoSisaInputRef}
-                  onChange={(e) => setArquivoSisa(e.target.files?.[0] || null)}
+                  onChange={(e) => atualizarArquivoSisa(e.target.files?.[0] || null)}
                   className="hidden"
                 />
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
@@ -1151,11 +1347,11 @@ export default function ConvenioSisa() {
               </div>
 
               <button
-                onClick={importarPlanilhaSisa}
+                onClick={previsualizarPlanilhaSisa}
                 disabled={importandoSisa || !arquivoSisa}
                 className="px-4 py-2 rounded-xl bg-emerald-600 text-white font-bold text-sm hover:bg-emerald-700 disabled:opacity-50"
               >
-                {importandoSisa ? 'Importando...' : 'Importar e conferir'}
+                {importandoSisa ? 'Analisando...' : 'Analisar planilha'}
               </button>
 
               <button
@@ -1165,6 +1361,83 @@ export default function ConvenioSisa() {
                 Atualizar histórico
               </button>
             </div>
+          )}
+
+          {aba === 'importacoes' && previaImportacaoSisa && (
+            <section className="mt-5 space-y-4 rounded-3xl border border-brand/20 bg-brand/5 p-4">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                  <h3 className="text-base font-black text-gray-900">Prévia inteligente da importação SISA</h3>
+                  <p className="mt-1 text-sm font-semibold text-gray-600">
+                    Recorte {formatarDataPt(previaImportacaoSisa.data_inicio_referencia)} a {formatarDataPt(previaImportacaoSisa.data_referencia)} · {previaImportacaoSisa.total_linhas} linha(s) lida(s) · {previaImportacaoSisa.vinculados} já vinculadas.
+                  </p>
+                  <p className="mt-1 text-xs font-semibold text-gray-500">
+                    Revise as sugestões abaixo. Apenas os itens marcados serão aplicados quando você confirmar a importação.
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setPreviaImportacaoSisa(null)}
+                    className="rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-black text-gray-700 hover:bg-gray-50"
+                  >
+                    Cancelar prévia
+                  </button>
+                  <button
+                    type="button"
+                    onClick={confirmarImportacaoSisa}
+                    disabled={importandoSisa}
+                    className="rounded-xl bg-brand px-4 py-2 text-sm font-black text-white hover:bg-brandDark disabled:opacity-50"
+                  >
+                    {importandoSisa ? 'Confirmando...' : 'Confirmar importação'}
+                  </button>
+                </div>
+              </div>
+
+              {renderGrupoPreviaSisa({
+                titulo: 'Criar como ativos',
+                descricao: 'Encontrados no SISA, ainda não existem no CareCore+ e não possuem desligamento.',
+                itens: previaImportacaoSisa.criar_ativos,
+                grupo: 'criar_ativos',
+              })}
+
+              {renderGrupoPreviaSisa({
+                titulo: 'Criar como inativados',
+                descricao: 'Encontrados no SISA, ainda não existem no CareCore+ e já possuem data de desligamento.',
+                itens: previaImportacaoSisa.criar_inativos,
+                grupo: 'criar_inativos',
+              })}
+
+              {renderGrupoPreviaSisa({
+                titulo: 'Reativar existentes',
+                descricao: 'Já existem no CareCore+, aparecem no SISA sem desligamento, mas estão inativos no sistema.',
+                itens: previaImportacaoSisa.reativar_existentes,
+                grupo: 'reativar_existentes',
+              })}
+
+              {renderGrupoPreviaSisa({
+                titulo: 'Inativar existentes',
+                descricao: 'Ativos no CareCore+ com número SISA, mas ausentes na planilha atual. Nada é apagado fisicamente.',
+                itens: previaImportacaoSisa.inativar_existentes,
+                grupo: 'inativar_existentes',
+              })}
+
+              {renderGrupoPreviaSisa({
+                titulo: 'Possíveis duplicidades',
+                descricao: 'Mesmo nome e nascimento de um cadastro existente. Se houver um alvo único, você pode mesclar o número SISA ao cadastro existente.',
+                itens: (previaImportacaoSisa.possiveis_duplicidades || []).filter((item) => item.convivente_id),
+                grupo: 'mesclar_duplicidades',
+                selecionavel: true,
+              })}
+
+              {renderGrupoPreviaSisa({
+                titulo: 'Duplicidades para revisão manual',
+                descricao: 'Há mais de um cadastro possível. Revise manualmente antes de vincular ou criar qualquer novo cadastro.',
+                itens: (previaImportacaoSisa.possiveis_duplicidades || []).filter((item) => !item.convivente_id),
+                grupo: 'possiveis_duplicidades',
+                selecionavel: false,
+              })}
+            </section>
           )}
 
         </div>

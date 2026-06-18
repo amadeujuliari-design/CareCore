@@ -1615,6 +1615,42 @@ class SisaImportacaoDetalheResponse(SisaImportacaoResponse):
     divergencias: List[SisaDivergenciaResponse] = []
 
 
+class SisaPreviaConviventeLinha(BaseModel):
+    numero_sisa: str
+    nome: str
+    nome_social: Optional[str] = None
+    data_nascimento: Optional[date] = None
+    data_vinculacao: Optional[date] = None
+    data_desligamento: Optional[date] = None
+    dias_permanencia: int = 0
+    status_sugerido: Optional[str] = None
+    convivente_id: Optional[str] = None
+    convivente_nome: Optional[str] = None
+    motivo: Optional[str] = None
+
+
+class SisaPreviaImportacaoResponse(BaseModel):
+    nome_arquivo: str
+    servico: Optional[str] = None
+    data_inicio_referencia: date
+    data_referencia: date
+    total_linhas: int
+    vinculados: int
+    criar_ativos: List[SisaPreviaConviventeLinha] = []
+    criar_inativos: List[SisaPreviaConviventeLinha] = []
+    possiveis_duplicidades: List[SisaPreviaConviventeLinha] = []
+    inativar_existentes: List[SisaPreviaConviventeLinha] = []
+    reativar_existentes: List[SisaPreviaConviventeLinha] = []
+
+
+class SisaAcoesImportacao(BaseModel):
+    criar_ativos: List[str] = []
+    criar_inativos: List[str] = []
+    inativar_existentes: List[str] = []
+    mesclar_duplicidades: List[str] = []
+    reativar_existentes: List[str] = []
+
+
 # =====================================================================
 # COMUNICAÇÃO INTERNA / AVISOS IMPORTANTES
 # =====================================================================
