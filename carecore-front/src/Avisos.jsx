@@ -25,6 +25,11 @@ import {
 import { API_ROOT } from "./config/apiBase";
 import { decodificarPayloadJwt } from "./utils/jwtUtils";
 import { criarHeadersAutenticados } from "./utils/requestIdUtils";
+import {
+  calcularDataInicioPadrao,
+  dataHojeIsoLocal,
+  LISTAGEM_OPERACIONAL_DIAS_PADRAO,
+} from "./utils/prontuarioHistoricoFluxoUtils";
 
 const CLASSIFICACOES = ["Informativo", "Atenção", "Urgente", "Comunicado", "Rotina", "Gestão"];
 
@@ -167,6 +172,18 @@ const filtrosHistoricoInicial = {
 };
 
 const AVISOS_HISTORICO_POR_PAGINA = 10;
+const AVISOS_ATIVOS_POR_PAGINA = 30;
+
+function criarFiltrosAtivosPadrao() {
+  return {
+    data_inicio: calcularDataInicioPadrao(LISTAGEM_OPERACIONAL_DIAS_PADRAO),
+    data_fim: dataHojeIsoLocal(),
+    busca: "",
+    classificacao: "",
+    prioridade: "",
+    somente_nao_lidos: false,
+  };
+}
 
 
 function ModalAvisoCompleto({ aviso, onFechar, onMarcarLido }) {
@@ -243,6 +260,10 @@ export default function Avisos() {
 
   const [formulario, setFormulario] = useState(estadoInicialFormulario);
   const [avisos, setAvisos] = useState([]);
+  const [totalAvisosAtivos, setTotalAvisosAtivos] = useState(0);
+  const [avisosAtivosTemMais, setAvisosAtivosTemMais] = useState(false);
+  const [filtrosAtivos, setFiltrosAtivos] = useState(criarFiltrosAtivosPadrao);
+  const [carregandoMaisAtivos, setCarregandoMaisAtivos] = useState(false);
   const [usuarios, setUsuarios] = useState([]);
   const [buscaUsuario, setBuscaUsuario] = useState("");
   const [resumo, setResumo] = useState({
@@ -286,25 +307,46 @@ export default function Avisos() {
     return Array.isArray(dados) ? dados : [];
   }
 
-  async function carregarAvisos() {
+  async function carregarAvisos(filtrosParciais = null, { append = false, offset = 0 } = {}) {
     if (!usuario.token) {
       setErro("Sessão expirada. Faça login novamente.");
       setCarregando(false);
       return;
     }
 
+    const filtrosAtuais = filtrosParciais || filtrosAtivos;
+
     try {
-      setCarregando(true);
+      if (!append) {
+        setCarregando(true);
+      } else {
+        setCarregandoMaisAtivos(true);
+      }
       setErro("");
 
-      const [lista, dadosResumo, listaUsuarios] = await Promise.all([
-        listarMeusAvisos(usuario.token, { limite: 50 }),
+      const [listaPaginada, dadosResumo, listaUsuarios] = await Promise.all([
+        listarMeusAvisos(usuario.token, {
+          limite: AVISOS_ATIVOS_POR_PAGINA,
+          offset,
+          somenteNaoLidos: filtrosAtuais.somente_nao_lidos,
+          busca: filtrosAtuais.busca || undefined,
+          classificacao: filtrosAtuais.classificacao || undefined,
+          prioridade: filtrosAtuais.prioridade || undefined,
+          data_inicio: filtrosAtuais.data_inicio || undefined,
+          data_fim: filtrosAtuais.data_fim || undefined,
+        }),
         obterResumoAvisos(usuario.token),
-        carregarUsuariosDestinatarios(),
+        append ? Promise.resolve(usuarios) : carregarUsuariosDestinatarios(),
       ]);
 
-      setAvisos(Array.isArray(lista) ? lista : []);
-      setUsuarios(Array.isArray(listaUsuarios) ? listaUsuarios : []);
+      const itens = listaPaginada.items || [];
+      setAvisos((atual) => (append ? [...atual, ...itens] : itens));
+      setTotalAvisosAtivos(listaPaginada.total || 0);
+      setAvisosAtivosTemMais(Boolean(listaPaginada.has_more));
+      setFiltrosAtivos(filtrosAtuais);
+      if (!append) {
+        setUsuarios(Array.isArray(listaUsuarios) ? listaUsuarios : []);
+      }
       setResumo(dadosResumo || {
         total_visiveis: 0,
         total_nao_lidos: 0,
@@ -315,7 +357,28 @@ export default function Avisos() {
       setErro(error?.response?.data?.detail || "Não foi possível carregar os avisos.");
     } finally {
       setCarregando(false);
+      setCarregandoMaisAtivos(false);
     }
+  }
+
+  function aplicarFiltrosAtivos(event) {
+    event?.preventDefault?.();
+    carregarAvisos({ ...filtrosAtivos }, { append: false, offset: 0 });
+  }
+
+  function restaurarFiltrosAtivosPadrao() {
+    const padrao = criarFiltrosAtivosPadrao();
+    setFiltrosAtivos(padrao);
+    carregarAvisos(padrao, { append: false, offset: 0 });
+  }
+
+  function carregarMaisAvisosAtivos() {
+    if (!avisosAtivosTemMais) return;
+    carregarAvisos(filtrosAtivos, { append: true, offset: avisos.length });
+  }
+
+  function atualizarFiltroAtivo(campo, valor) {
+    setFiltrosAtivos((atual) => ({ ...atual, [campo]: valor }));
   }
 
   async function carregarHistoricoAvisos(filtros = filtrosHistorico, pagina = paginaHistorico) {
@@ -429,7 +492,7 @@ export default function Avisos() {
 
       setFormulario(estadoInicialFormulario);
       setSucesso("Aviso enviado com sucesso.");
-      await carregarAvisos();
+      await carregarAvisos(filtrosAtivos, { append: false, offset: 0 });
     } catch (error) {
       console.error("Erro ao criar aviso", error);
       setErro(error?.response?.data?.detail || "Não foi possível enviar o aviso.");
@@ -443,7 +506,7 @@ export default function Avisos() {
       setErro("");
       setSucesso("");
       await marcarAvisoComoLido(usuario.token, avisoId);
-      await carregarAvisos();
+      await carregarAvisos(filtrosAtivos, { append: false, offset: 0 });
     } catch (error) {
       console.error("Erro ao marcar aviso como lido", error);
       setErro(error?.response?.data?.detail || "Não foi possível marcar o aviso como lido.");
@@ -484,7 +547,7 @@ export default function Avisos() {
       if (avisoAberto?.id === avisoId) {
         setAvisoAberto(null);
       }
-      await carregarAvisos();
+      await carregarAvisos(filtrosAtivos, { append: false, offset: 0 });
       await carregarHistoricoAvisos(filtrosHistorico, paginaHistorico);
     } catch (error) {
       console.error("Erro ao excluir aviso", error);
@@ -988,15 +1051,97 @@ export default function Avisos() {
                 <div>
                   <h2 className="text-xl font-black text-slate-900">Avisos visíveis para você</h2>
                   <p className="mt-1 text-sm text-slate-500">
-                    Esta lista usa a mesma fonte de dados do dashboard e do sininho.
+                    Por padrão, últimos {LISTAGEM_OPERACIONAL_DIAS_PADRAO} dias. Amplie o período nos filtros quando precisar.
                   </p>
                 </div>
 
                 <div className="flex flex-wrap gap-2">
-                  <Badge tipo="roxo">{resumo.total_visiveis || 0} visíveis</Badge>
+                  <Badge tipo="roxo">{totalAvisosAtivos || resumo.total_visiveis || 0} no filtro</Badge>
                   <Badge tipo="media">{resumo.total_nao_lidos || 0} não lidos</Badge>
                 </div>
               </div>
+
+              <form onSubmit={aplicarFiltrosAtivos} className="mb-4 grid grid-cols-1 gap-3 lg:grid-cols-6">
+                <div>
+                  <label className="mb-2 block text-xs font-black uppercase tracking-wide text-slate-500">Início</label>
+                  <input
+                    type="date"
+                    value={filtrosAtivos.data_inicio}
+                    onChange={(event) => atualizarFiltroAtivo("data_inicio", event.target.value)}
+                    className="w-full rounded-2xl border border-slate-200 px-3 py-3 text-sm font-semibold outline-none focus:border-purple-300"
+                  />
+                </div>
+                <div>
+                  <label className="mb-2 block text-xs font-black uppercase tracking-wide text-slate-500">Fim</label>
+                  <input
+                    type="date"
+                    value={filtrosAtivos.data_fim}
+                    onChange={(event) => atualizarFiltroAtivo("data_fim", event.target.value)}
+                    className="w-full rounded-2xl border border-slate-200 px-3 py-3 text-sm font-semibold outline-none focus:border-purple-300"
+                  />
+                </div>
+                <div>
+                  <label className="mb-2 block text-xs font-black uppercase tracking-wide text-slate-500">Classificação</label>
+                  <select
+                    value={filtrosAtivos.classificacao}
+                    onChange={(event) => atualizarFiltroAtivo("classificacao", event.target.value)}
+                    className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-3 text-sm font-bold outline-none focus:border-purple-300"
+                  >
+                    <option value="">Todas</option>
+                    {CLASSIFICACOES.map((item) => (
+                      <option key={item} value={item}>{item}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="mb-2 block text-xs font-black uppercase tracking-wide text-slate-500">Prioridade</label>
+                  <select
+                    value={filtrosAtivos.prioridade}
+                    onChange={(event) => atualizarFiltroAtivo("prioridade", event.target.value)}
+                    className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-3 text-sm font-bold outline-none focus:border-purple-300"
+                  >
+                    <option value="">Todas</option>
+                    {PRIORIDADES.map((item) => (
+                      <option key={item.value} value={item.value}>{item.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="lg:col-span-2">
+                  <label className="mb-2 block text-xs font-black uppercase tracking-wide text-slate-500">Buscar</label>
+                  <input
+                    value={filtrosAtivos.busca}
+                    onChange={(event) => atualizarFiltroAtivo("busca", event.target.value)}
+                    className="w-full rounded-2xl border border-slate-200 px-3 py-3 text-sm font-semibold outline-none focus:border-purple-300"
+                    placeholder="Título ou texto do aviso..."
+                  />
+                </div>
+                <div className="flex flex-wrap items-center gap-3 lg:col-span-6">
+                  <label className="inline-flex items-center gap-2 text-sm font-bold text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={filtrosAtivos.somente_nao_lidos}
+                      onChange={(event) => atualizarFiltroAtivo("somente_nao_lidos", event.target.checked)}
+                    />
+                    Somente não lidos
+                  </label>
+                  <button
+                    type="submit"
+                    className="rounded-2xl bg-purple-600 px-4 py-3 text-xs font-black text-white hover:bg-purple-700"
+                  >
+                    Aplicar filtros
+                  </button>
+                  <button
+                    type="button"
+                    onClick={restaurarFiltrosAtivosPadrao}
+                    className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-xs font-black text-slate-600"
+                  >
+                    Período padrão (7 dias)
+                  </button>
+                  <span className="text-xs font-semibold text-slate-500">
+                    Mostrando {avisos.length} de {totalAvisosAtivos}
+                  </span>
+                </div>
+              </form>
 
               {carregando ? (
                 <div className="rounded-3xl border border-slate-100 bg-slate-50 p-10 text-center text-sm font-bold text-slate-400">
@@ -1010,7 +1155,7 @@ export default function Avisos() {
                   </p>
                 </div>
               ) : (
-                <div className="space-y-3">
+                <div className="max-h-[58vh] space-y-3 overflow-y-auto pr-1">
                   {avisos.map((aviso) => {
                     const prioridadeLabel = normalizarPrioridade(aviso.prioridade);
                     const tipo = prioridadeParaTipo(aviso.prioridade);
@@ -1077,6 +1222,19 @@ export default function Avisos() {
                       </article>
                     );
                   })}
+                </div>
+              )}
+
+              {avisosAtivosTemMais && (
+                <div className="mt-4 flex justify-center">
+                  <button
+                    type="button"
+                    onClick={carregarMaisAvisosAtivos}
+                    disabled={carregandoMaisAtivos}
+                    className="rounded-2xl border border-purple-200 bg-white px-4 py-3 text-sm font-black text-purple-700 disabled:opacity-50"
+                  >
+                    {carregandoMaisAtivos ? "Carregando..." : "Carregar mais avisos"}
+                  </button>
                 </div>
               )}
               </section>

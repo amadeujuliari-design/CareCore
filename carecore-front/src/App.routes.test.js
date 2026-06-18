@@ -7,6 +7,8 @@ import { dirname, resolve } from 'node:path';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const appSource = readFileSync(resolve(__dirname, 'App.jsx'), 'utf8');
+const appRouterSource = readFileSync(resolve(__dirname, 'routes/AppRouter.jsx'), 'utf8');
+const rotasSource = `${appSource}\n${appRouterSource}`;
 
 const ROTAS_CRITICAS = [
   '/',
@@ -53,22 +55,22 @@ describe('App routes contract', () => {
     ];
 
     for (const importPath of lazyImports) {
-      assert.match(appSource, new RegExp(`lazy\\(\\(\\) => import\\('${importPath.replace('.', '\\.')}'\\)\\)`));
+      assert.match(rotasSource, new RegExp(`lazy\\(\\(\\) => import\\('${importPath.replace('.', '\\.')}'\\)\\)`));
     }
   });
 
   it('declara as rotas criticas do SaaS', () => {
     for (const rota of ROTAS_CRITICAS) {
-      assert.match(appSource, new RegExp(`path="${rota.replaceAll('/', '\\/')}"`));
+      assert.match(rotasSource, new RegExp(`path="${rota.replaceAll('/', '\\/')}"`));
     }
   });
 
   it('mantem rotas internas protegidas por ProtectedRoute', () => {
     for (const rota of ROTAS_PROTEGIDAS) {
-      const indiceRota = appSource.indexOf(`path="${rota}"`);
+      const indiceRota = rotasSource.indexOf(`path="${rota}"`);
       assert.notEqual(indiceRota, -1, `rota ausente: ${rota}`);
 
-      const trecho = appSource.slice(indiceRota, indiceRota + 260);
+      const trecho = rotasSource.slice(indiceRota, indiceRota + 260);
       assert.match(trecho, /<ProtectedRoute/, `rota sem ProtectedRoute: ${rota}`);
     }
   });

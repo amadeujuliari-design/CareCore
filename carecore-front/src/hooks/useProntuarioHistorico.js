@@ -2,6 +2,15 @@ import { useState } from 'react';
 
 import { FORM_HISTORICO_CONVIVENTE_INICIAL } from '../utils/conviventesProntuarioUtils';
 import {
+  criarFiltrosFluxoPadrao,
+  criarFiltrosHistoricoPadrao,
+  criarFiltrosListagemOperacionalPadrao,
+  montarParamsFluxoProntuario,
+  montarParamsHistoricoProntuario,
+  montarParamsListagemOperacional,
+  REGISTROS_POR_PAGINA_PRONTUARIO,
+} from '../utils/prontuarioHistoricoFluxoUtils';
+import {
   excluirHistoricoConviventeApi,
   listarHistoricoFluxoConvivente,
   listarHistoricosConvivente,
@@ -24,6 +33,16 @@ export function useProntuarioHistorico({ editandoId, podeCriarHistoricoConvivent
   const [formHistoricoConvivente, setFormHistoricoConvivente] = useState({
     ...FORM_HISTORICO_CONVIVENTE_INICIAL,
   });
+  const [filtrosFluxo, setFiltrosFluxo] = useState(criarFiltrosFluxoPadrao);
+  const [filtrosHistorico, setFiltrosHistorico] = useState(criarFiltrosHistoricoPadrao);
+  const [filtrosOcorrencias, setFiltrosOcorrencias] = useState(criarFiltrosListagemOperacionalPadrao);
+  const [totalHistoricoConvivente, setTotalHistoricoConvivente] = useState(0);
+  const [totalOcorrenciasConvivente, setTotalOcorrenciasConvivente] = useState(0);
+  const [fluxoTemMais, setFluxoTemMais] = useState(false);
+  const [ocorrenciasTemMais, setOcorrenciasTemMais] = useState(false);
+  const [carregandoMaisFluxo, setCarregandoMaisFluxo] = useState(false);
+  const [carregandoMaisHistorico, setCarregandoMaisHistorico] = useState(false);
+  const [carregandoMaisOcorrencias, setCarregandoMaisOcorrencias] = useState(false);
 
   const resetarHistoricoProntuario = () => {
     setOcorrencias([]);
@@ -32,49 +51,202 @@ export function useProntuarioHistorico({ editandoId, podeCriarHistoricoConvivent
     setHistoricosCarregadosPara(null);
     setFluxoCarregadoPara(null);
     setHistoricosConvivente([]);
+    setTotalHistoricoConvivente(0);
+    setTotalOcorrenciasConvivente(0);
+    setFluxoTemMais(false);
+    setOcorrenciasTemMais(false);
+    setFiltrosFluxo(criarFiltrosFluxoPadrao());
+    setFiltrosHistorico(criarFiltrosHistoricoPadrao());
+    setFiltrosOcorrencias(criarFiltrosListagemOperacionalPadrao());
     setFormHistoricoConvivente({ ...FORM_HISTORICO_CONVIVENTE_INICIAL });
     setHistoricoEditando(null);
   };
 
-  const carregarOcorrencias = async (conviventeId) => {
-    setLoadingOcorrencias(true);
+  const carregarOcorrencias = async (
+    conviventeId,
+    filtrosParciais = null,
+    { append = false } = {},
+  ) => {
+    const filtrosAtivos = {
+      ...(filtrosParciais || filtrosOcorrencias),
+      deslocamento: append
+        ? (filtrosParciais?.deslocamento ?? filtrosOcorrencias.deslocamento)
+        : 0,
+    };
+
+    if (!append) {
+      setLoadingOcorrencias(true);
+    } else {
+      setCarregandoMaisOcorrencias(true);
+    }
+
     try {
-      const ocorrenciasRecebidas = await listarOcorrenciasConvivente(conviventeId);
-      setOcorrencias(ocorrenciasRecebidas);
+      const resposta = await listarOcorrenciasConvivente(
+        conviventeId,
+        montarParamsListagemOperacional(filtrosAtivos),
+      );
+      const registros = resposta.registros || [];
+
+      setOcorrencias((prev) => (append ? [...prev, ...registros] : registros));
+      setTotalOcorrenciasConvivente(resposta.total || 0);
+      setOcorrenciasTemMais(registros.length === REGISTROS_POR_PAGINA_PRONTUARIO);
+      setFiltrosOcorrencias(filtrosAtivos);
       setOcorrenciasCarregadasPara(conviventeId);
     } catch (error) {
       console.error('Erro ao carregar histórico', error);
+      setErro('Não foi possível carregar as ocorrências do convivente.');
     } finally {
       setLoadingOcorrencias(false);
+      setCarregandoMaisOcorrencias(false);
     }
   };
 
-  const carregarHistoricosConvivente = async (conviventeId) => {
-    setLoadingHistoricosConvivente(true);
+  const aplicarFiltrosOcorrencias = async (conviventeId) => {
+    await carregarOcorrencias(conviventeId, {
+      ...filtrosOcorrencias,
+      deslocamento: 0,
+    });
+  };
+
+  const restaurarFiltrosOcorrenciasPadrao = async (conviventeId) => {
+    const padrao = criarFiltrosListagemOperacionalPadrao();
+    setFiltrosOcorrencias(padrao);
+    await carregarOcorrencias(conviventeId, padrao);
+  };
+
+  const carregarMaisOcorrenciasConvivente = async (conviventeId) => {
+    if (!ocorrenciasTemMais) return;
+
+    await carregarOcorrencias(
+      conviventeId,
+      { ...filtrosOcorrencias, deslocamento: ocorrencias.length },
+      { append: true },
+    );
+  };
+
+  const carregarHistoricosConvivente = async (
+    conviventeId,
+    filtrosParciais = null,
+    { append = false } = {},
+  ) => {
+    const filtrosAtivos = {
+      ...(filtrosParciais || filtrosHistorico),
+      deslocamento: append
+        ? (filtrosParciais?.deslocamento ?? filtrosHistorico.deslocamento)
+        : 0,
+    };
+
+    if (!append) {
+      setLoadingHistoricosConvivente(true);
+    } else {
+      setCarregandoMaisHistorico(true);
+    }
+
     try {
-      const historicosRecebidos = await listarHistoricosConvivente(conviventeId);
-      setHistoricosConvivente(historicosRecebidos);
+      const resposta = await listarHistoricosConvivente(
+        conviventeId,
+        montarParamsHistoricoProntuario(filtrosAtivos),
+      );
+      const registros = resposta.registros || [];
+
+      setHistoricosConvivente((prev) => (append ? [...prev, ...registros] : registros));
+      setTotalHistoricoConvivente(resposta.total || 0);
+      setFiltrosHistorico(filtrosAtivos);
       setHistoricosCarregadosPara(conviventeId);
     } catch (error) {
       console.error('Erro ao carregar históricos do convivente', error);
       setErro('Não foi possível carregar o histórico do convivente.');
     } finally {
       setLoadingHistoricosConvivente(false);
+      setCarregandoMaisHistorico(false);
     }
   };
 
-  const carregarHistoricoFluxo = async (conviventeId) => {
-    try {
-      setLoadingHistoricoFluxo(true);
-      const historicoRecebido = await listarHistoricoFluxoConvivente(conviventeId);
+  const carregarHistoricoFluxo = async (
+    conviventeId,
+    filtrosParciais = null,
+    { append = false } = {},
+  ) => {
+    const filtrosAtivos = {
+      ...(filtrosParciais || filtrosFluxo),
+      deslocamento: append
+        ? (filtrosParciais?.deslocamento ?? filtrosFluxo.deslocamento)
+        : 0,
+    };
 
-      setHistoricoFluxo(historicoRecebido);
+    if (!append) {
+      setLoadingHistoricoFluxo(true);
+    } else {
+      setCarregandoMaisFluxo(true);
+    }
+
+    try {
+      const historicoRecebido = await listarHistoricoFluxoConvivente(
+        conviventeId,
+        montarParamsFluxoProntuario(filtrosAtivos),
+      );
+      const registros = historicoRecebido.registros || [];
+
+      setHistoricoFluxo((prev) => (
+        append ? [...prev, ...registros] : registros
+      ));
+      setFluxoTemMais(Boolean(historicoRecebido.has_more));
+      setFiltrosFluxo(filtrosAtivos);
       setFluxoCarregadoPara(conviventeId);
     } catch (error) {
       console.error('Erro ao carregar histórico de fluxo:', error);
+      setErro('Não foi possível carregar o fluxo diário do convivente.');
     } finally {
       setLoadingHistoricoFluxo(false);
+      setCarregandoMaisFluxo(false);
     }
+  };
+
+  const aplicarFiltrosHistorico = async (conviventeId) => {
+    await carregarHistoricosConvivente(conviventeId, {
+      ...filtrosHistorico,
+      deslocamento: 0,
+    });
+  };
+
+  const aplicarFiltrosFluxo = async (conviventeId) => {
+    await carregarHistoricoFluxo(conviventeId, {
+      ...filtrosFluxo,
+      deslocamento: 0,
+    });
+  };
+
+  const restaurarFiltrosHistoricoPadrao = async (conviventeId) => {
+    const padrao = criarFiltrosHistoricoPadrao();
+    setFiltrosHistorico(padrao);
+    await carregarHistoricosConvivente(conviventeId, padrao);
+  };
+
+  const restaurarFiltrosFluxoPadrao = async (conviventeId) => {
+    const padrao = criarFiltrosFluxoPadrao();
+    setFiltrosFluxo(padrao);
+    await carregarHistoricoFluxo(conviventeId, padrao);
+  };
+
+  const carregarMaisHistoricosConvivente = async (conviventeId) => {
+    const proximoDeslocamento = historicosConvivente.length;
+    if (proximoDeslocamento >= totalHistoricoConvivente) return;
+
+    await carregarHistoricosConvivente(
+      conviventeId,
+      { ...filtrosHistorico, deslocamento: proximoDeslocamento },
+      { append: true },
+    );
+  };
+
+  const carregarMaisHistoricoFluxo = async (conviventeId) => {
+    if (!fluxoTemMais) return;
+
+    await carregarHistoricoFluxo(
+      conviventeId,
+      { ...filtrosFluxo, deslocamento: historicoFluxo.length },
+      { append: true },
+    );
   };
 
   const handleSalvarHistoricoConvivente = async () => {
@@ -116,11 +288,17 @@ export function useProntuarioHistorico({ editandoId, podeCriarHistoricoConvivent
         historicoEditando?.id || null,
       );
 
-      setHistoricosConvivente(prev => (
-        historicoEditando
-          ? prev.map(item => item.id === historicoSalvo.id ? historicoSalvo : item)
-          : [historicoSalvo, ...prev]
-      ));
+      if (historicoEditando) {
+        setHistoricosConvivente((prev) => prev.map((item) => (
+          item.id === historicoSalvo.id ? historicoSalvo : item
+        )));
+      } else {
+        await carregarHistoricosConvivente(editandoId, {
+          ...filtrosHistorico,
+          deslocamento: 0,
+        });
+      }
+
       setFormHistoricoConvivente({ ...FORM_HISTORICO_CONVIVENTE_INICIAL });
       setHistoricoEditando(null);
       setSucesso(historicoEditando ? 'Histórico atualizado com sucesso.' : 'Histórico do convivente salvo com sucesso.');
@@ -154,7 +332,8 @@ export function useProntuarioHistorico({ editandoId, podeCriarHistoricoConvivent
 
     try {
       await excluirHistoricoConviventeApi(editandoId, registro.id);
-      setHistoricosConvivente(prev => prev.filter(item => item.id !== registro.id));
+      setHistoricosConvivente((prev) => prev.filter((item) => item.id !== registro.id));
+      setTotalHistoricoConvivente((prev) => Math.max(prev - 1, 0));
       if (historicoEditando?.id === registro.id) {
         cancelarEdicaoHistoricoConvivente();
       }
@@ -166,12 +345,26 @@ export function useProntuarioHistorico({ editandoId, podeCriarHistoricoConvivent
   };
 
   return {
+    aplicarFiltrosFluxo,
+    aplicarFiltrosHistorico,
+    aplicarFiltrosOcorrencias,
     cancelarEdicaoHistoricoConvivente,
     carregarHistoricoFluxo,
     carregarHistoricosConvivente,
+    carregarMaisHistoricoFluxo,
+    carregarMaisHistoricosConvivente,
+    carregarMaisOcorrenciasConvivente,
     carregarOcorrencias,
+    carregandoMaisFluxo,
+    carregandoMaisHistorico,
+    carregandoMaisOcorrencias,
     excluirHistoricoConvivente,
+    filtrosFluxo,
+    filtrosHistorico,
+    filtrosOcorrencias,
     fluxoCarregadoPara,
+    fluxoTemMais,
+    ocorrenciasTemMais,
     formHistoricoConvivente,
     handleSalvarHistoricoConvivente,
     historicoEditando,
@@ -185,7 +378,15 @@ export function useProntuarioHistorico({ editandoId, podeCriarHistoricoConvivent
     ocorrencias,
     ocorrenciasCarregadasPara,
     resetarHistoricoProntuario,
+    restaurarFiltrosFluxoPadrao,
+    restaurarFiltrosHistoricoPadrao,
+    restaurarFiltrosOcorrenciasPadrao,
     salvandoHistoricoConvivente,
+    setFiltrosFluxo,
+    setFiltrosHistorico,
+    setFiltrosOcorrencias,
     setFormHistoricoConvivente,
+    totalHistoricoConvivente,
+    totalOcorrenciasConvivente,
   };
 }

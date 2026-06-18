@@ -14,6 +14,9 @@ import { FiltroSelect, ResumoCard, Td, Th } from './ConvenioSisaUI';
 
 export function ImportacoesSisa({
   importacoes,
+  totalImportacoes,
+  importacoesTemMais,
+  onCarregarMaisImportacoes,
   importacaoSelecionada,
   podeExcluirImportacoes,
   excluindoImportacaoId,
@@ -21,19 +24,21 @@ export function ImportacoesSisa({
   onExcluirImportacao,
   filtros,
   onAlterarFiltros,
-  divergenciasFiltradas,
+  divergencias,
+  totalDivergencias,
+  divergenciasTemMais,
+  carregandoDivergencias,
+  resumoDivergencias,
+  onCarregarMaisDivergencias,
   onAtualizarStatus,
 }) {
-  const divergencias = importacaoSelecionada?.divergencias || [];
-  const alertasCriticos = divergencias.filter(item => item.tipo === 'SISA_MENOR' || item.prioridade === 'Crítica');
-  const pendencias = divergencias.filter(item => !['OK', 'SEM_BASE_ANTERIOR'].includes(item.tipo));
-  const lista = divergenciasFiltradas || [];
+  const lista = divergencias || [];
   const totalFiltrado = lista.length;
-
-  const diasPerdidosFiltrados = lista.reduce(
-    (acc, item) => acc + (Number(item.diferenca || 0) < 0 ? Math.abs(Number(item.diferenca || 0)) : 0),
-    0,
-  );
+  const resumo = resumoDivergencias || {
+    pendencias: 0,
+    alertas_criticos: 0,
+    dias_perdidos_filtrados: 0,
+  };
 
   const filtrosAtivos =
     (filtros?.busca || '').trim() !== '' ||
@@ -61,11 +66,11 @@ export function ImportacoesSisa({
       </section>
 
       <div className="grid grid-cols-2 gap-4 md:grid-cols-5">
-        <ResumoCard titulo="Importações" valor={importacoes.length} />
+        <ResumoCard titulo="Importações" valor={totalImportacoes ?? importacoes.length} />
         <ResumoCard titulo="Linhas lidas" valor={importacaoSelecionada?.total_linhas || 0} />
         <ResumoCard titulo="Vinculados" valor={importacaoSelecionada?.total_vinculados || 0} />
-        <ResumoCard titulo="Pendências" valor={pendencias.length} />
-        <ResumoCard titulo="Alertas críticos" valor={alertasCriticos.length} />
+        <ResumoCard titulo="Pendências" valor={resumo.pendencias ?? importacaoSelecionada?.total_divergencias ?? 0} />
+        <ResumoCard titulo="Alertas críticos" valor={resumo.alertas_criticos ?? importacaoSelecionada?.total_alertas_criticos ?? 0} />
       </div>
 
       <section className="rounded-2xl border border-gray-100 bg-white p-3 shadow-sm">
@@ -119,6 +124,18 @@ export function ImportacoesSisa({
             ))
           )}
         </div>
+
+        {importacoesTemMais && (
+          <div className="mt-3 flex justify-center">
+            <button
+              type="button"
+              onClick={onCarregarMaisImportacoes}
+              className="rounded-lg border border-gray-200 bg-white px-4 py-2 text-xs font-bold text-brand hover:bg-gray-50"
+            >
+              Carregar mais importações
+            </button>
+          </div>
+        )}
       </section>
 
       <section className="print:hidden rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
@@ -205,10 +222,17 @@ export function ImportacoesSisa({
         </div>
 
         <div className="mt-3 flex flex-wrap items-center gap-2 text-xs font-semibold text-gray-600">
-          <span className="rounded-full bg-gray-100 px-3 py-1">{totalFiltrado} de {divergencias.length} registro(s)</span>
-          {diasPerdidosFiltrados > 0 && (
+          <span className="rounded-full bg-gray-100 px-3 py-1">
+            {totalFiltrado} de {totalDivergencias ?? totalFiltrado} registro(s) carregados
+          </span>
+          {resumo.dias_perdidos_filtrados > 0 && (
             <span className="rounded-full bg-red-50 px-3 py-1 font-black text-red-700">
-              {diasPerdidosFiltrados} dia(s) sem reconhecimento do SISA
+              {resumo.dias_perdidos_filtrados} dia(s) sem reconhecimento do SISA
+            </span>
+          )}
+          {filtrosAtivos && (
+            <span className="rounded-full bg-blue-50 px-3 py-1 text-blue-700">
+              Filtros ativos
             </span>
           )}
         </div>
@@ -225,83 +249,102 @@ export function ImportacoesSisa({
             </p>
           </div>
 
-          {alertasCriticos.length > 0 && (
+          {(resumo.alertas_criticos ?? 0) > 0 && (
             <span className="rounded-full bg-red-50 px-3 py-1 text-xs font-black uppercase text-red-700">
               Possível perda de repasse
             </span>
           )}
         </div>
 
-        <div className="mt-4 overflow-x-auto">
-          <table className="w-full min-w-[900px]">
-            <thead className="bg-gray-100">
-              <tr>
-                <Th>Convivente</Th>
-                <Th>Nº SISA</Th>
-                <Th>Tipo</Th>
-                <Th>Período</Th>
-                <Th>SISA</Th>
-                <Th>CareCore+</Th>
-                <Th>Dif.</Th>
-                <Th>Tratativa</Th>
-              </tr>
-            </thead>
-            <tbody>
-              {lista.length === 0 ? (
+        {carregandoDivergencias && lista.length === 0 ? (
+          <div className="mt-6 flex justify-center py-10">
+            <p className="text-sm font-bold text-gray-500 animate-pulse">Carregando divergências...</p>
+          </div>
+        ) : (
+          <div className="mt-4 overflow-x-auto">
+            <table className="w-full min-w-[900px]">
+              <thead className="bg-gray-100">
                 <tr>
-                  <td colSpan="8" className="px-4 py-6 text-sm font-semibold text-gray-500">
-                    {!importacaoSelecionada
-                      ? 'Sem importação selecionada.'
-                      : divergencias.length === 0
-                        ? 'Nenhuma divergência registrada.'
-                        : 'Nenhum registro para os filtros aplicados.'}
-                  </td>
+                  <Th>Convivente</Th>
+                  <Th>Nº SISA</Th>
+                  <Th>Tipo</Th>
+                  <Th>Período</Th>
+                  <Th>SISA</Th>
+                  <Th>CareCore+</Th>
+                  <Th>Dif.</Th>
+                  <Th>Tratativa</Th>
                 </tr>
-              ) : (
-                lista.map((item) => (
-                  <>
-                    <tr key={item.id} className={`border-t border-gray-100 ${item.tipo === 'SISA_MENOR' ? 'bg-red-50/60' : ''}`}>
-                      <Td destaque>{item.nome_convivente}</Td>
-                      <Td>{item.numero_sisa}</Td>
-                      <Td>
-                        <span className={`rounded-full px-2 py-1 text-[10px] font-black uppercase ${
-                          item.tipo === 'SISA_MENOR'
-                            ? 'bg-red-100 text-red-700'
-                            : item.tipo === 'OK'
-                              ? 'bg-emerald-100 text-emerald-700'
-                              : 'bg-yellow-100 text-yellow-700'
-                        }`}>
-                          {formatarTipoDivergencia(item.tipo)}
-                        </span>
-                      </Td>
-                      <Td>{item.data_inicio ? `${formatarDataPt(item.data_inicio)} a ${formatarDataPt(item.data_fim)}` : formatarDataPt(item.data_fim)}</Td>
-                      <Td>{item.dias_sisa_delta ?? item.dias_sisa_atual}</Td>
-                      <Td>{item.dias_carecore}</Td>
-                      <Td>{item.diferenca ?? '-'}</Td>
-                      <Td>
-                        <select
-                          value={item.status || 'Pendente'}
-                          onChange={(e) => onAtualizarStatus(item.id, e.target.value)}
-                          className="rounded-lg border border-gray-300 px-2 py-1 text-xs font-semibold"
-                        >
-                          {STATUS_TRATATIVA_SISA.map(status => (
-                            <option key={status} value={status}>{status}</option>
-                          ))}
-                        </select>
-                      </Td>
-                    </tr>
-                    <tr key={`${item.id}-mensagem`} className={`${item.tipo === 'SISA_MENOR' ? 'bg-red-50/60' : 'bg-gray-50/70'}`}>
-                      <td colSpan="8" className="px-4 pb-4 pt-0 text-xs font-semibold leading-relaxed text-gray-600">
-                        <span className="font-black uppercase text-gray-500">Mensagem: </span>
-                        {item.mensagem || '-'}
-                      </td>
-                    </tr>
-                  </>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {lista.length === 0 ? (
+                  <tr>
+                    <td colSpan="8" className="px-4 py-6 text-sm font-semibold text-gray-500">
+                      {!importacaoSelecionada
+                        ? 'Sem importação selecionada.'
+                        : (totalDivergencias ?? 0) === 0
+                          ? 'Nenhuma divergência registrada.'
+                          : 'Nenhum registro para os filtros aplicados.'}
+                    </td>
+                  </tr>
+                ) : (
+                  lista.map((item) => (
+                    <>
+                      <tr key={item.id} className={`border-t border-gray-100 ${item.tipo === 'SISA_MENOR' ? 'bg-red-50/60' : ''}`}>
+                        <Td destaque>{item.nome_convivente}</Td>
+                        <Td>{item.numero_sisa}</Td>
+                        <Td>
+                          <span className={`rounded-full px-2 py-1 text-[10px] font-black uppercase ${
+                            item.tipo === 'SISA_MENOR'
+                              ? 'bg-red-100 text-red-700'
+                              : item.tipo === 'OK'
+                                ? 'bg-emerald-100 text-emerald-700'
+                                : 'bg-yellow-100 text-yellow-700'
+                          }`}>
+                            {formatarTipoDivergencia(item.tipo)}
+                          </span>
+                        </Td>
+                        <Td>{item.data_inicio ? `${formatarDataPt(item.data_inicio)} a ${formatarDataPt(item.data_fim)}` : formatarDataPt(item.data_fim)}</Td>
+                        <Td>{item.dias_sisa_delta ?? item.dias_sisa_atual}</Td>
+                        <Td>{item.dias_carecore}</Td>
+                        <Td>{item.diferenca ?? '-'}</Td>
+                        <Td>
+                          <select
+                            value={item.status || 'Pendente'}
+                            onChange={(e) => onAtualizarStatus(item.id, e.target.value)}
+                            className="rounded-lg border border-gray-300 px-2 py-1 text-xs font-semibold"
+                          >
+                            {STATUS_TRATATIVA_SISA.map(status => (
+                              <option key={status} value={status}>{status}</option>
+                            ))}
+                          </select>
+                        </Td>
+                      </tr>
+                      <tr key={`${item.id}-mensagem`} className={`${item.tipo === 'SISA_MENOR' ? 'bg-red-50/60' : 'bg-gray-50/70'}`}>
+                        <td colSpan="8" className="px-4 pb-4 pt-0 text-xs font-semibold leading-relaxed text-gray-600">
+                          <span className="font-black uppercase text-gray-500">Mensagem: </span>
+                          {item.mensagem || '-'}
+                        </td>
+                      </tr>
+                    </>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {divergenciasTemMais && (
+          <div className="mt-4 flex justify-center">
+            <button
+              type="button"
+              onClick={onCarregarMaisDivergencias}
+              disabled={carregandoDivergencias}
+              className="rounded-lg border border-gray-200 bg-white px-4 py-2 text-xs font-bold text-brand hover:bg-gray-50 disabled:opacity-50"
+            >
+              {carregandoDivergencias ? 'Carregando...' : 'Carregar mais divergências'}
+            </button>
+          </div>
+        )}
       </section>
     </div>
   );

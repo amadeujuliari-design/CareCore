@@ -114,6 +114,9 @@ export default function Conviventes() {
     carregarRegistrosPia,
     handleSalvarRegistroPia,
     resetarPia,
+    carregarMaisRegistrosPia,
+    piaTemMais,
+    totalRegistrosPia,
   } = useProntuarioPia({ editandoId, setErro, setSucesso });
 
   const {
@@ -138,6 +141,9 @@ export default function Conviventes() {
     canvasRef,
     capturarFoto,
     carregarDocumentos,
+    carregarMaisDocumentos,
+    documentosTemMais,
+    totalDocumentos,
     documentoConsultaBnmp,
     documentoSensivelSelecionado,
     documentos,
@@ -194,12 +200,26 @@ export default function Conviventes() {
     usuarioPodeImprimirSensiveisConvivente,
   });
   const {
+    aplicarFiltrosFluxo,
+    aplicarFiltrosHistorico,
+    aplicarFiltrosOcorrencias,
     cancelarEdicaoHistoricoConvivente,
     carregarHistoricoFluxo,
     carregarHistoricosConvivente,
+    carregarMaisHistoricoFluxo,
+    carregarMaisHistoricosConvivente,
+    carregarMaisOcorrenciasConvivente,
     carregarOcorrencias,
+    carregandoMaisFluxo,
+    carregandoMaisHistorico,
+    carregandoMaisOcorrencias,
     excluirHistoricoConvivente,
+    filtrosFluxo,
+    filtrosHistorico,
+    filtrosOcorrencias,
     fluxoCarregadoPara,
+    fluxoTemMais,
+    ocorrenciasTemMais,
     formHistoricoConvivente,
     handleSalvarHistoricoConvivente,
     historicoEditando,
@@ -213,8 +233,16 @@ export default function Conviventes() {
     ocorrencias,
     ocorrenciasCarregadasPara,
     resetarHistoricoProntuario,
+    restaurarFiltrosFluxoPadrao,
+    restaurarFiltrosHistoricoPadrao,
+    restaurarFiltrosOcorrenciasPadrao,
     salvandoHistoricoConvivente,
+    setFiltrosFluxo,
+    setFiltrosHistorico,
+    setFiltrosOcorrencias,
     setFormHistoricoConvivente,
+    totalHistoricoConvivente,
+    totalOcorrenciasConvivente,
   } = useProntuarioHistorico({
     editandoId,
     podeCriarHistoricoConvivente,
@@ -686,6 +714,21 @@ export default function Conviventes() {
                       podeEditarHistoricoConvivente={podeEditarHistoricoConvivente}
                       loadingHistoricosConvivente={loadingHistoricosConvivente}
                       historicosConvivente={historicosConvivente}
+                      totalHistoricoConvivente={totalHistoricoConvivente}
+                      filtrosHistorico={filtrosHistorico}
+                      setFiltrosHistorico={setFiltrosHistorico}
+                      aplicarFiltrosHistorico={aplicarFiltrosHistorico}
+                      restaurarFiltrosHistoricoPadrao={restaurarFiltrosHistoricoPadrao}
+                      carregarMaisHistoricosConvivente={carregarMaisHistoricosConvivente}
+                      carregandoMaisHistorico={carregandoMaisHistorico}
+                      filtrosOcorrencias={filtrosOcorrencias}
+                      setFiltrosOcorrencias={setFiltrosOcorrencias}
+                      aplicarFiltrosOcorrencias={aplicarFiltrosOcorrencias}
+                      restaurarFiltrosOcorrenciasPadrao={restaurarFiltrosOcorrenciasPadrao}
+                      carregarMaisOcorrenciasConvivente={carregarMaisOcorrenciasConvivente}
+                      carregandoMaisOcorrencias={carregandoMaisOcorrencias}
+                      totalOcorrenciasConvivente={totalOcorrenciasConvivente}
+                      ocorrenciasTemMais={ocorrenciasTemMais}
                       loadingOcorrencias={loadingOcorrencias}
                       ocorrencias={ocorrencias}
                       carregarHistoricosConvivente={carregarHistoricosConvivente}
@@ -701,6 +744,13 @@ export default function Conviventes() {
                       editandoId={editandoId}
                       loadingHistoricoFluxo={loadingHistoricoFluxo}
                       historicoFluxo={historicoFluxo}
+                      filtrosFluxo={filtrosFluxo}
+                      setFiltrosFluxo={setFiltrosFluxo}
+                      aplicarFiltrosFluxo={aplicarFiltrosFluxo}
+                      restaurarFiltrosFluxoPadrao={restaurarFiltrosFluxoPadrao}
+                      carregarMaisHistoricoFluxo={carregarMaisHistoricoFluxo}
+                      fluxoTemMais={fluxoTemMais}
+                      carregandoMaisFluxo={carregandoMaisFluxo}
                     />
                   )}
 
@@ -722,6 +772,9 @@ export default function Conviventes() {
                       prepararNovoPiaPrincipal={prepararNovoPiaPrincipal}
                       handleSalvarRegistroPia={handleSalvarRegistroPia}
                       carregarRegistrosPia={carregarRegistrosPia}
+                      carregarMaisRegistrosPia={carregarMaisRegistrosPia}
+                      piaTemMais={piaTemMais}
+                      totalRegistrosPia={totalRegistrosPia}
                     />
                   )}
 
@@ -774,6 +827,9 @@ export default function Conviventes() {
                       setArquivoSelecionado={setArquivoSelecionado}
                       handleUploadDocumento={handleUploadDocumento}
                       handleExcluirDocumento={handleExcluirDocumento}
+                      carregarMaisDocumentos={carregarMaisDocumentos}
+                      documentosTemMais={documentosTemMais}
+                      totalDocumentos={totalDocumentos}
                     />
                   )}
                 </div>

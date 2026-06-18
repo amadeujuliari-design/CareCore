@@ -15,6 +15,11 @@ import {
   obterLogoRelatorioDataUrl,
 } from './utils/relatorioIdentidadePrint';
 import { filtrarOrdenarConviventesPorBusca } from './utils/conviventeBuscaUtils';
+import {
+  criarFiltrosListagemOperacionalPadrao,
+  LISTAGEM_OPERACIONAL_DIAS_PADRAO,
+  REGISTROS_POR_PAGINA_PRONTUARIO,
+} from './utils/prontuarioHistoricoFluxoUtils';
 import LeitorCarteirinhaModal from './components/LeitorCarteirinhaModal';
 import { encontrarConviventePorCodigo } from './utils/conviventeIdentificacaoUtils';
 import { decodificarPayloadJwt } from './utils/jwtUtils';
@@ -54,6 +59,12 @@ export default function PertencesRecolhidos() {
   const podeBaixaAdministrativa = usuarioMaster || ['Gestor', 'Gestao', 'Gestão', 'Gerente', 'Técnico', 'Tecnico', 'Manutenção', 'Manutencao'].includes(perfilUsuario);
 
   const [registros, setRegistros] = useState([]);
+  const [totalRegistros, setTotalRegistros] = useState(0);
+  const [temMais, setTemMais] = useState(false);
+  const [carregandoMais, setCarregandoMais] = useState(false);
+  const [resumoFila, setResumoFila] = useState(null);
+  const [filtrosPeriodo, setFiltrosPeriodo] = useState({ dataInicio: '', dataFim: '', busca: '' });
+  const [buscaRascunho, setBuscaRascunho] = useState('');
   const [quartos, setQuartos] = useState([]);
   const [conviventes, setConviventes] = useState([]);
   const [statusFiltro, setStatusFiltro] = useState('abertos');
@@ -125,6 +136,14 @@ export default function PertencesRecolhidos() {
   })), [registros]);
 
   const resumo = useMemo(() => {
+    if (resumoFila) {
+      return {
+        abertos: resumoFila.abertos || 0,
+        itensDisponiveis: resumoFila.itens_disponiveis || 0,
+        itensRecolhidos: resumoFila.itens_recolhidos || 0,
+      };
+    }
+
     const abertos = registros.filter(item => Number(item.quantidade_disponivel || 0) > 0).length;
     const itensDisponiveis = registros.reduce(
       (total, item) => total + Number(item.quantidade_disponivel || 0),
@@ -136,33 +155,97 @@ export default function PertencesRecolhidos() {
     );
 
     return { abertos, itensDisponiveis, itensRecolhidos };
-  }, [registros]);
+  }, [registros, resumoFila]);
 
-  const carregarDados = useCallback(async () => {
+  const montarParamsLista = useCallback(() => {
+    const params = {
+      limite: REGISTROS_POR_PAGINA_PRONTUARIO,
+    };
+
+    if (statusFiltro !== 'abertos') {
+      if (filtrosPeriodo.dataInicio) params.data_inicio = filtrosPeriodo.dataInicio;
+      if (filtrosPeriodo.dataFim) params.data_fim = filtrosPeriodo.dataFim;
+    }
+
+    if (filtrosPeriodo.busca?.trim()) {
+      params.busca = filtrosPeriodo.busca.trim();
+    }
+
+    return params;
+  }, [statusFiltro, filtrosPeriodo]);
+
+  const carregarDados = useCallback(async ({ append = false, offset = 0 } = {}) => {
     try {
-      setLoading(true);
+      if (!append) {
+        setLoading(true);
+      } else {
+        setCarregandoMais(true);
+      }
       setErro('');
 
-      const [registrosDados, quartosResponse, conviventesResponse] = await Promise.all([
-        listarPertencesRecolhidos(statusFiltro),
-        api.get('/api/quartos'),
-        api.get('/api/conviventes'),
+      const params = { ...montarParamsLista(), offset };
+      const [lista, quartosResponse, conviventesResponse] = await Promise.all([
+        listarPertencesRecolhidos(statusFiltro, params),
+        append ? Promise.resolve(null) : api.get('/api/quartos'),
+        append ? Promise.resolve(null) : api.get('/api/conviventes/resumo'),
       ]);
 
-      setRegistros(registrosDados);
-      setQuartos(quartosResponse.data || []);
-      setConviventes(conviventesResponse.data || []);
+      const itens = lista.items || [];
+      setRegistros(prev => (append ? [...prev, ...itens] : itens));
+      setTotalRegistros(lista.total || 0);
+      setTemMais(Boolean(lista.has_more));
+      setResumoFila(lista.resumo_fila || null);
+
+      if (!append) {
+        setQuartos(quartosResponse?.data || []);
+        setConviventes(conviventesResponse?.data || []);
+      }
     } catch (error) {
       console.error(error);
       setErro(error.response?.data?.detail || 'Erro ao carregar pertences recolhidos.');
     } finally {
       setLoading(false);
+      setCarregandoMais(false);
     }
+  }, [statusFiltro, montarParamsLista]);
+
+  useEffect(() => {
+    if (statusFiltro === 'abertos') {
+      setFiltrosPeriodo({ dataInicio: '', dataFim: '', busca: '' });
+      setBuscaRascunho('');
+      return;
+    }
+
+    const padrao = criarFiltrosListagemOperacionalPadrao();
+    setFiltrosPeriodo(prev => ({
+      dataInicio: padrao.dataInicio,
+      dataFim: padrao.dataFim,
+      busca: prev.busca,
+    }));
   }, [statusFiltro]);
 
   useEffect(() => {
-    carregarDados();
+    carregarDados({ append: false, offset: 0 });
   }, [carregarDados]);
+
+  const aplicarFiltrosLista = () => {
+    setFiltrosPeriodo(prev => ({ ...prev, busca: buscaRascunho.trim() }));
+  };
+
+  const restaurarFiltrosLista = () => {
+    const padrao = criarFiltrosListagemOperacionalPadrao();
+    setBuscaRascunho('');
+    setFiltrosPeriodo({
+      dataInicio: statusFiltro === 'abertos' ? '' : padrao.dataInicio,
+      dataFim: statusFiltro === 'abertos' ? '' : padrao.dataFim,
+      busca: '',
+    });
+  };
+
+  const carregarMaisRegistros = () => {
+    if (!temMais || carregandoMais) return;
+    carregarDados({ append: true, offset: registros.length });
+  };
 
   useEffect(() => {
     buscarIdentidadeRelatorios().then(setIdentidadeRelatorio);
@@ -204,7 +287,8 @@ export default function PertencesRecolhidos() {
       titulo: 'Relatório de Pertences Recolhidos',
       filtros: {
         Status: statusFiltro,
-        'Total filtrado': registros.length,
+        'Total filtrado': totalRegistros,
+        'Exibidos na tela': registros.length,
       },
       colunas: [
         'Quarto',
@@ -225,7 +309,7 @@ export default function PertencesRecolhidos() {
 
     imprimirRelatorio({
       titulo: 'Relatório de Pertences Recolhidos',
-      subtitulo: `${registros.length} registro(s). Status: ${statusFiltro}.`,
+      subtitulo: `${totalRegistros} registro(s). Status: ${statusFiltro}.`,
       metricas: [
         { label: 'Recolhas abertas', valor: resumo.abertos },
         { label: 'Itens disponíveis', valor: resumo.itensDisponiveis },
@@ -411,7 +495,7 @@ export default function PertencesRecolhidos() {
               <ReportActionButton action="print" onClick={imprimir} disabled={registros.length === 0}>
                 Imprimir
               </ReportActionButton>
-              <PremiumButton type="button" variant="brand" onClick={carregarDados}>
+              <PremiumButton type="button" variant="brand" onClick={() => carregarDados({ append: false, offset: 0 })}>
                 Atualizar
               </PremiumButton>
             </>
@@ -522,6 +606,110 @@ export default function PertencesRecolhidos() {
                   <option value="Baixa administrativa">Baixa administrativa</option>
                 </select>
               </div>
+
+              {statusFiltro !== 'abertos' && (
+                <div className="border-b border-gray-100 p-4">
+                  <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+                    <div>
+                      <p className="text-xs font-black uppercase text-gray-500">Filtros da listagem</p>
+                      <p className="mt-1 text-xs font-semibold text-gray-500">
+                        Por padrão, últimos {LISTAGEM_OPERACIONAL_DIAS_PADRAO} dias. Amplie o período quando precisar.
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <input
+                        type="date"
+                        value={filtrosPeriodo.dataInicio}
+                        onChange={(event) => setFiltrosPeriodo(prev => ({ ...prev, dataInicio: event.target.value }))}
+                        className="rounded-xl border border-gray-200 px-3 py-2 text-sm font-semibold"
+                      />
+                      <input
+                        type="date"
+                        value={filtrosPeriodo.dataFim}
+                        onChange={(event) => setFiltrosPeriodo(prev => ({ ...prev, dataFim: event.target.value }))}
+                        className="rounded-xl border border-gray-200 px-3 py-2 text-sm font-semibold"
+                      />
+                      <input
+                        type="search"
+                        value={buscaRascunho}
+                        onChange={(event) => setBuscaRascunho(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter') {
+                            event.preventDefault();
+                            aplicarFiltrosLista();
+                          }
+                        }}
+                        placeholder="Buscar quarto ou observação..."
+                        className="min-w-[220px] rounded-xl border border-gray-200 px-3 py-2 text-sm font-semibold"
+                      />
+                      <button
+                        type="button"
+                        onClick={aplicarFiltrosLista}
+                        className="rounded-xl bg-brand px-4 py-2 text-sm font-black text-white"
+                      >
+                        Filtrar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={restaurarFiltrosLista}
+                        className="rounded-xl border border-gray-200 px-4 py-2 text-sm font-bold text-gray-600"
+                      >
+                        Padrão
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {statusFiltro === 'abertos' && (
+                <div className="border-b border-gray-100 p-4">
+                  <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+                    <p className="text-xs font-semibold text-gray-500">
+                      Fila operacional sem corte de data. Use os demais status para consultar histórico recente.
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      <input
+                        type="search"
+                        value={buscaRascunho}
+                        onChange={(event) => setBuscaRascunho(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter') {
+                            event.preventDefault();
+                            aplicarFiltrosLista();
+                          }
+                        }}
+                        placeholder="Buscar quarto ou observação..."
+                        className="min-w-[220px] rounded-xl border border-gray-200 px-3 py-2 text-sm font-semibold"
+                      />
+                      <button
+                        type="button"
+                        onClick={aplicarFiltrosLista}
+                        className="rounded-xl bg-brand px-4 py-2 text-sm font-black text-white"
+                      >
+                        Filtrar
+                      </button>
+                      {filtrosPeriodo.busca && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setBuscaRascunho('');
+                            setFiltrosPeriodo(prev => ({ ...prev, busca: '' }));
+                          }}
+                          className="rounded-xl border border-gray-200 px-4 py-2 text-sm font-bold text-gray-600"
+                        >
+                          Limpar busca
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {!loading && registros.length > 0 && (
+                <div className="border-b border-gray-100 px-4 py-2 text-xs font-semibold text-gray-500">
+                  Exibindo {registros.length} de {totalRegistros} registro(s).
+                </div>
+              )}
 
               {loading ? (
                 <div className="p-8 text-center text-sm font-semibold text-gray-500">
@@ -675,6 +863,19 @@ export default function PertencesRecolhidos() {
                     </tbody>
                     </table>
                   </div>
+
+                  {temMais && (
+                    <div className="flex justify-center border-t border-gray-100 p-4">
+                      <button
+                        type="button"
+                        onClick={carregarMaisRegistros}
+                        disabled={carregandoMais}
+                        className="rounded-2xl border border-blue-200 bg-white px-4 py-3 text-sm font-black text-blue-700 disabled:opacity-50"
+                      >
+                        {carregandoMais ? 'Carregando...' : 'Carregar mais registros'}
+                      </button>
+                    </div>
+                  )}
                 </>
               )}
             </div>

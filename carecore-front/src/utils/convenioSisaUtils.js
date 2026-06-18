@@ -68,6 +68,27 @@ export const FILTROS_DIVERGENCIA_PADRAO = {
   difMinima: 0,
 };
 
+export const IMPORTACOES_POR_PAGINA_SISA = 30;
+export const DIVERGENCIAS_POR_PAGINA_SISA = 30;
+export const EXPORT_DIVERGENCIAS_SISA_LIMITE = 5000;
+
+export function montarParamsDivergenciasSisaApi(filtros = {}, paginacao = {}) {
+  const f = filtros || FILTROS_DIVERGENCIA_PADRAO;
+
+  return {
+    limit: paginacao.limit ?? DIVERGENCIAS_POR_PAGINA_SISA,
+    offset: paginacao.offset ?? 0,
+    busca: (f.busca || '').trim() || undefined,
+    tipo: f.tipo !== 'todos' ? f.tipo : undefined,
+    prioridade: f.prioridade !== 'todas' ? f.prioridade : undefined,
+    status_tratativa: f.statusTratativa !== 'todos' ? f.statusTratativa : undefined,
+    status_convivente: f.statusConvivente !== 'todos' ? f.statusConvivente : undefined,
+    desligamento: f.desligamento !== 'todos' ? f.desligamento : undefined,
+    somente_diferenca: f.somenteDiferenca ? true : undefined,
+    dif_minima: Number(f.difMinima || 0) > 0 ? Number(f.difMinima) : undefined,
+  };
+}
+
 export function dataLocalISO(data = new Date()) {
   const pad = (numero) => String(numero).padStart(2, '0');
   return `${data.getFullYear()}-${pad(data.getMonth() + 1)}-${pad(data.getDate())}`;

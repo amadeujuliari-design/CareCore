@@ -8,6 +8,11 @@ import HistoricoLegadoRotina from './components/historico-legado/HistoricoLegado
 import { API_ROOT } from './config/apiBase';
 import { decodificarPayloadJwt } from './utils/jwtUtils';
 import { criarHeadersAutenticados } from './utils/requestIdUtils';
+import {
+  calcularDataInicioPadrao,
+  dataHojeIsoLocal,
+  HISTORICO_DIAS_PADRAO,
+} from './utils/prontuarioHistoricoFluxoUtils';
 
 const LIMITE_PADRAO = 10;
 
@@ -15,8 +20,8 @@ const filtrosIniciais = {
   busca: '',
   nome_identificado: '',
   ano: '',
-  data_inicio: '',
-  data_fim: '',
+  data_inicio: calcularDataInicioPadrao(HISTORICO_DIAS_PADRAO),
+  data_fim: dataHojeIsoLocal(),
   arquivo_origem: '',
   tipo_sugerido: '',
   status_revisao: '',

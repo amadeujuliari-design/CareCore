@@ -25,11 +25,16 @@ import {
   resumirPrioridadesOcorrencias,
 } from './utils/ocorrenciasUtils';
 import { filtrarOrdenarConviventesPorBusca } from './utils/conviventeBuscaUtils';
+import {
+  calcularDataInicioPadrao,
+  dataHojeIsoLocal,
+  LISTAGEM_OPERACIONAL_DIAS_PADRAO,
+} from './utils/prontuarioHistoricoFluxoUtils';
 import { decodificarPayloadJwt } from './utils/jwtUtils';
 import { criarHeadersAutenticados } from './utils/requestIdUtils';
 
 
-const TAMANHO_PAGINA_OCORRENCIAS = 50;
+const TAMANHO_PAGINA_OCORRENCIAS = 30;
 
 export default function CentralOcorrencias() {
   const navigate = useNavigate();
@@ -77,6 +82,13 @@ export default function CentralOcorrencias() {
 
   const [filtroPrioridade, setFiltroPrioridade] = useState(searchParams.get('prioridade') || 'Todas');
   const [filtroStatus, setFiltroStatus] = useState(searchParams.get('status') || 'Todos');
+  const [filtroDataInicio, setFiltroDataInicio] = useState(
+    () => calcularDataInicioPadrao(LISTAGEM_OPERACIONAL_DIAS_PADRAO),
+  );
+  const [filtroDataFim, setFiltroDataFim] = useState(() => dataHojeIsoLocal());
+  const [filtroBusca, setFiltroBusca] = useState('');
+  const [filtroBuscaRascunho, setFiltroBuscaRascunho] = useState('');
+  const [filtroTecnicoId, setFiltroTecnicoId] = useState(searchParams.get('tecnico_id') || '');
 
   const [selecionados, setSelecionados] = useState([]);
   const [baixandoLote, setBaixandoLote] = useState(false);
@@ -107,7 +119,22 @@ export default function CentralOcorrencias() {
     if (!token) return;
     setPaginaAtual(1);
     carregarOcorrencias(1);
-  }, [token, filtroPrioridade, filtroStatus]);
+  }, [token, filtroPrioridade, filtroStatus, filtroDataInicio, filtroDataFim, filtroBusca, filtroTecnicoId]);
+
+  const restaurarFiltrosPadrao = () => {
+    setFiltroPrioridade('Todas');
+    setFiltroStatus('Todos');
+    setFiltroDataInicio(calcularDataInicioPadrao(LISTAGEM_OPERACIONAL_DIAS_PADRAO));
+    setFiltroDataFim(dataHojeIsoLocal());
+    setFiltroBusca('');
+    setFiltroBuscaRascunho('');
+    setFiltroTecnicoId('');
+  };
+
+  const aplicarBuscaOcorrencias = () => {
+    setFiltroBusca(filtroBuscaRascunho.trim());
+    setPaginaAtual(1);
+  };
 
   useEffect(() => {
     let leitor = null;
@@ -203,6 +230,10 @@ export default function CentralOcorrencias() {
           offset: (paginaNormalizada - 1) * TAMANHO_PAGINA_OCORRENCIAS,
           prioridade: filtroPrioridade,
           status: filtroStatus,
+          data_inicio: filtroDataInicio || undefined,
+          data_fim: filtroDataFim || undefined,
+          busca: filtroBusca || undefined,
+          tecnico_id: filtroTecnicoId || undefined,
         },
       });
       const dados = response.data;
@@ -228,7 +259,7 @@ export default function CentralOcorrencias() {
     try {
       const config = { headers: criarHeadersAutenticados(token) };
       const [resConv, resEquipe] = await Promise.all([
-        axios.get(`${API_ROOT}/conviventes`, config),
+        axios.get(`${API_ROOT}/conviventes/resumo`, config),
         axios.get(`${API_ROOT}/equipe`, config)
       ]);
       setListaConviventes((resConv.data || []).filter((convivente) => convivente.status === 'Ativo'));
@@ -649,6 +680,10 @@ export default function CentralOcorrencias() {
             offset: (paginaAtual - 1) * TAMANHO_PAGINA_OCORRENCIAS,
             prioridade: filtroPrioridade,
             status: filtroStatus,
+            data_inicio: filtroDataInicio || undefined,
+            data_fim: filtroDataFim || undefined,
+            busca: filtroBusca || undefined,
+            tecnico_id: filtroTecnicoId || undefined,
           },
         });
         const itens = Array.isArray(response.data) ? response.data : (response.data.items || []);
@@ -706,35 +741,94 @@ export default function CentralOcorrencias() {
             ))}
           </div>
 
-          <div className="bg-white rounded-2xl border border-gray-100 p-4 mb-6 flex flex-col md:flex-row gap-3 md:items-center md:justify-between">
-            <div>
-              <h2 className="font-black text-gray-800 text-sm">Filtros de ocorrências</h2>
-              <p className="text-xs text-gray-500">Filtre por prioridade real e situação do chamado.</p>
+          <div className="bg-white rounded-2xl border border-gray-100 p-4 mb-6 flex flex-col gap-4">
+            <div className="flex flex-col md:flex-row gap-3 md:items-center md:justify-between">
+              <div>
+                <h2 className="font-black text-gray-800 text-sm">Filtros de ocorrências</h2>
+                <p className="text-xs text-gray-500">
+                  Por padrão, últimos {LISTAGEM_OPERACIONAL_DIAS_PADRAO} dias. Amplie o período quando precisar.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <select
+                  value={filtroPrioridade}
+                  onChange={(e) => setFiltroPrioridade(e.target.value)}
+                  className="px-3 py-2 border border-gray-200 rounded-xl text-sm font-bold bg-white"
+                >
+                  {PRIORIDADES_OCORRENCIA.map((p) => <option key={p} value={p}>{p}</option>)}
+                </select>
+                <select
+                  value={filtroStatus}
+                  onChange={(e) => setFiltroStatus(e.target.value)}
+                  className="px-3 py-2 border border-gray-200 rounded-xl text-sm font-bold bg-white"
+                >
+                  <option value="Todos">Todos os status</option>
+                  <option value="Pendente">Pendentes</option>
+                  <option value="Resolvido">Resolvidos</option>
+                </select>
+                <button
+                  type="button"
+                  onClick={restaurarFiltrosPadrao}
+                  className="px-3 py-2 rounded-xl bg-gray-100 text-gray-700 text-sm font-bold hover:bg-gray-200"
+                >
+                  Período padrão (7 dias)
+                </button>
+              </div>
             </div>
-            <div className="flex flex-wrap gap-2">
-              <select
-                value={filtroPrioridade}
-                onChange={(e) => setFiltroPrioridade(e.target.value)}
-                className="px-3 py-2 border border-gray-200 rounded-xl text-sm font-bold bg-white"
-              >
-                {PRIORIDADES_OCORRENCIA.map((p) => <option key={p} value={p}>{p}</option>)}
-              </select>
-              <select
-                value={filtroStatus}
-                onChange={(e) => setFiltroStatus(e.target.value)}
-                className="px-3 py-2 border border-gray-200 rounded-xl text-sm font-bold bg-white"
-              >
-                <option value="Todos">Todos os status</option>
-                <option value="Pendente">Pendentes</option>
-                <option value="Resolvido">Resolvidos</option>
-              </select>
-              <button
-                type="button"
-                onClick={() => { setFiltroPrioridade('Todas'); setFiltroStatus('Todos'); }}
-                className="px-3 py-2 rounded-xl bg-gray-100 text-gray-700 text-sm font-bold hover:bg-gray-200"
-              >
-                Limpar filtros
-              </button>
+
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
+              <div>
+                <label className="mb-1 block text-xs font-bold text-gray-600">Data inicial</label>
+                <input
+                  type="date"
+                  value={filtroDataInicio}
+                  onChange={(e) => setFiltroDataInicio(e.target.value)}
+                  className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm font-semibold"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-bold text-gray-600">Data final</label>
+                <input
+                  type="date"
+                  value={filtroDataFim}
+                  onChange={(e) => setFiltroDataFim(e.target.value)}
+                  className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm font-semibold"
+                />
+              </div>
+              <div className="xl:col-span-2">
+                <label className="mb-1 block text-xs font-bold text-gray-600">Buscar</label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={filtroBuscaRascunho}
+                    onChange={(e) => setFiltroBuscaRascunho(e.target.value)}
+                    placeholder="Convivente, tipo, motivo ou descrição..."
+                    className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm font-semibold"
+                  />
+                  <button
+                    type="button"
+                    onClick={aplicarBuscaOcorrencias}
+                    className="shrink-0 rounded-xl bg-brand px-3 py-2 text-xs font-black text-white"
+                  >
+                    Buscar
+                  </button>
+                </div>
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-bold text-gray-600">Técnico responsável</label>
+                <select
+                  value={filtroTecnicoId}
+                  onChange={(e) => setFiltroTecnicoId(e.target.value)}
+                  className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm font-bold bg-white"
+                >
+                  <option value="">Todos</option>
+                  {listaFuncionarios
+                    .filter((usuario) => usuario.perfil_acesso === 'Técnico')
+                    .map((tecnico) => (
+                      <option key={tecnico.id} value={tecnico.id}>{tecnico.nome}</option>
+                    ))}
+                </select>
+              </div>
             </div>
           </div>
 

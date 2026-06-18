@@ -1034,6 +1034,13 @@ class OcorrenciaResponse(OcorrenciaBase):
     model_config = ConfigDict(from_attributes=True)
 
 
+class OcorrenciaConviventeListaResponse(BaseModel):
+    registros: List[OcorrenciaResponse]
+    total: int
+    limite: int
+    deslocamento: int
+
+
 class OcorrenciaPrioridadeResumo(BaseModel):
     prioridade: str
     total: int
@@ -1228,6 +1235,55 @@ class HistoricoConviventeResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class HistoricoConviventeListaResponse(BaseModel):
+    registros: List[HistoricoConviventeResponse]
+    total: int
+    limite: int
+    deslocamento: int
+
+
+class RegistroPIAListaResponse(BaseModel):
+    registros: List[RegistroPIAResponse]
+    total: int
+    limite: int
+    deslocamento: int
+    has_more: bool
+
+
+class DocumentoListaResponse(BaseModel):
+    registros: List[DocumentoResponse]
+    total: int
+    limite: int
+    deslocamento: int
+    has_more: bool
+
+
+class RotinaHistoricoResumoPeriodo(BaseModel):
+    total: int = 0
+    entradas: int = 0
+    saidas: int = 0
+    editados: int = 0
+    cancelados: int = 0
+    retornos_rapidos: int = 0
+
+
+class RotinaHistoricoListaResponse(BaseModel):
+    registros: List[dict]
+    total: int
+    limite: int
+    deslocamento: int
+    has_more: bool
+    resumo_periodo: Optional[RotinaHistoricoResumoPeriodo] = None
+
+
+class RelatorioPiaListaResponse(BaseModel):
+    registros: List[dict]
+    total: int
+    limite: int
+    deslocamento: int
+    has_more: bool
+
+
 # =====================================================================
 # ROTINA DIÁRIA
 # =====================================================================
@@ -1406,6 +1462,36 @@ class PertenceRecolhidoResponse(BaseModel):
     baixas: List[PertenceRecolhidoBaixaResponse] = []
 
 
+class LavanderiaResumoFila(BaseModel):
+    pendentes: int
+    atrasados: int
+    pecas_em_aberto: int
+
+
+class LavanderiaListaResponse(BaseModel):
+    items: List[LavanderiaRegistroResponse]
+    total: int
+    limit: int
+    offset: int
+    has_more: bool
+    resumo_fila: Optional[LavanderiaResumoFila] = None
+
+
+class PertenceRecolhidoResumoFila(BaseModel):
+    abertos: int
+    itens_disponiveis: int
+    itens_recolhidos: int
+
+
+class PertenceRecolhidoListaResponse(BaseModel):
+    items: List[PertenceRecolhidoResponse]
+    total: int
+    limit: int
+    offset: int
+    has_more: bool
+    resumo_fila: Optional[PertenceRecolhidoResumoFila] = None
+
+
 # =====================================================================
 # HISTÓRICO LEGADO SIAT
 # =====================================================================
@@ -1542,6 +1628,14 @@ class FechamentoMensalResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class FechamentoMensalListaResponse(BaseModel):
+    items: List[FechamentoMensalResponse]
+    total: int
+    limit: int
+    offset: int
+    has_more: bool
+
+
 class SisaLancamentoCreate(BaseModel):
     ano: int
     mes: int
@@ -1611,8 +1705,31 @@ class SisaImportacaoResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class SisaImportacaoListaResponse(BaseModel):
+    items: List[SisaImportacaoResponse]
+    total: int
+    limit: int
+    offset: int
+    has_more: bool
+
+
 class SisaImportacaoDetalheResponse(SisaImportacaoResponse):
     divergencias: List[SisaDivergenciaResponse] = []
+
+
+class SisaDivergenciaResumoLista(BaseModel):
+    pendencias: int
+    alertas_criticos: int
+    dias_perdidos_filtrados: int
+
+
+class SisaDivergenciaListaResponse(BaseModel):
+    items: List[SisaDivergenciaResponse]
+    total: int
+    limit: int
+    offset: int
+    has_more: bool
+    resumo: SisaDivergenciaResumoLista
 
 
 class SisaPreviaConviventeLinha(BaseModel):
@@ -1741,6 +1858,14 @@ class AvisoDashboardResponse(BaseModel):
     valido_ate: Optional[datetime] = None
 
     pode_exibir_titulo: bool = True
+
+
+class AvisoMeListResponse(BaseModel):
+    items: List[AvisoDashboardResponse]
+    total: int
+    limit: int
+    offset: int
+    has_more: bool
 
 
 class AvisosResumoResponse(BaseModel):

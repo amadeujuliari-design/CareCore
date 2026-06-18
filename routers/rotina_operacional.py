@@ -1,13 +1,14 @@
-from datetime import timedelta
+from datetime import date, datetime, timedelta
+from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import cast, func, or_, String
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 from database import get_db
 from models import (
     ConviventeDB,
-    HistoricoConviventeDB,
     LavanderiaRegistroDB,
     LeitoDB,
     PertenceRecolhidoBaixaDB,
@@ -18,13 +19,17 @@ from models import (
 from routers.conviventes_helpers import agora_sao_paulo
 from schemas import (
     LavanderiaCancelamento,
+    LavanderiaListaResponse,
     LavanderiaRegistroCreate,
     LavanderiaRegistroResponse,
+    LavanderiaResumoFila,
     LavanderiaRetirada,
     PertenceRecolhidoBaixaAdministrativa,
     PertenceRecolhidoBaixaResponse,
     PertenceRecolhidoCreate,
+    PertenceRecolhidoListaResponse,
     PertenceRecolhidoResponse,
+    PertenceRecolhidoResumoFila,
     PertenceRecolhidoRetirada,
 )
 from security import (
@@ -38,6 +43,82 @@ from tenant_scope import obter_instituicao_escopo
 
 
 router = APIRouter(prefix="/api/rotina", tags=["Rotina Operacional"])
+
+REGISTROS_POR_PAGINA_PADRAO = 30
+
+
+def _parse_data_filtro_operacional(valor: Optional[str]) -> Optional[date]:
+    if not valor:
+        return None
+    try:
+        return date.fromisoformat(valor.strip())
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Data inválida. Use o formato AAAA-MM-DD.")
+
+
+def _aplicar_periodo_entrega_lavanderia(query, data_inicio: Optional[date], data_fim: Optional[date]):
+    if data_inicio:
+        inicio = datetime.combine(data_inicio, datetime.min.time())
+        query = query.where(LavanderiaRegistroDB.entregue_em >= inicio)
+    if data_fim:
+        fim = datetime.combine(data_fim, datetime.max.time())
+        query = query.where(LavanderiaRegistroDB.entregue_em <= fim)
+    return query
+
+
+def _aplicar_periodo_recolha_pertences(query, data_inicio: Optional[date], data_fim: Optional[date]):
+    if data_inicio:
+        inicio = datetime.combine(data_inicio, datetime.min.time())
+        query = query.where(PertenceRecolhidoDB.recolhido_em >= inicio)
+    if data_fim:
+        fim = datetime.combine(data_fim, datetime.max.time())
+        query = query.where(PertenceRecolhidoDB.recolhido_em <= fim)
+    return query
+
+
+async def _resumo_fila_lavanderia(db: AsyncSession, instituicao_id: str) -> dict:
+    registros = (
+        await db.execute(
+            select(LavanderiaRegistroDB).where(
+                LavanderiaRegistroDB.instituicao_id == instituicao_id,
+                LavanderiaRegistroDB.status == "Em lavanderia",
+            )
+        )
+    ).scalars().all()
+
+    agora = agora_sao_paulo()
+    atrasados = 0
+    pecas_em_aberto = 0
+
+    for registro in registros:
+        ja_retiradas = int(registro.quantidade_retirada or 0)
+        saldo = max(int(registro.quantidade_entregue or 0) - ja_retiradas, 0)
+        pecas_em_aberto += saldo
+        if registro.prazo_retirada_em and agora > registro.prazo_retirada_em:
+            atrasados += 1
+
+    return {
+        "pendentes": len(registros),
+        "atrasados": atrasados,
+        "pecas_em_aberto": pecas_em_aberto,
+    }
+
+
+async def _resumo_fila_pertences(db: AsyncSession, instituicao_id: str) -> dict:
+    registros = (
+        await db.execute(
+            select(PertenceRecolhidoDB).where(
+                PertenceRecolhidoDB.instituicao_id == instituicao_id,
+                PertenceRecolhidoDB.quantidade_disponivel > 0,
+            )
+        )
+    ).scalars().all()
+
+    return {
+        "abertos": len(registros),
+        "itens_disponiveis": sum(int(registro.quantidade_disponivel or 0) for registro in registros),
+        "itens_recolhidos": sum(int(registro.quantidade_recolhida or 0) for registro in registros),
+    }
 
 
 def _nome_convivente(convivente: ConviventeDB | None) -> str | None:
@@ -75,29 +156,6 @@ def _append_observacao_lavanderia(atual: str | None, nova: str | None) -> str | 
     if not atual:
         return nova
     return f"{atual}\n{agora_sao_paulo().strftime('%d/%m/%Y %H:%M')} - {nova}"
-
-
-def _registrar_historico_convivente(
-    db: AsyncSession,
-    *,
-    instituicao_id: str,
-    convivente_id: str,
-    usuario_id: str,
-    titulo: str,
-    descricao: str,
-):
-    db.add(
-        HistoricoConviventeDB(
-            instituicao_id=instituicao_id,
-            convivente_id=convivente_id,
-            usuario_id=usuario_id,
-            origem_informacao="Rotina operacional",
-            data_origem=agora_sao_paulo().date(),
-            titulo=titulo,
-            descricao=descricao,
-            criado_em=agora_sao_paulo(),
-        )
-    )
 
 
 async def _mapear_usuarios(db: AsyncSession, ids: set[str]) -> dict[str, str]:
@@ -267,18 +325,25 @@ def _pertence_response(
     )
 
 
-@router.get("/lavanderia", response_model=list[LavanderiaRegistroResponse])
+@router.get("/lavanderia", response_model=LavanderiaListaResponse)
 async def listar_lavanderia(
     status_filtro: str = "pendentes",
+    data_inicio: Optional[str] = None,
+    data_fim: Optional[str] = None,
+    busca: Optional[str] = None,
+    limite: int = Query(REGISTROS_POR_PAGINA_PADRAO, ge=1, le=100),
+    offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
     usuario_atual: dict = Depends(get_usuario_logado),
 ):
     instituicao_id = obter_instituicao_escopo(usuario_atual)
+    inicio = _parse_data_filtro_operacional(data_inicio)
+    fim = _parse_data_filtro_operacional(data_fim)
+
     query = (
         select(LavanderiaRegistroDB, ConviventeDB)
         .join(ConviventeDB, ConviventeDB.id == LavanderiaRegistroDB.convivente_id)
         .where(LavanderiaRegistroDB.instituicao_id == instituicao_id)
-        .order_by(LavanderiaRegistroDB.entregue_em.desc())
     )
 
     if status_filtro == "pendentes":
@@ -286,7 +351,35 @@ async def listar_lavanderia(
     elif status_filtro != "todos":
         query = query.where(LavanderiaRegistroDB.status == status_filtro)
 
-    linhas = (await db.execute(query)).all()
+    if inicio or fim:
+        query = _aplicar_periodo_entrega_lavanderia(query, inicio, fim)
+
+    if busca and busca.strip():
+        termo = f"%{busca.strip()}%"
+        query = query.where(
+            or_(
+                ConviventeDB.nome_completo.ilike(termo),
+                ConviventeDB.nome_social.ilike(termo),
+                cast(ConviventeDB.numero_institucional, String).ilike(termo),
+                LavanderiaRegistroDB.observacao_entrega.ilike(termo),
+                LavanderiaRegistroDB.observacao_retirada.ilike(termo),
+            )
+        )
+
+    total = (
+        await db.execute(
+            select(func.count()).select_from(query.order_by(None).subquery())
+        )
+    ).scalar_one()
+
+    linhas = (
+        await db.execute(
+            query.order_by(LavanderiaRegistroDB.entregue_em.desc())
+            .offset(offset)
+            .limit(limite)
+        )
+    ).all()
+
     ids_usuarios = {
         registro.usuario_entrega_id
         for registro, _ in linhas
@@ -297,10 +390,23 @@ async def listar_lavanderia(
     }
     usuarios = await _mapear_usuarios(db, ids_usuarios)
 
-    return [
+    items = [
         _lavanderia_response(registro, convivente, usuarios)
         for registro, convivente in linhas
     ]
+    total_int = int(total or 0)
+    resumo_fila = None
+    if status_filtro == "pendentes":
+        resumo_fila = await _resumo_fila_lavanderia(db, instituicao_id)
+
+    return {
+        "items": items,
+        "total": total_int,
+        "limit": limite,
+        "offset": offset,
+        "has_more": offset + len(items) < total_int,
+        "resumo_fila": resumo_fila,
+    }
 
 
 @router.post(
@@ -329,18 +435,6 @@ async def registrar_lavanderia(
     )
 
     db.add(registro)
-    _registrar_historico_convivente(
-        db,
-        instituicao_id=instituicao_id,
-        convivente_id=convivente.id,
-        usuario_id=usuario_atual["sub"],
-        titulo="Lavanderia - entrega de peças",
-        descricao=(
-            f"Entrega de {payload.quantidade_entregue} peça(s) na lavanderia. "
-            f"Prazo de retirada: {(agora + timedelta(hours=48)).strftime('%d/%m/%Y %H:%M')}."
-            + (f" Observação: {(payload.observacao_entrega or '').strip()}" if (payload.observacao_entrega or "").strip() else "")
-        ),
-    )
     await db.commit()
     await db.refresh(registro)
 
@@ -424,21 +518,6 @@ async def retirar_lavanderia(
     else:
         registro.status = "Em lavanderia"
 
-    saldo_restante = max(registro.quantidade_entregue - total_retirado, 0)
-    _registrar_historico_convivente(
-        db,
-        instituicao_id=instituicao_id,
-        convivente_id=convivente.id,
-        usuario_id=usuario_atual["sub"],
-        titulo="Lavanderia - retirada de peças",
-        descricao=(
-            f"Retirada de {quantidade_nova} peça(s) da lavanderia. "
-            f"Total retirado: {total_retirado}/{registro.quantidade_entregue}. "
-            f"Saldo pendente: {saldo_restante}. Status: {registro.status}."
-            + (f" Observação: {registro.observacao_retirada}" if registro.observacao_retirada else "")
-        ),
-    )
-
     await db.commit()
     await db.refresh(registro)
 
@@ -480,14 +559,6 @@ async def cancelar_lavanderia(
     registro.cancelado_por_id = usuario_atual["sub"]
     registro.cancelado_em = agora_sao_paulo()
     registro.motivo_cancelamento = motivo
-    _registrar_historico_convivente(
-        db,
-        instituicao_id=instituicao_id,
-        convivente_id=convivente.id,
-        usuario_id=usuario_atual["sub"],
-        titulo="Lavanderia - registro cancelado",
-        descricao=f"Registro de lavanderia cancelado. Motivo: {motivo}",
-    )
 
     await db.commit()
     await db.refresh(registro)
@@ -496,18 +567,25 @@ async def cancelar_lavanderia(
     return _lavanderia_response(registro, convivente, usuarios)
 
 
-@router.get("/pertences-recolhidos", response_model=list[PertenceRecolhidoResponse])
+@router.get("/pertences-recolhidos", response_model=PertenceRecolhidoListaResponse)
 async def listar_pertences_recolhidos(
     status_filtro: str = "abertos",
+    data_inicio: Optional[str] = None,
+    data_fim: Optional[str] = None,
+    busca: Optional[str] = None,
+    limite: int = Query(REGISTROS_POR_PAGINA_PADRAO, ge=1, le=100),
+    offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
     usuario_atual: dict = Depends(get_usuario_logado),
 ):
     instituicao_id = obter_instituicao_escopo(usuario_atual)
+    inicio = _parse_data_filtro_operacional(data_inicio)
+    fim = _parse_data_filtro_operacional(data_fim)
+
     query = (
         select(PertenceRecolhidoDB, QuartoDB)
         .join(QuartoDB, QuartoDB.id == PertenceRecolhidoDB.quarto_id)
         .where(PertenceRecolhidoDB.instituicao_id == instituicao_id)
-        .order_by(PertenceRecolhidoDB.recolhido_em.desc())
     )
 
     if status_filtro == "abertos":
@@ -515,7 +593,32 @@ async def listar_pertences_recolhidos(
     elif status_filtro != "todos":
         query = query.where(PertenceRecolhidoDB.status == status_filtro)
 
-    linhas = (await db.execute(query)).all()
+    if inicio or fim:
+        query = _aplicar_periodo_recolha_pertences(query, inicio, fim)
+
+    if busca and busca.strip():
+        termo = f"%{busca.strip()}%"
+        query = query.where(
+            or_(
+                QuartoDB.nome.ilike(termo),
+                PertenceRecolhidoDB.observacao.ilike(termo),
+            )
+        )
+
+    total = (
+        await db.execute(
+            select(func.count()).select_from(query.order_by(None).subquery())
+        )
+    ).scalar_one()
+
+    linhas = (
+        await db.execute(
+            query.order_by(PertenceRecolhidoDB.recolhido_em.desc())
+            .offset(offset)
+            .limit(limite)
+        )
+    ).all()
+
     registros = [registro for registro, _ in linhas]
     registro_ids = [registro.id for registro in registros]
 
@@ -554,7 +657,7 @@ async def listar_pertences_recolhidos(
     }
     usuarios = await _mapear_usuarios(db, usuario_ids)
 
-    return [
+    items = [
         _pertence_response(
             registro,
             quarto,
@@ -564,6 +667,19 @@ async def listar_pertences_recolhidos(
         )
         for registro, quarto in linhas
     ]
+    total_int = int(total or 0)
+    resumo_fila = None
+    if status_filtro == "abertos":
+        resumo_fila = await _resumo_fila_pertences(db, instituicao_id)
+
+    return {
+        "items": items,
+        "total": total_int,
+        "limit": limite,
+        "offset": offset,
+        "has_more": offset + len(items) < total_int,
+        "resumo_fila": resumo_fila,
+    }
 
 
 @router.post(
@@ -660,18 +776,6 @@ async def retirar_pertences_recolhidos(
         baixado_em=agora_sao_paulo(),
     )
     db.add(baixa)
-    _registrar_historico_convivente(
-        db,
-        instituicao_id=instituicao_id,
-        convivente_id=convivente.id,
-        usuario_id=usuario_atual["sub"],
-        titulo="Pertences recolhidos - retirada",
-        descricao=(
-            f"Retirada de {payload.quantidade} item(ns) recolhido(s) do quarto {quarto.nome}. "
-            f"Saldo restante da recolha: {registro.quantidade_disponivel} item(ns)."
-            + (f" Observação: {(payload.justificativa or '').strip()}" if (payload.justificativa or "").strip() else "")
-        ),
-    )
 
     await db.commit()
     await db.refresh(registro)

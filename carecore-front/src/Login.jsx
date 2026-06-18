@@ -12,6 +12,11 @@ import {
   passkeysDisponiveis,
 } from './utils/passkeysUtils';
 import { decodificarPayloadJwt } from './utils/jwtUtils';
+import {
+  manutencaoProgramadaAtiva,
+  MENSAGEM_LOGIN_BLOQUEADO_MANUTENCAO,
+  usuarioPodeAcessarDuranteManutencao,
+} from './config/manutencao';
 
 export default function Login() {
   const navigate = useNavigate();
@@ -140,6 +145,18 @@ export default function Login() {
         throw new Error('Resposta de autenticação inválida.');
       }
 
+      if (
+        manutencaoProgramadaAtiva()
+        && !usuarioPodeAcessarDuranteManutencao(data.usuario)
+      ) {
+        localStorage.removeItem('token');
+        localStorage.removeItem('usuario');
+        localStorage.removeItem('@CareCore:token');
+        localStorage.removeItem('@CareCore:user');
+        setErro(MENSAGEM_LOGIN_BLOQUEADO_MANUTENCAO);
+        return;
+      }
+
       // =====================================================
       // SALVA SESSÃO GLOBAL
       // =====================================================
@@ -195,6 +212,18 @@ export default function Login() {
 
       if (!data?.access_token || !data?.usuario) {
         throw new Error('Resposta de autenticação inválida.');
+      }
+
+      if (
+        manutencaoProgramadaAtiva()
+        && !usuarioPodeAcessarDuranteManutencao(data.usuario)
+      ) {
+        localStorage.removeItem('token');
+        localStorage.removeItem('usuario');
+        localStorage.removeItem('@CareCore:token');
+        localStorage.removeItem('@CareCore:user');
+        setErro(MENSAGEM_LOGIN_BLOQUEADO_MANUTENCAO);
+        return;
       }
 
       login({

@@ -70,7 +70,7 @@ useEffect(() => {
       const config = { headers: criarHeadersAutenticados(token) };
       const [resQuartos, resConviventes] = await Promise.all([
         axios.get(`${API_ROOT}/quartos`, config),
-        axios.get(`${API_ROOT}/conviventes`, config)
+        axios.get(`${API_ROOT}/conviventes/resumo`, config)
       ]);
       setQuartos(resQuartos.data);
       setConviventes(resConviventes.data || []);

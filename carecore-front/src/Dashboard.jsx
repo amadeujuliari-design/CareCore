@@ -418,7 +418,7 @@ export default function Dashboard() {
         axios.get(`${API_ROOT}/dashboard/resumo`, { headers }),
         listarMeusAvisos(token, { limite: 10 }).catch((error) => {
           console.warn("Avisos ainda não disponíveis no backend.", error);
-          return [];
+          return { items: [], total: 0, has_more: false };
         }),
         obterResumoAvisos(token).catch((error) => {
           console.warn("Resumo de avisos ainda não disponível no backend.", error);
@@ -428,7 +428,7 @@ export default function Dashboard() {
 
       setResumoDashboard(resDashboard.data || null);
       setSeries(resDashboard.data?.series || null);
-      setAvisos(Array.isArray(resAvisos) ? resAvisos : []);
+      setAvisos(Array.isArray(resAvisos?.items) ? resAvisos.items : (Array.isArray(resAvisos) ? resAvisos : []));
       setResumoAvisos(resResumoAvisos || { total_visiveis: 0, total_nao_lidos: 0, total_alertas_ativos: 0 });
     } catch (error) {
       console.error("Erro ao carregar dashboard", error);

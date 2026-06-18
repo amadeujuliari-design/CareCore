@@ -15,6 +15,10 @@ import {
   sessaoExpiradaPorInatividade,
 } from '../utils/sessionInatividadeUtils';
 import { decodificarPayloadJwt } from '../utils/jwtUtils';
+import {
+  manutencaoProgramadaAtiva,
+  usuarioPodeAcessarDuranteManutencao,
+} from '../config/manutencao';
 
 const AuthContext = createContext(null);
 
@@ -77,6 +81,15 @@ export function AuthProvider({ children }) {
         }
 
         const usuarioParseado = JSON.parse(usuarioRaw);
+
+        if (
+          manutencaoProgramadaAtiva()
+          && !usuarioPodeAcessarDuranteManutencao(usuarioParseado)
+        ) {
+          limparSessaoLocal();
+          setUsuario(null);
+          return;
+        }
 
         localStorage.setItem(STORAGE_TOKEN_KEY, token);
         localStorage.setItem(STORAGE_USER_KEY, JSON.stringify(usuarioParseado));

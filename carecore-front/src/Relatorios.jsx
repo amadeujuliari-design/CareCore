@@ -18,7 +18,9 @@ import { useRelatoriosIndicadores } from './hooks/useRelatoriosIndicadores';
 import { useRelatoriosTabela } from './hooks/useRelatoriosTabela';
 import {
   LIMITE_AMOSTRA_OCORRENCIAS_RELATORIOS,
+  LIMITE_EXPORT_ROTINA_RELATORIOS,
   carregarDadosRelatorios,
+  carregarHistoricoRotinaRelatorio,
 } from './services/relatoriosService';
 import { useRelatoriosIdentidade } from './hooks/useRelatoriosIdentidade';
 import {
@@ -120,7 +122,14 @@ export default function Relatorios() {
         setEquipe(dadosRelatorios.equipe);
         setRegistrosPia(dadosRelatorios.registrosPia);
         if (dadosRelatorios.rotina) setRotinaOperacional(dadosRelatorios.rotina);
-        if (dadosRelatorios.historicoRotina) setHistoricoRotina(dadosRelatorios.historicoRotina);
+        if (['rotina', 'auditoria'].includes(aba)) {
+          const historico = await carregarHistoricoRotinaRelatorio(filtros, {
+            limite: LIMITE_EXPORT_ROTINA_RELATORIOS,
+          });
+          setHistoricoRotina(historico.registros || []);
+        } else {
+          setHistoricoRotina([]);
+        }
         if (dadosRelatorios.resumoRotinaEvolucao) setResumoRotinaEvolucao(dadosRelatorios.resumoRotinaEvolucao);
         if (dadosRelatorios.avisos) setAvisos(Array.isArray(dadosRelatorios.avisos) ? dadosRelatorios.avisos : []);
         if (dadosRelatorios.resumoAvisos) setResumoAvisos(dadosRelatorios.resumoAvisos || null);

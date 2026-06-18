@@ -18,13 +18,17 @@ import {
   fecharMesSisa,
   importarPlanilhaConvenioSisa,
   listarImportacoesSisa,
+  listarDivergenciasImportacaoSisa,
   previsualizarImportacaoConvenioSisa,
   reabrirMesSisa,
 } from './services/convenioSisaService';
 import {
   FILTROS_ATENDIMENTO_SISA,
   FILTROS_DIVERGENCIA_PADRAO,
-  aplicarFiltrosDivergencias,
+  IMPORTACOES_POR_PAGINA_SISA,
+  DIVERGENCIAS_POR_PAGINA_SISA,
+  EXPORT_DIVERGENCIAS_SISA_LIMITE,
+  montarParamsDivergenciasSisaApi,
   calcularResumoDiarioSisa,
   calcularResumoMensalSisa,
   dataLocalISO,
@@ -87,7 +91,18 @@ export default function ConvenioSisa() {
   const [diario, setDiario] = useState({ resumo: {}, items: [] });
   const [mensal, setMensal] = useState({ resumo: {}, items: [] });
   const [importacoes, setImportacoes] = useState([]);
+  const [totalImportacoes, setTotalImportacoes] = useState(0);
+  const [importacoesTemMais, setImportacoesTemMais] = useState(false);
   const [importacaoSelecionada, setImportacaoSelecionada] = useState(null);
+  const [divergenciasSisa, setDivergenciasSisa] = useState([]);
+  const [totalDivergenciasSisa, setTotalDivergenciasSisa] = useState(0);
+  const [divergenciasSisaTemMais, setDivergenciasSisaTemMais] = useState(false);
+  const [resumoDivergenciasSisa, setResumoDivergenciasSisa] = useState({
+    pendencias: 0,
+    alertas_criticos: 0,
+    dias_perdidos_filtrados: 0,
+  });
+  const [carregandoDivergenciasSisa, setCarregandoDivergenciasSisa] = useState(false);
   const [arquivoSisa, setArquivoSisa] = useState(null);
   const [previaImportacaoSisa, setPreviaImportacaoSisa] = useState(null);
   const [selecoesPreviaSisa, setSelecoesPreviaSisa] = useState({
@@ -139,7 +154,7 @@ export default function ConvenioSisa() {
 
   const carregarFechamentoAtual = async (anoReferencia = ano, mesReferencia = mes) => {
     try {
-      const fechamentos = await buscarFechamentosSisa();
+      const { items: fechamentos } = await buscarFechamentosSisa();
 
       const encontrado = (fechamentos || []).find(item =>
         Number(item.ano) === Number(anoReferencia) &&
@@ -221,18 +236,60 @@ export default function ConvenioSisa() {
     await carregarMensal({ inicioPeriodo: dataInicio, fimPeriodo: dataFim });
   };
 
-  const carregarImportacoes = async () => {
+  const carregarImportacoes = async ({ append = false } = {}) => {
     try {
-      const importacoesSisa = await listarImportacoesSisa();
+      const resposta = await listarImportacoesSisa({
+        limit: IMPORTACOES_POR_PAGINA_SISA,
+        offset: append ? importacoes.length : 0,
+      });
+      const importacoesSisa = resposta.items || [];
 
-      setImportacoes(importacoesSisa);
+      setImportacoes((prev) => (append ? [...prev, ...importacoesSisa] : importacoesSisa));
+      setTotalImportacoes(resposta.total ?? importacoesSisa.length);
+      setImportacoesTemMais(Boolean(resposta.has_more));
 
-      if ((importacoesSisa || []).length > 0 && !importacaoSelecionada) {
+      if (!append && importacoesSisa.length > 0 && !importacaoSelecionada) {
         await carregarDetalheImportacao(importacoesSisa[0].id);
       }
     } catch (error) {
       console.error(error);
       avisarErro('Erro ao carregar importações SISA.');
+    }
+  };
+
+  const carregarDivergenciasImportacao = async (
+    importacaoId,
+    { append = false, filtros = filtrosDivergencia, limite = DIVERGENCIAS_POR_PAGINA_SISA } = {},
+  ) => {
+    if (!importacaoId) return;
+
+    try {
+      if (!append) {
+        setCarregandoDivergenciasSisa(true);
+      }
+
+      const resposta = await listarDivergenciasImportacaoSisa(
+        importacaoId,
+        montarParamsDivergenciasSisaApi(filtros, {
+          limit: limite,
+          offset: append ? divergenciasSisa.length : 0,
+        }),
+      );
+      const itens = resposta.items || [];
+
+      setDivergenciasSisa((prev) => (append ? [...prev, ...itens] : itens));
+      setTotalDivergenciasSisa(resposta.total ?? itens.length);
+      setDivergenciasSisaTemMais(Boolean(resposta.has_more));
+      setResumoDivergenciasSisa(resposta.resumo || {
+        pendencias: 0,
+        alertas_criticos: 0,
+        dias_perdidos_filtrados: 0,
+      });
+    } catch (error) {
+      console.error(error);
+      avisarErro('Erro ao carregar divergências da importação SISA.');
+    } finally {
+      setCarregandoDivergenciasSisa(false);
     }
   };
 
@@ -243,6 +300,7 @@ export default function ConvenioSisa() {
       const detalhe = await buscarDetalheImportacaoSisa(importacaoId);
 
       setImportacaoSelecionada(detalhe);
+      setDivergenciasSisa([]);
     } catch (error) {
       console.error(error);
       avisarErro('Erro ao carregar detalhes da importação SISA.');
@@ -355,8 +413,8 @@ export default function ConvenioSisa() {
       if (arquivoSisaInputRef.current) {
         arquivoSisaInputRef.current.value = '';
       }
-      setImportacaoSelecionada(importacao);
       await carregarImportacoes();
+      await carregarDetalheImportacao(importacao.id);
       avisarSucesso('Planilha SISA importada, conferida e ações selecionadas aplicadas com sucesso.');
     } catch (error) {
       console.error(error);
@@ -468,15 +526,9 @@ export default function ConvenioSisa() {
     try {
       const divergenciaAtualizada = await atualizarTratativaDivergenciaSisa(divergenciaId, novoStatus);
 
-      setImportacaoSelecionada(prev => {
-        if (!prev) return prev;
-        return {
-          ...prev,
-          divergencias: (prev.divergencias || []).map(item =>
-            item.id === divergenciaId ? { ...item, ...divergenciaAtualizada } : item
-          ),
-        };
-      });
+      setDivergenciasSisa((prev) => (prev || []).map((item) =>
+        item.id === divergenciaId ? { ...item, ...divergenciaAtualizada } : item
+      ));
     } catch (error) {
       console.error(error);
       avisarErro(
@@ -501,13 +553,19 @@ export default function ConvenioSisa() {
       setExcluindoImportacaoId(importacao.id);
       await excluirImportacaoSisa(importacao.id);
 
-      const importacoesAtualizadas = await listarImportacoesSisa();
+      const respostaImportacoes = await listarImportacoesSisa();
+      const importacoesAtualizadas = respostaImportacoes.items || [];
       setImportacoes(importacoesAtualizadas);
+      setTotalImportacoes(respostaImportacoes.total ?? importacoesAtualizadas.length);
+      setImportacoesTemMais(Boolean(respostaImportacoes.has_more));
 
-      if ((importacoesAtualizadas || []).length > 0) {
+      if (importacoesAtualizadas.length > 0) {
         await carregarDetalheImportacao(importacoesAtualizadas[0].id);
       } else {
         setImportacaoSelecionada(null);
+        setDivergenciasSisa([]);
+        setTotalDivergenciasSisa(0);
+        setDivergenciasSisaTemMais(false);
       }
 
       avisarSucesso('Importação SISA excluída com sucesso.');
@@ -527,6 +585,11 @@ export default function ConvenioSisa() {
     carregarImportacoes();
     buscarIdentidadeRelatorios().then(setIdentidadeRelatorio);
   }, []);
+
+  useEffect(() => {
+    if (!importacaoSelecionada?.id || aba !== 'importacoes') return;
+    carregarDivergenciasImportacao(importacaoSelecionada.id, { append: false });
+  }, [importacaoSelecionada?.id, filtrosDivergencia, aba]);
 
   useEffect(() => {
     setPaginaMensal(1);
@@ -596,11 +659,6 @@ export default function ConvenioSisa() {
     }
   };
 
-  const divergenciasImportacao = importacaoSelecionada?.divergencias || [];
-  const divergenciasImportacaoFiltradas = useMemo(
-    () => aplicarFiltrosDivergencias(divergenciasImportacao, filtrosDivergencia),
-    [divergenciasImportacao, filtrosDivergencia]
-  );
 
   const imprimir = async () => {
     const logoRelatorioDataUrl = await obterLogoRelatorioDataUrl(identidadeRelatorio);
@@ -630,7 +688,19 @@ export default function ConvenioSisa() {
 
     if (aba === 'importacoes') {
       const importacao = importacaoSelecionada;
-      const divergencias = divergenciasImportacaoFiltradas;
+      let divergencias = divergenciasSisa;
+
+      if (importacao?.id) {
+        const respostaCompleta = await listarDivergenciasImportacaoSisa(
+          importacao.id,
+          montarParamsDivergenciasSisaApi(filtrosDivergencia, {
+            limit: EXPORT_DIVERGENCIAS_SISA_LIMITE,
+            offset: 0,
+          }),
+        );
+        divergencias = respostaCompleta.items || [];
+      }
+
       const alertasCriticos = divergencias.filter(item => item.tipo === 'SISA_MENOR' || item.prioridade === 'Crítica');
       const pendencias = divergencias.filter(item => !['OK', 'SEM_BASE_ANTERIOR'].includes(item.tipo));
       const subtituloFiltros = descreverFiltrosDivergencias(filtrosDivergencia);
@@ -1911,6 +1981,9 @@ export default function ConvenioSisa() {
         ) : (
           <ImportacoesSisa
             importacoes={importacoes}
+            totalImportacoes={totalImportacoes}
+            importacoesTemMais={importacoesTemMais}
+            onCarregarMaisImportacoes={() => carregarImportacoes({ append: true })}
             importacaoSelecionada={importacaoSelecionada}
             podeExcluirImportacoes={podeExcluirImportacoesSisa}
             excluindoImportacaoId={excluindoImportacaoId}
@@ -1918,7 +1991,15 @@ export default function ConvenioSisa() {
             onExcluirImportacao={excluirImportacaoSelecionada}
             filtros={filtrosDivergencia}
             onAlterarFiltros={setFiltrosDivergencia}
-            divergenciasFiltradas={divergenciasImportacaoFiltradas}
+            divergencias={divergenciasSisa}
+            totalDivergencias={totalDivergenciasSisa}
+            divergenciasTemMais={divergenciasSisaTemMais}
+            carregandoDivergencias={carregandoDivergenciasSisa}
+            resumoDivergencias={resumoDivergenciasSisa}
+            onCarregarMaisDivergencias={() => {
+              if (!importacaoSelecionada?.id) return;
+              carregarDivergenciasImportacao(importacaoSelecionada.id, { append: true });
+            }}
             onAtualizarStatus={atualizarStatusDivergencia}
           />
         )}

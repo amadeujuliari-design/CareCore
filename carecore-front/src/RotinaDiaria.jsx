@@ -213,7 +213,7 @@ export default function RotinaDiaria() {
       };
 
       const [resConv, resRotina] = await Promise.all([
-        axios.get(`${API_ROOT}/conviventes`, config),
+        axios.get(`${API_ROOT}/conviventes/resumo`, config),
         axios.get(`${API_ROOT}/rotina/hoje`, config)
       ]);
 

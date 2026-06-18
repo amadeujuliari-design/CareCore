@@ -16,6 +16,8 @@ const MENSAGEM_NOVO_PIA = 'Este convivente já possui PIA registrado. Deseja abr
 
 export function useProntuarioPia({ editandoId, setErro, setSucesso }) {
   const [registrosPia, setRegistrosPia] = useState([]);
+  const [totalRegistrosPia, setTotalRegistrosPia] = useState(0);
+  const [piaTemMais, setPiaTemMais] = useState(false);
   const [loadingPia, setLoadingPia] = useState(false);
   const [salvandoPia, setSalvandoPia] = useState(false);
   const [piaCarregadoPara, setPiaCarregadoPara] = useState(null);
@@ -36,21 +38,35 @@ export function useProntuarioPia({ editandoId, setErro, setSucesso }) {
 
   const resetarPia = () => {
     setRegistrosPia([]);
+    setTotalRegistrosPia(0);
+    setPiaTemMais(false);
     setPiaCarregadoPara(null);
     setFormPia(montarFormPiaPrincipal());
   };
 
-  const carregarRegistrosPia = async (conviventeId) => {
+  const carregarRegistrosPia = async (conviventeId, { append = false } = {}) => {
     if (!conviventeId) return;
 
     try {
-      setLoadingPia(true);
-      const registrosRecebidos = await listarRegistrosPiaConvivente(conviventeId);
-      const principalMaisRecente = ordenarRegistrosPiaPrincipais(registrosRecebidos)[0];
+      if (!append) {
+        setLoadingPia(true);
+      }
+      const resposta = await listarRegistrosPiaConvivente(conviventeId, {
+        limite: 100,
+        deslocamento: append ? registrosPia.length : 0,
+      });
+      const registrosRecebidos = resposta.registros || [];
+      const principalMaisRecente = ordenarRegistrosPiaPrincipais(
+        append ? [...registrosPia, ...registrosRecebidos] : registrosRecebidos,
+      )[0];
 
-      setRegistrosPia(registrosRecebidos);
-      setFormPia(principalMaisRecente ? montarFormEvolucaoPia(principalMaisRecente) : montarFormPiaPrincipal());
-      setPiaCarregadoPara(conviventeId);
+      setRegistrosPia((prev) => (append ? [...prev, ...registrosRecebidos] : registrosRecebidos));
+      setTotalRegistrosPia(resposta.total || registrosRecebidos.length);
+      setPiaTemMais(Boolean(resposta.has_more));
+      if (!append) {
+        setFormPia(principalMaisRecente ? montarFormEvolucaoPia(principalMaisRecente) : montarFormPiaPrincipal());
+        setPiaCarregadoPara(conviventeId);
+      }
     } catch (error) {
       console.error('Erro ao carregar PIA', error);
       setErro('Não foi possível carregar os registros do PIA.');
@@ -147,7 +163,13 @@ export function useProntuarioPia({ editandoId, setErro, setSucesso }) {
     setFormPia,
     temasEvolucaoPia: TEMAS_EVOLUCAO_PIA,
     carregarRegistrosPia,
-    handleSalvarRegistroPia,
+    carregarMaisRegistrosPia: (conviventeId) => {
+      if (!piaTemMais) return;
+      return carregarRegistrosPia(conviventeId, { append: true });
+    },
+    piaTemMais,
+    totalRegistrosPia,
     resetarPia,
+    handleSalvarRegistroPia,
   };
 }

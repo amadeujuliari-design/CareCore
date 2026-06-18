@@ -1422,3 +1422,117 @@ body {
     animation: none;
   }
 }
+
+/* ---------------------------------------------------------------------
+   Página de manutenção programada
+   --------------------------------------------------------------------- */
+
+@keyframes manutencao-orb-float {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(0, -18px, 0) scale(1.04);
+  }
+}
+
+@keyframes manutencao-progress {
+  0% {
+    transform: translateX(-120%);
+  }
+  100% {
+    transform: translateX(320%);
+  }
+}
+
+@keyframes manutencao-logo-glow {
+  0%,
+  100% {
+    box-shadow:
+      0 24px 60px rgba(15, 23, 42, 0.45),
+      0 0 0 1px rgba(255, 255, 255, 0.12),
+      0 0 40px rgba(45, 212, 191, 0.18);
+  }
+  50% {
+    box-shadow:
+      0 28px 70px rgba(15, 23, 42, 0.5),
+      0 0 0 1px rgba(255, 255, 255, 0.18),
+      0 0 56px rgba(56, 189, 248, 0.28);
+  }
+}
+
+.manutencao-programada__orb {
+  position: absolute;
+  border-radius: 9999px;
+  filter: blur(70px);
+  opacity: 0.55;
+  animation: manutencao-orb-float 10s ease-in-out infinite;
+}
+
+.manutencao-programada__orb--blue {
+  top: -8rem;
+  left: -6rem;
+  width: 22rem;
+  height: 22rem;
+  background: rgba(37, 99, 235, 0.55);
+}
+
+.manutencao-programada__orb--teal {
+  top: 18%;
+  right: -5rem;
+  width: 18rem;
+  height: 18rem;
+  background: rgba(20, 184, 166, 0.45);
+  animation-delay: 1.5s;
+}
+
+.manutencao-programada__orb--gold {
+  bottom: -6rem;
+  left: 30%;
+  width: 20rem;
+  height: 20rem;
+  background: rgba(245, 158, 11, 0.35);
+  animation-delay: 3s;
+}
+
+.manutencao-programada__grid {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.04) 1px, transparent 1px);
+  background-size: 48px 48px;
+  mask-image: radial-gradient(circle at center, black 35%, transparent 85%);
+}
+
+.manutencao-programada__logo-wrap {
+  display: inline-flex;
+  border-radius: 1.75rem;
+  background: rgba(255, 255, 255, 0.96);
+  padding: 1.25rem 1.5rem;
+  animation: manutencao-logo-glow 4s ease-in-out infinite;
+}
+
+.manutencao-programada__progress-track {
+  height: 0.45rem;
+  overflow: hidden;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.manutencao-programada__progress-bar {
+  width: 38%;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #14b8a6, #38bdf8, #fbbf24);
+  animation: manutencao-progress 2.2s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .manutencao-programada__orb,
+  .manutencao-programada__logo-wrap,
+  .manutencao-programada__progress-bar {
+    animation: none;
+  }
+}

@@ -1,4 +1,9 @@
 {
+  "build": {
+    "env": {
+      "VITE_MAINTENANCE_MODE": "true"
+    }
+  },
   "rewrites": [
     { "source": "/(.*)", "destination": "/index.html" }
   ],

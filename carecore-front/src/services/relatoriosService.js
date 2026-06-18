@@ -1,6 +1,8 @@
 import api from './api';
+import { REGISTROS_POR_PAGINA_PRONTUARIO } from '../utils/prontuarioHistoricoFluxoUtils';
 
 export const LIMITE_AMOSTRA_OCORRENCIAS_RELATORIOS = 200;
+export const LIMITE_EXPORT_ROTINA_RELATORIOS = 5000;
 
 function obterStatusOcorrenciaApi(filtros) {
   if (filtros.somentePendencias || filtros.statusOcorrencia === 'Pendentes') {
@@ -27,13 +29,12 @@ export async function carregarDadosRelatorios({ aba, filtros, carregarIdentidade
     equipe,
     registrosPia,
     rotina,
-    historicoRotina,
     resumoRotinaEvolucao,
     avisos,
     resumoAvisos,
     identidade,
   ] = await Promise.all([
-    api.get('/api/conviventes'),
+    api.get('/api/conviventes/resumo'),
     api.get('/api/quartos'),
     api.get('/api/ocorrencias', {
       params: {
@@ -50,18 +51,14 @@ export async function carregarDadosRelatorios({ aba, filtros, carregarIdentidade
     }),
     api.get('/api/tecnicos'),
     api.get('/api/equipe'),
-    api.get('/api/relatorios/pia').catch(() => ({ data: [] })),
+    api.get('/api/relatorios/pia', {
+      params: {
+        limite: LIMITE_AMOSTRA_OCORRENCIAS_RELATORIOS,
+        deslocamento: 0,
+      },
+    }).catch(() => ({ data: { registros: [], total: 0, has_more: false } })),
     carregarHistoricoRotina
       ? api.get('/api/rotina/dashboard-operacional').catch(() => ({ data: null }))
-      : Promise.resolve(null),
-    carregarHistoricoRotina
-      ? api.get('/api/rotina/historico', {
-        params: {
-          data_inicio: filtros.dataInicio || undefined,
-          data_fim: filtros.dataFim || undefined,
-          limite: 5000,
-        },
-      }).catch(() => ({ data: [] }))
       : Promise.resolve(null),
     carregarResumoEvolucao
       ? api.get('/api/rotina/historico/resumo-evolucao', {
@@ -86,13 +83,42 @@ export async function carregarDadosRelatorios({ aba, filtros, carregarIdentidade
     ocorrencias: ocorrencias.data,
     tecnicos: tecnicos.data || [],
     equipe: equipe.data || [],
-    registrosPia: registrosPia.data || [],
+    registrosPia: registrosPia.data?.registros || registrosPia.data || [],
     rotina: rotina?.data || null,
-    historicoRotina: historicoRotina?.data || [],
+    historicoRotina: [],
     resumoRotinaEvolucao: resumoRotinaEvolucao?.data || [],
     avisos,
     resumoAvisos,
     identidade: identidade?.data || null,
+  };
+}
+
+export async function carregarHistoricoRotinaRelatorio(filtros, {
+  limite = LIMITE_EXPORT_ROTINA_RELATORIOS,
+  deslocamento = 0,
+} = {}) {
+  const response = await api.get('/api/rotina/historico', {
+    params: {
+      data_inicio: filtros.dataInicio || undefined,
+      data_fim: filtros.dataFim || undefined,
+      limite,
+      deslocamento,
+    },
+  });
+
+  const data = response.data;
+  if (Array.isArray(data)) {
+    return {
+      registros: data,
+      total: data.length,
+      has_more: false,
+    };
+  }
+
+  return {
+    registros: data?.registros || [],
+    total: data?.total || 0,
+    has_more: Boolean(data?.has_more),
   };
 }
 

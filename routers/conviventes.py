@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, File, UploadFile, Form, s
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from sqlalchemy import and_, case, cast, delete, func, or_, String
+from sqlalchemy import and_, case, cast, delete, exists, func, or_, String
 
 from audit_log import registrar_evento_auditoria
 from database import get_db
@@ -32,15 +32,40 @@ from models import (
     AusenciaJustificadaConfirmacaoDB,
     LavanderiaRegistroDB,
     PertenceRecolhidoBaixaDB,
+    PertenceRecolhidoDB,
 )
+
+ORIGEM_HISTORICO_ROTINA_OPERACIONAL = "Rotina operacional"
+REGISTROS_POR_PAGINA_PADRAO = 30
+LISTAGEM_OPERACIONAL_DIAS_PADRAO = 7
+EXPORT_ROTINA_HISTORICO_LIMITE_MAX = 5000
+
+
+def _normalizar_periodo_listagem_operacional(
+    data_inicio: str | None,
+    data_fim: str | None,
+    *,
+    aplicar_padrao: bool = True,
+):
+    if data_inicio or data_fim or not aplicar_padrao:
+        return data_inicio, data_fim
+
+    agora = agora_sao_paulo()
+    fim = agora.date()
+    inicio = fim - timedelta(days=LISTAGEM_OPERACIONAL_DIAS_PADRAO - 1)
+    return inicio.isoformat(), fim.isoformat()
 from schemas import (
     ConviventeCreate, ConviventeUpdate, ConviventeResponse,
     MotivoInativacaoCreate, MotivoInativacaoResponse,
     OrigemEncaminhamentoCreate, OrigemEncaminhamentoResponse,
-    DocumentoResponse, OcorrenciaResponse, InteracaoOcorrenciaCreate, OcorrenciaCreate,
+    DocumentoResponse, OcorrenciaResponse, OcorrenciaConviventeListaResponse, InteracaoOcorrenciaCreate, OcorrenciaCreate,
     OcorrenciaRelatorioPrioridades, OcorrenciaPrioridadeResumo,
-    RegistroPIACreate, RegistroPIAResponse,
-    HistoricoConviventeCreate, HistoricoConviventeResponse, HistoricoConviventeUpdate,
+    RegistroPIACreate, RegistroPIAResponse, RegistroPIAListaResponse,
+    DocumentoListaResponse,
+    HistoricoConviventeCreate, HistoricoConviventeListaResponse, HistoricoConviventeResponse, HistoricoConviventeUpdate,
+    RotinaHistoricoListaResponse, RotinaHistoricoResumoPeriodo,
+    RelatorioPiaListaResponse,
+    SisaImportacaoListaResponse, FechamentoMensalListaResponse,
     RegistroRotinaCreate,
     RegistroRotinaResponse,
     RegistroRotinaEdicao,
@@ -56,6 +81,7 @@ from schemas import (
     SisaPreviaImportacaoResponse,
     SisaAcoesImportacao,
     SisaDivergenciaResponse,
+    SisaDivergenciaListaResponse,
     SisaDivergenciaStatusUpdate,
     AusenciaJustificadaPendenteResponse,
     AusenciaJustificadaResposta,
@@ -725,9 +751,11 @@ async def obtener_convivente(convivente_id: str, db: AsyncSession = Depends(get_
     return convivente_para_response(convivente, usuario_atual)
 
 
-@router.get("/conviventes/{convivente_id}/pia", response_model=List[RegistroPIAResponse])
+@router.get("/conviventes/{convivente_id}/pia", response_model=RegistroPIAListaResponse)
 async def listar_registros_pia(
     convivente_id: str,
+    limite: int = Query(REGISTROS_POR_PAGINA_PADRAO, ge=1, le=200),
+    deslocamento: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
     usuario_atual: dict = Depends(get_usuario_logado)
 ):
@@ -743,25 +771,44 @@ async def listar_registros_pia(
     if not convivente:
         raise HTTPException(status_code=404, detail="Convivente não encontrado.")
 
+    instituicao_id = obter_instituicao_escopo(usuario_atual)
+    base = select(RegistroPIADB).where(
+        RegistroPIADB.convivente_id == convivente_id,
+        RegistroPIADB.instituicao_id == instituicao_id,
+    )
+    total = int((await db.execute(
+        select(func.count()).select_from(base.subquery())
+    )).scalar_one() or 0)
+
     registros = (
         await db.execute(
             select(RegistroPIADB, UsuarioDB.nome.label("usuario_nome"))
             .join(UsuarioDB, UsuarioDB.id == RegistroPIADB.usuario_id)
             .where(
                 RegistroPIADB.convivente_id == convivente_id,
-                RegistroPIADB.instituicao_id == obter_instituicao_escopo(usuario_atual),
+                RegistroPIADB.instituicao_id == instituicao_id,
             )
             .order_by(RegistroPIADB.data_registro.desc())
+            .offset(deslocamento)
+            .limit(limite)
         )
     ).all()
 
-    return [
+    items = [
         {
             **{coluna.name: getattr(registro, coluna.name) for coluna in registro.__table__.columns},
             "usuario_nome": usuario_nome,
         }
         for registro, usuario_nome in registros
     ]
+
+    return {
+        "registros": items,
+        "total": total,
+        "limite": limite,
+        "deslocamento": deslocamento,
+        "has_more": deslocamento + len(items) < total,
+    }
 
 
 @router.post("/conviventes/{convivente_id}/pia", response_model=RegistroPIAResponse)
@@ -937,9 +984,15 @@ async def listar_bloqueios_exclusao_convivente(
     return bloqueios
 
 
-@router.get("/conviventes/{convivente_id}/historicos", response_model=List[HistoricoConviventeResponse])
+@router.get("/conviventes/{convivente_id}/historicos", response_model=HistoricoConviventeListaResponse)
 async def listar_historicos_convivente(
     convivente_id: str,
+    data_inicio: str = None,
+    data_fim: str = None,
+    origem_informacao: str = None,
+    busca: str = None,
+    limite: int = 30,
+    deslocamento: int = 0,
     db: AsyncSession = Depends(get_db),
     usuario_atual: dict = Depends(get_usuario_logado)
 ):
@@ -955,28 +1008,78 @@ async def listar_historicos_convivente(
     if not convivente:
         raise HTTPException(status_code=404, detail="Convivente não encontrado.")
 
+    instituicao_id = obter_instituicao_escopo(usuario_atual)
+    condicoes = [
+        HistoricoConviventeDB.instituicao_id == instituicao_id,
+        HistoricoConviventeDB.convivente_id == convivente_id,
+        HistoricoConviventeDB.origem_informacao != ORIGEM_HISTORICO_ROTINA_OPERACIONAL,
+    ]
+
+    if data_inicio:
+        try:
+            inicio = date.fromisoformat(data_inicio)
+            condicoes.append(HistoricoConviventeDB.data_origem >= inicio)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Data inicial inválida.")
+
+    if data_fim:
+        try:
+            fim = date.fromisoformat(data_fim)
+            condicoes.append(HistoricoConviventeDB.data_origem <= fim)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Data final inválida.")
+
+    if origem_informacao:
+        termo_origem = f"%{origem_informacao.strip()}%"
+        condicoes.append(HistoricoConviventeDB.origem_informacao.ilike(termo_origem))
+
+    if busca:
+        termo = f"%{busca.strip()}%"
+        condicoes.append(
+            or_(
+                HistoricoConviventeDB.titulo.ilike(termo),
+                HistoricoConviventeDB.descricao.ilike(termo),
+                HistoricoConviventeDB.origem_informacao.ilike(termo),
+            )
+        )
+
+    limite_seguro = min(max(int(limite or 30), 1), 200)
+    deslocamento_seguro = max(int(deslocamento or 0), 0)
+
+    total = (
+        await db.execute(
+            select(func.count(HistoricoConviventeDB.id))
+            .select_from(HistoricoConviventeDB)
+            .where(*condicoes)
+        )
+    ).scalar_one()
+
     registros = (
         await db.execute(
             select(HistoricoConviventeDB, UsuarioDB.nome.label("usuario_nome"))
             .join(UsuarioDB, UsuarioDB.id == HistoricoConviventeDB.usuario_id)
-            .where(
-                HistoricoConviventeDB.instituicao_id == obter_instituicao_escopo(usuario_atual),
-                HistoricoConviventeDB.convivente_id == convivente_id,
-            )
+            .where(*condicoes)
             .order_by(
                 HistoricoConviventeDB.data_origem.desc(),
                 HistoricoConviventeDB.criado_em.desc(),
             )
+            .offset(deslocamento_seguro)
+            .limit(limite_seguro)
         )
     ).all()
 
-    return [
-        {
-            **{coluna.name: getattr(registro, coluna.name) for coluna in registro.__table__.columns},
-            "usuario_nome": usuario_nome,
-        }
-        for registro, usuario_nome in registros
-    ]
+    return {
+        "registros": [
+            {
+                **{coluna.name: getattr(registro, coluna.name) for coluna in registro.__table__.columns},
+                "usuario_nome": usuario_nome,
+            }
+            for registro, usuario_nome in registros
+        ],
+        "total": int(total or 0),
+        "limite": limite_seguro,
+        "deslocamento": deslocamento_seguro,
+    }
 
 
 @router.post("/conviventes/{convivente_id}/historicos", response_model=HistoricoConviventeResponse)
@@ -1084,6 +1187,12 @@ async def atualizar_historico_convivente(
     if not registro:
         raise HTTPException(status_code=404, detail="Histórico não encontrado.")
 
+    if registro.origem_informacao == ORIGEM_HISTORICO_ROTINA_OPERACIONAL:
+        raise HTTPException(
+            status_code=403,
+            detail="Registros de rotina operacional são somente leitura. Consulte a aba Fluxo Diário.",
+        )
+
     registro.origem_informacao = payload.origem_informacao.strip()
     registro.data_origem = payload.data_origem
     registro.titulo = (payload.titulo or "").strip() or None
@@ -1137,6 +1246,12 @@ async def excluir_historico_convivente(
 
     if not registro:
         raise HTTPException(status_code=404, detail="Histórico não encontrado.")
+
+    if registro.origem_informacao == ORIGEM_HISTORICO_ROTINA_OPERACIONAL:
+        raise HTTPException(
+            status_code=403,
+            detail="Registros de rotina operacional são somente leitura. Consulte a aba Fluxo Diário.",
+        )
 
     await db.delete(registro)
     await db.commit()
@@ -1316,7 +1431,7 @@ async def excluir_convivente_sem_vinculos(
 async def listar_todas_ocorrencias(
     db: AsyncSession = Depends(get_db),
     usuario_atual: dict = Depends(get_usuario_logado),
-    limit: Optional[int] = Query(None, ge=1, le=200),
+    limit: int = Query(REGISTROS_POR_PAGINA_PADRAO, ge=1, le=200),
     offset: int = Query(0, ge=0),
     prioridade: Optional[str] = Query(None),
     status_filtro: Optional[str] = Query(None, alias="status"),
@@ -1503,9 +1618,6 @@ async def listar_todas_ocorrencias(
             oc_dict["convivente_cpf"] = convivente.cpf
         resultado.append(oc_dict)
 
-    if limit is None:
-        return resultado
-
     return {
         "items": resultado,
         "total": total,
@@ -1525,32 +1637,49 @@ async def listar_todas_ocorrencias(
 @router.get("/ocorrencias/relatorio-prioridades", response_model=OcorrenciaRelatorioPrioridades)
 async def relatorio_prioridades_ocorrencias(db: AsyncSession = Depends(get_db), usuario_atual: dict = Depends(get_usuario_logado)):
     inst_id = obter_instituicao_escopo(usuario_atual)
+    base = select(OcorrenciaConviventeDB).where(OcorrenciaConviventeDB.instituicao_id == inst_id)
 
-    query = select(OcorrenciaConviventeDB).where(OcorrenciaConviventeDB.instituicao_id == inst_id)
-    ocorrencias = (await db.execute(query)).scalars().all()
+    def contar(expressao=None):
+        consulta = base
+        if expressao is not None:
+            consulta = consulta.where(expressao)
+        return select(func.count()).select_from(consulta.order_by(None).subquery())
+
+    total = int((await db.execute(contar())).scalar_one() or 0)
+    pendentes = int((await db.execute(
+        contar(OcorrenciaConviventeDB.status_resolucao != "Resolvido")
+    )).scalar_one() or 0)
+    resolvidas = int((await db.execute(
+        contar(OcorrenciaConviventeDB.status_resolucao == "Resolvido")
+    )).scalar_one() or 0)
 
     resumo = {}
     for prioridade in PRIORIDADES_OCORRENCIA:
-        resumo[prioridade] = {"prioridade": prioridade, "total": 0, "pendentes": 0, "resolvidas": 0}
-
-    total = 0
-    pendentes = 0
-    resolvidas = 0
-
-    for oc in ocorrencias:
-        prioridade = normalizar_prioridade_ocorrencia(getattr(oc, "prioridade", None))
-        status = getattr(oc, "status_resolucao", "Pendente")
-        resolvido = status == "Resolvido"
-
-        total += 1
-        resumo[prioridade]["total"] += 1
-
-        if resolvido:
-            resolvidas += 1
-            resumo[prioridade]["resolvidas"] += 1
-        else:
-            pendentes += 1
-            resumo[prioridade]["pendentes"] += 1
+        total_prioridade = int((await db.execute(
+            contar(OcorrenciaConviventeDB.prioridade == prioridade)
+        )).scalar_one() or 0)
+        pendentes_prioridade = int((await db.execute(
+            contar(
+                and_(
+                    OcorrenciaConviventeDB.prioridade == prioridade,
+                    OcorrenciaConviventeDB.status_resolucao != "Resolvido",
+                )
+            )
+        )).scalar_one() or 0)
+        resolvidas_prioridade = int((await db.execute(
+            contar(
+                and_(
+                    OcorrenciaConviventeDB.prioridade == prioridade,
+                    OcorrenciaConviventeDB.status_resolucao == "Resolvido",
+                )
+            )
+        )).scalar_one() or 0)
+        resumo[prioridade] = {
+            "prioridade": prioridade,
+            "total": total_prioridade,
+            "pendentes": pendentes_prioridade,
+            "resolvidas": resolvidas_prioridade,
+        }
 
     return {
         "total": total,
@@ -1561,7 +1690,12 @@ async def relatorio_prioridades_ocorrencias(db: AsyncSession = Depends(get_db), 
 
 
 @router.get("/ocorrencias/pendencias-tecnicas", response_model=List[OcorrenciaResponse])
-async def listar_pendencias_tecnicas_priorizadas(db: AsyncSession = Depends(get_db), usuario_atual: dict = Depends(get_usuario_logado)):
+async def listar_pendencias_tecnicas_priorizadas(
+    limit: int = Query(REGISTROS_POR_PAGINA_PADRAO, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
     inst_id = obter_instituicao_escopo(usuario_atual)
 
     query = select(OcorrenciaConviventeDB).where(
@@ -1571,7 +1705,7 @@ async def listar_pendencias_tecnicas_priorizadas(db: AsyncSession = Depends(get_
             OcorrenciaConviventeDB.requer_acao_tecnica == True,
             OcorrenciaConviventeDB.prioridade.in_(["Alta", "Crítica"])
         )
-    ).order_by(OcorrenciaConviventeDB.data_ocorrencia.desc())
+    ).order_by(OcorrenciaConviventeDB.data_ocorrencia.desc()).offset(offset).limit(limit)
 
     ocorrencias_db = (await db.execute(query)).scalars().all()
 
@@ -1755,29 +1889,156 @@ async def adicionar_interacao(ocorrencia_id: str, payload: InteracaoOcorrenciaCr
     
     return {"status": "sucesso"}
 
-@router.get("/conviventes/{convivente_id}/ocorrencias", response_model=List[OcorrenciaResponse])
-async def listar_ocorrencias_convivente(convivente_id: str, db: AsyncSession = Depends(get_db), usuario_atual: dict = Depends(get_usuario_logado)):
-    query = select(OcorrenciaConviventeDB).where(
-        OcorrenciaConviventeDB.convivente_id == convivente_id, 
-        OcorrenciaConviventeDB.instituicao_id == obter_instituicao_escopo(usuario_atual)
-    ).order_by(OcorrenciaConviventeDB.data_ocorrencia.desc())
-    
-    ocorrencias_db = (await db.execute(query)).scalars().all()
-    
+async def _serializar_ocorrencias_com_vinculos(
+    db: AsyncSession,
+    ocorrencias_db: list[OcorrenciaConviventeDB],
+) -> list[dict]:
+    if not ocorrencias_db:
+        return []
+
+    ocorrencia_ids = [oc.id for oc in ocorrencias_db]
+    convivente_ids = [oc.convivente_id for oc in ocorrencias_db if oc.convivente_id]
+    interacoes_por_ocorrencia = {oc_id: [] for oc_id in ocorrencia_ids}
+    observadores_por_ocorrencia = {oc_id: [] for oc_id in ocorrencia_ids}
+    conviventes_por_id = {}
+
+    if convivente_ids:
+        conviventes_db = (
+            await db.execute(
+                select(ConviventeDB).where(ConviventeDB.id.in_(convivente_ids))
+            )
+        ).scalars().all()
+        conviventes_por_id = {conv.id: conv for conv in conviventes_db}
+
+    interacoes_db = (
+        await db.execute(
+            select(InteracaoOcorrenciaDB)
+            .where(InteracaoOcorrenciaDB.ocorrencia_id.in_(ocorrencia_ids))
+            .order_by(InteracaoOcorrenciaDB.data_interacao.asc())
+        )
+    ).scalars().all()
+    for interacao in interacoes_db:
+        interacoes_por_ocorrencia.setdefault(interacao.ocorrencia_id, []).append(interacao)
+
+    observadores_db = (
+        await db.execute(
+            select(ObservadorOcorrenciaDB)
+            .where(ObservadorOcorrenciaDB.ocorrencia_id.in_(ocorrencia_ids))
+        )
+    ).scalars().all()
+    for observador in observadores_db:
+        observadores_por_ocorrencia.setdefault(observador.ocorrencia_id, []).append(observador)
+
     resultado = []
     for oc in ocorrencias_db:
-        q_int = select(InteracaoOcorrenciaDB).where(InteracaoOcorrenciaDB.ocorrencia_id == oc.id).order_by(InteracaoOcorrenciaDB.data_interacao.asc())
-        interacoes = (await db.execute(q_int)).scalars().all()
-        
-        q_obs = select(ObservadorOcorrenciaDB).where(ObservadorOcorrenciaDB.ocorrencia_id == oc.id)
-        observadores = (await db.execute(q_obs)).scalars().all()
-        
         oc_dict = {c.name: getattr(oc, c.name) for c in oc.__table__.columns}
-        oc_dict["interacoes"] = interacoes
-        oc_dict["observadores"] = observadores
+        oc_dict["prioridade"] = normalizar_prioridade_ocorrencia(oc_dict.get("prioridade"))
+        oc_dict["interacoes"] = [
+            {c.name: getattr(interacao, c.name) for c in interacao.__table__.columns}
+            for interacao in interacoes_por_ocorrencia.get(oc.id, [])
+        ]
+        oc_dict["observadores"] = [
+            {c.name: getattr(observador, c.name) for c in observador.__table__.columns}
+            for observador in observadores_por_ocorrencia.get(oc.id, [])
+        ]
+        convivente = conviventes_por_id.get(oc.convivente_id)
+        if convivente:
+            oc_dict["convivente_nome"] = convivente.nome_social or convivente.nome_completo
+            oc_dict["convivente_nome_completo"] = convivente.nome_completo
+            oc_dict["convivente_nome_social"] = convivente.nome_social
+            oc_dict["convivente_numero_institucional"] = convivente.numero_institucional
+            oc_dict["convivente_cpf"] = convivente.cpf
         resultado.append(oc_dict)
-        
+
     return resultado
+
+
+@router.get("/conviventes/{convivente_id}/ocorrencias", response_model=OcorrenciaConviventeListaResponse)
+async def listar_ocorrencias_convivente(
+    convivente_id: str,
+    data_inicio: Optional[date] = None,
+    data_fim: Optional[date] = None,
+    status_filtro: Optional[str] = Query(None, alias="status"),
+    prioridade: Optional[str] = None,
+    busca: Optional[str] = None,
+    limite: int = 30,
+    deslocamento: int = 0,
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    inst_id = obter_instituicao_escopo(usuario_atual)
+    convivente = (
+        await db.execute(
+            select(ConviventeDB).where(
+                ConviventeDB.id == convivente_id,
+                ConviventeDB.instituicao_id == inst_id,
+            )
+        )
+    ).scalar_one_or_none()
+
+    if not convivente:
+        raise HTTPException(status_code=404, detail="Convivente não encontrado.")
+
+    condicoes = [
+        OcorrenciaConviventeDB.convivente_id == convivente_id,
+        OcorrenciaConviventeDB.instituicao_id == inst_id,
+    ]
+
+    if data_inicio:
+        condicoes.append(OcorrenciaConviventeDB.data_ocorrencia >= data_inicio)
+
+    if data_fim:
+        condicoes.append(OcorrenciaConviventeDB.data_ocorrencia < data_fim + timedelta(days=1))
+
+    if prioridade and prioridade != "Todas":
+        condicoes.append(
+            OcorrenciaConviventeDB.prioridade == normalizar_prioridade_ocorrencia(prioridade)
+        )
+
+    if status_filtro and status_filtro != "Todos":
+        if status_filtro == "Resolvido":
+            condicoes.append(OcorrenciaConviventeDB.status_resolucao == "Resolvido")
+        elif status_filtro == "Pendente":
+            condicoes.append(OcorrenciaConviventeDB.status_resolucao != "Resolvido")
+
+    if busca and busca.strip():
+        termo = f"%{busca.strip()}%"
+        condicoes.append(
+            or_(
+                OcorrenciaConviventeDB.tipo_ocorrencia.ilike(termo),
+                OcorrenciaConviventeDB.motivo.ilike(termo),
+                OcorrenciaConviventeDB.descricao.ilike(termo),
+                OcorrenciaConviventeDB.parecer_tecnico.ilike(termo),
+            )
+        )
+
+    limite_seguro = min(max(int(limite or 30), 1), 100)
+    deslocamento_seguro = max(int(deslocamento or 0), 0)
+
+    total = (
+        await db.execute(
+            select(func.count(OcorrenciaConviventeDB.id)).where(*condicoes)
+        )
+    ).scalar_one()
+
+    ocorrencias_db = (
+        await db.execute(
+            select(OcorrenciaConviventeDB)
+            .where(*condicoes)
+            .order_by(OcorrenciaConviventeDB.data_ocorrencia.desc())
+            .offset(deslocamento_seguro)
+            .limit(limite_seguro)
+        )
+    ).scalars().all()
+
+    registros = await _serializar_ocorrencias_com_vinculos(db, ocorrencias_db)
+
+    return {
+        "registros": registros,
+        "total": int(total or 0),
+        "limite": limite_seguro,
+        "deslocamento": deslocamento_seguro,
+    }
 
 # =====================================================================
 # ROTAS DE UPLOAD DE DOCUMENTOS (GED)
@@ -1872,8 +2133,14 @@ async def upload_documento(
     )
     return novo_doc
 
-@router.get("/conviventes/{convivente_id}/documentos", response_model=List[DocumentoResponse])
-async def listar_documentos(convivente_id: str, db: AsyncSession = Depends(get_db), usuario_atual: dict = Depends(get_usuario_logado)):
+@router.get("/conviventes/{convivente_id}/documentos", response_model=DocumentoListaResponse)
+async def listar_documentos(
+    convivente_id: str,
+    limite: int = Query(REGISTROS_POR_PAGINA_PADRAO, ge=1, le=200),
+    deslocamento: int = Query(0, ge=0),
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
     filtros = [
         DocumentoConviventeDB.convivente_id == convivente_id,
         ConviventeDB.instituicao_id == obter_instituicao_escopo(usuario_atual),
@@ -1889,14 +2156,30 @@ async def listar_documentos(convivente_id: str, db: AsyncSession = Depends(get_d
             )
         )
 
-    return (
+    base = (
+        select(DocumentoConviventeDB)
+        .join(ConviventeDB, ConviventeDB.id == DocumentoConviventeDB.convivente_id)
+        .where(*filtros)
+    )
+    total = int((await db.execute(
+        select(func.count()).select_from(base.order_by(None).subquery())
+    )).scalar_one() or 0)
+
+    documentos = (
         await db.execute(
-            select(DocumentoConviventeDB)
-            .join(ConviventeDB, ConviventeDB.id == DocumentoConviventeDB.convivente_id)
-            .where(*filtros)
-            .order_by(DocumentoConviventeDB.data_upload.desc())
+            base.order_by(DocumentoConviventeDB.data_upload.desc())
+            .offset(deslocamento)
+            .limit(limite)
         )
     ).scalars().all()
+
+    return {
+        "registros": documentos,
+        "total": total,
+        "limite": limite,
+        "deslocamento": deslocamento,
+        "has_more": deslocamento + len(documentos) < total,
+    }
 
 @router.delete("/documentos/{documento_id}")
 async def excluir_documento(documento_id: str, db: AsyncSession = Depends(get_db), usuario_atual: dict = Depends(get_usuario_logado)):
@@ -2754,6 +3037,12 @@ def _aplicar_filtros_historico_rotina(
             "Toalha": ["Retirada de Toalha", "Entrega de Toalha"],
             "Documentos": ["Bipar documentos guardados", "Bipar documentos retirados"],
             "Bagageiro": ["Movimentação de Bagageiro"],
+            "Lavanderia": [
+                "Lavanderia - Entrega",
+                "Lavanderia - Retirada",
+                "Lavanderia - Cancelamento",
+            ],
+            "Pertences recolhidos": ["Pertences recolhidos - Retirada"],
         }
         if tipo_registro in grupos_tipo_registro:
             query = query.where(
@@ -2853,6 +3142,377 @@ def _linha_historico_para_dict(
     }
 
 
+def _evento_fluxo_operacional_dict(
+    *,
+    evento_id: str,
+    instituicao_id: str,
+    convivente_id: str,
+    convivente_nome: str | None,
+    numero_institucional,
+    tipo_registro: str,
+    observacao: str | None,
+    data_registro,
+    usuario_id: str,
+    usuario_nome: str | None,
+    usuario_perfil: str | None,
+    cancelado: bool = False,
+    motivo_cancelamento: str | None = None,
+) -> dict:
+    return {
+        "id": evento_id,
+        "instituicao_id": instituicao_id,
+        "convivente_id": convivente_id,
+        "convivente_nome": convivente_nome,
+        "convivente_nome_completo": convivente_nome,
+        "numero_institucional": numero_institucional,
+        "tipo_registro": tipo_registro,
+        "observacao": observacao,
+        "data_registro": data_registro,
+        "usuario_id": usuario_id,
+        "usuario_nome": usuario_nome,
+        "usuario_perfil": usuario_perfil,
+        "retorno_rapido": False,
+        "justificativa_retorno_rapido": None,
+        "foi_editado": False,
+        "editado_por_id": None,
+        "editado_em": None,
+        "motivo_edicao": None,
+        "tipo_registro_original": None,
+        "data_registro_original": None,
+        "cancelado": cancelado,
+        "cancelado_por_id": None,
+        "cancelado_em": None,
+        "motivo_cancelamento": motivo_cancelamento,
+        "origem_operacional": True,
+    }
+
+
+async def _mapear_usuarios_fluxo_operacional(
+    db: AsyncSession,
+    usuario_ids: set[str],
+) -> dict[str, tuple[str | None, str | None]]:
+    ids_limpos = {item for item in usuario_ids if item}
+    if not ids_limpos:
+        return {}
+
+    linhas = (
+        await db.execute(
+            select(UsuarioDB.id, UsuarioDB.nome, UsuarioDB.perfil_acesso).where(
+                UsuarioDB.id.in_(ids_limpos)
+            )
+        )
+    ).all()
+
+    return {
+        usuario_id: (nome, perfil)
+        for usuario_id, nome, perfil in linhas
+    }
+
+
+def _data_evento_no_periodo(data_registro, inicio_dt, fim_dt) -> bool:
+    if not data_registro:
+        return False
+    if inicio_dt and data_registro < inicio_dt:
+        return False
+    if fim_dt and data_registro > fim_dt:
+        return False
+    return True
+
+
+async def _coletar_eventos_fluxo_operacional_convivente(
+    db: AsyncSession,
+    instituicao_id: str,
+    convivente_id: str,
+    convivente_nome: str | None,
+    numero_institucional,
+    data_inicio: str = None,
+    data_fim: str = None,
+) -> list[dict]:
+    eventos: list[dict] = []
+    usuario_ids: set[str] = set()
+
+    inicio_dt = None
+    fim_dt = None
+    if data_inicio:
+        try:
+            inicio_dt = datetime.fromisoformat(data_inicio)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Data inicial inválida.")
+    if data_fim:
+        try:
+            fim_dt = datetime.fromisoformat(data_fim)
+            if len(data_fim) == 10:
+                fim_dt = fim_dt.replace(hour=23, minute=59, second=59, microsecond=999999)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Data final inválida.")
+
+    condicoes_lavanderia = [
+        LavanderiaRegistroDB.instituicao_id == instituicao_id,
+        LavanderiaRegistroDB.convivente_id == convivente_id,
+    ]
+    if inicio_dt or fim_dt:
+        janelas_lavanderia = []
+        if inicio_dt and fim_dt:
+            janelas_lavanderia.extend([
+                and_(LavanderiaRegistroDB.entregue_em >= inicio_dt, LavanderiaRegistroDB.entregue_em <= fim_dt),
+                and_(LavanderiaRegistroDB.retirado_em.isnot(None), LavanderiaRegistroDB.retirado_em >= inicio_dt, LavanderiaRegistroDB.retirado_em <= fim_dt),
+                and_(LavanderiaRegistroDB.cancelado_em.isnot(None), LavanderiaRegistroDB.cancelado_em >= inicio_dt, LavanderiaRegistroDB.cancelado_em <= fim_dt),
+            ])
+        elif inicio_dt:
+            janelas_lavanderia.extend([
+                LavanderiaRegistroDB.entregue_em >= inicio_dt,
+                and_(LavanderiaRegistroDB.retirado_em.isnot(None), LavanderiaRegistroDB.retirado_em >= inicio_dt),
+                and_(LavanderiaRegistroDB.cancelado_em.isnot(None), LavanderiaRegistroDB.cancelado_em >= inicio_dt),
+            ])
+        else:
+            janelas_lavanderia.extend([
+                LavanderiaRegistroDB.entregue_em <= fim_dt,
+                and_(LavanderiaRegistroDB.retirado_em.isnot(None), LavanderiaRegistroDB.retirado_em <= fim_dt),
+                and_(LavanderiaRegistroDB.cancelado_em.isnot(None), LavanderiaRegistroDB.cancelado_em <= fim_dt),
+            ])
+        condicoes_lavanderia.append(or_(*janelas_lavanderia))
+
+    lavanderias = (
+        await db.execute(
+            select(LavanderiaRegistroDB).where(*condicoes_lavanderia)
+        )
+    ).scalars().all()
+
+    for registro in lavanderias:
+        usuario_ids.add(registro.usuario_entrega_id)
+        if registro.usuario_retirada_id:
+            usuario_ids.add(registro.usuario_retirada_id)
+        if registro.cancelado_por_id:
+            usuario_ids.add(registro.cancelado_por_id)
+
+    condicoes_baixas = [
+        PertenceRecolhidoBaixaDB.instituicao_id == instituicao_id,
+        PertenceRecolhidoBaixaDB.convivente_id == convivente_id,
+    ]
+    if inicio_dt:
+        condicoes_baixas.append(PertenceRecolhidoBaixaDB.baixado_em >= inicio_dt)
+    if fim_dt:
+        condicoes_baixas.append(PertenceRecolhidoBaixaDB.baixado_em <= fim_dt)
+
+    baixas_pertences = (
+        await db.execute(
+            select(PertenceRecolhidoBaixaDB, QuartoDB.nome.label("quarto_nome"))
+            .join(
+                PertenceRecolhidoDB,
+                PertenceRecolhidoDB.id == PertenceRecolhidoBaixaDB.pertence_recolhido_id,
+            )
+            .join(QuartoDB, QuartoDB.id == PertenceRecolhidoDB.quarto_id)
+            .where(*condicoes_baixas)
+        )
+    ).all()
+
+    for baixa, _quarto_nome in baixas_pertences:
+        usuario_ids.add(baixa.usuario_id)
+
+    usuarios = await _mapear_usuarios_fluxo_operacional(db, usuario_ids)
+
+    for registro in lavanderias:
+        nome_entrega, perfil_entrega = usuarios.get(
+            registro.usuario_entrega_id, (None, None)
+        )
+        prazo = registro.prazo_retirada_em.strftime("%d/%m/%Y %H:%M") if registro.prazo_retirada_em else "—"
+        obs_entrega = (
+            f"Entrega de {registro.quantidade_entregue} peça(s). Prazo de retirada: {prazo}."
+        )
+        if registro.observacao_entrega:
+            obs_entrega += f" Observação: {registro.observacao_entrega}"
+
+        if _data_evento_no_periodo(registro.entregue_em, inicio_dt, fim_dt):
+            eventos.append(
+                _evento_fluxo_operacional_dict(
+                    evento_id=f"lavanderia-entrega-{registro.id}",
+                    instituicao_id=instituicao_id,
+                    convivente_id=convivente_id,
+                    convivente_nome=convivente_nome,
+                    numero_institucional=numero_institucional,
+                    tipo_registro="Lavanderia - Entrega",
+                    observacao=obs_entrega,
+                    data_registro=registro.entregue_em,
+                    usuario_id=registro.usuario_entrega_id,
+                    usuario_nome=nome_entrega,
+                    usuario_perfil=perfil_entrega,
+                )
+            )
+
+        if registro.quantidade_retirada and registro.retirado_em:
+            nome_retirada, perfil_retirada = usuarios.get(
+                registro.usuario_retirada_id or registro.usuario_entrega_id,
+                (nome_entrega, perfil_entrega),
+            )
+            saldo = max(
+                int(registro.quantidade_entregue or 0) - int(registro.quantidade_retirada or 0),
+                0,
+            )
+            obs_retirada = (
+                f"Retirada acumulada de {registro.quantidade_retirada} peça(s) "
+                f"de {registro.quantidade_entregue}. Saldo pendente: {saldo}. "
+                f"Status: {registro.status}."
+            )
+            if registro.observacao_retirada:
+                obs_retirada += f"\n{registro.observacao_retirada}"
+
+            if _data_evento_no_periodo(registro.retirado_em, inicio_dt, fim_dt):
+                eventos.append(
+                    _evento_fluxo_operacional_dict(
+                        evento_id=f"lavanderia-retirada-{registro.id}",
+                    instituicao_id=instituicao_id,
+                    convivente_id=convivente_id,
+                    convivente_nome=convivente_nome,
+                    numero_institucional=numero_institucional,
+                    tipo_registro="Lavanderia - Retirada",
+                    observacao=obs_retirada,
+                    data_registro=registro.retirado_em,
+                    usuario_id=registro.usuario_retirada_id or registro.usuario_entrega_id,
+                    usuario_nome=nome_retirada,
+                    usuario_perfil=perfil_retirada,
+                    )
+                )
+
+        if registro.cancelado_em and _data_evento_no_periodo(registro.cancelado_em, inicio_dt, fim_dt):
+            nome_cancelamento, perfil_cancelamento = usuarios.get(
+                registro.cancelado_por_id or registro.usuario_entrega_id,
+                (nome_entrega, perfil_entrega),
+            )
+            eventos.append(
+                _evento_fluxo_operacional_dict(
+                    evento_id=f"lavanderia-cancelamento-{registro.id}",
+                    instituicao_id=instituicao_id,
+                    convivente_id=convivente_id,
+                    convivente_nome=convivente_nome,
+                    numero_institucional=numero_institucional,
+                    tipo_registro="Lavanderia - Cancelamento",
+                    observacao=f"Registro de lavanderia cancelado. Motivo: {registro.motivo_cancelamento or '—'}",
+                    data_registro=registro.cancelado_em,
+                    usuario_id=registro.cancelado_por_id or registro.usuario_entrega_id,
+                    usuario_nome=nome_cancelamento,
+                    usuario_perfil=perfil_cancelamento,
+                    cancelado=True,
+                    motivo_cancelamento=registro.motivo_cancelamento,
+                )
+            )
+
+    for baixa, quarto_nome in baixas_pertences:
+        nome_usuario, perfil_usuario = usuarios.get(baixa.usuario_id, (None, None))
+        obs = (
+            f"Retirada de {baixa.quantidade} item(ns) recolhido(s) do quarto {quarto_nome or '—'}."
+        )
+        if baixa.justificativa:
+            obs += f" Observação: {baixa.justificativa}"
+
+        eventos.append(
+            _evento_fluxo_operacional_dict(
+                evento_id=f"pertences-retirada-{baixa.id}",
+                instituicao_id=instituicao_id,
+                convivente_id=convivente_id,
+                convivente_nome=convivente_nome,
+                numero_institucional=numero_institucional,
+                tipo_registro="Pertences recolhidos - Retirada",
+                observacao=obs,
+                data_registro=baixa.baixado_em,
+                usuario_id=baixa.usuario_id,
+                usuario_nome=nome_usuario,
+                usuario_perfil=perfil_usuario,
+            )
+        )
+
+    return eventos
+
+
+def _filtrar_eventos_fluxo_merged(
+    eventos: list[dict],
+    *,
+    data_inicio: str = None,
+    data_fim: str = None,
+    tipo_registro: str = None,
+    busca: str = None,
+    status_registro: str = None,
+    apenas_editados: bool = False,
+    apenas_cancelados: bool = False,
+    apenas_retorno_rapido: bool = False,
+) -> list[dict]:
+    filtrados = eventos
+
+    if data_inicio:
+        try:
+            inicio = datetime.fromisoformat(data_inicio)
+            filtrados = [
+                evento for evento in filtrados
+                if evento.get("data_registro") and evento["data_registro"] >= inicio
+            ]
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Data inicial inválida.")
+
+    if data_fim:
+        try:
+            fim = datetime.fromisoformat(data_fim)
+            if len(data_fim) == 10:
+                fim = fim.replace(hour=23, minute=59, second=59, microsecond=999999)
+            filtrados = [
+                evento for evento in filtrados
+                if evento.get("data_registro") and evento["data_registro"] <= fim
+            ]
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Data final inválida.")
+
+    if tipo_registro:
+        grupos_tipo_registro = {
+            "Cobertor": ["Retirada de Cobertor", "Entrega de Cobertor"],
+            "Toalha": ["Retirada de Toalha", "Entrega de Toalha"],
+            "Documentos": ["Bipar documentos guardados", "Bipar documentos retirados"],
+            "Bagageiro": ["Movimentação de Bagageiro"],
+            "Lavanderia": [
+                "Lavanderia - Entrega",
+                "Lavanderia - Retirada",
+                "Lavanderia - Cancelamento",
+            ],
+            "Pertences recolhidos": ["Pertences recolhidos - Retirada"],
+        }
+        if tipo_registro in grupos_tipo_registro:
+            tipos_validos = set(grupos_tipo_registro[tipo_registro])
+            filtrados = [
+                evento for evento in filtrados
+                if evento.get("tipo_registro") in tipos_validos
+            ]
+        else:
+            filtrados = [
+                evento for evento in filtrados
+                if evento.get("tipo_registro") == tipo_registro
+            ]
+
+    if busca:
+        termo = busca.strip().casefold()
+        filtrados = [
+            evento for evento in filtrados
+            if termo in (evento.get("convivente_nome") or "").casefold()
+            or termo in (evento.get("convivente_nome_completo") or "").casefold()
+            or termo in str(evento.get("numero_institucional") or "").casefold()
+            or termo in (evento.get("observacao") or "").casefold()
+            or termo in (evento.get("tipo_registro") or "").casefold()
+        ]
+
+    if status_registro == "ativos":
+        filtrados = [evento for evento in filtrados if not evento.get("cancelado")]
+
+    if status_registro == "cancelados":
+        filtrados = [evento for evento in filtrados if evento.get("cancelado")]
+
+    if apenas_editados:
+        filtrados = [evento for evento in filtrados if evento.get("foi_editado")]
+
+    if apenas_cancelados:
+        filtrados = [evento for evento in filtrados if evento.get("cancelado")]
+
+    if apenas_retorno_rapido:
+        filtrados = [evento for evento in filtrados if evento.get("retorno_rapido")]
+
+    return filtrados
+
+
 @router.get("/rotina/historico/resumo-evolucao")
 async def resumo_evolucao_historico_rotina(
     data_inicio: str = None,
@@ -2904,7 +3564,7 @@ async def resumo_evolucao_historico_rotina(
     ]
 
 
-@router.get("/rotina/historico")
+@router.get("/rotina/historico", response_model=RotinaHistoricoListaResponse)
 async def listar_historico_rotina(
     data_inicio: str = None,
     data_fim: str = None,
@@ -2915,13 +3575,16 @@ async def listar_historico_rotina(
     apenas_editados: bool = False,
     apenas_cancelados: bool = False,
     apenas_retorno_rapido: bool = False,
-    limite: int = 500,
-    deslocamento: int = 0,
+    limite: int = Query(REGISTROS_POR_PAGINA_PADRAO, ge=1, le=EXPORT_ROTINA_HISTORICO_LIMITE_MAX),
+    deslocamento: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
     usuario_atual: dict = Depends(get_usuario_logado)
 ):
-    query = _query_base_historico_rotina(usuario_atual)
+    data_inicio, data_fim = _normalizar_periodo_listagem_operacional(data_inicio, data_fim)
+    limite_seguro = min(max(int(limite or REGISTROS_POR_PAGINA_PADRAO), 1), EXPORT_ROTINA_HISTORICO_LIMITE_MAX)
+    deslocamento_seguro = max(int(deslocamento or 0), 0)
 
+    query = _query_base_historico_rotina(usuario_atual)
     query = _aplicar_filtros_historico_rotina(
         query=query,
         data_inicio=data_inicio,
@@ -2932,27 +3595,123 @@ async def listar_historico_rotina(
         status_registro=status_registro,
         apenas_editados=apenas_editados,
         apenas_cancelados=apenas_cancelados,
-        apenas_retorno_rapido=apenas_retorno_rapido
+        apenas_retorno_rapido=apenas_retorno_rapido,
     )
 
-    limite_seguro = min(max(int(limite or 500), 1), 5000)
-    deslocamento_seguro = max(int(deslocamento or 0), 0)
-    query = query.offset(deslocamento_seguro).limit(limite_seguro)
+    if convivente_id:
+        resultado = await db.execute(query)
+        linhas = resultado.all()
 
+        convivente_nome = None
+        numero_institucional = None
+        if linhas:
+            _, nome_completo, nome_social, numero_institucional, _, _ = linhas[0]
+            convivente_nome = nome_social or nome_completo
+        else:
+            convivente = (
+                await db.execute(
+                    select(ConviventeDB).where(
+                        ConviventeDB.id == convivente_id,
+                        ConviventeDB.instituicao_id == obter_instituicao_escopo(usuario_atual),
+                    )
+                )
+            ).scalar_one_or_none()
+            if convivente:
+                convivente_nome = convivente.nome_social or convivente.nome_completo
+                numero_institucional = convivente.numero_institucional
+
+        itens = [
+            _linha_historico_para_dict(
+                registro,
+                nome_completo,
+                nome_social,
+                numero_institucional_linha,
+                usuario_nome,
+                usuario_perfil,
+            )
+            for registro, nome_completo, nome_social, numero_institucional_linha, usuario_nome, usuario_perfil in linhas
+        ]
+
+        eventos_operacionais = await _coletar_eventos_fluxo_operacional_convivente(
+            db,
+            obter_instituicao_escopo(usuario_atual),
+            convivente_id,
+            convivente_nome,
+            numero_institucional,
+            data_inicio=data_inicio,
+            data_fim=data_fim,
+        )
+        itens.extend(eventos_operacionais)
+        itens = _filtrar_eventos_fluxo_merged(
+            itens,
+            data_inicio=data_inicio,
+            data_fim=data_fim,
+            tipo_registro=tipo_registro,
+            busca=busca,
+            status_registro=status_registro,
+            apenas_editados=apenas_editados,
+            apenas_cancelados=apenas_cancelados,
+            apenas_retorno_rapido=apenas_retorno_rapido,
+        )
+        itens.sort(
+            key=lambda item: item.get("data_registro") or datetime.min,
+            reverse=True,
+        )
+        total = len(itens)
+        pagina = itens[deslocamento_seguro:deslocamento_seguro + limite_seguro]
+        return {
+            "registros": pagina,
+            "total": total,
+            "limite": limite_seguro,
+            "deslocamento": deslocamento_seguro,
+            "has_more": deslocamento_seguro + len(pagina) < total,
+            "resumo_periodo": None,
+        }
+
+    total = int((
+        await db.execute(
+            select(func.count()).select_from(query.order_by(None).subquery())
+        )
+    ).scalar_one() or 0)
+
+    def contar_resumo(expressao):
+        return select(func.count()).select_from(
+            query.order_by(None).where(expressao).subquery()
+        )
+
+    resumo_periodo = {
+        "total": total,
+        "entradas": int((await db.execute(contar_resumo(RegistroRotinaDB.tipo_registro == "Entrada"))).scalar_one() or 0),
+        "saidas": int((await db.execute(contar_resumo(RegistroRotinaDB.tipo_registro == "Saída"))).scalar_one() or 0),
+        "editados": int((await db.execute(contar_resumo(RegistroRotinaDB.foi_editado == True))).scalar_one() or 0),
+        "cancelados": int((await db.execute(contar_resumo(RegistroRotinaDB.cancelado == True))).scalar_one() or 0),
+        "retornos_rapidos": int((await db.execute(contar_resumo(RegistroRotinaDB.retorno_rapido == True))).scalar_one() or 0),
+    }
+
+    query = query.offset(deslocamento_seguro).limit(limite_seguro)
     resultado = await db.execute(query)
     linhas = resultado.all()
 
-    return [
+    registros = [
         _linha_historico_para_dict(
             registro,
             nome_completo,
             nome_social,
             numero_institucional,
             usuario_nome,
-            usuario_perfil
+            usuario_perfil,
         )
         for registro, nome_completo, nome_social, numero_institucional, usuario_nome, usuario_perfil in linhas
     ]
+
+    return {
+        "registros": registros,
+        "total": total,
+        "limite": limite_seguro,
+        "deslocamento": deslocamento_seguro,
+        "has_more": deslocamento_seguro + len(registros) < total,
+        "resumo_periodo": resumo_periodo,
+    }
 
 
 @router.get("/rotina/historico/exportar-xlsx")
@@ -2970,6 +3729,7 @@ async def exportar_historico_rotina_xlsx(
     usuario_atual: dict = Depends(get_usuario_logado)
 ):
     query = _query_base_historico_rotina(usuario_atual)
+    data_inicio, data_fim = _normalizar_periodo_listagem_operacional(data_inicio, data_fim)
 
     query = _aplicar_filtros_historico_rotina(
         query=query,
@@ -2984,7 +3744,9 @@ async def exportar_historico_rotina_xlsx(
         apenas_retorno_rapido=apenas_retorno_rapido
     )
 
-    resultado = await db.execute(query)
+    resultado = await db.execute(
+        query.limit(EXPORT_ROTINA_HISTORICO_LIMITE_MAX)
+    )
     linhas = resultado.all()
 
     historico = [
@@ -3886,6 +4648,183 @@ def _serializar_divergencia_sisa(divergencia, status_convivente=None, tem_deslig
     return dados
 
 
+def _ordenacao_divergencias_sisa():
+    return (
+        case(
+            (SisaDivergenciaDB.prioridade == "Crítica", 0),
+            (SisaDivergenciaDB.prioridade == "Alta", 1),
+            (SisaDivergenciaDB.prioridade == "Média", 2),
+            else_=3,
+        ),
+        SisaDivergenciaDB.nome_convivente.asc(),
+    )
+
+
+def _aplicar_filtros_divergencias_sisa(
+    query,
+    *,
+    busca: str | None = None,
+    tipo: str = "todos",
+    prioridade: str = "todas",
+    status_tratativa: str = "todos",
+    status_convivente: str = "todos",
+    desligamento: str = "todos",
+    somente_diferenca: bool = False,
+    dif_minima: int = 0,
+    importacao_id: str,
+    instituicao_id: str,
+):
+    if tipo and tipo != "todos":
+        query = query.where(SisaDivergenciaDB.tipo == tipo)
+
+    if prioridade and prioridade != "todas":
+        query = query.where(SisaDivergenciaDB.prioridade == prioridade)
+
+    if status_tratativa and status_tratativa != "todos":
+        query = query.where(SisaDivergenciaDB.status == status_tratativa)
+
+    if status_convivente == "sem_cadastro":
+        query = query.where(SisaDivergenciaDB.convivente_id.is_(None))
+    elif status_convivente and status_convivente != "todos":
+        query = query.join(
+            ConviventeDB,
+            and_(
+                ConviventeDB.id == SisaDivergenciaDB.convivente_id,
+                ConviventeDB.instituicao_id == instituicao_id,
+            ),
+        ).where(ConviventeDB.status == status_convivente)
+
+    if desligamento in {"com", "sem"}:
+        presenca_com_desligamento = exists(
+            select(SisaPresencaImportadaDB.id).where(
+                SisaPresencaImportadaDB.importacao_id == importacao_id,
+                SisaPresencaImportadaDB.instituicao_id == instituicao_id,
+                SisaPresencaImportadaDB.numero_sisa == SisaDivergenciaDB.numero_sisa,
+                SisaPresencaImportadaDB.data_desligamento.is_not(None),
+            )
+        )
+        if desligamento == "com":
+            query = query.where(presenca_com_desligamento)
+        else:
+            query = query.where(~presenca_com_desligamento)
+
+    if somente_diferenca:
+        query = query.where(SisaDivergenciaDB.diferenca.is_not(None), SisaDivergenciaDB.diferenca != 0)
+
+    if dif_minima and dif_minima > 0:
+        query = query.where(func.abs(SisaDivergenciaDB.diferenca) >= dif_minima)
+
+    busca_limpa = (busca or "").strip()
+    if busca_limpa:
+        termo = f"%{busca_limpa.lower()}%"
+        query = query.where(
+            or_(
+                func.lower(SisaDivergenciaDB.nome_convivente).like(termo),
+                func.lower(SisaDivergenciaDB.numero_sisa).like(termo),
+            )
+        )
+
+    return query
+
+
+async def _serializar_divergencias_sisa(
+    db: AsyncSession,
+    *,
+    instituicao_id: str,
+    importacao_id: str,
+    divergencias,
+):
+    convivente_ids = {d.convivente_id for d in divergencias if d.convivente_id}
+    status_por_convivente = {}
+    if convivente_ids:
+        conviventes = (
+            await db.execute(
+                select(ConviventeDB.id, ConviventeDB.status).where(
+                    ConviventeDB.instituicao_id == instituicao_id,
+                    ConviventeDB.id.in_(convivente_ids),
+                )
+            )
+        ).all()
+        status_por_convivente = {cid: status for cid, status in conviventes}
+
+    numeros_sisa = {d.numero_sisa for d in divergencias if d.numero_sisa}
+    desligamento_por_numero = {}
+    if numeros_sisa:
+        presencas = (
+            await db.execute(
+                select(
+                    SisaPresencaImportadaDB.numero_sisa,
+                    SisaPresencaImportadaDB.data_desligamento,
+                ).where(
+                    SisaPresencaImportadaDB.importacao_id == importacao_id,
+                    SisaPresencaImportadaDB.instituicao_id == instituicao_id,
+                    SisaPresencaImportadaDB.numero_sisa.in_(numeros_sisa),
+                )
+            )
+        ).all()
+        desligamento_por_numero = {
+            numero: bool(desligamento) for numero, desligamento in presencas
+        }
+
+    return [
+        _serializar_divergencia_sisa(
+            divergencia,
+            status_convivente=status_por_convivente.get(divergencia.convivente_id),
+            tem_desligamento=desligamento_por_numero.get(divergencia.numero_sisa, False),
+        )
+        for divergencia in divergencias
+    ]
+
+
+async def _resumo_divergencias_sisa_filtradas(db: AsyncSession, query_filtrada):
+    total = int((await db.execute(
+        select(func.count()).select_from(query_filtrada.subquery())
+    )).scalar_one() or 0)
+
+    sub = query_filtrada.subquery()
+    pendencias = int((await db.execute(
+        select(func.count()).select_from(sub).where(sub.c.tipo.notin_(["OK", "SEM_BASE_ANTERIOR"]))
+    )).scalar_one() or 0)
+
+    alertas_criticos = int((await db.execute(
+        select(func.count()).select_from(sub).where(
+            or_(sub.c.tipo == "SISA_MENOR", sub.c.prioridade == "Crítica")
+        )
+    )).scalar_one() or 0)
+
+    dias_perdidos_filtrados = int((await db.execute(
+        select(
+            func.coalesce(
+                func.sum(
+                    case(
+                        (sub.c.diferenca < 0, func.abs(sub.c.diferenca)),
+                        else_=0,
+                    )
+                ),
+                0,
+            )
+        ).select_from(sub)
+    )).scalar_one() or 0)
+
+    return {
+        "total": total,
+        "pendencias": pendencias,
+        "alertas_criticos": alertas_criticos,
+        "dias_perdidos_filtrados": dias_perdidos_filtrados,
+    }
+
+
+async def _carregar_importacao_sisa(db: AsyncSession, importacao_id: str, instituicao_id: str):
+    return (
+        await db.execute(
+            select(SisaImportacaoDB).where(
+                SisaImportacaoDB.id == importacao_id,
+                SisaImportacaoDB.instituicao_id == instituicao_id,
+            )
+        )
+    ).scalar_one_or_none()
+
+
 async def _criar_divergencia_sisa(
     db: AsyncSession,
     *,
@@ -4001,12 +4940,26 @@ async def _criar_divergencia_sisa(
     )
 
 
-@router.get("/relatorios/pia")
+@router.get("/relatorios/pia", response_model=RelatorioPiaListaResponse)
 async def listar_registros_pia_relatorios(
+    limite: int = Query(200, ge=1, le=EXPORT_ROTINA_HISTORICO_LIMITE_MAX),
+    deslocamento: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
     usuario_atual: dict = Depends(get_usuario_logado),
 ):
     instituicao_id = obter_instituicao_escopo(usuario_atual)
+    base = (
+        select(RegistroPIADB)
+        .join(ConviventeDB, ConviventeDB.id == RegistroPIADB.convivente_id)
+        .where(
+            RegistroPIADB.instituicao_id == instituicao_id,
+            ConviventeDB.instituicao_id == instituicao_id,
+        )
+    )
+    total = int((await db.execute(
+        select(func.count()).select_from(base.subquery())
+    )).scalar_one() or 0)
+
     registros = (
         await db.execute(
             select(
@@ -4025,10 +4978,12 @@ async def listar_registros_pia_relatorios(
                 ConviventeDB.instituicao_id == instituicao_id,
             )
             .order_by(RegistroPIADB.data_registro.desc())
+            .offset(deslocamento)
+            .limit(limite)
         )
     ).all()
 
-    return [
+    items = [
         {
             **{coluna.name: getattr(registro, coluna.name) for coluna in registro.__table__.columns},
             "convivente_nome_completo": convivente_nome_completo,
@@ -4049,20 +5004,46 @@ async def listar_registros_pia_relatorios(
         ) in registros
     ]
 
+    return {
+        "registros": items,
+        "total": total,
+        "limite": limite,
+        "deslocamento": deslocamento,
+        "has_more": deslocamento + len(items) < total,
+    }
 
-@router.get("/convenio-sisa/importacoes", response_model=List[SisaImportacaoResponse])
+
+@router.get("/convenio-sisa/importacoes", response_model=SisaImportacaoListaResponse)
 async def listar_importacoes_sisa(
+    limit: int = Query(REGISTROS_POR_PAGINA_PADRAO, ge=1, le=200),
+    offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
-    usuario_atual: dict = Depends(get_usuario_logado)
+    usuario_atual: dict = Depends(get_usuario_logado),
 ):
     bloquear_usuario_global_puro(usuario_atual)
-    resultado = await db.execute(
-        select(SisaImportacaoDB)
-        .where(SisaImportacaoDB.instituicao_id == obter_instituicao_escopo(usuario_atual))
-        .order_by(SisaImportacaoDB.data_referencia.desc(), SisaImportacaoDB.importado_em.desc())
+    instituicao_id = obter_instituicao_escopo(usuario_atual)
+    base = select(SisaImportacaoDB).where(
+        SisaImportacaoDB.instituicao_id == instituicao_id
     )
+    total = int((await db.execute(
+        select(func.count()).select_from(base.subquery())
+    )).scalar_one() or 0)
 
-    return resultado.scalars().all()
+    items = (
+        await db.execute(
+            base.order_by(SisaImportacaoDB.data_referencia.desc(), SisaImportacaoDB.importado_em.desc())
+            .offset(offset)
+            .limit(limit)
+        )
+    ).scalars().all()
+
+    return {
+        "items": items,
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "has_more": offset + len(items) < total,
+    }
 
 
 @router.delete("/convenio-sisa/importacoes/{importacao_id}")
@@ -4130,77 +5111,89 @@ async def detalhar_importacao_sisa(
     usuario_atual: dict = Depends(get_usuario_logado)
 ):
     bloquear_usuario_global_puro(usuario_atual)
-    importacao = (
-        await db.execute(
-            select(SisaImportacaoDB).where(
-                SisaImportacaoDB.id == importacao_id,
-                SisaImportacaoDB.instituicao_id == obter_instituicao_escopo(usuario_atual),
-            )
-        )
-    ).scalar_one_or_none()
+    instituicao_id = obter_instituicao_escopo(usuario_atual)
+    importacao = await _carregar_importacao_sisa(db, importacao_id, instituicao_id)
 
     if not importacao:
         raise HTTPException(status_code=404, detail="Importação SISA não encontrada.")
 
+    return {
+        **{coluna.name: getattr(importacao, coluna.name) for coluna in importacao.__table__.columns},
+        "divergencias": [],
+    }
+
+
+@router.get(
+    "/convenio-sisa/importacoes/{importacao_id}/divergencias",
+    response_model=SisaDivergenciaListaResponse,
+)
+async def listar_divergencias_importacao_sisa(
+    importacao_id: str,
+    limit: int = Query(REGISTROS_POR_PAGINA_PADRAO, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    busca: str | None = Query(None),
+    tipo: str = Query("todos"),
+    prioridade: str = Query("todas"),
+    status_tratativa: str = Query("todos"),
+    status_convivente: str = Query("todos"),
+    desligamento: str = Query("todos"),
+    somente_diferenca: bool = Query(False),
+    dif_minima: int = Query(0, ge=0),
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    bloquear_usuario_global_puro(usuario_atual)
+    instituicao_id = obter_instituicao_escopo(usuario_atual)
+    importacao = await _carregar_importacao_sisa(db, importacao_id, instituicao_id)
+
+    if not importacao:
+        raise HTTPException(status_code=404, detail="Importação SISA não encontrada.")
+
+    query = select(SisaDivergenciaDB).where(
+        SisaDivergenciaDB.importacao_id == importacao_id,
+        SisaDivergenciaDB.instituicao_id == instituicao_id,
+    )
+    query = _aplicar_filtros_divergencias_sisa(
+        query,
+        busca=busca,
+        tipo=tipo,
+        prioridade=prioridade,
+        status_tratativa=status_tratativa,
+        status_convivente=status_convivente,
+        desligamento=desligamento,
+        somente_diferenca=somente_diferenca,
+        dif_minima=dif_minima,
+        importacao_id=importacao_id,
+        instituicao_id=instituicao_id,
+    )
+
+    resumo = await _resumo_divergencias_sisa_filtradas(db, query)
+    total = resumo["total"]
+
     divergencias = (
         await db.execute(
-            select(SisaDivergenciaDB)
-            .where(
-                SisaDivergenciaDB.importacao_id == importacao_id,
-                SisaDivergenciaDB.instituicao_id == obter_instituicao_escopo(usuario_atual),
-            )
-            .order_by(
-                case(
-                    (SisaDivergenciaDB.prioridade == "Crítica", 0),
-                    (SisaDivergenciaDB.prioridade == "Alta", 1),
-                    (SisaDivergenciaDB.prioridade == "Média", 2),
-                    else_=3,
-                ),
-                SisaDivergenciaDB.nome_convivente.asc(),
-            )
+            query.order_by(*_ordenacao_divergencias_sisa()).offset(offset).limit(limit)
         )
     ).scalars().all()
 
-    convivente_ids = {d.convivente_id for d in divergencias if d.convivente_id}
-    status_por_convivente = {}
-    if convivente_ids:
-        conviventes = (
-            await db.execute(
-                select(ConviventeDB.id, ConviventeDB.status).where(
-                    ConviventeDB.instituicao_id == obter_instituicao_escopo(usuario_atual),
-                    ConviventeDB.id.in_(convivente_ids),
-                )
-            )
-        ).all()
-        status_por_convivente = {cid: status for cid, status in conviventes}
-
-    presencas = (
-        await db.execute(
-            select(
-                SisaPresencaImportadaDB.numero_sisa,
-                SisaPresencaImportadaDB.data_desligamento,
-            ).where(
-                SisaPresencaImportadaDB.importacao_id == importacao_id,
-                SisaPresencaImportadaDB.instituicao_id == obter_instituicao_escopo(usuario_atual),
-            )
-        )
-    ).all()
-    desligamento_por_numero = {
-        numero: bool(desligamento) for numero, desligamento in presencas
-    }
-
-    divergencias_serializadas = [
-        _serializar_divergencia_sisa(
-            d,
-            status_convivente=status_por_convivente.get(d.convivente_id),
-            tem_desligamento=desligamento_por_numero.get(d.numero_sisa, False),
-        )
-        for d in divergencias
-    ]
+    divergencias_serializadas = await _serializar_divergencias_sisa(
+        db,
+        instituicao_id=instituicao_id,
+        importacao_id=importacao_id,
+        divergencias=divergencias,
+    )
 
     return {
-        **{coluna.name: getattr(importacao, coluna.name) for coluna in importacao.__table__.columns},
-        "divergencias": divergencias_serializadas,
+        "items": divergencias_serializadas,
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "has_more": offset + len(divergencias_serializadas) < total,
+        "resumo": {
+            "pendencias": resumo["pendencias"],
+            "alertas_criticos": resumo["alertas_criticos"],
+            "dias_perdidos_filtrados": resumo["dias_perdidos_filtrados"],
+        },
     }
 
 
@@ -4423,18 +5416,9 @@ async def importar_planilha_sisa(
     await db.commit()
     await db.refresh(importacao)
 
-    divergencias_serializadas = [
-        _serializar_divergencia_sisa(
-            divergencia,
-            status_convivente=status_por_numero.get(divergencia.numero_sisa),
-            tem_desligamento=desligamento_por_numero.get(divergencia.numero_sisa, False),
-        )
-        for divergencia in divergencias
-    ]
-
     return {
         **{coluna.name: getattr(importacao, coluna.name) for coluna in importacao.__table__.columns},
-        "divergencias": divergencias_serializadas,
+        "divergencias": [],
     }
 
 
@@ -4944,22 +5928,40 @@ async def relatorio_sisa_mensal(
     }
 
 
-@router.get("/convenio-sisa/fechamentos", response_model=List[FechamentoMensalResponse])
+@router.get("/convenio-sisa/fechamentos", response_model=FechamentoMensalListaResponse)
 async def listar_fechamentos_mensais(
+    limit: int = Query(REGISTROS_POR_PAGINA_PADRAO, ge=1, le=200),
+    offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
-    usuario_atual: dict = Depends(get_usuario_logado)
+    usuario_atual: dict = Depends(get_usuario_logado),
 ):
     bloquear_usuario_global_puro(usuario_atual)
-    resultado = await db.execute(
-        select(FechamentoMensalDB).where(
-            FechamentoMensalDB.instituicao_id == obter_instituicao_escopo(usuario_atual)
-        ).order_by(
-            FechamentoMensalDB.ano.desc(),
-            FechamentoMensalDB.mes.desc()
-        )
+    instituicao_id = obter_instituicao_escopo(usuario_atual)
+    base = select(FechamentoMensalDB).where(
+        FechamentoMensalDB.instituicao_id == instituicao_id
     )
+    total = int((await db.execute(
+        select(func.count()).select_from(base.subquery())
+    )).scalar_one() or 0)
 
-    return resultado.scalars().all()
+    items = (
+        await db.execute(
+            base.order_by(
+                FechamentoMensalDB.ano.desc(),
+                FechamentoMensalDB.mes.desc(),
+            )
+            .offset(offset)
+            .limit(limit)
+        )
+    ).scalars().all()
+
+    return {
+        "items": items,
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "has_more": offset + len(items) < total,
+    }
 
 
 @router.post("/convenio-sisa/fechar-mes", response_model=FechamentoMensalResponse)
@@ -5618,6 +6620,193 @@ async def _dashboard_series_otimizada(db: AsyncSession, inst_id: str, agora: dat
     }
 
 
+async def _resumo_ocorrencias_dashboard(
+    db: AsyncSession,
+    inst_id: str,
+    perfil: str | None,
+    user_id: str | None,
+):
+    base = select(OcorrenciaConviventeDB).where(OcorrenciaConviventeDB.instituicao_id == inst_id)
+    if perfil == "Orientador":
+        subq = select(ObservadorOcorrenciaDB.ocorrencia_id).where(
+            ObservadorOcorrenciaDB.usuario_id == user_id
+        )
+        base = base.where(
+            or_(
+                OcorrenciaConviventeDB.usuario_criador_id == user_id,
+                OcorrenciaConviventeDB.id.in_(subq),
+            )
+        )
+
+    def contar(expressao=None):
+        consulta = base
+        if expressao is not None:
+            consulta = consulta.where(expressao)
+        return select(func.count()).select_from(consulta.order_by(None).subquery())
+
+    ocorrencias_pendentes = int((await db.execute(
+        contar(OcorrenciaConviventeDB.status_resolucao != "Resolvido")
+    )).scalar_one() or 0)
+
+    ocorrencias_criticas_altas_pendentes = int((await db.execute(
+        contar(
+            and_(
+                OcorrenciaConviventeDB.status_resolucao != "Resolvido",
+                OcorrenciaConviventeDB.prioridade.in_(["Alta", "Crítica"]),
+            )
+        )
+    )).scalar_one() or 0)
+
+    resumo_prioridades = {}
+    for prioridade in PRIORIDADES_OCORRENCIA:
+        total_prioridade = int((await db.execute(
+            contar(OcorrenciaConviventeDB.prioridade == prioridade)
+        )).scalar_one() or 0)
+        pendentes_prioridade = int((await db.execute(
+            contar(
+                and_(
+                    OcorrenciaConviventeDB.prioridade == prioridade,
+                    OcorrenciaConviventeDB.status_resolucao != "Resolvido",
+                )
+            )
+        )).scalar_one() or 0)
+        resumo_prioridades[prioridade] = {
+            "total": total_prioridade,
+            "pendentes": pendentes_prioridade,
+        }
+
+    peso_sql = case(
+        (OcorrenciaConviventeDB.prioridade == "Crítica", 4),
+        (OcorrenciaConviventeDB.prioridade == "Alta", 3),
+        (OcorrenciaConviventeDB.prioridade == "Média", 2),
+        else_=1,
+    )
+
+    alertas_db = (
+        await db.execute(
+            base.where(OcorrenciaConviventeDB.status_resolucao != "Resolvido")
+            .order_by(peso_sql.desc(), OcorrenciaConviventeDB.data_ocorrencia.desc())
+            .limit(10)
+        )
+    ).scalars().all()
+
+    ocorrencias_em_alerta = [
+        {
+            "id": ocorrencia.id,
+            "tecnico_responsavel_id": ocorrencia.tecnico_responsavel_id,
+            "tipo_ocorrencia": ocorrencia.tipo_ocorrencia,
+            "motivo": ocorrencia.motivo,
+            "descricao": ocorrencia.descricao,
+            "data_ocorrencia": ocorrencia.data_ocorrencia,
+            "requer_acao_tecnica": ocorrencia.requer_acao_tecnica,
+            "status_resolucao": ocorrencia.status_resolucao,
+            "prioridade": normalizar_prioridade_ocorrencia(ocorrencia.prioridade),
+        }
+        for ocorrencia in alertas_db
+    ]
+
+    tecnico_expr = func.coalesce(OcorrenciaConviventeDB.tecnico_responsavel_id, "sem_tecnico")
+    filtro_pendencias = and_(
+        OcorrenciaConviventeDB.status_resolucao != "Resolvido",
+        or_(
+            OcorrenciaConviventeDB.requer_acao_tecnica == True,
+            OcorrenciaConviventeDB.tecnico_responsavel_id.isnot(None),
+            OcorrenciaConviventeDB.prioridade.in_(["Alta", "Crítica"]),
+        ),
+    )
+
+    query_grupo = (
+        select(
+            tecnico_expr.label("tecnico_id"),
+            func.count().label("pendentes"),
+            func.sum(case((OcorrenciaConviventeDB.prioridade == "Alta", 1), else_=0)).label("alta"),
+            func.sum(case((OcorrenciaConviventeDB.prioridade == "Crítica", 1), else_=0)).label("critica"),
+        )
+        .select_from(OcorrenciaConviventeDB)
+        .where(OcorrenciaConviventeDB.instituicao_id == inst_id)
+        .where(filtro_pendencias)
+    )
+    if perfil == "Orientador":
+        subq = select(ObservadorOcorrenciaDB.ocorrencia_id).where(
+            ObservadorOcorrenciaDB.usuario_id == user_id
+        )
+        query_grupo = query_grupo.where(
+            or_(
+                OcorrenciaConviventeDB.usuario_criador_id == user_id,
+                OcorrenciaConviventeDB.id.in_(subq),
+            )
+        )
+
+    grupos = (await db.execute(query_grupo.group_by(tecnico_expr))).all()
+
+    tecnico_ids = [
+        grupo.tecnico_id
+        for grupo in grupos
+        if grupo.tecnico_id and grupo.tecnico_id != "sem_tecnico"
+    ]
+    tecnicos = {}
+    if tecnico_ids:
+        tecnicos = {
+            usuario.id: usuario
+            for usuario in (
+                await db.execute(
+                    select(UsuarioDB).where(
+                        UsuarioDB.instituicao_id == inst_id,
+                        UsuarioDB.id.in_(tecnico_ids),
+                    )
+                )
+            ).scalars().all()
+        }
+
+    pendencias_tecnicos = []
+    for grupo in grupos:
+        tecnico_id = grupo.tecnico_id or "sem_tecnico"
+        tecnico = tecnicos.get(tecnico_id)
+        alta = int(grupo.alta or 0)
+        critica = int(grupo.critica or 0)
+        pendentes = int(grupo.pendentes or 0)
+        maior_prioridade = (
+            "Crítica" if critica > 0
+            else "Alta" if alta > 0
+            else "Baixa"
+        )
+        prioridade = (
+            "Crítica" if critica > 0
+            else "Alta" if alta > 0
+            else "Crítico" if pendentes >= 5
+            else "Médio" if pendentes >= 3
+            else maior_prioridade
+        )
+        pendencias_tecnicos.append({
+            "tecnico_id": tecnico_id,
+            "tecnico_nome": tecnico.nome if tecnico else "Sem técnico definido",
+            "tecnico_avatar_url": tecnico.avatar_url if tecnico else "",
+            "perfil": tecnico.perfil_acesso if tecnico else "Técnico",
+            "pendentes": pendentes,
+            "alta": alta,
+            "critica": critica,
+            "maiorPrioridade": maior_prioridade,
+            "prioridade": prioridade,
+        })
+
+    pendencias_tecnicos.sort(
+        key=lambda item: (
+            PESO_PRIORIDADE.get(normalizar_prioridade_ocorrencia(item["prioridade"]), 2),
+            item["pendentes"],
+        ),
+        reverse=True,
+    )
+    pendencias_tecnicos = pendencias_tecnicos[:8]
+
+    return {
+        "ocorrencias_pendentes": ocorrencias_pendentes,
+        "ocorrencias_criticas_altas_pendentes": ocorrencias_criticas_altas_pendentes,
+        "resumo_prioridades": resumo_prioridades,
+        "ocorrencias_em_alerta": ocorrencias_em_alerta,
+        "pendencias_tecnicos": pendencias_tecnicos,
+    }
+
+
 @router.get("/dashboard/resumo")
 async def dashboard_resumo(
     db: AsyncSession = Depends(get_db),
@@ -5656,140 +6845,8 @@ async def dashboard_resumo(
         )
     )).scalar_one()
 
-    query_ocorrencias = select(
-        OcorrenciaConviventeDB.id,
-        OcorrenciaConviventeDB.tecnico_responsavel_id,
-        OcorrenciaConviventeDB.tipo_ocorrencia,
-        OcorrenciaConviventeDB.motivo,
-        OcorrenciaConviventeDB.descricao,
-        OcorrenciaConviventeDB.data_ocorrencia,
-        OcorrenciaConviventeDB.requer_acao_tecnica,
-        OcorrenciaConviventeDB.status_resolucao,
-        OcorrenciaConviventeDB.prioridade
-    ).where(
-        OcorrenciaConviventeDB.instituicao_id == inst_id
-    )
-
-    if perfil == "Orientador":
-        subq = select(ObservadorOcorrenciaDB.ocorrencia_id).where(
-            ObservadorOcorrenciaDB.usuario_id == user_id
-        )
-        query_ocorrencias = query_ocorrencias.where(
-            or_(
-                OcorrenciaConviventeDB.usuario_criador_id == user_id,
-                OcorrenciaConviventeDB.id.in_(subq)
-            )
-        )
-
-    ocorrencias = []
-    for row in (await db.execute(query_ocorrencias)).all():
-        ocorrencias.append({
-            "id": row.id,
-            "tecnico_responsavel_id": row.tecnico_responsavel_id,
-            "tipo_ocorrencia": row.tipo_ocorrencia,
-            "motivo": row.motivo,
-            "descricao": row.descricao,
-            "data_ocorrencia": row.data_ocorrencia,
-            "requer_acao_tecnica": row.requer_acao_tecnica,
-            "status_resolucao": row.status_resolucao,
-            "prioridade": normalizar_prioridade_ocorrencia(row.prioridade),
-        })
-
-    tecnicos = {
-        usuario.id: usuario
-        for usuario in (
-            await db.execute(
-                select(UsuarioDB).where(
-                    UsuarioDB.instituicao_id == inst_id
-                )
-            )
-        ).scalars().all()
-    }
-
-    pendentes = [
-        ocorrencia for ocorrencia in ocorrencias
-        if ocorrencia.get("status_resolucao") != "Resolvido"
-    ]
-
-    resumo_prioridades = {
-        prioridade: {"total": 0, "pendentes": 0}
-        for prioridade in PRIORIDADES_OCORRENCIA
-    }
-
-    for ocorrencia in ocorrencias:
-        prioridade = ocorrencia["prioridade"]
-        resumo_prioridades.setdefault(prioridade, {"total": 0, "pendentes": 0})
-        resumo_prioridades[prioridade]["total"] += 1
-        if ocorrencia.get("status_resolucao") != "Resolvido":
-            resumo_prioridades[prioridade]["pendentes"] += 1
-
-    ocorrencias_em_alerta = sorted(
-        pendentes,
-        key=lambda item: (
-            PESO_PRIORIDADE.get(item["prioridade"], 2),
-            item.get("data_ocorrencia") or datetime.min
-        ),
-        reverse=True
-    )[:10]
-
-    agrupado = {}
-    for ocorrencia in pendentes:
-        prioridade = ocorrencia["prioridade"]
-        if not (
-            ocorrencia.get("requer_acao_tecnica")
-            or ocorrencia.get("tecnico_responsavel_id")
-            or prioridade in ("Alta", "Crítica")
-        ):
-            continue
-
-        tecnico_id = ocorrencia.get("tecnico_responsavel_id") or "sem_tecnico"
-        tecnico = tecnicos.get(tecnico_id)
-        if tecnico_id not in agrupado:
-            agrupado[tecnico_id] = {
-                "tecnico_id": tecnico_id,
-                "tecnico_nome": tecnico.nome if tecnico else "Sem técnico definido",
-                "tecnico_avatar_url": tecnico.avatar_url if tecnico else "",
-                "perfil": tecnico.perfil_acesso if tecnico else "Técnico",
-                "pendentes": 0,
-                "alta": 0,
-                "critica": 0,
-                "maiorPrioridade": "Baixa",
-            }
-
-        agrupado[tecnico_id]["pendentes"] += 1
-        if prioridade == "Alta":
-            agrupado[tecnico_id]["alta"] += 1
-        if prioridade == "Crítica":
-            agrupado[tecnico_id]["critica"] += 1
-        if PESO_PRIORIDADE.get(prioridade, 2) > PESO_PRIORIDADE.get(agrupado[tecnico_id]["maiorPrioridade"], 1):
-            agrupado[tecnico_id]["maiorPrioridade"] = prioridade
-
-    pendencias_tecnicos = []
-    for item in agrupado.values():
-        prioridade = (
-            "Crítica" if item["critica"] > 0
-            else "Alta" if item["alta"] > 0
-            else "Crítico" if item["pendentes"] >= 5
-            else "Médio" if item["pendentes"] >= 3
-            else item["maiorPrioridade"]
-        )
-        pendencias_tecnicos.append({**item, "prioridade": prioridade})
-
-    pendencias_tecnicos.sort(
-        key=lambda item: (
-            PESO_PRIORIDADE.get(normalizar_prioridade_ocorrencia(item["prioridade"]), 2),
-            item["pendentes"]
-        ),
-        reverse=True
-    )
-    pendencias_tecnicos = pendencias_tecnicos[:8]
-
+    resumo_ocorrencias = await _resumo_ocorrencias_dashboard(db, inst_id, perfil, user_id)
     series = await _dashboard_series_otimizada(db, inst_id, agora)
-    ocorrencias_criticas_altas_pendentes = sum(
-        1 for ocorrencia in pendentes
-        if ocorrencia["prioridade"] in ("Alta", "Crítica")
-    )
-    ocorrencias_pendentes = len(pendentes)
 
     return {
         "totalConviventes": total_conviventes,
@@ -5798,13 +6855,13 @@ async def dashboard_resumo(
         "totalLeitos": total_leitos,
         "atendimentosMes": series["resumo"]["atendimentos_mes"],
         "atendimentosHoje": series["resumo"]["atendimentos_hoje"],
-        "ocorrenciasPendentes": ocorrencias_pendentes,
-        "ocorrenciasCriticasAltasPendentes": ocorrencias_criticas_altas_pendentes,
-        "alertasOcorrencias": ocorrencias_pendentes,
-        "pendenciasTecnicas": sum(item["pendentes"] for item in pendencias_tecnicos),
-        "ocorrenciasEmAlerta": ocorrencias_em_alerta,
-        "pendenciasTecnicos": pendencias_tecnicos,
-        "resumoPrioridades": resumo_prioridades,
+        "ocorrenciasPendentes": resumo_ocorrencias["ocorrencias_pendentes"],
+        "ocorrenciasCriticasAltasPendentes": resumo_ocorrencias["ocorrencias_criticas_altas_pendentes"],
+        "alertasOcorrencias": resumo_ocorrencias["ocorrencias_pendentes"],
+        "pendenciasTecnicas": sum(item["pendentes"] for item in resumo_ocorrencias["pendencias_tecnicos"]),
+        "ocorrenciasEmAlerta": resumo_ocorrencias["ocorrencias_em_alerta"],
+        "pendenciasTecnicos": resumo_ocorrencias["pendencias_tecnicos"],
+        "resumoPrioridades": resumo_ocorrencias["resumo_prioridades"],
         "series": series,
     }
 

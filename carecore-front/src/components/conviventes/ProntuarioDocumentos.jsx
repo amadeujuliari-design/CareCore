@@ -16,6 +16,9 @@ export default function ProntuarioDocumentos({
   setArquivoSelecionado,
   handleUploadDocumento,
   handleExcluirDocumento,
+  carregarMaisDocumentos,
+  documentosTemMais,
+  totalDocumentos,
 }) {
   if (!editandoId) {
     return (
@@ -79,7 +82,7 @@ export default function ProntuarioDocumentos({
           </div>
         </div>
         <div className="lg:col-span-2">
-          <h3 className="text-xs font-semibold text-gray-700 uppercase mb-3">Arquivos do Acolhido ({documentos.length})</h3>
+          <h3 className="text-xs font-semibold text-gray-700 uppercase mb-3">Arquivos do Acolhido ({totalDocumentos || documentos.length})</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {documentos.map(doc => (
               <div key={doc.id} className={`bg-white p-3 rounded-xl border shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow ${doc.sensivel ? 'border-red-200 ring-1 ring-red-50' : 'border-gray-200'}`}>
@@ -98,6 +101,18 @@ export default function ProntuarioDocumentos({
               </div>
             ))}
           </div>
+          {documentosTemMais && (
+            <div className="mt-4 flex justify-center">
+              <button
+                type="button"
+                onClick={() => carregarMaisDocumentos(editandoId)}
+                disabled={loadingDocs}
+                className="rounded-lg border border-gray-200 bg-white px-4 py-2 text-xs font-bold text-brand hover:bg-gray-50 disabled:opacity-50"
+              >
+                {loadingDocs ? 'Carregando...' : 'Carregar mais documentos'}
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </div>

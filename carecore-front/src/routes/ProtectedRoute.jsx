@@ -2,6 +2,11 @@ import { Navigate } from 'react-router-dom';
 
 import ChatFlutuante from '../components/ChatFlutuante';
 import { useAuth } from '../context/AuthContext';
+import {
+  manutencaoProgramadaAtiva,
+  MENSAGEM_LOGIN_BLOQUEADO_MANUTENCAO,
+  usuarioPodeAcessarDuranteManutencao,
+} from '../config/manutencao';
 
 const PERFIS_LEGADOS = {
   Gestao: 'Gestor',
@@ -42,6 +47,25 @@ export default function ProtectedRoute({
 
   if (!usuario) {
     return <Navigate to="/" replace />;
+  }
+
+  if (
+    manutencaoProgramadaAtiva()
+    && !usuarioPodeAcessarDuranteManutencao(usuario)
+  ) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
+        <div className="bg-white p-8 rounded-xl shadow-xl border border-amber-100 max-w-md text-center">
+          <h1 className="text-xl font-bold text-amber-700">
+            Manutenção programada
+          </h1>
+
+          <p className="mt-3 text-sm text-gray-600">
+            {MENSAGEM_LOGIN_BLOQUEADO_MANUTENCAO}
+          </p>
+        </div>
+      </div>
+    );
   }
 
   if (

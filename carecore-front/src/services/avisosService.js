@@ -1,7 +1,3 @@
-// =====================================================================
-// ARQUIVO: src/services/avisosService.js
-// Serviço de comunicação interna / avisos importantes CARECORE+
-// =====================================================================
 import axios from "axios";
 
 import { API_ROOT } from "../config/apiBase";
@@ -17,19 +13,46 @@ function authHeaders(token) {
   return criarHeadersAutenticados(tokenFinal);
 }
 
+function normalizarListaPaginada(data, limite, offset) {
+  if (Array.isArray(data)) {
+    return {
+      items: data,
+      total: data.length,
+      limit: limite,
+      offset,
+      has_more: false,
+    };
+  }
+
+  return {
+    items: Array.isArray(data?.items) ? data.items : [],
+    total: Number(data?.total || 0),
+    limit: Number(data?.limit || limite),
+    offset: Number(data?.offset || offset),
+    has_more: Boolean(data?.has_more),
+  };
+}
+
 export async function listarMeusAvisos(token, opcoes = {}) {
   const limite = Number(opcoes.limite || 10);
+  const offset = Number(opcoes.offset || 0);
   const somenteNaoLidos = Boolean(opcoes.somenteNaoLidos);
 
   const response = await axios.get(`${API_ROOT}/avisos/me`, {
     headers: authHeaders(token),
     params: {
       limite,
+      offset,
       somente_nao_lidos: somenteNaoLidos,
+      busca: opcoes.busca || undefined,
+      classificacao: opcoes.classificacao || undefined,
+      prioridade: opcoes.prioridade || undefined,
+      data_inicio: opcoes.data_inicio || undefined,
+      data_fim: opcoes.data_fim || undefined,
     },
   });
 
-  return Array.isArray(response.data) ? response.data : [];
+  return normalizarListaPaginada(response.data, limite, offset);
 }
 
 export async function obterResumoAvisos(token) {
@@ -61,23 +84,7 @@ export async function listarHistoricoAvisos(token, filtros = {}) {
     },
   });
 
-  if (Array.isArray(response.data)) {
-    return {
-      items: response.data,
-      total: response.data.length,
-      limit: limite,
-      offset,
-      has_more: false,
-    };
-  }
-
-  return {
-    items: Array.isArray(response.data?.items) ? response.data.items : [],
-    total: Number(response.data?.total || 0),
-    limit: Number(response.data?.limit || limite),
-    offset: Number(response.data?.offset || offset),
-    has_more: Boolean(response.data?.has_more),
-  };
+  return normalizarListaPaginada(response.data, limite, offset);
 }
 
 export async function marcarAvisoComoLido(token, avisoId) {

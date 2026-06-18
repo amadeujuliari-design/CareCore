@@ -17,6 +17,12 @@ import {
   resumirRegistrosRotina,
   rotuloTipoRegistroFiltro,
 } from './utils/rotinaHistoricoUtils';
+import {
+  calcularDataInicioPadrao,
+  dataHojeIsoLocal,
+  LISTAGEM_OPERACIONAL_DIAS_PADRAO,
+  REGISTROS_POR_PAGINA_PRONTUARIO,
+} from './utils/prontuarioHistoricoFluxoUtils';
 import { imprimirRelatorio } from './utils/imprimirRelatorio';
 import { urlArquivoBackend } from './utils/arquivosApi';
 import { decodificarPayloadJwt } from './utils/jwtUtils';
@@ -27,6 +33,10 @@ export default function RotinaHistorico() {
   const token = localStorage.getItem('@CareCore:token');
 
   const [registros, setRegistros] = useState([]);
+  const [totalRegistros, setTotalRegistros] = useState(0);
+  const [temMais, setTemMais] = useState(false);
+  const [carregandoMais, setCarregandoMais] = useState(false);
+  const [resumoPeriodo, setResumoPeriodo] = useState(null);
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState('');
   const [sucesso, setSucesso] = useState('');
@@ -35,8 +45,10 @@ export default function RotinaHistorico() {
   // filtros
   const [tipoFiltro, setTipoFiltro] = useState('');
   const [buscaFiltro, setBuscaFiltro] = useState('');
-  const [dataInicioFiltro, setDataInicioFiltro] = useState('');
-  const [dataFimFiltro, setDataFimFiltro] = useState('');
+  const [dataInicioFiltro, setDataInicioFiltro] = useState(
+    () => calcularDataInicioPadrao(LISTAGEM_OPERACIONAL_DIAS_PADRAO),
+  );
+  const [dataFimFiltro, setDataFimFiltro] = useState(() => dataHojeIsoLocal());
   const [statusFiltro, setStatusFiltro] = useState('');
   const [auditoriaFiltro, setAuditoriaFiltro] = useState('');
   const [paginaAtual, setPaginaAtual] = useState(1);
@@ -91,7 +103,7 @@ export default function RotinaHistorico() {
       statusFiltro,
       auditoriaFiltro,
       }),
-      limite: 500,
+      limite: REGISTROS_POR_PAGINA_PRONTUARIO,
     };
   };
 
@@ -114,41 +126,44 @@ export default function RotinaHistorico() {
     ].filter(Boolean).join(' | ');
   };
 
-  // =====================================================================
-  // LOAD
-  // =====================================================================
-
-  const carregarHistorico = async () => {
-
+  const carregarHistorico = async ({ append = false, offset = 0 } = {}) => {
     try {
-
-      setLoading(true);
+      if (!append) {
+        setLoading(true);
+      } else {
+        setCarregandoMais(true);
+      }
 
       const response = await axios.get(
         `${API_ROOT}/rotina/historico`,
         {
-          params: montarParamsFiltros(),
-          headers: criarHeadersAutenticados(token)
-        }
+          params: {
+            ...montarParamsFiltros(),
+            deslocamento: offset,
+          },
+          headers: criarHeadersAutenticados(token),
+        },
       );
 
-      setRegistros(response.data);
-
+      const payload = response.data;
+      const itens = Array.isArray(payload) ? payload : (payload?.registros || []);
+      setRegistros((prev) => (append ? [...prev, ...itens] : itens));
+      setTotalRegistros(Array.isArray(payload) ? itens.length : (payload?.total || itens.length));
+      setTemMais(Array.isArray(payload) ? false : Boolean(payload?.has_more));
+      setResumoPeriodo(Array.isArray(payload) ? null : (payload?.resumo_periodo || null));
       setPaginaAtual(1);
-
     } catch (error) {
-
       console.error(error);
-
-      avisarErro(
-        'Erro ao carregar histórico da rotina.'
-      );
-
+      avisarErro('Erro ao carregar histórico da rotina.');
     } finally {
-
       setLoading(false);
-
+      setCarregandoMais(false);
     }
+  };
+
+  const carregarMaisRegistros = () => {
+    if (!temMais || carregandoMais) return;
+    carregarHistorico({ append: true, offset: registros.length });
   };
 
   const carregarIdentidadeRelatorio = async () => {
@@ -381,8 +396,18 @@ export default function RotinaHistorico() {
   );
 
   const resumo = useMemo(() => {
+    if (resumoPeriodo) {
+      return {
+        total: resumoPeriodo.total || 0,
+        entradas: resumoPeriodo.entradas || 0,
+        saidas: resumoPeriodo.saidas || 0,
+        editados: resumoPeriodo.editados || 0,
+        cancelados: resumoPeriodo.cancelados || 0,
+        retornosRapidos: resumoPeriodo.retornos_rapidos || 0,
+      };
+    }
     return resumirRegistrosRotina(registrosFiltradosSemTipo);
-  }, [registrosFiltradosSemTipo]);
+  }, [registrosFiltradosSemTipo, resumoPeriodo]);
 
   const rotuloTipoSelecionado = useMemo(
     () => rotuloTipoRegistroFiltro(tipoFiltro),
@@ -395,11 +420,10 @@ export default function RotinaHistorico() {
   );
 
   const limparFiltros = () => {
-
     setTipoFiltro('');
     setBuscaFiltro('');
-    setDataInicioFiltro('');
-    setDataFimFiltro('');
+    setDataInicioFiltro(calcularDataInicioPadrao(LISTAGEM_OPERACIONAL_DIAS_PADRAO));
+    setDataFimFiltro(dataHojeIsoLocal());
     setStatusFiltro('');
     setAuditoriaFiltro('');
     setPaginaAtual(1);
@@ -747,7 +771,7 @@ export default function RotinaHistorico() {
 
             <button
               type="button"
-              onClick={carregarHistorico}
+              onClick={() => carregarHistorico({ append: false, offset: 0 })}
               className="px-4 py-2 rounded-xl bg-blue-600 text-white text-sm font-bold hover:bg-blue-700 transition-colors"
             >
               Aplicar Filtros
@@ -1120,6 +1144,25 @@ export default function RotinaHistorico() {
             </button>
 
           </div>
+
+          {!loading && registros.length > 0 && (
+            <div className="border-t border-gray-100 px-4 py-2 text-xs font-semibold text-gray-500">
+              Exibindo {registros.length} de {totalRegistros} registro(s) no período.
+            </div>
+          )}
+
+          {temMais && (
+            <div className="flex justify-center border-t border-gray-100 p-4">
+              <button
+                type="button"
+                onClick={carregarMaisRegistros}
+                disabled={carregandoMais}
+                className="rounded-2xl border border-blue-200 bg-white px-4 py-3 text-sm font-black text-blue-700 disabled:opacity-50"
+              >
+                {carregandoMais ? 'Carregando...' : 'Carregar mais registros'}
+              </button>
+            </div>
+          )}
 
         </div>
 

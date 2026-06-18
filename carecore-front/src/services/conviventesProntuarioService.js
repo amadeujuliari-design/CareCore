@@ -25,31 +25,70 @@ export async function obterConviventeProntuario(conviventeId) {
   return response.data;
 }
 
-export async function listarOcorrenciasConvivente(conviventeId) {
-  const response = await api.get(`/api/conviventes/${conviventeId}/ocorrencias`);
-  return response.data || [];
+export async function listarOcorrenciasConvivente(conviventeId, params = {}) {
+  const response = await api.get(`/api/conviventes/${conviventeId}/ocorrencias`, { params });
+  return response.data || { registros: [], total: 0, limite: 0, deslocamento: 0 };
 }
 
-export async function listarHistoricosConvivente(conviventeId) {
-  const response = await api.get(`/api/conviventes/${conviventeId}/historicos`);
-  return response.data || [];
+export async function listarHistoricosConvivente(conviventeId, params = {}) {
+  const response = await api.get(`/api/conviventes/${conviventeId}/historicos`, { params });
+  return response.data || { registros: [], total: 0, limite: 0, deslocamento: 0 };
 }
 
-export async function listarHistoricoFluxoConvivente(conviventeId) {
+export async function listarHistoricoFluxoConvivente(conviventeId, params = {}) {
   const response = await api.get('/api/rotina/historico', {
-    params: { convivente_id: conviventeId },
+    params: {
+      convivente_id: conviventeId,
+      ...params,
+    },
   });
-  return response.data || [];
+  const data = response.data;
+  if (Array.isArray(data)) {
+    return {
+      registros: data,
+      total: data.length,
+      has_more: false,
+    };
+  }
+  return {
+    registros: data?.registros || [],
+    total: data?.total || 0,
+    has_more: Boolean(data?.has_more),
+  };
 }
 
-export async function listarRegistrosPiaConvivente(conviventeId) {
-  const response = await api.get(`/api/conviventes/${conviventeId}/pia`);
-  return response.data || [];
+export async function listarRegistrosPiaConvivente(conviventeId, params = {}) {
+  const response = await api.get(`/api/conviventes/${conviventeId}/pia`, { params });
+  const data = response.data;
+  if (Array.isArray(data)) {
+    return {
+      registros: data,
+      total: data.length,
+      has_more: false,
+    };
+  }
+  return {
+    registros: data?.registros || [],
+    total: data?.total || 0,
+    has_more: Boolean(data?.has_more),
+  };
 }
 
-export async function listarDocumentosConvivente(conviventeId) {
-  const response = await api.get(`/api/conviventes/${conviventeId}/documentos`);
-  return response.data || [];
+export async function listarDocumentosConvivente(conviventeId, params = {}) {
+  const response = await api.get(`/api/conviventes/${conviventeId}/documentos`, { params });
+  const data = response.data;
+  if (Array.isArray(data)) {
+    return {
+      registros: data,
+      total: data.length,
+      has_more: false,
+    };
+  }
+  return {
+    registros: data?.registros || [],
+    total: data?.total || 0,
+    has_more: Boolean(data?.has_more),
+  };
 }
 
 export async function uploadDocumentoConvivente(conviventeId, formUpload) {

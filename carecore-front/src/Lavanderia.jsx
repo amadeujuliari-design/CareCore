@@ -15,6 +15,11 @@ import {
   obterLogoRelatorioDataUrl,
 } from './utils/relatorioIdentidadePrint';
 import { filtrarOrdenarConviventesPorBusca } from './utils/conviventeBuscaUtils';
+import {
+  criarFiltrosListagemOperacionalPadrao,
+  LISTAGEM_OPERACIONAL_DIAS_PADRAO,
+  REGISTROS_POR_PAGINA_PRONTUARIO,
+} from './utils/prontuarioHistoricoFluxoUtils';
 import LeitorCarteirinhaModal from './components/LeitorCarteirinhaModal';
 import { encontrarConviventePorCodigo } from './utils/conviventeIdentificacaoUtils';
 
@@ -43,6 +48,12 @@ function saldoPendenteLavanderia(registro) {
 
 export default function Lavanderia() {
   const [registros, setRegistros] = useState([]);
+  const [totalRegistros, setTotalRegistros] = useState(0);
+  const [temMais, setTemMais] = useState(false);
+  const [carregandoMais, setCarregandoMais] = useState(false);
+  const [resumoFila, setResumoFila] = useState(null);
+  const [filtrosPeriodo, setFiltrosPeriodo] = useState({ dataInicio: '', dataFim: '', busca: '' });
+  const [buscaRascunho, setBuscaRascunho] = useState('');
   const [conviventes, setConviventes] = useState([]);
   const [statusFiltro, setStatusFiltro] = useState('pendentes');
   const [loading, setLoading] = useState(true);
@@ -82,6 +93,14 @@ export default function Lavanderia() {
   })), [registros]);
 
   const resumo = useMemo(() => {
+    if (resumoFila) {
+      return {
+        pendentes: resumoFila.pendentes || 0,
+        atrasados: resumoFila.atrasados || 0,
+        pecasPendentes: resumoFila.pecas_em_aberto || 0,
+      };
+    }
+
     const pendentes = registros.filter(item => item.status === 'Em lavanderia').length;
     const atrasados = registros.filter(item => item.status === 'Atrasado').length;
     const pecasPendentes = registros
@@ -89,31 +108,95 @@ export default function Lavanderia() {
       .reduce((total, item) => total + Number(item.quantidade_entregue || 0), 0);
 
     return { pendentes, atrasados, pecasPendentes };
-  }, [registros]);
+  }, [registros, resumoFila]);
 
-  const carregarDados = useCallback(async () => {
+  const montarParamsLista = useCallback(() => {
+    const params = {
+      limite: REGISTROS_POR_PAGINA_PRONTUARIO,
+    };
+
+    if (statusFiltro !== 'pendentes') {
+      if (filtrosPeriodo.dataInicio) params.data_inicio = filtrosPeriodo.dataInicio;
+      if (filtrosPeriodo.dataFim) params.data_fim = filtrosPeriodo.dataFim;
+    }
+
+    if (filtrosPeriodo.busca?.trim()) {
+      params.busca = filtrosPeriodo.busca.trim();
+    }
+
+    return params;
+  }, [statusFiltro, filtrosPeriodo]);
+
+  const carregarDados = useCallback(async ({ append = false, offset = 0 } = {}) => {
     try {
-      setLoading(true);
+      if (!append) {
+        setLoading(true);
+      } else {
+        setCarregandoMais(true);
+      }
       setErro('');
 
-      const [registrosDados, conviventesResponse] = await Promise.all([
-        listarLavanderia(statusFiltro),
-        api.get('/api/conviventes'),
+      const params = { ...montarParamsLista(), offset };
+      const [lista, conviventesResponse] = await Promise.all([
+        listarLavanderia(statusFiltro, params),
+        append ? Promise.resolve(null) : api.get('/api/conviventes/resumo'),
       ]);
 
-      setRegistros(registrosDados);
-      setConviventes(conviventesResponse.data || []);
+      const itens = lista.items || [];
+      setRegistros(prev => (append ? [...prev, ...itens] : itens));
+      setTotalRegistros(lista.total || 0);
+      setTemMais(Boolean(lista.has_more));
+      setResumoFila(lista.resumo_fila || null);
+
+      if (!append && conviventesResponse) {
+        setConviventes(conviventesResponse.data || []);
+      }
     } catch (error) {
       console.error(error);
       setErro(error.response?.data?.detail || 'Erro ao carregar lavanderia.');
     } finally {
       setLoading(false);
+      setCarregandoMais(false);
     }
+  }, [statusFiltro, montarParamsLista]);
+
+  useEffect(() => {
+    if (statusFiltro === 'pendentes') {
+      setFiltrosPeriodo({ dataInicio: '', dataFim: '', busca: '' });
+      setBuscaRascunho('');
+      return;
+    }
+
+    const padrao = criarFiltrosListagemOperacionalPadrao();
+    setFiltrosPeriodo(prev => ({
+      dataInicio: padrao.dataInicio,
+      dataFim: padrao.dataFim,
+      busca: prev.busca,
+    }));
   }, [statusFiltro]);
 
   useEffect(() => {
-    carregarDados();
+    carregarDados({ append: false, offset: 0 });
   }, [carregarDados]);
+
+  const aplicarFiltrosLista = () => {
+    setFiltrosPeriodo(prev => ({ ...prev, busca: buscaRascunho.trim() }));
+  };
+
+  const restaurarFiltrosLista = () => {
+    const padrao = criarFiltrosListagemOperacionalPadrao();
+    setBuscaRascunho('');
+    setFiltrosPeriodo({
+      dataInicio: statusFiltro === 'pendentes' ? '' : padrao.dataInicio,
+      dataFim: statusFiltro === 'pendentes' ? '' : padrao.dataFim,
+      busca: '',
+    });
+  };
+
+  const carregarMaisRegistros = () => {
+    if (!temMais || carregandoMais) return;
+    carregarDados({ append: true, offset: registros.length });
+  };
 
   useEffect(() => {
     buscarIdentidadeRelatorios().then(setIdentidadeRelatorio);
@@ -162,7 +245,8 @@ export default function Lavanderia() {
       titulo: 'Relatório de Lavanderia',
       filtros: {
         Status: statusFiltro,
-        'Total filtrado': registros.length,
+        'Total filtrado': totalRegistros,
+        'Exibidos na tela': registros.length,
       },
       colunas: [
         'Convivente',
@@ -186,7 +270,7 @@ export default function Lavanderia() {
 
     imprimirRelatorio({
       titulo: 'Relatório de Lavanderia',
-      subtitulo: `${registros.length} registro(s). Status: ${statusFiltro}.`,
+      subtitulo: `${totalRegistros} registro(s). Status: ${statusFiltro}.`,
       metricas: [
         { label: 'Pendentes', valor: resumo.pendentes },
         { label: 'Atrasados +48h', valor: resumo.atrasados },
@@ -346,7 +430,7 @@ export default function Lavanderia() {
               <ReportActionButton action="print" onClick={imprimir} disabled={registros.length === 0}>
                 Imprimir
               </ReportActionButton>
-              <PremiumButton type="button" variant="brand" onClick={carregarDados}>
+              <PremiumButton type="button" variant="brand" onClick={() => carregarDados({ append: false, offset: 0 })}>
                 Atualizar
               </PremiumButton>
             </>
@@ -505,6 +589,110 @@ export default function Lavanderia() {
                   <option value="Cancelado">Cancelados</option>
                 </select>
               </div>
+
+              {statusFiltro !== 'pendentes' && (
+                <div className="border-b border-gray-100 p-4">
+                  <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+                    <div>
+                      <p className="text-xs font-black uppercase text-gray-500">Filtros da listagem</p>
+                      <p className="mt-1 text-xs font-semibold text-gray-500">
+                        Por padrão, últimos {LISTAGEM_OPERACIONAL_DIAS_PADRAO} dias. Amplie o período quando precisar.
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <input
+                        type="date"
+                        value={filtrosPeriodo.dataInicio}
+                        onChange={(event) => setFiltrosPeriodo(prev => ({ ...prev, dataInicio: event.target.value }))}
+                        className="rounded-xl border border-gray-200 px-3 py-2 text-sm font-semibold"
+                      />
+                      <input
+                        type="date"
+                        value={filtrosPeriodo.dataFim}
+                        onChange={(event) => setFiltrosPeriodo(prev => ({ ...prev, dataFim: event.target.value }))}
+                        className="rounded-xl border border-gray-200 px-3 py-2 text-sm font-semibold"
+                      />
+                      <input
+                        type="search"
+                        value={buscaRascunho}
+                        onChange={(event) => setBuscaRascunho(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter') {
+                            event.preventDefault();
+                            aplicarFiltrosLista();
+                          }
+                        }}
+                        placeholder="Buscar convivente ou observação..."
+                        className="min-w-[220px] rounded-xl border border-gray-200 px-3 py-2 text-sm font-semibold"
+                      />
+                      <button
+                        type="button"
+                        onClick={aplicarFiltrosLista}
+                        className="rounded-xl bg-brand px-4 py-2 text-sm font-black text-white"
+                      >
+                        Filtrar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={restaurarFiltrosLista}
+                        className="rounded-xl border border-gray-200 px-4 py-2 text-sm font-bold text-gray-600"
+                      >
+                        Padrão
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {statusFiltro === 'pendentes' && (
+                <div className="border-b border-gray-100 p-4">
+                  <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+                    <p className="text-xs font-semibold text-gray-500">
+                      Fila operacional sem corte de data. Use os demais status para consultar histórico recente.
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      <input
+                        type="search"
+                        value={buscaRascunho}
+                        onChange={(event) => setBuscaRascunho(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter') {
+                            event.preventDefault();
+                            aplicarFiltrosLista();
+                          }
+                        }}
+                        placeholder="Buscar convivente ou observação..."
+                        className="min-w-[220px] rounded-xl border border-gray-200 px-3 py-2 text-sm font-semibold"
+                      />
+                      <button
+                        type="button"
+                        onClick={aplicarFiltrosLista}
+                        className="rounded-xl bg-brand px-4 py-2 text-sm font-black text-white"
+                      >
+                        Filtrar
+                      </button>
+                      {filtrosPeriodo.busca && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setBuscaRascunho('');
+                            setFiltrosPeriodo(prev => ({ ...prev, busca: '' }));
+                          }}
+                          className="rounded-xl border border-gray-200 px-4 py-2 text-sm font-bold text-gray-600"
+                        >
+                          Limpar busca
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {!loading && registros.length > 0 && (
+                <div className="border-b border-gray-100 px-4 py-2 text-xs font-semibold text-gray-500">
+                  Exibindo {registros.length} de {totalRegistros} registro(s).
+                </div>
+              )}
 
               {loading ? (
                 <div className="p-8 text-center text-sm font-semibold text-gray-500">
@@ -686,6 +874,19 @@ export default function Lavanderia() {
                     </tbody>
                     </table>
                   </div>
+
+                  {temMais && (
+                    <div className="flex justify-center border-t border-gray-100 p-4">
+                      <button
+                        type="button"
+                        onClick={carregarMaisRegistros}
+                        disabled={carregandoMais}
+                        className="rounded-2xl border border-blue-200 bg-white px-4 py-3 text-sm font-black text-blue-700 disabled:opacity-50"
+                      >
+                        {carregandoMais ? 'Carregando...' : 'Carregar mais registros'}
+                      </button>
+                    </div>
+                  )}
                 </>
               )}
             </div>

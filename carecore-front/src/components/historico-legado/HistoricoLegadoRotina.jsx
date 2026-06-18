@@ -3,6 +3,11 @@ import axios from 'axios';
 
 import { PremiumButton } from '../PremiumUI';
 import { API_ROOT } from '../../config/apiBase';
+import {
+  calcularDataInicioPadrao,
+  dataHojeIsoLocal,
+  HISTORICO_DIAS_PADRAO,
+} from '../../utils/prontuarioHistoricoFluxoUtils';
 
 const LIMITE_ROTINA = 20;
 
@@ -10,8 +15,8 @@ const filtrosIniciais = {
   busca: '',
   nome_convivente: '',
   numero_sisa: '',
-  data_inicio: '',
-  data_fim: '',
+  data_inicio: calcularDataInicioPadrao(HISTORICO_DIAS_PADRAO),
+  data_fim: dataHojeIsoLocal(),
   servico_prestado: '',
   status_revisao: '',
   quarto: '',

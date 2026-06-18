@@ -1,10 +1,27 @@
 import api from './api';
+import { REGISTROS_POR_PAGINA_PRONTUARIO } from '../utils/prontuarioHistoricoFluxoUtils';
 
-export async function listarLavanderia(statusFiltro = 'pendentes') {
+const LISTA_VAZIA = {
+  items: [],
+  total: 0,
+  limit: REGISTROS_POR_PAGINA_PRONTUARIO,
+  offset: 0,
+  has_more: false,
+  resumo_fila: null,
+};
+
+export async function listarLavanderia(statusFiltro = 'pendentes', params = {}) {
   const response = await api.get('/api/rotina/lavanderia', {
-    params: { status_filtro: statusFiltro },
+    params: {
+      status_filtro: statusFiltro,
+      limite: params.limite ?? REGISTROS_POR_PAGINA_PRONTUARIO,
+      offset: params.offset ?? 0,
+      ...(params.data_inicio ? { data_inicio: params.data_inicio } : {}),
+      ...(params.data_fim ? { data_fim: params.data_fim } : {}),
+      ...(params.busca ? { busca: params.busca } : {}),
+    },
   });
-  return response.data || [];
+  return response.data || LISTA_VAZIA;
 }
 
 export async function registrarLavanderia(payload) {
@@ -22,11 +39,18 @@ export async function cancelarLavanderia(registroId, payload) {
   return response.data;
 }
 
-export async function listarPertencesRecolhidos(statusFiltro = 'abertos') {
+export async function listarPertencesRecolhidos(statusFiltro = 'abertos', params = {}) {
   const response = await api.get('/api/rotina/pertences-recolhidos', {
-    params: { status_filtro: statusFiltro },
+    params: {
+      status_filtro: statusFiltro,
+      limite: params.limite ?? REGISTROS_POR_PAGINA_PRONTUARIO,
+      offset: params.offset ?? 0,
+      ...(params.data_inicio ? { data_inicio: params.data_inicio } : {}),
+      ...(params.data_fim ? { data_fim: params.data_fim } : {}),
+      ...(params.busca ? { busca: params.busca } : {}),
+    },
   });
-  return response.data || [];
+  return response.data || LISTA_VAZIA;
 }
 
 export async function registrarPertencesRecolhidos(payload) {

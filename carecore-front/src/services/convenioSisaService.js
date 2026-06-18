@@ -9,9 +9,22 @@ export async function buscarRelatorioDiarioSisa({ data }) {
   return response.data;
 }
 
-export async function buscarFechamentosSisa() {
-  const response = await api.get(`${BASE_CONVENIO_SISA}/fechamentos`);
-  return response.data || [];
+export async function buscarFechamentosSisa(params = {}) {
+  const response = await api.get(`${BASE_CONVENIO_SISA}/fechamentos`, {
+    params: {
+      limit: params.limit ?? 60,
+      offset: params.offset ?? 0,
+    },
+  });
+  const data = response.data;
+  if (Array.isArray(data)) {
+    return { items: data, total: data.length, has_more: false };
+  }
+  return {
+    items: data?.items || [],
+    total: data?.total ?? (data?.items || []).length,
+    has_more: Boolean(data?.has_more),
+  };
 }
 
 export async function buscarRelatorioMensalSisa({ ano, mes, dataInicio, dataFim }) {
@@ -26,9 +39,29 @@ export async function buscarRelatorioMensalSisa({ ano, mes, dataInicio, dataFim 
   return response.data;
 }
 
-export async function listarImportacoesSisa() {
-  const response = await api.get(`${BASE_CONVENIO_SISA}/importacoes`);
-  return response.data || [];
+export async function listarImportacoesSisa(params = {}) {
+  const response = await api.get(`${BASE_CONVENIO_SISA}/importacoes`, {
+    params: {
+      limit: params.limit ?? 30,
+      offset: params.offset ?? 0,
+    },
+  });
+  const data = response.data;
+  if (Array.isArray(data)) {
+    return { items: data, total: data.length, has_more: false };
+  }
+  return {
+    items: data?.items || [],
+    total: data?.total ?? (data?.items || []).length,
+    has_more: Boolean(data?.has_more),
+  };
+}
+
+export async function listarDivergenciasImportacaoSisa(importacaoId, params = {}) {
+  const response = await api.get(`${BASE_CONVENIO_SISA}/importacoes/${importacaoId}/divergencias`, {
+    params,
+  });
+  return response.data;
 }
 
 export async function buscarDetalheImportacaoSisa(importacaoId) {

@@ -15,6 +15,7 @@ from schemas import (
     AvisoCreate,
     AvisoDashboardResponse,
     AvisoHistoricoListResponse,
+    AvisoMeListResponse,
     AvisoResponse,
     AvisosResumoResponse,
     AvisoUpdate,
@@ -261,17 +262,23 @@ async def criar_aviso(
     return novo_aviso
 
 
-@router.get("/me", response_model=List[AvisoDashboardResponse])
+@router.get("/me", response_model=AvisoMeListResponse)
 async def listar_meus_avisos(
     somente_nao_lidos: bool = False,
     limite: int = 10,
+    offset: int = Query(0, ge=0),
+    busca: Optional[str] = None,
+    classificacao: Optional[str] = None,
+    prioridade: Optional[str] = None,
+    data_inicio: Optional[str] = None,
+    data_fim: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
     usuario_atual: dict = Depends(get_usuario_logado),
 ):
     usuario_id = _usuario_id(usuario_atual)
     instituicao_id = _instituicao_id(usuario_atual)
 
-    limite = max(1, min(limite, 50))
+    limite = max(1, min(limite, 100))
 
     consulta = (
         select(AvisoDB, UsuarioDB.nome, UsuarioDB.avatar_url, AvisoDestinatarioDB.lido, AvisoDestinatarioDB.lido_em)
@@ -297,8 +304,6 @@ async def listar_meus_avisos(
             )
         )
 
-    consulta = consulta.order_by(AvisoDB.criado_em.desc()).limit(limite)
-
     if somente_nao_lidos:
         consulta = consulta.where(
             or_(
@@ -307,7 +312,38 @@ async def listar_meus_avisos(
             )
         )
 
-    resultado = await db.execute(consulta)
+    busca_limpa = (busca or "").strip()
+    if busca_limpa:
+        termo = f"%{busca_limpa}%"
+        consulta = consulta.where(
+            or_(
+                AvisoDB.titulo.ilike(termo),
+                AvisoDB.mensagem.ilike(termo),
+            )
+        )
+
+    classificacao_limpa = (classificacao or "").strip()
+    if classificacao_limpa:
+        consulta = consulta.where(AvisoDB.classificacao == classificacao_limpa)
+
+    prioridade_limpa = (prioridade or "").strip()
+    if prioridade_limpa and prioridade_limpa != "Todas":
+        consulta = consulta.where(AvisoDB.prioridade == prioridade_limpa)
+
+    inicio = _parse_data_filtro(data_inicio)
+    if inicio:
+        consulta = consulta.where(AvisoDB.criado_em >= inicio)
+
+    fim = _parse_data_filtro(data_fim, fim_do_dia=True)
+    if fim:
+        consulta = consulta.where(AvisoDB.criado_em <= fim)
+
+    ids_subconsulta = consulta.with_only_columns(AvisoDB.id).order_by(None).distinct().subquery()
+    total = (await db.execute(select(func.count()).select_from(ids_subconsulta))).scalar_one()
+
+    resultado = await db.execute(
+        consulta.order_by(AvisoDB.criado_em.desc()).offset(offset).limit(limite)
+    )
 
     avisos = []
     for aviso, remetente_nome, remetente_avatar_url, lido, lido_em in resultado.all():
@@ -338,7 +374,15 @@ async def listar_meus_avisos(
             )
         )
 
-    return avisos
+    total_int = int(total or 0)
+
+    return {
+        "items": avisos,
+        "total": total_int,
+        "limit": limite,
+        "offset": offset,
+        "has_more": offset + len(avisos) < total_int,
+    }
 
 
 @router.get("/me/resumo", response_model=AvisosResumoResponse)

@@ -30,6 +30,8 @@ export function useProntuarioDocumentos({
   carregarDadosIniciais,
 }) {
   const [documentos, setDocumentos] = useState([]);
+  const [totalDocumentos, setTotalDocumentos] = useState(0);
+  const [documentosTemMais, setDocumentosTemMais] = useState(false);
   const [loadingDocs, setLoadingDocs] = useState(false);
   const [arquivoSelecionado, setArquivoSelecionado] = useState(null);
   const [tipoDocumentoSelecionado, setTipoDocumentoSelecionado] = useState('');
@@ -50,11 +52,17 @@ export function useProntuarioDocumentos({
     .filter(doc => doc.tipo_documento === 'Foto de Perfil')
     .sort((a, b) => new Date(b.data_upload) - new Date(a.data_upload))[0];
 
-  const carregarDocumentos = async (conviventeId) => {
+  const carregarDocumentos = async (conviventeId, { append = false } = {}) => {
     setLoadingDocs(true);
     try {
-      const documentosRecebidos = await listarDocumentosConvivente(conviventeId);
-      setDocumentos(documentosRecebidos);
+      const resposta = await listarDocumentosConvivente(conviventeId, {
+        limite: 30,
+        deslocamento: append ? documentos.length : 0,
+      });
+      const documentosRecebidos = resposta.registros || [];
+      setDocumentos((prev) => (append ? [...prev, ...documentosRecebidos] : documentosRecebidos));
+      setTotalDocumentos(resposta.total || documentosRecebidos.length);
+      setDocumentosTemMais(Boolean(resposta.has_more));
     } catch (error) {
       console.error('Erro ao carregar documentos', error);
     } finally {
@@ -276,6 +284,8 @@ export function useProntuarioDocumentos({
 
   const resetarDocumentosProntuario = () => {
     setDocumentos([]);
+    setTotalDocumentos(0);
+    setDocumentosTemMais(false);
     setArquivoSelecionado(null);
     setTipoDocumentoSelecionado('');
     setDocumentoSensivelSelecionado(false);
@@ -290,6 +300,12 @@ export function useProntuarioDocumentos({
     canvasRef,
     capturarFoto,
     carregarDocumentos,
+    carregarMaisDocumentos: (conviventeId) => {
+      if (!documentosTemMais) return;
+      return carregarDocumentos(conviventeId, { append: true });
+    },
+    documentosTemMais,
+    totalDocumentos,
     documentoConsultaBnmp,
     documentoSensivelSelecionado,
     documentos,

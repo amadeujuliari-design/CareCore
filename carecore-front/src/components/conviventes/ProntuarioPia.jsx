@@ -15,6 +15,9 @@ export default function ProntuarioPia({
   prepararNovoPiaPrincipal,
   handleSalvarRegistroPia,
   carregarRegistrosPia,
+  carregarMaisRegistrosPia,
+  piaTemMais,
+  totalRegistrosPia,
 }) {
   if (!editandoId) {
     return (
@@ -153,7 +156,7 @@ export default function ProntuarioPia({
 
         <div className="lg:col-span-2">
           <div className="flex flex-col gap-2 mb-3 sm:flex-row sm:items-center sm:justify-between">
-            <h3 className="text-xs font-semibold text-gray-700 uppercase">Histórico do PIA ({registrosPia.length})</h3>
+            <h3 className="text-xs font-semibold text-gray-700 uppercase">Histórico do PIA ({totalRegistrosPia || registrosPia.length})</h3>
             <div className="flex flex-wrap gap-2">
               {registrosPiaPrincipais.length > 0 && (
                 <button
@@ -263,6 +266,18 @@ export default function ProntuarioPia({
                   </article>
                 );
               })}
+              {piaTemMais && (
+                <div className="flex justify-center pt-2">
+                  <button
+                    type="button"
+                    onClick={() => carregarMaisRegistrosPia(editandoId)}
+                    disabled={loadingPia}
+                    className="rounded-lg border border-indigo-200 bg-white px-4 py-2 text-xs font-bold text-indigo-700 hover:bg-indigo-50 disabled:opacity-50"
+                  >
+                    {loadingPia ? 'Carregando...' : 'Carregar mais registros'}
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>
