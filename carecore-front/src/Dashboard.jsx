@@ -171,6 +171,54 @@ function normalizarPrioridadeAviso(prioridade) {
   return "Baixa";
 }
 
+function formatarSubtituloAlertas({ alertasComunicacao = 0, ocorrenciasPendentes = 0, resumoPrioridades = {} }) {
+  const partes = [];
+  if (alertasComunicacao > 0) {
+    partes.push(`${alertasComunicacao} aviso${alertasComunicacao === 1 ? "" : "s"}`);
+  }
+  if (ocorrenciasPendentes > 0) {
+    partes.push(`${ocorrenciasPendentes} ocorrência${ocorrenciasPendentes === 1 ? "" : "s"} em aberto`);
+  }
+  if (!partes.length) return "Nenhum alerta no momento";
+
+  const criticas = resumoPrioridades?.Crítica?.pendentes || 0;
+  const altas = resumoPrioridades?.Alta?.pendentes || 0;
+  const medias = resumoPrioridades?.Média?.pendentes || 0;
+  const baixas = resumoPrioridades?.Baixa?.pendentes || 0;
+  const detalhePrioridades = [
+    criticas ? `${criticas} crítica${criticas === 1 ? "" : "s"}` : "",
+    altas ? `${altas} alta${altas === 1 ? "" : "s"}` : "",
+    medias ? `${medias} média${medias === 1 ? "" : "s"}` : "",
+    baixas ? `${baixas} baixa${baixas === 1 ? "" : "s"}` : "",
+  ].filter(Boolean).join(" · ");
+
+  return detalhePrioridades ? `${partes.join(" + ")} (${detalhePrioridades})` : partes.join(" + ");
+}
+
+function ResumoPrioridadesPendentes({ resumoPrioridades = {} }) {
+  const itens = [
+    { chave: "Crítica", rotulo: "Crítica", classes: "border-red-100 bg-red-50 text-red-700" },
+    { chave: "Alta", rotulo: "Alta", classes: "border-orange-100 bg-orange-50 text-orange-700" },
+    { chave: "Média", rotulo: "Média", classes: "border-amber-100 bg-amber-50 text-amber-700" },
+    { chave: "Baixa", rotulo: "Baixa", classes: "border-emerald-100 bg-emerald-50 text-emerald-700" },
+  ];
+
+  return (
+    <div className="carecore-dashboard-priority-strip">
+      {itens.map((item) => {
+        const pendentes = resumoPrioridades?.[item.chave]?.pendentes || 0;
+        return (
+          <div key={item.chave} className={`carecore-dashboard-priority-chip ${item.classes}`}>
+            <span className="carecore-dashboard-priority-chip-label">{item.rotulo}</span>
+            <strong className="carecore-dashboard-priority-chip-value">{pendentes}</strong>
+            <span className="carecore-dashboard-priority-chip-hint">em aberto</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function AvisosImportantes({ avisos, carregando, onAbrirAviso, onGerenciar }) {
   return (
     <article className="carecore-dashboard-card carecore-panel-scroll">
@@ -399,6 +447,12 @@ export default function Dashboard() {
         0
       );
 
+      const ocorrenciasPendentes = Number(
+        resumoDashboard.ocorrenciasPendentes ??
+        resumoDashboard.alertasOcorrencias ??
+        0
+      );
+
       return {
         totalConviventes: resumoDashboard.totalConviventes || 0,
         ativos: resumoDashboard.ativos || 0,
@@ -407,8 +461,9 @@ export default function Dashboard() {
         atendimentosMes: resumoDashboard.atendimentosMes || 0,
         atendimentosHoje: resumoDashboard.atendimentosHoje || 0,
         alertasComunicacao,
-        alertasOcorrencias: resumoDashboard.alertasOcorrencias || 0,
-        alertasAtivos: alertasComunicacao + Number(resumoDashboard.alertasOcorrencias || 0),
+        ocorrenciasPendentes,
+        alertasOcorrencias: ocorrenciasPendentes,
+        alertasAtivos: alertasComunicacao + ocorrenciasPendentes,
         pendenciasTecnicas: resumoDashboard.pendenciasTecnicas || 0,
         ocorrenciasEmAlerta: resumoDashboard.ocorrenciasEmAlerta || [],
         pendenciasTecnicos: resumoDashboard.pendenciasTecnicos || [],
@@ -440,16 +495,15 @@ export default function Dashboard() {
     const pendentes = ocorrencias.filter((oc) => oc.status_resolucao !== "Resolvido");
 
     const ocorrenciasEmAlerta = pendentes
-      .filter((oc) => ["Alta", "Crítica"].includes(prioridadeOcorrencia(oc)) || oc.requer_acao_tecnica)
       .sort((a, b) => {
         const pesoA = pesoPrioridade(prioridadeOcorrencia(a));
         const pesoB = pesoPrioridade(prioridadeOcorrencia(b));
         if (pesoA !== pesoB) return pesoB - pesoA;
         return new Date(b.data_ocorrencia || 0) - new Date(a.data_ocorrencia || 0);
       })
-      .slice(0, 6);
+      .slice(0, 10);
 
-    const ocorrenciasCriticasAltasPendentes = pendentes.filter((oc) => ["Alta", "Crítica"].includes(prioridadeOcorrencia(oc))).length;
+    const ocorrenciasPendentes = pendentes.length;
 
     const resumoPrioridades = {
       Baixa: { total: 0, pendentes: 0 },
@@ -517,8 +571,9 @@ export default function Dashboard() {
       atendimentosMes: series?.resumo?.atendimentos_mes ?? 0,
       atendimentosHoje: series?.resumo?.atendimentos_hoje ?? 0,
       alertasComunicacao: Number(resumoAvisos?.total_alertas_ativos ?? resumoAvisos?.total_nao_lidos ?? 0),
-      alertasOcorrencias: ocorrenciasCriticasAltasPendentes,
-      alertasAtivos: Number(resumoAvisos?.total_alertas_ativos ?? resumoAvisos?.total_nao_lidos ?? 0) + ocorrenciasCriticasAltasPendentes,
+      ocorrenciasPendentes,
+      alertasOcorrencias: ocorrenciasPendentes,
+      alertasAtivos: Number(resumoAvisos?.total_alertas_ativos ?? resumoAvisos?.total_nao_lidos ?? 0) + ocorrenciasPendentes,
       pendenciasTecnicas: pendenciasTecnicos.reduce((soma, item) => soma + item.pendentes, 0),
       ocorrenciasEmAlerta,
       pendenciasTecnicos,
@@ -530,10 +585,16 @@ export default function Dashboard() {
   const totalRange = dadosGraficoRange.reduce((total, item) => total + (item.atendimentos || 0), 0);
 
   const cards = [
-    { titulo: "Total de conviventes", valor: dados.totalConviventes, subtitulo: `${dados.ativos} ativos`, icone: "◇", cor: "text-slate-900" },
+    { titulo: "Conviventes ativos", valor: dados.ativos, subtitulo: `${dados.totalConviventes} no cadastro total`, icone: "◇", cor: "text-slate-900" },
     { titulo: "Atendimentos (mês)", valor: dados.atendimentosMes, subtitulo: "Registros válidos no mês", icone: "▥", cor: "text-slate-900" },
     { titulo: "Atendimentos hoje", valor: dados.atendimentosHoje, subtitulo: `${dados.leitosOcupados} vagas ocupadas`, icone: "✓", cor: "text-slate-900" },
-    { titulo: "Alertas ativos", valor: dados.alertasAtivos, subtitulo: `${dados.alertasComunicacao || 0} avisos + ${dados.alertasOcorrencias || 0} ocorrências alta/crítica`, icone: "!", cor: dados.alertasAtivos ? "text-red-600" : "text-slate-900" },
+    {
+      titulo: "Alertas ativos",
+      valor: dados.alertasAtivos,
+      subtitulo: formatarSubtituloAlertas(dados),
+      icone: "!",
+      cor: dados.alertasAtivos ? "text-red-600" : "text-slate-900",
+    },
   ];
 
   function abrirPendenciasTecnico(item) {
@@ -634,16 +695,18 @@ export default function Dashboard() {
                 {cards.map((card) => (
                   <article key={card.titulo} className="carecore-kpi-soft">
                     <div className="flex items-center justify-between gap-4">
-                      <div>
+                      <div className="min-w-0">
                         <p className="carecore-kpi-label">{card.titulo}</p>
                         <p className={`carecore-kpi-value ${card.cor}`}>{card.valor}</p>
-                        <p className="carecore-kpi-subtitle">{card.subtitulo}</p>
+                        <p className="carecore-kpi-subtitle line-clamp-2" title={card.subtitulo}>{card.subtitulo}</p>
                       </div>
                       <div className="carecore-kpi-icon">{card.icone}</div>
                     </div>
                   </article>
                 ))}
               </section>
+
+              <ResumoPrioridadesPendentes resumoPrioridades={dados.resumoPrioridades} />
 
 
               <section className="carecore-dashboard-main-grid">
@@ -670,8 +733,10 @@ export default function Dashboard() {
                   <div className="mb-3 flex items-start gap-3">
                     <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-red-50 text-xl font-bold text-red-600">!</div>
                     <div>
-                      <h2 className="carecore-dashboard-card-title">Ocorrências em Alerta</h2>
-                      <p className="carecore-dashboard-card-subtitle">Pendências técnicas e ocorrências com prioridade Alta ou Crítica.</p>
+                      <h2 className="carecore-dashboard-card-title">Ocorrências em aberto</h2>
+                      <p className="carecore-dashboard-card-subtitle">
+                        {dados.ocorrenciasPendentes || 0} pendente{(dados.ocorrenciasPendentes || 0) === 1 ? "" : "s"} no total, ordenadas por prioridade.
+                      </p>
                     </div>
                   </div>
 
@@ -688,7 +753,7 @@ export default function Dashboard() {
                       </thead>
                       <tbody className="divide-y divide-slate-100">
                         {dados.ocorrenciasEmAlerta.length === 0 ? (
-                          <tr><td colSpan="5" className="px-3 py-10 text-center text-sm text-slate-400">Nenhuma ocorrência em alerta no momento.</td></tr>
+                          <tr><td colSpan="5" className="px-3 py-10 text-center text-sm text-slate-400">Nenhuma ocorrência em aberto no momento.</td></tr>
                         ) : (
                           dados.ocorrenciasEmAlerta.map((oc) => {
                             const prioridade = prioridadeOcorrencia(oc);
@@ -715,7 +780,7 @@ export default function Dashboard() {
                   <div className="carecore-dashboard-mobile-list md:hidden">
                     {dados.ocorrenciasEmAlerta.length === 0 ? (
                       <div className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-8 text-center text-sm font-semibold text-slate-400">
-                        Nenhuma ocorrência em alerta no momento.
+                        Nenhuma ocorrência em aberto no momento.
                       </div>
                     ) : (
                       dados.ocorrenciasEmAlerta.map((oc) => {
@@ -749,7 +814,7 @@ export default function Dashboard() {
                     )}
                   </div>
 
-                  <button onClick={() => navigate("/ocorrencias?prioridade=Alta&status=Pendente")} className="carecore-soft-button mt-3 w-full">Ver ocorrências prioritárias →</button>
+                  <button onClick={() => navigate("/ocorrencias?status=Pendente")} className="carecore-soft-button mt-3 w-full">Ver todas as ocorrências em aberto →</button>
                 </article>
 
                 <article className="carecore-dashboard-card carecore-panel-scroll">

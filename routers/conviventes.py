@@ -5723,21 +5723,14 @@ async def dashboard_resumo(
         if ocorrencia.get("status_resolucao") != "Resolvido":
             resumo_prioridades[prioridade]["pendentes"] += 1
 
-    ocorrencias_em_alerta = [
-        ocorrencia for ocorrencia in pendentes
-        if (
-            ocorrencia.get("requer_acao_tecnica")
-            or ocorrencia["prioridade"] in ("Alta", "Crítica")
-        )
-    ]
-    ocorrencias_em_alerta.sort(
+    ocorrencias_em_alerta = sorted(
+        pendentes,
         key=lambda item: (
             PESO_PRIORIDADE.get(item["prioridade"], 2),
             item.get("data_ocorrencia") or datetime.min
         ),
         reverse=True
-    )
-    ocorrencias_em_alerta = ocorrencias_em_alerta[:6]
+    )[:10]
 
     agrupado = {}
     for ocorrencia in pendentes:
@@ -5796,6 +5789,7 @@ async def dashboard_resumo(
         1 for ocorrencia in pendentes
         if ocorrencia["prioridade"] in ("Alta", "Crítica")
     )
+    ocorrencias_pendentes = len(pendentes)
 
     return {
         "totalConviventes": total_conviventes,
@@ -5804,7 +5798,9 @@ async def dashboard_resumo(
         "totalLeitos": total_leitos,
         "atendimentosMes": series["resumo"]["atendimentos_mes"],
         "atendimentosHoje": series["resumo"]["atendimentos_hoje"],
-        "alertasOcorrencias": ocorrencias_criticas_altas_pendentes,
+        "ocorrenciasPendentes": ocorrencias_pendentes,
+        "ocorrenciasCriticasAltasPendentes": ocorrencias_criticas_altas_pendentes,
+        "alertasOcorrencias": ocorrencias_pendentes,
         "pendenciasTecnicas": sum(item["pendentes"] for item in pendencias_tecnicos),
         "ocorrenciasEmAlerta": ocorrencias_em_alerta,
         "pendenciasTecnicos": pendencias_tecnicos,

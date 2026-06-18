@@ -134,7 +134,7 @@ test('acessa dashboard protegido com sessao local e APIs mockadas', async ({ pag
   await page.goto('/dashboard');
 
   await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
-  await expect(page.getByText('Total de conviventes')).toBeVisible();
+  await expect(page.getByText('Conviventes ativos')).toBeVisible();
   await expect(page.getByText('Avisos Importantes')).toBeVisible();
   await expect(page).toHaveURL(/\/dashboard$/);
   expect(validouHeadersDashboard).toBe(true);

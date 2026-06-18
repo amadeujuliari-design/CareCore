@@ -896,31 +896,30 @@ body {
 }
 
 .carecore-dashboard-v2 {
-  height: 100%;
   min-height: 0;
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  display: flex;
+  flex-direction: column;
   gap: 12px;
 }
 
 .carecore-dashboard-kpis {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
+  gap: 10px;
 }
 
 .carecore-kpi-soft {
-  min-height: 88px;
-  border-radius: 20px;
+  min-height: 78px;
+  border-radius: 18px;
   border: 1px solid var(--carecore-border);
   background: #fff;
   box-shadow: 0 2px 10px rgba(15, 31, 61, 0.035);
-  padding: 13px 15px;
+  padding: 11px 13px;
 }
 
 .carecore-kpi-label {
-  font-size: 11px;
-  line-height: 1;
+  font-size: 10px;
+  line-height: 1.15;
   text-transform: uppercase;
   color: #8a96ad;
   font-weight: 750;
@@ -928,8 +927,8 @@ body {
 }
 
 .carecore-kpi-value {
-  margin-top: 8px;
-  font-size: 27px;
+  margin-top: 6px;
+  font-size: 30px;
   line-height: 1;
   font-weight: 750;
   color: #14213d;
@@ -937,43 +936,79 @@ body {
 }
 
 .carecore-kpi-subtitle {
-  margin-top: 7px;
-  font-size: 13px;
+  margin-top: 5px;
+  font-size: 12px;
+  line-height: 1.35;
   color: var(--carecore-muted);
   font-weight: 500;
 }
 
 .carecore-kpi-icon {
-  width: 46px;
-  height: 46px;
-  border-radius: 16px;
+  width: 40px;
+  height: 40px;
+  border-radius: 14px;
   background: #f7f9fd;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 21px;
+  font-size: 18px;
   flex-shrink: 0;
 }
 
-.carecore-dashboard-main-grid {
-  min-height: 0;
+.carecore-dashboard-priority-strip {
   display: grid;
-  grid-template-columns: minmax(0, 1.08fr) minmax(360px, 0.92fr);
-  grid-template-rows: minmax(250px, 0.85fr) minmax(0, 1.15fr);
-  gap: 12px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.carecore-dashboard-priority-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: 14px;
+  border: 1px solid;
+  padding: 8px 10px;
+  min-height: 42px;
+}
+
+.carecore-dashboard-priority-chip-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .03em;
+}
+
+.carecore-dashboard-priority-chip-value {
+  font-size: 18px;
+  line-height: 1;
+  font-weight: 800;
+}
+
+.carecore-dashboard-priority-chip-hint {
+  margin-left: auto;
+  font-size: 10px;
+  font-weight: 600;
+  opacity: .75;
+  white-space: nowrap;
+}
+
+.carecore-dashboard-main-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(300px, 0.85fr);
+  grid-template-rows: auto auto;
+  gap: 10px;
 }
 
 .carecore-dashboard-card {
-  min-height: 0;
-  border-radius: 22px;
+  border-radius: 20px;
   border: 1px solid var(--carecore-border);
   background: #fff;
   box-shadow: 0 2px 12px rgba(15, 31, 61, 0.04);
-  padding: 14px;
+  padding: 12px;
 }
 
 .carecore-dashboard-card-title {
-  font-size: 17px;
+  font-size: 16px;
   line-height: 1.2;
   color: #101c35;
   font-weight: 750;
@@ -981,14 +1016,27 @@ body {
 }
 
 .carecore-dashboard-card-subtitle {
-  margin-top: 3px;
-  font-size: 13px;
+  margin-top: 2px;
+  font-size: 12px;
+  line-height: 1.35;
   color: var(--carecore-muted);
   font-weight: 450;
 }
 
-.carecore-dashboard-chart-card { display: flex; flex-direction: column; }
-.carecore-dashboard-chart-wrap { min-height: 0; flex: 1; }
+.carecore-dashboard-chart-card {
+  display: flex;
+  flex-direction: column;
+  min-height: 250px;
+}
+
+.carecore-dashboard-chart-wrap {
+  min-height: 0;
+  flex: 1;
+}
+
+.carecore-dashboard-chart-wrap svg {
+  height: 150px;
+}
 
 .carecore-dashboard-mobile-list {
   display: grid;
@@ -1047,22 +1095,19 @@ body {
 }
 
 @media (max-width: 1450px) {
-  .carecore-kpi-soft { min-height: 82px; padding: 12px 14px; }
-  .carecore-kpi-value { font-size: 25px; }
-  .carecore-kpi-icon { width: 42px; height: 42px; border-radius: 15px; }
-  .carecore-dashboard-main-grid {
-    grid-template-rows: minmax(230px, 0.78fr) minmax(0, 1.22fr);
-    gap: 10px;
-  }
-  .carecore-dashboard-card { padding: 12px; border-radius: 20px; }
-  .carecore-dashboard-card-title { font-size: 16px; }
-  .carecore-dashboard-table-scroll { max-height: 225px; }
+  .carecore-kpi-soft { min-height: 74px; padding: 10px 12px; }
+  .carecore-kpi-value { font-size: 28px; }
+  .carecore-kpi-icon { width: 38px; height: 38px; border-radius: 13px; }
+  .carecore-dashboard-card { padding: 11px; border-radius: 18px; }
+  .carecore-dashboard-card-title { font-size: 15px; }
+  .carecore-dashboard-card.carecore-panel-scroll { min-height: 280px; max-height: 340px; }
 }
 
 @media (max-width: 1180px) {
   .carecore-dashboard-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .carecore-dashboard-priority-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .carecore-dashboard-main-grid { display: flex; flex-direction: column; }
-  .carecore-dashboard-table-scroll { max-height: 320px; }
+  .carecore-dashboard-card.carecore-panel-scroll { max-height: none; }
 }
 
 @media (max-width: 768px) {
@@ -1078,6 +1123,14 @@ body {
   .carecore-dashboard-kpis {
     grid-template-columns: 1fr;
     gap: 10px;
+  }
+
+  .carecore-dashboard-priority-strip {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .carecore-dashboard-priority-chip-hint {
+    display: none;
   }
 
   .carecore-kpi-soft {
@@ -1157,39 +1210,32 @@ body {
     display: none;
   }
 }
-/* =========================================================
-   Dashboard: rolagem confortável por painel
-   - dashboard geral permanece fixo
-   - avisos/ocorrências/pendências rolam individualmente
-   - mostra mais conteúdo antes de precisar rolar
-   ========================================================= */
-
-/* Mantém os cards inferiores com espaço real para exibir 3+ linhas */
-.carecore-dashboard-main-grid {
-  grid-template-rows: minmax(230px, 0.72fr) minmax(330px, 1.28fr) !important;
+/* Dashboard: painéis com altura fixa e rolagem interna confortável */
+.carecore-dashboard-scroll-area {
+  overflow-y: auto !important;
+  overflow-x: hidden;
 }
 
-/* Painéis continuam fixos dentro do grid */
 .carecore-dashboard-card.carecore-panel-scroll {
-  min-height: 0 !important;
-  overflow: hidden !important;
-  display: flex !important;
-  flex-direction: column !important;
+  display: flex;
+  flex-direction: column;
+  min-height: 300px;
+  max-height: 360px;
+  overflow: hidden;
 }
 
-/* Área rolável confortável, sem parecer uma "caixinha apertada" */
 .carecore-dashboard-panel-scroll-comfort {
   flex: 1 1 auto;
-  min-height: 190px;
-  max-height: none;
+  min-height: 0;
+  max-height: 100%;
   overflow-y: auto !important;
   overflow-x: hidden !important;
   scrollbar-gutter: stable;
 }
 
-/* Avisos também com altura útil melhor */
 .carecore-avisos-scroll {
-  min-height: 185px;
+  min-height: 0;
+  max-height: 100%;
 }
 
 /* Cabeçalho da tabela fica visível enquanto rola dentro do painel */
@@ -1299,16 +1345,9 @@ body {
 }
 
 @media (max-width: 1450px) {
-  .carecore-dashboard-main-grid {
-    grid-template-rows: minmax(220px, 0.68fr) minmax(310px, 1.32fr) !important;
-  }
-
-  .carecore-dashboard-panel-scroll-comfort {
-    min-height: 175px;
-  }
-
-  .carecore-avisos-scroll {
-    min-height: 170px;
+  .carecore-dashboard-card.carecore-panel-scroll {
+    min-height: 280px;
+    max-height: 340px;
   }
 }
 
