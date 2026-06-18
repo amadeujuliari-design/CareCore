@@ -740,78 +740,80 @@ export default function Dashboard() {
                     </div>
                   </div>
 
-                  <div className="carecore-dashboard-panel-scroll-comfort hidden rounded-2xl border border-slate-100 md:block">
-                    <table className="w-full text-left text-sm">
-                      <thead className="bg-slate-50 text-[11px] uppercase text-slate-500">
-                        <tr>
-                          <th className="px-3 py-3">Prioridade</th>
-                          <th className="px-3 py-3">Ocorrência</th>
-                          <th className="px-3 py-3">Data</th>
-                          <th className="px-3 py-3">Resp.</th>
-                          <th className="px-3 py-3 text-right">Ações</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {dados.ocorrenciasEmAlerta.length === 0 ? (
-                          <tr><td colSpan="5" className="px-3 py-10 text-center text-sm text-slate-400">Nenhuma ocorrência em aberto no momento.</td></tr>
-                        ) : (
-                          dados.ocorrenciasEmAlerta.map((oc) => {
-                            const prioridade = prioridadeOcorrencia(oc);
-                            return (
-                              <tr key={oc.id} className="hover:bg-slate-50">
-                                <td className="px-3 py-3"><BadgePrioridade prioridade={prioridade} /></td>
-                                <td className="px-3 py-3">
-                                  <p className="font-semibold text-slate-900">{oc.motivo || oc.tipo_ocorrencia || "Ocorrência"}</p>
-                                  <p className="text-xs text-slate-500 line-clamp-1">{oc.descricao || "Sem descrição"}</p>
-                                </td>
-                                <td className="px-3 py-3 text-xs font-semibold text-slate-500">{formatarData(oc.data_ocorrencia)}</td>
-                                <td className="px-3 py-3 text-xs font-semibold text-slate-600">Equipe</td>
-                                <td className="px-3 py-3 text-right">
-                                  <button onClick={() => navigate("/ocorrencias")} className="rounded-xl border border-purple-100 bg-purple-50 px-3 py-1.5 text-xs font-bold text-purple-700">Ver</button>
-                                </td>
-                              </tr>
-                            );
-                          })
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
+                  <div className="carecore-dashboard-panel-scroll-comfort carecore-avisos-scroll pr-1">
+                    <div className="hidden md:block rounded-2xl border border-slate-100 overflow-hidden">
+                      <table className="w-full text-left text-sm">
+                        <thead className="bg-slate-50 text-[11px] uppercase text-slate-500">
+                          <tr>
+                            <th className="px-3 py-3">Prioridade</th>
+                            <th className="px-3 py-3">Ocorrência</th>
+                            <th className="px-3 py-3">Data</th>
+                            <th className="px-3 py-3">Resp.</th>
+                            <th className="px-3 py-3 text-right">Ações</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {dados.ocorrenciasEmAlerta.length === 0 ? (
+                            <tr><td colSpan="5" className="px-3 py-10 text-center text-sm text-slate-400">Nenhuma ocorrência em aberto no momento.</td></tr>
+                          ) : (
+                            dados.ocorrenciasEmAlerta.map((oc) => {
+                              const prioridade = prioridadeOcorrencia(oc);
+                              return (
+                                <tr key={oc.id} className="hover:bg-slate-50">
+                                  <td className="px-3 py-3"><BadgePrioridade prioridade={prioridade} /></td>
+                                  <td className="px-3 py-3">
+                                    <p className="font-semibold text-slate-900">{oc.motivo || oc.tipo_ocorrencia || "Ocorrência"}</p>
+                                    <p className="text-xs text-slate-500 line-clamp-1">{oc.descricao || "Sem descrição"}</p>
+                                  </td>
+                                  <td className="px-3 py-3 text-xs font-semibold text-slate-500">{formatarData(oc.data_ocorrencia)}</td>
+                                  <td className="px-3 py-3 text-xs font-semibold text-slate-600">Equipe</td>
+                                  <td className="px-3 py-3 text-right">
+                                    <button onClick={() => navigate("/ocorrencias")} className="rounded-xl border border-purple-100 bg-purple-50 px-3 py-1.5 text-xs font-bold text-purple-700">Ver</button>
+                                  </td>
+                                </tr>
+                              );
+                            })
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
 
-                  <div className="carecore-dashboard-mobile-list md:hidden">
-                    {dados.ocorrenciasEmAlerta.length === 0 ? (
-                      <div className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-8 text-center text-sm font-semibold text-slate-400">
-                        Nenhuma ocorrência em aberto no momento.
-                      </div>
-                    ) : (
-                      dados.ocorrenciasEmAlerta.map((oc) => {
-                        const prioridade = prioridadeOcorrencia(oc);
-                        return (
-                          <button
-                            type="button"
-                            key={oc.id}
-                            onClick={() => navigate("/ocorrencias")}
-                            className="w-full rounded-2xl border border-slate-100 bg-slate-50/70 p-4 text-left shadow-sm"
-                          >
-                            <div className="flex items-start justify-between gap-3">
-                              <div className="min-w-0">
-                                <p className="truncate text-sm font-bold text-slate-900">
-                                  {oc.motivo || oc.tipo_ocorrencia || "Ocorrência"}
-                                </p>
-                                <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-slate-500">
-                                  {oc.descricao || "Sem descrição"}
-                                </p>
+                    <div className="carecore-dashboard-mobile-list md:hidden">
+                      {dados.ocorrenciasEmAlerta.length === 0 ? (
+                        <div className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-8 text-center text-sm font-semibold text-slate-400">
+                          Nenhuma ocorrência em aberto no momento.
+                        </div>
+                      ) : (
+                        dados.ocorrenciasEmAlerta.map((oc) => {
+                          const prioridade = prioridadeOcorrencia(oc);
+                          return (
+                            <button
+                              type="button"
+                              key={oc.id}
+                              onClick={() => navigate("/ocorrencias")}
+                              className="w-full rounded-2xl border border-slate-100 bg-slate-50/70 p-4 text-left shadow-sm"
+                            >
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                  <p className="truncate text-sm font-bold text-slate-900">
+                                    {oc.motivo || oc.tipo_ocorrencia || "Ocorrência"}
+                                  </p>
+                                  <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-slate-500">
+                                    {oc.descricao || "Sem descrição"}
+                                  </p>
+                                </div>
+                                <BadgePrioridade prioridade={prioridade} />
                               </div>
-                              <BadgePrioridade prioridade={prioridade} />
-                            </div>
 
-                            <div className="mt-3 flex items-center justify-between gap-3 text-xs font-semibold text-slate-500">
-                              <span>{formatarData(oc.data_ocorrencia)}</span>
-                              <span className="text-purple-700">Ver ocorrência</span>
-                            </div>
-                          </button>
-                        );
-                      })
-                    )}
+                              <div className="mt-3 flex items-center justify-between gap-3 text-xs font-semibold text-slate-500">
+                                <span>{formatarData(oc.data_ocorrencia)}</span>
+                                <span className="text-purple-700">Ver ocorrência</span>
+                              </div>
+                            </button>
+                          );
+                        })
+                      )}
+                    </div>
                   </div>
 
                   <button onClick={() => navigate("/ocorrencias?status=Pendente")} className="carecore-soft-button mt-3 w-full">Ver todas as ocorrências em aberto →</button>
@@ -823,84 +825,86 @@ export default function Dashboard() {
                     <p className="carecore-dashboard-card-subtitle">Ocorrências aguardando encerramento técnico.</p>
                   </div>
 
-                  <div className="carecore-dashboard-panel-scroll-comfort hidden rounded-2xl border border-slate-100 md:block">
-                    <table className="w-full text-left text-sm">
-                      <thead className="bg-slate-50 text-[11px] uppercase text-slate-500">
-                        <tr>
-                          <th className="px-3 py-3">Técnico</th>
-                          <th className="px-3 py-3 text-center">Pendentes</th>
-                          <th className="px-3 py-3">Prioridade</th>
-                          <th className="px-3 py-3"></th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {dados.pendenciasTecnicos.length === 0 ? (
-                          <tr><td colSpan="4" className="px-3 py-10 text-center text-sm text-slate-400">Nenhuma pendência técnica encontrada.</td></tr>
-                        ) : (
-                          dados.pendenciasTecnicos.map((item) => (
-                            <tr key={item.tecnico_id} className="hover:bg-slate-50">
-                              <td className="px-3 py-3">
-                                <div className="flex items-center gap-3">
-                                  <UserAvatar
-                                    nome={item.tecnico_nome}
-                                    avatarUrl={item.tecnico_avatar_url}
-                                    size="sm"
-                                  />
-                                  <div className="min-w-0">
-                                    <button type="button" onClick={() => abrirPendenciasTecnico(item)} className="carecore-technician-link truncate text-left">{item.tecnico_nome}</button>
-                                    <p className="text-xs text-slate-500">{item.perfil}</p>
+                  <div className="carecore-dashboard-panel-scroll-comfort carecore-avisos-scroll pr-1">
+                    <div className="hidden md:block rounded-2xl border border-slate-100 overflow-hidden">
+                      <table className="w-full text-left text-sm">
+                        <thead className="bg-slate-50 text-[11px] uppercase text-slate-500">
+                          <tr>
+                            <th className="px-3 py-3">Técnico</th>
+                            <th className="px-3 py-3 text-center">Pendentes</th>
+                            <th className="px-3 py-3">Prioridade</th>
+                            <th className="px-3 py-3"></th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {dados.pendenciasTecnicos.length === 0 ? (
+                            <tr><td colSpan="4" className="px-3 py-10 text-center text-sm text-slate-400">Nenhuma pendência técnica encontrada.</td></tr>
+                          ) : (
+                            dados.pendenciasTecnicos.map((item) => (
+                              <tr key={item.tecnico_id} className="hover:bg-slate-50">
+                                <td className="px-3 py-3">
+                                  <div className="flex items-center gap-3">
+                                    <UserAvatar
+                                      nome={item.tecnico_nome}
+                                      avatarUrl={item.tecnico_avatar_url}
+                                      size="sm"
+                                    />
+                                    <div className="min-w-0">
+                                      <button type="button" onClick={() => abrirPendenciasTecnico(item)} className="carecore-technician-link truncate text-left">{item.tecnico_nome}</button>
+                                      <p className="text-xs text-slate-500">{item.perfil}</p>
+                                    </div>
                                   </div>
-                                </div>
-                              </td>
-                              <td className="px-3 py-3 text-center text-xl font-bold text-slate-900">{item.pendentes}</td>
-                              <td className="px-3 py-3"><BadgePrioridade prioridade={item.prioridade} /></td>
-                              <td className="px-3 py-3 text-right text-slate-400">›</td>
-                            </tr>
-                          ))
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
+                                </td>
+                                <td className="px-3 py-3 text-center text-xl font-bold text-slate-900">{item.pendentes}</td>
+                                <td className="px-3 py-3"><BadgePrioridade prioridade={item.prioridade} /></td>
+                                <td className="px-3 py-3 text-right text-slate-400">›</td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
 
-                  <div className="carecore-dashboard-mobile-list md:hidden">
-                    {dados.pendenciasTecnicos.length === 0 ? (
-                      <div className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-8 text-center text-sm font-semibold text-slate-400">
-                        Nenhuma pendência técnica encontrada.
-                      </div>
-                    ) : (
-                      dados.pendenciasTecnicos.map((item) => (
-                        <button
-                          type="button"
-                          key={item.tecnico_id}
-                          onClick={() => abrirPendenciasTecnico(item)}
-                          className="w-full rounded-2xl border border-slate-100 bg-slate-50/70 p-4 text-left shadow-sm"
-                        >
-                          <div className="flex items-center justify-between gap-3">
-                            <div className="flex min-w-0 items-center gap-3">
-                              <UserAvatar
-                                nome={item.tecnico_nome}
-                                avatarUrl={item.tecnico_avatar_url}
-                                size="sm"
-                              />
-                              <div className="min-w-0">
-                                <p className="truncate text-sm font-bold text-slate-900">{item.tecnico_nome}</p>
-                                <p className="text-xs text-slate-500">{item.perfil}</p>
+                    <div className="carecore-dashboard-mobile-list md:hidden">
+                      {dados.pendenciasTecnicos.length === 0 ? (
+                        <div className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-8 text-center text-sm font-semibold text-slate-400">
+                          Nenhuma pendência técnica encontrada.
+                        </div>
+                      ) : (
+                        dados.pendenciasTecnicos.map((item) => (
+                          <button
+                            type="button"
+                            key={item.tecnico_id}
+                            onClick={() => abrirPendenciasTecnico(item)}
+                            className="w-full rounded-2xl border border-slate-100 bg-slate-50/70 p-4 text-left shadow-sm"
+                          >
+                            <div className="flex items-center justify-between gap-3">
+                              <div className="flex min-w-0 items-center gap-3">
+                                <UserAvatar
+                                  nome={item.tecnico_nome}
+                                  avatarUrl={item.tecnico_avatar_url}
+                                  size="sm"
+                                />
+                                <div className="min-w-0">
+                                  <p className="truncate text-sm font-bold text-slate-900">{item.tecnico_nome}</p>
+                                  <p className="text-xs text-slate-500">{item.perfil}</p>
+                                </div>
+                              </div>
+
+                              <div className="text-right">
+                                <p className="text-2xl font-bold leading-none text-slate-900">{item.pendentes}</p>
+                                <p className="text-[10px] font-bold uppercase text-slate-400">pend.</p>
                               </div>
                             </div>
 
-                            <div className="text-right">
-                              <p className="text-2xl font-bold leading-none text-slate-900">{item.pendentes}</p>
-                              <p className="text-[10px] font-bold uppercase text-slate-400">pend.</p>
+                            <div className="mt-3 flex items-center justify-between gap-3">
+                              <BadgePrioridade prioridade={item.prioridade} />
+                              <span className="text-xs font-bold text-purple-700">Abrir fila</span>
                             </div>
-                          </div>
-
-                          <div className="mt-3 flex items-center justify-between gap-3">
-                            <BadgePrioridade prioridade={item.prioridade} />
-                            <span className="text-xs font-bold text-purple-700">Abrir fila</span>
-                          </div>
-                        </button>
-                      ))
-                    )}
+                          </button>
+                        ))
+                      )}
+                    </div>
                   </div>
 
                   <button onClick={() => navigate("/ocorrencias")} className="carecore-soft-button mt-3 w-full">Ver todas as pendências →</button>

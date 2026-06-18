@@ -1170,15 +1170,16 @@ body {
   }
 
   .carecore-dashboard-card.carecore-panel-scroll {
-    overflow: visible !important;
+    overflow: hidden !important;
+    max-height: 360px;
   }
 
   .carecore-dashboard-panel-scroll-comfort,
   .carecore-avisos-scroll {
     min-height: 0;
     max-height: none;
-    overflow: visible !important;
-    scrollbar-gutter: auto;
+    overflow-y: auto !important;
+    scrollbar-gutter: stable;
   }
 
   .carecore-dashboard-chart-card {
@@ -1224,18 +1225,18 @@ body {
   overflow: hidden;
 }
 
-.carecore-dashboard-panel-scroll-comfort {
-  flex: 1 1 auto;
+.carecore-dashboard-panel-scroll-comfort,
+.carecore-avisos-scroll {
+  flex: 1 1 0%;
   min-height: 0;
-  max-height: 100%;
   overflow-y: auto !important;
   overflow-x: hidden !important;
   scrollbar-gutter: stable;
+  -webkit-overflow-scrolling: touch;
 }
 
 .carecore-avisos-scroll {
   min-height: 0;
-  max-height: 100%;
 }
 
 /* Cabeçalho da tabela fica visível enquanto rola dentro do painel */
