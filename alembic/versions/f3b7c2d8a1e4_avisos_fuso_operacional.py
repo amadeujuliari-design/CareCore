@@ -1,7 +1,7 @@
 """avisos fuso operacional
 
 Revision ID: f3b7c2d8a1e4
-Revises: d2a8f6c1b9e0
+Revises: b1c2d3e4f5a6
 Create Date: 2026-06-19 01:00:00.000000
 """
 
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 
 revision: str = "f3b7c2d8a1e4"
-down_revision: Union[str, Sequence[str], None] = "d2a8f6c1b9e0"
+down_revision: Union[str, Sequence[str], None] = "b1c2d3e4f5a6"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
