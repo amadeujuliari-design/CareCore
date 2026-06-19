@@ -1,5 +1,4 @@
 import api from './api';
-import { REGISTROS_POR_PAGINA_PRONTUARIO } from '../utils/prontuarioHistoricoFluxoUtils';
 
 export const LIMITE_AMOSTRA_OCORRENCIAS_RELATORIOS = 200;
 export const LIMITE_EXPORT_ROTINA_RELATORIOS = 5000;

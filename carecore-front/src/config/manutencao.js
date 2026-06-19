@@ -7,6 +7,7 @@ const PERFIS_LEGADOS = {
   Gestão: 'Gestor',
   Gerente: 'Gestor',
   Tecnico: 'Técnico',
+  Manutencao: 'Manutenção',
   Executivo: 'Global',
 };
 
@@ -43,6 +44,13 @@ export function usuarioPodeAcessarDuranteManutencao(usuario) {
   if (usuario.is_manutencao === true || usuario.is_master === true) return true;
 
   return PERFIS_LIBERADOS_MANUTENCAO.has(normalizarPerfil(usuario.perfil_acesso));
+}
+
+/** Usuário técnico de suporte/manutenção CareCore+ (não Gestor/Global). */
+export function usuarioEhPerfilManutencao(usuario) {
+  if (!usuario) return false;
+  if (usuario.is_manutencao === true) return true;
+  return normalizarPerfil(usuario.perfil_acesso) === 'Manutenção';
 }
 
 export const MENSAGEM_LOGIN_BLOQUEADO_MANUTENCAO =

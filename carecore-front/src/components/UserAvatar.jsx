@@ -1,4 +1,6 @@
 import AuthenticatedImage from './AuthenticatedImage';
+import logoEmblemaCarecore from '../assets/logo-emblema.png';
+import { usuarioEhPerfilManutencao } from '../config/manutencao';
 
 export default function UserAvatar({
   usuario,
@@ -10,6 +12,7 @@ export default function UserAvatar({
   const nomeFinal = nome || usuario?.nome || usuario?.email || 'Usuário';
   const foto = avatarUrl || usuario?.avatar_url || '';
   const fotoEhUpload = /^\/?uploads\//i.test(foto);
+  const exibirEmblemaCarecore = !foto && usuarioEhPerfilManutencao(usuario);
   const inicial = (nomeFinal || 'U').slice(0, 1).toUpperCase();
   const sizes = {
     sm: 'h-9 w-9 text-xs rounded-xl',
@@ -17,10 +20,13 @@ export default function UserAvatar({
     lg: 'h-16 w-16 text-lg rounded-3xl',
   };
   const sizeClass = sizes[size] || sizes.md;
+  const temaClass = exibirEmblemaCarecore
+    ? 'border-slate-200 bg-white'
+    : 'border-violet-100 bg-violet-50 text-violet-700';
 
   return (
     <div
-      className={`inline-flex shrink-0 items-center justify-center overflow-hidden border border-violet-100 bg-violet-50 font-black text-violet-700 ${sizeClass} ${className}`}
+      className={`inline-flex shrink-0 items-center justify-center overflow-hidden border font-black ${temaClass} ${sizeClass} ${className}`}
       title={nomeFinal}
     >
       {fotoEhUpload ? (
@@ -34,6 +40,13 @@ export default function UserAvatar({
           src={foto}
           alt={nomeFinal}
           className="h-full w-full object-cover"
+        />
+      ) : exibirEmblemaCarecore ? (
+        <img
+          src={logoEmblemaCarecore}
+          alt={nomeFinal}
+          className="h-full w-full object-contain p-1"
+          draggable={false}
         />
       ) : (
         inicial
