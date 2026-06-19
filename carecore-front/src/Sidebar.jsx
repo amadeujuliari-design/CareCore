@@ -25,6 +25,7 @@ import PasskeysModal from './components/PasskeysModal';
 import UserAvatar from './components/UserAvatar';
 import api, { limparSessaoLocal } from './services/api';
 import { API_ROOT } from './config/apiBase';
+import { carecoreVersaoRotulo } from './config/versao';
 import { decodificarPayloadJwt } from './utils/jwtUtils';
 import {
   DIREITOS_RESERVADOS_TITULO,
@@ -651,7 +652,7 @@ export default function Sidebar() {
 
               <div className="carecore-version-card">
                 <p>
-                  <strong>CARECORE+</strong> <span>v1.0.0</span>
+                  <strong>CARECORE+</strong> <span>{carecoreVersaoRotulo()}</span>
                 </p>
                 <a
                   href={obterUrlDireitosReservados()}
@@ -727,7 +728,7 @@ export default function Sidebar() {
 
         <div className="carecore-version-card">
           <p>
-            <strong>CARECORE+</strong> <span>v1.0.0</span>
+            <strong>CARECORE+</strong> <span>{carecoreVersaoRotulo()}</span>
           </p>
           <a
             href={obterUrlDireitosReservados()}

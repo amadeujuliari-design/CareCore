@@ -23,3 +23,7 @@ Nunca commitar artefatos locais de continuidade, contrato, importação ou manut
 `CHECKPOINT_COMPLETO_*.txt`, `relatorios_importacao/`, `minuta_contrato_carecore_aeb*`, `preencher_organizacao.py`.
 
 Diferenciar sempre: commit local, push GitHub, deploy Fly, deploy Vercel e migration aplicada.
+
+# Versao do app (sidebar)
+
+Em entregas com mudancas visiveis ao usuario (funcionalidade, correcao relevante, performance percebida), incrementar `carecore-front/src/config/versao.js` (semver: patch/minor/major) para refletir no sidebar.
