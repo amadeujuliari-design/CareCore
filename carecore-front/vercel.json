@@ -1,7 +1,7 @@
 {
   "build": {
     "env": {
-      "VITE_MAINTENANCE_MODE": "true"
+      "VITE_MAINTENANCE_MODE": "false"
     }
   },
   "rewrites": [
