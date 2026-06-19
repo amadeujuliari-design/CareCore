@@ -7,6 +7,7 @@ import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import Sidebar from "./Sidebar";
 import UserAvatar from "./components/UserAvatar";
+import { montarUsuarioAvatarRemetente } from "./config/manutencao";
 import ProjetoAtualBadge from "./components/ProjetoAtualBadge";
 import { listarMeusAvisos, obterResumoAvisos, marcarAvisoComoLido } from "./services/avisosService";
 import { API_ROOT } from "./config/apiBase";
@@ -260,6 +261,7 @@ function AvisosImportantes({ avisos, carregando, onAbrirAviso, onGerenciar }) {
                 <div className="flex items-center justify-between gap-3">
                   <div className="flex min-w-0 items-center gap-3">
                     <UserAvatar
+                      usuario={montarUsuarioAvatarRemetente(aviso)}
                       nome={aviso.remetente_nome || "Sistema"}
                       avatarUrl={aviso.remetente_avatar_url}
                       size="sm"

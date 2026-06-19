@@ -1844,6 +1844,7 @@ class AvisoDashboardResponse(BaseModel):
     remetente_id: str
     remetente_nome: Optional[str] = None
     remetente_avatar_url: Optional[str] = None
+    remetente_perfil_acesso: Optional[str] = None
 
     titulo: str
     mensagem: Optional[str] = None

@@ -35,27 +35,35 @@ const ROTAS_PROTEGIDAS = ROTAS_CRITICAS.filter((rota) => rota !== '/');
 describe('App routes contract', () => {
   it('mantem lazy loading nas telas principais', () => {
     const lazyImports = [
-      './Login',
-      './Dashboard',
-      './Quartos',
-      './Conviventes',
-      './CentralOcorrencias',
-      './RotinaDiaria',
-      './Lavanderia',
-      './PertencesRecolhidos',
-      './RotinaHistorico',
-      './DashboardOperacional',
-      './ConvenioSisa',
-      './Avisos',
-      './Usuarios',
-      './Relatorios',
-      './Organizacao',
-      './GestaoGlobal',
-      './HistoricoLegado',
+      '../Login',
+      '../ManutencaoProgramada',
+      '../Dashboard',
+      '../Cadastro',
+      '../Quartos',
+      '../Conviventes',
+      '../CentralOcorrencias',
+      '../RotinaDiaria',
+      '../Lavanderia',
+      '../PertencesRecolhidos',
+      '../RotinaHistorico',
+      '../DashboardOperacional',
+      '../ConvenioSisa',
+      '../Avisos',
+      '../Usuarios',
+      '../Relatorios',
+      '../Organizacao',
+      '../GestaoGlobal',
+      '../HistoricoLegado',
+      '../Suporte',
+      '../Cobrancas',
+      '../CobrancasAdmin',
     ];
 
     for (const importPath of lazyImports) {
-      assert.match(rotasSource, new RegExp(`lazy\\(\\(\\) => import\\('${importPath.replace('.', '\\.')}'\\)\\)`));
+      assert.match(
+        appRouterSource,
+        new RegExp(`lazy\\(\\(\\) => import\\('${importPath.replace('.', '\\.')}'\\)\\)`),
+      );
     }
   });
 

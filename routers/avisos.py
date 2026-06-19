@@ -271,7 +271,14 @@ async def listar_meus_avisos(
     limite = max(1, min(limite, 100))
 
     consulta = (
-        select(AvisoDB, UsuarioDB.nome, UsuarioDB.avatar_url, AvisoDestinatarioDB.lido, AvisoDestinatarioDB.lido_em)
+        select(
+            AvisoDB,
+            UsuarioDB.nome,
+            UsuarioDB.avatar_url,
+            UsuarioDB.perfil_acesso,
+            AvisoDestinatarioDB.lido,
+            AvisoDestinatarioDB.lido_em,
+        )
         .join(UsuarioDB, UsuarioDB.id == AvisoDB.remetente_id)
         .outerjoin(
             AvisoDestinatarioDB,
@@ -336,7 +343,7 @@ async def listar_meus_avisos(
     )
 
     avisos = []
-    for aviso, remetente_nome, remetente_avatar_url, lido, lido_em in resultado.all():
+    for aviso, remetente_nome, remetente_avatar_url, remetente_perfil_acesso, lido, lido_em in resultado.all():
         lido_bool = bool(lido)
         pode_exibir_titulo = aviso.destino_tipo == "todos" or _usuario_eh_gestor(usuario_atual)
 
@@ -346,6 +353,7 @@ async def listar_meus_avisos(
                 remetente_id=aviso.remetente_id,
                 remetente_nome=remetente_nome,
                 remetente_avatar_url=remetente_avatar_url,
+                remetente_perfil_acesso=remetente_perfil_acesso,
                 titulo=aviso.titulo if pode_exibir_titulo else "Você tem uma mensagem",
                 mensagem=aviso.mensagem,
                 mensagem_resumo=(

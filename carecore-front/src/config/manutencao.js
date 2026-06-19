@@ -53,6 +53,17 @@ export function usuarioEhPerfilManutencao(usuario) {
   return normalizarPerfil(usuario.perfil_acesso) === 'Manutenção';
 }
 
+/** Monta objeto de usuário para UserAvatar a partir de um aviso/remetente. */
+export function montarUsuarioAvatarRemetente(aviso) {
+  if (!aviso) return null;
+
+  return {
+    nome: aviso.remetente_nome,
+    avatar_url: aviso.remetente_avatar_url,
+    perfil_acesso: aviso.remetente_perfil_acesso,
+  };
+}
+
 export const MENSAGEM_LOGIN_BLOQUEADO_MANUTENCAO =
   'O CareCore+ está em manutenção programada. Neste momento, apenas a equipe de gestão/manutenção pode acessar. Tente novamente quando o sistema for liberado.';
 
