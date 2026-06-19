@@ -16,3 +16,4 @@ O backend usa FastAPI, SQLAlchemy async e Alembic. Trate dados assistenciais com
 - Prefira invariantes claras no backend a correcoes apenas no frontend.
 - Evite consultas N+1 e filtros em memoria quando o banco puder filtrar com seguranca.
 - Antes de deploy com migration, confirme que a migration e reversivel ou que o risco foi explicado.
+- Timestamps operacionais: usar `time_operacional.py` (nao `utcnow`).

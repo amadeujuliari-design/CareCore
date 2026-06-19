@@ -16,3 +16,4 @@ O frontend usa React/Vite. Mantenha interfaces simples, claras, institucionais e
 - Preserve consistencia visual e evite refatoracoes amplas quando a correcao for localizada.
 - Para telas de impressao, priorize legibilidade, A4, economia de espaco e informacao essencial.
 - Ao mexer em autenticacao, passkeys, tokens ou contexto de usuario, avalie impacto no login local e online.
+- Datas naive da API = horario operacional SP; ver `carecore-fuso-operacional.mdc`.

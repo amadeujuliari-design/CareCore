@@ -24,6 +24,10 @@ Nunca commitar artefatos locais de continuidade, contrato, importação ou manut
 
 Diferenciar sempre: commit local, push GitHub, deploy Fly, deploy Vercel e migration aplicada.
 
+# Fuso operacional
+
+Datas e horarios do projeto seguem **America/Sao_Paulo**. Ver regra `carecore-fuso-operacional.mdc`. Nao usar UTC em registros assistenciais novos.
+
 # Versao do app (sidebar)
 
 Em entregas com mudancas visiveis ao usuario (funcionalidade, correcao relevante, performance percebida), incrementar `carecore-front/src/config/versao.js` (semver: patch/minor/major) para refletir no sidebar.

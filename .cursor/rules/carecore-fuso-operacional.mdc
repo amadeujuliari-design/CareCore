@@ -1,0 +1,34 @@
+---
+description: Fuso operacional America/Sao_Paulo para datas, horarios e continuidade
+alwaysApply: true
+---
+
+# CareCore+ - Fuso operacional (Sao Paulo)
+
+A equipe e o sistema operam em **America/Sao_Paulo** (Brasilia, UTC-3). Timestamps do Cursor, GitHub Actions e servidores cloud costumam vir em **UTC** e podem parecer "dia seguinte" a noite no Brasil.
+
+## Regra para o agente
+
+- Trate o horario local do usuario em **Sao Paulo** como referencia operacional principal.
+- Se o usuario informar data/hora local, **priorize isso** sobre timestamps UTC do ambiente da IA.
+- Ao falar de "hoje", "agora" ou nomear checkpoints/arquivos com data, use **calendario de Sao Paulo**, nao UTC.
+- Ao explicar divergencias (ex.: aviso 19/06 vs relogio 18/06 23h), cite UTC vs SP quando relevante.
+
+## Backend (Python)
+
+- Para registros operacionais (`criado_em`, filtros por dia, validade, rotina, avisos etc.), use **`time_operacional.py`** (`agora_operacional_naive`, `parse_data_filtro_operacional`).
+- **Nao** use `datetime.utcnow()` nem `datetime.now()` sem fuso para dominio assistencial.
+- Filtros `data_inicio`/`data_fim` (AAAA-MM-DD) representam **dias no fuso operacional**.
+- Preferir reutilizar `agora_sao_paulo()` de `routers/conviventes_helpers.py` onde ja e o padrao local.
+
+## Frontend (React)
+
+- Datas naive vindas da API representam **horario operacional SP** (nao UTC), salvo campo explicitamente documentado como UTC.
+- Filtros de data do browser (input `type="date"`) devem alinhar com o mesmo calendario operacional.
+- Em telas que exibem `criado_em`, usar formatacao local pt-BR coerente com esse contrato.
+
+## Checkpoints, operacao e CI
+
+- Nomear checkpoints com data **SP** (ex.: `CHECKPOINT_COMPLETO_CARECORE_2026-06-18_...`).
+- Horarios de e-mail/CI GitHub sao UTC; nao confundir com falha operacional do app online.
+- Scripts pontuais de manutencao devem registrar data/hora SP no log quando imprimirem timestamps.
