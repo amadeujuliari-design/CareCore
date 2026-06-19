@@ -6,6 +6,7 @@ from sqlalchemy import Column, String, Boolean, ForeignKey, Integer, Date, Float
 import uuid
 import datetime
 from database import Base
+from time_operacional import agora_operacional_naive
 
 def get_uuid():
     return str(uuid.uuid4())
@@ -821,7 +822,7 @@ class AvisoDB(Base):
     destino_tipo = Column(String, default="todos", nullable=False)
 
     ativo = Column(Boolean, default=True)
-    criado_em = Column(DateTime, default=datetime.datetime.utcnow)
+    criado_em = Column(DateTime, default=agora_operacional_naive)
     valido_ate = Column(DateTime, nullable=True)
 
     # Auditoria simples
@@ -840,7 +841,7 @@ class AvisoDestinatarioDB(Base):
 
     lido = Column(Boolean, default=False)
     lido_em = Column(DateTime, nullable=True)
-    criado_em = Column(DateTime, default=datetime.datetime.utcnow)
+    criado_em = Column(DateTime, default=agora_operacional_naive)
 
 
 class CobrancaCicloDB(Base):

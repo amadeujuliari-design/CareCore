@@ -1,9 +1,8 @@
 # =====================================================================
 # ARQUIVO: routers/avisos.py
 # =====================================================================
-from datetime import datetime, time, timedelta, timezone
+from datetime import datetime
 from typing import List, Optional
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import and_, func, or_, select
@@ -21,13 +20,9 @@ from schemas import (
     AvisoUpdate,
 )
 from security import get_usuario_logado
+from time_operacional import agora_operacional_naive, parse_data_filtro_operacional
 
 router = APIRouter(prefix="/api/avisos", tags=["Avisos e Comunicação Interna"])
-try:
-    _FUSO_OPERACIONAL = ZoneInfo("America/Sao_Paulo")
-except ZoneInfoNotFoundError:
-    # Windows pode não trazer a base IANA de fusos sem o pacote tzdata.
-    _FUSO_OPERACIONAL = timezone(timedelta(hours=-3))
 
 
 def _usuario_id(usuario_atual: dict) -> str:
@@ -83,11 +78,7 @@ def _pode_consultar_historico_avisos(usuario_atual: dict) -> bool:
 
 
 def _agora_operacional_naive() -> datetime:
-    return datetime.now(_FUSO_OPERACIONAL).replace(tzinfo=None)
-
-
-def _agora_utc_naive() -> datetime:
-    return datetime.now(timezone.utc).replace(tzinfo=None)
+    return agora_operacional_naive()
 
 
 def _aviso_ativo_e_valido():
@@ -104,14 +95,12 @@ def _parse_data_filtro(valor: Optional[str], fim_do_dia: bool = False) -> Option
         return None
 
     try:
-        data = datetime.fromisoformat(valor.strip()).date()
+        return parse_data_filtro_operacional(valor, fim_do_dia=fim_do_dia)
     except ValueError:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Data inválida. Use o formato AAAA-MM-DD.",
         )
-
-    return datetime.combine(data, time.max if fim_do_dia else time.min)
 
 
 async def _ids_destinatarios_validos(
@@ -240,6 +229,7 @@ async def criar_aviso(
         destino_tipo=destino_tipo,
         ativo=payload.ativo,
         valido_ate=payload.valido_ate,
+        criado_em=_agora_operacional_naive(),
     )
 
     db.add(novo_aviso)
@@ -560,12 +550,12 @@ async def marcar_aviso_como_lido(
             aviso_id=aviso_id,
             usuario_id=usuario_id,
             lido=True,
-            lido_em=_agora_utc_naive(),
+            lido_em=_agora_operacional_naive(),
         )
         db.add(registro)
     else:
         registro.lido = True
-        registro.lido_em = _agora_utc_naive()
+        registro.lido_em = _agora_operacional_naive()
 
     await db.commit()
 
@@ -706,7 +696,7 @@ async def atualizar_aviso(
                     )
                 )
 
-    aviso.atualizado_em = _agora_utc_naive()
+    aviso.atualizado_em = _agora_operacional_naive()
     await db.commit()
     await db.refresh(aviso)
 
@@ -743,7 +733,7 @@ async def cancelar_aviso(
         )
 
     aviso.ativo = False
-    aviso.cancelado_em = _agora_utc_naive()
+    aviso.cancelado_em = _agora_operacional_naive()
     aviso.cancelado_por_id = usuario_id
 
     await db.commit()
