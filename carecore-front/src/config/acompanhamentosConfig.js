@@ -37,7 +37,8 @@ export const STATUS_FILTRO_POR_MODULO = {
 export const MODULOS_ACOMPANHAMENTO = {
   transferencias: {
     slug: 'transferencias',
-    titulo: 'Ações, encaminhamentos e saídas',
+    titulo: 'Encaminhamentos, saídas e ações',
+    menuLabelLinhas: ['Encaminhamentos', 'saídas e ações'],
     subtitulo:
       'Registre ações do relatório mensal: contatos familiares, encaminhamentos, transferências SIAT/rede e saídas autônomas.',
     endpoint: 'transferencias',
@@ -81,6 +82,7 @@ export const MODULOS_ACOMPANHAMENTO = {
   'discussoes-hospitalares': {
     slug: 'discussoes-hospitalares',
     titulo: 'Discussões hospitalares',
+    menuLabel: 'Discussões hosp.',
     subtitulo: 'Previsões de internação e discussões com hospitais SUS (São Paulo). Registre evoluções: Internado, Alta ou Encerrado.',
     endpoint: 'discussoes-hospitalares',
     icone: Hospital,
@@ -118,6 +120,7 @@ export const MODULOS_ACOMPANHAMENTO = {
   tuberculose: {
     slug: 'tuberculose',
     titulo: 'Tuberculose (TB)',
+    menuLabel: 'TB',
     subtitulo: 'Acompanhamento de casos de tuberculose.',
     endpoint: 'tuberculose',
     icone: Stethoscope,
@@ -167,6 +170,7 @@ export const MODULOS_ACOMPANHAMENTO = {
   suspensoes: {
     slug: 'suspensoes',
     titulo: 'Suspensão provisória',
+    menuLabel: 'Suspensão',
     subtitulo: 'Registro de suspensão/bloqueio. Atualiza automaticamente o status do convivente no cadastro.',
     endpoint: 'suspensoes-provisorias',
     icone: PauseCircle,
@@ -201,7 +205,10 @@ export const MENU_ACOMPANHAMENTOS = {
     ...Object.values(MODULOS_ACOMPANHAMENTO).map(modulo => ({
       path: `/conviventes/acompanhamentos/${modulo.slug}`,
       icon: modulo.icone,
-      label: modulo.titulo,
+      label: modulo.menuLabel
+        || (modulo.menuLabelLinhas ? modulo.menuLabelLinhas.join(' · ') : modulo.titulo),
+      menuLabelLinhas: modulo.menuLabelLinhas,
+      labelTitle: modulo.titulo,
       perfis: ['Gestor', 'Técnico', 'Global'],
     })),
     {

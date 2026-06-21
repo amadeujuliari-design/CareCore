@@ -491,7 +491,7 @@ body {
   }
 
   .carecore-sidebar {
-    width: 230px;
+    width: 252px;
     min-height: 100vh;
     top: 0;
   }
@@ -578,9 +578,9 @@ body {
 }
 
 .carecore-sidebar {
-  width: 230px;
-  min-width: 230px;
-  max-width: 230px;
+  width: 252px;
+  min-width: 252px;
+  max-width: 252px;
   height: 100%;
   min-height: 0 !important;
   position: relative;
@@ -866,10 +866,10 @@ body {
 .carecore-submenu-item {
   min-height: 26px;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 6px;
   position: relative;
-  padding: 3px 7px;
+  padding: 5px 7px;
   border-radius: 9px;
   color: #526687;
   font-size: 11.5px;
@@ -878,6 +878,25 @@ body {
   transition:
     background 160ms ease,
     color 160ms ease;
+}
+
+.carecore-submenu-label {
+  flex: 1;
+  min-width: 0;
+  line-height: 1.35;
+  white-space: normal;
+  word-break: break-word;
+}
+
+.carecore-submenu-label-multiline {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  line-height: 1.25;
+}
+
+.carecore-submenu-label-line {
+  display: block;
 }
 
 .carecore-submenu-item:hover {
@@ -891,17 +910,21 @@ body {
 }
 
 .carecore-submenu-list-nested {
-  margin-left: 6px;
+  margin-left: 4px;
   padding-left: 6px;
 }
 
 .carecore-submenu-nested .carecore-submenu-item {
   font-size: 11px;
+  padding-top: 4px;
+  padding-bottom: 4px;
 }
 
 .carecore-submenu-item .carecore-menu-icon {
   width: 16px !important;
   height: 16px !important;
+  margin-top: 1px;
+  flex-shrink: 0;
 }
 
 .carecore-dashboard-v2 {

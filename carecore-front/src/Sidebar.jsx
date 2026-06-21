@@ -477,6 +477,32 @@ export default function Sidebar() {
 
   const isActiveItem = (item) => itemTemDescendenteAtivo(item);
 
+  const renderSubmenuLabel = (child) => {
+    const tituloCompleto = child.labelTitle || child.label;
+
+    if (child.menuLabelLinhas?.length) {
+      return (
+        <span
+          className="carecore-submenu-label carecore-submenu-label-multiline"
+          title={tituloCompleto}
+        >
+          {child.menuLabelLinhas.map((linha) => (
+            <span key={linha} className="carecore-submenu-label-line">{linha}</span>
+          ))}
+        </span>
+      );
+    }
+
+    return (
+      <span
+        className="carecore-submenu-label"
+        title={tituloCompleto}
+      >
+        {child.label}
+      </span>
+    );
+  };
+
   const renderSubmenuItems = (children, { onNavigate, depth = 0 } = {}) => (
     children.map(child => {
       const childTemSubmenu = child.children?.length > 0;
@@ -508,7 +534,7 @@ export default function Sidebar() {
               `}
             >
               <IconBox icon={child.icon} active={childActive} />
-              <span className="truncate">{child.label}</span>
+              {renderSubmenuLabel(child)}
               <ChevronDown
                 size={14}
                 strokeWidth={2.2}
@@ -539,7 +565,7 @@ export default function Sidebar() {
           `}
         >
           <IconBox icon={child.icon} active={isActivePath(child.path)} />
-          <span className="truncate">{child.label}</span>
+          {renderSubmenuLabel(child)}
           {isActivePath(child.path) && (
             <span className="carecore-active-dot" />
           )}
