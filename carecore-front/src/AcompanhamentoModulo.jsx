@@ -10,7 +10,7 @@ import {
   excluirAcompanhamento,
   listarAcompanhamentos,
 } from './services/acompanhamentosService';
-import { obterModuloPorSlug } from './config/acompanhamentosConfig';
+import { STATUS_FILTRO_POR_MODULO, obterModuloPorSlug } from './config/acompanhamentosConfig';
 import {
   GRUPOS_NATUREZA_ACAO,
   TIPOS_ACAO_ACOMPANHAMENTO,
@@ -141,12 +141,12 @@ export default function AcompanhamentoModulo() {
 
   const campos = modulo?.campos || [];
   const colunas = modulo?.colunas || [];
+  const statusFiltros = STATUS_FILTRO_POR_MODULO[slug];
 
   const conviventesElegiveis = useMemo(() => {
-    const statusPermitidos = modulo?.statusFiltros;
-    if (!statusPermitidos?.length) return conviventes;
-    return conviventes.filter(convivente => statusPermitidos.includes(convivente.status));
-  }, [conviventes, modulo?.statusFiltros]);
+    if (!statusFiltros?.length) return conviventes;
+    return conviventes.filter(convivente => statusFiltros.includes(convivente.status));
+  }, [conviventes, statusFiltros]);
 
   const conviventesFiltrados = useMemo(
     () => filtrarOrdenarConviventesPorBusca(conviventesElegiveis, buscaConvivente),
@@ -170,27 +170,23 @@ export default function AcompanhamentoModulo() {
     }
   }, []);
 
-  const montarParams = useCallback(() => {
-    const params = { limite: REGISTROS_POR_PAGINA_PRONTUARIO };
-    if (buscaDebounced.trim()) params.busca = buscaDebounced.trim();
-    if (dataInicio) params.data_inicio = dataInicio;
-    if (dataFim) params.data_fim = dataFim;
-    Object.entries(filtrosExtras).forEach(([chave, valor]) => {
-      if (valor) params[chave] = valor;
-    });
-    return params;
-  }, [buscaDebounced, dataInicio, dataFim, filtrosExtras]);
-
-  const carregarDados = useCallback(async ({ append = false, offset = 0 } = {}) => {
-    if (!modulo) return;
+  async function carregarDados({ append = false, offset = 0 } = {}) {
+    const endpoint = obterModuloPorSlug(slug)?.endpoint;
+    if (!endpoint) return;
 
     try {
       if (!append) setLoading(true);
       else setCarregandoMais(true);
       setErro('');
 
-      const params = { ...montarParams(), offset };
-      const lista = await listarAcompanhamentos(modulo.endpoint, params);
+      const params = { limite: REGISTROS_POR_PAGINA_PRONTUARIO, offset };
+      if (buscaDebounced.trim()) params.busca = buscaDebounced.trim();
+      if (dataInicio) params.data_inicio = dataInicio;
+      if (dataFim) params.data_fim = dataFim;
+      Object.entries(filtrosExtras).forEach(([chave, valor]) => {
+        if (valor) params[chave] = valor;
+      });
+      const lista = await listarAcompanhamentos(endpoint, params);
 
       const itens = lista.items || [];
       setRegistros(prev => (append ? [...prev, ...itens] : itens));
@@ -202,7 +198,7 @@ export default function AcompanhamentoModulo() {
       setLoading(false);
       setCarregandoMais(false);
     }
-  }, [modulo, montarParams]);
+  }
 
   useEffect(() => {
     carregandoMaisRef.current = carregandoMais;
@@ -228,7 +224,7 @@ export default function AcompanhamentoModulo() {
 
     observer.observe(sentinel);
     return () => observer.disconnect();
-  }, [temMais, loading, carregarDados, registros.length]);
+  }, [temMais, loading, slug, buscaDebounced, dataInicio, dataFim, filtrosExtras, registros.length]);
 
   useEffect(() => {
     const timer = setTimeout(() => setBuscaDebounced(busca), BUSCA_DEBOUNCE_MS);
@@ -241,7 +237,7 @@ export default function AcompanhamentoModulo() {
 
   useEffect(() => {
     carregarDados();
-  }, [carregarDados]);
+  }, [slug, buscaDebounced, dataInicio, dataFim, filtrosExtras]);
 
   useEffect(() => {
     conviventePrefillProcessado.current = false;
@@ -313,12 +309,12 @@ export default function AcompanhamentoModulo() {
     conviventeInputRef.current?.blur();
   };
 
-  const selecionarConviventeModal = useCallback((convivente) => {
+  const selecionarConviventeModal = (convivente) => {
     setForm(prev => ({ ...prev, convivente_id: convivente.id }));
     setBuscaConvivente(nomeConvivente(convivente));
     setMostrarDropdownConvivente(false);
     conviventeInputRef.current?.blur();
-  }, []);
+  };
 
   useEffect(() => {
     if (form.convivente_id) {

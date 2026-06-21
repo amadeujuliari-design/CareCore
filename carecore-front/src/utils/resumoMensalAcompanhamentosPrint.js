@@ -1,4 +1,3 @@
-import logoCarecore from '../assets/logo.PNG';
 import {
   DIREITOS_RESERVADOS_TITULO,
   obterUrlDireitosReservados,
