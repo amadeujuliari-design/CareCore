@@ -1,5 +1,5 @@
 import { lazy } from 'react';
-import { Route, Routes, useLocation } from 'react-router-dom';
+import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 
 import AusenciaJustificadaAlerta from '../components/AusenciaJustificadaAlerta';
 import ProtectedRoute from './ProtectedRoute';
@@ -27,6 +27,8 @@ const HistoricoLegado = lazy(() => import('../HistoricoLegado'));
 const Suporte = lazy(() => import('../Suporte'));
 const Cobrancas = lazy(() => import('../Cobrancas'));
 const CobrancasAdmin = lazy(() => import('../CobrancasAdmin'));
+const AcompanhamentoModulo = lazy(() => import('../AcompanhamentoModulo'));
+const AcompanhamentoResumoMensal = lazy(() => import('../AcompanhamentoResumoMensal'));
 
 function RotasAplicacao() {
   return (
@@ -59,6 +61,29 @@ function RotasAplicacao() {
           element={
             <ProtectedRoute perfis={['Gestor', 'Técnico', 'Orientador', 'Administrativo']}>
               <Conviventes />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/conviventes/acompanhamentos"
+          element={<Navigate to="/conviventes/acompanhamentos/transferencias" replace />}
+        />
+
+        <Route
+          path="/conviventes/acompanhamentos/resumo-mensal"
+          element={
+            <ProtectedRoute perfis={['Gestor', 'Técnico', 'Global']}>
+              <AcompanhamentoResumoMensal />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/conviventes/acompanhamentos/:slug"
+          element={
+            <ProtectedRoute perfis={['Gestor', 'Técnico', 'Global']}>
+              <AcompanhamentoModulo />
             </ProtectedRoute>
           }
         />

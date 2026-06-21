@@ -1,5 +1,5 @@
 // =====================================================================
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 import Sidebar from './Sidebar';
@@ -25,6 +25,7 @@ import {
   resumirPrioridadesOcorrencias,
 } from './utils/ocorrenciasUtils';
 import { filtrarOrdenarConviventesPorBusca } from './utils/conviventeBuscaUtils';
+import { deveIgnorarLeituraCodigoRepetida } from './utils/leituraCodigoUtils';
 import {
   calcularDataInicioPadrao,
   dataHojeIsoLocal,
@@ -79,6 +80,7 @@ export default function CentralOcorrencias() {
   const [mostrarDropdownPaciente, setMostrarDropdownPaciente] = useState(false);
   const [scannerAssinaturaAberto, setScannerAssinaturaAberto] = useState(false);
   const [scannerAssinaturaErro, setScannerAssinaturaErro] = useState('');
+  const ultimaLeituraAssinaturaRef = useRef({ codigo: '', horario: 0 });
 
   const [filtroPrioridade, setFiltroPrioridade] = useState(searchParams.get('prioridade') || 'Todas');
   const [filtroStatus, setFiltroStatus] = useState(searchParams.get('status') || 'Todos');
@@ -145,6 +147,7 @@ export default function CentralOcorrencias() {
 
       try {
         setScannerAssinaturaErro('');
+        ultimaLeituraAssinaturaRef.current = { codigo: '', horario: 0 };
 
         if (!navigator.mediaDevices?.getUserMedia) {
           setScannerAssinaturaErro('Este navegador não liberou acesso à câmera. Use o campo manual.');
@@ -183,9 +186,14 @@ export default function CentralOcorrencias() {
           },
           (codigoLido) => {
             if (!ativo) return;
+            if (deveIgnorarLeituraCodigoRepetida(ultimaLeituraAssinaturaRef, codigoLido)) {
+              return;
+            }
+
+            const codigo = ultimaLeituraAssinaturaRef.current.codigo;
             setFormNovo((atual) => ({
               ...atual,
-              assinatura_convivente_codigo: String(codigoLido || '').trim(),
+              assinatura_convivente_codigo: codigo,
               assinatura_convivente_metodo: 'QR Code da carteirinha',
             }));
             setScannerAssinaturaAberto(false);

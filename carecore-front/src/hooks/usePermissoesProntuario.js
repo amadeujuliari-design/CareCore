@@ -23,7 +23,7 @@ export function usePermissoesProntuario({
     return {
       usuarioPodeGerenciarDocumentosRestritos,
       usuarioPodeEnviarDocumentosRestritos: usuarioPodeGerenciarDocumentosRestritos || usuarioEhTecnico,
-      podeMudarStatus: !editandoId || usuarioEhGestao || tecnicoPodeMudarStatus,
+      podeMudarStatus: !editandoId || usuarioEhGestao || usuarioEhManutencao || tecnicoPodeMudarStatus,
       podeCriarHistoricoConvivente: usuarioEhGestao || usuarioEhTecnico,
       podeEditarHistoricoConvivente: usuarioEhGestao || usuarioEhTecnicoResponsavel,
       podeGerenciarPiaConvivente: usuarioEhGestao || usuarioEhTecnico || usuarioEhManutencao,

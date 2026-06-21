@@ -5,7 +5,7 @@
 
 import re
 from datetime import date, datetime
-from typing import Optional, List
+from typing import Optional, List, Any
 
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
@@ -422,6 +422,7 @@ def validar_senha_forte_valor(senha: str) -> str:
 
 STATUS_CONVIVENTE_VALIDOS = {
     "Ativo",
+    "Em acolhimento",
     "Inativado",
     "Bloqueado",
     "Saída qualificada",
@@ -430,6 +431,7 @@ STATUS_CONVIVENTE_VALIDOS = {
 
 MAPEAMENTO_STATUS_CONVIVENTE = {
     "ativo": "Ativo",
+    "em acolhimento": "Em acolhimento",
     "inativado": "Inativado",
     "bloqueado": "Bloqueado",
     "saida qualificada": "Saída qualificada",
@@ -451,7 +453,7 @@ def normalizar_status_convivente(valor: Optional[str]) -> str:
     if status not in STATUS_CONVIVENTE_VALIDOS:
         raise ValueError(
             "Status do convivente inválido. "
-            "Use: Ativo, Inativado, Bloqueado, Saída qualificada ou Ausência justificada."
+            "Use: Ativo, Em acolhimento, Inativado, Bloqueado, Saída qualificada ou Ausência justificada."
         )
 
     return status
@@ -2074,4 +2076,380 @@ class SuporteChamadosListResponse(BaseModel):
     limit: int
     offset: int
     has_more: bool
+
+
+from tipos_acao_acompanhamento import (
+    DESTINOS_TRANSFERENCIA_VALIDOS,
+)
+
+SITUACOES_TB = [
+    "Suspeita",
+    "Confirmado",
+    "Em tratamento",
+    "Alta",
+]
+
+
+class AcompanhamentoTransferenciaCreate(BaseModel):
+    convivente_id: str
+    destino: str
+    destino_outro: Optional[str] = None
+    data_discussao: Optional[date] = None
+    data_visita: Optional[date] = None
+    data_transferencia: Optional[date] = None
+    observacoes: Optional[str] = None
+    inativar_convivente: bool = False
+    marcar_ausencia_justificada: bool = False
+
+    @field_validator("destino")
+    @classmethod
+    def validar_destino(cls, valor: str):
+        if valor not in DESTINOS_TRANSFERENCIA_VALIDOS:
+            raise ValueError("Tipo de ação inválido.")
+        return valor
+
+    @model_validator(mode="after")
+    def validar_destino_outro(self):
+        if self.destino == "Outros":
+            texto = (self.destino_outro or "").strip()
+            if len(texto) < 2:
+                raise ValueError("Informe o destino quando selecionar Outros.")
+            self.destino_outro = texto
+        elif self.destino_outro:
+            self.destino_outro = None
+        return self
+
+
+class AcompanhamentoTransferenciaUpdate(BaseModel):
+    destino: Optional[str] = None
+    destino_outro: Optional[str] = None
+    data_discussao: Optional[date] = None
+    data_visita: Optional[date] = None
+    data_transferencia: Optional[date] = None
+    observacoes: Optional[str] = None
+
+    @field_validator("destino")
+    @classmethod
+    def validar_destino(cls, valor: Optional[str]):
+        if valor is not None and valor not in DESTINOS_TRANSFERENCIA_VALIDOS:
+            raise ValueError("Tipo de ação inválido.")
+        return valor
+
+
+class AcompanhamentoTransferenciaResponse(BaseModel):
+    id: str
+    convivente_id: str
+    convivente_nome: Optional[str] = None
+    prontuario: Optional[str] = None
+    destino: str
+    destino_outro: Optional[str] = None
+    destino_exibicao: Optional[str] = None
+    data_discussao: Optional[date] = None
+    data_visita: Optional[date] = None
+    data_transferencia: Optional[date] = None
+    observacoes: Optional[str] = None
+    registrado_por_id: str
+    registrado_por_nome: Optional[str] = None
+    criado_em: datetime
+    atualizado_em: Optional[datetime] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class AcompanhamentoDiscussaoHospitalarCreate(BaseModel):
+    convivente_id: str
+    nome_hospital: Optional[str] = None
+    hospital_outro: Optional[str] = None
+    data_discussao: Optional[date] = None
+    data_prevista_entrada: Optional[date] = None
+    observacoes: Optional[str] = None
+
+    @model_validator(mode="after")
+    def validar_hospital(self):
+        hospital = (self.nome_hospital or "").strip()
+        if not hospital:
+            raise ValueError("Selecione o hospital.")
+        if hospital == "Outros":
+            texto = (self.hospital_outro or "").strip()
+            if len(texto) < 2:
+                raise ValueError("Informe o hospital quando selecionar Outros.")
+            self.hospital_outro = texto
+        else:
+            self.hospital_outro = None
+        self.nome_hospital = hospital
+        return self
+
+
+class AcompanhamentoDiscussaoHospitalarUpdate(BaseModel):
+    nome_hospital: Optional[str] = None
+    hospital_outro: Optional[str] = None
+    data_discussao: Optional[date] = None
+    data_prevista_entrada: Optional[date] = None
+    observacoes: Optional[str] = None
+
+
+STATUS_EVOLUCAO_DISCUSSAO_HOSPITALAR = [
+    "Internado",
+    "Alta",
+    "Encerrado",
+]
+
+
+class AcompanhamentoDiscussaoEvolucaoCreate(BaseModel):
+    status_evolucao: str
+    data_evolucao: date
+    observacoes: Optional[str] = None
+
+    @field_validator("status_evolucao")
+    @classmethod
+    def validar_status_evolucao(cls, valor: str):
+        valor = (valor or "").strip()
+        if valor not in STATUS_EVOLUCAO_DISCUSSAO_HOSPITALAR:
+            raise ValueError("Status de evolução inválido. Use: Internado, Alta ou Encerrado.")
+        return valor
+
+
+class AcompanhamentoDiscussaoEvolucaoUpdate(BaseModel):
+    status_evolucao: Optional[str] = None
+    data_evolucao: Optional[date] = None
+    observacoes: Optional[str] = None
+
+    @field_validator("status_evolucao")
+    @classmethod
+    def validar_status_evolucao(cls, valor: Optional[str]):
+        if valor is None:
+            return valor
+        valor = valor.strip()
+        if valor not in STATUS_EVOLUCAO_DISCUSSAO_HOSPITALAR:
+            raise ValueError("Status de evolução inválido. Use: Internado, Alta ou Encerrado.")
+        return valor
+
+
+class AcompanhamentoDiscussaoHospitalarResponse(BaseModel):
+    id: str
+    convivente_id: str
+    convivente_nome: Optional[str] = None
+    prontuario: Optional[str] = None
+    registro_pai_id: Optional[str] = None
+    nome_hospital: Optional[str] = None
+    hospital_outro: Optional[str] = None
+    hospital_exibicao: Optional[str] = None
+    data_discussao: Optional[date] = None
+    data_prevista_entrada: Optional[date] = None
+    status_evolucao: Optional[str] = None
+    data_evolucao: Optional[date] = None
+    situacao_atual: Optional[str] = None
+    observacoes: Optional[str] = None
+    registrado_por_id: str
+    registrado_por_nome: Optional[str] = None
+    criado_em: datetime
+    atualizado_em: Optional[datetime] = None
+    evolucoes: Optional[List["AcompanhamentoDiscussaoHospitalarResponse"]] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class AcompanhamentoTbCreate(BaseModel):
+    convivente_id: str
+    situacao: Optional[str] = None
+    data_inicio: Optional[date] = None
+    data_fim: Optional[date] = None
+    observacoes: Optional[str] = None
+
+    @field_validator("situacao")
+    @classmethod
+    def validar_situacao(cls, valor: Optional[str]):
+        if valor is not None and valor not in SITUACOES_TB:
+            raise ValueError("Situação inválida.")
+        return valor
+
+
+class AcompanhamentoTbUpdate(BaseModel):
+    situacao: Optional[str] = None
+    data_inicio: Optional[date] = None
+    data_fim: Optional[date] = None
+    observacoes: Optional[str] = None
+
+    @field_validator("situacao")
+    @classmethod
+    def validar_situacao(cls, valor: Optional[str]):
+        if valor is not None and valor not in SITUACOES_TB:
+            raise ValueError("Situação inválida.")
+        return valor
+
+
+class AcompanhamentoTbResponse(BaseModel):
+    id: str
+    convivente_id: str
+    convivente_nome: Optional[str] = None
+    prontuario: Optional[str] = None
+    situacao: Optional[str] = None
+    data_inicio: Optional[date] = None
+    data_fim: Optional[date] = None
+    observacoes: Optional[str] = None
+    registrado_por_id: str
+    registrado_por_nome: Optional[str] = None
+    criado_em: datetime
+    atualizado_em: Optional[datetime] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class AcompanhamentoPotCreate(BaseModel):
+    convivente_id: str
+    data_insercao: Optional[date] = None
+    data_desligamento: Optional[date] = None
+    congelamento_ativo: bool = False
+    congelamento_inicio: Optional[date] = None
+    congelamento_fim: Optional[date] = None
+    observacoes: Optional[str] = None
+
+
+class AcompanhamentoPotUpdate(BaseModel):
+    data_insercao: Optional[date] = None
+    data_desligamento: Optional[date] = None
+    congelamento_ativo: Optional[bool] = None
+    congelamento_inicio: Optional[date] = None
+    congelamento_fim: Optional[date] = None
+    observacoes: Optional[str] = None
+
+
+class AcompanhamentoPotResponse(BaseModel):
+    id: str
+    convivente_id: str
+    convivente_nome: Optional[str] = None
+    prontuario: Optional[str] = None
+    data_insercao: Optional[date] = None
+    data_desligamento: Optional[date] = None
+    congelamento_ativo: bool = False
+    congelamento_inicio: Optional[date] = None
+    congelamento_fim: Optional[date] = None
+    observacoes: Optional[str] = None
+    registrado_por_id: str
+    registrado_por_nome: Optional[str] = None
+    criado_em: datetime
+    atualizado_em: Optional[datetime] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class AcompanhamentoSuspensaoProvisoriaCreate(BaseModel):
+    convivente_id: str
+    mes_referencia: str
+    data_registro: date
+    motivo: str
+    observacoes: Optional[str] = None
+    status_aplicado: str = "Bloqueado"
+
+    @field_validator("motivo")
+    @classmethod
+    def validar_motivo(cls, valor: str):
+        texto = (valor or "").strip()
+        if len(texto) < 5:
+            raise ValueError("Informe o motivo da suspensão/bloqueio (mínimo 5 caracteres).")
+        return texto
+
+    @field_validator("status_aplicado")
+    @classmethod
+    def validar_status_aplicado(cls, valor: str):
+        if valor not in {"Bloqueado"}:
+            raise ValueError("Status operacional inválido para suspensão.")
+        return valor
+
+    @field_validator("mes_referencia")
+    @classmethod
+    def validar_mes_referencia(cls, valor: str):
+        valor = (valor or "").strip()
+        if len(valor) != 7 or valor[4] != "-":
+            raise ValueError("Mês de referência inválido. Use AAAA-MM.")
+        ano, mes = valor.split("-", 1)
+        if not ano.isdigit() or not mes.isdigit():
+            raise ValueError("Mês de referência inválido. Use AAAA-MM.")
+        mes_int = int(mes)
+        if mes_int < 1 or mes_int > 12:
+            raise ValueError("Mês de referência inválido.")
+        return valor
+
+
+class AcompanhamentoSuspensaoProvisoriaUpdate(BaseModel):
+    mes_referencia: Optional[str] = None
+    data_registro: Optional[date] = None
+    motivo: Optional[str] = None
+    observacoes: Optional[str] = None
+    status_aplicado: Optional[str] = None
+
+    @field_validator("motivo")
+    @classmethod
+    def validar_motivo(cls, valor: Optional[str]):
+        if valor is None:
+            return valor
+        texto = valor.strip()
+        if len(texto) < 5:
+            raise ValueError("Informe o motivo da suspensão/bloqueio (mínimo 5 caracteres).")
+        return texto
+
+    @field_validator("mes_referencia")
+    @classmethod
+    def validar_mes_referencia(cls, valor: Optional[str]):
+        if valor is None:
+            return valor
+        valor = valor.strip()
+        if len(valor) != 7 or valor[4] != "-":
+            raise ValueError("Mês de referência inválido. Use AAAA-MM.")
+        ano, mes = valor.split("-", 1)
+        if not ano.isdigit() or not mes.isdigit():
+            raise ValueError("Mês de referência inválido. Use AAAA-MM.")
+        mes_int = int(mes)
+        if mes_int < 1 or mes_int > 12:
+            raise ValueError("Mês de referência inválido.")
+        return valor
+
+
+class AcompanhamentoSuspensaoProvisoriaResponse(BaseModel):
+    id: str
+    convivente_id: str
+    convivente_nome: Optional[str] = None
+    prontuario: Optional[str] = None
+    mes_referencia: str
+    data_registro: date
+    motivo: Optional[str] = None
+    observacoes: Optional[str] = None
+    status_aplicado: str = "Bloqueado"
+    registrado_por_id: str
+    registrado_por_nome: Optional[str] = None
+    criado_em: datetime
+    atualizado_em: Optional[datetime] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class AcompanhamentosListaResponse(BaseModel):
+    items: List[Any]
+    total: int
+    limit: int
+    offset: int
+    has_more: bool
+    destinos_transferencia: Optional[List[str]] = None
+    situacoes_tb: Optional[List[str]] = None
+    hospitais: Optional[List[str]] = None
+    status_evolucao: Optional[List[str]] = None
+
+
+class AcompanhamentoResumoMensalLinha(BaseModel):
+    acao: str
+    total: int
+    origem: str = "acoes"
+    observacoes: Optional[str] = None
+
+
+class AcompanhamentoResumoMensalResponse(BaseModel):
+    mes_referencia: str
+    mes_rotulo: str
+    titulo: str
+    periodo_inicio: date
+    periodo_fim: date
+    periodo_rotulo: str
+    periodo_personalizado: bool = False
+    linhas: List[AcompanhamentoResumoMensalLinha]
+    gerado_em: datetime
 

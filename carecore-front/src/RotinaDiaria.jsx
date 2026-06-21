@@ -23,6 +23,10 @@ import {
   registroAindaPodeSerDesfeitoRotina,
   tocarBeep,
 } from './utils/rotinaDiariaUtils';
+import {
+  deveIgnorarLeituraCodigoRepetida,
+  deveIgnorarLeituraConviventeRepetida,
+} from './utils/leituraCodigoUtils';
 
 const OPCOES_INTERACAO_ROTINA = [
   { valor: 'Café da manhã', label: 'Café da manhã', grupo: 'refeicao' },
@@ -38,7 +42,6 @@ const OPCOES_INTERACAO_ROTINA = [
 ];
 
 const TIPOS_ROTINA_REFEICOES = ['Café da manhã', 'Almoço', 'Jantar', 'Lanche noturno'];
-const JANELA_IGNORAR_LEITURA_REPETIDA_MS = 7000;
 
 const ROTULOS_REFEICAO_EXTRA = {
   'Café da manhã': 'café da manhã',
@@ -77,8 +80,8 @@ export default function RotinaDiaria() {
   const [retornoRapidoPendente, setRetornoRapidoPendente] = useState(null);
   const [justificativaRetornoRapido, setJustificativaRetornoRapido] = useState('');
 
-  const ultimaLeituraRef = useRef('');
-  const ultimaLeituraTempoRef = useRef(0);
+  const ultimaLeituraRef = useRef({ codigo: '', horario: 0 });
+  const ultimaLeituraConviventeRef = useRef({ conviventeId: '', horario: 0 });
   const assinaturaSyncRotinaRef = useRef(null);
   const processarCodigoLidoRef = useRef(null);
   const leituraUsbBufferRef = useRef('');
@@ -428,22 +431,11 @@ export default function RotinaDiaria() {
   };
 
   const processarCodigoLido = (codigoBruto) => {
-    const codigo = normalizarCodigo(codigoBruto);
-
-    if (!codigo) return;
-
-    const agora = Date.now();
-
-    if (
-      ultimaLeituraRef.current === codigo &&
-      agora - ultimaLeituraTempoRef.current < JANELA_IGNORAR_LEITURA_REPETIDA_MS
-    ) {
+    if (deveIgnorarLeituraCodigoRepetida(ultimaLeituraRef, codigoBruto)) {
       return;
     }
 
-    ultimaLeituraRef.current = codigo;
-    ultimaLeituraTempoRef.current = agora;
-
+    const codigo = ultimaLeituraRef.current.codigo || normalizarCodigo(codigoBruto);
     const codigoNumerico = codigo.replace(/\D/g, '');
 
     const pacienteEncontrado = conviventes.find(c => {
@@ -488,6 +480,14 @@ export default function RotinaDiaria() {
     setBusca('');
 
     if (modoAutomatico) {
+      if (processandoAcao) {
+        return;
+      }
+
+      if (deveIgnorarLeituraConviventeRepetida(ultimaLeituraConviventeRef, pacienteEncontrado.id)) {
+        return;
+      }
+
       if (tipoBipagemAutomatica === 'interacao') {
         solicitarRegistroInteracao(pacienteEncontrado);
         return;
@@ -516,19 +516,14 @@ export default function RotinaDiaria() {
 
   useEffect(() => {
     const handleLeitorUsbGlobal = (event) => {
-      const alvo = event.target;
-      const tag = alvo?.tagName?.toLowerCase();
+      const tag = event.target?.tagName?.toLowerCase();
       const editandoTexto =
         tag === 'input' ||
         tag === 'textarea' ||
         tag === 'select' ||
-        alvo?.isContentEditable;
+        event.target?.isContentEditable;
 
-      if (
-        editandoTexto &&
-        alvo !== campoLeitorPistolaRef.current
-      ) return;
-      if (event.ctrlKey || event.altKey || event.metaKey) return;
+      if (editandoTexto || event.ctrlKey || event.altKey || event.metaKey) return;
 
       const agora = Date.now();
       if (agora - leituraUsbUltimaTeclaRef.current > 120) {

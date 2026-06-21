@@ -1,4 +1,5 @@
 import ProntuarioFiltrosLista from './ProntuarioFiltrosLista';
+import ProntuarioAcompanhamentos from './ProntuarioAcompanhamentos';
 
 export default function ProntuarioHistorico({
   editandoId,
@@ -46,6 +47,8 @@ export default function ProntuarioHistorico({
 
   return (
     <div className="space-y-5">
+      <ProntuarioAcompanhamentos conviventeId={editandoId} />
+
       <section className="rounded-xl border border-blue-100 bg-blue-50/50 p-4">
         <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
           <div>

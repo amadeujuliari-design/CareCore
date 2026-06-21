@@ -66,7 +66,7 @@ export default function ProntuarioPessoais({
               disabled={!podeMudarStatus}
               className={`w-full px-3 py-1.5 border border-gray-300 rounded-lg outline-none text-sm font-semibold text-gray-800 ${!podeMudarStatus ? 'bg-gray-100 cursor-not-allowed opacity-70' : 'bg-white focus:ring-2 focus:ring-brand'}`}
             >
-              <option value="Ativo">Ativo (Presente)</option><option value="Ausência justificada">Ausência justificada</option><option value="Inativado">Inativado (Evadiu/Alta)</option><option value="Saída qualificada">Saída qualificada</option><option value="Bloqueado">Bloqueado (Suspensão)</option>
+              <option value="Ativo">Ativo (Presente)</option><option value="Em acolhimento">Em acolhimento</option><option value="Ausência justificada">Ausência justificada</option><option value="Inativado">Inativado (Evadiu/Alta)</option><option value="Saída qualificada">Saída qualificada</option><option value="Bloqueado">Bloqueado (Suspensão)</option>
             </select>
             {!podeMudarStatus && <p className="text-[9px] text-red-500 font-bold mt-1">Apenas Gestor, Técnico Responsável ou Técnico em atendimento geral podem alterar.</p>}
           </div>
@@ -91,7 +91,7 @@ export default function ProntuarioPessoais({
             </select>
           </div>
 
-          {formData.status !== statusOriginal && (
+          {formData.status !== statusOriginal && formData.status !== 'Bloqueado' && (
             <div className={`md:col-span-3 grid grid-cols-1 md:grid-cols-3 gap-4 pt-3 ${formData.status === 'Saída qualificada' ? 'border-t border-emerald-200' : 'border-t border-red-200'}`}>
               <div className="md:col-span-1">
                 <label className={`block text-xs font-bold mb-1 ${formData.status === 'Saída qualificada' ? 'text-emerald-800' : 'text-red-800'}`}>Motivo Principal *</label>

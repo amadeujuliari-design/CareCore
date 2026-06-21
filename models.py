@@ -965,4 +965,93 @@ class ChatMensagemDB(Base):
     criado_em = Column(DateTime, default=datetime.datetime.utcnow, index=True)
 
 
+class AcompanhamentoTransferenciaDB(Base):
+    __tablename__ = "acompanhamentos_transferencias"
+
+    id = Column(String, primary_key=True, default=get_uuid)
+    instituicao_id = Column(String, ForeignKey("instituicoes.id"), nullable=False, index=True)
+    convivente_id = Column(String, ForeignKey("conviventes.id"), nullable=False, index=True)
+    destino = Column(String, nullable=False, index=True)
+    destino_outro = Column(String, nullable=True)
+    data_discussao = Column(Date, nullable=True)
+    data_visita = Column(Date, nullable=True)
+    data_transferencia = Column(Date, nullable=True, index=True)
+    observacoes = Column(Text, nullable=True)
+    registrado_por_id = Column(String, ForeignKey("usuarios.id"), nullable=False)
+    criado_em = Column(DateTime, default=datetime.datetime.utcnow, index=True)
+    atualizado_em = Column(DateTime, default=datetime.datetime.utcnow)
+
+
+class AcompanhamentoDiscussaoHospitalarDB(Base):
+    __tablename__ = "acompanhamentos_discussoes_hospitalares"
+
+    id = Column(String, primary_key=True, default=get_uuid)
+    instituicao_id = Column(String, ForeignKey("instituicoes.id"), nullable=False, index=True)
+    convivente_id = Column(String, ForeignKey("conviventes.id"), nullable=False, index=True)
+    registro_pai_id = Column(
+        String,
+        ForeignKey("acompanhamentos_discussoes_hospitalares.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
+    nome_hospital = Column(String, nullable=True)
+    hospital_outro = Column(String, nullable=True)
+    data_discussao = Column(Date, nullable=True, index=True)
+    data_prevista_entrada = Column(Date, nullable=True)
+    status_evolucao = Column(String, nullable=True, index=True)
+    data_evolucao = Column(Date, nullable=True)
+    observacoes = Column(Text, nullable=True)
+    registrado_por_id = Column(String, ForeignKey("usuarios.id"), nullable=False)
+    criado_em = Column(DateTime, default=datetime.datetime.utcnow, index=True)
+    atualizado_em = Column(DateTime, default=datetime.datetime.utcnow)
+
+
+class AcompanhamentoTbDB(Base):
+    __tablename__ = "acompanhamentos_tb"
+
+    id = Column(String, primary_key=True, default=get_uuid)
+    instituicao_id = Column(String, ForeignKey("instituicoes.id"), nullable=False, index=True)
+    convivente_id = Column(String, ForeignKey("conviventes.id"), nullable=False, index=True)
+    situacao = Column(String, nullable=True, index=True)
+    data_inicio = Column(Date, nullable=True, index=True)
+    data_fim = Column(Date, nullable=True)
+    observacoes = Column(Text, nullable=True)
+    registrado_por_id = Column(String, ForeignKey("usuarios.id"), nullable=False)
+    criado_em = Column(DateTime, default=datetime.datetime.utcnow, index=True)
+    atualizado_em = Column(DateTime, default=datetime.datetime.utcnow)
+
+
+class AcompanhamentoPotDB(Base):
+    __tablename__ = "acompanhamentos_pot"
+
+    id = Column(String, primary_key=True, default=get_uuid)
+    instituicao_id = Column(String, ForeignKey("instituicoes.id"), nullable=False, index=True)
+    convivente_id = Column(String, ForeignKey("conviventes.id"), nullable=False, index=True)
+    data_insercao = Column(Date, nullable=True, index=True)
+    data_desligamento = Column(Date, nullable=True)
+    congelamento_ativo = Column(Boolean, default=False)
+    congelamento_inicio = Column(Date, nullable=True)
+    congelamento_fim = Column(Date, nullable=True)
+    observacoes = Column(Text, nullable=True)
+    registrado_por_id = Column(String, ForeignKey("usuarios.id"), nullable=False)
+    criado_em = Column(DateTime, default=datetime.datetime.utcnow, index=True)
+    atualizado_em = Column(DateTime, default=datetime.datetime.utcnow)
+
+
+class AcompanhamentoSuspensaoProvisoriaDB(Base):
+    __tablename__ = "acompanhamentos_suspensoes_provisorias"
+
+    id = Column(String, primary_key=True, default=get_uuid)
+    instituicao_id = Column(String, ForeignKey("instituicoes.id"), nullable=False, index=True)
+    convivente_id = Column(String, ForeignKey("conviventes.id"), nullable=False, index=True)
+    mes_referencia = Column(String, nullable=False, index=True)
+    data_registro = Column(Date, nullable=False, index=True)
+    motivo = Column(Text, nullable=True)
+    observacoes = Column(Text, nullable=True)
+    status_aplicado = Column(String, nullable=False, default="Bloqueado", index=True)
+    registrado_por_id = Column(String, ForeignKey("usuarios.id"), nullable=False)
+    criado_em = Column(DateTime, default=datetime.datetime.utcnow, index=True)
+    atualizado_em = Column(DateTime, default=datetime.datetime.utcnow)
+
+
 

@@ -915,6 +915,9 @@ def usuario_pode_alterar_status_convivente(usuario_atual: dict, convivente: Conv
     if usuario_eh_gestor(usuario_atual):
         return True
 
+    if usuario_eh_manutencao(usuario_atual):
+        return True
+
     if not usuario_tem_perfil(usuario_atual, {PERFIL_TECNICO}):
         return False
 
@@ -1294,7 +1297,7 @@ async def atualizar_convivente(convivente_id: str, dados_atualizacao: Convivente
         dados["leito_id"] = None
 
     novo_status = dados.get("status", status_antigo)
-    if novo_status == "Ativo":
+    if novo_status in ("Ativo", "Em acolhimento"):
         dados["inativado_em"] = None
         dados["ausencia_justificada_desde"] = None
     elif novo_status == "Ausência justificada":

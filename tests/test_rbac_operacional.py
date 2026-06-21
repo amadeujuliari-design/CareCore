@@ -140,6 +140,17 @@ def test_tecnico_nao_responsavel_nao_pode_alterar_status_com_tecnico_atrelado():
     assert not usuario_pode_alterar_status_convivente(usuario, convivente)
 
 
+def test_manutencao_pode_alterar_status_mesmo_com_tecnico_atrelado():
+    usuario = {
+        "sub": "manutencao-1",
+        "perfil_acesso": "Manutenção",
+        "is_manutencao": True,
+    }
+    convivente = SimpleNamespace(tecnico_id="tecnico-1")
+
+    assert usuario_pode_alterar_status_convivente(usuario, convivente)
+
+
 def test_gestor_pode_resolver_ocorrencia_de_qualquer_tecnico():
     usuario = {
         "sub": "gestor-1",

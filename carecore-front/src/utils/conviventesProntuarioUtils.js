@@ -164,6 +164,7 @@ export function montarPayloadProntuario(formData, statusOriginal) {
 
 export function statusConviventeClasse(status) {
   if (status === 'Ativo') return 'bg-green-100 text-green-800';
+  if (status === 'Em acolhimento') return 'bg-purple-100 text-purple-800';
   if (status === 'Saída qualificada') return 'bg-emerald-100 text-emerald-800';
   if (status === 'Ausência justificada') return 'bg-blue-100 text-blue-800';
   if (status === 'Bloqueado') return 'bg-amber-100 text-amber-800';
@@ -201,6 +202,15 @@ export function validarProntuarioAntesSalvar(formData, statusOriginal, errosVali
   }
 
   if (formData.status !== statusOriginal) {
+    if (formData.status === 'Bloqueado') {
+      return {
+        valido: false,
+        mensagem: 'Para bloquear/suspender, registre em Conviventes → Acompanhamentos → Suspensão provisória.',
+        abaComErro: 'pessoais',
+        erros: errosValidacao,
+      };
+    }
+
     if (!formData.motivo_status || formData.motivo_status.trim() === '') {
       return {
         valido: false,

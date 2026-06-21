@@ -430,6 +430,15 @@ export default function Conviventes() {
     if (errosValidacao[name]) setErrosValidacao(prev => ({ ...prev, [name]: '' }));
 
     if (name === 'status') {
+      if (value === 'Bloqueado' && value !== statusOriginal) {
+        if (!editandoId) {
+          setErro('Salve o cadastro antes de registrar suspensão/bloqueio.');
+          return;
+        }
+        navigate(`/conviventes/acompanhamentos/suspensoes?convivente_id=${editandoId}`);
+        return;
+      }
+
       setFormData(prev => ({
         ...prev,
         status: value,

@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-
-const JANELA_IGNORAR_LEITURA_REPETIDA_MS = 7000;
+import { deveIgnorarLeituraCodigoRepetida } from '../utils/leituraCodigoUtils';
 
 export default function LeitorCarteirinhaModal({
   aberto,
@@ -13,11 +12,35 @@ export default function LeitorCarteirinhaModal({
   const [erro, setErro] = useState('');
   const [codigoManual, setCodigoManual] = useState('');
   const ultimaLeituraRef = useRef({ codigo: '', horario: 0 });
+  const onCodigoLidoRef = useRef(onCodigoLido);
+  const onCloseRef = useRef(onClose);
+
+  useEffect(() => {
+    onCodigoLidoRef.current = onCodigoLido;
+    onCloseRef.current = onClose;
+  });
+
+  const encaminharCodigoLido = async (codigoBruto) => {
+    if (deveIgnorarLeituraCodigoRepetida(ultimaLeituraRef, codigoBruto)) {
+      return 'ignorado';
+    }
+
+    const codigo = ultimaLeituraRef.current.codigo;
+    const aceito = await onCodigoLidoRef.current?.(codigo);
+    if (aceito === false) {
+      setErro('Código lido, mas nenhum convivente correspondente foi encontrado.');
+      return 'invalido';
+    }
+
+    onCloseRef.current?.();
+    return 'aceito';
+  };
 
   useEffect(() => {
     if (!aberto) {
       setErro('');
       setCodigoManual('');
+      ultimaLeituraRef.current = { codigo: '', horario: 0 };
       return undefined;
     }
 
@@ -72,22 +95,7 @@ export default function LeitorCarteirinhaModal({
           },
           async (codigoLido) => {
             if (!ativo) return;
-            const codigo = String(codigoLido || '').trim();
-            const agora = Date.now();
-            if (
-              ultimaLeituraRef.current.codigo === codigo &&
-              agora - ultimaLeituraRef.current.horario < JANELA_IGNORAR_LEITURA_REPETIDA_MS
-            ) {
-              return;
-            }
-            ultimaLeituraRef.current = { codigo, horario: agora };
-
-            const aceito = await onCodigoLido?.(codigo);
-            if (aceito === false) {
-              setErro('Código lido, mas nenhum convivente correspondente foi encontrado.');
-              return;
-            }
-            onClose?.();
+            await encaminharCodigoLido(codigoLido);
           },
           () => {},
         );
@@ -116,7 +124,7 @@ export default function LeitorCarteirinhaModal({
         }
       }
     };
-  }, [aberto, onCodigoLido, onClose]);
+  }, [aberto]);
 
   if (!aberto) return null;
 
@@ -128,12 +136,17 @@ export default function LeitorCarteirinhaModal({
       return;
     }
 
-    const aceito = await onCodigoLido?.(codigo);
-    if (aceito === false) {
-      setErro('Nenhum convivente correspondente foi encontrado para este código.');
+    const resultado = await encaminharCodigoLido(codigo);
+    if (resultado === 'aceito') {
+      setCodigoManual('');
       return;
     }
-    onClose?.();
+
+    if (resultado === 'invalido') {
+      return;
+    }
+
+    setCodigoManual('');
   };
 
   return (

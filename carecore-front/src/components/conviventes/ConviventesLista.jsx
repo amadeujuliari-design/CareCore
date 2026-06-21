@@ -41,7 +41,7 @@ export default function ConviventesLista({
         <div>
           <label className="block text-xs font-medium text-gray-500 uppercase mb-1.5">Status</label>
           <select value={filtroStatus} onChange={(e) => setFiltroStatus(e.target.value)} className="w-full px-4 py-2.5 border border-gray-300 rounded-lg outline-none bg-white focus:ring-2 focus:ring-brand text-sm">
-            <option value="Todos">Todos</option><option value="Ativo">Apenas Ativos</option><option value="Ausência justificada">Ausência justificada</option><option value="Inativos">Inativos / saídas</option><option value="Saída qualificada">Saída qualificada</option><option value="Inativado">Inativado</option><option value="Bloqueado">Bloqueado</option>
+            <option value="Todos">Todos</option><option value="Ativo">Apenas Ativos</option><option value="Em acolhimento">Em acolhimento</option><option value="Ausência justificada">Ausência justificada</option><option value="Inativos">Inativos / saídas</option><option value="Saída qualificada">Saída qualificada</option><option value="Inativado">Inativado</option><option value="Bloqueado">Bloqueado</option>
           </select>
         </div>
         <div>

@@ -2,6 +2,7 @@ export const FLUXO_DIAS_PADRAO = 7;
 export const HISTORICO_DIAS_PADRAO = 30;
 export const LISTAGEM_OPERACIONAL_DIAS_PADRAO = 7;
 export const REGISTROS_POR_PAGINA_PRONTUARIO = 30;
+export const REGISTROS_POR_PAGINA_ACOMPANHAMENTO_PRONTUARIO = 10;
 
 export const TIPOS_REGISTRO_FLUXO_PRONTUARIO = [
   { valor: '', label: 'Todos os tipos' },

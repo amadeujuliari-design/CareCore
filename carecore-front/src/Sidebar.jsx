@@ -26,6 +26,7 @@ import UserAvatar from './components/UserAvatar';
 import api, { limparSessaoLocal } from './services/api';
 import { API_ROOT } from './config/apiBase';
 import { carecoreVersaoRotulo } from './config/versao';
+import { MENU_ACOMPANHAMENTOS, MENU_CONVIVENTES } from './config/acompanhamentosConfig';
 import { decodificarPayloadJwt } from './utils/jwtUtils';
 import {
   DIREITOS_RESERVADOS_TITULO,
@@ -200,7 +201,11 @@ export default function Sidebar() {
           path: '/conviventes',
           icon: Users,
           label: 'Conviventes',
-          perfis: ['Gestor', 'Técnico', 'Orientador', 'Administrativo']
+          perfis: ['Gestor', 'Técnico', 'Orientador', 'Administrativo', 'Global'],
+          children: [
+            MENU_CONVIVENTES,
+            MENU_ACOMPANHAMENTOS,
+          ],
         },
         {
           path: '/quartos',
@@ -421,11 +426,24 @@ export default function Sidebar() {
       return location.pathname === '/rotina';
     }
 
+    if (path === '/conviventes') {
+      return location.pathname === '/conviventes';
+    }
+
+    if (path === '/conviventes/acompanhamentos') {
+      return location.pathname.startsWith('/conviventes/acompanhamentos');
+    }
+
     return (
       location.pathname === path ||
       location.pathname.startsWith(path + '/')
     );
   };
+
+  const itemTemDescendenteAtivo = (item) => (
+    isActivePath(item.path) ||
+    item.children?.some(child => itemTemDescendenteAtivo(child))
+  );
 
   const usuarioPodeVerItem = (item) => {
     if (isManutencao) return true;
@@ -438,19 +456,96 @@ export default function Sidebar() {
     return perfilPermitido && globalPermitido && featurePermitida;
   };
 
+  const filtrarChildrenRecursivo = (children) => (
+    children
+      ?.filter(usuarioPodeVerItem)
+      .map(child => ({
+        ...child,
+        children: filtrarChildrenRecursivo(child.children),
+      }))
+  );
+
   const itensVisiveisPorGrupo = menuGroups.map((group) => ({
     ...group,
     items: group.items
       .filter(usuarioPodeVerItem)
       .map(item => ({
         ...item,
-        children: item.children?.filter(usuarioPodeVerItem),
+        children: filtrarChildrenRecursivo(item.children),
       })),
   })).filter(group => group.items.length > 0);
 
-  const isActiveItem = (item) => (
-    isActivePath(item.path) ||
-    item.children?.some(child => isActivePath(child.path))
+  const isActiveItem = (item) => itemTemDescendenteAtivo(item);
+
+  const renderSubmenuItems = (children, { onNavigate, depth = 0 } = {}) => (
+    children.map(child => {
+      const childTemSubmenu = child.children?.length > 0;
+      const childActive = itemTemDescendenteAtivo(child);
+      const childExpanded = childTemSubmenu && (menusExpandidos[child.path] ?? childActive);
+
+      if (childTemSubmenu) {
+        return (
+          <div key={child.path} className={depth > 0 ? 'carecore-submenu-nested' : ''}>
+            <Link
+              to={child.children[0]?.path || child.path}
+              onClick={(event) => {
+                if (childActive) {
+                  event.preventDefault();
+                }
+
+                setMenusExpandidos((prev) => ({
+                  ...prev,
+                  [child.path]: !(prev[child.path] ?? childActive),
+                }));
+
+                if (!childActive) {
+                  onNavigate?.();
+                }
+              }}
+              className={`
+                carecore-submenu-item
+                ${childActive ? 'carecore-submenu-item-active' : ''}
+              `}
+            >
+              <IconBox icon={child.icon} active={childActive} />
+              <span className="truncate">{child.label}</span>
+              <ChevronDown
+                size={14}
+                strokeWidth={2.2}
+                className={`
+                  ml-auto shrink-0 transition-transform duration-200
+                  ${childExpanded ? 'rotate-180 text-emerald-700' : 'text-slate-400'}
+                `}
+              />
+            </Link>
+
+            {childExpanded && (
+              <div className="carecore-submenu-list carecore-submenu-list-nested">
+                {renderSubmenuItems(child.children, { onNavigate, depth: depth + 1 })}
+              </div>
+            )}
+          </div>
+        );
+      }
+
+      return (
+        <Link
+          key={child.path}
+          to={child.path}
+          onClick={onNavigate}
+          className={`
+            carecore-submenu-item
+            ${isActivePath(child.path) ? 'carecore-submenu-item-active' : ''}
+          `}
+        >
+          <IconBox icon={child.icon} active={isActivePath(child.path)} />
+          <span className="truncate">{child.label}</span>
+          {isActivePath(child.path) && (
+            <span className="carecore-active-dot" />
+          )}
+        </Link>
+      );
+    })
   );
 
   const renderMenuGroups = ({ onNavigate } = {}) => (
@@ -530,31 +625,7 @@ export default function Sidebar() {
 
                 {expanded && (
                   <div className="carecore-submenu-list">
-                    {item.children.map(child => {
-                      const childActive = isActivePath(child.path);
-
-                      return (
-                        <Link
-                          key={child.path}
-                          to={child.path}
-                          onClick={onNavigate}
-                          className={`
-                            carecore-submenu-item
-                            ${childActive ? 'carecore-submenu-item-active' : ''}
-                          `}
-                        >
-                          <IconBox icon={child.icon} active={childActive} />
-
-                          <span className="truncate">
-                            {child.label}
-                          </span>
-
-                          {childActive && (
-                            <span className="carecore-active-dot" />
-                          )}
-                        </Link>
-                      );
-                    })}
+                    {renderSubmenuItems(item.children, { onNavigate })}
                   </div>
                 )}
               </div>

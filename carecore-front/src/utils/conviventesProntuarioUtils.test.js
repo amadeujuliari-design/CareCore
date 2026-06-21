@@ -60,7 +60,7 @@ describe('conviventesProntuarioUtils', () => {
     );
 
     assert.equal(validacao.valido, false);
-    assert.equal(validacao.abaComErro, 'pessoais');
+    assert.match(validacao.mensagem, /Suspensão provisória/i);
   });
 
   it('prepara e ordena estruturas do PIA', () => {

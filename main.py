@@ -34,6 +34,7 @@ from routers import rotina_operacional
 from routers import passkeys
 from routers import suporte
 from routers import cobrancas
+from routers import acompanhamentos
 
 
 configurar_logging_carecore()
@@ -440,4 +441,5 @@ app.include_router(chat.router)
 app.include_router(suporte.router)
 app.include_router(cobrancas.router)
 app.include_router(usuarios.router)
+app.include_router(acompanhamentos.router)
 
