@@ -110,6 +110,7 @@ export default function AcompanhamentoModulo() {
   const modulo = obterModuloPorSlug(slug);
   const somenteLeitura = isGlobal && usuario?.is_manutencao !== true;
   const conviventePrefillProcessado = useRef(false);
+  const conviventeInputRef = useRef(null);
   const sentinelRef = useRef(null);
   const carregandoMaisRef = useRef(false);
   const registrosLengthRef = useRef(0);
@@ -309,7 +310,21 @@ export default function AcompanhamentoModulo() {
     setRegistroEdicao(null);
     setBuscaConvivente('');
     setMostrarDropdownConvivente(false);
+    conviventeInputRef.current?.blur();
   };
+
+  const selecionarConviventeModal = useCallback((convivente) => {
+    setForm(prev => ({ ...prev, convivente_id: convivente.id }));
+    setBuscaConvivente(nomeConvivente(convivente));
+    setMostrarDropdownConvivente(false);
+    conviventeInputRef.current?.blur();
+  }, []);
+
+  useEffect(() => {
+    if (form.convivente_id) {
+      setMostrarDropdownConvivente(false);
+    }
+  }, [form.convivente_id]);
 
   const montarPayload = () => {
     const payload = {};
@@ -705,6 +720,7 @@ export default function AcompanhamentoModulo() {
                     <span className="mb-1 block font-medium text-slate-600">Convivente *</span>
                     <div className="relative">
                       <input
+                        ref={conviventeInputRef}
                         type="text"
                         required={!form.convivente_id}
                         value={buscaConvivente}
@@ -713,12 +729,19 @@ export default function AcompanhamentoModulo() {
                           setMostrarDropdownConvivente(true);
                           setForm(prev => ({ ...prev, convivente_id: '' }));
                         }}
-                        onFocus={() => setMostrarDropdownConvivente(true)}
+                        onFocus={() => {
+                          if (!form.convivente_id) {
+                            setMostrarDropdownConvivente(true);
+                          }
+                        }}
+                        onBlur={() => {
+                          window.setTimeout(() => setMostrarDropdownConvivente(false), 150);
+                        }}
                         placeholder="Digite nome, prontuário ou CPF para buscar..."
                         className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-violet-200"
                       />
 
-                      {mostrarDropdownConvivente && (
+                      {mostrarDropdownConvivente && !form.convivente_id && (
                         <div className="absolute z-20 mt-1 max-h-52 w-full overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-lg">
                           {carregandoConviventes && (
                             <div className="p-3 text-center text-sm text-slate-500">
@@ -730,11 +753,8 @@ export default function AcompanhamentoModulo() {
                             <button
                               key={convivente.id}
                               type="button"
-                              onClick={() => {
-                                setForm(prev => ({ ...prev, convivente_id: convivente.id }));
-                                setBuscaConvivente(nomeConvivente(convivente));
-                                setMostrarDropdownConvivente(false);
-                              }}
+                              onPointerDown={(event) => event.preventDefault()}
+                              onClick={() => selecionarConviventeModal(convivente)}
                               className="block w-full border-b border-slate-50 px-3 py-3 text-left text-sm text-slate-700 hover:bg-violet-50"
                             >
                               <span className="font-semibold">{nomeConvivente(convivente)}</span>
