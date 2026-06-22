@@ -86,7 +86,6 @@ export function montarParamsListagemOperacional(filtros, extras = {}, { limite =
 
 export function montarParamsFluxoProntuario(filtros, { limite = REGISTROS_POR_PAGINA_PRONTUARIO } = {}) {
   const params = {
-    convivente_id: filtros.conviventeId,
     limite,
     deslocamento: filtros.deslocamento || 0,
   };

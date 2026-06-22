@@ -38,8 +38,8 @@ export async function listarHistoricosConvivente(conviventeId, params = {}) {
 export async function listarHistoricoFluxoConvivente(conviventeId, params = {}) {
   const response = await api.get('/api/rotina/historico', {
     params: {
-      convivente_id: conviventeId,
       ...params,
+      convivente_id: conviventeId,
     },
   });
   const data = response.data;

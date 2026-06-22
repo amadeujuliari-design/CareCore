@@ -176,6 +176,7 @@ export function useProntuarioHistorico({ editandoId, podeCriarHistoricoConvivent
 
     if (!append) {
       setLoadingHistoricoFluxo(true);
+      setHistoricoFluxo([]);
     } else {
       setCarregandoMaisFluxo(true);
     }
