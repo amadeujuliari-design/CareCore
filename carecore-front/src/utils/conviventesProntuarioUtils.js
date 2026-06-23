@@ -327,7 +327,9 @@ export function montarPayloadProntuario(formData, statusOriginal) {
     }));
   }
 
-  payload.origem_encaminhamento_id = normalizarOrigemEncaminhamentoId(payload.origem_encaminhamento_id);
+  if (Object.prototype.hasOwnProperty.call(formData, 'origem_encaminhamento_id')) {
+    payload.origem_encaminhamento_id = normalizarOrigemEncaminhamentoId(payload.origem_encaminhamento_id);
+  }
 
   if (Array.isArray(payload.equipamentos_anteriores)) {
     payload.equipamentos_anteriores = payload.equipamentos_anteriores.map((item) => ({
