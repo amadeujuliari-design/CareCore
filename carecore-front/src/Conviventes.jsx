@@ -128,7 +128,6 @@ export default function Conviventes() {
     podeCriarHistoricoConvivente,
     podeEditarHistoricoConvivente,
     podeGerenciarPiaConvivente,
-    usuarioPodeImprimirSensiveisConvivente,
   } = usePermissoesProntuario({
     perfilUsuario,
     idUsuarioLogado,

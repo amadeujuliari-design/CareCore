@@ -907,8 +907,3 @@ export function montarHtmlFormularioPia({
     </html>
   `;
 }
-
-function campoValueOrOutros(item, modo) {
-  const descricao = valorTexto(item?.descricao_outros);
-  return campoValor(descricao, modo);
-}
