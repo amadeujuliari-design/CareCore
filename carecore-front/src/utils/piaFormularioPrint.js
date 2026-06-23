@@ -97,6 +97,7 @@ function montarCabecalhoPagina({
   logoSrc,
   nomeExibicao,
   numeroPagina,
+  totalPaginas = 8,
   tituloPagina,
   dataInicialPia,
   nomeTecnico,
@@ -118,7 +119,7 @@ function montarCabecalhoPagina({
         <p><strong>${escaparHtml(nomeConvivente)}</strong> | Prontuário ${escaparHtml(prontuario)}</p>
         <p>Data inicial do PIA: <strong>${campoValor(dataInicialPia, modo)}</strong></p>
         <p>Técnico de referência: <strong>${campoValor(nomeTecnico, modo)}</strong></p>
-        <p class="meta-pagina">Página ${escaparHtml(numeroPagina)} de 7 | ${escaparHtml(tituloPagina)} | Gerado em ${escaparHtml(geradoEm)}</p>
+        <p class="meta-pagina">Página ${escaparHtml(numeroPagina)} de ${escaparHtml(totalPaginas)} | ${escaparHtml(tituloPagina)} | Gerado em ${escaparHtml(geradoEm)}</p>
       </div>
     </header>
   `;
@@ -335,14 +336,13 @@ function estilosFormulario() {
     .pagina {
       display: flex;
       flex-direction: column;
-      height: calc(297mm - 26mm);
       min-height: calc(297mm - 26mm);
       break-after: page;
       page-break-after: always;
       padding: 0 2mm;
     }
     .pagina:last-child { break-after: auto; page-break-after: auto; }
-    .pagina-corpo { flex: 1 1 auto; display: flex; flex-direction: column; }
+    .pagina-corpo { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0; }
     .pagina-rodape {
       flex: 0 0 auto;
       margin-top: auto;
@@ -370,8 +370,10 @@ function estilosFormulario() {
       border: 1px solid #e5e7eb;
       border-radius: 10px;
       padding: 11px 12px;
-      break-inside: avoid;
-      page-break-inside: avoid;
+    }
+    .secao-quebravel {
+      break-inside: auto;
+      page-break-inside: auto;
     }
     .secao h2 { margin: 0 0 10px; font-size: 12px; text-transform: uppercase; color: #0f766e; letter-spacing: .05em; }
     .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 11px; }
@@ -557,7 +559,12 @@ function estilosFormulario() {
     }
     @media print {
       .no-print { display: none; }
-      .pagina { height: calc(297mm - 26mm); min-height: calc(297mm - 26mm); padding: 0; box-shadow: none; }
+      .pagina { min-height: calc(297mm - 26mm); padding: 0; box-shadow: none; }
+      .pagina-termo,
+      .pagina-lgpd {
+        height: calc(297mm - 26mm);
+        min-height: calc(297mm - 26mm);
+      }
       .pagina-rodape { padding-top: 8mm; }
       .pagina-termo .paragrafo-termo { font-size: 9.5px; line-height: 1.3; }
       .texto-lgpd-corpo { font-size: 10px; line-height: 1.32; }
@@ -570,7 +577,8 @@ function estilosFormulario() {
       .pagina-termo .pagina-rodape { padding-top: 5mm; }
       .assinatura-bloco { min-height: 34mm; }
       .assinatura-espaco { min-height: 22mm; }
-      .cabecalho, .rodape-relatorio, .secao, .bloco-assinaturas-pagina, .rodape-lgpd-formulario { break-inside: avoid; page-break-inside: avoid; }
+      .cabecalho, .rodape-relatorio, .bloco-assinaturas-pagina, .rodape-lgpd-formulario { break-inside: avoid; page-break-inside: avoid; }
+      .secao:not(.secao-quebravel), .secao-termo, .secao-lgpd { break-inside: avoid; page-break-inside: avoid; }
     }
   `;
 }
@@ -616,6 +624,7 @@ export function montarHtmlFormularioPia({
     : equipamentosAnteriores;
 
   const rodapeHtml = montarRodapePagina(identidadeRelatorio);
+  const totalPaginas = 8;
 
   return `
     <!doctype html>
@@ -636,6 +645,7 @@ export function montarHtmlFormularioPia({
             logoSrc,
             nomeExibicao,
             numeroPagina: '1',
+            totalPaginas,
             tituloPagina: 'Identificação e dados iniciais',
             dataInicialPia,
             nomeTecnico: tecnicoNome,
@@ -673,6 +683,7 @@ export function montarHtmlFormularioPia({
             logoSrc,
             nomeExibicao,
             numeroPagina: '2',
+            totalPaginas,
             tituloPagina: 'Família e documentação',
             dataInicialPia,
             nomeTecnico: tecnicoNome,
@@ -728,6 +739,7 @@ export function montarHtmlFormularioPia({
             logoSrc,
             nomeExibicao,
             numeroPagina: '3',
+            totalPaginas,
             tituloPagina: 'Saúde e histórico clínico',
             dataInicialPia,
             nomeTecnico: tecnicoNome,
@@ -760,18 +772,19 @@ export function montarHtmlFormularioPia({
             logoSrc,
             nomeExibicao,
             numeroPagina: '4',
-            tituloPagina: 'Medicamentos, internações e seção 8',
+            totalPaginas,
+            tituloPagina: 'Medicamentos e internações',
             dataInicialPia,
             nomeTecnico: tecnicoNome,
             modo: modoValido,
           })}
 
-          <div class="secao">
+          <div class="secao secao-quebravel">
             <h2>7. Medicamentos e internações</h2>
             ${montarTabelaComLinhas({
               modo: modoValido,
               linhas: medicamentosFiltrados,
-              minLinhasManual: 5,
+              minLinhasManual: 4,
               vazioTexto: 'Nenhum medicamento cadastrado.',
               colunas: [
                 { titulo: 'Medicamento', render: (item, m) => campoValor(item?.nome, m) },
@@ -783,7 +796,7 @@ export function montarHtmlFormularioPia({
             ${montarTabelaComLinhas({
               modo: modoValido,
               linhas: internacoesFiltradas,
-              minLinhasManual: 4,
+              minLinhasManual: 3,
               vazioTexto: 'Nenhuma internação cadastrada.',
               colunas: [
                 { titulo: 'Onde', render: (item, m) => campoValor(item?.onde, m) },
@@ -792,6 +805,20 @@ export function montarHtmlFormularioPia({
               ],
             })}
           </div>
+        `, rodapeHtml)}
+
+        ${montarPaginaPia(`
+          ${montarCabecalhoPagina({
+            convivente,
+            logoSrc,
+            nomeExibicao,
+            numeroPagina: '5',
+            totalPaginas,
+            tituloPagina: 'Planejamento e perspectivas (seção 8)',
+            dataInicialPia,
+            nomeTecnico: tecnicoNome,
+            modo: modoValido,
+          })}
 
           <div class="secao">
             <h2>8. Planejamento e perspectivas (PIA principal estruturado)</h2>
@@ -821,7 +848,8 @@ export function montarHtmlFormularioPia({
             convivente,
             logoSrc,
             nomeExibicao,
-            numeroPagina: '5',
+            numeroPagina: '6',
+            totalPaginas,
             tituloPagina: 'Equipamentos anteriores e ciência',
             dataInicialPia,
             nomeTecnico: tecnicoNome,
@@ -874,7 +902,8 @@ export function montarHtmlFormularioPia({
             convivente,
             logoSrc,
             nomeExibicao,
-            numeroPagina: '6',
+            numeroPagina: '7',
+            totalPaginas,
             tituloPagina: 'Termo de compromisso',
             dataInicialPia,
             nomeTecnico: tecnicoNome,
@@ -895,7 +924,8 @@ export function montarHtmlFormularioPia({
             convivente,
             logoSrc,
             nomeExibicao,
-            numeroPagina: '7',
+            numeroPagina: '8',
+            totalPaginas,
             tituloPagina: 'Termo LGPD',
             dataInicialPia,
             nomeTecnico: tecnicoNome,
