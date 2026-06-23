@@ -817,7 +817,7 @@ async def aplicar_historicos(conn, plan):
             "conv": h["convivente_id"],
             "usuario": usuario,
             "origem": origem,
-            "data": h["data_origem"],
+            "data": date.fromisoformat(h["data_origem"]) if h.get("data_origem") else date(2000, 1, 1),
             "titulo": h.get("titulo"),
             "descricao": h["descricao"],
             "criado": agora_dt,
@@ -829,7 +829,7 @@ async def aplicar_historicos(conn, plan):
                     data_origem, titulo, descricao, criado_em
                 ) values (
                     :id, :inst, :conv, :usuario, :origem,
-                    cast(:data as date), :titulo, :descricao, :criado
+                    :data, :titulo, :descricao, :criado
                 )
             """), lote)
             inseridos += len(lote)
@@ -841,7 +841,7 @@ async def aplicar_historicos(conn, plan):
                 data_origem, titulo, descricao, criado_em
             ) values (
                 :id, :inst, :conv, :usuario, :origem,
-                cast(:data as date), :titulo, :descricao, :criado
+                :data, :titulo, :descricao, :criado
             )
         """), lote)
         inseridos += len(lote)
@@ -876,12 +876,15 @@ def fly_aplicar_plano(plan: dict) -> dict:
     )
     texto = proc.stdout + proc.stderr
     ini, fim = texto.find("{"), texto.rfind("}")
-    if ini < 0 or proc.returncode != 0:
+    if ini < 0:
         raise RuntimeError(f"Falha aplicacao Fly (code={proc.returncode}):\n{texto[-8000:]}")
     try:
-        return json.loads(texto[ini : fim + 1])
+        payload = json.loads(texto[ini : fim + 1])
     except json.JSONDecodeError as exc:
         raise RuntimeError(f"JSON invalido na aplicacao: {exc}\n{texto[-8000:]}") from exc
+    if proc.returncode != 0 and not payload.get("ok"):
+        raise RuntimeError(f"Falha aplicacao Fly (code={proc.returncode}):\n{texto[-8000:]}")
+    return payload
 
 
 def aplicar_em_producao(aplicacao: dict) -> dict:
@@ -892,9 +895,13 @@ def aplicar_em_producao(aplicacao: dict) -> dict:
     setup_plan["fase"] = "setup"
     setup_plan["historicos"] = []
 
-    print("Fase 1/2: motivo, cadastros novos e mesclagens...")
-    stats_setup = fly_aplicar_plano(setup_plan)
-    print(json.dumps(stats_setup, ensure_ascii=False, indent=2))
+    if setup_plan.get("novos_cadastros") or setup_plan.get("mesclagens"):
+        print("Fase 1/2: motivo, cadastros novos e mesclagens...")
+        stats_setup = fly_aplicar_plano(setup_plan)
+        print(json.dumps(stats_setup, ensure_ascii=False, indent=2))
+    else:
+        print("Fase 1/2: pulada (cadastros e mesclagens ja aplicados).")
+        stats_setup = {"ok": True, "fase": "setup", "resultado": {"pulado": True}}
 
     historicos = aplicacao.get("historicos", [])
     stats_hist: list[dict] = []
