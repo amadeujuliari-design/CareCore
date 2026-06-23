@@ -70,6 +70,7 @@ minuta_contrato_carecore_aeb*
 !/scripts/
 /scripts/*
 !/scripts/importar_conviventes_sisa_vinculados.py
+!/scripts/importar_diario_atendimento_historico.py
 !/scripts/preparar_base_producao_aeb.py
 !/scripts/validar_base_producao_aeb.py
 relatorios_importacao/

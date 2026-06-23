@@ -1,4 +1,8 @@
-const CACHE_NAME = 'carecore-shell-v1';
+const SW_URL = new URL(self.location.href);
+const APP_VERSION = SW_URL.searchParams.get('cv') || 'legacy';
+const CACHE_SHELL = `carecore-shell-${APP_VERSION}`;
+const CACHE_ASSETS = `carecore-assets-${APP_VERSION}`;
+
 const APP_SHELL_URLS = [
   '/',
   '/manifest.webmanifest',
@@ -10,7 +14,7 @@ const APP_SHELL_URLS = [
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME)
+    caches.open(CACHE_SHELL)
       .then((cache) => cache.addAll(APP_SHELL_URLS))
       .then(() => self.skipWaiting()),
   );
@@ -21,12 +25,27 @@ self.addEventListener('activate', (event) => {
     caches.keys()
       .then((cacheNames) => Promise.all(
         cacheNames
-          .filter((cacheName) => cacheName !== CACHE_NAME)
+          .filter((cacheName) => cacheName !== CACHE_SHELL && cacheName !== CACHE_ASSETS)
           .map((cacheName) => caches.delete(cacheName)),
       ))
       .then(() => self.clients.claim()),
   );
 });
+
+self.addEventListener('message', (event) => {
+  if (event.data?.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
+});
+
+function cachearResposta(cacheName, request, response) {
+  if (!response.ok) {
+    return;
+  }
+
+  const responseClone = response.clone();
+  caches.open(cacheName).then((cache) => cache.put(request, responseClone));
+}
 
 self.addEventListener('fetch', (event) => {
   const request = event.request;
@@ -36,12 +55,16 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
+  if (url.pathname === '/version.json') {
+    event.respondWith(fetch(request, { cache: 'no-store' }));
+    return;
+  }
+
   if (request.mode === 'navigate') {
     event.respondWith(
       fetch(request)
         .then((response) => {
-          const responseClone = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put('/', responseClone));
+          cachearResposta(CACHE_SHELL, '/', response);
           return response;
         })
         .catch(() => caches.match('/')),
@@ -53,18 +76,27 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  event.respondWith(
-    caches.match(request).then((cachedResponse) => {
-      if (cachedResponse) return cachedResponse;
+  if (url.pathname.startsWith('/assets/')) {
+    event.respondWith(
+      fetch(request)
+        .then((response) => {
+          cachearResposta(CACHE_ASSETS, request, response);
+          return response;
+        })
+        .catch(() => caches.match(request)),
+    );
+    return;
+  }
 
-      return fetch(request).then((response) => {
+  event.respondWith(
+    fetch(request)
+      .then((response) => {
         const cacheable = response.ok && ['style', 'script', 'image', 'font'].includes(request.destination);
         if (cacheable) {
-          const responseClone = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(request, responseClone));
+          cachearResposta(CACHE_ASSETS, request, response);
         }
         return response;
-      });
-    }),
+      })
+      .catch(() => caches.match(request)),
   );
 });

@@ -477,6 +477,12 @@ export default function Sidebar() {
 
   const isActiveItem = (item) => itemTemDescendenteAtivo(item);
 
+  const menuEstaExpandido = (path, ativoPorRota) => (
+    Object.prototype.hasOwnProperty.call(menusExpandidos, path)
+      ? menusExpandidos[path]
+      : ativoPorRota
+  );
+
   const renderSubmenuLabel = (child) => {
     const tituloCompleto = child.labelTitle || child.label;
 
@@ -507,7 +513,7 @@ export default function Sidebar() {
     children.map(child => {
       const childTemSubmenu = child.children?.length > 0;
       const childActive = itemTemDescendenteAtivo(child);
-      const childExpanded = childTemSubmenu && (menusExpandidos[child.path] ?? childActive);
+      const childExpanded = childTemSubmenu && menuEstaExpandido(child.path, childActive);
 
       if (childTemSubmenu) {
         return (
@@ -587,7 +593,7 @@ export default function Sidebar() {
           {group.items.map(item => {
             const active = isActiveItem(item);
             const temSubmenu = item.children?.length > 0;
-            const expanded = temSubmenu && (menusExpandidos[item.path] ?? active);
+            const expanded = temSubmenu && menuEstaExpandido(item.path, active);
 
             if (item.disabled) {
               return (

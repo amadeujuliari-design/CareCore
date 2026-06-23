@@ -8,6 +8,7 @@ import { BrowserRouter } from 'react-router-dom';
 
 import './carecore-premium.css';
 
+import AtualizacaoAppBanner from './components/AtualizacaoAppBanner.jsx';
 import AppRouter from './routes/AppRouter';
 
 function PageFallback() {
@@ -21,6 +22,7 @@ function PageFallback() {
 export default function App() {
   return (
     <BrowserRouter>
+      <AtualizacaoAppBanner />
       <Suspense fallback={<PageFallback />}>
         <AppRouter />
       </Suspense>
