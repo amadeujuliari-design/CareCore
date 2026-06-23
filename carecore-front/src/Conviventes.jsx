@@ -5,7 +5,7 @@ import Sidebar from './Sidebar';
 import ConviventesLista from './components/conviventes/ConviventesLista';
 import ModalCamera from './components/conviventes/ModalCamera';
 import ModalCarteirinha from './components/conviventes/ModalCarteirinha';
-import ModalFichaSensivel from './components/conviventes/ModalFichaSensivel';
+import ModalFichaCompleta from './components/conviventes/ModalFichaCompleta';
 import ProntuarioCabecalho from './components/conviventes/ProntuarioCabecalho';
 import ProntuarioDocumentos from './components/conviventes/ProntuarioDocumentos';
 import ProntuarioFluxo from './components/conviventes/ProntuarioFluxo';
@@ -25,6 +25,7 @@ import {
   validarCampoProntuario,
   validarProntuarioAntesSalvar,
 } from './utils/conviventesProntuarioUtils';
+import { obterMensagemErro } from './utils/usuariosUtils';
 import {
   useDeviceInfo,
 } from './hooks/useDeviceInfo';
@@ -42,6 +43,7 @@ import {
 } from './utils/conviventesUtils';
 import { abrirPreviewHtml } from './utils/imprimirRelatorio';
 import { montarHtmlPiaCompleto } from './utils/piaCompletoPrint';
+import { montarHtmlFormularioPia } from './utils/piaFormularioPrint';
 import { obterLogoRelatorioDataUrl } from './utils/relatorioIdentidadePrint';
 import {
   atualizarConviventeProntuario,
@@ -183,21 +185,20 @@ export default function Conviventes() {
     usuarioPayload?.is_master === true;
   const {
     abrirCarteirinha,
-    abrirFichaCompleta,
     carteirinhaAberta,
-    fichaSensivelPendente,
+    fichaCompletaPendente,
     fotoCarteirinha,
     identidadeRelatorio,
+    imprimindoFicha,
+    imprimirFichaCompleta,
     setCarteirinhaAberta,
-    setFichaSensivelPendente,
+    setFichaCompletaPendente,
     setIdentidadeRelatorio,
     solicitarImpressaoFichaCompleta,
   } = useProntuarioImpressao({
-    documentos,
-    editandoId,
     listaTecnicos,
     quartos,
-    usuarioPodeImprimirSensiveisConvivente,
+    origensEncaminhamento,
   });
   const {
     aplicarFiltrosFluxo,
@@ -392,6 +393,30 @@ export default function Conviventes() {
     }
   };
 
+  const imprimirFormularioPia = async (modo) => {
+    if (!editandoId) {
+      setErro('Salve o prontuário antes de imprimir o formulário PIA.');
+      return;
+    }
+
+    const logoRelatorioDataUrl = await obterLogoRelatorioDataUrl(identidadeRelatorio);
+    const html = montarHtmlFormularioPia({
+      convivente: formData,
+      piaPrincipal: registroPiaMaisRecente,
+      origensEncaminhamento,
+      listaTecnicos,
+      identidadeRelatorio,
+      logoRelatorioDataUrl,
+      modo,
+    });
+
+    abrirPreviewHtml({
+      titulo: `Formulário PIA (${modo === 'manual' ? 'preenchimento manual' : 'completo'}) - ${formData.nome_social || formData.nome_completo || 'Convivente'}`,
+      html,
+      orientacaoInicial: 'portrait',
+    });
+  };
+
   const imprimirPiaCompleto = async () => {
     if (!editandoId || registrosPiaPrincipais.length === 0) {
       setErro('Nenhum PIA principal disponível para impressão.');
@@ -513,7 +538,7 @@ export default function Conviventes() {
       }
       return conviventeSalvo;
     } catch (error) {
-      setErro(error.response?.data?.detail || 'Erro ao salvar dados no servidor.');
+      setErro(obterMensagemErro(error) || 'Erro ao salvar dados no servidor.');
       return null;
     } finally {
       setSalvandoProntuario(false);
@@ -570,11 +595,20 @@ export default function Conviventes() {
       return;
     }
 
-    await salvarProntuario({
+    const conviventeSalvo = await salvarProntuario({
       permanecerNaFicha: true,
       abaDestino: novaAba,
       silencioso: true,
     });
+
+    if (!conviventeSalvo) {
+      setAbaAtual(novaAba);
+      setErro((mensagemAtual) => (
+        mensagemAtual
+          ? `${mensagemAtual} Você pode continuar navegando; clique em "Atualizar prontuário" quando corrigir.`
+          : mensagemAtual
+      ));
+    }
   };
 
   const obterLocalizacaoLeito = (leitoId) => {
@@ -703,6 +737,8 @@ export default function Conviventes() {
                       handleBlur={handleBlur}
                       handleRemoverFotoPerfil={handleRemoverFotoPerfil}
                       trocarAbaComSalvamento={trocarAbaComSalvamento}
+                      setFormData={setFormData}
+                      setErrosValidacao={setErrosValidacao}
                     />
                   )}
 {/* === FIM DA SEÇÃO 5 === */}
@@ -774,6 +810,9 @@ export default function Conviventes() {
                       registrosPiaPrincipais={registrosPiaPrincipais}
                       evolucoesPorRegistroPia={evolucoesPorRegistroPia}
                       imprimirPiaCompleto={imprimirPiaCompleto}
+                      imprimirFormularioPia={imprimirFormularioPia}
+                      formData={formData}
+                      handleChange={handleChange}
                       loadingPia={loadingPia}
                       salvandoPia={salvandoPia}
                       temasEvolucaoPia={temasEvolucaoPia}
@@ -788,19 +827,16 @@ export default function Conviventes() {
                   )}
 
                   {abaAtual === 'social' && (
-                    <ProntuarioSocial formData={formData} handleChange={handleChange} />
+                    <ProntuarioSocial formData={formData} handleChange={handleChange} setFormData={setFormData} origensEncaminhamento={origensEncaminhamento} />
                   )}
 
                   {abaAtual === 'saude' && (
                     <ProntuarioSaude
                       formData={formData}
                       errosValidacao={errosValidacao}
-                      mostrarSenhaEmail={mostrarSenhaEmail}
-                      mostrarSenhaGovbr={mostrarSenhaGovbr}
-                      setMostrarSenhaEmail={setMostrarSenhaEmail}
-                      setMostrarSenhaGovbr={setMostrarSenhaGovbr}
                       handleChange={handleChange}
                       handleBlur={handleBlur}
+                      setFormData={setFormData}
                     />
                   )}
 
@@ -808,6 +844,7 @@ export default function Conviventes() {
                     <ProntuarioSensiveis
                       editandoId={editandoId}
                       formData={formData}
+                      setFormData={setFormData}
                       documentoConsultaBnmp={documentoConsultaBnmp}
                       usuarioPodeEnviarDocumentosRestritos={usuarioPodeEnviarDocumentosRestritos}
                       usuarioPodeGerenciarDocumentosRestritos={usuarioPodeGerenciarDocumentosRestritos}
@@ -822,6 +859,14 @@ export default function Conviventes() {
                   {abaAtual === 'documentos' && (
                     <ProntuarioDocumentos
                       editandoId={editandoId}
+                      formData={formData}
+                      errosValidacao={errosValidacao}
+                      mostrarSenhaEmail={mostrarSenhaEmail}
+                      mostrarSenhaGovbr={mostrarSenhaGovbr}
+                      setMostrarSenhaEmail={setMostrarSenhaEmail}
+                      setMostrarSenhaGovbr={setMostrarSenhaGovbr}
+                      handleChange={handleChange}
+                      handleBlur={handleBlur}
                       documentos={documentos}
                       loadingDocs={loadingDocs}
                       arquivoSelecionado={arquivoSelecionado}
@@ -853,10 +898,11 @@ export default function Conviventes() {
           </div>
         </ScrollArea>
 
-      <ModalFichaSensivel
-        fichaSensivelPendente={fichaSensivelPendente}
-        setFichaSensivelPendente={setFichaSensivelPendente}
-        abrirFichaCompleta={abrirFichaCompleta}
+      <ModalFichaCompleta
+        fichaPendente={fichaCompletaPendente}
+        setFichaPendente={setFichaCompletaPendente}
+        imprimirFichaCompleta={imprimirFichaCompleta}
+        carregando={imprimindoFicha}
       />
 
       <ModalCarteirinha

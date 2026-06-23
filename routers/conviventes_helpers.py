@@ -57,10 +57,16 @@ def usuario_pode_ver_credenciais_cofre_convivente(
 
 def aplicar_credenciais_convivente_salvar(dados: dict) -> None:
     if "senha_email" in dados:
-        dados["senha_email"] = criptografar_credencial(dados.get("senha_email"))
+        if dados.get("senha_email") is None or str(dados.get("senha_email") or "").strip() == "":
+            dados.pop("senha_email", None)
+        else:
+            dados["senha_email"] = criptografar_credencial(dados.get("senha_email"))
 
     if "senha_govbr" in dados:
-        dados["senha_govbr"] = criptografar_credencial(dados.get("senha_govbr"))
+        if dados.get("senha_govbr") is None or str(dados.get("senha_govbr") or "").strip() == "":
+            dados.pop("senha_govbr", None)
+        else:
+            dados["senha_govbr"] = criptografar_credencial(dados.get("senha_govbr"))
 
 
 def usuario_pode_resolver_ocorrencia(

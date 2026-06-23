@@ -1,5 +1,6 @@
 # =====================================================================
 import json
+import logging
 import os
 import re
 import uuid
@@ -14,8 +15,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy import and_, case, cast, delete, exists, func, or_, String
 
-from audit_log import registrar_evento_auditoria
+from convivente_ficha_pia import (
+    carregar_listas_ficha_pia,
+    enriquecer_convivente_response_dict,
+    normalizar_campos_ficha_payload,
+    sincronizar_listas_ficha_pia,
+)
 from database import get_db
+from audit_log import registrar_evento_auditoria
 from models import (
     ConviventeDB, MotivoInativacaoDB, OrigemEncaminhamentoDB, 
     QuartoDB, LeitoDB, DocumentoConviventeDB, OcorrenciaConviventeDB, UsuarioDB,
@@ -123,7 +130,31 @@ from routers.conviventes_xlsx import (
 from imagem_upload import eh_arquivo_imagem, padronizar_upload_imagem
 from tenant_scope import obter_instituicao_escopo
 
+logger = logging.getLogger("carecore.conviventes")
+APP_ENV = os.getenv("APP_ENV", "local").strip().lower()
+
 router = APIRouter(prefix="/api", tags=["Conviventes e Ocorrencias"])
+
+LISTAS_FICHA_PIA = (
+    "familiares",
+    "documentos_civis",
+    "substancias",
+    "medicamentos",
+    "internacoes",
+    "equipamentos_anteriores",
+)
+
+
+async def montar_convivente_response(
+    db: AsyncSession,
+    convivente: ConviventeDB,
+    usuario_atual: dict,
+) -> ConviventeResponse:
+    base = convivente_para_response(convivente, usuario_atual)
+    listas = await carregar_listas_ficha_pia(db, convivente.id)
+    return ConviventeResponse.model_validate(
+        enriquecer_convivente_response_dict(base.model_dump(), listas)
+    )
 
 TIPOS_ROTINA_PRINCIPAIS = {"Entrada", "Saída"}
 TIPOS_ROTINA_REFEICOES = {"Café da manhã", "Almoço", "Jantar", "Lanche noturno"}
@@ -477,6 +508,8 @@ async def criar_convivente(convivente: ConviventeCreate, db: AsyncSession = Depe
     try:
         obs_status = getattr(convivente, "observacao_status", None)
         dados = convivente.model_dump(exclude_unset=True, exclude={"observacao_status"})
+        listas_payload = {chave: dados.pop(chave) for chave in LISTAS_FICHA_PIA if chave in dados}
+        normalizar_campos_ficha_payload(dados)
         
         if dados.get("status") in ["Inativado", "Bloqueado", "Saída qualificada"]:
             dados["leito_id"] = None
@@ -500,7 +533,13 @@ async def criar_convivente(convivente: ConviventeCreate, db: AsyncSession = Depe
         maior_numero = (await db.execute(select(func.max(ConviventeDB.numero_institucional)).where(ConviventeDB.instituicao_id == obter_instituicao_escopo(usuario_atual)))).scalar()
         novo_convivente.numero_institucional = (maior_numero or 0) + 1
         db.add(novo_convivente)
-        await db.flush() 
+        await db.flush()
+        await sincronizar_listas_ficha_pia(
+            db,
+            novo_convivente,
+            obter_instituicao_escopo(usuario_atual),
+            listas_payload,
+        )
 
         if novo_convivente.leito_id and novo_convivente.status == "Ativo":
             leito = (await db.execute(select(LeitoDB).where(LeitoDB.id == novo_convivente.leito_id))).scalar_one_or_none()
@@ -524,7 +563,7 @@ async def criar_convivente(convivente: ConviventeCreate, db: AsyncSession = Depe
             status=novo_convivente.status,
             tecnico_id=novo_convivente.tecnico_id,
         )
-        return convivente_para_response(novo_convivente, usuario_atual)
+        return await montar_convivente_response(db, novo_convivente, usuario_atual)
     except HTTPException:
         await db.rollback()
         raise
@@ -748,7 +787,7 @@ async def listar_conviventes_resumo(
 async def obtener_convivente(convivente_id: str, db: AsyncSession = Depends(get_db), usuario_atual: dict = Depends(get_usuario_logado)):
     convivente = (await db.execute(select(ConviventeDB).where(ConviventeDB.id == convivente_id, ConviventeDB.instituicao_id == obter_instituicao_escopo(usuario_atual)))).scalar_one_or_none()
     if not convivente: raise HTTPException(status_code=404, detail="Convivente não encontrado.")
-    return convivente_para_response(convivente, usuario_atual)
+    return await montar_convivente_response(db, convivente, usuario_atual)
 
 
 @router.get("/conviventes/{convivente_id}/pia", response_model=RegistroPIAListaResponse)
@@ -1271,6 +1310,8 @@ async def atualizar_convivente(convivente_id: str, dados_atualizacao: Convivente
     status_antigo = convivente.status
     obs_status = getattr(dados_atualizacao, "observacao_status", None)
     dados = dados_atualizacao.model_dump(exclude_unset=True, exclude={"observacao_status"})
+    listas_payload = {chave: dados.pop(chave) for chave in LISTAS_FICHA_PIA if chave in dados}
+    normalizar_campos_ficha_payload(dados)
 
     if (
         "leito_id" in dados
@@ -1316,7 +1357,15 @@ async def atualizar_convivente(convivente_id: str, dados_atualizacao: Convivente
 
     aplicar_credenciais_convivente_salvar(dados)
 
-    for key, value in dados.items(): setattr(convivente, key, value)
+    for key, value in dados.items():
+        setattr(convivente, key, value)
+
+    await sincronizar_listas_ficha_pia(
+        db,
+        convivente,
+        obter_instituicao_escopo(usuario_atual),
+        listas_payload,
+    )
 
     try:
         if leito_id_antigo != convivente.leito_id:
@@ -1348,14 +1397,18 @@ async def atualizar_convivente(convivente_id: str, dados_atualizacao: Convivente
             alterou_status=status_antigo != convivente.status,
             alterou_leito=leito_id_antigo != convivente.leito_id,
         )
-        return convivente_para_response(convivente, usuario_atual)
+        return await montar_convivente_response(db, convivente, usuario_atual)
     except HTTPException:
         raise
     except Exception as e:
         await db.rollback()
+        logger.exception("Falha ao atualizar convivente %s", convivente_id)
+        detail = "Não foi possível atualizar o convivente."
+        if APP_ENV not in {"production", "prod"}:
+            detail = f"{detail} ({type(e).__name__}: {e})"
         raise HTTPException(
             status_code=400,
-            detail="Não foi possível atualizar o convivente.",
+            detail=detail,
         ) from e
 
 

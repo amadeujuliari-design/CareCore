@@ -88,7 +88,7 @@ export function RelatoriosTabelaDados({
                       </span>
                     ) : coluna === 'Quais pendências' ? (
                       <span className={`text-[11px] font-semibold ${
-                        linha[coluna] === 'Cadastro completo'
+                        linha[coluna] === 'Completo' || linha[coluna] === 'Cadastro completo'
                           ? 'text-emerald-700'
                           : 'text-slate-600'
                       }`}>

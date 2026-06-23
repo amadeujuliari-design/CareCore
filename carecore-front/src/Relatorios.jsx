@@ -4,6 +4,7 @@ import Sidebar from './Sidebar';
 import { AppShell, MainShell, PageHeader, ReportActionButton, ScrollArea } from './components/PremiumUI';
 import CarteirinhasLote from './components/CarteirinhasLote';
 import DireitosReservadosAviso from './components/DireitosReservadosAviso';
+import ModalFichaCompleta from './components/conviventes/ModalFichaCompleta';
 import { RelatoriosEvolucaoGraficos } from './components/relatorios/RelatoriosEvolucaoGraficos';
 import { RelatoriosFiltrosPanel } from './components/relatorios/RelatoriosFiltrosPanel';
 import { RelatoriosPersonalizacao } from './components/relatorios/RelatoriosPersonalizacao';
@@ -12,7 +13,12 @@ import { RelatoriosTabelaDados } from './components/relatorios/RelatoriosTabelaD
 import { exportarRelatorioXlsx } from './utils/exportarRelatorioXlsx';
 import { abrirPreviewHtml, imprimirRelatorio } from './utils/imprimirRelatorio';
 import { montarHtmlPiasCompletosLote } from './utils/piaCompletoPrint';
+import { montarHtmlFichasCompletasLote } from './utils/fichaCompletaConvivente';
+import { formatarDadosConviventeParaTela } from './utils/conviventesProntuarioUtils';
 import { gerarGraficosEvolucaoHtml } from './utils/relatoriosGraficosHtml';
+import { LIMITE_FICHAS_LOTE_RELATORIOS } from './config/fichaCompletaConfig';
+import api from './services/api';
+import { obterConviventeProntuario } from './services/conviventesProntuarioService';
 import { useRelatoriosFiltros } from './hooks/useRelatoriosFiltros';
 import { useRelatoriosIndicadores } from './hooks/useRelatoriosIndicadores';
 import { useRelatoriosTabela } from './hooks/useRelatoriosTabela';
@@ -76,6 +82,9 @@ export default function Relatorios() {
   const [paginaTabela, setPaginaTabela] = useState(1);
   const [ordenacaoAcomodacoes, setOrdenacaoAcomodacoes] = useState('quarto');
   const [opcoesImpressaoEvolucaoAbertas, setOpcoesImpressaoEvolucaoAbertas] = useState(false);
+  const [fichaLoteModalAberto, setFichaLoteModalAberto] = useState(false);
+  const [imprimindoFichasLote, setImprimindoFichasLote] = useState(false);
+  const [progressoFichasLote, setProgressoFichasLote] = useState(null);
   const [tecnicoPendenciasEvolucaoId, setTecnicoPendenciasEvolucaoId] = useState('');
   const {
     aplicarIdentidadeRelatorio,
@@ -648,6 +657,83 @@ export default function Relatorios() {
     });
   }
 
+  function solicitarImpressaoFichasCompletasLote() {
+    if (conviventesFiltrados.length === 0) {
+      setErro('Nenhum convivente encontrado com os filtros atuais.');
+      return;
+    }
+    setFichaLoteModalAberto(true);
+  }
+
+  async function imprimirFichasCompletasFiltradas(secoesSelecionadas) {
+    const conviventesOrdenados = [...conviventesFiltrados].sort((a, b) => (
+      String(a.nome_social || a.nome_completo || '').localeCompare(
+        String(b.nome_social || b.nome_completo || ''),
+        'pt-BR',
+      )
+    ));
+
+    if (conviventesOrdenados.length > LIMITE_FICHAS_LOTE_RELATORIOS) {
+      setErro(`Refine o filtro para no máximo ${LIMITE_FICHAS_LOTE_RELATORIOS} conviventes por impressão.`);
+      return;
+    }
+
+    setImprimindoFichasLote(true);
+    setProgressoFichasLote({ atual: 0, total: conviventesOrdenados.length });
+
+    try {
+      const [origensRes, logoRelatorioDataUrl] = await Promise.all([
+        api.get('/api/origens-encaminhamento').catch(() => ({ data: [] })),
+        obterLogoRelatorioParaImpressao(),
+      ]);
+      const origensEncaminhamento = origensRes.data || [];
+
+      const prontuarios = [];
+      const tamanhoLote = 5;
+
+      for (let indice = 0; indice < conviventesOrdenados.length; indice += tamanhoLote) {
+        const pedaco = conviventesOrdenados.slice(indice, indice + tamanhoLote);
+        const resultados = await Promise.all(
+          pedaco.map(async (resumo) => {
+            try {
+              const completo = await obterConviventeProntuario(resumo.id);
+              return formatarDadosConviventeParaTela(completo);
+            } catch (erroCarregamento) {
+              console.error(`Erro ao carregar prontuário #${resumo.id}`, erroCarregamento);
+              return formatarDadosConviventeParaTela(resumo);
+            }
+          }),
+        );
+        prontuarios.push(...resultados);
+        setProgressoFichasLote({ atual: prontuarios.length, total: conviventesOrdenados.length });
+      }
+
+      const html = montarHtmlFichasCompletasLote({
+        conviventes: prontuarios,
+        secoesSelecionadas,
+        listaTecnicos: tecnicos,
+        quartos,
+        origensEncaminhamento,
+        identidadeRelatorio,
+        logoRelatorioDataUrl,
+        descricaoFiltros: filtrosAtivos.join(' | ') || 'Todos os filtros',
+      });
+
+      abrirPreviewHtml({
+        titulo: `Fichas completas filtradas (${prontuarios.length})`,
+        html,
+        orientacaoInicial: 'portrait',
+      });
+      setFichaLoteModalAberto(false);
+    } catch (erroImpressao) {
+      console.error('Erro ao gerar fichas completas em lote', erroImpressao);
+      setErro('Não foi possível gerar as fichas completas. Tente novamente com um filtro menor.');
+    } finally {
+      setImprimindoFichasLote(false);
+      setProgressoFichasLote(null);
+    }
+  }
+
   async function imprimirAbaAtual({ incluirGraficos = null } = {}) {
     if (aba === 'evolucao' && incluirGraficos === null) {
       setOpcoesImpressaoEvolucaoAbertas(true);
@@ -682,6 +768,9 @@ export default function Relatorios() {
         : '',
       colunas: colunasExportacao,
       dados: linhasExportacao,
+      orientacao: ['conviventes', 'documentacao', 'pia', 'auditoria', 'rotina'].includes(aba)
+        ? 'landscape'
+        : null,
       identidade: {
         ...identidadeRelatorio,
         logo_src: logoRelatorioDataUrl,
@@ -747,6 +836,16 @@ export default function Relatorios() {
                   disabled={loading || registrosPiaFiltrados.length === 0}
                 >
                   Imprimir PIAs completos
+                </ReportActionButton>
+              )}
+
+              {['conviventes', 'documentacao'].includes(aba) && (
+                <ReportActionButton
+                  action="print"
+                  onClick={solicitarImpressaoFichasCompletasLote}
+                  disabled={loading || imprimindoFichasLote || conviventesFiltrados.length === 0}
+                >
+                  Imprimir fichas completas
                 </ReportActionButton>
               )}
             </>
@@ -894,6 +993,19 @@ export default function Relatorios() {
             </div>
           </div>
         </div>
+      )}
+
+      {fichaLoteModalAberto && (
+        <ModalFichaCompleta
+          modoLote
+          fichaPendente={{ aberta: true }}
+          quantidadeLote={conviventesFiltrados.length}
+          descricaoFiltrosLote={filtrosAtivos.join(' | ') || 'Todos os filtros'}
+          imprimirFichaCompleta={imprimirFichasCompletasFiltradas}
+          carregando={imprimindoFichasLote}
+          progressoLote={progressoFichasLote}
+          onFechar={() => setFichaLoteModalAberto(false)}
+        />
       )}
     </AppShell>
   );

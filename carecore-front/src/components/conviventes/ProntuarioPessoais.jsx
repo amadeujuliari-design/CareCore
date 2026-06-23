@@ -1,5 +1,30 @@
 import AuthenticatedImage from '../AuthenticatedImage';
+import ProntuarioFamilia from './ProntuarioFamilia';
+import { EQUIPAMENTO_ANTERIOR_OUTROS } from '../../config/piaFichaConfig';
 import { calcularIdade } from '../../utils/conviventesUtils';
+
+function valorSelectOrigemPrincipal(formData = {}) {
+  if (formData.origem_encaminhamento_id === EQUIPAMENTO_ANTERIOR_OUTROS) return EQUIPAMENTO_ANTERIOR_OUTROS;
+  if (formData.origem_encaminhamento_id) return formData.origem_encaminhamento_id;
+  if ((formData.origem_encaminhamento_outros || '').trim()) return EQUIPAMENTO_ANTERIOR_OUTROS;
+  return '';
+}
+
+function alterarOrigemPrincipal(setFormData, valor) {
+  if (valor === EQUIPAMENTO_ANTERIOR_OUTROS) {
+    setFormData((prev) => ({
+      ...prev,
+      origem_encaminhamento_id: EQUIPAMENTO_ANTERIOR_OUTROS,
+      origem_encaminhamento_outros: prev.origem_encaminhamento_outros || '',
+    }));
+    return;
+  }
+  setFormData((prev) => ({
+    ...prev,
+    origem_encaminhamento_id: valor,
+    origem_encaminhamento_outros: '',
+  }));
+}
 
 export default function ProntuarioPessoais({
   editandoId,
@@ -17,6 +42,8 @@ export default function ProntuarioPessoais({
   handleBlur,
   handleRemoverFotoPerfil,
   trocarAbaComSalvamento,
+  setFormData,
+  setErrosValidacao,
 }) {
   return (
     <div className="space-y-5">
@@ -79,16 +106,29 @@ export default function ProntuarioPessoais({
           <div className="md:col-span-1">
             <label className={`block text-xs font-semibold mb-1 ${formData.status === 'Ativo' ? 'text-blue-900' : formData.status === 'Saída qualificada' ? 'text-emerald-900' : formData.status === 'Ausência justificada' ? 'text-sky-900' : 'text-red-900'}`}>Origem / Encaminhado por</label>
             <select
-              name="origem_encaminhamento_id"
-              value={formData.origem_encaminhamento_id || ''}
-              onChange={handleChange}
+              value={valorSelectOrigemPrincipal(formData)}
+              onChange={(e) => alterarOrigemPrincipal(setFormData, e.target.value)}
               className="w-full px-3 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none bg-white text-sm"
             >
               <option value="">Não informado</option>
               {(origensEncaminhamento || []).map((origem) => (
                 <option key={origem.id} value={origem.id}>{origem.descricao}</option>
               ))}
+              <option value={EQUIPAMENTO_ANTERIOR_OUTROS}>Outros</option>
             </select>
+            {valorSelectOrigemPrincipal(formData) === EQUIPAMENTO_ANTERIOR_OUTROS && (
+              <input
+                type="text"
+                name="origem_encaminhamento_outros"
+                placeholder="Informe origem / encaminhamento"
+                value={formData.origem_encaminhamento_outros || ''}
+                onChange={handleChange}
+                className={`mt-1.5 w-full px-3 py-1.5 border rounded-lg focus:ring-2 focus:ring-brand outline-none bg-white text-sm ${errosValidacao.origem_encaminhamento_outros ? 'border-red-500 focus:ring-red-500 bg-red-50' : 'border-gray-300'}`}
+              />
+            )}
+            {errosValidacao.origem_encaminhamento_outros && (
+              <p className="text-red-500 text-[10px] mt-0.5 font-bold">{errosValidacao.origem_encaminhamento_outros}</p>
+            )}
           </div>
 
           {formData.status !== statusOriginal && formData.status !== 'Bloqueado' && (
@@ -164,6 +204,14 @@ export default function ProntuarioPessoais({
         <div><label className="block text-xs font-semibold text-gray-700 mb-1">Nome da Mãe</label><input type="text" name="nome_mae" value={formData.nome_mae} onChange={handleChange} className="w-full px-3 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none text-sm" /></div>
         <div><label className="block text-xs font-semibold text-gray-700 mb-1">Nome do Pai</label><input type="text" name="nome_pai" value={formData.nome_pai} onChange={handleChange} className="w-full px-3 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none text-sm" /></div>
       </div>
+
+      <ProntuarioFamilia
+        formData={formData}
+        handleChange={handleChange}
+        setFormData={setFormData}
+        errosValidacao={errosValidacao}
+        setErrosValidacao={setErrosValidacao}
+      />
     </div>
   );
 }

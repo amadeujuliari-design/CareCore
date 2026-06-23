@@ -333,6 +333,7 @@ class ConviventeDB(Base):
     ausencia_justificada_desde = Column(Date, nullable=True, index=True)
     motivo_inativacao_id = Column(String, ForeignKey("motivos_inativacao.id"), nullable=True)
     origem_encaminhamento_id = Column(String, ForeignKey("origens_encaminhamento.id"), nullable=True)
+    origem_encaminhamento_outros = Column(String, nullable=True)
     data_entrada = Column(Date, nullable=True)
     leito_id = Column(String, ForeignKey("leitos.id"), nullable=True) 
     
@@ -385,6 +386,136 @@ class ConviventeDB(Base):
     uso_substancias = Column(Text, nullable=True)
     transtorno_mental = Column(Text, nullable=True)
 
+    cor_raca = Column(String, nullable=True)
+    possui_religiao = Column(Boolean, default=False)
+    religiao_qual = Column(String, nullable=True)
+    relacao_familiar_situacao = Column(String, nullable=True)
+    relacao_familiar_outra = Column(Text, nullable=True)
+
+    data_inicio_pia = Column(Date, nullable=True)
+    em_sao_paulo_desde = Column(Date, nullable=True)
+
+    alfabetizado = Column(Boolean, nullable=True)
+    ef_concluido = Column(Boolean, nullable=True)
+    ef_incompleto = Column(Boolean, nullable=True)
+    ef_incompleto_serie = Column(String, nullable=True)
+    em_concluido = Column(Boolean, nullable=True)
+    em_incompleto = Column(Boolean, nullable=True)
+    em_incompleto_serie = Column(String, nullable=True)
+    es_concluido = Column(Boolean, nullable=True)
+    es_incompleto = Column(Boolean, nullable=True)
+    es_incompleto_periodo = Column(String, nullable=True)
+    estuda_atualmente = Column(Boolean, nullable=True)
+    estuda_curso = Column(String, nullable=True)
+    interesse_eja = Column(Boolean, nullable=True)
+
+    profissao = Column(String, nullable=True)
+    situacoes_trabalho = Column(Text, nullable=True)
+    trabalho_nao_remunerada_qual = Column(Text, nullable=True)
+    trabalho_cursos_participou = Column(Boolean, nullable=True)
+    trabalho_cursos_quais = Column(Text, nullable=True)
+    trabalho_certificados = Column(Boolean, nullable=True)
+    trabalho_certificados_quais = Column(Text, nullable=True)
+    trabalho_pretende_curso = Column(Boolean, nullable=True)
+    trabalho_pretende_curso_quais = Column(Text, nullable=True)
+    beneficios_pia = Column(Text, nullable=True)
+
+    rua_desde = Column(String, nullable=True)
+    rua_relato = Column(Text, nullable=True)
+
+    saude_hist_familia = Column(Boolean, nullable=True)
+    saude_hist_familia_qual = Column(Text, nullable=True)
+    saude_problema = Column(Boolean, nullable=True)
+    saude_problema_qual = Column(Text, nullable=True)
+    saude_laudo = Column(Boolean, nullable=True)
+    saude_cid = Column(String, nullable=True)
+    saude_outro_equipamento = Column(Boolean, nullable=True)
+    saude_outro_equipamento_onde = Column(String, nullable=True)
+
+    pendencia_judiciaria = Column(Boolean, nullable=True)
+    pendencia_judiciaria_qual = Column(Text, nullable=True)
+    pendencia_eleitoral = Column(Boolean, nullable=True)
+    pendencia_eleitoral_qual = Column(Text, nullable=True)
+    egresso_artigo_motivo = Column(Text, nullable=True)
+    egresso_ano = Column(String, nullable=True)
+
+
+class ConviventeFamiliarDB(Base):
+    __tablename__ = "convivente_familiares"
+
+    id = Column(String, primary_key=True, default=get_uuid)
+    instituicao_id = Column(String, ForeignKey("instituicoes.id"), nullable=False, index=True)
+    convivente_id = Column(String, ForeignKey("conviventes.id"), nullable=False, index=True)
+    parentesco = Column(String, nullable=False)
+    parentesco_outros = Column(String, nullable=True)
+    nome = Column(String, nullable=True)
+    idade = Column(Integer, nullable=True)
+    cep = Column(String, nullable=True)
+    logradouro = Column(String, nullable=True)
+    numero = Column(String, nullable=True)
+    complemento = Column(String, nullable=True)
+    bairro = Column(String, nullable=True)
+    cidade = Column(String, nullable=True)
+    uf = Column(String, nullable=True)
+    endereco = Column(Text, nullable=True)
+    telefone = Column(String, nullable=True)
+
+
+class ConviventeDocumentoCivilDB(Base):
+    __tablename__ = "convivente_documentos_civis"
+
+    id = Column(String, primary_key=True, default=get_uuid)
+    instituicao_id = Column(String, ForeignKey("instituicoes.id"), nullable=False, index=True)
+    convivente_id = Column(String, ForeignKey("conviventes.id"), nullable=False, index=True)
+    tipo = Column(String, nullable=False)
+    tipo_outros = Column(String, nullable=True)
+    numero = Column(String, nullable=True)
+    orientacoes = Column(Text, nullable=True)
+
+
+class ConviventeSubstanciaDB(Base):
+    __tablename__ = "convivente_substancias"
+
+    id = Column(String, primary_key=True, default=get_uuid)
+    instituicao_id = Column(String, ForeignKey("instituicoes.id"), nullable=False, index=True)
+    convivente_id = Column(String, ForeignKey("conviventes.id"), nullable=False, index=True)
+    tipo = Column(String, nullable=False)
+    desde_quando = Column(String, nullable=True)
+    quantidade = Column(String, nullable=True)
+
+
+class ConviventeMedicamentoDB(Base):
+    __tablename__ = "convivente_medicamentos"
+
+    id = Column(String, primary_key=True, default=get_uuid)
+    instituicao_id = Column(String, ForeignKey("instituicoes.id"), nullable=False, index=True)
+    convivente_id = Column(String, ForeignKey("conviventes.id"), nullable=False, index=True)
+    nome = Column(String, nullable=False)
+    tempo_uso = Column(String, nullable=True)
+    modo_uso = Column(Text, nullable=True)
+
+
+class ConviventeInternacaoDB(Base):
+    __tablename__ = "convivente_internacoes"
+
+    id = Column(String, primary_key=True, default=get_uuid)
+    instituicao_id = Column(String, ForeignKey("instituicoes.id"), nullable=False, index=True)
+    convivente_id = Column(String, ForeignKey("conviventes.id"), nullable=False, index=True)
+    onde = Column(String, nullable=True)
+    periodo = Column(String, nullable=True)
+    quem_encaminhou = Column(String, nullable=True)
+
+
+class ConviventeEquipamentoAnteriorDB(Base):
+    __tablename__ = "convivente_equipamentos_anteriores"
+
+    id = Column(String, primary_key=True, default=get_uuid)
+    instituicao_id = Column(String, ForeignKey("instituicoes.id"), nullable=False, index=True)
+    convivente_id = Column(String, ForeignKey("conviventes.id"), nullable=False, index=True)
+    origem_encaminhamento_id = Column(String, ForeignKey("origens_encaminhamento.id"), nullable=True)
+    descricao_outros = Column(String, nullable=True)
+
+
 class RegistroPIADB(Base):
     __tablename__ = "registros_pia"
 
@@ -402,6 +533,14 @@ class RegistroPIADB(Base):
     encaminhamentos = Column(Text, nullable=True)
     status = Column(String, nullable=False, default="Em acompanhamento")
     data_registro = Column(DateTime, default=datetime.datetime.utcnow)
+
+    expectativas_servico = Column(Text, nullable=True)
+    expectativas_vida_projetos = Column(Text, nullable=True)
+    destino_siat_iii = Column(Boolean, default=False)
+    destino_moradia_autonoma = Column(Boolean, default=False)
+    destino_retorno_familiar = Column(Boolean, default=False)
+    destino_explicacao = Column(Text, nullable=True)
+    dificuldades_planos = Column(Text, nullable=True)
 
 class HistoricoConviventeDB(Base):
     __tablename__ = "historicos_conviventes"

@@ -1,8 +1,10 @@
 import { baixarArquivoAutenticado } from '../../utils/arquivosApi';
+import { SimNaoSelect, campoClasse, parseSimNao } from './ProntuarioFamilia';
 
 export default function ProntuarioSensiveis({
   editandoId,
   formData,
+  setFormData,
   documentoConsultaBnmp,
   usuarioPodeEnviarDocumentosRestritos,
   usuarioPodeGerenciarDocumentosRestritos,
@@ -22,6 +24,12 @@ export default function ProntuarioSensiveis({
               <input type="checkbox" name="egresso_prisional" checked={formData.egresso_prisional} onChange={handleChange} className="w-5 h-5 text-red-600 rounded focus:ring-red-500" />
               <span className="text-sm font-semibold text-gray-800">É Egresso Prisional?</span>
             </label>
+            {formData.egresso_prisional && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2 pl-1">
+                <input type="text" name="egresso_artigo_motivo" value={formData.egresso_artigo_motivo || ''} onChange={handleChange} placeholder="Artigo / motivo" className={campoClasse()} />
+                <input type="text" name="egresso_ano" value={formData.egresso_ano || ''} onChange={handleChange} placeholder="Ano" className={campoClasse()} />
+              </div>
+            )}
             <label className="flex items-center gap-2 cursor-pointer">
               <input type="checkbox" name="usa_tornozeleira" checked={formData.usa_tornozeleira} onChange={handleChange} className="w-5 h-5 text-red-600 rounded focus:ring-red-500" />
               <span className="text-sm font-semibold text-gray-800">Usa Tornozeleira Eletrônica?</span>
@@ -40,7 +48,22 @@ export default function ProntuarioSensiveis({
               </button>
             </div>
           </div>
-          <div className="space-y-3"><div><label className="block text-xs font-semibold text-red-900 mb-1">Acompanhamento CAPS</label><input type="text" name="acompanhamento_caps" value={formData.acompanhamento_caps} onChange={handleChange} className="w-full px-3 py-1.5 border border-red-200 rounded-lg outline-none bg-white text-sm" /></div><div><label className="block text-xs font-semibold text-red-900 mb-1">Medidas Protetivas</label><input type="text" name="medidas_protetivas" value={formData.medidas_protetivas} onChange={handleChange} className="w-full px-3 py-1.5 border border-red-200 rounded-lg outline-none bg-white text-sm" /></div></div>
+          <div className="md:col-span-2 space-y-3">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-semibold text-red-900 mb-1">Pendência no Judiciário?</label>
+                <SimNaoSelect name="pendencia_judiciaria" value={formData.pendencia_judiciaria} onChange={(e) => setFormData((p) => ({ ...p, pendencia_judiciaria: parseSimNao(e) }))} />
+                {formData.pendencia_judiciaria && <input type="text" name="pendencia_judiciaria_qual" value={formData.pendencia_judiciaria_qual || ''} onChange={handleChange} placeholder="Qual?" className={`mt-1 ${campoClasse()}`} />}
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-red-900 mb-1">Pendência no Eleitoral?</label>
+                <SimNaoSelect name="pendencia_eleitoral" value={formData.pendencia_eleitoral} onChange={(e) => setFormData((p) => ({ ...p, pendencia_eleitoral: parseSimNao(e) }))} />
+                {formData.pendencia_eleitoral && <input type="text" name="pendencia_eleitoral_qual" value={formData.pendencia_eleitoral_qual || ''} onChange={handleChange} placeholder="Qual?" className={`mt-1 ${campoClasse()}`} />}
+              </div>
+            </div>
+            <div><label className="block text-xs font-semibold text-red-900 mb-1">Acompanhamento CAPS</label><input type="text" name="acompanhamento_caps" value={formData.acompanhamento_caps} onChange={handleChange} className={campoClasse()} /></div>
+            <div><label className="block text-xs font-semibold text-red-900 mb-1">Medidas Protetivas</label><input type="text" name="medidas_protetivas" value={formData.medidas_protetivas} onChange={handleChange} className={campoClasse()} /></div>
+          </div>
           <div className="md:col-span-2"><label className="block text-xs font-semibold text-red-900 mb-1">Uso de Substâncias Psicoativas</label><textarea name="uso_substancias" value={formData.uso_substancias} onChange={handleChange} rows="2" className="w-full px-3 py-1.5 border border-red-200 rounded-lg outline-none bg-white text-sm"></textarea></div>
           <div className="md:col-span-2"><label className="block text-xs font-semibold text-red-900 mb-1">Transtornos Mentais</label><textarea name="transtorno_mental" value={formData.transtorno_mental} onChange={handleChange} rows="2" className="w-full px-3 py-1.5 border border-red-200 rounded-lg outline-none bg-white text-sm"></textarea></div>
           <div className="md:col-span-2 rounded-xl border border-red-200 bg-white p-4 shadow-sm">

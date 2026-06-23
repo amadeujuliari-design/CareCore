@@ -45,7 +45,12 @@ export default function ProntuarioCabecalho({
               </button>
               <button
                 type="button"
-                onClick={() => podeImprimir && solicitarImpressaoFichaCompleta({ ...conviventeAtual, ...formData, id: editandoId })}
+                onClick={() => podeImprimir && solicitarImpressaoFichaCompleta({
+                  id: editandoId,
+                  nome_social: formData.nome_social || conviventeAtual?.nome_social,
+                  nome_completo: formData.nome_completo || conviventeAtual?.nome_completo,
+                  numero_institucional: conviventeAtual?.numero_institucional || formData.numero_institucional,
+                })}
                 disabled={!podeImprimir}
                 className="bg-white text-slate-800 px-4 py-2 rounded-xl text-sm font-bold shadow-sm hover:bg-slate-100 transition-colors flex items-center gap-2 border border-white/60 disabled:cursor-not-allowed disabled:opacity-50"
               >
@@ -79,12 +84,12 @@ export default function ProntuarioCabecalho({
 
         {perfilUsuario !== 'Orientador' && (
           <>
-            <button type="button" disabled={salvandoProntuario} onClick={() => trocarAbaComSalvamento('saude')} className={classeAba('saude', 'border-brand text-brand bg-white', 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-white/70')}>Saúde e cofre</button>
+            <button type="button" disabled={salvandoProntuario} onClick={() => trocarAbaComSalvamento('saude')} className={classeAba('saude', 'border-brand text-brand bg-white', 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-white/70')}>Saúde</button>
             <button type="button" disabled={salvandoProntuario} onClick={() => trocarAbaComSalvamento('sensiveis')} className={classeAba('sensiveis', 'border-red-500 text-red-600 bg-red-50/50', 'border-transparent text-slate-500 hover:text-red-500 hover:bg-red-50/30')}>Dados sensíveis</button>
           </>
         )}
 
-        <button type="button" disabled={salvandoProntuario} onClick={() => trocarAbaComSalvamento('documentos')} className={classeAba('documentos', 'border-blue-500 text-blue-600 bg-blue-50/50', 'border-transparent text-slate-500 hover:text-blue-600 hover:bg-blue-50/30')}>Anexos e GED</button>
+        <button type="button" disabled={salvandoProntuario} onClick={() => trocarAbaComSalvamento('documentos')} className={classeAba('documentos', 'border-blue-500 text-blue-600 bg-blue-50/50', 'border-transparent text-slate-500 hover:text-blue-600 hover:bg-blue-50/30')}>Anexos, GED e Cofre</button>
       </div>
     </>
   );

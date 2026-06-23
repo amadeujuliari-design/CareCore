@@ -3,6 +3,7 @@
 # CARECORE+ - Schemas Pydantic
 # =====================================================================
 
+import json
 import re
 from datetime import date, datetime
 from typing import Optional, List, Any
@@ -949,6 +950,23 @@ class RegistroPIABase(BaseModel):
     objetivos: Optional[str] = None
     encaminhamentos: Optional[str] = None
     status: str = "Em acompanhamento"
+    expectativas_servico: Optional[str] = None
+    expectativas_vida_projetos: Optional[str] = None
+    destino_siat_iii: bool = False
+    destino_moradia_autonoma: bool = False
+    destino_retorno_familiar: bool = False
+    destino_explicacao: Optional[str] = None
+    dificuldades_planos: Optional[str] = None
+
+    @field_validator(
+        "destino_siat_iii",
+        "destino_moradia_autonoma",
+        "destino_retorno_familiar",
+        mode="before",
+    )
+    @classmethod
+    def normalizar_destinos_pia(cls, valor):
+        return False if valor is None else valor
 
 
 class RegistroPIACreate(RegistroPIABase):
@@ -1059,6 +1077,58 @@ class OcorrenciaRelatorioPrioridades(BaseModel):
 
 # --- CONVIVENTE ---
 
+class FamiliarConviventeItem(BaseModel):
+    id: Optional[str] = None
+    parentesco: str
+    parentesco_outros: Optional[str] = None
+    nome: Optional[str] = None
+    idade: Optional[int] = None
+    cep: Optional[str] = None
+    logradouro: Optional[str] = None
+    numero: Optional[str] = None
+    complemento: Optional[str] = None
+    bairro: Optional[str] = None
+    cidade: Optional[str] = None
+    uf: Optional[str] = None
+    endereco: Optional[str] = None
+    telefone: Optional[str] = None
+
+
+class DocumentoCivilItem(BaseModel):
+    id: Optional[str] = None
+    tipo: str
+    tipo_outros: Optional[str] = None
+    numero: Optional[str] = None
+    orientacoes: Optional[str] = None
+
+
+class SubstanciaItem(BaseModel):
+    id: Optional[str] = None
+    tipo: str
+    desde_quando: Optional[str] = None
+    quantidade: Optional[str] = None
+
+
+class MedicamentoItem(BaseModel):
+    id: Optional[str] = None
+    nome: str
+    tempo_uso: Optional[str] = None
+    modo_uso: Optional[str] = None
+
+
+class InternacaoItem(BaseModel):
+    id: Optional[str] = None
+    onde: Optional[str] = None
+    periodo: Optional[str] = None
+    quem_encaminhou: Optional[str] = None
+
+
+class EquipamentoAnteriorItem(BaseModel):
+    id: Optional[str] = None
+    origem_encaminhamento_id: Optional[str] = None
+    descricao_outros: Optional[str] = None
+
+
 class ConviventeBase(BaseModel):
     status: str = "Ativo"
 
@@ -1069,6 +1139,7 @@ class ConviventeBase(BaseModel):
 
     motivo_inativacao_id: Optional[str] = None
     origem_encaminhamento_id: Optional[str] = None
+    origem_encaminhamento_outros: Optional[str] = None
 
     nome_completo: str
     nome_social: Optional[str] = None
@@ -1125,6 +1196,96 @@ class ConviventeBase(BaseModel):
     uso_substancias: Optional[str] = None
     transtorno_mental: Optional[str] = None
 
+    cor_raca: Optional[str] = None
+    possui_religiao: bool = False
+    religiao_qual: Optional[str] = None
+    relacao_familiar_situacao: Optional[str] = None
+    relacao_familiar_outra: Optional[str] = None
+
+    data_inicio_pia: Optional[date] = None
+    em_sao_paulo_desde: Optional[date] = None
+
+    alfabetizado: Optional[bool] = None
+    ef_concluido: Optional[bool] = None
+    ef_incompleto: Optional[bool] = None
+    ef_incompleto_serie: Optional[str] = None
+    em_concluido: Optional[bool] = None
+    em_incompleto: Optional[bool] = None
+    em_incompleto_serie: Optional[str] = None
+    es_concluido: Optional[bool] = None
+    es_incompleto: Optional[bool] = None
+    es_incompleto_periodo: Optional[str] = None
+    estuda_atualmente: Optional[bool] = None
+    estuda_curso: Optional[str] = None
+    interesse_eja: Optional[bool] = None
+
+    profissao: Optional[str] = None
+    situacoes_trabalho: Optional[List[str]] = None
+    trabalho_nao_remunerada_qual: Optional[str] = None
+    trabalho_cursos_participou: Optional[bool] = None
+    trabalho_cursos_quais: Optional[str] = None
+    trabalho_certificados: Optional[bool] = None
+    trabalho_certificados_quais: Optional[str] = None
+    trabalho_pretende_curso: Optional[bool] = None
+    trabalho_pretende_curso_quais: Optional[str] = None
+    beneficios_pia: Optional[dict] = None
+
+    rua_desde: Optional[str] = None
+    rua_relato: Optional[str] = None
+
+    saude_hist_familia: Optional[bool] = None
+    saude_hist_familia_qual: Optional[str] = None
+    saude_problema: Optional[bool] = None
+    saude_problema_qual: Optional[str] = None
+    saude_laudo: Optional[bool] = None
+    saude_cid: Optional[str] = None
+    saude_outro_equipamento: Optional[bool] = None
+    saude_outro_equipamento_onde: Optional[str] = None
+
+    pendencia_judiciaria: Optional[bool] = None
+    pendencia_judiciaria_qual: Optional[str] = None
+    pendencia_eleitoral: Optional[bool] = None
+    pendencia_eleitoral_qual: Optional[str] = None
+    egresso_artigo_motivo: Optional[str] = None
+    egresso_ano: Optional[str] = None
+
+    familiares: Optional[List[FamiliarConviventeItem]] = None
+    documentos_civis: Optional[List[DocumentoCivilItem]] = None
+    substancias: Optional[List[SubstanciaItem]] = None
+    medicamentos: Optional[List[MedicamentoItem]] = None
+    internacoes: Optional[List[InternacaoItem]] = None
+    equipamentos_anteriores: Optional[List[EquipamentoAnteriorItem]] = None
+
+    @field_validator("beneficios_pia", mode="before")
+    @classmethod
+    def parse_beneficios_pia(cls, valor):
+        if not valor:
+            return {}
+        if isinstance(valor, dict):
+            return valor
+        if isinstance(valor, str):
+            try:
+                parsed = json.loads(valor)
+                return parsed if isinstance(parsed, dict) else {}
+            except (TypeError, json.JSONDecodeError):
+                return {}
+        return {}
+
+    @field_validator("situacoes_trabalho", mode="before")
+    @classmethod
+    def parse_situacoes_trabalho(cls, valor):
+        if not valor:
+            return []
+        if isinstance(valor, list):
+            return valor
+        if isinstance(valor, str):
+            try:
+                parsed = json.loads(valor)
+                return parsed if isinstance(parsed, list) else []
+            except (TypeError, json.JSONDecodeError):
+                return []
+        return []
+
     @field_validator("status")
     @classmethod
     def validar_status(cls, valor: Optional[str]):
@@ -1135,6 +1296,7 @@ class ConviventeBase(BaseModel):
         "egresso_prisional",
         "usa_tornozeleira",
         "tem_mandado_prisao",
+        "possui_religiao",
         mode="before",
     )
     @classmethod

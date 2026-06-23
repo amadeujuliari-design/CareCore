@@ -13,6 +13,78 @@ function escaparHtml(valor) {
     .replace(/'/g, "&#039;");
 }
 
+/** Perfis de largura/quebra para colunas recorrentes nos relatórios. */
+const PERFIS_COLUNA_RELATORIO = {
+  Prontuário: { largura: "5.5%", rotulo: "Pront.", nowrap: true },
+  Nome: { largura: "15%", wrap: true },
+  Status: { largura: "6.5%", nowrap: true },
+  Técnico: { largura: "9%", wrap: true },
+  Entrada: { largura: "6.5%", nowrap: true },
+  Leito: { largura: "9%", wrap: true },
+  CPF: { largura: "9.5%", nowrap: true },
+  Cidade: { largura: "7%", wrap: true },
+  "Ocorrências pendentes": { largura: "5%", rotulo: "Ocorr.", nowrap: true, centro: true },
+  "Pendências de cadastro": { largura: "4.5%", rotulo: "Pend.", nowrap: true, centro: true },
+  "Quais pendências": { largura: "12%", rotulo: "Detalhe pend.", wrap: true },
+  "Data/Hora": { largura: "9%", nowrap: true },
+  Data: { largura: "9%", nowrap: true },
+  Convivente: { largura: "14%", wrap: true },
+  Tipo: { largura: "7%", nowrap: true },
+  Motivo: { largura: "10%", wrap: true },
+  Prioridade: { largura: "7%", nowrap: true },
+  "N SISA": { largura: "7%", nowrap: true },
+  NIS: { largura: "8%", nowrap: true },
+};
+
+function obterPerfilColuna(nomeColuna) {
+  return PERFIS_COLUNA_RELATORIO[nomeColuna] || {};
+}
+
+function slugColuna(nomeColuna) {
+  return String(nomeColuna || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")
+    .toLowerCase();
+}
+
+function montarEstilosColunas(colunas = []) {
+  const regras = colunas.map((coluna) => {
+    const perfil = obterPerfilColuna(coluna);
+    const classe = `col-${slugColuna(coluna)}`;
+    const largura = perfil.largura ? `width: ${perfil.largura};` : "";
+    const alinhamento = perfil.centro ? "text-align: center;" : "";
+    const quebra = perfil.nowrap
+      ? "white-space: nowrap; overflow: hidden; text-overflow: clip;"
+      : perfil.wrap
+        ? "white-space: normal; word-break: break-word; overflow-wrap: anywhere;"
+        : "";
+
+    return `
+      .tabela-dados .${classe} {
+        ${largura}
+        ${alinhamento}
+        ${quebra}
+      }
+    `;
+  });
+
+  return regras.join("\n");
+}
+
+function montarCabecalhoColuna(coluna) {
+  const perfil = obterPerfilColuna(coluna);
+  const rotulo = perfil.rotulo || coluna;
+  const classe = `col-${slugColuna(coluna)}`;
+  return `<th class="${classe}">${escaparHtml(rotulo)}</th>`;
+}
+
+function montarCelulaColuna(coluna, valor) {
+  const classe = `col-${slugColuna(coluna)}`;
+  return `<td class="${classe}">${escaparHtml(valor)}</td>`;
+}
+
 export function abrirPreviewHtml({
   titulo = "Relatório",
   html = "",
@@ -165,30 +237,16 @@ export function imprimirRelatorio({
     identidade?.relatorio_site ? `Site: ${identidade.relatorio_site}` : "",
   ].filter(Boolean);
   const orientacaoInicial = orientacao || (colunas.length > 6 ? "landscape" : "portrait");
+  const tabelaLarga = colunas.length >= 8;
+  const estilosColunas = montarEstilosColunas(colunas);
 
-  const tabelaCabecalho = colunas
-    .map(
-      (coluna) => `
-        <th>
-          ${escaparHtml(coluna)}
-        </th>
-      `
-    )
-    .join("");
+  const tabelaCabecalho = colunas.map(montarCabecalhoColuna).join("");
 
   const tabelaLinhas = dados
     .map((item) => {
       return `
         <tr>
-          ${colunas
-            .map(
-              (coluna) => `
-                <td>
-                  ${escaparHtml(item[coluna])}
-                </td>
-              `
-            )
-            .join("")}
+          ${colunas.map((coluna) => montarCelulaColuna(coluna, item[coluna])).join("")}
         </tr>
       `;
     })
@@ -224,8 +282,8 @@ export function imprimirRelatorio({
 
         <style>
           @page {
-            size: A4;
-            margin: 12mm 10mm 14mm;
+            size: A4 ${orientacaoInicial === "landscape" ? "landscape" : "portrait"};
+            margin: 10mm 8mm 12mm;
           }
 
           body {
@@ -338,18 +396,32 @@ export function imprimirRelatorio({
           .tabela-dados {
             width: 100%;
             border-collapse: collapse;
+            table-layout: ${tabelaLarga ? "fixed" : "auto"};
           }
+
+          ${estilosColunas}
 
           .tabela-dados th {
             background: #f3f4f6;
             text-align: left;
+            vertical-align: bottom;
+            line-height: 1.2;
+            font-size: ${tabelaLarga ? "8px" : "10px"};
+            padding: ${tabelaLarga ? "5px 4px" : "8px"};
+            word-break: break-word;
+          }
+
+          .tabela-dados td {
+            vertical-align: top;
+            line-height: 1.25;
+            font-size: ${tabelaLarga ? "8.5px" : "12px"};
+            padding: ${tabelaLarga ? "4px 4px" : "8px"};
+            overflow: hidden;
           }
 
           .tabela-dados th,
           .tabela-dados td {
             border: 1px solid #d1d5db;
-            padding: 10px;
-            font-size: 13px;
           }
 
           .tabela-dados tr:nth-child(even) {
@@ -386,13 +458,18 @@ export function imprimirRelatorio({
             }
 
             .cabecalho-relatorio,
-            .rodape-relatorio {
+            .rodape-relatorio,
+            .metrica-card {
               break-inside: avoid;
             }
 
-            tr,
-            .metrica-card {
-              break-inside: avoid;
+            .tabela-dados thead {
+              display: table-header-group;
+            }
+
+            .tabela-dados tbody tr {
+              break-inside: auto;
+              page-break-inside: auto;
             }
           }
         </style>

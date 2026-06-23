@@ -2,6 +2,14 @@ import { baixarArquivoAutenticado } from '../../utils/arquivosApi';
 
 export default function ProntuarioDocumentos({
   editandoId,
+  formData,
+  errosValidacao,
+  mostrarSenhaEmail,
+  mostrarSenhaGovbr,
+  setMostrarSenhaEmail,
+  setMostrarSenhaGovbr,
+  handleChange,
+  handleBlur,
   documentos,
   loadingDocs,
   arquivoSelecionado,
@@ -33,6 +41,27 @@ export default function ProntuarioDocumentos({
 
   return (
     <div className="space-y-5">
+      <div className="bg-gray-800 p-4 rounded-xl text-white shadow-inner">
+        <h3 className="text-sm font-bold mb-3">Cofre de senhas</h3>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div><label className="block text-xs text-gray-300 mb-1">E-mail Pessoal</label><input type="email" name="email_pessoal" value={formData.email_pessoal || ''} onChange={handleChange} onBlur={handleBlur} className={`w-full px-3 py-1.5 bg-gray-700 border rounded-lg text-white text-sm outline-none ${errosValidacao.email_pessoal ? 'border-red-500' : 'border-gray-600'}`} />{errosValidacao.email_pessoal && <p className="text-red-400 text-[10px] mt-0.5 font-bold">{errosValidacao.email_pessoal}</p>}</div>
+          <div>
+            <label className="block text-xs text-gray-300 mb-1">Senha E-mail</label>
+            <div className="flex gap-2">
+              <input type={mostrarSenhaEmail ? 'text' : 'password'} autoComplete="new-password" name="senha_email" value={formData.senha_email || ''} onChange={handleChange} className="w-full px-3 py-1.5 bg-gray-700 border border-gray-600 rounded-lg text-white text-sm" />
+              <button type="button" onClick={() => setMostrarSenhaEmail((v) => !v)} className="px-3 py-1.5 bg-gray-700 border border-gray-600 rounded-lg text-xs font-bold text-gray-200">{mostrarSenhaEmail ? 'Ocultar' : 'Mostrar'}</button>
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs text-blue-300 font-bold mb-1">Senha GOV.BR</label>
+            <div className="flex gap-2">
+              <input type={mostrarSenhaGovbr ? 'text' : 'password'} autoComplete="new-password" name="senha_govbr" value={formData.senha_govbr || ''} onChange={handleChange} className="w-full px-3 py-1.5 bg-gray-700 border border-blue-500/50 rounded-lg text-white text-sm" />
+              <button type="button" onClick={() => setMostrarSenhaGovbr((v) => !v)} className="px-3 py-1.5 bg-gray-700 border border-blue-500/50 rounded-lg text-xs font-bold text-blue-100">{mostrarSenhaGovbr ? 'Ocultar' : 'Mostrar'}</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         <div className="lg:col-span-1 bg-gray-50 p-4 rounded-xl border border-gray-200 h-fit">
           <h3 className="text-xs font-semibold text-gray-700 uppercase mb-3">Novo Documento ou Foto</h3>

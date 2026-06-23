@@ -6,6 +6,7 @@ import {
   formatarDataHora,
   normalizarPrioridade,
 } from '../utils/relatoriosUtils';
+import { formatarCPF } from '../utils/conviventesUtils';
 
 const COLUNAS_RESUMO_RELATORIOS = ['Relatório', 'Status', 'Métrica', 'Valor', 'Descrição'];
 
@@ -71,8 +72,17 @@ export function useRelatoriosTabela({
       return pendencias;
     };
 
+    const textoLeitoConvivente = (leitoId) => {
+      const texto = mapaLeitos.get(leitoId) || 'Centro dia / sem leito';
+      if (texto === 'Centro dia / sem leito') return 'Centro dia';
+      return texto;
+    };
+
     const montarLinhaConvivente = (convivente) => {
       const pendencias = listarPendenciasConvivente(convivente);
+      const cpfFormatado = convivente.cpf
+        ? formatarCPF(String(convivente.cpf).replace(/\D/g, ''))
+        : '-';
 
       return {
         Prontuário: convivente.numero_institucional ? `#${convivente.numero_institucional}` : 'S/N',
@@ -80,12 +90,12 @@ export function useRelatoriosTabela({
         Status: convivente.status || '-',
         Técnico: mapaTecnicos.get(convivente.tecnico_id) || 'Sem técnico',
         Entrada: formatarData(convivente.data_entrada),
-        Leito: mapaLeitos.get(convivente.leito_id) || 'Centro dia / sem leito',
-        CPF: convivente.cpf || '-',
+        Leito: textoLeitoConvivente(convivente.leito_id),
+        CPF: cpfFormatado,
         Cidade: convivente.cidade || '-',
         'Ocorrências pendentes': contarOcorrenciasPendentesConvivente(convivente.id),
         'Pendências de cadastro': pendencias.length,
-        'Quais pendências': pendencias.length ? pendencias.join(', ') : 'Cadastro completo',
+        'Quais pendências': pendencias.length ? pendencias.join(', ') : 'Completo',
       };
     };
 

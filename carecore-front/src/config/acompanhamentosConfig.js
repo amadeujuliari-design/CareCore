@@ -146,7 +146,7 @@ export const MODULOS_ACOMPANHAMENTO = {
   pot: {
     slug: 'pot',
     titulo: 'POT',
-    subtitulo: 'Programa de Orientação Terapêutica.',
+    subtitulo: 'Programa de Orientação ao Trabalho.',
     endpoint: 'pot',
     icone: ShieldPlus,
     statusFiltros: STATUS_FILTRO_POR_MODULO.pot,

@@ -1,5 +1,7 @@
 export default function ProntuarioPia({
   editandoId,
+  formData,
+  handleChange,
   formPia,
   setFormPia,
   formularioPiaEvolucao,
@@ -8,6 +10,7 @@ export default function ProntuarioPia({
   registrosPiaPrincipais,
   evolucoesPorRegistroPia,
   imprimirPiaCompleto,
+  imprimirFormularioPia,
   loadingPia,
   salvandoPia,
   temasEvolucaoPia,
@@ -32,9 +35,24 @@ export default function ProntuarioPia({
 
   return (
     <div className="space-y-5">
-      <div className="rounded-xl border border-indigo-100 bg-indigo-50/70 p-4">
+      <div className="rounded-xl border border-indigo-100 bg-indigo-50/70 p-4 space-y-3">
         <h2 className="text-base font-black text-indigo-950">PIA - Plano Individual de Atendimento</h2>
-        <p className="mt-1 text-xs text-indigo-700">Registre o plano principal do convivente e mantenha as evoluções no mesmo histórico.</p>
+        <p className="text-xs text-indigo-700">Datas do formulário oficial (salvas no prontuário) e registro narrativo do plano.</p>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div>
+            <label className="block text-[11px] font-bold text-indigo-900 mb-1">Data de início do PIA</label>
+            <input type="date" name="data_inicio_pia" value={formData.data_inicio_pia || ''} onChange={handleChange} className="w-full px-3 py-2 border border-indigo-200 rounded-lg bg-white text-sm" />
+            <p className="text-[10px] text-indigo-600 mt-1">Se vazio, na impressão usa a data de entrada no projeto.</p>
+          </div>
+          <div>
+            <label className="block text-[11px] font-bold text-indigo-900 mb-1">Está em São Paulo desde</label>
+            <input type="date" name="em_sao_paulo_desde" value={formData.em_sao_paulo_desde || ''} onChange={handleChange} className="w-full px-3 py-2 border border-indigo-200 rounded-lg bg-white text-sm" />
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-2 pt-1">
+          <button type="button" onClick={() => imprimirFormularioPia('manual')} className="rounded-lg border border-indigo-300 bg-white px-3 py-2 text-[11px] font-black text-indigo-800 hover:bg-indigo-100">Imprimir formulário (manual)</button>
+          <button type="button" onClick={() => imprimirFormularioPia('completo')} className="rounded-lg border border-indigo-300 bg-indigo-600 px-3 py-2 text-[11px] font-black text-white hover:bg-indigo-700">Imprimir formulário (completo)</button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
@@ -130,6 +148,21 @@ export default function ProntuarioPia({
             className="w-full px-3 py-2 border border-indigo-200 rounded-lg outline-none bg-white text-sm resize-none"
           />
 
+          {!formularioPiaEvolucao && (
+            <div className="rounded-lg border border-violet-200 bg-violet-50/50 p-3 space-y-2">
+              <p className="text-[11px] font-black uppercase text-violet-800">Projeto de vida (formulário PIA — seção 8)</p>
+              <textarea value={formPia.expectativas_servico || ''} onChange={(e) => setFormPia((p) => ({ ...p, expectativas_servico: e.target.value }))} rows="2" placeholder="Expectativas em relação ao serviço" className="w-full px-3 py-2 border border-violet-200 rounded-lg bg-white text-sm" />
+              <textarea value={formPia.expectativas_vida_projetos || ''} onChange={(e) => setFormPia((p) => ({ ...p, expectativas_vida_projetos: e.target.value }))} rows="3" placeholder="Expectativas de vida / projetos" className="w-full px-3 py-2 border border-violet-200 rounded-lg bg-white text-sm" />
+              <div className="space-y-1 text-xs">
+                <label className="flex gap-2"><input type="checkbox" checked={formPia.destino_siat_iii} onChange={(e) => setFormPia((p) => ({ ...p, destino_siat_iii: e.target.checked }))} /> SIAT III / Hotel Social / República</label>
+                <label className="flex gap-2"><input type="checkbox" checked={formPia.destino_moradia_autonoma} onChange={(e) => setFormPia((p) => ({ ...p, destino_moradia_autonoma: e.target.checked }))} /> Moradia Autônoma</label>
+                <label className="flex gap-2"><input type="checkbox" checked={formPia.destino_retorno_familiar} onChange={(e) => setFormPia((p) => ({ ...p, destino_retorno_familiar: e.target.checked }))} /> Retorno Familiar</label>
+              </div>
+              <textarea value={formPia.destino_explicacao || ''} onChange={(e) => setFormPia((p) => ({ ...p, destino_explicacao: e.target.value }))} rows="2" placeholder="Explicação dos destinos" className="w-full px-3 py-2 border border-violet-200 rounded-lg bg-white text-sm" />
+              <textarea value={formPia.dificuldades_planos || ''} onChange={(e) => setFormPia((p) => ({ ...p, dificuldades_planos: e.target.value }))} rows="2" placeholder="Maiores dificuldades para realizar planos/projetos" className="w-full px-3 py-2 border border-violet-200 rounded-lg bg-white text-sm" />
+            </div>
+          )}
+
           <div>
             <label className="mb-1 block text-[11px] font-bold text-indigo-900">Status do registro</label>
             <select
@@ -164,7 +197,7 @@ export default function ProntuarioPia({
                   onClick={imprimirPiaCompleto}
                   className="rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-[11px] font-black text-indigo-700 hover:bg-indigo-100"
                 >
-                  Imprimir PIA completo
+                  Imprimir histórico narrativo
                 </button>
               )}
               <button type="button" onClick={() => carregarRegistrosPia(editandoId)} className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-[11px] font-bold text-indigo-600 hover:bg-gray-50">Atualizar</button>
