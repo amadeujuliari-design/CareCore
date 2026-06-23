@@ -117,10 +117,9 @@ from routers.conviventes_helpers import (
 )
 from routers.conviventes_documentos import (
     TAMANHO_MAXIMO_DOCUMENTO_BYTES,
-    UPLOAD_DIR,
-    UPLOAD_DIR_ABSOLUTO,
-    caminho_absoluto_documento,
+    remover_arquivo_documento,
     remover_documentos_foto_perfil,
+    salvar_conteudo_documento_convivente,
     validar_upload_documento,
 )
 from routers.conviventes_xlsx import (
@@ -2156,13 +2155,13 @@ async def upload_documento(
                 detail="Não foi possível processar a imagem enviada.",
             ) from exc
 
-    nome_unico = f"{uuid.uuid4().hex}{extensao_final}"
-    caminho_completo = os.path.join(UPLOAD_DIR, nome_unico)
-
-    with open(caminho_completo, "wb") as buffer:
-        buffer.write(conteudo)
-
-    caminho_relativo = f"/uploads/documentos/{nome_unico}"
+    caminho_relativo = salvar_conteudo_documento_convivente(
+        instituicao_id=obter_instituicao_escopo(usuario_atual),
+        convivente_id=convivente_id,
+        extensao_final=extensao_final,
+        conteudo=conteudo,
+        content_type=file.content_type,
+    )
 
     if tipo_documento == "Foto de Perfil":
         await remover_documentos_foto_perfil(db, convivente_id)
@@ -2253,9 +2252,7 @@ async def excluir_documento(documento_id: str, db: AsyncSession = Depends(get_db
     if not documento: raise HTTPException(status_code=404, detail="Não encontrado.")
     if documento.sensivel and not usuario_eh_gestor(usuario_atual):
         raise HTTPException(status_code=403, detail="Apenas Gestores/Gerentes/Master podem excluir documentos sensíveis.")
-    caminho_documento = caminho_absoluto_documento(documento.caminho_arquivo)
-    if os.path.commonpath([UPLOAD_DIR_ABSOLUTO, caminho_documento]) == UPLOAD_DIR_ABSOLUTO and os.path.exists(caminho_documento):
-        os.remove(caminho_documento)
+    remover_arquivo_documento(documento.caminho_arquivo)
     convivente_id = documento.convivente_id
     tipo_documento = documento.tipo_documento
     sensivel = bool(documento.sensivel)

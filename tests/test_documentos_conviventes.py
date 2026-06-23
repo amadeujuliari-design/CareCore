@@ -4,7 +4,7 @@ from types import SimpleNamespace
 import pytest
 from fastapi import HTTPException
 
-from routers.conviventes import (
+from routers.conviventes_documentos import (
     UPLOAD_DIR_ABSOLUTO,
     caminho_absoluto_documento,
     validar_upload_documento,

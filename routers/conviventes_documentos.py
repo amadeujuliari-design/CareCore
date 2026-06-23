@@ -1,11 +1,19 @@
 import contextlib
 import os
+import uuid
 
 from fastapi import HTTPException, UploadFile, status
 from sqlalchemy.future import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models import DocumentoConviventeDB
+from storage_uploads import (
+    StorageErro,
+    extrair_bucket_caminho_storage,
+    remover_supabase_storage,
+    storage_supabase_configurado,
+    upload_supabase_storage,
+)
 
 
 UPLOAD_DIR = "uploads/documentos"
@@ -33,6 +41,29 @@ CONTENT_TYPES_DOCUMENTO_PERMITIDOS = {
     "application/vnd.ms-excel",
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 }
+_AMBIENTES_COM_UPLOAD_LOCAL = {"local", "development", "dev", "test", "testing"}
+_CONTENT_TYPES_POR_EXTENSAO = {
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".png": "image/png",
+    ".webp": "image/webp",
+    ".pdf": "application/pdf",
+    ".doc": "application/msword",
+    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ".xls": "application/vnd.ms-excel",
+    ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+}
+
+
+def upload_local_documentos_permitido() -> bool:
+    app_env = os.getenv("APP_ENV", "local").strip().lower()
+    return app_env in _AMBIENTES_COM_UPLOAD_LOCAL
+
+
+def content_type_documento(extensao: str, content_type: str | None = None) -> str:
+    if content_type:
+        return content_type
+    return _CONTENT_TYPES_POR_EXTENSAO.get(extensao.lower(), "application/octet-stream")
 
 
 def validar_upload_documento(file: UploadFile) -> str:
@@ -80,6 +111,67 @@ async def salvar_upload_documento(file: UploadFile, caminho_completo: str) -> No
             buffer.write(bloco)
 
 
+def salvar_conteudo_documento_convivente(
+    *,
+    instituicao_id: str,
+    convivente_id: str,
+    extensao_final: str,
+    conteudo: bytes,
+    content_type: str | None = None,
+) -> str:
+    nome_unico = f"{uuid.uuid4().hex}{extensao_final}"
+    mime = content_type_documento(extensao_final, content_type)
+
+    if storage_supabase_configurado():
+        try:
+            return upload_supabase_storage(
+                f"documentos/{instituicao_id}/{convivente_id}/{nome_unico}",
+                conteudo,
+                content_type=mime,
+            )
+        except StorageErro as exc:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Não foi possível salvar o arquivo no storage persistente.",
+            ) from exc
+
+    if not upload_local_documentos_permitido():
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(
+                "Storage persistente não configurado para documentos. "
+                "Configure CARECORE_SUPABASE_URL e CARECORE_SUPABASE_SERVICE_ROLE_KEY no backend."
+            ),
+        )
+
+    caminho_completo = os.path.join(UPLOAD_DIR, nome_unico)
+    with open(caminho_completo, "wb") as buffer:
+        buffer.write(conteudo)
+
+    return f"/uploads/documentos/{nome_unico}"
+
+
+def remover_arquivo_documento(caminho_arquivo: str | None) -> None:
+    if not caminho_arquivo:
+        return
+
+    storage_ref = extrair_bucket_caminho_storage(caminho_arquivo)
+    if storage_ref and storage_supabase_configurado():
+        bucket, caminho = storage_ref
+        try:
+            remover_supabase_storage(bucket, caminho)
+        except StorageErro:
+            pass
+        return
+
+    caminho_documento = caminho_absoluto_documento(caminho_arquivo)
+    if (
+        os.path.commonpath([UPLOAD_DIR_ABSOLUTO, caminho_documento]) == UPLOAD_DIR_ABSOLUTO
+        and os.path.exists(caminho_documento)
+    ):
+        os.remove(caminho_documento)
+
+
 async def remover_documentos_foto_perfil(
     db: AsyncSession,
     convivente_id: str,
@@ -94,14 +186,7 @@ async def remover_documentos_foto_perfil(
     ).scalars().all()
 
     for documento in documentos_foto:
-        caminho_documento = caminho_absoluto_documento(documento.caminho_arquivo)
-
-        if (
-            os.path.commonpath([UPLOAD_DIR_ABSOLUTO, caminho_documento]) == UPLOAD_DIR_ABSOLUTO
-            and os.path.exists(caminho_documento)
-        ):
-            os.remove(caminho_documento)
-
+        remover_arquivo_documento(documento.caminho_arquivo)
         await db.delete(documento)
 
 
