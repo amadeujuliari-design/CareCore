@@ -542,6 +542,38 @@ class RegistroPIADB(Base):
     destino_explicacao = Column(Text, nullable=True)
     dificuldades_planos = Column(Text, nullable=True)
 
+
+class AssinaturaFormularioPiaDB(Base):
+    __tablename__ = "assinaturas_formulario_pia"
+
+    id = Column(String, primary_key=True, default=get_uuid)
+    instituicao_id = Column(String, ForeignKey("instituicoes.id"), nullable=False, index=True)
+    convivente_id = Column(String, ForeignKey("conviventes.id"), nullable=False, index=True)
+    usuario_id = Column(String, ForeignKey("usuarios.id"), nullable=False)
+    tipo_evento = Column(String, nullable=False)
+    metodo_leitura = Column(String, nullable=True)
+    codigo_lido = Column(String, nullable=False)
+    numero_prontuario = Column(Integer, nullable=True)
+    modo_formulario = Column(String, nullable=True)
+    assinado_em = Column(DateTime, nullable=False, default=agora_operacional_naive)
+    criado_em = Column(DateTime, default=agora_operacional_naive)
+
+
+class AssinaturaTermoBagageiroDB(Base):
+    __tablename__ = "assinaturas_termo_bagageiro"
+
+    id = Column(String, primary_key=True, default=get_uuid)
+    instituicao_id = Column(String, ForeignKey("instituicoes.id"), nullable=False, index=True)
+    convivente_id = Column(String, ForeignKey("conviventes.id"), nullable=False, index=True)
+    usuario_id = Column(String, ForeignKey("usuarios.id"), nullable=False)
+    tipo_evento = Column(String, nullable=False)
+    metodo_leitura = Column(String, nullable=True)
+    codigo_lido = Column(String, nullable=True)
+    numero_prontuario = Column(Integer, nullable=True)
+    assinado_em = Column(DateTime, nullable=True)
+    criado_em = Column(DateTime, default=agora_operacional_naive)
+
+
 class HistoricoConviventeDB(Base):
     __tablename__ = "historicos_conviventes"
 
@@ -1228,4 +1260,176 @@ class AcompanhamentoSuspensaoProvisoriaDB(Base):
     atualizado_em = Column(DateTime, default=datetime.datetime.utcnow)
 
 
+class AtividadeDB(Base):
+    __tablename__ = "atividades"
+    __table_args__ = (
+        Index("ix_atividades_instituicao_id", "instituicao_id"),
+        Index("ix_atividades_instituicao_ativo", "instituicao_id", "ativo"),
+        Index("ix_atividades_responsavel", "responsavel_usuario_id"),
+    )
+
+    id = Column(String, primary_key=True, default=get_uuid)
+    instituicao_id = Column(String, ForeignKey("instituicoes.id"), nullable=False)
+    nome = Column(String, nullable=False)
+    categoria = Column(String, nullable=False, default="oficina")
+    responsavel_usuario_id = Column(String, ForeignKey("usuarios.id"), nullable=True)
+    tipo_frequencia = Column(String, nullable=False, default="semanal")
+    configuracao_agenda = Column(Text, nullable=True)
+    vigencia_inicio = Column(Date, nullable=True)
+    vigencia_fim = Column(Date, nullable=True)
+    sisa_descricao_atividade = Column(String, nullable=True)
+    sisa_descricao_tema = Column(String, nullable=True)
+    sisa_horario_padrao = Column(String, nullable=True)
+    ativo = Column(Boolean, default=True)
+    criado_por_id = Column(String, ForeignKey("usuarios.id"), nullable=False)
+    criado_em = Column(DateTime, default=agora_operacional_naive)
+    atualizado_em = Column(DateTime, default=agora_operacional_naive)
+
+
+class AtividadeOcorrenciaDB(Base):
+    __tablename__ = "atividade_ocorrencias"
+    __table_args__ = (
+        Index("ix_atividade_ocorrencias_instituicao", "instituicao_id"),
+        Index("ix_atividade_ocorrencias_atividade_mes", "atividade_id", "mes_referencia"),
+        UniqueConstraint("atividade_id", "data_sessao", "horario_sessao", name="uq_atividade_ocorrencia_data_horario"),
+    )
+
+    id = Column(String, primary_key=True, default=get_uuid)
+    instituicao_id = Column(String, ForeignKey("instituicoes.id"), nullable=False)
+    atividade_id = Column(String, ForeignKey("atividades.id"), nullable=False)
+    data_sessao = Column(Date, nullable=False)
+    numero_sessao_mes = Column(Integer, nullable=False)
+    mes_referencia = Column(String, nullable=False)
+    horario_sessao = Column(String, nullable=False, default="")
+    status = Column(String, nullable=False, default="aberta")
+    criado_em = Column(DateTime, default=agora_operacional_naive)
+
+
+class AtividadePresencaDB(Base):
+    __tablename__ = "atividade_presencas"
+    __table_args__ = (
+        Index("ix_atividade_presencas_instituicao", "instituicao_id"),
+        Index("ix_atividade_presencas_ocorrencia", "ocorrencia_id"),
+        Index("ix_atividade_presencas_convivente", "convivente_id"),
+        Index("ix_atividade_presencas_atividade", "atividade_id"),
+    )
+
+    id = Column(String, primary_key=True, default=get_uuid)
+    instituicao_id = Column(String, ForeignKey("instituicoes.id"), nullable=False)
+    atividade_id = Column(String, ForeignKey("atividades.id"), nullable=False)
+    ocorrencia_id = Column(String, ForeignKey("atividade_ocorrencias.id"), nullable=False)
+    convivente_id = Column(String, ForeignKey("conviventes.id"), nullable=False)
+    usuario_id = Column(String, ForeignKey("usuarios.id"), nullable=False)
+    metodo_leitura = Column(String, nullable=False)
+    codigo_lido = Column(String, nullable=True)
+    registrado_em = Column(DateTime, default=agora_operacional_naive)
+    cancelado = Column(Boolean, default=False)
+    cancelado_por_id = Column(String, ForeignKey("usuarios.id"), nullable=True)
+    cancelado_em = Column(DateTime, nullable=True)
+    motivo_cancelamento = Column(Text, nullable=True)
+
+
+class AtividadeSessaoConteudoDB(Base):
+    __tablename__ = "atividade_sessao_conteudos"
+    __table_args__ = (
+        Index("ix_atividade_sessao_conteudos_ocorrencia", "ocorrencia_id"),
+        UniqueConstraint("ocorrencia_id", name="uq_atividade_sessao_conteudo_ocorrencia"),
+    )
+
+    id = Column(String, primary_key=True, default=get_uuid)
+    instituicao_id = Column(String, ForeignKey("instituicoes.id"), nullable=False)
+    atividade_id = Column(String, ForeignKey("atividades.id"), nullable=False)
+    ocorrencia_id = Column(String, ForeignKey("atividade_ocorrencias.id"), nullable=False)
+    acoes_realizadas = Column(Text, nullable=True)
+    registrado_por_id = Column(String, ForeignKey("usuarios.id"), nullable=False)
+    criado_em = Column(DateTime, default=agora_operacional_naive)
+    atualizado_em = Column(DateTime, default=agora_operacional_naive)
+
+
+class AtividadeCatalogoSisaDB(Base):
+    __tablename__ = "atividade_catalogo_sisa"
+    __table_args__ = (
+        Index("ix_atividade_catalogo_sisa_instituicao", "instituicao_id"),
+        UniqueConstraint("instituicao_id", "tipo", "valor_norm", name="uq_atividade_catalogo_sisa_valor"),
+    )
+
+    id = Column(String, primary_key=True, default=get_uuid)
+    instituicao_id = Column(String, ForeignKey("instituicoes.id"), nullable=False)
+    tipo = Column(String, nullable=False)
+    valor = Column(String, nullable=False)
+    valor_norm = Column(String, nullable=False)
+    personalizado = Column(Boolean, default=True)
+    criado_por_id = Column(String, ForeignKey("usuarios.id"), nullable=True)
+    criado_em = Column(DateTime, default=agora_operacional_naive)
+
+
+class AtividadeSisaVinculoDB(Base):
+    __tablename__ = "atividade_sisa_vinculos"
+    __table_args__ = (
+        Index("ix_atividade_sisa_vinculos_instituicao", "instituicao_id"),
+        UniqueConstraint(
+            "instituicao_id",
+            "sisa_descricao_atividade_norm",
+            "sisa_descricao_tema_norm",
+            "sisa_horario_norm",
+            name="uq_atividade_sisa_vinculo_chave",
+        ),
+    )
+
+    id = Column(String, primary_key=True, default=get_uuid)
+    instituicao_id = Column(String, ForeignKey("instituicoes.id"), nullable=False)
+    sisa_descricao_atividade = Column(String, nullable=False)
+    sisa_descricao_tema = Column(String, nullable=False)
+    sisa_horario = Column(String, nullable=False, default="")
+    sisa_descricao_atividade_norm = Column(String, nullable=False)
+    sisa_descricao_tema_norm = Column(String, nullable=False)
+    sisa_horario_norm = Column(String, nullable=False, default="")
+    atividade_id = Column(String, ForeignKey("atividades.id"), nullable=False)
+    criado_por_id = Column(String, ForeignKey("usuarios.id"), nullable=False)
+    criado_em = Column(DateTime, default=agora_operacional_naive)
+    atualizado_em = Column(DateTime, default=agora_operacional_naive)
+
+
+class AtividadeSisaConferenciaHistoricoDB(Base):
+    __tablename__ = "atividade_sisa_conferencias_historico"
+    __table_args__ = (
+        Index("ix_atividade_sisa_conf_hist_instituicao_data", "instituicao_id", "importado_em"),
+    )
+
+    id = Column(String, primary_key=True, default=get_uuid)
+    instituicao_id = Column(String, ForeignKey("instituicoes.id"), nullable=False)
+    usuario_id = Column(String, ForeignKey("usuarios.id"), nullable=False)
+    nome_arquivo = Column(String, nullable=False)
+    data_inicio_referencia = Column(Date, nullable=False)
+    data_fim_referencia = Column(Date, nullable=False)
+    servico = Column(String, nullable=True)
+    projeto = Column(String, nullable=True)
+    conferidas = Column(Integer, default=0)
+    divergencias_quantidade = Column(Integer, default=0)
+    sem_vinculo = Column(Integer, default=0)
+    sem_ocorrencia_carecore = Column(Integer, default=0)
+    somente_carecore = Column(Integer, default=0)
+    total_linhas_sisa = Column(Integer, default=0)
+    resultado_json = Column(Text, nullable=False)
+    vinculos_json = Column(Text, nullable=True, default="[]")
+    importado_em = Column(DateTime, default=agora_operacional_naive)
+
+
+class AtividadePontosResgateDB(Base):
+    __tablename__ = "atividade_pontos_resgates"
+    __table_args__ = (
+        Index("ix_atividade_pontos_resgates_instituicao", "instituicao_id"),
+        Index("ix_atividade_pontos_resgates_convivente", "convivente_id"),
+        Index("ix_atividade_pontos_resgates_registrado", "instituicao_id", "registrado_em"),
+    )
+
+    id = Column(String, primary_key=True, default=get_uuid)
+    instituicao_id = Column(String, ForeignKey("instituicoes.id"), nullable=False)
+    convivente_id = Column(String, ForeignKey("conviventes.id"), nullable=False)
+    pontos_utilizados = Column(Integer, nullable=False)
+    descricao_brinde = Column(String, nullable=True)
+    usuario_id = Column(String, ForeignKey("usuarios.id"), nullable=False)
+    metodo_leitura = Column(String, nullable=False)
+    codigo_lido = Column(String, nullable=True)
+    registrado_em = Column(DateTime, default=agora_operacional_naive)
 

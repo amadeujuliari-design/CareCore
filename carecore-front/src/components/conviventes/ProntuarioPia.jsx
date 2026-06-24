@@ -9,7 +9,7 @@ export default function ProntuarioPia({
   registrosPia,
   registrosPiaPrincipais,
   evolucoesPorRegistroPia,
-  imprimirPiaCompleto,
+  imprimirPiaEvolucao,
   imprimirFormularioPia,
   loadingPia,
   salvandoPia,
@@ -194,10 +194,10 @@ export default function ProntuarioPia({
               {registrosPiaPrincipais.length > 0 && (
                 <button
                   type="button"
-                  onClick={imprimirPiaCompleto}
+                  onClick={imprimirPiaEvolucao}
                   className="rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-[11px] font-black text-indigo-700 hover:bg-indigo-100"
                 >
-                  Imprimir histórico narrativo
+                  Imprimir evolução do PIA
                 </button>
               )}
               <button type="button" onClick={() => carregarRegistrosPia(editandoId)} className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-[11px] font-bold text-indigo-600 hover:bg-gray-50">Atualizar</button>

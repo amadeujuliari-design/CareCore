@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import {
   ehArquivoImagem,
@@ -69,6 +69,29 @@ export function useProntuarioDocumentos({
       setLoadingDocs(false);
     }
   };
+
+  useEffect(() => {
+    const atualizarDocumentos = async (evento) => {
+      const conviventeId = evento?.detail?.conviventeId;
+      if (!editandoId || conviventeId !== editandoId) return;
+
+      setLoadingDocs(true);
+      try {
+        const resposta = await listarDocumentosConvivente(editandoId, { limite: 30, deslocamento: 0 });
+        const documentosRecebidos = resposta.registros || [];
+        setDocumentos(documentosRecebidos);
+        setTotalDocumentos(resposta.total || documentosRecebidos.length);
+        setDocumentosTemMais(Boolean(resposta.has_more));
+      } catch (error) {
+        console.error('Erro ao atualizar documentos do GED', error);
+      } finally {
+        setLoadingDocs(false);
+      }
+    };
+
+    window.addEventListener('carecore:documentos-convivente-atualizar', atualizarDocumentos);
+    return () => window.removeEventListener('carecore:documentos-convivente-atualizar', atualizarDocumentos);
+  }, [editandoId]);
 
   const abrirCamera = async () => {
     setCameraAberta(true);

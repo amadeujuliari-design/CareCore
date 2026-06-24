@@ -57,6 +57,50 @@ function campoValor(valor, modo = 'manual') {
   return '-';
 }
 
+function campoValorCadastro(valor) {
+  const texto = valorTexto(valor);
+  if (texto) return escaparHtml(texto);
+  return '<span class="linha-preenchimento"></span>';
+}
+
+function rotuloEhAssinaturaConvivente(rotulo = '') {
+  return /convivente/i.test(String(rotulo));
+}
+
+function montarHtmlAssinaturaDigitalConteudo(assinaturaDigital) {
+  if (!assinaturaDigital) return '';
+
+  const linhas = [];
+  if (Array.isArray(assinaturaDigital.linhas) && assinaturaDigital.linhas.length) {
+    linhas.push(...assinaturaDigital.linhas);
+  } else {
+    const metodo = assinaturaDigital.metodo_leitura
+      || (String(assinaturaDigital.codigo_lido || '').includes('-') ? 'qr_code' : 'codigo_barras');
+    linhas.push('Assinado Digitalmente');
+    if (metodo === 'qr_code') {
+      linhas.push(`Código: ${assinaturaDigital.codigo_lido}`);
+      if (assinaturaDigital.numero_prontuario) {
+        linhas.push(`Prontuário #${assinaturaDigital.numero_prontuario}`);
+      }
+    } else {
+      linhas.push(`Código: ${assinaturaDigital.codigo_lido}`);
+    }
+    if (assinaturaDigital.assinado_em) {
+      try {
+        linhas.push(new Date(assinaturaDigital.assinado_em).toLocaleString('pt-BR'));
+      } catch {
+        // ignore
+      }
+    }
+  }
+
+  return `
+    <div class="assinatura-digital-texto">
+      ${linhas.map((linha) => `<div>${escaparHtml(linha)}</div>`).join('')}
+    </div>
+  `;
+}
+
 function campoMultilinha(valor, modo = 'manual', linhas = 3) {
   const texto = valorTexto(valor);
   if (texto) return `<div class="valor-multilinha">${escaparHtml(texto)}</div>`;
@@ -182,8 +226,11 @@ function formatarTextoTermoCompromissoHtml(texto) {
   `;
 }
 
-function montarRodapeFormularioLgpd(convivente, modo = 'manual') {
-  const nomeExibicao = convivente?.nome_social || convivente?.nome_completo || '';
+function montarRodapeFormularioLgpd(convivente, modo = 'manual', assinaturaDigital = null) {
+  const nomeExibicao = convivente?.nome_completo || convivente?.nome_social || '';
+  const assinaturaHtml = assinaturaDigital
+    ? montarHtmlAssinaturaDigitalConteudo(assinaturaDigital)
+    : '<div class="linha-assinatura-lgpd"></div>';
 
   return `
     <div class="rodape-lgpd-formulario">
@@ -195,35 +242,36 @@ function montarRodapeFormularioLgpd(convivente, modo = 'manual') {
       <div class="grid-lgpd-assinatura">
         <div class="campo-lgpd">
           <span class="label-lgpd">NOME COMPLETO (Se menor, inserir o nome do responsável):</span>
-          <div class="valor-lgpd">${campoValor(nomeExibicao, modo)}</div>
+          <div class="valor-lgpd">${campoValorCadastro(nomeExibicao)}</div>
         </div>
         <div class="campo-lgpd">
           <span class="label-lgpd">RG:</span>
-          <div class="valor-lgpd">${campoValor(convivente?.rg, modo)}</div>
+          <div class="valor-lgpd">${campoValorCadastro(convivente?.rg)}</div>
         </div>
         <div class="campo-lgpd">
           <span class="label-lgpd">ASSINATURA PARA AUTORIZAÇÃO (Se menor, assina o nome do responsável):</span>
-          <div class="linha-assinatura-lgpd"></div>
+          ${assinaturaHtml}
         </div>
       </div>
     </div>
   `;
 }
 
-function montarConteudoPaginaLgpd(convivente, modo = 'manual') {
+function montarConteudoPaginaLgpd(convivente, modo = 'manual', assinaturaDigital = null) {
   return `
     <div class="secao secao-lgpd">
       <h2 class="titulo-lgpd">${escaparHtml(TERMO_LGPD_TITULO)}</h2>
       <h3 class="subtitulo-lgpd">${escaparHtml(TERMO_LGPD_SUBTITULO)}</h3>
       <p class="texto-lgpd-corpo">${destacarTermosLgpd(TERMO_LGPD_TEXTO)}</p>
     </div>
-    ${montarRodapeFormularioLgpd(convivente, modo)}
+    ${montarRodapeFormularioLgpd(convivente, modo, assinaturaDigital)}
   `;
 }
 
 function montarBlocoAssinaturas(rotulos = [], opcoes = {}) {
   const itens = normalizarLista(rotulos).filter(Boolean);
   if (!itens.length) return '';
+  const assinaturaDigital = opcoes.assinaturaDigital || null;
 
   const classeBloco = opcoes.termo
     ? 'bloco-assinaturas-pagina bloco-assinaturas-termo'
@@ -232,13 +280,19 @@ function montarBlocoAssinaturas(rotulos = [], opcoes = {}) {
   return `
     <div class="${classeBloco}">
       <div class="assinaturas">
-        ${itens.map((rotulo) => `
+        ${itens.map((rotulo) => {
+          const ehConvivente = rotuloEhAssinaturaConvivente(rotulo);
+          const conteudoDigital = ehConvivente && assinaturaDigital
+            ? montarHtmlAssinaturaDigitalConteudo(assinaturaDigital)
+            : '';
+          return `
           <div class="assinatura-bloco">
-            <div class="assinatura-espaco" aria-hidden="true"></div>
+            <div class="assinatura-espaco" aria-hidden="true">${conteudoDigital}</div>
             <div class="assinatura-traco"></div>
             <div class="assinatura-rotulo">${escaparHtml(rotulo)}</div>
           </div>
-        `).join('')}
+        `;
+        }).join('')}
       </div>
     </div>
   `;
@@ -420,6 +474,21 @@ function estilosFormulario() {
       color: #374151;
       line-height: 1.35;
     }
+    .assinatura-digital-texto {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      min-height: 24mm;
+      padding: 4px 6px;
+      text-align: center;
+      font-size: 10px;
+      line-height: 1.35;
+      color: #111827;
+      font-weight: 700;
+    }
+    .assinatura-digital-texto div + div {
+      margin-top: 3px;
+    }
     .texto-termo { font-size: 10px; line-height: 1.5; white-space: pre-wrap; text-align: justify; margin-bottom: 4mm; }
     .pagina-termo {
       height: calc(297mm - 26mm);
@@ -591,6 +660,7 @@ export function montarHtmlFormularioPia({
   identidadeRelatorio = null,
   logoRelatorioDataUrl = '',
   modo = 'manual',
+  assinaturaDigital = null,
 }) {
   const modoValido = modo === 'completo' ? 'completo' : 'manual';
   const logoSrc = obterLogoRelatorioSrc(logoRelatorioDataUrl);
@@ -894,7 +964,7 @@ export function montarHtmlFormularioPia({
           ${montarBlocoAssinaturas([
             'Assinatura do convivente',
             'Assinatura e carimbo do técnico responsável',
-          ])}
+          ], { assinaturaDigital })}
         `, rodapeHtml)}
 
         ${montarPaginaPia(`
@@ -916,7 +986,7 @@ export function montarHtmlFormularioPia({
           ${montarBlocoAssinaturas([
             'Assinatura do convivente',
             'Assinatura do responsável pelo atendimento',
-          ], { termo: true })}
+          ], { termo: true, assinaturaDigital })}
         `, rodapeHtml, { classeExtra: 'pagina-termo' })}
 
         ${montarPaginaPia(`
@@ -931,7 +1001,7 @@ export function montarHtmlFormularioPia({
             nomeTecnico: tecnicoNome,
             modo: modoValido,
           })}
-          ${montarConteudoPaginaLgpd(convivente, modoValido)}
+          ${montarConteudoPaginaLgpd(convivente, modoValido, assinaturaDigital)}
         `, rodapeHtml, { classeExtra: 'pagina-lgpd' })}
       </body>
     </html>

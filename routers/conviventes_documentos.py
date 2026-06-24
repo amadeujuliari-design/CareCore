@@ -26,6 +26,8 @@ EXTENSOES_DOCUMENTO_PERMITIDAS = {
     ".png",
     ".webp",
     ".pdf",
+    ".html",
+    ".htm",
     ".doc",
     ".docx",
     ".xls",
@@ -36,6 +38,7 @@ CONTENT_TYPES_DOCUMENTO_PERMITIDOS = {
     "image/png",
     "image/webp",
     "application/pdf",
+    "text/html",
     "application/msword",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     "application/vnd.ms-excel",
@@ -48,11 +51,15 @@ _CONTENT_TYPES_POR_EXTENSAO = {
     ".png": "image/png",
     ".webp": "image/webp",
     ".pdf": "application/pdf",
+    ".html": "text/html",
+    ".htm": "text/html",
     ".doc": "application/msword",
     ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     ".xls": "application/vnd.ms-excel",
     ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 }
+
+TIPO_DOCUMENTO_TERMO_BAGAGEIRO = "Termo do bagageiro"
 
 
 def upload_local_documentos_permitido() -> bool:
@@ -69,7 +76,7 @@ def content_type_documento(extensao: str, content_type: str | None = None) -> st
 def validar_upload_documento(file: UploadFile) -> str:
     nome_original = os.path.basename(file.filename or "")
     extensao = os.path.splitext(nome_original)[1].lower()
-    content_type = (file.content_type or "").lower()
+    content_type = (file.content_type or "").split(";", 1)[0].strip().lower()
 
     if not nome_original or extensao not in EXTENSOES_DOCUMENTO_PERMITIDAS:
         raise HTTPException(
@@ -176,18 +183,75 @@ async def remover_documentos_foto_perfil(
     db: AsyncSession,
     convivente_id: str,
 ) -> None:
-    documentos_foto = (
+    await remover_documentos_por_tipo(db, convivente_id, "Foto de Perfil")
+
+
+async def remover_documentos_por_tipo(
+    db: AsyncSession,
+    convivente_id: str,
+    tipo_documento: str,
+) -> None:
+    documentos = (
         await db.execute(
             select(DocumentoConviventeDB).where(
                 DocumentoConviventeDB.convivente_id == convivente_id,
-                DocumentoConviventeDB.tipo_documento == "Foto de Perfil",
+                DocumentoConviventeDB.tipo_documento == tipo_documento,
             )
         )
     ).scalars().all()
 
-    for documento in documentos_foto:
+    for documento in documentos:
         remover_arquivo_documento(documento.caminho_arquivo)
         await db.delete(documento)
+
+
+async def salvar_termo_bagageiro_no_ged(
+    db: AsyncSession,
+    *,
+    instituicao_id: str,
+    convivente_id: str,
+    nome_arquivo: str,
+    conteudo: bytes,
+    content_type: str | None = None,
+) -> DocumentoConviventeDB:
+    await remover_documentos_por_tipo(db, convivente_id, TIPO_DOCUMENTO_TERMO_BAGAGEIRO)
+
+    extensao_final = os.path.splitext(nome_arquivo)[1].lower() or ".html"
+    caminho_relativo = salvar_conteudo_documento_convivente(
+        instituicao_id=instituicao_id,
+        convivente_id=convivente_id,
+        extensao_final=extensao_final,
+        conteudo=conteudo,
+        content_type=content_type,
+    )
+
+    novo_doc = DocumentoConviventeDB(
+        convivente_id=convivente_id,
+        nome_arquivo=nome_arquivo,
+        caminho_arquivo=caminho_relativo,
+        tipo_documento=TIPO_DOCUMENTO_TERMO_BAGAGEIRO,
+        sensivel=False,
+    )
+    db.add(novo_doc)
+    await db.flush()
+    return novo_doc
+
+
+async def buscar_documento_termo_bagageiro_ged(
+    db: AsyncSession,
+    convivente_id: str,
+) -> DocumentoConviventeDB | None:
+    return (
+        await db.execute(
+            select(DocumentoConviventeDB)
+            .where(
+                DocumentoConviventeDB.convivente_id == convivente_id,
+                DocumentoConviventeDB.tipo_documento == TIPO_DOCUMENTO_TERMO_BAGAGEIRO,
+            )
+            .order_by(DocumentoConviventeDB.data_upload.desc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
 
 
 def caminho_absoluto_documento(caminho_arquivo: str) -> str:

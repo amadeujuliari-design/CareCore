@@ -5,6 +5,8 @@ import { AppShell, MainShell, PageHeader, ReportActionButton, ScrollArea } from 
 import CarteirinhasLote from './components/CarteirinhasLote';
 import DireitosReservadosAviso from './components/DireitosReservadosAviso';
 import ModalFichaCompleta from './components/conviventes/ModalFichaCompleta';
+import ModalOpcaoCabecalhoPia from './components/conviventes/ModalOpcaoCabecalhoPia';
+import ModalImpressaoTermoBagageiro from './components/termoBagageiro/ModalImpressaoTermoBagageiro';
 import { RelatoriosEvolucaoGraficos } from './components/relatorios/RelatoriosEvolucaoGraficos';
 import { RelatoriosFiltrosPanel } from './components/relatorios/RelatoriosFiltrosPanel';
 import { RelatoriosPersonalizacao } from './components/relatorios/RelatoriosPersonalizacao';
@@ -13,7 +15,13 @@ import { RelatoriosTabelaDados } from './components/relatorios/RelatoriosTabelaD
 import { exportarRelatorioXlsx } from './utils/exportarRelatorioXlsx';
 import { abrirPreviewHtml, imprimirRelatorio } from './utils/imprimirRelatorio';
 import { montarHtmlPiasCompletosLote } from './utils/piaCompletoPrint';
+import {
+  carregarConviventesParaPiaEvolucao,
+  montarItensPiaEvolucaoLote,
+} from './utils/piaEvolucaoPrint';
 import { montarHtmlFichasCompletasLote } from './utils/fichaCompletaConvivente';
+import { montarHtmlTermoBagageiro, montarHtmlTermoBagageiroLote } from './utils/termoBagageiroPrint';
+import { persistirTermoBagageiroNoGed } from './utils/termoBagageiroGed';
 import { formatarDadosConviventeParaTela } from './utils/conviventesProntuarioUtils';
 import { gerarGraficosEvolucaoHtml } from './utils/relatoriosGraficosHtml';
 import { LIMITE_FICHAS_LOTE_RELATORIOS } from './config/fichaCompletaConfig';
@@ -58,6 +66,15 @@ function periodoInicialPorAbaRelatorios(aba) {
   return { dataInicio: '', dataFim: '' };
 }
 
+function obterNomeUsuarioLogado() {
+  try {
+    const bruto = localStorage.getItem('@CareCore:user') || localStorage.getItem('usuario');
+    return bruto ? JSON.parse(bruto).nome || '' : '';
+  } catch {
+    return '';
+  }
+}
+
 export default function Relatorios() {
   const token = localStorage.getItem('@CareCore:token') || localStorage.getItem('token');
 
@@ -85,6 +102,11 @@ export default function Relatorios() {
   const [fichaLoteModalAberto, setFichaLoteModalAberto] = useState(false);
   const [imprimindoFichasLote, setImprimindoFichasLote] = useState(false);
   const [progressoFichasLote, setProgressoFichasLote] = useState(null);
+  const [piaEvolucaoModalAberto, setPiaEvolucaoModalAberto] = useState(false);
+  const [imprimindoPiaEvolucao, setImprimindoPiaEvolucao] = useState(false);
+  const [progressoPiaEvolucao, setProgressoPiaEvolucao] = useState(null);
+  const [termoBagageiroConvivente, setTermoBagageiroConvivente] = useState(null);
+  const [imprimindoTermoBagageiroLote, setImprimindoTermoBagageiroLote] = useState(false);
   const [tecnicoPendenciasEvolucaoId, setTecnicoPendenciasEvolucaoId] = useState('');
   const {
     aplicarIdentidadeRelatorio,
@@ -577,7 +599,20 @@ export default function Relatorios() {
     });
   }
 
-  async function imprimirPiasCompletosFiltrados() {
+  function solicitarImpressaoPiaEvolucaoFiltrada() {
+    const conviventeIdsSelecionados = Array.from(
+      new Set(registrosPiaFiltrados.map((registro) => registro.convivente_id).filter(Boolean)),
+    );
+
+    if (conviventeIdsSelecionados.length === 0) {
+      setErro('Nenhum convivente com PIA foi encontrado nos filtros atuais.');
+      return;
+    }
+
+    setPiaEvolucaoModalAberto(true);
+  }
+
+  async function imprimirPiaEvolucaoFiltrada(modoCabecalho) {
     const conviventeIdsSelecionados = Array.from(
       new Set(registrosPiaFiltrados.map((registro) => registro.convivente_id).filter(Boolean)),
     );
@@ -589,72 +624,60 @@ export default function Relatorios() {
 
     if (conviventeIdsSelecionados.length > 25) {
       const confirmado = window.confirm(
-        `Você está prestes a imprimir ${conviventeIdsSelecionados.length} PIAs completos. Deseja continuar?`
+        `Você está prestes a imprimir a evolução do PIA de ${conviventeIdsSelecionados.length} conviventes. Deseja continuar?`,
       );
 
       if (!confirmado) return;
     }
 
-    const registrosPorConvivente = new Map();
-    registrosPia.forEach((registro) => {
-      if (!conviventeIdsSelecionados.includes(registro.convivente_id)) return;
-      const lista = registrosPorConvivente.get(registro.convivente_id) || [];
-      lista.push(registro);
-      registrosPorConvivente.set(registro.convivente_id, lista);
-    });
+    setImprimindoPiaEvolucao(true);
+    setProgressoPiaEvolucao({ atual: 0, total: conviventeIdsSelecionados.length });
 
-    const itens = conviventeIdsSelecionados
-      .map((conviventeId) => {
-        const registrosDoConvivente = registrosPorConvivente.get(conviventeId) || [];
-        const registroReferencia = registrosPiaFiltrados.find((registro) => registro.convivente_id === conviventeId);
-        const conviventeCompleto = conviventes.find((convivente) => convivente.id === conviventeId);
-        const convivente = conviventeCompleto || {
-          id: conviventeId,
-          nome_completo: registroReferencia?.convivente_nome_completo,
-          nome_social: registroReferencia?.convivente_nome_social,
-          numero_institucional: registroReferencia?.convivente_numero_institucional,
-          status: registroReferencia?.convivente_status,
-          tecnico_id: registroReferencia?.convivente_tecnico_id,
-        };
-        const registrosPiaPrincipais = registrosDoConvivente
-          .filter((registro) => !registro.registro_pai_id)
-          .sort((a, b) => new Date(b.data_registro) - new Date(a.data_registro));
-        const evolucoesPorRegistroPia = registrosDoConvivente
-          .filter((registro) => registro.registro_pai_id)
-          .reduce((acc, registro) => {
-            const chave = registro.registro_pai_id;
-            acc[chave] = [...(acc[chave] || []), registro];
-            return acc;
-          }, {});
+    try {
+      const [origensRes, logoRelatorioDataUrl] = await Promise.all([
+        api.get('/api/origens-encaminhamento').catch(() => ({ data: [] })),
+        obterLogoRelatorioParaImpressao(),
+      ]);
+      const origensEncaminhamento = origensRes.data || [];
 
-        Object.keys(evolucoesPorRegistroPia).forEach((chave) => {
-          evolucoesPorRegistroPia[chave].sort((a, b) => new Date(b.data_registro) - new Date(a.data_registro));
-        });
+      const conviventesPorId = await carregarConviventesParaPiaEvolucao({
+        conviventeIds: conviventeIdsSelecionados,
+        conviventesResumo: conviventes,
+        modoCabecalho,
+        onProgress: setProgressoPiaEvolucao,
+      });
 
-        return {
-          convivente,
-          registrosPiaPrincipais,
-          evolucoesPorRegistroPia,
-        };
-      })
-      .sort((a, b) => String(a.convivente.nome_social || a.convivente.nome_completo || '').localeCompare(
-        String(b.convivente.nome_social || b.convivente.nome_completo || ''),
-      ));
+      const itens = montarItensPiaEvolucaoLote({
+        conviventeIds: conviventeIdsSelecionados,
+        registrosPia,
+        registrosPiaFiltrados,
+        conviventesPorId,
+        conviventesResumo: conviventes,
+      });
 
-    const logoRelatorioDataUrl = await obterLogoRelatorioParaImpressao();
-    const html = montarHtmlPiasCompletosLote({
-      itens,
-      listaTecnicos: tecnicos,
-      identidadeRelatorio,
-      logoRelatorioDataUrl,
-      descricaoFiltros: filtrosAtivos.join(' | ') || 'Todos os filtros',
-    });
+      const html = montarHtmlPiasCompletosLote({
+        itens,
+        listaTecnicos: tecnicos,
+        origensEncaminhamento,
+        identidadeRelatorio,
+        logoRelatorioDataUrl,
+        descricaoFiltros: filtrosAtivos.join(' | ') || 'Todos os filtros',
+        modoCabecalho,
+      });
 
-    abrirPreviewHtml({
-      titulo: `PIAs completos filtrados (${itens.length})`,
-      html,
-      orientacaoInicial: 'portrait',
-    });
+      abrirPreviewHtml({
+        titulo: `Evolução do PIA filtrada (${itens.length})`,
+        html,
+        orientacaoInicial: 'portrait',
+      });
+      setPiaEvolucaoModalAberto(false);
+    } catch (error) {
+      console.error('Erro ao imprimir evolução do PIA filtrada', error);
+      setErro('Não foi possível gerar a impressão da evolução do PIA.');
+    } finally {
+      setImprimindoPiaEvolucao(false);
+      setProgressoPiaEvolucao(null);
+    }
   }
 
   function solicitarImpressaoFichasCompletasLote() {
@@ -663,6 +686,75 @@ export default function Relatorios() {
       return;
     }
     setFichaLoteModalAberto(true);
+  }
+
+  function solicitarImpressaoTermoBagageiroFiltrado() {
+    if (conviventesFiltrados.length === 0) {
+      setErro('Nenhum convivente encontrado com os filtros atuais.');
+      return;
+    }
+    if (conviventesFiltrados.length === 1) {
+      setTermoBagageiroConvivente(conviventesFiltrados[0]);
+      return;
+    }
+    imprimirTermoBagageiroLote(conviventesFiltrados);
+  }
+
+  async function executarImpressaoTermoBagageiroRelatorio({ assinaturaDigital }) {
+    const convivente = termoBagageiroConvivente;
+    if (!convivente) return;
+
+    const logoRelatorioDataUrl = await obterLogoRelatorioParaImpressao();
+    const html = montarHtmlTermoBagageiro({
+      convivente,
+      identidadeRelatorio,
+      logoRelatorioDataUrl,
+      assinaturaDigital,
+      nomeFuncionario: obterNomeUsuarioLogado(),
+    });
+
+    abrirPreviewHtml({
+      titulo: `Termo do bagageiro — ${convivente.nome_social || convivente.nome_completo || 'Convivente'}`,
+      html,
+      orientacaoInicial: 'portrait',
+    });
+
+    const resultadoGed = await persistirTermoBagageiroNoGed(convivente, html);
+    if (resultadoGed?.ok) {
+      setErro('');
+    } else if (resultadoGed?.mensagem) {
+      setErro(`Termo impresso, mas não foi salvo no GED: ${resultadoGed.mensagem}`);
+    }
+
+    setTermoBagageiroConvivente(null);
+  }
+
+  async function imprimirTermoBagageiroLote(lista) {
+    const conviventesOrdenados = [...lista].sort((a, b) => (
+      String(a.nome_social || a.nome_completo || '').localeCompare(
+        String(b.nome_social || b.nome_completo || ''),
+        'pt-BR',
+      )
+    ));
+
+    setImprimindoTermoBagageiroLote(true);
+    try {
+      const logoRelatorioDataUrl = await obterLogoRelatorioParaImpressao();
+      const html = montarHtmlTermoBagageiroLote({
+        conviventes: conviventesOrdenados,
+        identidadeRelatorio,
+        logoRelatorioDataUrl,
+        nomeFuncionario: obterNomeUsuarioLogado(),
+      });
+
+      abrirPreviewHtml({
+        titulo: `Termo do bagageiro (${conviventesOrdenados.length})`,
+        html,
+        orientacaoInicial: 'portrait',
+      });
+    } finally {
+      setImprimindoTermoBagageiroLote(false);
+    }
   }
 
   async function imprimirFichasCompletasFiltradas(secoesSelecionadas) {
@@ -832,10 +924,10 @@ export default function Relatorios() {
               {aba === 'pia' && (
                 <ReportActionButton
                   action="print"
-                  onClick={imprimirPiasCompletosFiltrados}
+                  onClick={solicitarImpressaoPiaEvolucaoFiltrada}
                   disabled={loading || registrosPiaFiltrados.length === 0}
                 >
-                  Imprimir PIAs completos
+                  Imprimir evolução do PIA
                 </ReportActionButton>
               )}
 
@@ -846,6 +938,16 @@ export default function Relatorios() {
                   disabled={loading || imprimindoFichasLote || conviventesFiltrados.length === 0}
                 >
                   Imprimir fichas completas
+                </ReportActionButton>
+              )}
+
+              {aba === 'documentacao' && (
+                <ReportActionButton
+                  action="print"
+                  onClick={solicitarImpressaoTermoBagageiroFiltrado}
+                  disabled={loading || imprimindoTermoBagageiroLote || conviventesFiltrados.length === 0}
+                >
+                  Termo do bagageiro
                 </ReportActionButton>
               )}
             </>
@@ -1005,6 +1107,31 @@ export default function Relatorios() {
           carregando={imprimindoFichasLote}
           progressoLote={progressoFichasLote}
           onFechar={() => setFichaLoteModalAberto(false)}
+        />
+      )}
+
+      <ModalOpcaoCabecalhoPia
+        aberto={piaEvolucaoModalAberto}
+        onFechar={() => !imprimindoPiaEvolucao && setPiaEvolucaoModalAberto(false)}
+        onConfirmar={imprimirPiaEvolucaoFiltrada}
+        modoLote
+        quantidade={new Set(registrosPiaFiltrados.map((registro) => registro.convivente_id).filter(Boolean)).size}
+        descricaoFiltros={filtrosAtivos.join(' | ') || 'Todos os filtros'}
+        carregando={imprimindoPiaEvolucao}
+        progresso={progressoPiaEvolucao}
+      />
+
+      {termoBagageiroConvivente && (
+        <ModalImpressaoTermoBagageiro
+          aberto={Boolean(termoBagageiroConvivente)}
+          conviventeId={termoBagageiroConvivente.id}
+          convivente={termoBagageiroConvivente}
+          nomeConvivente={termoBagageiroConvivente.nome_social || termoBagageiroConvivente.nome_completo}
+          numeroProntuario={termoBagageiroConvivente.numero_institucional}
+          tituloContexto="Termo do bagageiro"
+          descricaoContexto="Imprima o termo de guarda de volumes com assinatura digital ou manual."
+          onFechar={() => setTermoBagageiroConvivente(null)}
+          onConfirmar={executarImpressaoTermoBagageiroRelatorio}
         />
       )}
     </AppShell>

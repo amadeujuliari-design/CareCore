@@ -6,6 +6,7 @@ export default function LeitorCarteirinhaModal({
   titulo = 'Ler carteirinha',
   subtitulo = 'Aponte a câmera para o QR Code ou código de barras da carteirinha.',
   placeholder = 'Digite o prontuário, CPF, código de barras ou QR Code',
+  erroExterno = '',
   onCodigoLido,
   onClose,
 }) {
@@ -29,6 +30,9 @@ export default function LeitorCarteirinhaModal({
     const aceito = await onCodigoLidoRef.current?.(codigo);
     if (aceito === false) {
       setErro('Código lido, mas nenhum convivente correspondente foi encontrado.');
+      return 'invalido';
+    }
+    if (aceito === 'erro_tratado') {
       return 'invalido';
     }
 
@@ -172,7 +176,13 @@ export default function LeitorCarteirinhaModal({
             className="min-h-[280px] overflow-hidden rounded-2xl border border-gray-200 bg-gray-950"
           />
 
-          {erro && (
+          {erroExterno && (
+            <div className="rounded-xl border border-red-100 bg-red-50 p-3 text-sm font-semibold text-red-700">
+              {erroExterno}
+            </div>
+          )}
+
+          {erro && !erroExterno && (
             <div className="rounded-xl border border-red-100 bg-red-50 p-3 text-sm font-semibold text-red-700">
               {erro}
             </div>

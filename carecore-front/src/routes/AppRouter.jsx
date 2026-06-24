@@ -29,6 +29,13 @@ const Cobrancas = lazy(() => import('../Cobrancas'));
 const CobrancasAdmin = lazy(() => import('../CobrancasAdmin'));
 const AcompanhamentoModulo = lazy(() => import('../AcompanhamentoModulo'));
 const AcompanhamentoResumoMensal = lazy(() => import('../AcompanhamentoResumoMensal'));
+const AtividadesCadastro = lazy(() => import('../AtividadesCadastro'));
+const AtividadesChamada = lazy(() => import('../AtividadesChamada'));
+const AtividadesGrade = lazy(() => import('../AtividadesGrade'));
+const AtividadesConteudo = lazy(() => import('../AtividadesConteudo'));
+const AtividadesRelatorios = lazy(() => import('../AtividadesRelatorios'));
+const AtividadesConferenciaSisa = lazy(() => import('../AtividadesConferenciaSisa'));
+const AtividadesPontosBrindes = lazy(() => import('../AtividadesPontosBrindes'));
 
 function RotasAplicacao() {
   return (
@@ -138,6 +145,69 @@ function RotasAplicacao() {
           element={
             <ProtectedRoute perfis={['Gestor', 'Técnico', 'Orientador', 'Administrativo']}>
               <RotinaHistorico />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/atividades"
+          element={
+            <ProtectedRoute perfis={['Gestor', 'Técnico', 'Orientador', 'Administrativo', 'Global']}>
+              <AtividadesCadastro />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/atividades/chamada"
+          element={
+            <ProtectedRoute perfis={['Gestor', 'Técnico', 'Orientador', 'Administrativo', 'Global']}>
+              <AtividadesChamada />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/atividades/grade"
+          element={
+            <ProtectedRoute perfis={['Gestor', 'Técnico', 'Orientador', 'Administrativo', 'Global']}>
+              <AtividadesGrade />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/atividades/conteudo"
+          element={
+            <ProtectedRoute perfis={['Gestor', 'Técnico', 'Orientador', 'Administrativo', 'Global']}>
+              <AtividadesConteudo />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/atividades/relatorios"
+          element={
+            <ProtectedRoute perfis={['Gestor', 'Técnico', 'Orientador', 'Administrativo', 'Global']}>
+              <AtividadesRelatorios />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/atividades/conferencia-sisa"
+          element={
+            <ProtectedRoute perfis={['Gestor', 'Técnico', 'Orientador', 'Administrativo', 'Global']}>
+              <AtividadesConferenciaSisa />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/atividades/pontos-brindes"
+          element={
+            <ProtectedRoute perfis={['Gestor', 'Técnico', 'Orientador', 'Administrativo', 'Global']}>
+              <AtividadesPontosBrindes />
             </ProtectedRoute>
           }
         />

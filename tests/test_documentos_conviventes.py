@@ -23,6 +23,14 @@ def test_validar_upload_documento_aceita_pdf():
     assert nome == "documento.pdf"
 
 
+def test_validar_upload_documento_aceita_html_com_charset():
+    nome = validar_upload_documento(
+        arquivo_upload("termo_bagageiro_2.html", "text/html; charset=utf-8")
+    )
+
+    assert nome == "termo_bagageiro_2.html"
+
+
 def test_validar_upload_documento_rejeita_extensao_perigosa():
     with pytest.raises(HTTPException):
         validar_upload_documento(

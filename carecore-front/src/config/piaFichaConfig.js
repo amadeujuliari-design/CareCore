@@ -28,6 +28,31 @@ export const CORES_RACA_IBGE = [
   'Prefiro não informar',
 ];
 
+export const UFS_BRASIL = [
+  'AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA', 'MT', 'MS', 'MG',
+  'PA', 'PB', 'PR', 'PE', 'PI', 'RJ', 'RN', 'RS', 'RO', 'RR', 'SC', 'SP', 'SE', 'TO',
+];
+
+export const IDENTIDADES_GENERO = [
+  'Homem Cisgênero',
+  'Mulher Cisgênero',
+  'Homem Transgênero',
+  'Mulher Transgênero',
+  'Não-Binário',
+  'Outro',
+  'Prefiro não informar',
+];
+
+export const ORIENTACOES_SEXUAIS = [
+  'Heterossexual',
+  'Homossexual',
+  'Bissexual',
+  'Pansexual',
+  'Assexual',
+  'Outra',
+  'Prefiro não informar',
+];
+
 export const TIPOS_DOCUMENTO_CIVIL = [
   'Carteira de trabalho (CTPS)',
   'Título de eleitor',

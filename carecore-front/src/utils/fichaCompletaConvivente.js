@@ -168,7 +168,7 @@ function renderIdentificacao(c, { listaTecnicos, quartos, origensEncaminhamento 
     linha('Religião', c.religiao_qual),
     linha('Identidade de gênero', c.identidade_genero),
     linha('Orientação sexual', c.orientacao_sexual),
-    linha('Naturalidade', c.naturalidade),
+    linha('Natural de', c.naturalidade),
     linha('Estado civil', c.estado_civil),
     linha('Status no serviço', c.status),
     linha('Data de entrada/vinculação', dataBr(c.data_entrada)),
@@ -405,6 +405,57 @@ export function avaliarSecoesComDadosFicha(convivente) {
     resultado[id] = Boolean(html?.trim());
   });
   return resultado;
+}
+
+function renderDadosPessoaisBasicosPia(c, { listaTecnicos = [], origensEncaminhamento = [] } = {}) {
+  const tecnico = listaTecnicos.find((tec) => tec.id === c.tecnico_id);
+  const origem = obterLabelOrigem(
+    c.origem_encaminhamento_id,
+    origensEncaminhamento,
+    c.origem_encaminhamento_outros,
+  );
+  const nascimento = c.data_nascimento
+    ? `${dataBr(c.data_nascimento)} (${calcularIdade(c.data_nascimento)} anos)`
+    : '';
+
+  return secao('Dados pessoais básicos', [
+    linha('Nome civil', c.nome_completo),
+    linha('Nome social', c.nome_social),
+    linha('Prontuário institucional', c.numero_institucional),
+    linha('CPF', c.cpf),
+    linha('RG', c.rg),
+    linha('Data de nascimento', nascimento),
+    linha('Identidade de gênero', c.identidade_genero),
+    linha('Estado civil', c.estado_civil),
+    linha('Telefone / celular', c.telefone_celular),
+    linha('Nome da mãe', c.nome_mae),
+    linha('Nome do pai', c.nome_pai),
+    linha('Status no serviço', c.status),
+    linha('Data de entrada/vinculação', dataBr(c.data_entrada)),
+    linha('Início do PIA', dataBr(c.data_inicio_pia)),
+    linha('Está em São Paulo desde', dataBr(c.em_sao_paulo_desde)),
+    linha('Origem / encaminhado por', origem),
+    linha('Técnico de referência', tecnico?.nome || ''),
+    linha('CEP', c.cep),
+    linha('Endereço', [c.logradouro, c.numero, c.complemento].filter(Boolean).join(', ')),
+    linha('Bairro / cidade / UF', [c.bairro, c.cidade, c.uf].filter(Boolean).join(' — ')),
+  ].join(''));
+}
+
+/** Capa da impressão de evolução do PIA: pessoais básicos + aba Assistência social. */
+export function montarCapaCompletaPiaEvolucao(
+  convivente,
+  { listaTecnicos = [], origensEncaminhamento = [] } = {},
+) {
+  const c = normalizarConviventeFicha(convivente);
+
+  return [
+    renderDadosPessoaisBasicosPia(c, { listaTecnicos, origensEncaminhamento }),
+    renderBeneficios(c),
+    renderEscolaridadeTrabalho(c),
+    renderDocumentosCivis(c),
+    renderTrajetoria(c, origensEncaminhamento),
+  ].filter(Boolean).join('');
 }
 
 function estilosFichaCompletaCss() {

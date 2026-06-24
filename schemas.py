@@ -8,7 +8,7 @@ import re
 from datetime import date, datetime
 from typing import Optional, List, Any
 
-from pydantic import BaseModel, ConfigDict, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 # --- AUXILIARES (MOTIVOS E ORIGENS) ---
@@ -983,6 +983,68 @@ class RegistroPIAResponse(RegistroPIABase):
     data_registro: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class AssinaturaFormularioPiaRegistrar(BaseModel):
+    codigo_lido: str
+    metodo_leitura: Optional[str] = None
+    modo_formulario: Optional[str] = None
+
+
+class AssinaturaFormularioPiaReimpressao(BaseModel):
+    modo_formulario: Optional[str] = None
+
+
+class AssinaturaFormularioPiaResponse(BaseModel):
+    id: str
+    convivente_id: str
+    tipo_evento: str
+    metodo_leitura: Optional[str] = None
+    codigo_lido: str
+    numero_prontuario: Optional[int] = None
+    modo_formulario: Optional[str] = None
+    assinado_em: datetime
+    usuario_id: str
+    usuario_nome: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class AssinaturaFormularioPiaConsultaResponse(BaseModel):
+    possui_assinatura: bool
+    assinatura: Optional[AssinaturaFormularioPiaResponse] = None
+
+
+class AssinaturaTermoBagageiroRegistrar(BaseModel):
+    codigo_lido: str
+    metodo_leitura: Optional[str] = None
+
+
+class AssinaturaTermoBagageiroReimpressao(BaseModel):
+    pass
+
+
+class AssinaturaTermoBagageiroResponse(BaseModel):
+    id: str
+    convivente_id: str
+    tipo_evento: str
+    metodo_leitura: Optional[str] = None
+    codigo_lido: Optional[str] = None
+    numero_prontuario: Optional[int] = None
+    assinado_em: Optional[datetime] = None
+    usuario_id: str
+    usuario_nome: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class AssinaturaTermoBagageiroConsultaResponse(BaseModel):
+    possui_assinatura: bool
+    assinatura: Optional[AssinaturaTermoBagageiroResponse] = None
+    termo_aceito: bool = False
+    exige_termo_primeiro_bagageiro: bool = False
+    possui_movimentacao_bagageiro: bool = False
+    documento_ged: Optional[DocumentoResponse] = None
 
 
 # --- OCORRÊNCIAS ---
@@ -2614,4 +2676,377 @@ class AcompanhamentoResumoMensalResponse(BaseModel):
     periodo_personalizado: bool = False
     linhas: List[AcompanhamentoResumoMensalLinha]
     gerado_em: datetime
+
+
+# --- Atividades (oficinas / presença) ---
+
+CATEGORIAS_ATIVIDADE = [
+    "oficina",
+    "esporte",
+    "reuniao_tecnica",
+    "noturna",
+    "cultural",
+    "outra",
+]
+
+TIPOS_FREQUENCIA_ATIVIDADE = [
+    "diaria",
+    "semanal",
+    "bisemanal",
+    "dias_mes",
+]
+
+METODOS_PRESENCA_ATIVIDADE = [
+    "QR Code",
+    "Código de barras",
+    "Leitor USB",
+    "Manual",
+]
+
+STATUS_OCORRENCIA_ATIVIDADE = ["aberta", "encerrada", "cancelada"]
+
+
+class AtividadeConfiguracaoAgenda(BaseModel):
+    dias_semana: List[int] = Field(default_factory=list)
+    datas_especificas: List[str] = Field(default_factory=list)
+    somente_dias_uteis: bool = False
+    max_sessoes_mes: Optional[int] = None
+
+
+class AtividadeCreate(BaseModel):
+    nome: str
+    categoria: str = "oficina"
+    responsavel_usuario_id: Optional[str] = None
+    tipo_frequencia: str = "semanal"
+    configuracao_agenda: AtividadeConfiguracaoAgenda = Field(default_factory=AtividadeConfiguracaoAgenda)
+    vigencia_inicio: Optional[date] = None
+    vigencia_fim: Optional[date] = None
+    sisa_descricao_atividade: Optional[str] = None
+    sisa_descricao_tema: Optional[str] = None
+    sisa_horario_padrao: Optional[str] = None
+    ativo: bool = True
+
+
+class AtividadeUpdate(BaseModel):
+    nome: Optional[str] = None
+    categoria: Optional[str] = None
+    responsavel_usuario_id: Optional[str] = None
+    tipo_frequencia: Optional[str] = None
+    configuracao_agenda: Optional[AtividadeConfiguracaoAgenda] = None
+    vigencia_inicio: Optional[date] = None
+    vigencia_fim: Optional[date] = None
+    sisa_descricao_atividade: Optional[str] = None
+    sisa_descricao_tema: Optional[str] = None
+    sisa_horario_padrao: Optional[str] = None
+    ativo: Optional[bool] = None
+
+
+class AtividadeResponse(BaseModel):
+    id: str
+    instituicao_id: str
+    nome: str
+    categoria: str
+    responsavel_usuario_id: Optional[str] = None
+    responsavel_nome: Optional[str] = None
+    tipo_frequencia: str
+    configuracao_agenda: dict = Field(default_factory=dict)
+    vigencia_inicio: Optional[date] = None
+    vigencia_fim: Optional[date] = None
+    sisa_descricao_atividade: Optional[str] = None
+    sisa_descricao_tema: Optional[str] = None
+    sisa_horario_padrao: Optional[str] = None
+    ativo: bool = True
+    criado_por_id: str
+    criado_em: datetime
+    atualizado_em: Optional[datetime] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class AtividadesListaResponse(BaseModel):
+    items: List[AtividadeResponse]
+    total: int
+
+
+class AtividadeGerarOcorrenciasRequest(BaseModel):
+    mes_referencia: str
+
+
+class AtividadeOcorrenciaResponse(BaseModel):
+    id: str
+    atividade_id: str
+    data_sessao: date
+    numero_sessao_mes: int
+    mes_referencia: str
+    horario_sessao: str = ""
+    status: str
+    criado_em: datetime
+    total_presentes: int = 0
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class AtividadeOcorrenciasListaResponse(BaseModel):
+    items: List[AtividadeOcorrenciaResponse]
+    total: int
+    mes_referencia: str
+
+
+class AtividadePresencaCreate(BaseModel):
+    convivente_id: str
+    metodo_leitura: str
+    codigo_lido: Optional[str] = None
+
+
+class AtividadePresencaResponse(BaseModel):
+    id: str
+    atividade_id: str
+    ocorrencia_id: str
+    convivente_id: str
+    convivente_nome: Optional[str] = None
+    prontuario: Optional[str] = None
+    usuario_id: str
+    usuario_nome: Optional[str] = None
+    metodo_leitura: str
+    codigo_lido: Optional[str] = None
+    registrado_em: datetime
+    cancelado: bool = False
+    pode_desfazer: bool = False
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class AtividadePresencaCancelamento(BaseModel):
+    motivo_cancelamento: str
+
+
+class AtividadeChamadaResponse(BaseModel):
+    ocorrencia: AtividadeOcorrenciaResponse
+    atividade: AtividadeResponse
+    presencas: List[AtividadePresencaResponse]
+    conviventes_elegiveis: List[dict]
+
+
+class AtividadeGradeConviventeLinha(BaseModel):
+    convivente_id: str
+    nome: str
+    prontuario: Optional[str] = None
+    status: str
+    presencas_por_ocorrencia: dict[str, Optional[AtividadePresencaResponse]]
+
+
+class AtividadeGradeResponse(BaseModel):
+    mes_referencia: str
+    atividade: AtividadeResponse
+    ocorrencias: List[AtividadeOcorrenciaResponse]
+    linhas: List[AtividadeGradeConviventeLinha]
+
+
+class AtividadeSessaoConteudoUpsert(BaseModel):
+    acoes_realizadas: Optional[str] = None
+
+
+class AtividadeSessaoConteudoResponse(BaseModel):
+    id: str
+    ocorrencia_id: str
+    atividade_id: str
+    acoes_realizadas: Optional[str] = None
+    registrado_por_id: str
+    registrado_por_nome: Optional[str] = None
+    criado_em: datetime
+    atualizado_em: Optional[datetime] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class AtividadeOcorrenciaStatusUpdate(BaseModel):
+    status: str
+
+
+class AtividadeRelatorioResumo(BaseModel):
+    total_presencas: int = 0
+    total_conviventes: int = 0
+    total_atividades: int = 0
+    total_sessoes: int = 0
+
+
+class AtividadeRelatorioLinha(BaseModel):
+    chave: str
+    rotulo: str
+    data_sessao: Optional[date] = None
+    atividade_id: Optional[str] = None
+    atividade_nome: Optional[str] = None
+    responsavel_nome: Optional[str] = None
+    convivente_id: Optional[str] = None
+    convivente_nome: Optional[str] = None
+    prontuario: Optional[str] = None
+    metodo_leitura: Optional[str] = None
+    registrado_por_nome: Optional[str] = None
+    total_presencas: Optional[int] = None
+    total_sessoes: Optional[int] = None
+    total_conviventes: Optional[int] = None
+    total_atividades: Optional[int] = None
+
+
+class AtividadeRelatorioResponse(BaseModel):
+    data_inicio: date
+    data_fim: date
+    agrupamento: str
+    resumo: AtividadeRelatorioResumo
+    linhas: List[AtividadeRelatorioLinha]
+
+
+class AtividadeCatalogoSisaItem(BaseModel):
+    valor: str
+    personalizado: bool = False
+
+
+class AtividadeCatalogoSisaResponse(BaseModel):
+    descricao_atividade: List[AtividadeCatalogoSisaItem]
+    descricao_tema: List[AtividadeCatalogoSisaItem]
+
+
+class AtividadeCatalogoSisaCreate(BaseModel):
+    tipo: str
+    valor: str
+
+
+class AtividadeSisaVinculoPayload(BaseModel):
+    chave: str
+    atividade_id: str
+
+
+class AtividadeSisaConferenciaLinha(BaseModel):
+    indice: int
+    chave: str
+    dimensao: Optional[str] = None
+    descricao_atividade: str
+    descricao_tema: str
+    data_sessao: date
+    horario: str
+    participacoes_sisa: int
+    participacoes_carecore: int = 0
+    delta: Optional[int] = None
+    atividade_id: Optional[str] = None
+    atividade_nome: Optional[str] = None
+    ocorrencia_id: Optional[str] = None
+    status: str
+    mensagem: str
+    sugestao_atividade_id: Optional[str] = None
+
+
+class AtividadeSisaSomenteCarecoreLinha(BaseModel):
+    chave: str
+    data_sessao: date
+    horario: str
+    descricao_atividade: Optional[str] = None
+    descricao_tema: Optional[str] = None
+    atividade_id: str
+    atividade_nome: Optional[str] = None
+    ocorrencia_id: str
+    participacoes_carecore: int
+    status: str
+    mensagem: str
+
+
+class AtividadeSisaConferenciaResumo(BaseModel):
+    conferidas: int = 0
+    divergencias_quantidade: int = 0
+    sem_vinculo: int = 0
+    sem_ocorrencia_carecore: int = 0
+    somente_sisa: int = 0
+    somente_carecore: int = 0
+
+
+class AtividadeSisaConferenciaResponse(BaseModel):
+    nome_arquivo: str
+    data_inicio_referencia: date
+    data_fim_referencia: date
+    servico: Optional[str] = None
+    projeto: Optional[str] = None
+    totais_sisa: dict = Field(default_factory=dict)
+    resumo: AtividadeSisaConferenciaResumo
+    linhas: List[AtividadeSisaConferenciaLinha]
+    somente_carecore: List[AtividadeSisaSomenteCarecoreLinha]
+    historico_id: Optional[str] = None
+
+
+class AtividadeSisaConferenciaHistoricoResumo(BaseModel):
+    id: str
+    nome_arquivo: str
+    data_inicio_referencia: date
+    data_fim_referencia: date
+    servico: Optional[str] = None
+    importado_em: datetime
+    usuario_nome: Optional[str] = None
+    resumo: AtividadeSisaConferenciaResumo
+
+
+class AtividadeSisaConferenciaHistoricoListaResponse(BaseModel):
+    items: List[AtividadeSisaConferenciaHistoricoResumo]
+    total: int
+    limit: int
+    offset: int
+    has_more: bool
+
+
+class AtividadeSisaConferenciaHistoricoDetalheResponse(BaseModel):
+    id: str
+    nome_arquivo: str
+    data_inicio_referencia: date
+    data_fim_referencia: date
+    servico: Optional[str] = None
+    projeto: Optional[str] = None
+    importado_em: datetime
+    usuario_nome: Optional[str] = None
+    vinculos: List[AtividadeSisaVinculoPayload]
+    resultado: AtividadeSisaConferenciaResponse
+
+
+PONTOS_POR_PRESENCA_ATIVIDADE = 10
+
+
+class AtividadePontosRankingItem(BaseModel):
+    posicao: int
+    convivente_id: str
+    nome: str
+    numero_institucional: Optional[int] = None
+    total_presencas: int
+    pontos_ganhos: int
+    pontos_utilizados: int
+    saldo_pontos: int
+
+
+class AtividadePontosRankingResponse(BaseModel):
+    items: List[AtividadePontosRankingItem]
+    total: int
+    pontos_por_presenca: int = PONTOS_POR_PRESENCA_ATIVIDADE
+
+
+class AtividadePontosResgateCreate(BaseModel):
+    convivente_id: str
+    pontos_utilizados: int = Field(gt=0)
+    descricao_brinde: Optional[str] = None
+    metodo_leitura: str
+    codigo_lido: str
+
+
+class AtividadePontosResgateResponse(BaseModel):
+    id: str
+    convivente_id: str
+    convivente_nome: str
+    pontos_utilizados: int
+    descricao_brinde: Optional[str] = None
+    saldo_restante: Optional[int] = None
+    usuario_nome: Optional[str] = None
+    metodo_leitura: str
+    registrado_em: datetime
+
+
+class AtividadePontosResgatesListaResponse(BaseModel):
+    items: List[AtividadePontosResgateResponse]
+    total: int
+    limit: int
+    offset: int
+    has_more: bool
 

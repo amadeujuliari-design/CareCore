@@ -6,6 +6,8 @@ import ConviventesLista from './components/conviventes/ConviventesLista';
 import ModalCamera from './components/conviventes/ModalCamera';
 import ModalCarteirinha from './components/conviventes/ModalCarteirinha';
 import ModalFichaCompleta from './components/conviventes/ModalFichaCompleta';
+import ModalImpressaoFormularioPia from './components/conviventes/ModalImpressaoFormularioPia';
+import ModalOpcaoCabecalhoPia from './components/conviventes/ModalOpcaoCabecalhoPia';
 import ProntuarioCabecalho from './components/conviventes/ProntuarioCabecalho';
 import ProntuarioDocumentos from './components/conviventes/ProntuarioDocumentos';
 import ProntuarioFluxo from './components/conviventes/ProntuarioFluxo';
@@ -44,6 +46,7 @@ import {
 import { abrirPreviewHtml } from './utils/imprimirRelatorio';
 import { montarHtmlPiaCompleto } from './utils/piaCompletoPrint';
 import { montarHtmlFormularioPia } from './utils/piaFormularioPrint';
+import { agruparRegistrosPiaConvivente } from './utils/piaEvolucaoPrint';
 import { obterLogoRelatorioDataUrl } from './utils/relatorioIdentidadePrint';
 import {
   atualizarConviventeProntuario,
@@ -99,6 +102,10 @@ export default function Conviventes() {
   const [mostrarSenhaEmail, setMostrarSenhaEmail] = useState(false);
   const [mostrarSenhaGovbr, setMostrarSenhaGovbr] = useState(false);
   const [salvandoProntuario, setSalvandoProntuario] = useState(false);
+  const [piaEvolucaoModalAberto, setPiaEvolucaoModalAberto] = useState(false);
+  const [formularioPiaImpressao, setFormularioPiaImpressao] = useState(null);
+  const [numeroProntuarioEdicao, setNumeroProntuarioEdicao] = useState(null);
+  const [imprimindoPiaEvolucao, setImprimindoPiaEvolucao] = useState(false);
   const {
     evolucoesPorRegistroPia,
     formPia,
@@ -323,6 +330,7 @@ export default function Conviventes() {
     setMostrarSenhaGovbr(false);
     setStatusOriginal(prontuario.status || 'Ativo'); // <-- NOVO: Salva na memória o status que veio do banco
     setEditandoId(prontuario.id);
+    setNumeroProntuarioEdicao(prontuario.numero_institucional ?? null);
     setAbaAtual('pessoais');
     setTelaAtual('form');
     setErro('');
@@ -392,12 +400,15 @@ export default function Conviventes() {
     }
   };
 
-  const imprimirFormularioPia = async (modo) => {
+  const solicitarImpressaoFormularioPia = (modo) => {
     if (!editandoId) {
       setErro('Salve o prontuário antes de imprimir o formulário PIA.');
       return;
     }
+    setFormularioPiaImpressao({ modo });
+  };
 
+  const executarImpressaoFormularioPia = async ({ modo, assinaturaDigital }) => {
     const logoRelatorioDataUrl = await obterLogoRelatorioDataUrl(identidadeRelatorio);
     const html = montarHtmlFormularioPia({
       convivente: formData,
@@ -407,6 +418,7 @@ export default function Conviventes() {
       identidadeRelatorio,
       logoRelatorioDataUrl,
       modo,
+      assinaturaDigital,
     });
 
     abrirPreviewHtml({
@@ -414,29 +426,53 @@ export default function Conviventes() {
       html,
       orientacaoInicial: 'portrait',
     });
+    setFormularioPiaImpressao(null);
   };
 
-  const imprimirPiaCompleto = async () => {
+  const solicitarImpressaoPiaEvolucao = () => {
     if (!editandoId || registrosPiaPrincipais.length === 0) {
       setErro('Nenhum PIA principal disponível para impressão.');
       return;
     }
+    setPiaEvolucaoModalAberto(true);
+  };
 
-    const logoRelatorioDataUrl = await obterLogoRelatorioDataUrl(identidadeRelatorio);
-    const html = montarHtmlPiaCompleto({
-      convivente: formData,
-      registrosPiaPrincipais,
-      evolucoesPorRegistroPia,
-      listaTecnicos,
-      identidadeRelatorio,
-      logoRelatorioDataUrl,
-    });
+  const imprimirPiaEvolucao = async (modoCabecalho) => {
+    if (!editandoId || registrosPia.length === 0) {
+      setErro('Nenhum PIA disponível para impressão.');
+      return;
+    }
 
-    abrirPreviewHtml({
-      titulo: `PIA completo - ${formData.nome_social || formData.nome_completo || 'Convivente'}`,
-      html,
-      orientacaoInicial: 'portrait',
-    });
+    setImprimindoPiaEvolucao(true);
+
+    try {
+      const { registrosPiaPrincipais: principais, evolucoesPorRegistroPia: evolucoes } = (
+        agruparRegistrosPiaConvivente(registrosPia)
+      );
+      const logoRelatorioDataUrl = await obterLogoRelatorioDataUrl(identidadeRelatorio);
+      const html = montarHtmlPiaCompleto({
+        convivente: formData,
+        registrosPiaPrincipais: principais,
+        evolucoesPorRegistroPia: evolucoes,
+        listaTecnicos,
+        origensEncaminhamento,
+        identidadeRelatorio,
+        logoRelatorioDataUrl,
+        modoCabecalho,
+      });
+
+      abrirPreviewHtml({
+        titulo: `Evolução do PIA - ${formData.nome_social || formData.nome_completo || 'Convivente'}`,
+        html,
+        orientacaoInicial: 'portrait',
+      });
+      setPiaEvolucaoModalAberto(false);
+    } catch (error) {
+      console.error('Erro ao imprimir evolução do PIA', error);
+      setErro('Não foi possível gerar a impressão da evolução do PIA.');
+    } finally {
+      setImprimindoPiaEvolucao(false);
+    }
   };
 
   const handleChange = (e) => {
@@ -808,8 +844,8 @@ export default function Conviventes() {
                       registrosPia={registrosPia}
                       registrosPiaPrincipais={registrosPiaPrincipais}
                       evolucoesPorRegistroPia={evolucoesPorRegistroPia}
-                      imprimirPiaCompleto={imprimirPiaCompleto}
-                      imprimirFormularioPia={imprimirFormularioPia}
+                      imprimirPiaEvolucao={solicitarImpressaoPiaEvolucao}
+                      imprimirFormularioPia={solicitarImpressaoFormularioPia}
                       formData={formData}
                       handleChange={handleChange}
                       loadingPia={loadingPia}
@@ -896,6 +932,26 @@ export default function Conviventes() {
           )}
           </div>
         </ScrollArea>
+
+      <ModalOpcaoCabecalhoPia
+        aberto={piaEvolucaoModalAberto}
+        onFechar={() => !imprimindoPiaEvolucao && setPiaEvolucaoModalAberto(false)}
+        onConfirmar={imprimirPiaEvolucao}
+        carregando={imprimindoPiaEvolucao}
+        nomeConvivente={formData.nome_social || formData.nome_completo}
+        numeroProntuario={formData.numero_institucional}
+      />
+
+      <ModalImpressaoFormularioPia
+        aberto={Boolean(formularioPiaImpressao)}
+        modo={formularioPiaImpressao?.modo || 'manual'}
+        conviventeId={editandoId}
+        convivente={formData}
+        nomeConvivente={formData.nome_social || formData.nome_completo}
+        numeroProntuario={numeroProntuarioEdicao ?? formData.numero_institucional}
+        onFechar={() => setFormularioPiaImpressao(null)}
+        onConfirmar={executarImpressaoFormularioPia}
+      />
 
       <ModalFichaCompleta
         fichaPendente={fichaCompletaPendente}

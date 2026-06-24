@@ -128,6 +128,27 @@ export async function removerFotoPerfilConvivente(conviventeId) {
   return response.data;
 }
 
+export async function consultarAssinaturaFormularioPia(conviventeId) {
+  const response = await api.get(`/api/conviventes/${conviventeId}/pia-formulario/assinatura-digital`);
+  return response.data;
+}
+
+export async function registrarAssinaturaFormularioPia(conviventeId, payload) {
+  const response = await api.post(
+    `/api/conviventes/${conviventeId}/pia-formulario/assinatura-digital`,
+    payload,
+  );
+  return response.data;
+}
+
+export async function registrarReimpressaoFormularioPiaAssinado(conviventeId, payload) {
+  const response = await api.post(
+    `/api/conviventes/${conviventeId}/pia-formulario/reimpressao-assinada`,
+    payload,
+  );
+  return response.data;
+}
+
 export async function criarConviventeProntuario(payload) {
   const response = await api.post('/api/conviventes', payload);
   return response.data;

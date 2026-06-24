@@ -2,6 +2,7 @@ import {
   DIREITOS_RESERVADOS_TITULO,
   obterUrlDireitosReservados,
 } from './direitosReservados';
+import { montarCapaCompletaPiaEvolucao } from './fichaCompletaConvivente';
 import { obterLogoRelatorioSrc } from './relatorioIdentidadePrint';
 
 function escaparHtml(valor) {
@@ -113,13 +114,16 @@ function montarRodapeRelatorio(rodapeItens, direitosUrl) {
 function montarCabecalhoPia({
   convivente,
   listaTecnicos = [],
+  origensEncaminhamento = [],
   logoSrc,
   nomeExibicao,
-  titulo = 'Plano Individual de Atendimento',
+  titulo = 'Evolução do PIA',
   subtitulo = '',
+  modoCabecalho = 'resumido',
 }) {
   const nomeConvivente = convivente?.nome_social || convivente?.nome_completo || 'Convivente';
   const tecnico = listaTecnicos.find((tec) => tec.id === convivente?.tecnico_id);
+  const modoCompleto = modoCabecalho === 'completo';
 
   return `
     <header class="cabecalho">
@@ -135,12 +139,18 @@ function montarCabecalhoPia({
       </div>
     </header>
 
-    <section class="dados-convivente">
-      <div class="dado"><span>Prontuário</span><strong>#${escaparHtml(convivente?.numero_institucional || 'S/N')}</strong></div>
-      <div class="dado"><span>Status</span><strong>${escaparHtml(convivente?.status || '-')}</strong></div>
-      <div class="dado"><span>Técnico</span><strong>${escaparHtml(tecnico?.nome || 'Sem técnico')}</strong></div>
-      <div class="dado"><span>Nº SISA</span><strong>${escaparHtml(convivente?.numero_sisa || '-')}</strong></div>
-    </section>
+    ${
+      modoCompleto
+        ? `<div class="capa-pia-evolucao">${montarCapaCompletaPiaEvolucao(convivente, { listaTecnicos, origensEncaminhamento })}</div>`
+        : `
+          <section class="dados-convivente">
+            <div class="dado"><span>Prontuário</span><strong>#${escaparHtml(convivente?.numero_institucional || 'S/N')}</strong></div>
+            <div class="dado"><span>Status</span><strong>${escaparHtml(convivente?.status || '-')}</strong></div>
+            <div class="dado"><span>Técnico</span><strong>${escaparHtml(tecnico?.nome || 'Sem técnico')}</strong></div>
+            <div class="dado"><span>Nº SISA</span><strong>${escaparHtml(convivente?.numero_sisa || '-')}</strong></div>
+          </section>
+        `
+    }
   `;
 }
 
@@ -183,6 +193,15 @@ function estilosPiaCompleto() {
     .quebra-pia { break-after: page; page-break-after: always; }
     .quebra-pia:last-child { break-after: auto; page-break-after: auto; }
     .quebra-pia .pia-principal:last-child { margin-bottom: 0; }
+    .capa-pia-evolucao { margin-bottom: 18px; }
+    .capa-pia-evolucao .secao-ficha { margin-bottom: 14px; break-inside: avoid; page-break-inside: avoid; }
+    .capa-pia-evolucao h2 { margin: 0 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: #0f766e; }
+    .capa-pia-evolucao h3 { margin: 10px 0 4px; font-size: 10px; text-transform: uppercase; color: #374151; }
+    .capa-pia-evolucao table { width: 100%; border-collapse: collapse; margin-bottom: 4px; }
+    .capa-pia-evolucao th, .capa-pia-evolucao td { border: 1px solid #e5e7eb; padding: 5px 7px; font-size: 10px; vertical-align: top; text-align: left; }
+    .capa-pia-evolucao th { width: 32%; background: #f9fafb; color: #374151; font-weight: 700; }
+    .capa-pia-evolucao .tabela-lista th { width: auto; background: #f3f4f6; }
+    .capa-pia-evolucao .subsecao { margin-top: 8px; }
     @media print {
       body { padding: 0; }
       .cabecalho { margin-bottom: 12px; padding-bottom: 9px; }
@@ -215,8 +234,10 @@ export function montarHtmlPiaCompleto({
   registrosPiaPrincipais = [],
   evolucoesPorRegistroPia = {},
   listaTecnicos = [],
+  origensEncaminhamento = [],
   identidadeRelatorio = null,
   logoRelatorioDataUrl = '',
+  modoCabecalho = 'resumido',
 }) {
   const nomeConvivente = convivente?.nome_social || convivente?.nome_completo || 'Convivente';
   const logoSrc = obterLogoRelatorioSrc(logoRelatorioDataUrl);
@@ -229,13 +250,20 @@ export function montarHtmlPiaCompleto({
     <html>
       <head>
         <meta charset="utf-8" />
-        <title>PIA completo - ${escaparHtml(nomeConvivente)}</title>
+        <title>Evolução do PIA - ${escaparHtml(nomeConvivente)}</title>
         <style>
           ${estilosPiaCompleto()}
         </style>
       </head>
       <body>
-        ${montarCabecalhoPia({ convivente, listaTecnicos, logoSrc, nomeExibicao })}
+        ${montarCabecalhoPia({
+          convivente,
+          listaTecnicos,
+          origensEncaminhamento,
+          logoSrc,
+          nomeExibicao,
+          modoCabecalho,
+        })}
 
         ${
           registrosPiaPrincipais.length
@@ -255,19 +283,23 @@ export function montarHtmlPiaCompleto({
 export function montarHtmlPiasCompletosLote({
   itens = [],
   listaTecnicos = [],
+  origensEncaminhamento = [],
   identidadeRelatorio = null,
   logoRelatorioDataUrl = '',
   descricaoFiltros = '',
+  modoCabecalho = 'resumido',
 }) {
   const logoSrc = obterLogoRelatorioSrc(logoRelatorioDataUrl);
   const nomeExibicao = identidadeRelatorio?.relatorio_nome_exibicao || 'CARECORE+';
+  const direitosUrl = obterUrlDireitosReservados();
+  const rodapeItens = montarRodapeItens(identidadeRelatorio);
 
   return `
     <!doctype html>
     <html>
       <head>
         <meta charset="utf-8" />
-        <title>PIAs completos filtrados</title>
+        <title>Evolução do PIA — relatório filtrado</title>
         <style>
           ${estilosPiaCompleto()}
         </style>
@@ -278,10 +310,12 @@ export function montarHtmlPiasCompletosLote({
             ${montarCabecalhoPia({
               convivente: item.convivente,
               listaTecnicos,
+              origensEncaminhamento,
               logoSrc,
               nomeExibicao,
-              titulo: 'PIA completo filtrado',
+              titulo: 'Evolução do PIA',
               subtitulo: descricaoFiltros,
+              modoCabecalho,
             })}
             ${
               item.registrosPiaPrincipais.length
@@ -293,6 +327,7 @@ export function montarHtmlPiasCompletosLote({
             }
           </section>
         `).join('')}
+        ${montarRodapeRelatorio(rodapeItens, direitosUrl)}
       </body>
     </html>
   `;

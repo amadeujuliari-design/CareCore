@@ -1,17 +1,20 @@
+import { useEffect, useState } from 'react';
 import {
   BENEFICIOS_PIA_OPCOES,
   CORES_RACA_IBGE,
+  IDENTIDADES_GENERO,
+  ORIENTACOES_SEXUAIS,
   PARENTESCOS_FAMILIARES,
   RELACAO_FAMILIAR_SITUACOES,
   SITUACOES_TRABALHO_PIA,
   SUBSTANCIAS_PIA,
   TIPOS_DOCUMENTO_CIVIL,
+  UFS_BRASIL,
 } from '../../config/piaFichaConfig';
 import { consultarCep } from '../../services/cepService';
+import { listarMunicipiosPorUf } from '../../services/municipiosIbgeService';
 import { formatarCEP, formatarTelefone } from '../../utils/conviventesUtils';
 import { criarFamiliarInicial } from '../../utils/conviventesProntuarioUtils';
-
-const UFS_BRASIL = ['AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA', 'MT', 'MS', 'MG', 'PA', 'PB', 'PR', 'PE', 'PI', 'RJ', 'RN', 'RS', 'RO', 'RR', 'SC', 'SP', 'SE', 'TO'];
 
 function campoClasse(erro = false) {
   return `w-full px-3 py-1.5 border rounded-lg outline-none text-sm focus:ring-2 ${
@@ -22,6 +25,86 @@ function campoClasse(erro = false) {
 function campoData(valor) {
   if (!valor) return '';
   return String(valor).split('T')[0];
+}
+
+function CampoNaturalDe({ formData, setFormData }) {
+  const [municipios, setMunicipios] = useState([]);
+  const [carregando, setCarregando] = useState(false);
+  const [erroCidades, setErroCidades] = useState('');
+
+  const uf = formData.naturalidade_uf || '';
+  const cidade = formData.naturalidade_cidade || '';
+
+  useEffect(() => {
+    if (!uf) {
+      setMunicipios([]);
+      return undefined;
+    }
+
+    let ativo = true;
+    setCarregando(true);
+    setErroCidades('');
+
+    listarMunicipiosPorUf(uf)
+      .then((lista) => {
+        if (ativo) setMunicipios(lista);
+      })
+      .catch(() => {
+        if (ativo) {
+          setErroCidades('Não foi possível carregar as cidades deste estado.');
+          setMunicipios([]);
+        }
+      })
+      .finally(() => {
+        if (ativo) setCarregando(false);
+      });
+
+    return () => {
+      ativo = false;
+    };
+  }, [uf]);
+
+  const opcoesCidade = [...municipios];
+  if (cidade && !opcoesCidade.includes(cidade)) {
+    opcoesCidade.unshift(cidade);
+  }
+
+  return (
+    <div className="md:col-span-2">
+      <label className="block text-xs font-semibold text-gray-700 mb-1">Natural de:</label>
+      <div className="grid grid-cols-2 gap-2">
+        <select
+          value={uf}
+          onChange={(e) => {
+            const novaUf = e.target.value;
+            setFormData((prev) => ({
+              ...prev,
+              naturalidade_uf: novaUf,
+              naturalidade_cidade: novaUf === prev.naturalidade_uf ? prev.naturalidade_cidade : '',
+            }));
+          }}
+          className={campoClasse()}
+        >
+          <option value="">UF...</option>
+          {UFS_BRASIL.map((item) => (
+            <option key={item} value={item}>{item}</option>
+          ))}
+        </select>
+        <select
+          value={cidade}
+          disabled={!uf || carregando}
+          onChange={(e) => setFormData((prev) => ({ ...prev, naturalidade_cidade: e.target.value }))}
+          className={campoClasse()}
+        >
+          <option value="">{carregando ? 'Carregando...' : 'Cidade...'}</option>
+          {opcoesCidade.map((nome) => (
+            <option key={nome} value={nome}>{nome}</option>
+          ))}
+        </select>
+      </div>
+      {erroCidades && <p className="mt-1 text-xs text-amber-700">{erroCidades}</p>}
+    </div>
+  );
 }
 
 function SimNaoSelect({ name, value, onChange }) {
@@ -213,22 +296,38 @@ export function ProntuarioFamilia({ formData, handleChange, setFormData, errosVa
             {CORES_RACA_IBGE.map((item) => <option key={item} value={item}>{item}</option>)}
           </select>
         </div>
-        <div>
-          <label className="block text-xs font-semibold text-gray-700 mb-1">Naturalidade</label>
-          <input type="text" name="naturalidade" value={formData.naturalidade || ''} onChange={handleChange} className={campoClasse()} />
-        </div>
-        <div>
-          <label className="block text-xs font-semibold text-gray-700 mb-1">Orientação sexual</label>
-          <input type="text" name="orientacao_sexual" value={formData.orientacao_sexual || ''} onChange={handleChange} className={campoClasse()} />
-        </div>
+        <CampoNaturalDe formData={formData} setFormData={setFormData} />
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div>
+          <label className="block text-xs font-semibold text-gray-700 mb-1">Orientação sexual</label>
+          <select name="orientacao_sexual" value={formData.orientacao_sexual || ''} onChange={handleChange} className={campoClasse()}>
+            <option value="">Selecione...</option>
+            {ORIENTACOES_SEXUAIS.map((item) => <option key={item} value={item}>{item}</option>)}
+            {formData.orientacao_sexual && !ORIENTACOES_SEXUAIS.includes(formData.orientacao_sexual) && (
+              <option value={formData.orientacao_sexual}>{formData.orientacao_sexual}</option>
+            )}
+          </select>
+        </div>
+        <div>
+          <label className="block text-xs font-semibold text-gray-700 mb-1">Identidade de gênero</label>
+          <select name="identidade_genero" value={formData.identidade_genero || ''} onChange={handleChange} className={campoClasse()}>
+            <option value="">Selecione...</option>
+            {IDENTIDADES_GENERO.map((item) => <option key={item} value={item}>{item}</option>)}
+            {formData.identidade_genero && !IDENTIDADES_GENERO.includes(formData.identidade_genero) && (
+              <option value={formData.identidade_genero}>{formData.identidade_genero}</option>
+            )}
+          </select>
+        </div>
         <div>
           <label className="block text-xs font-semibold text-gray-700 mb-1">Possui religião?</label>
           <SimNaoSelect name="possui_religiao" value={formData.possui_religiao} onChange={(e) => setFormData((p) => ({ ...p, possui_religiao: parseSimNao(e) }))} />
         </div>
-        {formData.possui_religiao && (
+      </div>
+
+      {formData.possui_religiao && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label className="block text-xs font-semibold text-gray-700 mb-1">Qual religião?</label>
             <input type="text" name="religiao_qual" value={formData.religiao_qual || ''} onChange={handleChange} className={campoClasse()} />
@@ -236,8 +335,8 @@ export function ProntuarioFamilia({ formData, handleChange, setFormData, errosVa
               <p className="mt-1 text-xs font-semibold text-red-600">{errosValidacao.religiao_qual}</p>
             )}
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
       <div className="rounded-xl border border-gray-200 bg-gray-50 p-3 space-y-2">
         <p className="text-xs font-bold text-gray-700">Situação familiar afetivo-social (PIA)</p>

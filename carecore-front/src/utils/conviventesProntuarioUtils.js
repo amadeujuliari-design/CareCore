@@ -8,6 +8,7 @@ import {
   validarTelefone,
 } from './conviventesUtils.js';
 import { EQUIPAMENTO_ANTERIOR_OUTROS } from '../config/piaFichaConfig.js';
+import { montarNaturalidade, parseNaturalidade } from './naturalidadeUtils.js';
 
 function normalizarOrigemEncaminhamentoId(valor) {
   if (!valor || valor === EQUIPAMENTO_ANTERIOR_OUTROS) return null;
@@ -75,6 +76,8 @@ export function criarEstadoInicialConvivente() {
     identidade_genero: '',
     orientacao_sexual: '',
     naturalidade: '',
+    naturalidade_uf: '',
+    naturalidade_cidade: '',
     estado_civil: '',
     escolaridade: '',
     telefone_celular: '',
@@ -282,8 +285,12 @@ export function formatarDadosConviventeParaTela(convivente = {}) {
     }
   }
 
+  const naturalidadeParsed = parseNaturalidade(convivente.naturalidade);
+
   return {
     ...convivente,
+    naturalidade_uf: naturalidadeParsed.uf,
+    naturalidade_cidade: naturalidadeParsed.cidade,
     cpf: convivente.cpf ? formatarCPF(convivente.cpf) : '',
     telefone_celular: convivente.telefone_celular ? formatarTelefone(convivente.telefone_celular) : '',
     contato_emergencia_telefone: convivente.contato_emergencia_telefone ? formatarTelefone(convivente.contato_emergencia_telefone) : '',
@@ -337,6 +344,18 @@ export function montarPayloadProntuario(formData, statusOriginal) {
       origem_encaminhamento_id: normalizarOrigemEncaminhamentoId(item?.origem_encaminhamento_id),
     }));
   }
+
+  if (
+    Object.prototype.hasOwnProperty.call(formData, 'naturalidade_uf')
+    || Object.prototype.hasOwnProperty.call(formData, 'naturalidade_cidade')
+  ) {
+    payload.naturalidade = montarNaturalidade(
+      formData.naturalidade_cidade,
+      formData.naturalidade_uf,
+    );
+  }
+  delete payload.naturalidade_uf;
+  delete payload.naturalidade_cidade;
 
   return payload;
 }

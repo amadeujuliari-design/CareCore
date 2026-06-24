@@ -3,6 +3,7 @@ import {
   Bell,
   BedDouble,
   CalendarClock,
+  CalendarRange,
   ChartNoAxesColumnIncreasing,
   ChevronDown,
   ClipboardList,
@@ -271,6 +272,49 @@ export default function Sidebar() {
               path: '/rotina/historico',
               icon: ClipboardList,
               label: 'Histórico da Rotina'
+            }
+          ]
+        },
+        {
+          path: '/atividades',
+          icon: CalendarRange,
+          label: 'Atividades',
+          perfis: ['Gestor', 'Técnico', 'Orientador', 'Administrativo', 'Global'],
+          children: [
+            {
+              path: '/atividades',
+              icon: CalendarRange,
+              label: 'Cadastro'
+            },
+            {
+              path: '/atividades/chamada',
+              icon: CalendarRange,
+              label: 'Chamada de presença'
+            },
+            {
+              path: '/atividades/grade',
+              icon: ClipboardList,
+              label: 'Grade mensal'
+            },
+            {
+              path: '/atividades/conteudo',
+              icon: FileBarChart,
+              label: 'Conteúdo das sessões'
+            },
+            {
+              path: '/atividades/relatorios',
+              icon: FileBarChart,
+              label: 'Relatórios'
+            },
+            {
+              path: '/atividades/conferencia-sisa',
+              icon: FileBarChart,
+              label: 'Conferência SISA'
+            },
+            {
+              path: '/atividades/pontos-brindes',
+              icon: FileBarChart,
+              label: 'Pontos e brindes'
             }
           ]
         },

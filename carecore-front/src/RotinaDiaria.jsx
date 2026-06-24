@@ -27,6 +27,15 @@ import {
   deveIgnorarLeituraCodigoRepetida,
   deveIgnorarLeituraConviventeRepetida,
 } from './utils/leituraCodigoUtils';
+import ModalImpressaoTermoBagageiro from './components/termoBagageiro/ModalImpressaoTermoBagageiro';
+import { consultarTermoBagageiro } from './services/termoBagageiroService';
+import { abrirPreviewHtml } from './utils/imprimirRelatorio';
+import {
+  buscarIdentidadeRelatorios,
+  obterLogoRelatorioDataUrl,
+} from './utils/relatorioIdentidadePrint';
+import { montarHtmlTermoBagageiro } from './utils/termoBagageiroPrint';
+import { persistirTermoBagageiroNoGed } from './utils/termoBagageiroGed';
 
 const OPCOES_INTERACAO_ROTINA = [
   { valor: 'Café da manhã', label: 'Café da manhã', grupo: 'refeicao' },
@@ -42,6 +51,16 @@ const OPCOES_INTERACAO_ROTINA = [
 ];
 
 const TIPOS_ROTINA_REFEICOES = ['Café da manhã', 'Almoço', 'Jantar', 'Lanche noturno'];
+const TIPO_ROTINA_BAGAGEIRO = 'Movimentação de Bagageiro';
+
+function obterNomeUsuarioLogado() {
+  try {
+    const bruto = localStorage.getItem('@CareCore:user') || localStorage.getItem('usuario');
+    return bruto ? JSON.parse(bruto).nome || '' : '';
+  } catch {
+    return '';
+  }
+}
 
 const ROTULOS_REFEICAO_EXTRA = {
   'Café da manhã': 'café da manhã',
@@ -79,6 +98,9 @@ export default function RotinaDiaria() {
   const [agoraDesfazer, setAgoraDesfazer] = useState(Date.now());
   const [retornoRapidoPendente, setRetornoRapidoPendente] = useState(null);
   const [justificativaRetornoRapido, setJustificativaRetornoRapido] = useState('');
+  const [identidadeRelatorio, setIdentidadeRelatorio] = useState(null);
+  const [termoBagageiroModalAberto, setTermoBagageiroModalAberto] = useState(false);
+  const [bagageiroRegistroPendente, setBagageiroRegistroPendente] = useState(null);
 
   const ultimaLeituraRef = useRef({ codigo: '', horario: 0 });
   const ultimaLeituraConviventeRef = useRef({ conviventeId: '', horario: 0 });
@@ -95,6 +117,7 @@ export default function RotinaDiaria() {
     }
 
     carregarDados();
+    buscarIdentidadeRelatorios().then(setIdentidadeRelatorio);
   }, [token]);
 
   useEffect(() => {
@@ -553,6 +576,89 @@ export default function RotinaDiaria() {
   const handleBuscaKeyDown = (e) => {
     if (e.key === 'Enter' && busca.trim() !== '') {
       processarCodigoLido(busca.trim());
+    }
+  };
+
+  const confirmarObservacaoInteracao = async () => {
+    const observacao = observacaoInteracao.trim();
+    if (!observacao || !interacaoObservacaoPendente) return;
+
+    const { convivente, tipoRegistro } = interacaoObservacaoPendente;
+
+    if (tipoRegistro === TIPO_ROTINA_BAGAGEIRO) {
+      try {
+        const status = await consultarTermoBagageiro(convivente.id);
+        if (status?.exige_termo_primeiro_bagageiro) {
+          setBagageiroRegistroPendente({ convivente, tipoRegistro, observacao });
+          setInteracaoObservacaoPendente(null);
+          setObservacaoInteracao('');
+          setTermoBagageiroModalAberto(true);
+          return;
+        }
+      } catch (error) {
+        const detalhe = error?.response?.data?.detail;
+        setFeedback({
+          tipo: 'Erro',
+          nome: detalhe || 'Não foi possível validar o termo do bagageiro.',
+          horario: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+        });
+        setTimeout(() => setFeedback(null), 4000);
+        return;
+      }
+    }
+
+    handleRegistrar(convivente.id, tipoRegistro, convivente, { observacao });
+    setInteracaoObservacaoPendente(null);
+    setObservacaoInteracao('');
+  };
+
+  const executarImpressaoTermoBagageiro = async ({ assinaturaDigital }) => {
+    const convivente = bagageiroRegistroPendente?.convivente;
+    if (!convivente) return;
+
+    const identidade = identidadeRelatorio || await buscarIdentidadeRelatorios();
+    const logoRelatorioDataUrl = await obterLogoRelatorioDataUrl(identidade);
+    const html = montarHtmlTermoBagageiro({
+      convivente,
+      identidadeRelatorio: identidade,
+      logoRelatorioDataUrl,
+      assinaturaDigital,
+      nomeFuncionario: obterNomeUsuarioLogado(),
+    });
+
+    abrirPreviewHtml({
+      titulo: `Termo do bagageiro - ${convivente.nome_social || convivente.nome_completo || 'Convivente'}`,
+      html,
+      orientacaoInicial: 'portrait',
+    });
+
+    const resultadoGed = await persistirTermoBagageiroNoGed(convivente, html);
+    if (resultadoGed?.ok) {
+      setFeedback({
+        tipo: 'Sucesso',
+        nome: 'Termo salvo no GED do convivente.',
+        horario: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+      });
+      setTimeout(() => setFeedback(null), 4000);
+    } else if (resultadoGed?.mensagem) {
+      setFeedback({
+        tipo: 'Erro',
+        nome: `Termo impresso, mas não foi salvo no GED: ${resultadoGed.mensagem}`,
+        horario: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+      });
+      setTimeout(() => setFeedback(null), 6000);
+    }
+
+    if (bagageiroRegistroPendente) {
+      const pendente = bagageiroRegistroPendente;
+      setBagageiroRegistroPendente(null);
+      setTermoBagageiroModalAberto(false);
+      await handleRegistrar(
+        pendente.convivente.id,
+        pendente.tipoRegistro,
+        pendente.convivente,
+        { observacao: pendente.observacao },
+      );
     }
   };
 
@@ -1679,18 +1785,7 @@ export default function RotinaDiaria() {
                   Cancelar
                 </button>
                 <button
-                  onClick={() => {
-                    const observacao = observacaoInteracao.trim();
-                    if (!observacao) return;
-                    handleRegistrar(
-                      interacaoObservacaoPendente.convivente.id,
-                      interacaoObservacaoPendente.tipoRegistro,
-                      interacaoObservacaoPendente.convivente,
-                      { observacao },
-                    );
-                    setInteracaoObservacaoPendente(null);
-                    setObservacaoInteracao('');
-                  }}
+                  onClick={confirmarObservacaoInteracao}
                   disabled={!observacaoInteracao.trim()}
                   className="px-4 py-2 rounded-lg text-sm font-bold bg-brand text-white hover:bg-brandDark shadow-sm disabled:opacity-50"
                 >
@@ -1796,6 +1891,24 @@ export default function RotinaDiaria() {
           </div>
         </div>
       )}
+      <ModalImpressaoTermoBagageiro
+        aberto={termoBagageiroModalAberto}
+        conviventeId={bagageiroRegistroPendente?.convivente?.id}
+        convivente={bagageiroRegistroPendente?.convivente}
+        nomeConvivente={
+          bagageiroRegistroPendente?.convivente?.nome_social
+          || bagageiroRegistroPendente?.convivente?.nome_completo
+        }
+        numeroProntuario={bagageiroRegistroPendente?.convivente?.numero_institucional}
+        tituloContexto="Termo do bagageiro — primeiro registro"
+        descricaoContexto="Antes do primeiro uso do bagageiro, imprima o termo e registre a ciência do convivente."
+        exigirAceite
+        onFechar={() => {
+          setTermoBagageiroModalAberto(false);
+          setBagageiroRegistroPendente(null);
+        }}
+        onConfirmar={executarImpressaoTermoBagageiro}
+      />
 
       {feedback && (
         <div className="fixed bottom-6 right-6 z-50 bg-white rounded-2xl shadow-2xl border border-gray-200 overflow-hidden w-[320px]">

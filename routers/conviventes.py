@@ -21,6 +21,10 @@ from convivente_ficha_pia import (
     normalizar_campos_ficha_payload,
     sincronizar_listas_ficha_pia,
 )
+from pia_assinatura_digital import (
+    normalizar_metodo_leitura,
+    validar_codigo_carteirinha_convivente,
+)
 from database import get_db
 from audit_log import registrar_evento_auditoria
 from models import (
@@ -34,6 +38,8 @@ from models import (
     SisaDivergenciaDB,
     RegistroPIADB,
     HistoricoConviventeDB,
+    AssinaturaFormularioPiaDB,
+    AssinaturaTermoBagageiroDB,
     HistoricoLegadoSIATDB,
     HistoricoLegadoRotinaSIATDB,
     AusenciaJustificadaConfirmacaoDB,
@@ -68,6 +74,13 @@ from schemas import (
     DocumentoResponse, OcorrenciaResponse, OcorrenciaConviventeListaResponse, InteracaoOcorrenciaCreate, OcorrenciaCreate,
     OcorrenciaRelatorioPrioridades, OcorrenciaPrioridadeResumo,
     RegistroPIACreate, RegistroPIAResponse, RegistroPIAListaResponse,
+    AssinaturaFormularioPiaConsultaResponse,
+    AssinaturaFormularioPiaRegistrar,
+    AssinaturaFormularioPiaReimpressao,
+    AssinaturaFormularioPiaResponse,
+    AssinaturaTermoBagageiroConsultaResponse,
+    AssinaturaTermoBagageiroRegistrar,
+    AssinaturaTermoBagageiroResponse,
     DocumentoListaResponse,
     HistoricoConviventeCreate, HistoricoConviventeListaResponse, HistoricoConviventeResponse, HistoricoConviventeUpdate,
     RotinaHistoricoListaResponse, RotinaHistoricoResumoPeriodo,
@@ -117,9 +130,11 @@ from routers.conviventes_helpers import (
 )
 from routers.conviventes_documentos import (
     TAMANHO_MAXIMO_DOCUMENTO_BYTES,
+    buscar_documento_termo_bagageiro_ged,
     remover_arquivo_documento,
     remover_documentos_foto_perfil,
     salvar_conteudo_documento_convivente,
+    salvar_termo_bagageiro_no_ged,
     validar_upload_documento,
 )
 from routers.conviventes_xlsx import (
@@ -169,6 +184,8 @@ TIPOS_ROTINA_COM_OBSERVACAO_OBRIGATORIA = {
     "Bipar documentos guardados",
     "Bipar documentos retirados",
 }
+TIPO_ROTINA_BAGAGEIRO = "Movimentação de Bagageiro"
+EVENTOS_TERMO_BAGAGEIRO_ACEITE = {"assinatura_digital", "impressao_sem_assinatura"}
 TIPOS_ROTINA_VALIDOS = (
     TIPOS_ROTINA_PRINCIPAIS
     | TIPOS_ROTINA_REFEICOES
@@ -925,6 +942,562 @@ async def criar_registro_pia(
         **{coluna.name: getattr(registro, coluna.name) for coluna in registro.__table__.columns},
         "usuario_nome": usuario_atual.get("nome"),
     }
+
+
+async def _obter_convivente_pia_escopo(
+    convivente_id: str,
+    usuario_atual: dict,
+    db: AsyncSession,
+) -> ConviventeDB:
+    convivente = (
+        await db.execute(
+            select(ConviventeDB).where(
+                ConviventeDB.id == convivente_id,
+                ConviventeDB.instituicao_id == obter_instituicao_escopo(usuario_atual),
+            )
+        )
+    ).scalar_one_or_none()
+    if not convivente:
+        raise HTTPException(status_code=404, detail="Convivente não encontrado.")
+    return convivente
+
+
+def _exigir_permissao_pia_formulario(usuario_atual: dict) -> None:
+    bloquear_usuario_global_puro(usuario_atual)
+    if not usuario_pode_gerenciar_pia_convivente(usuario_atual):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Apenas Gestores, Técnicos ou Manutenção podem imprimir ou assinar o formulário PIA.",
+        )
+
+
+def _montar_assinatura_formulario_pia_response(registro, usuario_nome: str | None = None) -> dict:
+    return {
+        "id": registro.id,
+        "convivente_id": registro.convivente_id,
+        "tipo_evento": registro.tipo_evento,
+        "metodo_leitura": registro.metodo_leitura,
+        "codigo_lido": registro.codigo_lido,
+        "numero_prontuario": registro.numero_prontuario,
+        "modo_formulario": registro.modo_formulario,
+        "assinado_em": registro.assinado_em,
+        "usuario_id": registro.usuario_id,
+        "usuario_nome": usuario_nome,
+    }
+
+
+async def _buscar_ultima_assinatura_digital_pia(
+    db: AsyncSession,
+    convivente_id: str,
+    instituicao_id: str,
+):
+    return (
+        await db.execute(
+            select(AssinaturaFormularioPiaDB, UsuarioDB.nome.label("usuario_nome"))
+            .join(UsuarioDB, UsuarioDB.id == AssinaturaFormularioPiaDB.usuario_id)
+            .where(
+                AssinaturaFormularioPiaDB.convivente_id == convivente_id,
+                AssinaturaFormularioPiaDB.instituicao_id == instituicao_id,
+                AssinaturaFormularioPiaDB.tipo_evento == "assinatura_digital",
+            )
+            .order_by(AssinaturaFormularioPiaDB.assinado_em.desc())
+            .limit(1)
+        )
+    ).first()
+
+
+@router.get(
+    "/conviventes/{convivente_id}/pia-formulario/assinatura-digital",
+    response_model=AssinaturaFormularioPiaConsultaResponse,
+)
+async def consultar_assinatura_formulario_pia(
+    convivente_id: str,
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    _exigir_permissao_pia_formulario(usuario_atual)
+    await _obter_convivente_pia_escopo(convivente_id, usuario_atual, db)
+
+    ultima = await _buscar_ultima_assinatura_digital_pia(
+        db,
+        convivente_id,
+        obter_instituicao_escopo(usuario_atual),
+    )
+    if not ultima:
+        return {"possui_assinatura": False, "assinatura": None}
+
+    registro, usuario_nome = ultima
+    return {
+        "possui_assinatura": True,
+        "assinatura": _montar_assinatura_formulario_pia_response(registro, usuario_nome),
+    }
+
+
+@router.post(
+    "/conviventes/{convivente_id}/pia-formulario/assinatura-digital",
+    response_model=AssinaturaFormularioPiaResponse,
+)
+async def registrar_assinatura_formulario_pia(
+    convivente_id: str,
+    payload: AssinaturaFormularioPiaRegistrar,
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    _exigir_permissao_pia_formulario(usuario_atual)
+    convivente = await _obter_convivente_pia_escopo(convivente_id, usuario_atual, db)
+
+    codigo_lido = str(payload.codigo_lido or "").strip()
+    try:
+        validar_codigo_carteirinha_convivente(convivente, codigo_lido)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    metodo = normalizar_metodo_leitura(payload.metodo_leitura, codigo_lido)
+    modo_formulario = str(payload.modo_formulario or "").strip().lower() or None
+    if modo_formulario not in {None, "manual", "completo"}:
+        raise HTTPException(status_code=400, detail="Modo de formulário inválido.")
+
+    agora = agora_sao_paulo()
+    registro = AssinaturaFormularioPiaDB(
+        instituicao_id=obter_instituicao_escopo(usuario_atual),
+        convivente_id=convivente_id,
+        usuario_id=usuario_atual["sub"],
+        tipo_evento="assinatura_digital",
+        metodo_leitura=metodo,
+        codigo_lido=codigo_lido,
+        numero_prontuario=convivente.numero_institucional,
+        modo_formulario=modo_formulario,
+        assinado_em=agora,
+        criado_em=agora,
+    )
+    db.add(registro)
+    await db.commit()
+    await db.refresh(registro)
+
+    registrar_evento_auditoria(
+        "pia_formulario_assinatura_digital",
+        usuario_atual=usuario_atual,
+        convivente_id=convivente_id,
+        assinatura_id=registro.id,
+        metodo_leitura=metodo,
+        numero_prontuario=convivente.numero_institucional,
+        modo_formulario=modo_formulario,
+    )
+
+    return _montar_assinatura_formulario_pia_response(registro, usuario_atual.get("nome"))
+
+
+@router.post(
+    "/conviventes/{convivente_id}/pia-formulario/reimpressao-assinada",
+    response_model=AssinaturaFormularioPiaResponse,
+)
+async def registrar_reimpressao_formulario_pia_assinado(
+    convivente_id: str,
+    payload: AssinaturaFormularioPiaReimpressao,
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    _exigir_permissao_pia_formulario(usuario_atual)
+    await _obter_convivente_pia_escopo(convivente_id, usuario_atual, db)
+
+    instituicao_id = obter_instituicao_escopo(usuario_atual)
+    ultima = await _buscar_ultima_assinatura_digital_pia(db, convivente_id, instituicao_id)
+    if not ultima:
+        raise HTTPException(
+            status_code=404,
+            detail="Nenhuma assinatura digital do formulário PIA foi encontrada para este convivente.",
+        )
+
+    assinatura_base, _ = ultima
+    modo_formulario = str(payload.modo_formulario or "").strip().lower() or None
+    if modo_formulario not in {None, "manual", "completo"}:
+        raise HTTPException(status_code=400, detail="Modo de formulário inválido.")
+
+    agora = agora_sao_paulo()
+    registro = AssinaturaFormularioPiaDB(
+        instituicao_id=instituicao_id,
+        convivente_id=convivente_id,
+        usuario_id=usuario_atual["sub"],
+        tipo_evento="reimpressao_assinada",
+        metodo_leitura=assinatura_base.metodo_leitura,
+        codigo_lido=assinatura_base.codigo_lido,
+        numero_prontuario=assinatura_base.numero_prontuario,
+        modo_formulario=modo_formulario or assinatura_base.modo_formulario,
+        assinado_em=assinatura_base.assinado_em,
+        criado_em=agora,
+    )
+    db.add(registro)
+    await db.commit()
+    await db.refresh(registro)
+
+    registrar_evento_auditoria(
+        "pia_formulario_reimpressao_assinada",
+        usuario_atual=usuario_atual,
+        convivente_id=convivente_id,
+        assinatura_id=registro.id,
+        assinatura_origem_id=assinatura_base.id,
+        modo_formulario=registro.modo_formulario,
+    )
+
+    return _montar_assinatura_formulario_pia_response(registro, usuario_atual.get("nome"))
+
+
+async def _contar_movimentacoes_bagageiro_convivente(
+    db: AsyncSession,
+    convivente_id: str,
+    instituicao_id: str,
+) -> int:
+    return int(
+        (
+            await db.execute(
+                select(func.count())
+                .select_from(RegistroRotinaDB)
+                .where(
+                    RegistroRotinaDB.instituicao_id == instituicao_id,
+                    RegistroRotinaDB.convivente_id == convivente_id,
+                    RegistroRotinaDB.tipo_registro == TIPO_ROTINA_BAGAGEIRO,
+                    RegistroRotinaDB.cancelado != True,
+                )
+            )
+        ).scalar()
+        or 0
+    )
+
+
+async def _termo_bagageiro_aceito(
+    db: AsyncSession,
+    convivente_id: str,
+    instituicao_id: str,
+) -> bool:
+    aceite = (
+        await db.execute(
+            select(func.count())
+            .select_from(AssinaturaTermoBagageiroDB)
+            .where(
+                AssinaturaTermoBagageiroDB.instituicao_id == instituicao_id,
+                AssinaturaTermoBagageiroDB.convivente_id == convivente_id,
+                AssinaturaTermoBagageiroDB.tipo_evento.in_(EVENTOS_TERMO_BAGAGEIRO_ACEITE),
+            )
+        )
+    ).scalar()
+    return bool(aceite)
+
+
+def _montar_assinatura_termo_bagageiro_response(registro, usuario_nome: str | None = None) -> dict:
+    return {
+        "id": registro.id,
+        "convivente_id": registro.convivente_id,
+        "tipo_evento": registro.tipo_evento,
+        "metodo_leitura": registro.metodo_leitura,
+        "codigo_lido": registro.codigo_lido,
+        "numero_prontuario": registro.numero_prontuario,
+        "assinado_em": registro.assinado_em,
+        "usuario_id": registro.usuario_id,
+        "usuario_nome": usuario_nome,
+    }
+
+
+async def _buscar_ultima_assinatura_digital_termo_bagageiro(
+    db: AsyncSession,
+    convivente_id: str,
+    instituicao_id: str,
+):
+    return (
+        await db.execute(
+            select(AssinaturaTermoBagageiroDB, UsuarioDB.nome.label("usuario_nome"))
+            .join(UsuarioDB, UsuarioDB.id == AssinaturaTermoBagageiroDB.usuario_id)
+            .where(
+                AssinaturaTermoBagageiroDB.convivente_id == convivente_id,
+                AssinaturaTermoBagageiroDB.instituicao_id == instituicao_id,
+                AssinaturaTermoBagageiroDB.tipo_evento == "assinatura_digital",
+            )
+            .order_by(AssinaturaTermoBagageiroDB.assinado_em.desc())
+            .limit(1)
+        )
+    ).first()
+
+
+async def _montar_status_termo_bagageiro(
+    db: AsyncSession,
+    convivente_id: str,
+    instituicao_id: str,
+) -> dict:
+    possui_movimentacao = await _contar_movimentacoes_bagageiro_convivente(
+        db, convivente_id, instituicao_id
+    ) > 0
+    termo_aceito = await _termo_bagageiro_aceito(db, convivente_id, instituicao_id)
+    ultima = await _buscar_ultima_assinatura_digital_termo_bagageiro(
+        db, convivente_id, instituicao_id
+    )
+
+    assinatura = None
+    possui_assinatura = False
+    if ultima:
+        registro, usuario_nome = ultima
+        possui_assinatura = True
+        assinatura = _montar_assinatura_termo_bagageiro_response(registro, usuario_nome)
+
+    documento_ged = await buscar_documento_termo_bagageiro_ged(db, convivente_id)
+
+    return {
+        "possui_assinatura": possui_assinatura,
+        "assinatura": assinatura,
+        "termo_aceito": termo_aceito,
+        "possui_movimentacao_bagageiro": possui_movimentacao,
+        "exige_termo_primeiro_bagageiro": not possui_movimentacao and not termo_aceito,
+        "documento_ged": documento_ged,
+    }
+
+
+async def _persistir_termo_bagageiro_ged_automatico(
+    db: AsyncSession,
+    *,
+    convivente: ConviventeDB,
+    instituicao_id: str,
+    assinatura_digital: dict | None,
+    nome_funcionario: str | None,
+) -> None:
+    from termo_bagageiro_html import montar_html_termo_bagageiro
+
+    html = montar_html_termo_bagageiro(
+        convivente=convivente,
+        assinatura_digital=assinatura_digital,
+        nome_funcionario=nome_funcionario or "",
+    )
+    prontuario = convivente.numero_institucional or "sem_prontuario"
+    nome_arquivo = f"termo_bagageiro_{prontuario}_{agora_sao_paulo().date().isoformat()}.html"
+    await salvar_termo_bagageiro_no_ged(
+        db,
+        instituicao_id=instituicao_id,
+        convivente_id=convivente.id,
+        nome_arquivo=nome_arquivo,
+        conteudo=html.encode("utf-8"),
+        content_type="text/html",
+    )
+
+
+@router.get(
+    "/conviventes/{convivente_id}/termo-bagageiro/assinatura-digital",
+    response_model=AssinaturaTermoBagageiroConsultaResponse,
+)
+async def consultar_termo_bagageiro(
+    convivente_id: str,
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    bloquear_usuario_global_puro(usuario_atual)
+    await _obter_convivente_pia_escopo(convivente_id, usuario_atual, db)
+    return await _montar_status_termo_bagageiro(
+        db, convivente_id, obter_instituicao_escopo(usuario_atual)
+    )
+
+
+@router.post(
+    "/conviventes/{convivente_id}/termo-bagageiro/assinatura-digital",
+    response_model=AssinaturaTermoBagageiroResponse,
+)
+async def registrar_assinatura_termo_bagageiro(
+    convivente_id: str,
+    payload: AssinaturaTermoBagageiroRegistrar,
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    bloquear_usuario_global_puro(usuario_atual)
+    convivente = await _obter_convivente_pia_escopo(convivente_id, usuario_atual, db)
+
+    codigo_lido = str(payload.codigo_lido or "").strip()
+    try:
+        validar_codigo_carteirinha_convivente(convivente, codigo_lido)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    metodo = normalizar_metodo_leitura(payload.metodo_leitura, codigo_lido)
+    agora = agora_sao_paulo()
+    registro = AssinaturaTermoBagageiroDB(
+        instituicao_id=obter_instituicao_escopo(usuario_atual),
+        convivente_id=convivente_id,
+        usuario_id=usuario_atual["sub"],
+        tipo_evento="assinatura_digital",
+        metodo_leitura=metodo,
+        codigo_lido=codigo_lido,
+        numero_prontuario=convivente.numero_institucional,
+        assinado_em=agora,
+        criado_em=agora,
+    )
+    db.add(registro)
+    await db.flush()
+    await _persistir_termo_bagageiro_ged_automatico(
+        db,
+        convivente=convivente,
+        instituicao_id=obter_instituicao_escopo(usuario_atual),
+        assinatura_digital=_montar_assinatura_termo_bagageiro_response(registro, usuario_atual.get("nome")),
+        nome_funcionario=usuario_atual.get("nome"),
+    )
+    await db.commit()
+    await db.refresh(registro)
+
+    registrar_evento_auditoria(
+        "termo_bagageiro_assinatura_digital",
+        usuario_atual=usuario_atual,
+        convivente_id=convivente_id,
+        assinatura_id=registro.id,
+        metodo_leitura=metodo,
+        numero_prontuario=convivente.numero_institucional,
+    )
+
+    return _montar_assinatura_termo_bagageiro_response(registro, usuario_atual.get("nome"))
+
+
+@router.post(
+    "/conviventes/{convivente_id}/termo-bagageiro/documento-ged",
+    response_model=DocumentoResponse,
+)
+async def salvar_termo_bagageiro_documento_ged(
+    convivente_id: str,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    bloquear_usuario_global_puro(usuario_atual)
+    await _obter_convivente_pia_escopo(convivente_id, usuario_atual, db)
+
+    nome_original = validar_upload_documento(file)
+    extensao = os.path.splitext(nome_original)[1].lower()
+    if extensao not in {".html", ".htm", ".pdf"}:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Envie o termo em HTML ou PDF.",
+        )
+
+    conteudo = await file.read()
+    if len(conteudo) > TAMANHO_MAXIMO_DOCUMENTO_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="Arquivo muito grande. O limite é 10 MB.",
+        )
+
+    instituicao_id = obter_instituicao_escopo(usuario_atual)
+    novo_doc = await salvar_termo_bagageiro_no_ged(
+        db,
+        instituicao_id=instituicao_id,
+        convivente_id=convivente_id,
+        nome_arquivo=nome_original,
+        conteudo=conteudo,
+        content_type=file.content_type,
+    )
+    await db.commit()
+    await db.refresh(novo_doc)
+
+    registrar_evento_auditoria(
+        "termo_bagageiro_documento_ged",
+        usuario_atual=usuario_atual,
+        convivente_id=convivente_id,
+        documento_id=novo_doc.id,
+        nome_arquivo=nome_original,
+    )
+    return novo_doc
+
+
+@router.post(
+    "/conviventes/{convivente_id}/termo-bagageiro/impressao-sem-assinatura",
+    response_model=AssinaturaTermoBagageiroResponse,
+)
+async def registrar_impressao_termo_bagageiro_sem_assinatura(
+    convivente_id: str,
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    bloquear_usuario_global_puro(usuario_atual)
+    convivente = await _obter_convivente_pia_escopo(convivente_id, usuario_atual, db)
+    agora = agora_sao_paulo()
+    registro = AssinaturaTermoBagageiroDB(
+        instituicao_id=obter_instituicao_escopo(usuario_atual),
+        convivente_id=convivente_id,
+        usuario_id=usuario_atual["sub"],
+        tipo_evento="impressao_sem_assinatura",
+        metodo_leitura=None,
+        codigo_lido=None,
+        numero_prontuario=convivente.numero_institucional,
+        assinado_em=None,
+        criado_em=agora,
+    )
+    db.add(registro)
+    await db.flush()
+    await _persistir_termo_bagageiro_ged_automatico(
+        db,
+        convivente=convivente,
+        instituicao_id=obter_instituicao_escopo(usuario_atual),
+        assinatura_digital=None,
+        nome_funcionario=usuario_atual.get("nome"),
+    )
+    await db.commit()
+    await db.refresh(registro)
+
+    registrar_evento_auditoria(
+        "termo_bagageiro_impressao_sem_assinatura",
+        usuario_atual=usuario_atual,
+        convivente_id=convivente_id,
+        assinatura_id=registro.id,
+        numero_prontuario=convivente.numero_institucional,
+    )
+
+    return _montar_assinatura_termo_bagageiro_response(registro, usuario_atual.get("nome"))
+
+
+@router.post(
+    "/conviventes/{convivente_id}/termo-bagageiro/reimpressao-assinada",
+    response_model=AssinaturaTermoBagageiroResponse,
+)
+async def registrar_reimpressao_termo_bagageiro_assinado(
+    convivente_id: str,
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    bloquear_usuario_global_puro(usuario_atual)
+    convivente = await _obter_convivente_pia_escopo(convivente_id, usuario_atual, db)
+
+    instituicao_id = obter_instituicao_escopo(usuario_atual)
+    ultima = await _buscar_ultima_assinatura_digital_termo_bagageiro(db, convivente_id, instituicao_id)
+    if not ultima:
+        raise HTTPException(
+            status_code=404,
+            detail="Nenhuma assinatura digital do termo do bagageiro foi encontrada para este convivente.",
+        )
+
+    assinatura_base, _ = ultima
+    agora = agora_sao_paulo()
+    registro = AssinaturaTermoBagageiroDB(
+        instituicao_id=instituicao_id,
+        convivente_id=convivente_id,
+        usuario_id=usuario_atual["sub"],
+        tipo_evento="reimpressao_assinada",
+        metodo_leitura=assinatura_base.metodo_leitura,
+        codigo_lido=assinatura_base.codigo_lido,
+        numero_prontuario=assinatura_base.numero_prontuario,
+        assinado_em=assinatura_base.assinado_em,
+        criado_em=agora,
+    )
+    db.add(registro)
+    await db.flush()
+    await _persistir_termo_bagageiro_ged_automatico(
+        db,
+        convivente=convivente,
+        instituicao_id=instituicao_id,
+        assinatura_digital=_montar_assinatura_termo_bagageiro_response(assinatura_base, usuario_atual.get("nome")),
+        nome_funcionario=usuario_atual.get("nome"),
+    )
+    await db.commit()
+    await db.refresh(registro)
+
+    registrar_evento_auditoria(
+        "termo_bagageiro_reimpressao_assinada",
+        usuario_atual=usuario_atual,
+        convivente_id=convivente_id,
+        assinatura_id=registro.id,
+        assinatura_origem_id=assinatura_base.id,
+    )
+
+    return _montar_assinatura_termo_bagageiro_response(registro, usuario_atual.get("nome"))
 
 
 def usuario_pode_criar_historico_convivente(usuario_atual: dict) -> bool:
@@ -2341,6 +2914,22 @@ async def registar_rotina(
         )
 
     exigir_convivente_ativo_para_registro(convivente)
+
+    if payload.tipo_registro == TIPO_ROTINA_BAGAGEIRO:
+        instituicao_id = obter_instituicao_escopo(usuario_atual)
+        movimentacoes = await _contar_movimentacoes_bagageiro_convivente(
+            db, payload.convivente_id, instituicao_id
+        )
+        if movimentacoes == 0 and not await _termo_bagageiro_aceito(
+            db, payload.convivente_id, instituicao_id
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Antes do primeiro registro de bagageiro, o convivente precisa "
+                    "aceitar o termo de responsabilidade (impressão com ou sem assinatura digital)."
+                ),
+            )
 
     hoje = agora_sao_paulo().date()
 
