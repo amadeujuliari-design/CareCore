@@ -545,10 +545,14 @@ class RegistroPIADB(Base):
 
 class AssinaturaFormularioPiaDB(Base):
     __tablename__ = "assinaturas_formulario_pia"
+    __table_args__ = (
+        Index("ix_assinaturas_formulario_pia_convivente", "convivente_id", "assinado_em"),
+        Index("ix_assinaturas_formulario_pia_instituicao", "instituicao_id"),
+    )
 
     id = Column(String, primary_key=True, default=get_uuid)
-    instituicao_id = Column(String, ForeignKey("instituicoes.id"), nullable=False, index=True)
-    convivente_id = Column(String, ForeignKey("conviventes.id"), nullable=False, index=True)
+    instituicao_id = Column(String, ForeignKey("instituicoes.id"), nullable=False)
+    convivente_id = Column(String, ForeignKey("conviventes.id"), nullable=False)
     usuario_id = Column(String, ForeignKey("usuarios.id"), nullable=False)
     tipo_evento = Column(String, nullable=False)
     metodo_leitura = Column(String, nullable=True)
@@ -561,10 +565,14 @@ class AssinaturaFormularioPiaDB(Base):
 
 class AssinaturaTermoBagageiroDB(Base):
     __tablename__ = "assinaturas_termo_bagageiro"
+    __table_args__ = (
+        Index("ix_assinaturas_termo_bagageiro_convivente", "convivente_id", "criado_em"),
+        Index("ix_assinaturas_termo_bagageiro_instituicao", "instituicao_id"),
+    )
 
     id = Column(String, primary_key=True, default=get_uuid)
-    instituicao_id = Column(String, ForeignKey("instituicoes.id"), nullable=False, index=True)
-    convivente_id = Column(String, ForeignKey("conviventes.id"), nullable=False, index=True)
+    instituicao_id = Column(String, ForeignKey("instituicoes.id"), nullable=False)
+    convivente_id = Column(String, ForeignKey("conviventes.id"), nullable=False)
     usuario_id = Column(String, ForeignKey("usuarios.id"), nullable=False)
     tipo_evento = Column(String, nullable=False)
     metodo_leitura = Column(String, nullable=True)

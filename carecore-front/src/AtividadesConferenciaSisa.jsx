@@ -7,10 +7,9 @@ import {
   excluirHistoricoConferenciaSisa,
   listarAtividades,
   listarHistoricoConferenciasSisa,
-  obterCatalogoSisaAtividades,
   obterHistoricoConferenciaSisa,
 } from './services/atividadesService';
-import { catalogoSisaPadraoFrontend, mesclarCatalogoSisaComPadrao, usuarioSomenteLeituraAtividades } from './config/atividadesConfig';
+import { usuarioSomenteLeituraAtividades } from './config/atividadesConfig';
 import { API_BASE_URL } from './config/apiBase';
 import {
   exportarConferenciaSisaXlsx,
@@ -85,7 +84,6 @@ export default function AtividadesConferenciaSisa() {
   const detalheConferenciaRef = useRef(null);
   const [arquivo, setArquivo] = useState(null);
   const [nomeArquivoExibicao, setNomeArquivoExibicao] = useState('');
-  const [catalogo, setCatalogo] = useState(catalogoSisaPadraoFrontend());
   const [atividades, setAtividades] = useState([]);
   const [vinculos, setVinculos] = useState({});
   const [resultado, setResultado] = useState(null);
@@ -110,12 +108,10 @@ export default function AtividadesConferenciaSisa() {
   const carregarBase = useCallback(async () => {
     setLoading(true);
     try {
-      const [catalogoResp, atividadesResp, identidade] = await Promise.all([
-        obterCatalogoSisaAtividades().catch(() => null),
+      const [atividadesResp, identidade] = await Promise.all([
         listarAtividades(false),
         buscarIdentidadeRelatorios(),
       ]);
-      setCatalogo(mesclarCatalogoSisaComPadrao(catalogoResp));
       setAtividades(atividadesResp.items || []);
       setIdentidadeRelatorio(identidade);
       await carregarHistorico();

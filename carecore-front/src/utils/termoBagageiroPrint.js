@@ -358,8 +358,6 @@ export function montarHtmlTermoBagageiroLote({
     return match ? match[0] : '';
   }).filter(Boolean);
 
-  const logoSrc = obterLogoRelatorioSrc(logoRelatorioDataUrl);
-
   return `
     <!DOCTYPE html>
     <html lang="pt-BR">

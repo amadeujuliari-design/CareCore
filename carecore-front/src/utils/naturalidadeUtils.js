@@ -4,7 +4,7 @@ export function parseNaturalidade(valor) {
     return { cidade: '', uf: '' };
   }
 
-  const matchSeparador = texto.match(/^(.+?)\s*[\/\-]\s*([A-Za-z]{2})$/);
+  const matchSeparador = texto.match(/^(.+?)\s*(?:\/|-)\s*([A-Za-z]{2})$/);
   if (matchSeparador) {
     return {
       cidade: matchSeparador[1].trim(),

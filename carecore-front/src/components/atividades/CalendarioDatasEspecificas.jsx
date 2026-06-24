@@ -10,10 +10,6 @@ import {
 
 const ROTULOS_DIAS = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'];
 
-function chaveMes(ano, mes) {
-  return `${ano}-${String(mes).padStart(2, '0')}`;
-}
-
 function construirGradeMes(ano, mes) {
   const primeiro = new Date(ano, mes - 1, 1);
   const offset = (primeiro.getDay() + 6) % 7;
