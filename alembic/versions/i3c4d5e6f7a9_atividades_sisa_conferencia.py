@@ -55,7 +55,7 @@ def upgrade() -> None:
             sa.Column("tipo", sa.String(), nullable=False),
             sa.Column("valor", sa.String(), nullable=False),
             sa.Column("valor_norm", sa.String(), nullable=False),
-            sa.Column("personalizado", sa.Boolean(), server_default=sa.text("1")),
+            sa.Column("personalizado", sa.Boolean(), server_default=sa.true()),
             sa.Column("criado_por_id", sa.String(), nullable=True),
             sa.Column("criado_em", sa.DateTime(), nullable=True),
             sa.ForeignKeyConstraint(["criado_por_id"], ["usuarios.id"]),
