@@ -52,7 +52,7 @@ export function classeCelulaPresencaDia(status) {
 
 export function formatarDiaColuna(iso) {
   if (!iso) return '';
-  const [ano, mes, dia] = iso.split('-');
+  const [, mes, dia] = iso.split('-');
   return `${dia}/${mes}`;
 }
 
