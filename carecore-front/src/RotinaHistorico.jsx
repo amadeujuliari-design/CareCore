@@ -32,8 +32,6 @@ export default function RotinaHistorico() {
 
   const [registros, setRegistros] = useState([]);
   const [totalRegistros, setTotalRegistros] = useState(0);
-  const [temMais, setTemMais] = useState(false);
-  const [carregandoMais, setCarregandoMais] = useState(false);
   const [resumoPeriodo, setResumoPeriodo] = useState(null);
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState('');
@@ -144,7 +142,6 @@ export default function RotinaHistorico() {
       const itens = Array.isArray(payload) ? payload : (payload?.registros || []);
       setRegistros(itens);
       setTotalRegistros(Array.isArray(payload) ? itens.length : (payload?.total || itens.length));
-      setTemMais(Array.isArray(payload) ? false : Boolean(payload?.has_more));
       setResumoPeriodo(Array.isArray(payload) ? null : (payload?.resumo_periodo || null));
       setPaginaAtual(page);
     } catch (error) {
@@ -152,7 +149,6 @@ export default function RotinaHistorico() {
       avisarErro('Erro ao carregar histórico da rotina.');
     } finally {
       setLoading(false);
-      setCarregandoMais(false);
     }
   }, [
     auditoriaFiltro,
