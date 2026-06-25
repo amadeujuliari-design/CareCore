@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import Sidebar from './Sidebar';
 import { AppShell, MainShell, PageHeader, PremiumButton, ScrollArea } from './components/PremiumUI';
 import LeitorCarteirinhaModal from './components/LeitorCarteirinhaModal';
+import { useLeitorUsbGlobal } from './hooks/useLeitorUsbGlobal';
 import { useAuth } from './context/AuthContext';
 import {
   desfazerPresencaAtividade,
@@ -137,6 +138,19 @@ export default function AtividadesChamada() {
     await registrarPresenca(convivente, 'QR Code', codigo);
     return true;
   };
+
+  useLeitorUsbGlobal({
+    ativo: Boolean(ocorrenciaId) && !somenteLeitura && !scannerAberto,
+    onCodigoLido: async (codigo) => {
+      const elegiveis = chamada?.conviventes_elegiveis || [];
+      const convivente = encontrarConviventePorCodigo(elegiveis, codigo);
+      if (!convivente) {
+        setErro('Código lido, mas o convivente não está elegível para esta chamada.');
+        return;
+      }
+      await registrarPresenca(convivente, 'Código de barras', codigo);
+    },
+  });
 
   const desfazerPresenca = async (presenca) => {
     if (somenteLeitura) return;

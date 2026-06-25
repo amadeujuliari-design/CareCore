@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import Sidebar from './Sidebar';
 import { AppShell, MainShell, PageHeader, ReportActionButton, ScrollArea } from './components/PremiumUI';
@@ -9,10 +9,9 @@ import {
   TIPOS_REGISTRO_FILTRO,
   TIPOS_REGISTRO_EDICAO,
   classeTipoRegistroRotina,
-  contarRegistrosPorTipo,
-  filtrarRegistrosRotina,
   formatarDataHoraRotina,
   montarParamsFiltrosRotina,
+  obterContagemTipoResumo,
   ordenarRegistrosRotina,
   resumirRegistrosRotina,
   rotuloTipoRegistroFiltro,
@@ -21,7 +20,6 @@ import {
   calcularDataInicioPadrao,
   dataHojeIsoLocal,
   LISTAGEM_OPERACIONAL_DIAS_PADRAO,
-  REGISTROS_POR_PAGINA_PRONTUARIO,
 } from './utils/prontuarioHistoricoFluxoUtils';
 import { imprimirRelatorio } from './utils/imprimirRelatorio';
 import { urlArquivoBackend } from './utils/arquivosApi';
@@ -96,14 +94,14 @@ export default function RotinaHistorico() {
   const montarParamsFiltros = () => {
     return {
       ...montarParamsFiltrosRotina({
-      tipoFiltro,
-      buscaFiltro,
-      dataInicioFiltro,
-      dataFimFiltro,
-      statusFiltro,
-      auditoriaFiltro,
+        tipoFiltro,
+        buscaFiltro,
+        dataInicioFiltro,
+        dataFimFiltro,
+        statusFiltro,
+        auditoriaFiltro,
       }),
-      limite: REGISTROS_POR_PAGINA_PRONTUARIO,
+      limite: registrosPorPagina,
     };
   };
 
@@ -126,20 +124,17 @@ export default function RotinaHistorico() {
     ].filter(Boolean).join(' | ');
   };
 
-  const carregarHistorico = async ({ append = false, offset = 0 } = {}) => {
+  const carregarHistorico = useCallback(async ({ page = 1 } = {}) => {
     try {
-      if (!append) {
-        setLoading(true);
-      } else {
-        setCarregandoMais(true);
-      }
+      setLoading(true);
 
+      const deslocamento = (page - 1) * registrosPorPagina;
       const response = await axios.get(
         `${API_ROOT}/rotina/historico`,
         {
           params: {
             ...montarParamsFiltros(),
-            deslocamento: offset,
+            deslocamento,
           },
           headers: criarHeadersAutenticados(token),
         },
@@ -147,11 +142,11 @@ export default function RotinaHistorico() {
 
       const payload = response.data;
       const itens = Array.isArray(payload) ? payload : (payload?.registros || []);
-      setRegistros((prev) => (append ? [...prev, ...itens] : itens));
+      setRegistros(itens);
       setTotalRegistros(Array.isArray(payload) ? itens.length : (payload?.total || itens.length));
       setTemMais(Array.isArray(payload) ? false : Boolean(payload?.has_more));
       setResumoPeriodo(Array.isArray(payload) ? null : (payload?.resumo_periodo || null));
-      setPaginaAtual(1);
+      setPaginaAtual(page);
     } catch (error) {
       console.error(error);
       avisarErro('Erro ao carregar histórico da rotina.');
@@ -159,12 +154,16 @@ export default function RotinaHistorico() {
       setLoading(false);
       setCarregandoMais(false);
     }
-  };
-
-  const carregarMaisRegistros = () => {
-    if (!temMais || carregandoMais) return;
-    carregarHistorico({ append: true, offset: registros.length });
-  };
+  }, [
+    auditoriaFiltro,
+    buscaFiltro,
+    dataFimFiltro,
+    dataInicioFiltro,
+    registrosPorPagina,
+    statusFiltro,
+    tipoFiltro,
+    token,
+  ]);
 
   const carregarIdentidadeRelatorio = async () => {
     try {
@@ -212,10 +211,23 @@ export default function RotinaHistorico() {
   };
 
   useEffect(() => {
+    const timer = setTimeout(() => {
+      carregarHistorico({ page: 1 });
+    }, 350);
 
-    carregarHistorico();
+    return () => clearTimeout(timer);
+  }, [
+    auditoriaFiltro,
+    buscaFiltro,
+    carregarHistorico,
+    dataFimFiltro,
+    dataInicioFiltro,
+    statusFiltro,
+    tipoFiltro,
+  ]);
+
+  useEffect(() => {
     carregarIdentidadeRelatorio();
-
   }, []);
 
   // =====================================================================
@@ -265,7 +277,7 @@ export default function RotinaHistorico() {
 
       setMotivoEdicao('');
 
-      await carregarHistorico();
+      await carregarHistorico({ page: paginaAtual });
 
       avisarSucesso('Registro editado com sucesso.');
 
@@ -321,7 +333,7 @@ export default function RotinaHistorico() {
 
       setMotivoCancelamento('');
 
-      await carregarHistorico();
+      await carregarHistorico({ page: paginaAtual });
 
       avisarSucesso(
         'Registro cancelado com sucesso.'
@@ -342,58 +354,16 @@ export default function RotinaHistorico() {
   // FILTROS / RESUMO
   // =====================================================================
 
-  const registrosFiltrados = useMemo(() => {
-    return filtrarRegistrosRotina(registros, {
-      tipoFiltro,
-      buscaFiltro,
-      dataInicioFiltro,
-      dataFimFiltro,
-      statusFiltro,
-      auditoriaFiltro,
-    });
-  }, [
-    registros,
-    tipoFiltro,
-    buscaFiltro,
-    dataInicioFiltro,
-    dataFimFiltro,
-    statusFiltro,
-    auditoriaFiltro
-  ]);
-
-  // Conjunto que ignora o filtro de Tipo: usado nos cards de resumo (totais do
-  // período) e na contagem dinâmica do tipo selecionado.
-  const registrosFiltradosSemTipo = useMemo(() => {
-    return filtrarRegistrosRotina(registros, {
-      tipoFiltro: '',
-      buscaFiltro,
-      dataInicioFiltro,
-      dataFimFiltro,
-      statusFiltro,
-      auditoriaFiltro,
-    });
-  }, [
-    registros,
-    buscaFiltro,
-    dataInicioFiltro,
-    dataFimFiltro,
-    statusFiltro,
-    auditoriaFiltro
-  ]);
-
   const registrosOrdenados = useMemo(() => {
-    return ordenarRegistrosRotina(registrosFiltrados, buscaFiltro);
-  }, [buscaFiltro, registrosFiltrados]);
+    return ordenarRegistrosRotina(registros, buscaFiltro);
+  }, [buscaFiltro, registros]);
 
   const totalPaginas = Math.max(
     1,
-    Math.ceil(registrosOrdenados.length / registrosPorPagina)
+    Math.ceil(totalRegistros / registrosPorPagina),
   );
 
-  const registrosPaginados = registrosOrdenados.slice(
-    (paginaAtual - 1) * registrosPorPagina,
-    paginaAtual * registrosPorPagina
-  );
+  const registrosPaginados = registrosOrdenados;
 
   const resumo = useMemo(() => {
     if (resumoPeriodo) {
@@ -406,18 +376,21 @@ export default function RotinaHistorico() {
         retornosRapidos: resumoPeriodo.retornos_rapidos || 0,
       };
     }
-    return resumirRegistrosRotina(registrosFiltradosSemTipo);
-  }, [registrosFiltradosSemTipo, resumoPeriodo]);
+    return resumirRegistrosRotina(registros);
+  }, [registros, resumoPeriodo]);
 
   const rotuloTipoSelecionado = useMemo(
     () => rotuloTipoRegistroFiltro(tipoFiltro),
     [tipoFiltro],
   );
 
-  const totalTipoSelecionado = useMemo(
-    () => contarRegistrosPorTipo(registrosFiltradosSemTipo, tipoFiltro),
-    [registrosFiltradosSemTipo, tipoFiltro],
-  );
+  const totalTipoSelecionado = useMemo(() => {
+    if (!tipoFiltro) return totalRegistros;
+    if (resumoPeriodo?.contagens_por_tipo) {
+      return obterContagemTipoResumo(resumoPeriodo.contagens_por_tipo, tipoFiltro);
+    }
+    return totalRegistros;
+  }, [resumoPeriodo, tipoFiltro, totalRegistros]);
 
   const limparFiltros = () => {
     setTipoFiltro('');
@@ -535,15 +508,15 @@ export default function RotinaHistorico() {
   // =====================================================================
 
   const mudarPagina = (novaPagina) => {
-
     if (
       novaPagina < 1 ||
-      novaPagina > totalPaginas
+      novaPagina > totalPaginas ||
+      novaPagina === paginaAtual
     ) {
       return;
     }
 
-    setPaginaAtual(novaPagina);
+    carregarHistorico({ page: novaPagina });
   };
 
   // =====================================================================
@@ -598,7 +571,7 @@ export default function RotinaHistorico() {
 
         {/* RESUMO */}
 
-        <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-2 sm:gap-3 mb-5">
+        <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-2 sm:gap-3 mb-2">
 
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-3 sm:p-4">
             <p className="text-xs uppercase font-black text-gray-400">Total</p>
@@ -638,6 +611,11 @@ export default function RotinaHistorico() {
           </div>
 
         </div>
+
+        <p className="mb-5 text-xs text-gray-500">
+          Os totais refletem o período e os filtros selecionados abaixo.
+          O resumo da tela de Registro da Rotina considera apenas o dia de hoje e registros ativos.
+        </p>
 
         {/* FILTROS */}
 
@@ -771,10 +749,10 @@ export default function RotinaHistorico() {
 
             <button
               type="button"
-              onClick={() => carregarHistorico({ append: false, offset: 0 })}
+              onClick={() => carregarHistorico({ page: paginaAtual })}
               className="px-4 py-2 rounded-xl bg-blue-600 text-white text-sm font-bold hover:bg-blue-700 transition-colors"
             >
-              Aplicar Filtros
+              Atualizar
             </button>
 
             <button
@@ -802,7 +780,7 @@ export default function RotinaHistorico() {
               </span>
               {' '}de{' '}
               <span className="font-bold">
-                {registrosOrdenados.length}
+                {totalRegistros}
               </span>
               {' '}registros filtrados
             </p>
@@ -1148,19 +1126,6 @@ export default function RotinaHistorico() {
           {!loading && registros.length > 0 && (
             <div className="border-t border-gray-100 px-4 py-2 text-xs font-semibold text-gray-500">
               Exibindo {registros.length} de {totalRegistros} registro(s) no período.
-            </div>
-          )}
-
-          {temMais && (
-            <div className="flex justify-center border-t border-gray-100 p-4">
-              <button
-                type="button"
-                onClick={carregarMaisRegistros}
-                disabled={carregandoMais}
-                className="rounded-2xl border border-blue-200 bg-white px-4 py-3 text-sm font-black text-blue-700 disabled:opacity-50"
-              >
-                {carregandoMais ? 'Carregando...' : 'Carregar mais registros'}
-              </button>
             </div>
           )}
 

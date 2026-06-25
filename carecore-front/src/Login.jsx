@@ -17,6 +17,7 @@ import {
   MENSAGEM_LOGIN_BLOQUEADO_MANUTENCAO,
   usuarioPodeAcessarDuranteManutencao,
 } from './config/manutencao';
+import CampoSenha from './components/CampoSenha';
 
 export default function Login() {
   const navigate = useNavigate();
@@ -412,17 +413,11 @@ export default function Login() {
                   </label>
 
                   <div className="mt-2">
-                    <input
-                      type="password"
-                      autoComplete="current-password"
-                      autoCapitalize="none"
-                      autoCorrect="off"
-                      spellCheck={false}
-                      required
+                    <CampoSenha
                       value={senha}
                       onChange={(e) => setSenha(e.target.value)}
-                      className="block w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none placeholder:text-slate-400 focus:border-violet-500 focus:ring-4 focus:ring-violet-100"
                       placeholder="Digite sua senha"
+                      autoComplete="current-password"
                     />
                   </div>
                 </div>

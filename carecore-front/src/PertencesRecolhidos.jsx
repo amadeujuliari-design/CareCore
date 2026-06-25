@@ -21,6 +21,7 @@ import {
   REGISTROS_POR_PAGINA_PRONTUARIO,
 } from './utils/prontuarioHistoricoFluxoUtils';
 import LeitorCarteirinhaModal from './components/LeitorCarteirinhaModal';
+import { useLeitorUsbGlobal } from './hooks/useLeitorUsbGlobal';
 import { encontrarConviventePorCodigo } from './utils/conviventeIdentificacaoUtils';
 import { decodificarPayloadJwt } from './utils/jwtUtils';
 
@@ -280,6 +281,67 @@ export default function PertencesRecolhidos() {
     selecionarConviventeRetirada(convivente, true);
     return true;
   }, [conviventesPorQuarto, retirada, selecionarConviventeRetirada]);
+
+  const processarLeituraGlobal = useCallback((codigo) => {
+    setErro('');
+    setSucesso('');
+
+    const convivente = encontrarConviventePorCodigo(
+      (conviventes || []).filter(item => item.status === 'Ativo'),
+      codigo,
+    );
+
+    if (!convivente) {
+      setErro('Código lido, mas nenhum convivente ativo corresponde à carteirinha.');
+      return;
+    }
+
+    if (retirada) {
+      processarCodigoRetirada(codigo);
+      return;
+    }
+
+    const quarto = quartos.find((item) => (
+      (item.leitos || []).some((leito) => leito.convivente_id === convivente.id)
+    ));
+
+    if (!quarto) {
+      setErro(`${nomeConvivente(convivente)} não está alocado em nenhum quarto.`);
+      return;
+    }
+
+    const registroAberto = registros.find(
+      (registro) => registro.quarto_id === quarto.id && Number(registro.quantidade_disponivel || 0) > 0,
+    );
+
+    if (!registroAberto) {
+      setErro(`Não há pertences disponíveis no quarto de ${nomeConvivente(convivente)}.`);
+      return;
+    }
+
+    setErroRetirada('');
+    setRetirada({
+      ...registroAberto,
+      convivente_id: convivente.id,
+      quantidade: '',
+      justificativa: '',
+      carteirinha_conferida: true,
+    });
+    setBuscaConviventeRetirada(nomeConvivente(convivente));
+    setMostrarDropdownRetirada(false);
+    setSucesso(`Retirada aberta para ${nomeConvivente(convivente)}. Informe a quantidade e confirme.`);
+  }, [
+    conviventes,
+    processarCodigoRetirada,
+    quartos,
+    registros,
+    retirada,
+  ]);
+
+  useLeitorUsbGlobal({
+    ativo: !scannerRetiradaAberto && !baixaAdmin,
+    onCodigoLido: processarLeituraGlobal,
+  });
 
   const exportarXlsx = () => {
     exportarRelatorioXlsx({

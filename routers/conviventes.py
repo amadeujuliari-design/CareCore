@@ -180,11 +180,11 @@ TIPOS_ROTINA_PARES = {
     "Entrega de Toalha",
 }
 TIPOS_ROTINA_COM_OBSERVACAO_OBRIGATORIA = {
-    "Movimentação de Bagageiro",
     "Bipar documentos guardados",
     "Bipar documentos retirados",
 }
 TIPO_ROTINA_BAGAGEIRO = "Movimentação de Bagageiro"
+MOVIMENTACOES_BAGAGEIRO_VALIDAS = {"Entrada", "Saída"}
 EVENTOS_TERMO_BAGAGEIRO_ACEITE = {"assinatura_digital", "impressao_sem_assinatura"}
 TIPOS_ROTINA_VALIDOS = (
     TIPOS_ROTINA_PRINCIPAIS
@@ -214,6 +214,18 @@ ROTULOS_REFEICOES_EXTRAS = {
     "Jantar": "jantar",
     "Lanche noturno": "lanche noturno",
 }
+
+
+def _normalizar_movimentacao_bagageiro(observacao: str) -> str:
+    valor = (observacao or "").strip().lower()
+    if valor == "entrada":
+        return "Entrada"
+    if valor in {"saída", "saida"}:
+        return "Saída"
+    raise HTTPException(
+        status_code=400,
+        detail="A movimentação de bagageiro deve ser Entrada ou Saída.",
+    )
 
 
 async def validar_leito_do_projeto(
@@ -2898,6 +2910,9 @@ async def registar_rotina(
             detail="Este tipo de interação exige relato/especificação.",
         )
 
+    if payload.tipo_registro == TIPO_ROTINA_BAGAGEIRO:
+        observacao = _normalizar_movimentacao_bagageiro(observacao)
+
     convivente = (
         await db.execute(
             select(ConviventeDB).where(
@@ -3244,6 +3259,13 @@ async def resumo_rotina_hoje(
             grupo_interacao = "Cobertor" if "Cobertor" in r.tipo_registro else "Toalha"
             resumo[r.convivente_id]["ultimas_interacoes"][grupo_interacao] = {
                 "tipo_registro": r.tipo_registro,
+                "data_registro": r.data_registro.isoformat(),
+            }
+
+        if r.tipo_registro == TIPO_ROTINA_BAGAGEIRO:
+            resumo[r.convivente_id]["ultimas_interacoes"]["Bagageiro"] = {
+                "tipo_registro": r.tipo_registro,
+                "observacao": r.observacao,
                 "data_registro": r.data_registro.isoformat(),
             }
 
@@ -3743,6 +3765,42 @@ def _query_base_historico_rotina(usuario_atual: dict):
     )
 
 
+async def _contagens_por_tipo_historico_rotina(db: AsyncSession, query_sem_tipo):
+    grupos_tipo_registro = {
+        "Cobertor": ["Retirada de Cobertor", "Entrega de Cobertor"],
+        "Toalha": ["Retirada de Toalha", "Entrega de Toalha"],
+        "Documentos": ["Bipar documentos guardados", "Bipar documentos retirados"],
+        "Bagageiro": ["Movimentação de Bagageiro"],
+        "Lavanderia": [
+            "Lavanderia - Entrega",
+            "Lavanderia - Retirada",
+            "Lavanderia - Cancelamento",
+        ],
+        "Pertences recolhidos": ["Pertences recolhidos - Retirada"],
+    }
+
+    contagens_query = (
+        query_sem_tipo
+        .with_only_columns(
+            RegistroRotinaDB.tipo_registro,
+            func.count(RegistroRotinaDB.id),
+        )
+        .group_by(RegistroRotinaDB.tipo_registro)
+        .order_by(None)
+    )
+    linhas = (await db.execute(contagens_query)).all()
+    contagens = {
+        tipo: int(quantidade or 0)
+        for tipo, quantidade in linhas
+        if tipo
+    }
+
+    for grupo, tipos in grupos_tipo_registro.items():
+        contagens[grupo] = sum(contagens.get(tipo, 0) for tipo in tipos)
+
+    return contagens
+
+
 def _linha_historico_para_dict(
     registro,
     nome_completo,
@@ -4227,6 +4285,18 @@ async def listar_historico_rotina(
     deslocamento_seguro = max(int(deslocamento or 0), 0)
 
     query = _query_base_historico_rotina(usuario_atual)
+    query_sem_tipo = _aplicar_filtros_historico_rotina(
+        query=_query_base_historico_rotina(usuario_atual),
+        data_inicio=data_inicio,
+        data_fim=data_fim,
+        tipo_registro=None,
+        convivente_id=convivente_id,
+        busca=busca,
+        status_registro=status_registro,
+        apenas_editados=apenas_editados,
+        apenas_cancelados=apenas_cancelados,
+        apenas_retorno_rapido=apenas_retorno_rapido,
+    )
     query = _aplicar_filtros_historico_rotina(
         query=query,
         data_inicio=data_inicio,
@@ -4321,6 +4391,8 @@ async def listar_historico_rotina(
             query.order_by(None).where(expressao).subquery()
         )
 
+    contagens_por_tipo = await _contagens_por_tipo_historico_rotina(db, query_sem_tipo)
+
     resumo_periodo = {
         "total": total,
         "entradas": int((await db.execute(contar_resumo(RegistroRotinaDB.tipo_registro == "Entrada"))).scalar_one() or 0),
@@ -4328,6 +4400,7 @@ async def listar_historico_rotina(
         "editados": int((await db.execute(contar_resumo(RegistroRotinaDB.foi_editado == True))).scalar_one() or 0),
         "cancelados": int((await db.execute(contar_resumo(RegistroRotinaDB.cancelado == True))).scalar_one() or 0),
         "retornos_rapidos": int((await db.execute(contar_resumo(RegistroRotinaDB.retorno_rapido == True))).scalar_one() or 0),
+        "contagens_por_tipo": contagens_por_tipo,
     }
 
     query = query.offset(deslocamento_seguro).limit(limite_seguro)

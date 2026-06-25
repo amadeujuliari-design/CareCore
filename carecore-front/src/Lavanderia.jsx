@@ -21,6 +21,7 @@ import {
   REGISTROS_POR_PAGINA_PRONTUARIO,
 } from './utils/prontuarioHistoricoFluxoUtils';
 import LeitorCarteirinhaModal from './components/LeitorCarteirinhaModal';
+import { useLeitorUsbGlobal } from './hooks/useLeitorUsbGlobal';
 import { encontrarConviventePorCodigo } from './utils/conviventeIdentificacaoUtils';
 
 function nomeConvivente(convivente) {
@@ -212,11 +213,26 @@ export default function Lavanderia() {
     setMostrarDropdownConvivente(false);
   }, []);
 
+  const conviventesAtivosCadastro = useMemo(
+    () => (conviventes || []).filter(item => item.status === 'Ativo'),
+    [conviventes],
+  );
+
+  const abrirRetiradaPorRegistro = useCallback((registro, carteirinhaConferida = false) => {
+    setErro('');
+    setRetirada({
+      ...registro,
+      quantidade_ja_retirada: Number(registro.quantidade_retirada || 0),
+      quantidade_retirada: saldoPendenteLavanderia(registro),
+      observacao_retirada: '',
+      encerrar_pendencia: false,
+      motivo_baixa: '',
+      carteirinha_conferida: carteirinhaConferida,
+    });
+  }, []);
+
   const processarCodigoCarteirinha = useCallback((codigo) => {
-    const convivente = encontrarConviventePorCodigo(
-      (conviventes || []).filter(item => item.status === 'Ativo'),
-      codigo,
-    );
+    const convivente = encontrarConviventePorCodigo(conviventesAtivosCadastro, codigo);
 
     if (!convivente) return false;
 
@@ -237,7 +253,59 @@ export default function Lavanderia() {
     selecionarConviventeEntrega(convivente);
     setSucesso(`Convivente identificado: ${nomeConvivente(convivente)}.`);
     return true;
-  }, [conviventes, retirada, scannerContexto, selecionarConviventeEntrega]);
+  }, [conviventesAtivosCadastro, retirada, scannerContexto, selecionarConviventeEntrega]);
+
+  const processarLeituraGlobal = useCallback((codigo) => {
+    setErro('');
+    setSucesso('');
+
+    const convivente = encontrarConviventePorCodigo(conviventesAtivosCadastro, codigo);
+    if (!convivente) {
+      setErro('Código lido, mas nenhum convivente ativo corresponde à carteirinha.');
+      return;
+    }
+
+    if (retirada) {
+      if (convivente.id !== retirada.convivente_id) {
+        setErro(`Carteirinha de ${nomeConvivente(convivente)}, mas a retirada aberta é de ${retirada.convivente_nome || 'outro convivente'}.`);
+        return;
+      }
+
+      setRetirada(prev => ({
+        ...prev,
+        carteirinha_conferida: true,
+      }));
+      setSucesso(`Carteirinha conferida para ${retirada.convivente_nome}.`);
+      return;
+    }
+
+    const registroPendente = registros.find(
+      (registro) => registro.convivente_id === convivente.id
+        && ['Em lavanderia', 'Atrasado'].includes(registro.status)
+        && saldoPendenteLavanderia(registro) > 0,
+    );
+
+    if (registroPendente) {
+      abrirRetiradaPorRegistro(registroPendente, true);
+      setSucesso(`Retirada aberta para ${nomeConvivente(convivente)}. Ajuste a quantidade e confirme.`);
+      return;
+    }
+
+    selecionarConviventeEntrega(convivente);
+    setSucesso(`Nova entrega para ${nomeConvivente(convivente)}. Informe a quantidade de peças.`);
+    document.getElementById('lavanderia-form-entrega')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [
+    abrirRetiradaPorRegistro,
+    conviventesAtivosCadastro,
+    registros,
+    retirada,
+    selecionarConviventeEntrega,
+  ]);
+
+  useLeitorUsbGlobal({
+    ativo: !scannerContexto && !cancelamento,
+    onCodigoLido: processarLeituraGlobal,
+  });
 
   const exportarXlsx = () => {
     exportarRelatorioXlsx({
@@ -466,7 +534,7 @@ export default function Lavanderia() {
               </div>
             </div>
 
-            <form onSubmit={salvarEntrega} className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+            <form id="lavanderia-form-entrega" onSubmit={salvarEntrega} className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
               <div className="mb-4">
                 <h2 className="text-base font-black text-gray-800">Registrar entrega na lavanderia</h2>
                 <p className="mt-1 text-sm text-gray-500">
@@ -752,15 +820,7 @@ export default function Lavanderia() {
                           <div className="mt-3 flex flex-wrap gap-2">
                             <button
                               type="button"
-                              onClick={() => setRetirada({
-                                ...registro,
-                                quantidade_ja_retirada: Number(registro.quantidade_retirada || 0),
-                                quantidade_retirada: saldoPendenteLavanderia(registro),
-                                observacao_retirada: '',
-                                encerrar_pendencia: false,
-                                motivo_baixa: '',
-                                carteirinha_conferida: false,
-                              })}
+                              onClick={() => abrirRetiradaPorRegistro(registro)}
                               className="flex-1 rounded-xl bg-emerald-50 px-3 py-2 text-xs font-black text-emerald-700"
                             >
                               Retirar
@@ -844,15 +904,7 @@ export default function Lavanderia() {
                               <div className="flex flex-wrap gap-2">
                                 <button
                                   type="button"
-                                  onClick={() => setRetirada({
-                                    ...registro,
-                                    quantidade_ja_retirada: Number(registro.quantidade_retirada || 0),
-                                    quantidade_retirada: saldoPendenteLavanderia(registro),
-                                    observacao_retirada: '',
-                                    encerrar_pendencia: false,
-                                    motivo_baixa: '',
-                                    carteirinha_conferida: false,
-                                  })}
+                                  onClick={() => abrirRetiradaPorRegistro(registro)}
                                   className="rounded-lg bg-emerald-50 px-3 py-2 text-xs font-black text-emerald-700 hover:bg-emerald-100"
                                 >
                                   Retirar

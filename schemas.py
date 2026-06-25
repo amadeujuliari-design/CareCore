@@ -1491,6 +1491,7 @@ class RotinaHistoricoResumoPeriodo(BaseModel):
     editados: int = 0
     cancelados: int = 0
     retornos_rapidos: int = 0
+    contagens_por_tipo: dict[str, int] = Field(default_factory=dict)
 
 
 class RotinaHistoricoListaResponse(BaseModel):

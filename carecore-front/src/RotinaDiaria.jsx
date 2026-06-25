@@ -10,6 +10,7 @@ import AuthenticatedImage from './components/AuthenticatedImage';
 import { AppShell, MainShell, PageHeader, PremiumButton, ScrollArea } from './components/PremiumUI';
 import { API_ROOT } from './config/apiBase';
 import { useDeviceInfo } from './hooks/useDeviceInfo';
+import { useLeitorUsbGlobal } from './hooks/useLeitorUsbGlobal';
 import { criarHeadersAutenticados } from './utils/requestIdUtils';
 import {
   calcularResumoRotinaDiaria,
@@ -45,13 +46,17 @@ const OPCOES_INTERACAO_ROTINA = [
   { valor: 'Banho', label: 'Banho', grupo: 'simples' },
   { valor: 'Cobertor', label: 'Cobertor (sugerir retirada/entrega)', grupo: 'par' },
   { valor: 'Toalha', label: 'Toalha (sugerir retirada/entrega)', grupo: 'par' },
-  { valor: 'Movimentação de Bagageiro', label: 'Movimentação de Bagageiro', grupo: 'observacao' },
+  { valor: 'Bagageiro', label: 'Bagageiro (entrada/saída)', grupo: 'par_bagageiro' },
   { valor: 'Bipar documentos guardados', label: 'Documentos guardados', grupo: 'observacao' },
   { valor: 'Bipar documentos retirados', label: 'Documentos retirados', grupo: 'observacao' },
 ];
 
 const TIPOS_ROTINA_REFEICOES = ['Café da manhã', 'Almoço', 'Jantar', 'Lanche noturno'];
 const TIPO_ROTINA_BAGAGEIRO = 'Movimentação de Bagageiro';
+
+function rotuloMovimentacaoBagageiro(movimentacao) {
+  return movimentacao === 'Saída' ? 'Saída de bagagem' : 'Entrada de bagagem';
+}
 
 function obterNomeUsuarioLogado() {
   try {
@@ -106,8 +111,6 @@ export default function RotinaDiaria() {
   const ultimaLeituraConviventeRef = useRef({ conviventeId: '', horario: 0 });
   const assinaturaSyncRotinaRef = useRef(null);
   const processarCodigoLidoRef = useRef(null);
-  const leituraUsbBufferRef = useRef('');
-  const leituraUsbUltimaTeclaRef = useRef(0);
   const campoLeitorPistolaRef = useRef(null);
 
   useEffect(() => {
@@ -360,6 +363,37 @@ export default function RotinaDiaria() {
     return null;
   };
 
+  const obterProximaMovimentacaoBagageiro = (conviventeId) => {
+    const ultima = resumoHoje[conviventeId]?.ultimas_interacoes?.Bagageiro;
+    const movimentacao = String(ultima?.observacao || '').trim().toLowerCase();
+    if (movimentacao === 'entrada') {
+      return 'Saída';
+    }
+    return 'Entrada';
+  };
+
+  const registrarInteracaoBagageiro = async (convivente, observacao) => {
+    try {
+      const status = await consultarTermoBagageiro(convivente.id);
+      if (status?.exige_termo_primeiro_bagageiro) {
+        setBagageiroRegistroPendente({ convivente, tipoRegistro: TIPO_ROTINA_BAGAGEIRO, observacao });
+        setTermoBagageiroModalAberto(true);
+        return;
+      }
+    } catch (error) {
+      const detalhe = error?.response?.data?.detail;
+      setFeedback({
+        tipo: 'Erro',
+        nome: detalhe || 'Não foi possível validar o termo do bagageiro.',
+        horario: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+      });
+      setTimeout(() => setFeedback(null), 4000);
+      return;
+    }
+
+    await handleRegistrar(convivente.id, TIPO_ROTINA_BAGAGEIRO, convivente, { observacao });
+  };
+
   const conviventeEstaFora = (conviventeId) => resumoHoje[conviventeId]?.ultimo_movimento === 'Saída';
 
   const obterResumoRefeicao = (conviventeId, tipoRegistro) => {
@@ -432,6 +466,20 @@ export default function RotinaDiaria() {
       const tipoSugerido = obterProximaInteracaoPar(convivente.id, opcao.valor);
       const ultima = resumoHoje[convivente.id]?.ultimas_interacoes?.[opcao.valor] || null;
       setInteracaoConfirmacao({ convivente, tipoRegistro: tipoSugerido, grupo: opcao.valor, ultima });
+      return;
+    }
+
+    if (opcao.grupo === 'par_bagageiro') {
+      const movimentacao = obterProximaMovimentacaoBagageiro(convivente.id);
+      const ultima = resumoHoje[convivente.id]?.ultimas_interacoes?.Bagageiro || null;
+      setInteracaoConfirmacao({
+        convivente,
+        tipoRegistro: TIPO_ROTINA_BAGAGEIRO,
+        observacao: movimentacao,
+        grupo: 'Bagageiro',
+        ultima,
+        rotuloConfirmacao: rotuloMovimentacaoBagageiro(movimentacao),
+      });
       return;
     }
 
@@ -527,6 +575,22 @@ export default function RotinaDiaria() {
     processarCodigoLidoRef.current = processarCodigoLido;
   });
 
+  const leitorUsbAtivo = modoAutomatico
+    && !scannerAberto
+    && !interacaoConfirmacao
+    && !interacaoObservacaoPendente
+    && !refeicaoExtraPendente
+    && !retornoRapidoPendente
+    && !termoBagageiroModalAberto
+    && !bagageiroRegistroPendente;
+
+  useLeitorUsbGlobal({
+    ativo: leitorUsbAtivo,
+    onCodigoLido: (codigo) => {
+      processarCodigoLidoRef.current?.(codigo);
+    },
+  });
+
   useEffect(() => {
     if (!scannerAberto) return;
 
@@ -536,42 +600,6 @@ export default function RotinaDiaria() {
 
     return () => clearTimeout(timer);
   }, [scannerAberto]);
-
-  useEffect(() => {
-    const handleLeitorUsbGlobal = (event) => {
-      const tag = event.target?.tagName?.toLowerCase();
-      const editandoTexto =
-        tag === 'input' ||
-        tag === 'textarea' ||
-        tag === 'select' ||
-        event.target?.isContentEditable;
-
-      if (editandoTexto || event.ctrlKey || event.altKey || event.metaKey) return;
-
-      const agora = Date.now();
-      if (agora - leituraUsbUltimaTeclaRef.current > 120) {
-        leituraUsbBufferRef.current = '';
-      }
-      leituraUsbUltimaTeclaRef.current = agora;
-
-      if (event.key === 'Enter') {
-        const codigo = leituraUsbBufferRef.current.trim();
-        leituraUsbBufferRef.current = '';
-        if (codigo) {
-          event.preventDefault();
-          processarCodigoLidoRef.current?.(codigo);
-        }
-        return;
-      }
-
-      if (event.key?.length === 1) {
-        leituraUsbBufferRef.current += event.key;
-      }
-    };
-
-    window.addEventListener('keydown', handleLeitorUsbGlobal);
-    return () => window.removeEventListener('keydown', handleLeitorUsbGlobal);
-  }, []);
 
   const handleBuscaKeyDown = (e) => {
     if (e.key === 'Enter' && busca.trim() !== '') {
@@ -584,29 +612,6 @@ export default function RotinaDiaria() {
     if (!observacao || !interacaoObservacaoPendente) return;
 
     const { convivente, tipoRegistro } = interacaoObservacaoPendente;
-
-    if (tipoRegistro === TIPO_ROTINA_BAGAGEIRO) {
-      try {
-        const status = await consultarTermoBagageiro(convivente.id);
-        if (status?.exige_termo_primeiro_bagageiro) {
-          setBagageiroRegistroPendente({ convivente, tipoRegistro, observacao });
-          setInteracaoObservacaoPendente(null);
-          setObservacaoInteracao('');
-          setTermoBagageiroModalAberto(true);
-          return;
-        }
-      } catch (error) {
-        const detalhe = error?.response?.data?.detail;
-        setFeedback({
-          tipo: 'Erro',
-          nome: detalhe || 'Não foi possível validar o termo do bagageiro.',
-          horario: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
-        });
-        setTimeout(() => setFeedback(null), 4000);
-        return;
-      }
-    }
-
     handleRegistrar(convivente.id, tipoRegistro, convivente, { observacao });
     setInteracaoObservacaoPendente(null);
     setObservacaoInteracao('');
@@ -785,6 +790,17 @@ export default function RotinaDiaria() {
             ...(novoResumo.ultimas_interacoes || {}),
             Toalha: {
               tipo_registro: tipoRegistro,
+              data_registro: registroCriado.data_registro || new Date().toISOString(),
+            },
+          };
+        }
+
+        if (tipoRegistro === TIPO_ROTINA_BAGAGEIRO && (opcoes.observacao || registroCriado.observacao)) {
+          novoResumo.ultimas_interacoes = {
+            ...(novoResumo.ultimas_interacoes || {}),
+            Bagageiro: {
+              tipo_registro: tipoRegistro,
+              observacao: registroCriado.observacao || opcoes.observacao,
               data_registro: registroCriado.data_registro || new Date().toISOString(),
             },
           };
@@ -1652,11 +1668,15 @@ export default function RotinaDiaria() {
             <div className="min-h-0 overflow-y-auto p-4 space-y-4 sm:p-6">
               <p className="text-sm text-gray-700 leading-relaxed">
                 {interacaoConfirmacao.ultima
-                  ? `Última movimentação de ${interacaoConfirmacao.grupo}: ${interacaoConfirmacao.ultima.tipo_registro} em ${new Date(interacaoConfirmacao.ultima.data_registro).toLocaleString('pt-BR')}.`
-                  : `Não há movimentação anterior de ${interacaoConfirmacao.grupo} hoje.`}
+                  ? interacaoConfirmacao.grupo === 'Bagageiro'
+                    ? `Última movimentação de bagagem: ${interacaoConfirmacao.ultima.observacao || '—'} em ${new Date(interacaoConfirmacao.ultima.data_registro).toLocaleString('pt-BR')}.`
+                    : `Última movimentação de ${interacaoConfirmacao.grupo}: ${interacaoConfirmacao.ultima.tipo_registro} em ${new Date(interacaoConfirmacao.ultima.data_registro).toLocaleString('pt-BR')}.`
+                  : interacaoConfirmacao.grupo === 'Bagageiro'
+                    ? 'Não há movimentação de bagagem registrada hoje.'
+                    : `Não há movimentação anterior de ${interacaoConfirmacao.grupo} hoje.`}
               </p>
               <p className="rounded-xl bg-blue-50 border border-blue-100 p-3 text-sm font-black text-blue-800">
-                Vou registrar: {interacaoConfirmacao.tipoRegistro}. Confirma?
+                Vou registrar: {interacaoConfirmacao.rotuloConfirmacao || interacaoConfirmacao.tipoRegistro}. Confirma?
               </p>
 
               <div className="grid grid-cols-1 gap-2 pt-2 sm:flex sm:justify-end sm:gap-3">
@@ -1668,12 +1688,13 @@ export default function RotinaDiaria() {
                 </button>
                 <button
                   onClick={() => {
-                    handleRegistrar(
-                      interacaoConfirmacao.convivente.id,
-                      interacaoConfirmacao.tipoRegistro,
-                      interacaoConfirmacao.convivente,
-                    );
+                    const { convivente, tipoRegistro, observacao } = interacaoConfirmacao;
                     setInteracaoConfirmacao(null);
+                    if (tipoRegistro === TIPO_ROTINA_BAGAGEIRO && observacao) {
+                      registrarInteracaoBagageiro(convivente, observacao);
+                      return;
+                    }
+                    handleRegistrar(convivente.id, tipoRegistro, convivente);
                   }}
                   className="px-4 py-2 rounded-lg text-sm font-bold bg-blue-600 text-white hover:bg-blue-700 shadow-sm"
                 >

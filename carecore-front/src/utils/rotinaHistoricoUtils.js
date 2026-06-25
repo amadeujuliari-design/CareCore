@@ -69,6 +69,11 @@ export function contarRegistrosPorTipo(registros, filtro) {
   );
 }
 
+export function obterContagemTipoResumo(contagensPorTipo, filtro) {
+  if (!filtro) return 0;
+  return Number(contagensPorTipo?.[filtro] || 0);
+}
+
 export function montarParamsFiltrosRotina({
   tipoFiltro,
   buscaFiltro,

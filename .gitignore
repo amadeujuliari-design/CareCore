@@ -55,7 +55,9 @@ SNAPSHOT_COMPLETO_PROJETO.txt
 codigo_completo.txt
 documentos_teste/
 
-# Materiais de apoio locais / continuidade de chat
+# Desenvolvimento congelado (nao versionar; retomada futura local)
+_congelado/
+
 CHAT_*.txt
 CHECKPOINT_CHAT_*.txt
 CHECKPOINT_COMPLETO_*.txt

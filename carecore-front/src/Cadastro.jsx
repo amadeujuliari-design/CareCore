@@ -4,6 +4,7 @@ import logoCarecore from './assets/logo.PNG';
 import api from './services/api';
 import { consultarCep } from './services/cepService';
 import { formatarCEP, limparMascara } from './utils/usuariosUtils';
+import CampoSenha from './components/CampoSenha';
 
 function ItemRegraSenha({ valido, texto }) {
   return (
@@ -645,19 +646,18 @@ export default function Cadastro() {
                 </label>
 
                 <div className="mt-1">
-                  <input
-                    type="password"
-                    required
+                  <CampoSenha
                     value={senha}
                     onChange={(e) => {
                       setSenha(e.target.value);
                       limparErroCampo('senha');
                     }}
                     onBlur={() => validarCampoAdministrador('senha', senha)}
-                    className={`${classeInput('senha')} ${
-                      senha && !senhaForte ? 'border-red-300 focus:border-red-400 focus:ring-red-100' : ''
-                    }`}
+                    className={`text-slate-900 transition focus:border-violet-400 ${
+                      errosCampo.senha ? inputErroClassName : ''
+                    } ${senha && !senhaForte ? 'border-red-300 focus:border-red-400 focus:ring-red-100' : ''}`}
                     placeholder="Mínimo 8 caracteres"
+                    autoComplete="new-password"
                   />
                   {mensagemCampo('senha')}
                 </div>
