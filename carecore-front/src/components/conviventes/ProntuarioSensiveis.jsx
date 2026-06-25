@@ -61,6 +61,7 @@ export default function ProntuarioSensiveis({
                 {formData.pendencia_eleitoral && <input type="text" name="pendencia_eleitoral_qual" value={formData.pendencia_eleitoral_qual || ''} onChange={handleChange} placeholder="Qual?" className={`mt-1 ${campoClasse()}`} />}
               </div>
             </div>
+            <div><label className="block text-xs font-semibold text-red-900 mb-1">Referência CAPS</label><input type="text" name="acompanhamento_caps" value={formData.acompanhamento_caps} onChange={handleChange} className={campoClasse()} placeholder="Nome da referência no CAPS" /></div>
             <div><label className="block text-xs font-semibold text-red-900 mb-1">Acompanhamento CAPS</label><input type="text" name="acompanhamento_caps" value={formData.acompanhamento_caps} onChange={handleChange} className={campoClasse()} /></div>
             <div><label className="block text-xs font-semibold text-red-900 mb-1">Medidas Protetivas</label><input type="text" name="medidas_protetivas" value={formData.medidas_protetivas} onChange={handleChange} className={campoClasse()} /></div>
           </div>

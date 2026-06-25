@@ -17,6 +17,7 @@ import {
   obterMetadadosTipoAcao,
 } from './config/tiposAcaoAcompanhamento';
 import DiscussaoEvolucoesModal from './components/acompanhamentos/DiscussaoEvolucoesModal';
+import PotEvolucoesModal from './components/acompanhamentos/PotEvolucoesModal';
 import { filtrarOrdenarConviventesPorBusca } from './utils/conviventeBuscaUtils';
 import { REGISTROS_POR_PAGINA_PRONTUARIO } from './utils/prontuarioHistoricoFluxoUtils';
 
@@ -137,7 +138,7 @@ export default function AcompanhamentoModulo() {
   const [form, setForm] = useState({});
   const [buscaConvivente, setBuscaConvivente] = useState('');
   const [mostrarDropdownConvivente, setMostrarDropdownConvivente] = useState(false);
-  const [discussaoEvolucoes, setDiscussaoEvolucoes] = useState(null);
+  const [evolucoesModal, setEvolucoesModal] = useState(null);
 
   const campos = modulo?.campos || [];
   const colunas = modulo?.colunas || [];
@@ -637,7 +638,7 @@ export default function AcompanhamentoModulo() {
                               {modulo.suportaEvolucoes && (
                                 <button
                                   type="button"
-                                  onClick={() => setDiscussaoEvolucoes(registro)}
+                                  onClick={() => setEvolucoesModal(registro)}
                                   className="text-indigo-600 hover:underline"
                                 >
                                   Evoluções
@@ -664,7 +665,7 @@ export default function AcompanhamentoModulo() {
                           <td className="px-4 py-3">
                             <button
                               type="button"
-                              onClick={() => setDiscussaoEvolucoes(registro)}
+                              onClick={() => setEvolucoesModal(registro)}
                               className="text-indigo-600 hover:underline"
                             >
                               Ver evoluções
@@ -847,11 +848,20 @@ export default function AcompanhamentoModulo() {
         )}
       </MainShell>
 
-      {discussaoEvolucoes && (
-        <DiscussaoEvolucoesModal
-          registro={discussaoEvolucoes}
+      {evolucoesModal && modulo.modalEvolucoes === 'pot' && (
+        <PotEvolucoesModal
+          registro={evolucoesModal}
           somenteLeitura={somenteLeitura}
-          onFechar={() => setDiscussaoEvolucoes(null)}
+          onFechar={() => setEvolucoesModal(null)}
+          onAtualizado={carregarDados}
+        />
+      )}
+
+      {evolucoesModal && modulo.modalEvolucoes !== 'pot' && (
+        <DiscussaoEvolucoesModal
+          registro={evolucoesModal}
+          somenteLeitura={somenteLeitura}
+          onFechar={() => setEvolucoesModal(null)}
           onAtualizado={carregarDados}
         />
       )}

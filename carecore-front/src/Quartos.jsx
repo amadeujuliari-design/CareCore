@@ -1,13 +1,15 @@
 // =====================================================================
 // ARQUIVO: src/Quartos.jsx (COMPLETO)
 // =====================================================================
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import Sidebar from './Sidebar';
 import { AppShell, MainShell, PageHeader, ScrollArea } from './components/PremiumUI';
 import { API_ROOT } from './config/apiBase';
 import { filtrarOrdenarConviventesPorBusca } from './utils/conviventeBuscaUtils';
+import { ordenarPorTextoNatural, ordenarQuartosComLeitos } from './utils/ordenacaoNatural';
+import { usuarioPodeEditarAcomodacao } from './hooks/usePermissoesProntuario';
 import { decodificarPayloadJwt } from './utils/jwtUtils';
 import { criarHeadersAutenticados } from './utils/requestIdUtils';
 
@@ -17,6 +19,8 @@ export default function Quartos() {
   const [quartos, setQuartos] = useState([]);
   const [conviventes, setConviventes] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [carregandoConviventes, setCarregandoConviventes] = useState(false);
+  const conviventesCarregadosRef = useRef(false);
   const [erro, setErro] = useState('');
   const [sucesso, setSucesso] = useState('');
   const [modalLeito, setModalLeito] = useState(null);
@@ -39,12 +43,8 @@ export default function Quartos() {
     console.error('Erro ao ler token no módulo de quartos', error);
   }
 
-  const podeGerenciarQuartos =
-    usuarioMaster ||
-    ['Gestor', 'Gestao', 'Gestão', 'Gerente', 'Técnico', 'Tecnico'].includes(perfilUsuario);
-  const podeAlocarLeitos =
-    podeGerenciarQuartos ||
-    ['Orientador'].includes(perfilUsuario);
+  const podeGerenciarQuartos = usuarioPodeEditarAcomodacao(perfilUsuario, usuarioMaster);
+  const podeAlocarLeitos = podeGerenciarQuartos;
   // Formulário de Quarto
   const [nome, setNome] = useState('');
   const [tipoPublico, setTipoPublico] = useState('Masculino');
@@ -68,16 +68,31 @@ useEffect(() => {
     try {
       setLoading(true);
       const config = { headers: criarHeadersAutenticados(token) };
-      const [resQuartos, resConviventes] = await Promise.all([
-        axios.get(`${API_ROOT}/quartos`, config),
-        axios.get(`${API_ROOT}/conviventes/resumo`, config)
-      ]);
+      const resQuartos = await axios.get(`${API_ROOT}/quartos`, config);
       setQuartos(resQuartos.data);
-      setConviventes(resConviventes.data || []);
     } catch {
       setErro('Erro ao carregar lista de quartos.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const carregarConviventesParaAlocacao = async (forcar = false) => {
+    if (!podeAlocarLeitos) return;
+    if (!forcar && conviventesCarregadosRef.current) return;
+
+    try {
+      setCarregandoConviventes(true);
+      const resConviventes = await axios.get(`${API_ROOT}/conviventes/resumo`, {
+        headers: criarHeadersAutenticados(token),
+        params: { status: 'Ativo' },
+      });
+      setConviventes(resConviventes.data || []);
+      conviventesCarregadosRef.current = true;
+    } catch {
+      setErro('Erro ao carregar conviventes para alocação.');
+    } finally {
+      setCarregandoConviventes(false);
     }
   };
 
@@ -125,7 +140,8 @@ useEffect(() => {
     
     // Mapeia os leitos do banco para o formato do formulário
     if (quarto.leitos && quarto.leitos.length > 0) {
-      setLeitosForm(quarto.leitos.map(l => ({ id: l.id, identificacao: l.identificacao, status: l.status })));
+      const leitosOrdenados = ordenarPorTextoNatural(quarto.leitos, (leito) => leito.identificacao);
+      setLeitosForm(leitosOrdenados.map(l => ({ id: l.id, identificacao: l.identificacao, status: l.status })));
     } else {
       setLeitosForm([{ id_temporario: 1, identificacao: 'Cama 1', status: 'Livre' }]);
     }
@@ -196,6 +212,11 @@ useEffect(() => {
     )
   ), [buscaConvivente, conviventes]);
 
+  const quartosOrdenados = useMemo(
+    () => ordenarQuartosComLeitos(quartos),
+    [quartos],
+  );
+
   const abrirModalLeito = (quarto, leito) => {
     if (!podeAlocarLeitos) return;
 
@@ -204,6 +225,7 @@ useEffect(() => {
     setBuscaConvivente('');
     setMostrarDropdownConvivente(false);
     setErro('');
+    void carregarConviventesParaAlocacao();
   };
 
   const handleCliqueLeito = (quarto, leito) => {
@@ -233,6 +255,7 @@ useEffect(() => {
         { headers: criarHeadersAutenticados(token) }
       );
       setModalLeito(null);
+      conviventesCarregadosRef.current = false;
       setSucesso('Convivente alocado com sucesso.');
       await carregarQuartos();
       setTimeout(() => setSucesso(''), 3000);
@@ -254,6 +277,7 @@ useEffect(() => {
         { headers: criarHeadersAutenticados(token) }
       );
       setModalLeito(null);
+      conviventesCarregadosRef.current = false;
       setSucesso('Leito liberado com sucesso.');
       await carregarQuartos();
       setTimeout(() => setSucesso(''), 3000);
@@ -317,14 +341,14 @@ useEffect(() => {
 
               {loading ? (
                 <div className="flex justify-center p-12"><p className="text-brand font-bold animate-pulse text-lg">Carregando acomodações...</p></div>
-              ) : quartos.length === 0 ? (
+              ) : quartosOrdenados.length === 0 ? (
                 <div className="text-center py-16 bg-gray-50 border-2 border-dashed border-gray-300 rounded-2xl">
                   <p className="text-gray-500 text-lg font-medium">Nenhum quarto cadastrado até o momento.</p>
                 </div>
               ) : (
                 // MAPA VISUAL EM GRID DOS QUARTOS
                 <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4 items-start">
-                  {quartos.map(q => (
+                  {quartosOrdenados.map(q => (
                     <div key={q.id} className="bg-white rounded-3xl border border-slate-200 shadow-sm flex flex-col hover:shadow-md transition-all duration-200 min-h-[300px]" >
                       
                       {/* Topo do Quarto */}
@@ -550,7 +574,11 @@ useEffect(() => {
 
                       {mostrarDropdownConvivente && (
                         <div className="absolute z-20 mt-1 max-h-56 w-full overflow-y-auto rounded-2xl border border-slate-200 bg-white shadow-xl">
-                          {conviventesElegiveis.map(c => (
+                          {carregandoConviventes ? (
+                            <div className="p-4 text-center text-sm font-semibold text-slate-500">
+                              Carregando conviventes ativos...
+                            </div>
+                          ) : conviventesElegiveis.map(c => (
                             <button
                               type="button"
                               key={c.id}
@@ -570,7 +598,7 @@ useEffect(() => {
                             </button>
                           ))}
 
-                          {conviventesElegiveis.length === 0 && (
+                          {!carregandoConviventes && conviventesElegiveis.length === 0 && (
                             <div className="p-4 text-center text-sm font-semibold text-slate-500">
                               Nenhum convivente ativo encontrado.
                             </div>

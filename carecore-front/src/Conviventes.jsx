@@ -50,7 +50,9 @@ import { agruparRegistrosPiaConvivente } from './utils/piaEvolucaoPrint';
 import { obterLogoRelatorioDataUrl } from './utils/relatorioIdentidadePrint';
 import {
   atualizarConviventeProntuario,
-  carregarDadosIniciaisProntuario,
+  carregarDadosAuxiliaresProntuario,
+  carregarListaConviventesCadastro,
+  carregarResumoCompletoConviventes,
   criarConviventeProntuario,
   excluirConviventeSemVinculos,
   obterConviventeProntuario,
@@ -135,6 +137,7 @@ export default function Conviventes() {
     podeCriarHistoricoConvivente,
     podeEditarHistoricoConvivente,
     podeGerenciarPiaConvivente,
+    podeEditarAcomodacao,
   } = usePermissoesProntuario({
     perfilUsuario,
     idUsuarioLogado,
@@ -183,7 +186,6 @@ export default function Conviventes() {
   });
   const fotoPerfilUrl = fotoPerfilData?.caminho_arquivo || formData.foto_url || null;
   const usuarioLogadoEhTecnico = usuarioEhTecnico(perfilUsuario);
-  const usuarioLogadoEhOrientador = perfilUsuario === 'Orientador';
   const podeExcluirConviventeSemVinculos =
     perfilUsuario === 'Gestor' ||
     perfilUsuario === 'Manutenção' ||
@@ -275,18 +277,33 @@ export default function Conviventes() {
   async function carregarDadosIniciais() {
     setLoading(true);
     try {
-      const dados = await carregarDadosIniciaisProntuario();
+      const statusResumo = filtroStatus === 'Ativo'
+        ? 'Ativo'
+        : (filtroStatus === 'Todos' || filtroStatus === 'Inativos' ? null : filtroStatus);
 
-      setConviventes(dados.conviventes.map(formatarDadosConviventeParaTela));
-      setQuartos(dados.quartos);
-      setListaTecnicos(dados.tecnicos);
-      setHistoricoMotivos(dados.motivos);
-      setOrigensEncaminhamento(dados.origens || []);
-      if (dados.identidade) setIdentidadeRelatorio(dados.identidade);
-    } catch { 
-      setErro('Erro ao sincronizar dados com o servidor.'); 
-    } finally { 
-      setLoading(false); 
+      const { conviventes: listaInicial, quartos: quartosIniciais } = await carregarListaConviventesCadastro({
+        status: statusResumo,
+      });
+
+      setConviventes(listaInicial.map(formatarDadosConviventeParaTela));
+      setQuartos(quartosIniciais);
+
+      void carregarDadosAuxiliaresProntuario().then((dados) => {
+        setListaTecnicos(dados.tecnicos);
+        setHistoricoMotivos(dados.motivos);
+        setOrigensEncaminhamento(dados.origens || []);
+        if (dados.identidade) setIdentidadeRelatorio(dados.identidade);
+      });
+
+      if (filtroStatus === 'Ativo') {
+        void carregarResumoCompletoConviventes().then((listaCompleta) => {
+          setConviventes(listaCompleta.map(formatarDadosConviventeParaTela));
+        });
+      }
+    } catch {
+      setErro('Erro ao sincronizar dados com o servidor.');
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -767,7 +784,7 @@ export default function Conviventes() {
                       podeMudarStatus={podeMudarStatus}
                       errosValidacao={errosValidacao}
                       quartos={quartos}
-                      podeEditarLeitoPeloProntuario={!usuarioLogadoEhOrientador}
+                      podeEditarLeitoPeloProntuario={podeEditarAcomodacao}
                       handleChange={handleChange}
                       handleBlur={handleBlur}
                       handleRemoverFotoPerfil={handleRemoverFotoPerfil}

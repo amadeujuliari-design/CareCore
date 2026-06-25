@@ -1,5 +1,47 @@
 import { filtrarOrdenarConviventesPorBusca } from './conviventeBuscaUtils.js';
 
+export const TIPOS_ROTINA_REFEICOES = [
+  'Café da manhã',
+  'Almoço',
+  'Jantar',
+  'Lanche noturno',
+];
+
+export function perfilOcultaSomatoriaAlimentacao(perfil) {
+  const normalizado = String(perfil || '').trim();
+  return normalizado === 'Orientador' || normalizado === 'Técnico';
+}
+
+export function tipoRegistroAlimentacao(tipoRegistro) {
+  return TIPOS_ROTINA_REFEICOES.includes(tipoRegistro);
+}
+
+export function filtrarContagensInteracaoSemAlimentacao(contagensPorTipo) {
+  return Object.fromEntries(
+    Object.entries(contagensPorTipo || {}).filter(
+      ([tipo]) => !tipoRegistroAlimentacao(tipo),
+    ),
+  );
+}
+
+export function totalInteracoesSemAlimentacao(contagensPorTipo) {
+  return Object.values(filtrarContagensInteracaoSemAlimentacao(contagensPorTipo)).reduce(
+    (total, valor) => total + Number(valor || 0),
+    0,
+  );
+}
+
+export function obterPerfilUsuarioLogado() {
+  try {
+    const bruto = localStorage.getItem('@CareCore:user') || localStorage.getItem('usuario');
+    if (!bruto) return '';
+    const usuario = JSON.parse(bruto);
+    return usuario?.perfil_acesso || usuario?.perfil || '';
+  } catch {
+    return '';
+  }
+}
+
 export function normalizarCodigo(codigo) {
   return String(codigo || '').trim();
 }
@@ -141,10 +183,18 @@ export function calcularResumoRotinaDiaria(conviventes, resumoHoje) {
     const presencas = Array.isArray(resumo?.presencas) ? resumo.presencas : [];
     return total + presencas.filter((registro) => registro.tipo_registro === 'Almoço').length;
   }, 0);
-  const totalInteracoesRotina = Object.values(resumoHoje).reduce((total, resumo) => {
+  const contagensInteracoes = Object.values(resumoHoje).reduce((acc, resumo) => {
     const presencas = Array.isArray(resumo?.presencas) ? resumo.presencas : [];
-    return total + presencas.filter((registro) => !['Entrada', 'Saída'].includes(registro.tipo_registro)).length;
-  }, 0);
+    presencas.forEach((registro) => {
+      if (['Entrada', 'Saída'].includes(registro.tipo_registro)) return;
+      acc[registro.tipo_registro] = (acc[registro.tipo_registro] || 0) + 1;
+    });
+    return acc;
+  }, {});
+  const totalInteracoesRotina = Object.values(contagensInteracoes).reduce(
+    (total, valor) => total + Number(valor || 0),
+    0,
+  );
 
   return {
     totalAtivos,
@@ -152,5 +202,6 @@ export function calcularResumoRotinaDiaria(conviventes, resumoHoje) {
     totalDentro,
     totalAlmocos,
     totalInteracoesRotina,
+    contagensInteracoes,
   };
 }

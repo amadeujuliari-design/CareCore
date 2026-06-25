@@ -4,12 +4,13 @@ from sqlalchemy.future import select
 from database import get_db
 from models import QuartoDB, LeitoDB, ConviventeDB
 from schemas import LeitoAlocacaoPayload, QuartoCreate, QuartoUpdate
+from ordenacao_natural import chave_ordenacao_natural
 from security import exigir_perfis, exigir_tecnico_ou_gestor, get_usuario_logado
 from tenant_scope import obter_instituicao_escopo
 
 router = APIRouter(prefix="/api/quartos", tags=["Quartos e Leitos"])
 
-exigir_alocacao_leito = exigir_perfis("Gestor", "Técnico", "Administrativo", "Orientador")
+exigir_alocacao_leito = exigir_perfis("Gestor", "Técnico", "Administrativo")
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
@@ -74,16 +75,23 @@ async def listar_quartos(
 
         leito_ids = [leito.id for leito in leitos]
         if leito_ids:
-            conviventes = (
+            ocupantes = (
                 await db.execute(
-                    select(ConviventeDB).where(
+                    select(
+                        ConviventeDB.id,
+                        ConviventeDB.nome_completo,
+                        ConviventeDB.nome_social,
+                        ConviventeDB.numero_institucional,
+                        ConviventeDB.cpf,
+                        ConviventeDB.leito_id,
+                    ).where(
                         ConviventeDB.instituicao_id == instituicao_id,
                         ConviventeDB.leito_id.in_(leito_ids),
-                        ConviventeDB.status == "Ativo"
+                        ConviventeDB.status == "Ativo",
                     )
                 )
-            ).scalars().all()
-            convivente_por_leito = {convivente.leito_id: convivente for convivente in conviventes}
+            ).all()
+            convivente_por_leito = {row.leito_id: row for row in ocupantes}
 
     lista_quartos = []
 
@@ -126,6 +134,8 @@ async def listar_quartos(
                 "cpf": cpf
             })
 
+        lista_leitos.sort(key=lambda leito: chave_ordenacao_natural(leito["identificacao"]))
+
         lista_quartos.append({
             "id": q.id,
             "nome": q.nome,
@@ -134,6 +144,8 @@ async def listar_quartos(
             "is_active": q.is_active,
             "leitos": lista_leitos
         })
+
+    lista_quartos.sort(key=lambda quarto: chave_ordenacao_natural(quarto["nome"]))
 
     return lista_quartos
 

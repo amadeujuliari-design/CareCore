@@ -3,7 +3,10 @@ import { describe, it } from 'node:test';
 
 import {
   exigeJustificativaRetornoRapidoRotina,
+  filtrarContagensInteracaoSemAlimentacao,
   obterCodigoCarteirinhaConvivente,
+  perfilOcultaSomatoriaAlimentacao,
+  totalInteracoesSemAlimentacao,
 } from './rotinaDiariaUtils.js';
 
 describe('rotinaDiariaUtils', () => {
@@ -44,5 +47,22 @@ describe('rotinaDiariaUtils', () => {
     assert.equal(obterCodigoCarteirinhaConvivente({ numero_institucional: 123 }), '123');
     assert.equal(obterCodigoCarteirinhaConvivente({ cpf: '123.456.789-00' }), '12345678900');
     assert.equal(obterCodigoCarteirinhaConvivente({ id: 'abcdefghi' }), 'abcdefgh');
+  });
+
+  it('oculta somatoria de alimentacao para orientador e tecnico', () => {
+    assert.equal(perfilOcultaSomatoriaAlimentacao('Orientador'), true);
+    assert.equal(perfilOcultaSomatoriaAlimentacao('Técnico'), true);
+    assert.equal(perfilOcultaSomatoriaAlimentacao('Gestor'), false);
+  });
+
+  it('remove refeicoes das contagens visiveis para perfis operacionais', () => {
+    const contagens = {
+      Jantar: 10,
+      Banho: 3,
+      'Café da manhã': 2,
+    };
+
+    assert.deepEqual(filtrarContagensInteracaoSemAlimentacao(contagens), { Banho: 3 });
+    assert.equal(totalInteracoesSemAlimentacao(contagens), 3);
   });
 });

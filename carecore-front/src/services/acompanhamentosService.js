@@ -48,3 +48,13 @@ export async function criarEvolucaoDiscussaoHospitalar(registroId, payload) {
   const { data } = await api.post(`${BASE}/discussoes-hospitalares/${registroId}/evolucoes`, payload);
   return data;
 }
+
+export async function obterPot(registroId) {
+  const { data } = await api.get(`${BASE}/pot/${registroId}`);
+  return data;
+}
+
+export async function criarEvolucaoPot(registroId, payload) {
+  const { data } = await api.post(`${BASE}/pot/${registroId}/evolucoes`, payload);
+  return data;
+}

@@ -5,6 +5,10 @@ const PERFIS_DOCUMENTOS_RESTRITOS = [...PERFIS_GESTAO, 'Master'];
 const PERFIS_TECNICOS = ['Técnico', 'Tecnico'];
 const PERFIS_MANUTENCAO = ['Manutenção', 'Manutencao'];
 
+export function usuarioPodeEditarAcomodacao(perfilUsuario, isMaster = false) {
+  return isMaster || PERFIS_GESTAO.includes(perfilUsuario) || PERFIS_TECNICOS.includes(perfilUsuario);
+}
+
 export function usePermissoesProntuario({
   perfilUsuario,
   idUsuarioLogado,
@@ -27,6 +31,7 @@ export function usePermissoesProntuario({
       podeCriarHistoricoConvivente: usuarioEhGestao || usuarioEhTecnico,
       podeEditarHistoricoConvivente: usuarioEhGestao || usuarioEhTecnicoResponsavel,
       podeGerenciarPiaConvivente: usuarioEhGestao || usuarioEhTecnico || usuarioEhManutencao,
+      podeEditarAcomodacao: usuarioPodeEditarAcomodacao(perfilUsuario),
       usuarioPodeImprimirSensiveisConvivente: (convivente) => (
         usuarioEhGestao ||
         (usuarioEhTecnico && convivente?.tecnico_id === idUsuarioLogado)

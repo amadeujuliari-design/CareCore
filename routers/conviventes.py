@@ -15,6 +15,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy import and_, case, cast, delete, exists, func, or_, String
 
+from convivente_datas_cadastro import (
+    aplicar_datas_convivente_objeto,
+    aplicar_datas_convivente_payload,
+    preparar_datas_convivente_criacao,
+    validar_data_inclusao_convivente,
+)
 from convivente_ficha_pia import (
     carregar_listas_ficha_pia,
     enriquecer_convivente_response_dict,
@@ -25,6 +31,7 @@ from pia_assinatura_digital import (
     normalizar_metodo_leitura,
     validar_codigo_carteirinha_convivente,
 )
+from pia_acompanhamento_sync import reconciliar_espelhos_pia_convivente
 from database import get_db
 from audit_log import registrar_evento_auditoria
 from models import (
@@ -85,6 +92,8 @@ from schemas import (
     HistoricoConviventeCreate, HistoricoConviventeListaResponse, HistoricoConviventeResponse, HistoricoConviventeUpdate,
     RotinaHistoricoListaResponse, RotinaHistoricoResumoPeriodo,
     RelatorioPiaListaResponse,
+    RelatorioPresencaPeriodoResponse,
+    RelatorioCadastrosNovosResponse,
     SisaImportacaoListaResponse, FechamentoMensalListaResponse,
     RegistroRotinaCreate,
     RegistroRotinaResponse,
@@ -539,7 +548,19 @@ async def criar_convivente(convivente: ConviventeCreate, db: AsyncSession = Depe
         dados = convivente.model_dump(exclude_unset=True, exclude={"observacao_status"})
         listas_payload = {chave: dados.pop(chave) for chave in LISTAS_FICHA_PIA if chave in dados}
         normalizar_campos_ficha_payload(dados)
+
+        hoje = agora_sao_paulo().date()
+        campos_enviados = set(dados.keys())
+        preparar_datas_convivente_criacao(dados, hoje)
+        status_inicial = dados.get("status", "Ativo")
+        aplicar_datas_convivente_payload(dados, None, status_inicial, hoje, campos_enviados)
         
+        if dados.get("leito_id") and usuario_tem_perfil(usuario_atual, {PERFIL_ORIENTADOR}):
+            raise HTTPException(
+                status_code=403,
+                detail="Orientadores não podem definir quarto/cama do convivente.",
+            )
+
         if dados.get("status") in ["Inativado", "Bloqueado", "Saída qualificada"]:
             dados["leito_id"] = None
             dados["inativado_em"] = agora_sao_paulo()
@@ -745,6 +766,7 @@ async def responder_ausencia_justificada(
             leito_id_antigo = convivente.leito_id
             convivente.leito_id = None
             convivente.inativado_em = agora_sao_paulo()
+            convivente.data_inativacao = hoje
 
             if leito_id_antigo:
                 leito = (
@@ -773,24 +795,34 @@ async def responder_ausencia_justificada(
 
 @router.get("/conviventes/resumo")
 async def listar_conviventes_resumo(
+    status: str | None = Query(
+        None,
+        description="Filtra por status exato (ex.: Ativo). Sem filtro, retorna todos.",
+    ),
     db: AsyncSession = Depends(get_db),
     usuario_atual: dict = Depends(get_usuario_logado)
 ):
+    query = select(
+        ConviventeDB.id,
+        ConviventeDB.numero_institucional,
+        ConviventeDB.status,
+        ConviventeDB.nome_completo,
+        ConviventeDB.nome_social,
+        ConviventeDB.cpf,
+        ConviventeDB.leito_id,
+        ConviventeDB.tecnico_id,
+        ConviventeDB.foto_url,
+    ).where(
+        ConviventeDB.instituicao_id == obter_instituicao_escopo(usuario_atual),
+    )
+
+    status_filtro = (status or "").strip()
+    if status_filtro:
+        query = query.where(ConviventeDB.status == status_filtro)
+
     rows = (
         await db.execute(
-            select(
-                ConviventeDB.id,
-                ConviventeDB.numero_institucional,
-                ConviventeDB.status,
-                ConviventeDB.nome_completo,
-                ConviventeDB.nome_social,
-                ConviventeDB.cpf,
-                ConviventeDB.leito_id,
-                ConviventeDB.tecnico_id,
-                ConviventeDB.foto_url,
-            ).where(
-                ConviventeDB.instituicao_id == obter_instituicao_escopo(usuario_atual),
-            ).order_by(
+            query.order_by(
                 ConviventeDB.status.asc(),
                 ConviventeDB.nome_completo.asc(),
             )
@@ -840,6 +872,10 @@ async def listar_registros_pia(
         raise HTTPException(status_code=404, detail="Convivente não encontrado.")
 
     instituicao_id = obter_instituicao_escopo(usuario_atual)
+
+    await reconciliar_espelhos_pia_convivente(db, instituicao_id, convivente_id)
+    await db.commit()
+
     base = select(RegistroPIADB).where(
         RegistroPIADB.convivente_id == convivente_id,
         RegistroPIADB.instituicao_id == instituicao_id,
@@ -1897,6 +1933,8 @@ async def atualizar_convivente(convivente_id: str, dados_atualizacao: Convivente
     dados = dados_atualizacao.model_dump(exclude_unset=True, exclude={"observacao_status"})
     listas_payload = {chave: dados.pop(chave) for chave in LISTAS_FICHA_PIA if chave in dados}
     normalizar_campos_ficha_payload(dados)
+    campos_enviados = set(dados.keys())
+    hoje = agora_sao_paulo().date()
 
     if (
         "leito_id" in dados
@@ -1905,7 +1943,7 @@ async def atualizar_convivente(convivente_id: str, dados_atualizacao: Convivente
     ):
         raise HTTPException(
             status_code=403,
-            detail="Orientadores devem alterar a cama do convivente pelo módulo Acomodações.",
+            detail="Orientadores não podem alterar quarto/cama do convivente.",
         )
 
     if status_antigo != dados.get("status", status_antigo):
@@ -1923,6 +1961,8 @@ async def atualizar_convivente(convivente_id: str, dados_atualizacao: Convivente
         dados["leito_id"] = None
 
     novo_status = dados.get("status", status_antigo)
+    aplicar_datas_convivente_payload(dados, status_antigo, novo_status, hoje, campos_enviados)
+
     if novo_status in ("Ativo", "Em acolhimento"):
         dados["inativado_em"] = None
         dados["ausencia_justificada_desde"] = None
@@ -1941,6 +1981,9 @@ async def atualizar_convivente(convivente_id: str, dados_atualizacao: Convivente
     )
 
     aplicar_credenciais_convivente_salvar(dados)
+
+    if "data_inclusao" in campos_enviados:
+        await validar_data_inclusao_convivente(db, convivente_id, dados.get("data_inclusao"))
 
     for key, value in dados.items():
         setattr(convivente, key, value)
@@ -3362,8 +3405,11 @@ async def dashboard_operacional_rotina(
       representam apenas a movimentação do dia.
     """
     hoje = agora_sao_paulo().date()
+    agora = agora_sao_paulo()
     inicio_dia = datetime.combine(hoje, datetime.min.time())
     fim_dia = datetime.combine(hoje, datetime.max.time())
+    ontem = hoje - timedelta(days=1)
+    inicio_ontem = datetime.combine(ontem, datetime.min.time())
 
     inst_id = obter_instituicao_escopo(usuario_atual)
 
@@ -3479,53 +3525,85 @@ async def dashboard_operacional_rotina(
         for registro in ultimos_registros_historicos
     }
 
+    convivente_ids_ativos = [convivente.id for convivente in conviventes_ativos]
+    movimentos_fluxo_recentes = {}
+    if convivente_ids_ativos:
+        movimentos_resultado = await db.execute(
+            select(
+                RegistroRotinaDB.convivente_id,
+                RegistroRotinaDB.tipo_registro,
+                RegistroRotinaDB.data_registro,
+            ).where(
+                RegistroRotinaDB.instituicao_id == inst_id,
+                RegistroRotinaDB.cancelado != True,
+                RegistroRotinaDB.convivente_id.in_(convivente_ids_ativos),
+                RegistroRotinaDB.tipo_registro.in_(["Entrada", "Saída"]),
+                RegistroRotinaDB.data_registro >= inicio_ontem,
+                RegistroRotinaDB.data_registro <= fim_dia,
+            ).order_by(
+                RegistroRotinaDB.data_registro.asc()
+            )
+        )
+        for convivente_id, tipo_registro, data_registro in movimentos_resultado.all():
+            movimentos_fluxo_recentes.setdefault(convivente_id, []).append({
+                "tipo_registro": tipo_registro,
+                "data_registro": data_registro,
+            })
+
     registros_validos_hoje = [
         registro for registro, *_ in registros_hoje
         if not registro.cancelado
     ]
-    convivente_ids_com_registro_hoje = {
-        registro.convivente_id
-        for registro in registros_validos_hoje
-    }
 
     presentes = []
     fora_por_saida = []
-    sem_movimento = []
+    sem_interacao_24h = []
+    ausentes_operacionais = []
 
     for convivente in conviventes_ativos:
         ultimo = ultimo_movimento_por_convivente.get(convivente.id)
         ultimo_registro = ultimo_registro_por_convivente.get(convivente.id)
+        dentro = convivente_dentro_por_ultimo_fluxo(ultimo)
 
-        if ultimo and ultimo["tipo_registro"] == "Entrada":
-            presentes.append(ultimo)
+        if dentro:
+            presentes.append({
+                "id": ultimo.get("id") if ultimo else None,
+                "convivente_id": convivente.id,
+                "convivente_nome": convivente.nome_social or convivente.nome_completo,
+                "numero_institucional": convivente.numero_institucional,
+                "tipo_registro": ultimo.get("tipo_registro") if ultimo else None,
+                "data_registro": ultimo.get("data_registro") if ultimo else None,
+                "origem_estado": ultimo.get("origem_estado") if ultimo else "cadastro_ativo_sem_saida",
+            })
+
+            if sem_interacao_rotina_24h(
+                getattr(ultimo_registro, "data_registro", None),
+                agora,
+            ):
+                sem_interacao_24h.append({
+                    "id": getattr(ultimo_registro, "id", None),
+                    "convivente_id": convivente.id,
+                    "convivente_nome": convivente.nome_social or convivente.nome_completo,
+                    "numero_institucional": convivente.numero_institucional,
+                    "tipo_registro": getattr(ultimo_registro, "tipo_registro", None),
+                    "data_registro": getattr(ultimo_registro, "data_registro", None),
+                    "origem_estado": "dentro_sem_interacao_24h",
+                })
         elif ultimo and ultimo["tipo_registro"] == "Saída":
             item_fora = {
                 **ultimo,
-                "origem_estado": "saida_registrada"
+                "origem_estado": "saida_registrada",
             }
             fora_por_saida.append(item_fora)
-        else:
-            presentes.append({
-                "id": None,
-                "convivente_id": convivente.id,
-                "convivente_nome": convivente.nome_social or convivente.nome_completo,
-                "numero_institucional": convivente.numero_institucional,
-                "tipo_registro": None,
-                "data_registro": None,
-                "origem_estado": "cadastro_ativo_sem_saida",
-            })
 
-        if convivente.id not in convivente_ids_com_registro_hoje:
-            item_sem_movimento = {
-                "id": getattr(ultimo_registro, "id", None),
-                "convivente_id": convivente.id,
-                "convivente_nome": convivente.nome_social or convivente.nome_completo,
-                "numero_institucional": convivente.numero_institucional,
-                "tipo_registro": getattr(ultimo_registro, "tipo_registro", None),
-                "data_registro": getattr(ultimo_registro, "data_registro", None),
-                "origem_estado": "sem_movimento_hoje"
-            }
-            sem_movimento.append(item_sem_movimento)
+            if convivente_ausente_saida_ontem_sem_retorno(
+                movimentos_fluxo_recentes.get(convivente.id, []),
+                hoje,
+            ):
+                ausentes_operacionais.append({
+                    **item_fora,
+                    "origem_estado": "ausente_saida_ontem_sem_retorno",
+                })
 
     entradas_hoje = sum(
         1 for registro in registros_validos_hoje
@@ -3605,11 +3683,25 @@ async def dashboard_operacional_rotina(
             "descricao": f"{cancelados_hoje} registro(s) foram cancelados e precisam permanecer auditáveis."
         })
 
-    if sem_movimento:
+    if sem_interacao_24h:
         alertas.append({
-            "tipo": "sem_movimento",
-            "titulo": "Conviventes ativos sem movimentação hoje",
-            "descricao": f"{len(sem_movimento)} convivente(s) ativo(s) ainda não possuem registro de rotina hoje."
+            "tipo": "sem_interacao_24h",
+            "titulo": "Dentro do projeto sem interação há 24h",
+            "descricao": (
+                f"{len(sem_interacao_24h)} convivente(s) ativo(s) estão dentro do projeto, "
+                "mas não tiveram nenhum registro de rotina nas últimas 24 horas. "
+                "Verifique se algo precisa ser corrigido."
+            ),
+        })
+
+    if ausentes_operacionais:
+        alertas.append({
+            "tipo": "ausentes_operacionais",
+            "titulo": "Ausentes — saída ontem sem retorno",
+            "descricao": (
+                f"{len(ausentes_operacionais)} convivente(s) ativo(s) registraram saída ontem "
+                "e ainda não retornaram hoje."
+            ),
         })
 
     capacidade_operacional = len(conviventes_ativos)
@@ -3632,7 +3724,9 @@ async def dashboard_operacional_rotina(
             "dentro_projeto": len(presentes),
             "fora_projeto": len(fora_por_saida),
             "fora_com_saida": len(fora_por_saida),
-            "sem_movimento": len(sem_movimento),
+            "sem_movimento": len(sem_interacao_24h),
+            "sem_interacao_24h": len(sem_interacao_24h),
+            "ausentes_operacionais": len(ausentes_operacionais),
             "percentual_presentes": percentual_presentes,
 
             # Movimento diário.
@@ -3651,13 +3745,17 @@ async def dashboard_operacional_rotina(
             "presentes": len(presentes),
             "fora": len(fora_por_saida),
             "fora_com_saida": len(fora_por_saida),
-            "sem_movimento": len(sem_movimento)
+            "sem_movimento": len(sem_interacao_24h),
+            "sem_interacao_24h": len(sem_interacao_24h),
+            "ausentes_operacionais": len(ausentes_operacionais),
         },
         "limite_listas": limite_listas_seguro,
         "presentes": presentes[:limite_listas_seguro],
         "fora": fora_por_saida[:limite_listas_seguro],
         "fora_com_saida": fora_por_saida[:limite_listas_seguro],
-        "sem_movimento": sem_movimento[:limite_listas_seguro],
+        "sem_movimento": sem_interacao_24h[:limite_listas_seguro],
+        "sem_interacao_24h": sem_interacao_24h[:limite_listas_seguro],
+        "ausentes_operacionais": ausentes_operacionais[:limite_listas_seguro],
         "ultimos_registros": ultimos_registros,
         "alertas": alertas
     }
@@ -4617,66 +4715,18 @@ def _item_atende_filtro_sisa(item: dict, tipo_atendimento: str | None) -> bool:
     return True
 
 
-def _calcular_dias_presenca_operacional(
-    movimentos: list[dict],
-    data_inicio: date,
-    data_fim: date,
-    data_entrada: date | None = None,
-) -> list[str]:
-    movimentos_ordenados = sorted(
-        [
-            movimento for movimento in movimentos
-            if movimento.get("tipo_registro") in {"Entrada", "Saída"}
-        ],
-        key=lambda movimento: movimento["data_registro"],
-    )
-
-    dias_presentes = []
-    dia = data_inicio
-
-    while dia <= data_fim:
-        if data_entrada and dia < data_entrada:
-            dia += timedelta(days=1)
-            continue
-
-        inicio_dia = datetime.combine(dia, datetime.min.time())
-        fim_dia = datetime.combine(dia, datetime.max.time())
-
-        ultimo_antes_do_dia = None
-        ultimo_ate_fim_do_dia = None
-        entrou_no_dia = False
-
-        for movimento in movimentos_ordenados:
-            data_movimento = movimento["data_registro"]
-
-            if data_movimento < inicio_dia:
-                ultimo_antes_do_dia = movimento
-                ultimo_ate_fim_do_dia = movimento
-                continue
-
-            if data_movimento > fim_dia:
-                break
-
-            ultimo_ate_fim_do_dia = movimento
-            if movimento["tipo_registro"] == "Entrada":
-                entrou_no_dia = True
-
-        amanheceu_dentro = (
-            ultimo_antes_do_dia is None
-            or ultimo_antes_do_dia["tipo_registro"] == "Entrada"
-        )
-        dentro_no_fechamento = (
-            ultimo_ate_fim_do_dia is None
-            or ultimo_ate_fim_do_dia["tipo_registro"] == "Entrada"
-        )
-
-        if dentro_no_fechamento or amanheceu_dentro or entrou_no_dia:
-            dias_presentes.append(dia.isoformat())
-
-        dia += timedelta(days=1)
-
-    return dias_presentes
-
+from presenca_operacional import (
+    calcular_dias_presenca_operacional as _calcular_dias_presenca_operacional,
+    convivente_ausente_saida_ontem_sem_retorno,
+    convivente_dentro_por_ultimo_fluxo,
+    convivente_presente_no_dia,
+    listar_dias_periodo,
+    linha_atende_filtro_situacao_periodo,
+    MAX_DIAS_RELATORIO_PRESENCA,
+    montar_status_presenca_por_dia,
+    sem_interacao_rotina_24h,
+    totais_status_presenca,
+)
 
 TIPOS_SISA_PRESENCA_CARECORE = {
     "Entrada",
@@ -5729,6 +5779,285 @@ async def listar_registros_pia_relatorios(
     }
 
 
+@router.get("/relatorios/presenca-periodo", response_model=RelatorioPresencaPeriodoResponse)
+async def relatorio_presenca_periodo(
+    data_inicio: str = Query(..., description="Data inicial AAAA-MM-DD"),
+    data_fim: str = Query(..., description="Data final AAAA-MM-DD"),
+    tecnico_id: str | None = None,
+    busca: str | None = None,
+    status_convivente: str = Query(
+        "todos",
+        description="todos | Ativo | Ausência justificada",
+    ),
+    filtro_situacao: str = Query(
+        "presenca_ou_justificada",
+        description="presenca_ou_justificada | apenas_ausencia",
+    ),
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    bloquear_usuario_global_puro(usuario_atual)
+    instituicao_id = obter_instituicao_escopo(usuario_atual)
+
+    inicio = _parse_data_simples(data_inicio, "Data inicial").date()
+    fim = _parse_data_simples(data_fim, "Data final").date()
+
+    if inicio > fim:
+        raise HTTPException(status_code=400, detail="A data inicial não pode ser maior que a data final.")
+
+    dias_periodo = listar_dias_periodo(inicio, fim)
+    if len(dias_periodo) > MAX_DIAS_RELATORIO_PRESENCA:
+        raise HTTPException(
+            status_code=400,
+            detail=f"O período máximo é de {MAX_DIAS_RELATORIO_PRESENCA} dias.",
+        )
+
+    filtro_status = (status_convivente or "todos").strip()
+    if filtro_status not in {"todos", "Ativo", "Ausência justificada"}:
+        raise HTTPException(
+            status_code=400,
+            detail="Status do convivente inválido. Use todos, Ativo ou Ausência justificada.",
+        )
+
+    filtro_situacao_valor = (filtro_situacao or "presenca_ou_justificada").strip()
+    if filtro_situacao_valor not in {"presenca_ou_justificada", "apenas_ausencia"}:
+        raise HTTPException(
+            status_code=400,
+            detail="Filtro de situação inválido.",
+        )
+
+    query_conviventes = select(ConviventeDB, UsuarioDB.nome.label("tecnico_nome")).outerjoin(
+        UsuarioDB, UsuarioDB.id == ConviventeDB.tecnico_id
+    ).where(
+        ConviventeDB.instituicao_id == instituicao_id,
+    )
+    if filtro_status == "todos":
+        query_conviventes = query_conviventes.where(
+            ConviventeDB.status.in_(["Ativo", "Ausência justificada"]),
+        )
+    else:
+        query_conviventes = query_conviventes.where(ConviventeDB.status == filtro_status)
+
+    if tecnico_id:
+        query_conviventes = query_conviventes.where(ConviventeDB.tecnico_id == tecnico_id)
+
+    termo_busca = (busca or "").strip().lower()
+    if termo_busca:
+        query_conviventes = query_conviventes.where(
+            or_(
+                func.lower(ConviventeDB.nome_completo).contains(termo_busca),
+                func.lower(func.coalesce(ConviventeDB.nome_social, "")).contains(termo_busca),
+                cast(ConviventeDB.numero_institucional, String).contains(termo_busca),
+                func.lower(func.coalesce(ConviventeDB.numero_sisa, "")).contains(termo_busca),
+            )
+        )
+
+    conviventes_resultado = (
+        await db.execute(
+            query_conviventes.order_by(ConviventeDB.nome_completo.asc())
+        )
+    ).all()
+
+    convivente_ids = [convivente.id for convivente, _ in conviventes_resultado]
+    fim_datetime = datetime.combine(fim, datetime.max.time())
+
+    movimentos_por_convivente: dict[str, list[dict]] = {}
+    if convivente_ids:
+        movimentos_resultado = await db.execute(
+            select(
+                RegistroRotinaDB.convivente_id,
+                RegistroRotinaDB.tipo_registro,
+                RegistroRotinaDB.data_registro,
+            ).where(
+                RegistroRotinaDB.instituicao_id == instituicao_id,
+                RegistroRotinaDB.cancelado != True,
+                RegistroRotinaDB.convivente_id.in_(convivente_ids),
+                RegistroRotinaDB.tipo_registro.in_(["Entrada", "Saída"]),
+                RegistroRotinaDB.data_registro <= fim_datetime,
+            ).order_by(
+                RegistroRotinaDB.data_registro.asc()
+            )
+        )
+        for convivente_id, tipo_registro, data_registro in movimentos_resultado.all():
+            movimentos_por_convivente.setdefault(convivente_id, []).append({
+                "tipo_registro": tipo_registro,
+                "data_registro": data_registro,
+            })
+
+    dias_iso = [dia.isoformat() for dia in dias_periodo]
+    linhas = []
+
+    for convivente, tecnico_nome in conviventes_resultado:
+        status_por_dia = montar_status_presenca_por_dia(
+            movimentos_por_convivente.get(convivente.id, []),
+            inicio,
+            fim,
+            data_entrada=convivente.data_entrada,
+            status_convivente=convivente.status,
+            ausencia_justificada_desde=convivente.ausencia_justificada_desde,
+        )
+        totais = totais_status_presenca(status_por_dia)
+
+        if not linha_atende_filtro_situacao_periodo(totais, filtro_situacao_valor):
+            continue
+
+        linhas.append({
+            "convivente_id": convivente.id,
+            "nome": convivente.nome_social or convivente.nome_completo,
+            "prontuario": (
+                str(convivente.numero_institucional)
+                if convivente.numero_institucional is not None
+                else None
+            ),
+            "numero_sisa": convivente.numero_sisa,
+            "status": convivente.status,
+            "tecnico_id": convivente.tecnico_id,
+            "tecnico_nome": tecnico_nome,
+            "dias": status_por_dia,
+            "totais": totais,
+        })
+
+    resumo = {
+        "presentes": 0,
+        "presentes_operacionais": 0,
+        "justificados": 0,
+        "ausentes": 0,
+        "na": 0,
+    }
+    for linha in linhas:
+        for chave in resumo:
+            resumo[chave] += linha["totais"].get(chave, 0)
+
+    return {
+        "data_inicio": inicio.isoformat(),
+        "data_fim": fim.isoformat(),
+        "dias": dias_iso,
+        "total_conviventes": len(linhas),
+        "filtro_situacao": filtro_situacao_valor,
+        "status_convivente": filtro_status,
+        "resumo": resumo,
+        "linhas": linhas,
+    }
+
+
+MAX_DIAS_RELATORIO_CADASTROS_NOVOS = 366
+
+
+@router.get("/relatorios/cadastros-novos", response_model=RelatorioCadastrosNovosResponse)
+async def relatorio_cadastros_novos(
+    data_inicio: str = Query(..., description="Data inicial AAAA-MM-DD"),
+    data_fim: str = Query(..., description="Data final AAAA-MM-DD"),
+    criterio: str = Query(
+        "inclusoes",
+        description="inclusoes | nova_vinculacao | ambas",
+    ),
+    tecnico_id: str | None = None,
+    busca: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    bloquear_usuario_global_puro(usuario_atual)
+    instituicao_id = obter_instituicao_escopo(usuario_atual)
+
+    inicio = _parse_data_simples(data_inicio, "Data inicial").date()
+    fim = _parse_data_simples(data_fim, "Data final").date()
+
+    if inicio > fim:
+        raise HTTPException(status_code=400, detail="A data inicial não pode ser maior que a data final.")
+
+    if (fim - inicio).days > MAX_DIAS_RELATORIO_CADASTROS_NOVOS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"O período máximo é de {MAX_DIAS_RELATORIO_CADASTROS_NOVOS} dias.",
+        )
+
+    criterio_valor = (criterio or "inclusoes").strip()
+    if criterio_valor not in {"inclusoes", "nova_vinculacao", "ambas"}:
+        raise HTTPException(
+            status_code=400,
+            detail="Critério inválido. Use inclusoes, nova_vinculacao ou ambas.",
+        )
+
+    inclusao_no_periodo = and_(
+        ConviventeDB.data_inclusao.is_not(None),
+        ConviventeDB.data_inclusao >= inicio,
+        ConviventeDB.data_inclusao <= fim,
+    )
+    vinculacao_no_periodo = and_(
+        ConviventeDB.data_nova_vinculacao.is_not(None),
+        ConviventeDB.data_nova_vinculacao >= inicio,
+        ConviventeDB.data_nova_vinculacao <= fim,
+    )
+
+    if criterio_valor == "inclusoes":
+        filtro_periodo = inclusao_no_periodo
+    elif criterio_valor == "nova_vinculacao":
+        filtro_periodo = vinculacao_no_periodo
+    else:
+        filtro_periodo = or_(inclusao_no_periodo, vinculacao_no_periodo)
+
+    query = (
+        select(ConviventeDB, UsuarioDB.nome.label("tecnico_nome"))
+        .outerjoin(UsuarioDB, UsuarioDB.id == ConviventeDB.tecnico_id)
+        .where(
+            ConviventeDB.instituicao_id == instituicao_id,
+            filtro_periodo,
+        )
+    )
+
+    if tecnico_id:
+        query = query.where(ConviventeDB.tecnico_id == tecnico_id)
+
+    termo_busca = (busca or "").strip().lower()
+    if termo_busca:
+        query = query.where(
+            or_(
+                func.lower(ConviventeDB.nome_completo).contains(termo_busca),
+                func.lower(func.coalesce(ConviventeDB.nome_social, "")).contains(termo_busca),
+                func.lower(func.coalesce(ConviventeDB.nome_mae, "")).contains(termo_busca),
+                func.lower(func.coalesce(ConviventeDB.prontuario_saude, "")).contains(termo_busca),
+                cast(ConviventeDB.numero_institucional, String).contains(termo_busca),
+            )
+        )
+
+    resultado = (
+        await db.execute(
+            query.order_by(
+                func.coalesce(
+                    ConviventeDB.data_inclusao,
+                    ConviventeDB.data_nova_vinculacao,
+                ).asc(),
+                ConviventeDB.nome_completo.asc(),
+            )
+        )
+    ).all()
+
+    linhas = []
+    for convivente, _ in resultado:
+        linhas.append({
+            "convivente_id": convivente.id,
+            "nome": convivente.nome_social or convivente.nome_completo,
+            "nome_mae": convivente.nome_mae,
+            "prontuario_saude": convivente.prontuario_saude,
+            "prontuario_institucional": (
+                str(convivente.numero_institucional) if convivente.numero_institucional else None
+            ),
+            "data_inclusao": convivente.data_inclusao.isoformat() if convivente.data_inclusao else None,
+            "data_nova_vinculacao": (
+                convivente.data_nova_vinculacao.isoformat() if convivente.data_nova_vinculacao else None
+            ),
+            "status": convivente.status,
+        })
+
+    return {
+        "data_inicio": inicio.isoformat(),
+        "data_fim": fim.isoformat(),
+        "criterio": criterio_valor,
+        "total_cadastros": len(linhas),
+        "linhas": linhas,
+    }
+
+
 @router.get("/convenio-sisa/importacoes", response_model=SisaImportacaoListaResponse)
 async def listar_importacoes_sisa(
     limit: int = Query(REGISTROS_POR_PAGINA_PADRAO, ge=1, le=200),
@@ -6264,13 +6593,20 @@ async def relatorio_sisa_diario(
                 or convivente.ausencia_justificada_desde <= data_referencia
             )
         )
-        dias_presenca_operacional = _calcular_dias_presenca_operacional(
-            movimentos_por_convivente.get(convivente.id, []),
+        movimentos_fluxo = movimentos_por_convivente.get(convivente.id, [])
+        presente = convivente_presente_no_dia(
+            movimentos_fluxo,
             data_referencia,
-            data_referencia,
-            convivente.data_entrada,
+            data_entrada=convivente.data_entrada,
+            ausencia_justificada=ausencia_justificada,
         )
-        presente = bool(dias_presenca_operacional) or ausencia_justificada
+        ausente_operacional = (
+            convivente.status == "Ativo"
+            and convivente_ausente_saida_ontem_sem_retorno(
+                movimentos_fluxo,
+                data_referencia,
+            )
+        )
 
         primeira_entrada = entradas[0]["data_registro"] if entradas else None
         ultima_saida = saidas[-1]["data_registro"] if saidas else None
@@ -6308,6 +6644,7 @@ async def relatorio_sisa_diario(
             "numero_sisa": convivente.numero_sisa,
             "presenca": "Sim" if presente else "Não",
             "presenca_por_justificativa": "Sim" if ausencia_justificada else "Não",
+            "ausente_operacional": "Sim" if ausente_operacional else "Não",
             "entrada": primeira_entrada,
             "saida": ultima_saida,
             "almoco": "Sim" if almocos else "Não",
@@ -6333,7 +6670,11 @@ async def relatorio_sisa_diario(
         "conviventes_ativos": len(conviventes),
         "presentes": sum(1 for item in linhas if item["presenca"] == "Sim"),
         "presentes_por_justificativa": sum(1 for item in linhas if item.get("presenca_por_justificativa") == "Sim"),
-        "ausentes": sum(1 for item in linhas if item["presenca"] == "Não"),
+        "ausentes": sum(1 for item in linhas if item.get("ausente_operacional") == "Sim"),
+        "fora_sem_presenca": sum(
+            1 for item in linhas
+            if item["presenca"] == "Não" and item.get("ausente_operacional") != "Sim"
+        ),
         "cafes": sum(item["cafes"] for item in linhas),
         "almocos": sum(item["almocos"] for item in linhas),
         "jantares": sum(item["jantares"] for item in linhas),

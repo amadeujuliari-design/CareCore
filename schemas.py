@@ -981,6 +981,8 @@ class RegistroPIAResponse(RegistroPIABase):
     registro_pai_id: Optional[str] = None
     usuario_nome: Optional[str] = None
     data_registro: datetime
+    origem_modulo: Optional[str] = None
+    origem_registro_id: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -1195,6 +1197,10 @@ class ConviventeBase(BaseModel):
     status: str = "Ativo"
 
     data_entrada: Optional[date] = None
+    data_inclusao: Optional[date] = None
+    data_inativacao: Optional[date] = None
+    data_nova_vinculacao: Optional[date] = None
+    prontuario_saude: Optional[str] = None
     ausencia_justificada_desde: Optional[date] = None
     leito_id: Optional[str] = None
     tecnico_id: Optional[str] = None
@@ -1509,6 +1515,48 @@ class RelatorioPiaListaResponse(BaseModel):
     limite: int
     deslocamento: int
     has_more: bool
+
+
+class RelatorioPresencaPeriodoLinha(BaseModel):
+    convivente_id: str
+    nome: str
+    prontuario: Optional[str] = None
+    numero_sisa: Optional[str] = None
+    status: str
+    tecnico_id: Optional[str] = None
+    tecnico_nome: Optional[str] = None
+    dias: dict[str, str]
+    totais: dict[str, int]
+
+
+class RelatorioPresencaPeriodoResponse(BaseModel):
+    data_inicio: str
+    data_fim: str
+    dias: List[str]
+    total_conviventes: int
+    filtro_situacao: str
+    status_convivente: str
+    resumo: dict[str, int]
+    linhas: List[RelatorioPresencaPeriodoLinha]
+
+
+class RelatorioCadastrosNovosLinha(BaseModel):
+    convivente_id: str
+    nome: str
+    nome_mae: Optional[str] = None
+    prontuario_saude: Optional[str] = None
+    prontuario_institucional: Optional[str] = None
+    data_inclusao: Optional[str] = None
+    data_nova_vinculacao: Optional[str] = None
+    status: str
+
+
+class RelatorioCadastrosNovosResponse(BaseModel):
+    data_inicio: str
+    data_fim: str
+    criterio: str
+    total_cadastros: int
+    linhas: List[RelatorioCadastrosNovosLinha]
 
 
 # =====================================================================
@@ -2539,11 +2587,57 @@ class AcompanhamentoPotUpdate(BaseModel):
     observacoes: Optional[str] = None
 
 
+STATUS_EVOLUCAO_POT = [
+    "Em participação",
+    "Congelamento",
+    "Desligado",
+    "Encerrado",
+]
+
+
+class AcompanhamentoPotEvolucaoCreate(BaseModel):
+    status_evolucao: str
+    data_evolucao: date
+    observacoes: Optional[str] = None
+
+    @field_validator("status_evolucao")
+    @classmethod
+    def validar_status_evolucao_pot(cls, valor: str):
+        valor = (valor or "").strip()
+        if valor not in STATUS_EVOLUCAO_POT:
+            raise ValueError(
+                "Status de evolução inválido. Use: Em participação, Congelamento, Desligado ou Encerrado."
+            )
+        return valor
+
+
+class AcompanhamentoPotEvolucaoUpdate(BaseModel):
+    status_evolucao: Optional[str] = None
+    data_evolucao: Optional[date] = None
+    observacoes: Optional[str] = None
+
+    @field_validator("status_evolucao")
+    @classmethod
+    def validar_status_evolucao_pot_update(cls, valor: Optional[str]):
+        if valor is None:
+            return valor
+        valor = valor.strip()
+        if valor not in STATUS_EVOLUCAO_POT:
+            raise ValueError(
+                "Status de evolução inválido. Use: Em participação, Congelamento, Desligado ou Encerrado."
+            )
+        return valor
+
+
 class AcompanhamentoPotResponse(BaseModel):
     id: str
     convivente_id: str
     convivente_nome: Optional[str] = None
     prontuario: Optional[str] = None
+    registro_pai_id: Optional[str] = None
+    status_evolucao: Optional[str] = None
+    data_evolucao: Optional[date] = None
+    situacao_atual: Optional[str] = None
     data_insercao: Optional[date] = None
     data_desligamento: Optional[date] = None
     congelamento_ativo: bool = False
@@ -2554,6 +2648,7 @@ class AcompanhamentoPotResponse(BaseModel):
     registrado_por_nome: Optional[str] = None
     criado_em: datetime
     atualizado_em: Optional[datetime] = None
+    evolucoes: Optional[List["AcompanhamentoPotResponse"]] = None
 
     model_config = ConfigDict(from_attributes=True)
 

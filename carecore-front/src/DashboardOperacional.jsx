@@ -8,9 +8,23 @@ import Sidebar from './Sidebar';
 import { AppShell, MainShell, PageHeader, PremiumButton, ScrollArea } from './components/PremiumUI';
 import { API_ROOT } from './config/apiBase';
 import { criarHeadersAutenticados } from './utils/requestIdUtils';
+import { decodificarPayloadJwt } from './utils/jwtUtils';
+import { perfilOcultaSomatoriaAlimentacao } from './utils/rotinaDiariaUtils';
 
 export default function DashboardOperacional() {
   const token = localStorage.getItem('@CareCore:token');
+
+  let perfilUsuario = '';
+  try {
+    if (token) {
+      const payload = decodificarPayloadJwt(token) || {};
+      perfilUsuario = payload?.perfil_acesso || '';
+    }
+  } catch {
+    perfilUsuario = '';
+  }
+
+  const ocultarSomatoriaAlimentacao = perfilOcultaSomatoriaAlimentacao(perfilUsuario);
 
   const [dados, setDados] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -98,13 +112,19 @@ export default function DashboardOperacional() {
 
     if (abaLista === 'presentes') return dados.presentes || [];
     if (abaLista === 'fora') return dados.fora || [];
-    return dados.sem_movimento || [];
+    if (abaLista === 'ausentes') return dados.ausentes_operacionais || [];
+    return dados.sem_interacao_24h || dados.sem_movimento || [];
   }, [dados, abaLista]);
 
   const totalListaAtual = useMemo(() => {
     if (abaLista === 'presentes') return dados?.listas_totais?.presentes ?? listaAtual.length;
     if (abaLista === 'fora') return dados?.listas_totais?.fora ?? listaAtual.length;
-    return dados?.listas_totais?.sem_movimento ?? listaAtual.length;
+    if (abaLista === 'ausentes') {
+      return dados?.listas_totais?.ausentes_operacionais ?? listaAtual.length;
+    }
+    return dados?.listas_totais?.sem_interacao_24h
+      ?? dados?.listas_totais?.sem_movimento
+      ?? listaAtual.length;
   }, [abaLista, dados, listaAtual.length]);
 
   const listaAtualVisivel = useMemo(() => {
@@ -139,29 +159,37 @@ export default function DashboardOperacional() {
   ];
 
   const cardsSecundarios = [
-    {
-      label: 'Cafés da manhã hoje',
-      valor: resumo.cafes_hoje || 0
-    },
-    {
-      label: 'Almoços hoje',
-      valor: resumo.almocos_hoje || 0
-    },
-    {
-      label: 'Jantares hoje',
-      valor: resumo.jantares_hoje || 0
-    },
-    {
-      label: 'Lanches noturnos hoje',
-      valor: resumo.lanches_noturnos_hoje || 0
-    },
+    ...(!ocultarSomatoriaAlimentacao
+      ? [
+        {
+          label: 'Cafés da manhã hoje',
+          valor: resumo.cafes_hoje || 0,
+        },
+        {
+          label: 'Almoços hoje',
+          valor: resumo.almocos_hoje || 0,
+        },
+        {
+          label: 'Jantares hoje',
+          valor: resumo.jantares_hoje || 0,
+        },
+        {
+          label: 'Lanches noturnos hoje',
+          valor: resumo.lanches_noturnos_hoje || 0,
+        },
+      ]
+      : []),
     {
       label: 'Total de conviventes ativos',
       valor: resumo.conviventes_ativos || 0
     },
     {
-      label: 'Sem movimentação hoje',
-      valor: resumo.sem_movimento || 0
+      label: 'Sem interação 24h',
+      valor: resumo.sem_interacao_24h ?? resumo.sem_movimento ?? 0
+    },
+    {
+      label: 'Ausentes (saída ontem)',
+      valor: resumo.ausentes_operacionais || 0
     }
   ];
 
@@ -295,14 +323,26 @@ export default function DashboardOperacional() {
 
                     <button
                       type="button"
-                      onClick={() => setAbaLista('sem_movimento')}
+                      onClick={() => setAbaLista('sem_interacao')}
                       className={`min-w-fit px-3 py-2 rounded-xl text-xs font-black border ${
-                        abaLista === 'sem_movimento'
-                          ? 'bg-gray-700 text-white border-gray-700'
+                        abaLista === 'sem_interacao'
+                          ? 'bg-amber-600 text-white border-amber-600'
                           : 'bg-white text-gray-600 border-gray-200'
                       }`}
                     >
-                      Sem movimentação
+                      Sem interação 24h
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setAbaLista('ausentes')}
+                      className={`min-w-fit px-3 py-2 rounded-xl text-xs font-black border ${
+                        abaLista === 'ausentes'
+                          ? 'bg-red-600 text-white border-red-600'
+                          : 'bg-white text-gray-600 border-gray-200'
+                      }`}
+                    >
+                      Ausentes
                     </button>
                   </div>
                 </div>
@@ -328,7 +368,7 @@ export default function DashboardOperacional() {
                             </p>
                           </div>
 
-                          {abaLista !== 'sem_movimento' && item.tipo_registro ? (
+                          {abaLista !== 'sem_interacao' && item.tipo_registro ? (
                             <span className={`shrink-0 rounded-full border px-3 py-1 text-xs font-black ${
                               item.tipo_registro === 'Entrada'
                                 ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
@@ -338,13 +378,17 @@ export default function DashboardOperacional() {
                             </span>
                           ) : (
                             <span className="shrink-0 rounded-full border border-gray-200 bg-white px-3 py-1 text-[10px] font-black text-gray-500">
-                              {abaLista === 'presentes' ? 'Ativo sem saída' : 'Sem mov. hoje'}
+                              {abaLista === 'presentes'
+                                ? 'Dentro do projeto'
+                                : abaLista === 'ausentes'
+                                  ? 'Ausente operacional'
+                                  : 'Fora do projeto'}
                             </span>
                           )}
                         </div>
 
                         <div className="mt-3 rounded-xl bg-white px-3 py-2 text-xs font-semibold text-gray-600">
-                          {abaLista === 'sem_movimento'
+                          {abaLista === 'sem_interacao'
                             ? `Último registro: ${formatarDataHora(item.data_registro)} (${formatarTempoDesde(item.data_registro)})`
                             : `Último fluxo: ${formatarDataHora(item.data_registro)}`}
                         </div>
@@ -402,7 +446,7 @@ export default function DashboardOperacional() {
                             </td>
 
                             <td className="px-4 py-3">
-                              {abaLista !== 'sem_movimento' && item.tipo_registro ? (
+                              {abaLista !== 'sem_interacao' && item.tipo_registro ? (
                                 <span className={`text-xs font-black px-3 py-1 rounded-full border ${
                                   item.tipo_registro === 'Entrada'
                                     ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
@@ -419,7 +463,7 @@ export default function DashboardOperacional() {
 
                             <td className="px-4 py-3 text-sm text-gray-600">
                               <span className="font-semibold">{formatarDataHora(item.data_registro)}</span>
-                              {abaLista === 'sem_movimento' && (
+                              {abaLista === 'sem_interacao' && (
                                 <span className="ml-2 text-xs font-bold text-gray-400">
                                   {formatarTempoDesde(item.data_registro)}
                                 </span>

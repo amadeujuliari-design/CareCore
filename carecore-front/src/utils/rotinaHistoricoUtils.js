@@ -3,6 +3,13 @@ import {
   conviventeCorrespondeBusca,
   normalizarTextoBusca,
 } from './conviventeBuscaUtils';
+import {
+  perfilOcultaSomatoriaAlimentacao,
+  tipoRegistroAlimentacao,
+  TIPOS_ROTINA_REFEICOES,
+} from './rotinaDiariaUtils.js';
+
+export { TIPOS_ROTINA_REFEICOES };
 
 export const REGISTROS_POR_PAGINA = 20;
 
@@ -48,6 +55,26 @@ export const TIPOS_REGISTRO_EDICAO = [
   'Bipar documentos guardados',
   'Bipar documentos retirados',
 ];
+
+export function listarTiposRegistroFiltroRotina(perfil, opcoes = TIPOS_REGISTRO_FILTRO) {
+  if (!perfilOcultaSomatoriaAlimentacao(perfil)) {
+    return opcoes;
+  }
+
+  return opcoes.filter((item) => !tipoRegistroAlimentacao(item.valor));
+}
+
+export function obterTotalResumoSemAlimentacao(resumoPeriodo, registros = []) {
+  if (resumoPeriodo?.contagens_por_tipo) {
+    const totalAlimentacao = TIPOS_ROTINA_REFEICOES.reduce(
+      (acc, tipo) => acc + Number(resumoPeriodo.contagens_por_tipo?.[tipo] || 0),
+      0,
+    );
+    return Math.max(0, Number(resumoPeriodo.total || 0) - totalAlimentacao);
+  }
+
+  return registros.filter((registro) => !tipoRegistroAlimentacao(registro.tipo_registro)).length;
+}
 
 export function tipoRegistroCorresponde(tipoRegistro, filtro) {
   if (!filtro) return true;

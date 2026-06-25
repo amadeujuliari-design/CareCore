@@ -327,7 +327,24 @@ export default function Sidebar() {
         {
           path: '/relatorios',
           icon: FileBarChart,
-          label: 'Relatórios'
+          label: 'Relatórios',
+          children: [
+            {
+              path: '/relatorios',
+              icon: FileBarChart,
+              label: 'Central de relatórios',
+            },
+            {
+              path: '/relatorios/cadastros-novos',
+              icon: FileBarChart,
+              label: 'Cadastros novos',
+            },
+            {
+              path: '/relatorios/presenca-ausencia',
+              icon: FileBarChart,
+              label: 'Presença e ausência',
+            },
+          ],
         },
         {
           path: '/historico-legado',

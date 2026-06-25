@@ -335,6 +335,10 @@ class ConviventeDB(Base):
     origem_encaminhamento_id = Column(String, ForeignKey("origens_encaminhamento.id"), nullable=True)
     origem_encaminhamento_outros = Column(String, nullable=True)
     data_entrada = Column(Date, nullable=True)
+    data_inclusao = Column(Date, nullable=True)
+    data_inativacao = Column(Date, nullable=True)
+    data_nova_vinculacao = Column(Date, nullable=True)
+    prontuario_saude = Column(String, nullable=True)
     leito_id = Column(String, ForeignKey("leitos.id"), nullable=True) 
     
     tecnico_id = Column(String, ForeignKey("usuarios.id"), nullable=True)
@@ -518,6 +522,9 @@ class ConviventeEquipamentoAnteriorDB(Base):
 
 class RegistroPIADB(Base):
     __tablename__ = "registros_pia"
+    __table_args__ = (
+        Index("ix_registros_pia_origem", "origem_modulo", "origem_registro_id"),
+    )
 
     id = Column(String, primary_key=True, default=get_uuid)
     instituicao_id = Column(String, ForeignKey("instituicoes.id"), nullable=False)
@@ -541,6 +548,8 @@ class RegistroPIADB(Base):
     destino_retorno_familiar = Column(Boolean, default=False)
     destino_explicacao = Column(Text, nullable=True)
     dificuldades_planos = Column(Text, nullable=True)
+    origem_modulo = Column(String, nullable=True)
+    origem_registro_id = Column(String, nullable=True)
 
 
 class AssinaturaFormularioPiaDB(Base):
@@ -1226,6 +1235,8 @@ class AcompanhamentoPotDB(Base):
     __table_args__ = (
         Index("ix_acomp_pot_instituicao_id", "instituicao_id"),
         Index("ix_acomp_pot_convivente_id", "convivente_id"),
+        Index("ix_acomp_pot_registro_pai_id", "registro_pai_id"),
+        Index("ix_acomp_pot_status_evolucao", "status_evolucao"),
         Index("ix_acomp_pot_data_insercao", "data_insercao"),
         Index("ix_acomp_pot_criado_em", "criado_em"),
     )
@@ -1233,6 +1244,13 @@ class AcompanhamentoPotDB(Base):
     id = Column(String, primary_key=True, default=get_uuid)
     instituicao_id = Column(String, ForeignKey("instituicoes.id"), nullable=False)
     convivente_id = Column(String, ForeignKey("conviventes.id"), nullable=False)
+    registro_pai_id = Column(
+        String,
+        ForeignKey("acompanhamentos_pot.id", ondelete="CASCADE"),
+        nullable=True,
+    )
+    status_evolucao = Column(String, nullable=True)
+    data_evolucao = Column(Date, nullable=True)
     data_insercao = Column(Date, nullable=True)
     data_desligamento = Column(Date, nullable=True)
     congelamento_ativo = Column(Boolean, default=False)

@@ -63,6 +63,16 @@ function campoValorCadastro(valor) {
   return '<span class="linha-preenchimento"></span>';
 }
 
+/** Campo institucional opcional: só aparece no PIA preenchido quando há valor (como na ficha completa). */
+function campoOpcionalSePreenchido(rotulo, valor, modo = 'manual') {
+  if (modo === 'manual') return '';
+  const texto = valorTexto(valor);
+  if (!texto) return '';
+  return `
+    <div class="campo"><span class="campo-label">${escaparHtml(rotulo)}</span><div class="campo-valor">${escaparHtml(texto)}</div></div>
+  `;
+}
+
 function rotuloEhAssinaturaConvivente(rotulo = '') {
   return /convivente/i.test(String(rotulo));
 }
@@ -737,7 +747,12 @@ export function montarHtmlFormularioPia({
           <div class="secao">
             <h2>2. Dados institucionais e encaminhamento</h2>
             <div class="grid-2">
+              ${campoOpcionalSePreenchido('Data de inclusão', dataBr(convivente?.data_inclusao), modoValido)}
+              ${campoOpcionalSePreenchido('Data de inativação', dataBr(convivente?.data_inativacao), modoValido)}
+              ${campoOpcionalSePreenchido('Data de nova vinculação', dataBr(convivente?.data_nova_vinculacao), modoValido)}
               <div class="campo"><span class="campo-label">Data de entrada/vinculação</span><div class="campo-valor">${campoValor(dataBr(convivente?.data_entrada), modoValido)}</div></div>
+              ${campoOpcionalSePreenchido('Prontuário da saúde', convivente?.prontuario_saude, modoValido)}
+              ${campoOpcionalSePreenchido('Referência CAPS', convivente?.acompanhamento_caps, modoValido)}
               <div class="campo"><span class="campo-label">Data inicial PIA</span><div class="campo-valor">${campoValor(dataInicialPia, modoValido)}</div></div>
               <div class="campo"><span class="campo-label">Origem / Encaminhado por</span><div class="campo-valor">${campoValor(origemPrincipal, modoValido)}</div></div>
               <div class="campo"><span class="campo-label">Técnico de referência</span><div class="campo-valor">${campoValor(tecnicoNome, modoValido)}</div></div>
@@ -819,7 +834,7 @@ export function montarHtmlFormularioPia({
           <div class="secao">
             <h2>5. Saúde e dados sensíveis do PIA</h2>
             <div class="grid-2">
-              <div class="campo"><span class="campo-label">Acompanhamento CAPS</span><div class="campo-valor">${campoValor(convivente?.acompanhamento_caps, modoValido)}</div></div>
+              ${campoOpcionalSePreenchido('Acompanhamento CAPS', convivente?.acompanhamento_caps, modoValido)}
               <div class="campo"><span class="campo-label">Egresso prisional</span><div class="campo-valor">${campoValor(boolSimNao(convivente?.egresso_prisional), modoValido)}</div></div>
               <div class="campo"><span class="campo-label">Pendência judiciária</span><div class="campo-valor">${campoValor(boolSimNao(convivente?.pendencia_judiciaria), modoValido)}</div></div>
               <div class="campo"><span class="campo-label">Detalhe da pendência judiciária</span><div class="campo-valor">${campoValor(convivente?.pendencia_judiciaria_qual, modoValido)}</div></div>

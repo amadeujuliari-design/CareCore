@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 from database import get_db
+from convivente_datas_cadastro import aplicar_datas_convivente_objeto
 from models import (
     AcompanhamentoDiscussaoHospitalarDB,
     AcompanhamentoPotDB,
@@ -29,6 +30,12 @@ from tipos_acao_acompanhamento import (
     TIPOS_ACAO_ACOMPANHAMENTO,
     normalizar_destino_para_linha_relatorio,
 )
+from pia_acompanhamento_sync import (
+    reconciliar_espelhos_pia_convivente,
+    sincronizar_discussao_hospitalar_pia,
+    sincronizar_pot_pia,
+    sincronizar_tuberculose_pia,
+)
 from schemas import (
     AcompanhamentoDiscussaoHospitalarCreate,
     AcompanhamentoDiscussaoHospitalarResponse,
@@ -39,6 +46,9 @@ from schemas import (
     AcompanhamentoPotCreate,
     AcompanhamentoPotResponse,
     AcompanhamentoPotUpdate,
+    AcompanhamentoPotEvolucaoCreate,
+    AcompanhamentoPotEvolucaoUpdate,
+    STATUS_EVOLUCAO_POT,
     AcompanhamentoSuspensaoProvisoriaCreate,
     AcompanhamentoSuspensaoProvisoriaResponse,
     AcompanhamentoSuspensaoProvisoriaUpdate,
@@ -205,6 +215,7 @@ async def _aplicar_status_convivente(
 
     leito_id_antigo = convivente.leito_id
     convivente.status = status_novo
+    aplicar_datas_convivente_objeto(convivente, status_antigo, status_novo, agora_sao_paulo().date())
 
     if status_novo == "Ativo":
         convivente.inativado_em = None
@@ -510,6 +521,129 @@ async def _discussao_encerrada(
     return bool(ultima and ultima.status_evolucao == "Encerrado")
 
 
+async def _obter_pot_principal(
+    db: AsyncSession,
+    instituicao_id: str,
+    registro_id: str,
+) -> AcompanhamentoPotDB:
+    registro = await _obter_registro_instituicao(
+        db, AcompanhamentoPotDB, instituicao_id, registro_id
+    )
+    if registro.registro_pai_id:
+        raise HTTPException(status_code=400, detail="Evolua sempre o registro principal do POT.")
+    return registro
+
+
+async def _obter_evolucao_pot(
+    db: AsyncSession,
+    instituicao_id: str,
+    registro_id: str,
+) -> AcompanhamentoPotDB:
+    registro = await _obter_registro_instituicao(
+        db, AcompanhamentoPotDB, instituicao_id, registro_id
+    )
+    if not registro.registro_pai_id:
+        raise HTTPException(status_code=400, detail="Registro informado não é uma evolução do POT.")
+    return registro
+
+
+async def _mapear_situacao_atual_pot(
+    db: AsyncSession,
+    instituicao_id: str,
+    registros_principais_ids: set[str],
+) -> dict[str, str]:
+    if not registros_principais_ids:
+        return {}
+
+    evolucoes = (
+        await db.execute(
+            select(AcompanhamentoPotDB)
+            .where(
+                AcompanhamentoPotDB.instituicao_id == instituicao_id,
+                AcompanhamentoPotDB.registro_pai_id.in_(registros_principais_ids),
+            )
+            .order_by(
+                AcompanhamentoPotDB.data_evolucao.desc(),
+                AcompanhamentoPotDB.criado_em.desc(),
+            )
+        )
+    ).scalars().all()
+
+    situacao_por_pai: dict[str, str] = {}
+    for evolucao in evolucoes:
+        if evolucao.registro_pai_id and evolucao.registro_pai_id not in situacao_por_pai:
+            situacao_por_pai[evolucao.registro_pai_id] = evolucao.status_evolucao or "Em participação"
+    return situacao_por_pai
+
+
+async def _pot_encerrado(
+    db: AsyncSession,
+    instituicao_id: str,
+    registro_pai_id: str,
+) -> bool:
+    ultima = (
+        await db.execute(
+            select(AcompanhamentoPotDB)
+            .where(
+                AcompanhamentoPotDB.instituicao_id == instituicao_id,
+                AcompanhamentoPotDB.registro_pai_id == registro_pai_id,
+            )
+            .order_by(
+                AcompanhamentoPotDB.data_evolucao.desc(),
+                AcompanhamentoPotDB.criado_em.desc(),
+            )
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    return bool(ultima and ultima.status_evolucao == "Encerrado")
+
+
+async def _mapear_evolucoes_pot_principais(
+    db: AsyncSession,
+    instituicao_id: str,
+    conv_map: dict[str, ConviventeDB],
+    usuarios_map: dict[str, str],
+    principais: list[AcompanhamentoPotDB],
+) -> list[dict]:
+    if not principais:
+        return []
+
+    ids_principais = {item.id for item in principais}
+    situacao_map = await _mapear_situacao_atual_pot(db, instituicao_id, ids_principais)
+
+    evolucoes_db = (
+        await db.execute(
+            select(AcompanhamentoPotDB)
+            .where(
+                AcompanhamentoPotDB.instituicao_id == instituicao_id,
+                AcompanhamentoPotDB.registro_pai_id.in_(ids_principais),
+            )
+            .order_by(
+                AcompanhamentoPotDB.data_evolucao.desc(),
+                AcompanhamentoPotDB.criado_em.desc(),
+            )
+        )
+    ).scalars().all()
+
+    evolucoes_por_pai: dict[str, list] = {}
+    for item in evolucoes_db:
+        evolucoes_por_pai.setdefault(item.registro_pai_id, []).append(item)
+
+    return [
+        _map_pot(
+            registro,
+            conv_map,
+            usuarios_map,
+            situacao_atual=situacao_map.get(registro.id, "Em participação"),
+            evolucoes=[
+                _map_pot(evo, conv_map, usuarios_map).model_dump()
+                for evo in evolucoes_por_pai.get(registro.id, [])
+            ],
+        ).model_dump()
+        for registro in principais
+    ]
+
+
 def _map_tb(registro, conv_map, usuarios_map):
     convivente = conv_map.get(registro.convivente_id)
     return AcompanhamentoTbResponse(
@@ -528,13 +662,24 @@ def _map_tb(registro, conv_map, usuarios_map):
     )
 
 
-def _map_pot(registro, conv_map, usuarios_map):
+def _map_pot(
+    registro,
+    conv_map,
+    usuarios_map,
+    *,
+    situacao_atual: str | None = None,
+    evolucoes: list | None = None,
+):
     convivente = conv_map.get(registro.convivente_id)
     return AcompanhamentoPotResponse(
         id=registro.id,
         convivente_id=registro.convivente_id,
         convivente_nome=_nome_convivente(convivente),
         prontuario=_prontuario_convivente(convivente),
+        registro_pai_id=registro.registro_pai_id,
+        status_evolucao=registro.status_evolucao,
+        data_evolucao=registro.data_evolucao,
+        situacao_atual=situacao_atual,
         data_insercao=registro.data_insercao,
         data_desligamento=registro.data_desligamento,
         congelamento_ativo=bool(registro.congelamento_ativo),
@@ -545,6 +690,7 @@ def _map_pot(registro, conv_map, usuarios_map):
         registrado_por_nome=usuarios_map.get(registro.registrado_por_id),
         criado_em=registro.criado_em,
         atualizado_em=registro.atualizado_em,
+        evolucoes=evolucoes,
     )
 
 
@@ -729,8 +875,15 @@ async def _carregar_secao_acompanhamentos_convivente(
             convivente_id,
             offset,
             limite,
+            filtro_query=lambda query: query.where(AcompanhamentoPotDB.registro_pai_id.is_(None)),
         )
-        items = [_map_pot(registro, conv_map, usuarios_map).model_dump() for registro in registros]
+        items = await _mapear_evolucoes_pot_principais(
+            db,
+            instituicao_id,
+            conv_map,
+            usuarios_map,
+            registros,
+        )
         return _montar_pagina_secao(items, total, offset, limite)
 
     if secao == "suspensoes_provisorias":
@@ -1075,6 +1228,13 @@ async def criar_discussao_hospitalar(
         atualizado_em=agora,
     )
     db.add(registro)
+    await db.flush()
+    await sincronizar_discussao_hospitalar_pia(
+        db,
+        registro,
+        _usuario_operacional_id(usuario),
+        evento="criacao",
+    )
     await db.commit()
     await db.refresh(registro)
 
@@ -1104,6 +1264,12 @@ async def atualizar_discussao_hospitalar(
         setattr(registro, campo, valor)
     registro.atualizado_em = agora_sao_paulo()
 
+    await sincronizar_discussao_hospitalar_pia(
+        db,
+        registro,
+        _usuario_operacional_id(usuario),
+        evento="edicao",
+    )
     await db.commit()
     await db.refresh(registro)
 
@@ -1151,6 +1317,13 @@ async def criar_evolucao_discussao_hospitalar(
         atualizado_em=agora,
     )
     db.add(evolucao)
+    await db.flush()
+    await sincronizar_discussao_hospitalar_pia(
+        db,
+        evolucao,
+        _usuario_operacional_id(usuario),
+        evento="criacao",
+    )
     await db.commit()
     await db.refresh(evolucao)
 
@@ -1178,6 +1351,12 @@ async def atualizar_evolucao_discussao_hospitalar(
         setattr(registro, campo, valor)
     registro.atualizado_em = agora_sao_paulo()
 
+    await sincronizar_discussao_hospitalar_pia(
+        db,
+        registro,
+        _usuario_operacional_id(usuario),
+        evento="edicao",
+    )
     await db.commit()
     await db.refresh(registro)
 
@@ -1256,6 +1435,21 @@ async def criar_tuberculose(
         atualizado_em=agora,
     )
     db.add(registro)
+    await db.flush()
+    await sincronizar_tuberculose_pia(
+        db,
+        registro,
+        _usuario_operacional_id(usuario),
+        evento="criacao",
+    )
+    if registro.situacao == "Alta":
+        await sincronizar_tuberculose_pia(
+            db,
+            registro,
+            _usuario_operacional_id(usuario),
+            evento="criacao",
+            encerramento=True,
+        )
     await db.commit()
     await db.refresh(registro)
 
@@ -1274,11 +1468,29 @@ async def atualizar_tuberculose(
     instituicao_id = obter_instituicao_escopo(usuario)
     registro = await _obter_registro_instituicao(db, AcompanhamentoTbDB, instituicao_id, registro_id)
 
-    for campo, valor in payload.model_dump(exclude_unset=True).items():
+    situacao_anterior = registro.situacao
+    dados = payload.model_dump(exclude_unset=True)
+    for campo, valor in dados.items():
         if campo == "observacoes":
             valor = (valor or "").strip() or None
         setattr(registro, campo, valor)
     registro.atualizado_em = agora_sao_paulo()
+
+    await sincronizar_tuberculose_pia(
+        db,
+        registro,
+        _usuario_operacional_id(usuario),
+        evento="edicao",
+    )
+    nova_situacao = registro.situacao
+    if nova_situacao == "Alta" and situacao_anterior != "Alta":
+        await sincronizar_tuberculose_pia(
+            db,
+            registro,
+            _usuario_operacional_id(usuario),
+            evento="criacao",
+            encerramento=True,
+        )
 
     await db.commit()
     await db.refresh(registro)
@@ -1311,17 +1523,107 @@ async def listar_pot(
     usuario: dict = Depends(exigir_acesso_acompanhamentos),
 ):
     instituicao_id = obter_instituicao_escopo(usuario)
-    return await _listar_registros(
-        db,
-        instituicao_id,
-        AcompanhamentoPotDB,
-        AcompanhamentoPotDB.data_insercao,
-        lambda reg, conv_map, users: _map_pot(reg, conv_map, users),
-        busca=busca,
-        data_inicio=_parse_data_filtro(data_inicio),
-        data_fim=_parse_data_filtro(data_fim),
+
+    query = (
+        select(AcompanhamentoPotDB, ConviventeDB)
+        .join(ConviventeDB, ConviventeDB.id == AcompanhamentoPotDB.convivente_id)
+        .where(
+            AcompanhamentoPotDB.instituicao_id == instituicao_id,
+            AcompanhamentoPotDB.registro_pai_id.is_(None),
+        )
+        .order_by(AcompanhamentoPotDB.criado_em.desc())
+    )
+
+    if busca:
+        query = _aplicar_busca_convivente(query, busca)
+
+    if data_inicio:
+        query = query.where(AcompanhamentoPotDB.data_insercao >= _parse_data_filtro(data_inicio))
+    if data_fim:
+        query = query.where(AcompanhamentoPotDB.data_insercao <= _parse_data_filtro(data_fim))
+
+    total = (
+        await db.execute(select(func.count()).select_from(query.subquery()))
+    ).scalar_one()
+
+    rows = (
+        await db.execute(query.offset(offset).limit(limite))
+    ).all()
+
+    ids_principais = {registro.id for registro, _ in rows}
+    situacao_map = await _mapear_situacao_atual_pot(db, instituicao_id, ids_principais)
+
+    usuario_ids = {registro.registrado_por_id for registro, _ in rows}
+    usuarios_map = await _mapear_usuarios(db, usuario_ids)
+    conv_map = {convivente.id: convivente for _, convivente in rows}
+
+    items = [
+        _map_pot(
+            registro,
+            conv_map,
+            usuarios_map,
+            situacao_atual=situacao_map.get(registro.id, "Em participação"),
+        ).model_dump()
+        for registro, _ in rows
+    ]
+
+    return AcompanhamentosListaResponse(
+        items=items,
+        total=total,
+        limit=limite,
         offset=offset,
-        limite=limite,
+        has_more=offset + len(items) < total,
+        status_evolucao=STATUS_EVOLUCAO_POT,
+    )
+
+
+@router.get("/pot/opcoes")
+async def opcoes_pot(
+    usuario: dict = Depends(exigir_acesso_acompanhamentos),
+):
+    return {"status_evolucao": STATUS_EVOLUCAO_POT}
+
+
+@router.get("/pot/{registro_id}", response_model=AcompanhamentoPotResponse)
+async def obter_pot(
+    registro_id: str,
+    db: AsyncSession = Depends(get_db),
+    usuario: dict = Depends(exigir_acesso_acompanhamentos),
+):
+    instituicao_id = obter_instituicao_escopo(usuario)
+    registro = await _obter_pot_principal(db, instituicao_id, registro_id)
+
+    evolucoes_db = (
+        await db.execute(
+            select(AcompanhamentoPotDB)
+            .where(
+                AcompanhamentoPotDB.instituicao_id == instituicao_id,
+                AcompanhamentoPotDB.registro_pai_id == registro.id,
+            )
+            .order_by(
+                AcompanhamentoPotDB.data_evolucao.desc(),
+                AcompanhamentoPotDB.criado_em.desc(),
+            )
+        )
+    ).scalars().all()
+
+    usuario_ids = {registro.registrado_por_id, *(item.registrado_por_id for item in evolucoes_db)}
+    usuarios_map = await _mapear_usuarios(db, usuario_ids)
+    convivente = await _obter_convivente_instituicao(db, instituicao_id, registro.convivente_id)
+    conv_map = {convivente.id: convivente}
+
+    situacao_atual = evolucoes_db[0].status_evolucao if evolucoes_db else "Em participação"
+    evolucoes = [
+        _map_pot(item, conv_map, usuarios_map).model_dump()
+        for item in evolucoes_db
+    ]
+
+    return _map_pot(
+        registro,
+        conv_map,
+        usuarios_map,
+        situacao_atual=situacao_atual,
+        evolucoes=evolucoes,
     )
 
 
@@ -1354,12 +1656,24 @@ async def criar_pot(
         atualizado_em=agora,
     )
     db.add(registro)
+    await db.flush()
+    await sincronizar_pot_pia(
+        db,
+        registro,
+        _usuario_operacional_id(usuario),
+        evento="criacao",
+    )
     await db.commit()
     await db.refresh(registro)
 
     convivente = await _obter_convivente_instituicao(db, instituicao_id, registro.convivente_id)
     usuarios_map = await _mapear_usuarios(db, {registro.registrado_por_id})
-    return _map_pot(registro, {convivente.id: convivente}, usuarios_map)
+    return _map_pot(
+        registro,
+        {convivente.id: convivente},
+        usuarios_map,
+        situacao_atual="Em participação",
+    )
 
 
 @router.patch("/pot/{registro_id}", response_model=AcompanhamentoPotResponse)
@@ -1370,7 +1684,7 @@ async def atualizar_pot(
     usuario: dict = Depends(exigir_edicao_acompanhamentos),
 ):
     instituicao_id = obter_instituicao_escopo(usuario)
-    registro = await _obter_registro_instituicao(db, AcompanhamentoPotDB, instituicao_id, registro_id)
+    registro = await _obter_pot_principal(db, instituicao_id, registro_id)
 
     for campo, valor in payload.model_dump(exclude_unset=True).items():
         if campo == "observacoes":
@@ -1378,6 +1692,99 @@ async def atualizar_pot(
         setattr(registro, campo, valor)
     registro.atualizado_em = agora_sao_paulo()
 
+    await sincronizar_pot_pia(
+        db,
+        registro,
+        _usuario_operacional_id(usuario),
+        evento="edicao",
+    )
+    await db.commit()
+    await db.refresh(registro)
+
+    situacao_map = await _mapear_situacao_atual_pot(db, instituicao_id, {registro.id})
+    convivente = await _obter_convivente_instituicao(db, instituicao_id, registro.convivente_id)
+    usuarios_map = await _mapear_usuarios(db, {registro.registrado_por_id})
+    return _map_pot(
+        registro,
+        {convivente.id: convivente},
+        usuarios_map,
+        situacao_atual=situacao_map.get(registro.id, "Em participação"),
+    )
+
+
+@router.post(
+    "/pot/{registro_id}/evolucoes",
+    response_model=AcompanhamentoPotResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def criar_evolucao_pot(
+    registro_id: str,
+    payload: AcompanhamentoPotEvolucaoCreate,
+    db: AsyncSession = Depends(get_db),
+    usuario: dict = Depends(exigir_edicao_acompanhamentos),
+):
+    instituicao_id = obter_instituicao_escopo(usuario)
+    registro_pai = await _obter_pot_principal(db, instituicao_id, registro_id)
+
+    if await _pot_encerrado(db, instituicao_id, registro_pai.id):
+        raise HTTPException(
+            status_code=400,
+            detail="Este registro POT já foi encerrado. Não é possível registrar novas evoluções.",
+        )
+
+    agora = agora_sao_paulo()
+    evolucao = AcompanhamentoPotDB(
+        instituicao_id=instituicao_id,
+        convivente_id=registro_pai.convivente_id,
+        registro_pai_id=registro_pai.id,
+        status_evolucao=payload.status_evolucao,
+        data_evolucao=payload.data_evolucao,
+        observacoes=(payload.observacoes or "").strip() or None,
+        registrado_por_id=_usuario_operacional_id(usuario),
+        criado_em=agora,
+        atualizado_em=agora,
+    )
+    db.add(evolucao)
+    await db.flush()
+    await sincronizar_pot_pia(
+        db,
+        evolucao,
+        _usuario_operacional_id(usuario),
+        evento="criacao",
+    )
+    await db.commit()
+    await db.refresh(evolucao)
+
+    convivente = await _obter_convivente_instituicao(db, instituicao_id, evolucao.convivente_id)
+    usuarios_map = await _mapear_usuarios(db, {evolucao.registrado_por_id})
+    return _map_pot(evolucao, {convivente.id: convivente}, usuarios_map)
+
+
+@router.patch(
+    "/pot/evolucoes/{registro_id}",
+    response_model=AcompanhamentoPotResponse,
+)
+async def atualizar_evolucao_pot(
+    registro_id: str,
+    payload: AcompanhamentoPotEvolucaoUpdate,
+    db: AsyncSession = Depends(get_db),
+    usuario: dict = Depends(exigir_edicao_acompanhamentos),
+):
+    instituicao_id = obter_instituicao_escopo(usuario)
+    registro = await _obter_evolucao_pot(db, instituicao_id, registro_id)
+
+    for campo, valor in payload.model_dump(exclude_unset=True).items():
+        if campo == "observacoes":
+            valor = (valor or "").strip() or None
+        setattr(registro, campo, valor)
+    registro.atualizado_em = agora_sao_paulo()
+
+    await sincronizar_pot_pia(
+        db,
+        registro,
+        _usuario_operacional_id(usuario),
+        evento="edicao",
+    )
     await db.commit()
     await db.refresh(registro)
 
@@ -1393,7 +1800,7 @@ async def excluir_pot(
     usuario: dict = Depends(exigir_edicao_acompanhamentos),
 ):
     instituicao_id = obter_instituicao_escopo(usuario)
-    registro = await _obter_registro_instituicao(db, AcompanhamentoPotDB, instituicao_id, registro_id)
+    registro = await _obter_pot_principal(db, instituicao_id, registro_id)
     await db.delete(registro)
     await db.commit()
 

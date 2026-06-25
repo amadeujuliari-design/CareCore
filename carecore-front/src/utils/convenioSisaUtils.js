@@ -187,6 +187,7 @@ export function calcularResumoDiarioSisa(items = []) {
       acc.conviventes += 1;
       if (item.presenca === 'Sim') acc.presentes += 1;
       if (item.presenca !== 'Sim') acc.ausentes += 1;
+      if (item.ausente_operacional === 'Sim') acc.ausentes_operacionais += 1;
       if (item.presenca_por_justificativa === 'Sim') acc.presentes_por_justificativa += 1;
       acc.cafes += Number(item.cafes || (item.cafe === 'Sim' ? 1 : 0));
       acc.almocos += Number(item.almocos || (item.almoco === 'Sim' ? 1 : 0));
@@ -203,6 +204,7 @@ export function calcularResumoDiarioSisa(items = []) {
       presentes: 0,
       presentes_por_justificativa: 0,
       ausentes: 0,
+      ausentes_operacionais: 0,
       cafes: 0,
       almocos: 0,
       jantares: 0,
@@ -219,7 +221,7 @@ export function montarResumoCardsDiariosSisa(resumoDiario, dataDiariaFormatada, 
   return [
     { titulo: filtroAtendimentoLabel, valor: resumoDiario.conviventes, detalhe: 'Total no recorte filtrado' },
     { titulo: 'Presentes', valor: resumoDiario.presentes, detalhe: dataDiariaFormatada },
-    { titulo: 'Ausentes', valor: resumoDiario.ausentes, detalhe: dataDiariaFormatada },
+    { titulo: 'Ausentes', valor: resumoDiario.ausentes_operacionais ?? resumoDiario.ausentes, detalhe: 'Saída ontem sem retorno hoje' },
     { titulo: 'Entradas', valor: resumoDiario.entradas, detalhe: dataDiariaFormatada },
     { titulo: 'Saídas', valor: resumoDiario.saidas, detalhe: dataDiariaFormatada },
     { titulo: 'Justificadas', valor: resumoDiario.presentes_por_justificativa, detalhe: 'Presença por ausência justificada' },

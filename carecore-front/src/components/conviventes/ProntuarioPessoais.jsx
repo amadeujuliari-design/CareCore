@@ -147,6 +147,67 @@ export default function ProntuarioPessoais({
         </div>
       </div>
 
+      <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-4">
+        <h3 className="text-sm font-bold text-slate-800 mb-3">Histórico institucional</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div>
+            <label className="block text-xs font-semibold text-gray-700 mb-1">Data de inclusão</label>
+            <input
+              type="date"
+              name="data_inclusao"
+              value={formData.data_inclusao ? formData.data_inclusao.split('T')[0] : ''}
+              onChange={handleChange}
+              className="w-full px-3 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none bg-white text-sm"
+            />
+            <p className="mt-1 text-[10px] text-slate-500">Primeiro cadastro no projeto. Pode ser retroativa.</p>
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-gray-700 mb-1">Data de inativação</label>
+            <input
+              type="date"
+              name="data_inativacao"
+              value={formData.data_inativacao ? formData.data_inativacao.split('T')[0] : ''}
+              onChange={handleChange}
+              className="w-full px-3 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none bg-white text-sm"
+            />
+            <p className="mt-1 text-[10px] text-slate-500">Última inativação. Atualizada ao mudar o status.</p>
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-gray-700 mb-1">Data de nova vinculação</label>
+            <input
+              type="date"
+              name="data_nova_vinculacao"
+              value={formData.data_nova_vinculacao ? formData.data_nova_vinculacao.split('T')[0] : ''}
+              onChange={handleChange}
+              className="w-full px-3 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none bg-white text-sm"
+            />
+            <p className="mt-1 text-[10px] text-slate-500">Última reativação após inativação.</p>
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-gray-700 mb-1">Prontuário da saúde</label>
+            <input
+              type="text"
+              name="prontuario_saude"
+              value={formData.prontuario_saude || ''}
+              onChange={handleChange}
+              placeholder="Número ou código alfanumérico"
+              className="w-full px-3 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none bg-white text-sm"
+            />
+          </div>
+          <div className="md:col-span-2">
+            <label className="block text-xs font-semibold text-gray-700 mb-1">Referência CAPS</label>
+            <input
+              type="text"
+              name="acompanhamento_caps"
+              value={formData.acompanhamento_caps || ''}
+              onChange={handleChange}
+              placeholder="Nome da referência no CAPS"
+              className="w-full px-3 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none bg-white text-sm"
+            />
+          </div>
+        </div>
+      </div>
+
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         <div><label className="block text-xs font-semibold text-gray-700 mb-1">CPF</label><input type="text" name="cpf" value={formData.cpf} onChange={handleChange} onBlur={handleBlur} className={`w-full px-3 py-1.5 border rounded-lg outline-none text-sm ${errosValidacao.cpf ? 'border-red-500 focus:ring-red-500 bg-red-50' : 'border-gray-300 focus:ring-brand'}`} placeholder="000.000.000-00" />{errosValidacao.cpf && <p className="text-red-500 text-[10px] mt-0.5 font-bold">{errosValidacao.cpf}</p>}</div>
         <div><label className="block text-xs font-semibold text-gray-700 mb-1">RG</label><input type="text" name="rg" value={formData.rg} onChange={handleChange} className="w-full px-3 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none text-sm" /></div>
@@ -180,7 +241,7 @@ export default function ProntuarioPessoais({
           </select>
           {!podeEditarLeitoPeloProntuario && (
             <p className="mt-1 text-[10px] font-bold text-slate-500">
-              Orientadores alteram quarto/cama pelo módulo Acomodações. A informação aqui é atualizada automaticamente.
+              Apenas Gestor e Técnico podem alterar quarto/cama pelo módulo Acomodações.
             </p>
           )}
         </div>

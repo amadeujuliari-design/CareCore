@@ -35,7 +35,9 @@ function blocoTexto(titulo, conteudo) {
   `;
 }
 
-function montarEvolucaoHtml(evolucao) {
+function montarEvolucaoHtml(evolucao, evolucoesPorRegistroPia = {}) {
+  const filhas = evolucoesPorRegistroPia[evolucao.id] || [];
+
   return `
     <article class="evolucao">
       <header class="registro-header">
@@ -56,11 +58,16 @@ function montarEvolucaoHtml(evolucao) {
       ${blocoTexto('Descrição da evolução', evolucao.descricao)}
       ${blocoTexto('Objetivos / metas trabalhadas', evolucao.objetivos)}
       ${blocoTexto('Encaminhamentos e próximos passos', evolucao.encaminhamentos)}
+      ${
+        filhas.length
+          ? `<div class="evolucoes-aninhadas">${filhas.map((filha) => montarEvolucaoHtml(filha, evolucoesPorRegistroPia)).join('')}</div>`
+          : ''
+      }
     </article>
   `;
 }
 
-function montarPiaPrincipalHtml(registro, evolucoes = []) {
+function montarPiaPrincipalHtml(registro, evolucoes = [], evolucoesPorRegistroPia = {}) {
   return `
     <article class="pia-principal">
       <header class="registro-header">
@@ -86,7 +93,7 @@ function montarPiaPrincipalHtml(registro, evolucoes = []) {
         <h3>Evoluções vinculadas (${evolucoes.length})</h3>
         ${
           evolucoes.length
-            ? evolucoes.map(montarEvolucaoHtml).join('')
+            ? evolucoes.map((evolucao) => montarEvolucaoHtml(evolucao, evolucoesPorRegistroPia)).join('')
             : '<p class="vazio">Nenhuma evolução registrada para este PIA.</p>'
         }
       </section>
@@ -270,6 +277,7 @@ export function montarHtmlPiaCompleto({
             ? registrosPiaPrincipais.map((registro) => montarPiaPrincipalHtml(
               registro,
               evolucoesPorRegistroPia[registro.id] || [],
+              evolucoesPorRegistroPia,
             )).join('')
             : '<p class="vazio">Nenhum PIA principal registrado para este convivente.</p>'
         }
@@ -322,6 +330,7 @@ export function montarHtmlPiasCompletosLote({
                 ? item.registrosPiaPrincipais.map((registro) => montarPiaPrincipalHtml(
                   registro,
                   item.evolucoesPorRegistroPia[registro.id] || [],
+                  item.evolucoesPorRegistroPia,
                 )).join('')
                 : '<p class="vazio">Nenhum PIA principal registrado para este convivente.</p>'
             }

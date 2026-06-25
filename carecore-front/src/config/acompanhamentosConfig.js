@@ -25,6 +25,13 @@ export const STATUS_EVOLUCAO_DISCUSSAO = [
   'Encerrado',
 ];
 
+export const STATUS_EVOLUCAO_POT = [
+  'Em participação',
+  'Congelamento',
+  'Desligado',
+  'Encerrado',
+];
+
 /** Status permitidos na busca de convivente por módulo. */
 export const STATUS_FILTRO_POR_MODULO = {
   transferencias: ['Ativo', 'Ausência justificada'],
@@ -88,6 +95,7 @@ export const MODULOS_ACOMPANHAMENTO = {
     icone: Hospital,
     statusFiltros: STATUS_FILTRO_POR_MODULO['discussoes-hospitalares'],
     suportaEvolucoes: true,
+    modalEvolucoes: 'discussao',
     colunas: [
       { chave: 'convivente_nome', rotulo: 'Convivente' },
       { chave: 'prontuario', rotulo: 'Prontuário' },
@@ -145,14 +153,18 @@ export const MODULOS_ACOMPANHAMENTO = {
   },
   pot: {
     slug: 'pot',
-    titulo: 'POT',
-    subtitulo: 'Programa de Orientação ao Trabalho.',
+    titulo: 'Programa Operação Trabalho',
+    menuLabel: 'POT',
+    subtitulo: 'Acompanhamento de participação no Programa Operação Trabalho. Registre evoluções: participação, congelamento, desligamento ou encerramento.',
     endpoint: 'pot',
     icone: ShieldPlus,
     statusFiltros: STATUS_FILTRO_POR_MODULO.pot,
+    suportaEvolucoes: true,
+    modalEvolucoes: 'pot',
     colunas: [
       { chave: 'convivente_nome', rotulo: 'Convivente' },
       { chave: 'prontuario', rotulo: 'Prontuário' },
+      { chave: 'situacao_atual', rotulo: 'Situação' },
       { chave: 'data_insercao', rotulo: 'Inserção', tipo: 'data' },
       { chave: 'data_desligamento', rotulo: 'Desligamento', tipo: 'data' },
       { chave: 'congelamento_ativo', rotulo: 'Congelamento', tipo: 'simnao' },

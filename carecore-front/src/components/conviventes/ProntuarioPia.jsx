@@ -1,3 +1,74 @@
+import { classeOrigemPia, rotuloOrigemPia } from '../../config/piaOrigemConfig';
+
+function BadgeOrigemPia({ origemModulo }) {
+  const rotulo = rotuloOrigemPia(origemModulo);
+  if (!rotulo) return null;
+  return (
+    <span className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-black uppercase ${classeOrigemPia(origemModulo)}`}>
+      Espelhado de {rotulo}
+    </span>
+  );
+}
+
+function EvolucaoPiaCard({ evolucao, evolucoesPorRegistroPia, profundidade = 0 }) {
+  const filhas = evolucoesPorRegistroPia[evolucao.id] || [];
+
+  return (
+    <div className={profundidade > 0 ? 'ml-1' : ''}>
+      <div className="rounded-xl border border-indigo-100 bg-indigo-50/50 p-3">
+        <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-2">
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="text-[10px] font-black uppercase text-indigo-500">Evolução</p>
+              <BadgeOrigemPia origemModulo={evolucao.origem_modulo} />
+            </div>
+            <h5 className="text-sm font-black text-indigo-950">{evolucao.subtitulo || 'Sem subtítulo'}</h5>
+            <span className="mt-2 inline-flex rounded-full bg-white px-2 py-1 text-[10px] font-black uppercase text-gray-600 border border-indigo-100">
+              {evolucao.status}
+            </span>
+          </div>
+          <div className="text-xs text-indigo-700 md:text-right">
+            <p>{new Date(evolucao.data_registro).toLocaleString('pt-BR')}</p>
+            <p className="font-bold">{evolucao.usuario_nome || 'Usuário'}</p>
+          </div>
+        </div>
+
+        <p className="mt-2 whitespace-pre-wrap text-sm text-gray-700">{evolucao.descricao}</p>
+
+        {(evolucao.objetivos || evolucao.encaminhamentos) && (
+          <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+            {evolucao.objetivos && (
+              <div className="rounded-lg border border-blue-100 bg-white p-3">
+                <p className="font-black uppercase text-blue-700 mb-1">Objetivos</p>
+                <p className="whitespace-pre-wrap text-blue-900">{evolucao.objetivos}</p>
+              </div>
+            )}
+            {evolucao.encaminhamentos && (
+              <div className="rounded-lg border border-emerald-100 bg-white p-3">
+                <p className="font-black uppercase text-emerald-700 mb-1">Encaminhamentos</p>
+                <p className="whitespace-pre-wrap text-emerald-900">{evolucao.encaminhamentos}</p>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {filhas.length > 0 && (
+        <div className="mt-3 border-l-2 border-violet-200 pl-3 space-y-3">
+          {filhas.map((filha) => (
+            <EvolucaoPiaCard
+              key={filha.id}
+              evolucao={filha}
+              evolucoesPorRegistroPia={evolucoesPorRegistroPia}
+              profundidade={profundidade + 1}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function ProntuarioPia({
   editandoId,
   formData,
@@ -219,10 +290,16 @@ export default function ProntuarioPia({
                   <article key={registro.id} className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
                     <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-2">
                       <div>
-                        <span className="inline-flex rounded-full bg-indigo-50 px-3 py-1 text-[10px] font-black uppercase text-indigo-700 border border-indigo-100">
-                          PIA principal
-                        </span>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="inline-flex rounded-full bg-indigo-50 px-3 py-1 text-[10px] font-black uppercase text-indigo-700 border border-indigo-100">
+                            PIA principal
+                          </span>
+                          <BadgeOrigemPia origemModulo={registro.origem_modulo} />
+                        </div>
                         <h4 className="mt-2 text-sm font-black text-gray-900">{registro.titulo}</h4>
+                        {registro.subtitulo && (
+                          <p className="mt-1 text-xs font-semibold text-indigo-700">{registro.subtitulo}</p>
+                        )}
                       </div>
                       <div className="text-xs text-gray-500 md:text-right">
                         <p>{new Date(registro.data_registro).toLocaleString('pt-BR')}</p>
@@ -259,40 +336,11 @@ export default function ProntuarioPia({
                     {evolucoes.length > 0 && (
                       <div className="mt-4 border-l-2 border-indigo-100 pl-4 space-y-3">
                         {evolucoes.map((evolucao) => (
-                          <div key={evolucao.id} className="rounded-xl border border-indigo-100 bg-indigo-50/50 p-3">
-                            <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-2">
-                              <div>
-                                <p className="text-[10px] font-black uppercase text-indigo-500">Evolução</p>
-                                <h5 className="text-sm font-black text-indigo-950">{evolucao.subtitulo || 'Sem subtítulo'}</h5>
-                                <span className="mt-2 inline-flex rounded-full bg-white px-2 py-1 text-[10px] font-black uppercase text-gray-600 border border-indigo-100">
-                                  {evolucao.status}
-                                </span>
-                              </div>
-                              <div className="text-xs text-indigo-700 md:text-right">
-                                <p>{new Date(evolucao.data_registro).toLocaleString('pt-BR')}</p>
-                                <p className="font-bold">{evolucao.usuario_nome || 'Usuário'}</p>
-                              </div>
-                            </div>
-
-                            <p className="mt-2 whitespace-pre-wrap text-sm text-gray-700">{evolucao.descricao}</p>
-
-                            {(evolucao.objetivos || evolucao.encaminhamentos) && (
-                              <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
-                                {evolucao.objetivos && (
-                                  <div className="rounded-lg border border-blue-100 bg-white p-3">
-                                    <p className="font-black uppercase text-blue-700 mb-1">Objetivos</p>
-                                    <p className="whitespace-pre-wrap text-blue-900">{evolucao.objetivos}</p>
-                                  </div>
-                                )}
-                                {evolucao.encaminhamentos && (
-                                  <div className="rounded-lg border border-emerald-100 bg-white p-3">
-                                    <p className="font-black uppercase text-emerald-700 mb-1">Encaminhamentos</p>
-                                    <p className="whitespace-pre-wrap text-emerald-900">{evolucao.encaminhamentos}</p>
-                                  </div>
-                                )}
-                              </div>
-                            )}
-                          </div>
+                          <EvolucaoPiaCard
+                            key={evolucao.id}
+                            evolucao={evolucao}
+                            evolucoesPorRegistroPia={evolucoesPorRegistroPia}
+                          />
                         ))}
                       </div>
                     )}

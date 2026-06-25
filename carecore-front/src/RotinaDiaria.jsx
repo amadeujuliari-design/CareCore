@@ -18,11 +18,16 @@ import {
   definirAcaoAutomaticaRotina,
   exigeJustificativaRetornoRapidoRotina,
   filtrarConviventesRotina,
+  filtrarContagensInteracaoSemAlimentacao,
   getFotoUrl,
   normalizarCodigo,
   normalizarCpf,
+  obterPerfilUsuarioLogado,
+  perfilOcultaSomatoriaAlimentacao,
   registroAindaPodeSerDesfeitoRotina,
+  TIPOS_ROTINA_REFEICOES,
   tocarBeep,
+  totalInteracoesSemAlimentacao,
 } from './utils/rotinaDiariaUtils';
 import {
   deveIgnorarLeituraCodigoRepetida,
@@ -51,7 +56,6 @@ const OPCOES_INTERACAO_ROTINA = [
   { valor: 'Bipar documentos retirados', label: 'Documentos retirados', grupo: 'observacao' },
 ];
 
-const TIPOS_ROTINA_REFEICOES = ['Café da manhã', 'Almoço', 'Jantar', 'Lanche noturno'];
 const TIPO_ROTINA_BAGAGEIRO = 'Movimentação de Bagageiro';
 
 function rotuloMovimentacaoBagageiro(movimentacao) {
@@ -61,10 +65,37 @@ function rotuloMovimentacaoBagageiro(movimentacao) {
 function obterNomeUsuarioLogado() {
   try {
     const bruto = localStorage.getItem('@CareCore:user') || localStorage.getItem('usuario');
-    return bruto ? JSON.parse(bruto).nome || '' : '';
+    if (!bruto) return '';
+    const usuario = JSON.parse(bruto);
+    return usuario?.nome || '';
   } catch {
     return '';
   }
+}
+
+function horarioFeedbackAgora() {
+  return new Date().toLocaleTimeString('pt-BR', {
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+function PainelOperadorRotina({ className = '' }) {
+  const nome = obterNomeUsuarioLogado();
+  if (!nome) return null;
+
+  return (
+    <div
+      className={`rounded-xl border-2 border-indigo-200 bg-indigo-50 px-4 py-3 text-center ${className}`}
+    >
+      <p className="text-[10px] font-black uppercase tracking-wide text-indigo-500">
+        Registrando como
+      </p>
+      <p className="mt-1 text-lg font-black leading-tight text-indigo-950 sm:text-xl break-words">
+        {nome}
+      </p>
+    </div>
+  );
 }
 
 const ROTULOS_REFEICAO_EXTRA = {
@@ -642,7 +673,8 @@ export default function RotinaDiaria() {
       setFeedback({
         tipo: 'Sucesso',
         nome: 'Termo salvo no GED do convivente.',
-        horario: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+        operador: obterNomeUsuarioLogado(),
+        horario: horarioFeedbackAgora(),
       });
       setTimeout(() => setFeedback(null), 4000);
     } else if (resultadoGed?.mensagem) {
@@ -835,10 +867,8 @@ export default function RotinaDiaria() {
       setFeedback({
         tipo: tipoRegistro,
         nome,
-        horario: new Date().toLocaleTimeString('pt-BR', {
-          hour: '2-digit',
-          minute: '2-digit'
-        })
+        operador: obterNomeUsuarioLogado(),
+        horario: horarioFeedbackAgora(),
       });
 
       adicionarHistorico({
@@ -986,17 +1016,20 @@ export default function RotinaDiaria() {
   };
 
   const conviventesFiltrados = filtrarConviventesRotina(conviventes, busca);
-  const { totalFora, totalDentro, totalInteracoesRotina } =
+  const perfilUsuario = obterPerfilUsuarioLogado();
+  const ocultarSomatoriaAlimentacao = perfilOcultaSomatoriaAlimentacao(perfilUsuario);
+  const { totalFora, totalDentro, contagensInteracoes } =
     calcularResumoRotinaDiaria(conviventes, resumoHoje);
-  const resumoInteracoesPorTipo = Object.values(resumoHoje).reduce((acc, resumo) => {
-    const presencas = Array.isArray(resumo?.presencas) ? resumo.presencas : [];
-    presencas.forEach((registro) => {
-      if (['Entrada', 'Saída'].includes(registro.tipo_registro)) return;
-      acc[registro.tipo_registro] = (acc[registro.tipo_registro] || 0) + 1;
-    });
-    return acc;
-  }, {});
-  const resumoInteracoesLista = Object.entries(resumoInteracoesPorTipo)
+  const contagensInteracoesVisiveis = ocultarSomatoriaAlimentacao
+    ? filtrarContagensInteracaoSemAlimentacao(contagensInteracoes)
+    : contagensInteracoes;
+  const totalInteracoesRotina = ocultarSomatoriaAlimentacao
+    ? totalInteracoesSemAlimentacao(contagensInteracoes)
+    : Object.values(contagensInteracoes).reduce(
+      (total, valor) => total + Number(valor || 0),
+      0,
+    );
+  const resumoInteracoesLista = Object.entries(contagensInteracoesVisiveis)
     .sort(([, totalA], [, totalB]) => totalB - totalA);
   const resumoInteracoesTooltip = resumoInteracoesLista.length
     ? resumoInteracoesLista.map(([tipo, total]) => `${tipo}: ${total}`).join('\n')
@@ -1679,6 +1712,8 @@ export default function RotinaDiaria() {
                 Vou registrar: {interacaoConfirmacao.rotuloConfirmacao || interacaoConfirmacao.tipoRegistro}. Confirma?
               </p>
 
+              <PainelOperadorRotina />
+
               <div className="grid grid-cols-1 gap-2 pt-2 sm:flex sm:justify-end sm:gap-3">
                 <button
                   onClick={() => setInteracaoConfirmacao(null)}
@@ -1732,6 +1767,8 @@ export default function RotinaDiaria() {
               <p className="rounded-xl bg-amber-50 border border-amber-100 p-3 text-sm font-black text-amber-800">
                 Deseja registrar mais uma refeição como extra?
               </p>
+
+              <PainelOperadorRotina />
 
               {refeicaoExtraPendente.ultimoRegistro?.data_registro && (
                 <p className="text-xs font-semibold text-gray-500">
@@ -1795,6 +1832,8 @@ export default function RotinaDiaria() {
                 autoFocus
               />
 
+              <PainelOperadorRotina />
+
               <div className="grid grid-cols-1 gap-2 pt-2 sm:flex sm:justify-end sm:gap-3">
                 <button
                   onClick={() => {
@@ -1849,6 +1888,8 @@ export default function RotinaDiaria() {
                 autoFocus
               />
 
+              <PainelOperadorRotina />
+
               <div className="grid grid-cols-1 gap-2 pt-2 sm:flex sm:justify-end sm:gap-3">
                 <button
                   onClick={() => {
@@ -1878,7 +1919,11 @@ export default function RotinaDiaria() {
             <div className="bg-blue-600 p-5 flex justify-between items-center gap-3 text-white">
               <div>
                 <h2 className="text-lg font-bold">Interações de rotina</h2>
-                <p className="text-xs text-blue-100 mt-1">Somas registradas hoje por tipo.</p>
+                <p className="text-xs text-blue-100 mt-1">
+                  {ocultarSomatoriaAlimentacao
+                    ? 'Somas de hoje por tipo (exceto alimentação).'
+                    : 'Somas registradas hoje por tipo.'}
+                </p>
               </div>
               <button
                 onClick={() => setResumoInteracoesAberto(false)}
@@ -1932,7 +1977,7 @@ export default function RotinaDiaria() {
       />
 
       {feedback && (
-        <div className="fixed bottom-6 right-6 z-50 bg-white rounded-2xl shadow-2xl border border-gray-200 overflow-hidden w-[320px]">
+        <div className="fixed bottom-6 right-6 z-50 bg-white rounded-2xl shadow-2xl border border-gray-200 overflow-hidden w-[min(100vw-1.5rem,360px)]">
           <div
             className={`
               px-5 py-4 text-white
@@ -1955,11 +2000,28 @@ export default function RotinaDiaria() {
             </h3>
           </div>
 
-          <div className="p-4">
-            <p className="font-bold text-gray-800 uppercase text-sm">
-              {feedback.nome}
-            </p>
-            <p className="text-xs text-gray-500 mt-1">
+          <div className="p-4 space-y-3">
+            {feedback.tipo !== 'Erro' && (
+              <p className="font-bold text-gray-800 uppercase text-sm">
+                {feedback.nome}
+              </p>
+            )}
+            {feedback.tipo === 'Erro' && (
+              <p className="text-sm font-semibold text-gray-800">
+                {feedback.nome}
+              </p>
+            )}
+            {feedback.operador && feedback.tipo !== 'Erro' && (
+              <div className="rounded-xl border-2 border-indigo-200 bg-indigo-50 px-3 py-2.5 text-center">
+                <p className="text-[10px] font-black uppercase tracking-wide text-indigo-500">
+                  Registrado por
+                </p>
+                <p className="mt-0.5 text-base font-black leading-tight text-indigo-950 break-words">
+                  {feedback.operador}
+                </p>
+              </div>
+            )}
+            <p className="text-xs text-gray-500">
               Horário: {feedback.horario}
             </p>
           </div>

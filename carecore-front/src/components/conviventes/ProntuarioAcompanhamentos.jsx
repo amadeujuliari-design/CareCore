@@ -102,6 +102,18 @@ const CONFIG_SECOES = [
           {registro.congelamento_ativo ? ' · Congelamento ativo' : ''}
         </p>
         {registro.observacoes && <p className="mt-2 whitespace-pre-wrap">{registro.observacoes}</p>}
+        {(registro.evolucoes || []).length > 0 && (
+          <ul className="mt-3 space-y-1 border-t border-slate-200 pt-2">
+            {registro.evolucoes.map(evolucao => (
+              <li key={evolucao.id} className="text-[11px] text-slate-600">
+                <span className="font-bold text-violet-800">{evolucao.status_evolucao}</span>
+                {' · '}
+                {formatarData(evolucao.data_evolucao)}
+                {evolucao.observacoes ? ` — ${evolucao.observacoes}` : ''}
+              </li>
+            ))}
+          </ul>
+        )}
       </>
     ),
   },

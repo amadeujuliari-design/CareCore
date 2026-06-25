@@ -6,16 +6,18 @@ import DireitosReservadosAviso from './components/DireitosReservadosAviso';
 import { API_ROOT } from './config/apiBase';
 import {
   REGISTROS_POR_PAGINA,
-  TIPOS_REGISTRO_FILTRO,
   TIPOS_REGISTRO_EDICAO,
   classeTipoRegistroRotina,
   formatarDataHoraRotina,
+  listarTiposRegistroFiltroRotina,
   montarParamsFiltrosRotina,
   obterContagemTipoResumo,
+  obterTotalResumoSemAlimentacao,
   ordenarRegistrosRotina,
   resumirRegistrosRotina,
   rotuloTipoRegistroFiltro,
 } from './utils/rotinaHistoricoUtils';
+import { perfilOcultaSomatoriaAlimentacao, tipoRegistroAlimentacao } from './utils/rotinaDiariaUtils';
 import {
   calcularDataInicioPadrao,
   dataHojeIsoLocal,
@@ -84,6 +86,19 @@ export default function RotinaHistorico() {
     perfilUsuario === 'Gestor' ||
     perfilUsuario === 'Gestao' ||
     perfilUsuario === 'Gerente';
+
+  const ocultarSomatoriaAlimentacao = perfilOcultaSomatoriaAlimentacao(perfilUsuario);
+  const tiposRegistroFiltro = useMemo(
+    () => listarTiposRegistroFiltroRotina(perfilUsuario),
+    [perfilUsuario],
+  );
+
+  useEffect(() => {
+    if (ocultarSomatoriaAlimentacao && tipoRegistroAlimentacao(tipoFiltro)) {
+      setTipoFiltro('');
+      setPaginaAtual(1);
+    }
+  }, [ocultarSomatoriaAlimentacao, tipoFiltro]);
 
   // =====================================================================
   // PARAMS
@@ -381,12 +396,17 @@ export default function RotinaHistorico() {
   );
 
   const totalTipoSelecionado = useMemo(() => {
-    if (!tipoFiltro) return totalRegistros;
+    if (!tipoFiltro) {
+      if (ocultarSomatoriaAlimentacao) {
+        return obterTotalResumoSemAlimentacao(resumoPeriodo, registros);
+      }
+      return totalRegistros;
+    }
     if (resumoPeriodo?.contagens_por_tipo) {
       return obterContagemTipoResumo(resumoPeriodo.contagens_por_tipo, tipoFiltro);
     }
     return totalRegistros;
-  }, [resumoPeriodo, tipoFiltro, totalRegistros]);
+  }, [ocultarSomatoriaAlimentacao, registros, resumoPeriodo, tipoFiltro, totalRegistros]);
 
   const limparFiltros = () => {
     setTipoFiltro('');
@@ -611,6 +631,9 @@ export default function RotinaHistorico() {
         <p className="mb-5 text-xs text-gray-500">
           Os totais refletem o período e os filtros selecionados abaixo.
           O resumo da tela de Registro da Rotina considera apenas o dia de hoje e registros ativos.
+          {ocultarSomatoriaAlimentacao && (
+            <> Perfis operacionais não visualizam somatórias de alimentação.</>
+          )}
         </p>
 
         {/* FILTROS */}
@@ -688,7 +711,7 @@ export default function RotinaHistorico() {
                 }}
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
               >
-                {TIPOS_REGISTRO_FILTRO.map((opcao) => (
+                {tiposRegistroFiltro.map((opcao) => (
                   <option key={opcao.valor || 'todos'} value={opcao.valor}>
                     {opcao.label}
                   </option>

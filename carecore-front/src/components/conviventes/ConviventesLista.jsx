@@ -1,5 +1,26 @@
 import { formatarCPF } from '../../utils/conviventesUtils';
 import { conviventeEhMeuCaso } from '../../hooks/useConviventesLista';
+import AuthenticatedImage from '../AuthenticatedImage';
+import { getFotoUrl } from '../../utils/rotinaDiariaUtils';
+
+function FotoConviventeMini({ convivente }) {
+  const fotoUrl = getFotoUrl(convivente);
+
+  return (
+    <div className="h-9 w-9 shrink-0 overflow-hidden rounded-full border border-gray-200 bg-gray-100 flex items-center justify-center">
+      {fotoUrl ? (
+        <AuthenticatedImage
+          caminhoOuUrl={fotoUrl}
+          alt=""
+          className="h-full w-full object-cover"
+          lazy
+        />
+      ) : (
+        <span className="text-base opacity-40">○</span>
+      )}
+    </div>
+  );
+}
 
 export default function ConviventesLista({
   loading,
@@ -72,7 +93,9 @@ export default function ConviventesLista({
                   className={`rounded-3xl border p-4 shadow-sm ${isMeuCaso ? 'border-blue-100 bg-blue-50/70' : 'border-slate-100 bg-slate-50'}`}
                 >
                   <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
+                    <div className="flex min-w-0 items-start gap-3">
+                      <FotoConviventeMini convivente={c} />
+                      <div className="min-w-0">
                       <p className="text-xs font-black uppercase tracking-wide text-brand">
                         #{c.numero_institucional || 'Novo'}
                         {isMeuCaso && <span className="ml-2 rounded-full bg-brand px-2 py-0.5 text-[9px] text-white">Meu caso</span>}
@@ -85,6 +108,7 @@ export default function ConviventesLista({
                           Civil: {c.nome_completo}
                         </p>
                       )}
+                      </div>
                     </div>
 
                     <span className={`shrink-0 rounded-full px-3 py-1 text-[10px] font-bold uppercase ${statusConviventeClasse(c.status)}`}>
@@ -130,8 +154,13 @@ export default function ConviventesLista({
                         {isMeuCaso && <span className="ml-2 text-[9px] bg-brand text-white px-1.5 py-0.5 rounded-full uppercase tracking-wider" title="Este acolhido está sob a sua responsabilidade">Meu Caso</span>}
                       </td>
                       <td className="p-4">
-                        <p className="text-gray-900 font-medium">{c.nome_social || c.nome_completo}</p>
-                        {c.nome_social && <p className="text-xs text-gray-500 mt-0.5">Civil: {c.nome_completo}</p>}
+                        <div className="flex items-center gap-3 min-w-0">
+                          <FotoConviventeMini convivente={c} />
+                          <div className="min-w-0">
+                            <p className="text-gray-900 font-medium truncate">{c.nome_social || c.nome_completo}</p>
+                            {c.nome_social && <p className="text-xs text-gray-500 mt-0.5 truncate">Civil: {c.nome_completo}</p>}
+                          </div>
+                        </div>
                       </td>
                       <td className="p-4 text-gray-600 font-mono text-sm">{c.cpf ? formatarCPF(c.cpf) : '-'}</td>
                       <td className="p-4">{obterLocalizacaoLeito(c.leito_id)}</td>

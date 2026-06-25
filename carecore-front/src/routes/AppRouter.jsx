@@ -2,6 +2,7 @@ import { lazy } from 'react';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 
 import AusenciaJustificadaAlerta from '../components/AusenciaJustificadaAlerta';
+import AlertaPresencaOperacional from '../components/AlertaPresencaOperacional';
 import ProtectedRoute from './ProtectedRoute';
 import { deveExibirManutencaoProgramada } from '../config/manutencao';
 
@@ -21,6 +22,8 @@ const ConvenioSisa = lazy(() => import('../ConvenioSisa'));
 const Avisos = lazy(() => import('../Avisos'));
 const Usuarios = lazy(() => import('../Usuarios'));
 const Relatorios = lazy(() => import('../Relatorios'));
+const RelatorioPresencaAusencia = lazy(() => import('../RelatorioPresencaAusencia'));
+const RelatorioCadastrosNovos = lazy(() => import('../RelatorioCadastrosNovos'));
 const Organizacao = lazy(() => import('../Organizacao'));
 const GestaoGlobal = lazy(() => import('../GestaoGlobal'));
 const HistoricoLegado = lazy(() => import('../HistoricoLegado'));
@@ -222,6 +225,24 @@ function RotasAplicacao() {
         />
 
         <Route
+          path="/relatorios/cadastros-novos"
+          element={
+            <ProtectedRoute perfis={['Gestor', 'Técnico', 'Orientador', 'Administrativo']}>
+              <RelatorioCadastrosNovos />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/relatorios/presenca-ausencia"
+          element={
+            <ProtectedRoute perfis={['Gestor', 'Técnico', 'Orientador', 'Administrativo']}>
+              <RelatorioPresencaAusencia />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
           path="/relatorios"
           element={
             <ProtectedRoute>
@@ -312,6 +333,7 @@ function RotasAplicacao() {
         />
       </Routes>
       <AusenciaJustificadaAlerta />
+      <AlertaPresencaOperacional />
     </>
   );
 }

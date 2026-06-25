@@ -1,9 +1,20 @@
 import api from './api';
 
-export async function carregarDadosIniciaisProntuario() {
-  const [conviventes, quartos, tecnicos, motivos, origens, identidade] = await Promise.all([
-    api.get('/api/conviventes/resumo'),
+export async function carregarListaConviventesCadastro({ status = null } = {}) {
+  const params = status ? { status } : {};
+  const [conviventes, quartos] = await Promise.all([
+    api.get('/api/conviventes/resumo', { params }),
     api.get('/api/quartos'),
+  ]);
+
+  return {
+    conviventes: conviventes.data || [],
+    quartos: quartos.data || [],
+  };
+}
+
+export async function carregarDadosAuxiliaresProntuario() {
+  const [tecnicos, motivos, origens, identidade] = await Promise.all([
     api.get('/api/tecnicos'),
     api.get('/api/motivos-inteligentes'),
     api.get('/api/origens-encaminhamento'),
@@ -11,12 +22,31 @@ export async function carregarDadosIniciaisProntuario() {
   ]);
 
   return {
-    conviventes: conviventes.data || [],
-    quartos: quartos.data || [],
     tecnicos: tecnicos.data || [],
     motivos: motivos.data || [],
     origens: origens.data || [],
     identidade: identidade.data || null,
+  };
+}
+
+export async function carregarResumoCompletoConviventes() {
+  const response = await api.get('/api/conviventes/resumo');
+  return response.data || [];
+}
+
+export async function carregarDadosIniciaisProntuario() {
+  const [lista, auxiliares] = await Promise.all([
+    carregarListaConviventesCadastro(),
+    carregarDadosAuxiliaresProntuario(),
+  ]);
+
+  return {
+    conviventes: lista.conviventes,
+    quartos: lista.quartos,
+    tecnicos: auxiliares.tecnicos,
+    motivos: auxiliares.motivos,
+    origens: auxiliares.origens,
+    identidade: auxiliares.identidade,
   };
 }
 
