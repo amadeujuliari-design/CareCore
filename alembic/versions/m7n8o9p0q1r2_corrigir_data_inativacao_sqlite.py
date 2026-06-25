@@ -17,6 +17,10 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
+    bind = op.get_bind()
+    if bind.dialect.name != "sqlite":
+        return
+
     # CAST(inativado_em AS DATE) no SQLite retorna o ano como inteiro, não AAAA-MM-DD.
     op.execute(
         sa.text(
