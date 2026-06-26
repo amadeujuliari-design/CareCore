@@ -48,6 +48,24 @@ def test_matriz_ausencia_apos_saida():
     assert status["2026-06-10"] == STATUS_DIA_AUSENTE
 
 
+def test_aj_nao_cobre_dia_com_presenca_operacional():
+    from datetime import datetime
+
+    status = montar_status_presenca_por_dia(
+        [
+            {"tipo_registro": "Entrada", "data_registro": datetime(2026, 6, 10, 8, 0)},
+            {"tipo_registro": "Saída", "data_registro": datetime(2026, 6, 10, 20, 0)},
+        ],
+        date(2026, 6, 1),
+        date(2026, 6, 12),
+        data_entrada=date(2026, 6, 1),
+        status_convivente="Ausência justificada",
+        ausencia_justificada_desde=None,
+    )
+    assert status["2026-06-10"] == STATUS_DIA_PRESENTE
+    assert status["2026-06-11"] == STATUS_DIA_JUSTIFICADO
+
+
 def test_matriz_justificada_conta_como_presenca_no_total():
     status = montar_status_presenca_por_dia(
         [],
@@ -75,9 +93,34 @@ def test_matriz_dias_apos_inativacao_sao_na():
         ausencia_justificada_desde=None,
     )
     assert status["2026-06-10"] == STATUS_DIA_PRESENTE
-    assert status["2026-06-11"] == STATUS_DIA_AUSENTE
+    assert status["2026-06-11"] == STATUS_DIA_NA
     assert status["2026-06-12"] == STATUS_DIA_NA
     assert status["2026-06-13"] == STATUS_DIA_NA
+
+
+def test_inativado_sem_data_inativacao_nao_ganha_presenca():
+    status = montar_status_presenca_por_dia(
+        [],
+        date(2026, 6, 1),
+        date(2026, 6, 5),
+        data_entrada=date(2026, 6, 1),
+        status_convivente="Inativado",
+        ausencia_justificada_desde=None,
+    )
+    assert all(valor == STATUS_DIA_NA for valor in status.values())
+
+
+def test_inativado_antes_do_periodo_todo_na():
+    status = montar_status_presenca_por_dia(
+        [],
+        date(2026, 6, 1),
+        date(2026, 6, 5),
+        data_entrada=date(2025, 1, 1),
+        data_inativacao=date(2026, 5, 31),
+        status_convivente="Inativado",
+        ausencia_justificada_desde=None,
+    )
+    assert all(valor == STATUS_DIA_NA for valor in status.values())
 
 
 def test_inativado_no_periodo_ainda_aparece_com_presenca():

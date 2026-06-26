@@ -36,6 +36,7 @@ def normalizar_prontuario_saude(valor: str | None) -> str | None:
 
 
 def preparar_datas_convivente_criacao(dados: dict, hoje: date) -> None:
+    dados["data_entrada"] = hoje
     if not dados.get("data_inclusao"):
         dados["data_inclusao"] = hoje
 
@@ -45,6 +46,10 @@ def preparar_datas_convivente_criacao(dados: dict, hoje: date) -> None:
     status = dados.get("status", "Ativo")
     if status in STATUS_INATIVOS and not dados.get("data_inativacao"):
         dados["data_inativacao"] = hoje
+
+
+def bloquear_alteracao_data_entrada_convivente(dados: dict) -> None:
+    dados.pop("data_entrada", None)
 
 
 def aplicar_datas_convivente_payload(

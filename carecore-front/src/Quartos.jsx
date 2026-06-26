@@ -49,6 +49,7 @@ export default function Quartos() {
   const [nome, setNome] = useState('');
   const [tipoPublico, setTipoPublico] = useState('Masculino');
   const [modalidade, setModalidade] = useState('Fixo');
+  const [rotativo, setRotativo] = useState(false);
 
   // Controle de Tela
   const [telaAtual, setTelaAtual] = useState('lista'); // 'lista' ou 'form'
@@ -105,6 +106,7 @@ useEffect(() => {
     setNome('');
     setTipoPublico('Masculino');
     setModalidade('Fixo');
+    setRotativo(false);
     setLeitosForm([{ id_temporario: 1, identificacao: 'Cama 1', status: 'Livre' }]);
     setEditandoId(null);
     setTelaAtual('form');
@@ -137,6 +139,7 @@ useEffect(() => {
     setNome(quarto.nome);
     setTipoPublico(quarto.tipo_publico);
     setModalidade(quarto.modalidade);
+    setRotativo(Boolean(quarto.rotativo));
     
     // Mapeia os leitos do banco para o formato do formulário
     if (quarto.leitos && quarto.leitos.length > 0) {
@@ -162,6 +165,7 @@ useEffect(() => {
       nome: nome.trim(),
       tipo_publico: tipoPublico,
       modalidade: modalidade,
+      rotativo,
       leitos: leitosForm.map(l => ({ id: l.id || null, identificacao: l.identificacao, status: l.status }))
     };
 
@@ -355,7 +359,10 @@ useEffect(() => {
                       <div className="bg-slate-800 px-3 py-2.5 text-white flex justify-between items-start">
                         <div>
                           <h3 className="font-semibold text-[15px] tracking-tight">{q.nome}</h3>
-                          <p className="text-[9px] text-slate-300 font-medium uppercase tracking-wide mt-0.5">{q.tipo_publico} • {q.modalidade === 'Transitorio' ? 'Transitório' : 'Fixo'}</p>
+                          <p className="text-[9px] text-slate-300 font-medium uppercase tracking-wide mt-0.5">
+                            {q.tipo_publico} • {q.modalidade === 'Transitorio' ? 'Transitório' : 'Fixo'}
+                            {q.rotativo ? ' • Rotativo' : ''}
+                          </p>
                         </div>
                         {podeGerenciarQuartos && (
                           <div className="flex gap-2">
@@ -460,6 +467,18 @@ useEffect(() => {
                       <option value="Fixo">Fixo (Pernoite Regular)</option>
                       <option value="Transitorio">Transitório (Passagem de Curto Prazo)</option>
                     </select>
+                  </div>
+
+                  <div className="sm:col-span-2">
+                    <label className="flex items-center gap-2 text-sm font-semibold text-orange-800">
+                      <input
+                        type="checkbox"
+                        checked={rotativo}
+                        onChange={(e) => setRotativo(e.target.checked)}
+                        className="h-4 w-4 rounded border-gray-300 text-orange-600 focus:ring-orange-500"
+                      />
+                      Quarto rotativo (carteirinha provisória por 7 dias ao alocar leito)
+                    </label>
                   </div>
                 </div>
 

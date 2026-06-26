@@ -7,6 +7,7 @@ from schemas import LeitoAlocacaoPayload, QuartoCreate, QuartoUpdate
 from ordenacao_natural import chave_ordenacao_natural
 from security import exigir_perfis, exigir_tecnico_ou_gestor, get_usuario_logado
 from tenant_scope import obter_instituicao_escopo
+from carteirinha_operacional import sincronizar_leito_provisorio_convivente
 
 router = APIRouter(prefix="/api/quartos", tags=["Quartos e Leitos"])
 
@@ -25,7 +26,8 @@ async def criar_quarto(
             instituicao_id=instituicao_id,
             nome=payload.nome,
             tipo_publico=payload.tipo_publico,
-            modalidade=payload.modalidade
+            modalidade=payload.modalidade,
+            rotativo=payload.rotativo,
         )
         db.add(novo_quarto)
         await db.flush()
@@ -141,6 +143,7 @@ async def listar_quartos(
             "nome": q.nome,
             "tipo_publico": q.tipo_publico,
             "modalidade": q.modalidade,
+            "rotativo": bool(getattr(q, "rotativo", False)),
             "is_active": q.is_active,
             "leitos": lista_leitos
         })
@@ -214,6 +217,12 @@ async def alocar_convivente_leito(
 
         convivente.leito_id = leito_id
         leito.status = "Ocupado"
+        await sincronizar_leito_provisorio_convivente(
+            db,
+            convivente,
+            leito_id,
+            instituicao_id,
+        )
         await db.commit()
     except Exception as e:
         await db.rollback()
@@ -293,6 +302,7 @@ async def atualizar_quarto(
         quarto.nome = payload.nome
         quarto.tipo_publico = payload.tipo_publico
         quarto.modalidade = payload.modalidade
+        quarto.rotativo = payload.rotativo
 
         query_leitos = select(LeitoDB).where(LeitoDB.quarto_id == quarto.id)
         res_leitos = await db.execute(query_leitos)

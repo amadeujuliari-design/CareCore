@@ -71,12 +71,8 @@ export const TIPOS_REGISTRO_EDICAO = [
   'Bipar documentos retirados',
 ];
 
-export function listarTiposRegistroFiltroRotina(perfil, opcoes = TIPOS_REGISTRO_FILTRO) {
-  if (!perfilOcultaSomatoriaAlimentacao(perfil)) {
-    return opcoes;
-  }
-
-  return opcoes.filter((item) => !tipoRegistroAlimentacao(item.valor));
+export function listarTiposRegistroFiltroRotina(_perfil, opcoes = TIPOS_REGISTRO_FILTRO) {
+  return opcoes;
 }
 
 export function obterTotalResumoSemAlimentacao(resumoPeriodo, registros = []) {

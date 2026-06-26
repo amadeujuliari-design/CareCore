@@ -17,11 +17,15 @@ import {
   obterContagemTipoResumo,
   obterTotalResumoSemAlimentacao,
   ordenarRegistrosRotina,
+  contarRegistrosPorTipo,
   resumirRegistrosRotina,
   rotuloTipoRegistroFiltro,
   usuarioPodeGerenciarHistoricoRotina,
 } from './utils/rotinaHistoricoUtils';
-import { perfilOcultaSomatoriaAlimentacao, tipoRegistroAlimentacao } from './utils/rotinaDiariaUtils';
+import {
+  perfilOcultaSomatoriaAlimentacao,
+  tipoRegistroAlimentacao,
+} from './utils/rotinaDiariaUtils';
 import {
   calcularDataInicioPadrao,
   dataHojeIsoLocal,
@@ -100,13 +104,6 @@ export default function RotinaHistorico() {
     () => listarTiposRegistroFiltroRotina(perfilUsuario),
     [perfilUsuario],
   );
-
-  useEffect(() => {
-    if (ocultarSomatoriaAlimentacao && tipoRegistroAlimentacao(tipoFiltro)) {
-      setTipoFiltro('');
-      setPaginaAtual(1);
-    }
-  }, [ocultarSomatoriaAlimentacao, tipoFiltro]);
 
   // =====================================================================
   // PARAMS
@@ -401,11 +398,31 @@ export default function RotinaHistorico() {
       }
       return totalRegistros;
     }
+    if (ocultarSomatoriaAlimentacao && tipoRegistroAlimentacao(tipoFiltro)) {
+      return null;
+    }
     if (resumoPeriodo?.contagens_por_tipo) {
       return obterContagemTipoResumo(resumoPeriodo.contagens_por_tipo, tipoFiltro);
     }
-    return totalRegistros;
+    return contarRegistrosPorTipo(registros, tipoFiltro);
   }, [ocultarSomatoriaAlimentacao, registros, resumoPeriodo, tipoFiltro, totalRegistros]);
+
+  const totalResumoExibido = useMemo(() => {
+    if (!ocultarSomatoriaAlimentacao) {
+      return resumo.total;
+    }
+    if (tipoFiltro && tipoRegistroAlimentacao(tipoFiltro)) {
+      return null;
+    }
+    if (!tipoFiltro) {
+      return obterTotalResumoSemAlimentacao(resumoPeriodo, registros);
+    }
+    return resumo.total;
+  }, [ocultarSomatoriaAlimentacao, registros, resumo.total, resumoPeriodo, tipoFiltro]);
+
+  const formatarContagemResumo = (valor) => (
+    valor === null || valor === undefined ? '—' : valor
+  );
 
   const limparFiltros = () => {
     setTipoFiltro('');
@@ -597,7 +614,7 @@ export default function RotinaHistorico() {
 
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-3 sm:p-4">
             <p className="text-xs uppercase font-black text-gray-400">Total</p>
-            <p className="text-2xl font-black text-gray-800">{resumo.total}</p>
+            <p className="text-2xl font-black text-gray-800">{formatarContagemResumo(totalResumoExibido)}</p>
           </div>
 
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-3 sm:p-4">
@@ -614,7 +631,7 @@ export default function RotinaHistorico() {
             <p className="text-xs uppercase font-black text-violet-400 truncate" title={rotuloTipoSelecionado}>
               {rotuloTipoSelecionado}
             </p>
-            <p className="text-2xl font-black text-violet-700">{totalTipoSelecionado}</p>
+            <p className="text-2xl font-black text-violet-700">{formatarContagemResumo(totalTipoSelecionado)}</p>
           </div>
 
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-3 sm:p-4">

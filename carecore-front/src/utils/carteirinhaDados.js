@@ -1,10 +1,12 @@
 /** Dados normalizados da carteirinha — compartilhado entre preview e impressão. */
+import { avaliarCarteirinhaConvivente } from './carteirinhaValidadeUtils';
 
 export function resolverDadosCarteirinha(convivente, quartos = [], tecnicos = [], fotoCaminho = null) {
   if (!convivente) return null;
 
   let nomeAcomodacao = 'Sem Cama (Centro Dia)';
   let tipoAcomodacao = '-';
+  let quartoRotativo = false;
 
   if (convivente.leito_id) {
     for (const q of quartos) {
@@ -12,10 +14,13 @@ export function resolverDadosCarteirinha(convivente, quartos = [], tecnicos = []
       if (leito) {
         nomeAcomodacao = `${q.nome} - ${leito.identificacao}`;
         tipoAcomodacao = q.modalidade === 'Transitorio' ? 'Transitório' : 'Fixo';
+        quartoRotativo = Boolean(q.rotativo);
         break;
       }
     }
   }
+
+  const carteirinhaStatus = avaliarCarteirinhaConvivente(convivente, quartos);
 
   const codigoBarrasValor = convivente.numero_institucional
     ? String(convivente.numero_institucional)
@@ -42,6 +47,10 @@ export function resolverDadosCarteirinha(convivente, quartos = [], tecnicos = []
     codigoBarrasValor,
     qrValue: String(convivente.id || ''),
     foto: fotoCaminho ?? convivente.foto_url ?? null,
+    provisoria: carteirinhaStatus.provisoria,
+    preferencial: carteirinhaStatus.preferencial,
+    rotuloProvisoria: carteirinhaStatus.provisoria ? 'PROVISÓRIA' : null,
+    rotuloPreferencial: carteirinhaStatus.preferencial ? 'PREFERENCIAL' : null,
   };
 }
 
@@ -68,11 +77,20 @@ export function gerarHtmlCarteirinhaUnitaria(
   } = {},
 ) {
   const d = dados;
-  const boxAcom = d.acomodacaoTransitoria
-    ? 'background:#fffbeb;border:1px solid #fde68a;'
-    : 'background:#eff6ff;border:1px solid #dbeafe;';
-  const tituloAcom = d.acomodacaoTransitoria ? 'color:#b45309;' : 'color:#0ea5e9;';
-  const tipoAcom = d.acomodacaoTransitoria ? 'color:#b45309;' : 'color:#2563eb;';
+  const cabecalhoCor = d.provisoria ? '#ea580c' : (d.preferencial ? '#d97706' : '#0ea5e9');
+  const boxAcom = d.provisoria
+    ? 'background:#fff7ed;border:1px solid #fdba74;'
+    : (d.preferencial
+      ? 'background:#fffbeb;border:1px solid #fcd34d;'
+      : (d.acomodacaoTransitoria
+        ? 'background:#fffbeb;border:1px solid #fde68a;'
+        : 'background:#eff6ff;border:1px solid #dbeafe;'));
+  const tituloAcom = d.provisoria ? 'color:#c2410c;' : (d.preferencial ? 'color:#b45309;' : (d.acomodacaoTransitoria ? 'color:#b45309;' : 'color:#0ea5e9;'));
+  const tipoAcom = d.provisoria ? 'color:#c2410c;' : (d.preferencial ? 'color:#b45309;' : (d.acomodacaoTransitoria ? 'color:#b45309;' : 'color:#2563eb;'));
+  const seloHtml = [
+    d.rotuloProvisoria ? `<div style="margin-top:4px;font-size:8px;font-weight:900;letter-spacing:0.12em;color:#c2410c;">${escaparHtml(d.rotuloProvisoria)}</div>` : '',
+    d.rotuloPreferencial ? `<div style="margin-top:2px;font-size:8px;font-weight:900;letter-spacing:0.12em;color:#b45309;">${escaparHtml(d.rotuloPreferencial)}</div>` : '',
+  ].filter(Boolean).join('');
 
   const fotoBloco = fotoDataUrl
     ? `<img src="${fotoDataUrl}" alt="" style="width:100%;height:100%;object-fit:cover;display:block;" />`
@@ -108,7 +126,7 @@ export function gerarHtmlCarteirinhaUnitaria(
       print-color-adjust: exact;
     }
     .head {
-      background: #0ea5e9;
+      background: ${cabecalhoCor};
       color: #fff;
       text-align: center;
       padding: 4px 6px 3px;
@@ -291,6 +309,7 @@ export function gerarHtmlCarteirinhaUnitaria(
         <div class="qr">${qrBloco}<span>Escanear ID</span></div>
       </div>
       <div class="nome">${escaparHtml(d.nome)}</div>
+      ${seloHtml}
       <div class="grid">
         <div><b>PRONT:</b> #${escaparHtml(d.prontuario)}</div>
         <div><b>SISA:</b> ${escaparHtml(d.sisa)}</div>

@@ -20,6 +20,7 @@ from licenciamento import middleware_licenciamento
 from logging_config import configurar_logging_carecore
 from manutencao_usuario import provisionar_usuario_manutencao
 from observability import configurar_observabilidade_carecore
+from presenca_operacional import PRESENCA_REGRAS_BUILD
 
 from routers import usuarios
 from routers import auth
@@ -390,6 +391,7 @@ async def healthcheck():
         "status": "ok",
         "service": "CARECORE+ API",
         "environment": APP_ENV,
+        "presenca_regras": PRESENCA_REGRAS_BUILD,
     }
 
 

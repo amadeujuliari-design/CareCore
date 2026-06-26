@@ -42,6 +42,10 @@ import {
 } from './utils/relatorioIdentidadePrint';
 import { montarHtmlTermoBagageiro } from './utils/termoBagageiroPrint';
 import { persistirTermoBagageiroNoGed } from './utils/termoBagageiroGed';
+import { validarHorarioRefeicaoOperacional } from './utils/refeicaoHorarioOperacional';
+import {
+  obterAvisoCarteirinhaConvivente,
+} from './utils/carteirinhaValidadeUtils';
 
 const OPCOES_INTERACAO_ROTINA = [
   { valor: 'Café da manhã', label: 'Café da manhã', grupo: 'refeicao' },
@@ -71,6 +75,23 @@ function obterNomeUsuarioLogado() {
   } catch {
     return '';
   }
+}
+
+function AvisoCarteirinhaProvisoria({ convivente, quartos = [] }) {
+  const aviso = obterAvisoCarteirinhaConvivente(convivente, quartos);
+  if (!aviso?.mensagem) return null;
+
+  return (
+    <div
+      className={`rounded-xl border px-3 py-2 text-left text-xs font-semibold ${
+        aviso.bloqueado
+          ? 'border-red-200 bg-red-50 text-red-800'
+          : 'border-amber-200 bg-amber-50 text-amber-900'
+      }`}
+    >
+      {aviso.mensagem}
+    </div>
+  );
 }
 
 function horarioFeedbackAgora() {
@@ -111,6 +132,7 @@ export default function RotinaDiaria() {
   const deviceInfo = useDeviceInfo();
 
   const [conviventes, setConviventes] = useState([]);
+  const [quartos, setQuartos] = useState([]);
   const [resumoHoje, setResumoHoje] = useState({});
   const [loading, setLoading] = useState(true);
   const [busca, setBusca] = useState('');
@@ -272,14 +294,16 @@ export default function RotinaDiaria() {
         headers: criarHeadersAutenticados(token)
       };
 
-      const [resConv, resRotina] = await Promise.all([
+      const [resConv, resRotina, resQuartos] = await Promise.all([
         axios.get(`${API_ROOT}/conviventes/resumo`, config),
-        axios.get(`${API_ROOT}/rotina/hoje`, config)
+        axios.get(`${API_ROOT}/rotina/hoje`, config),
+        axios.get(`${API_ROOT}/quartos`, config),
       ]);
 
       const ativos = resConv.data.filter(c => c.status === 'Ativo');
 
       setConviventes(ativos);
+      setQuartos(resQuartos.data || []);
       setResumoHoje(resRotina.data || {});
     } catch (error) {
       console.error('Erro ao carregar dados da rotina', error);
@@ -699,6 +723,10 @@ export default function RotinaDiaria() {
     }
   };
 
+  const validarCarteirinhaOperacional = (convivente) => (
+    obterAvisoCarteirinhaConvivente(convivente, quartos)
+  );
+
   const handleRegistrar = async (
     conviventeId,
     tipoRegistro,
@@ -712,6 +740,30 @@ export default function RotinaDiaria() {
     if (tipoRegistro !== 'Entrada' && conviventeEstaFora(conviventeId)) {
       avisarConviventeFora(convivente, tipoRegistro);
       return;
+    }
+
+    const avisoCarteirinha = validarCarteirinhaOperacional(convivente);
+    if (avisoCarteirinha?.bloqueado) {
+      setFeedback({
+        tipo: 'Erro',
+        nome: avisoCarteirinha.mensagem,
+        horario: horarioFeedbackAgora(),
+      });
+      setTimeout(() => setFeedback(null), 6000);
+      return;
+    }
+
+    if (TIPOS_ROTINA_REFEICOES.includes(tipoRegistro)) {
+      const erroHorario = validarHorarioRefeicaoOperacional(tipoRegistro);
+      if (erroHorario) {
+        setFeedback({
+          tipo: 'Erro',
+          nome: erroHorario,
+          horario: horarioFeedbackAgora(),
+        });
+        setTimeout(() => setFeedback(null), 5000);
+        return;
+      }
     }
 
     if (
@@ -869,6 +921,7 @@ export default function RotinaDiaria() {
         nome,
         operador: obterNomeUsuarioLogado(),
         horario: horarioFeedbackAgora(),
+        aviso: avisoCarteirinha?.mensagem || null,
       });
 
       adicionarHistorico({
@@ -883,7 +936,7 @@ export default function RotinaDiaria() {
 
       setTimeout(() => {
         setFeedback(null);
-      }, 2600);
+      }, avisoCarteirinha?.mensagem ? 8000 : 2600);
     } catch (error) {
       console.error('Erro ao registrar ação', error);
 
@@ -1631,6 +1684,8 @@ export default function RotinaDiaria() {
                   )}
                 </div>
 
+                <AvisoCarteirinhaProvisoria convivente={pacienteEscaneado} quartos={quartos} />
+
                 <div className="pt-4 border-t border-gray-100 grid grid-cols-1 gap-3">
                   <button
                     onClick={() => handleRegistrar(pacienteEscaneado.id, 'Entrada')}
@@ -1708,6 +1763,11 @@ export default function RotinaDiaria() {
                 Vou registrar: {interacaoConfirmacao.rotuloConfirmacao || interacaoConfirmacao.tipoRegistro}. Confirma?
               </p>
 
+              <AvisoCarteirinhaProvisoria
+                convivente={interacaoConfirmacao.convivente}
+                quartos={quartos}
+              />
+
               <PainelOperadorRotina />
 
               <div className="grid grid-cols-1 gap-2 pt-2 sm:flex sm:justify-end sm:gap-3">
@@ -1763,6 +1823,11 @@ export default function RotinaDiaria() {
               <p className="rounded-xl bg-amber-50 border border-amber-100 p-3 text-sm font-black text-amber-800">
                 Deseja registrar mais uma refeição como extra?
               </p>
+
+              <AvisoCarteirinhaProvisoria
+                convivente={refeicaoExtraPendente.convivente}
+                quartos={quartos}
+              />
 
               <PainelOperadorRotina />
 
@@ -2016,6 +2081,11 @@ export default function RotinaDiaria() {
                   {feedback.operador}
                 </p>
               </div>
+            )}
+            {feedback.aviso && (
+              <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-900">
+                {feedback.aviso}
+              </p>
             )}
             <p className="text-xs text-gray-500">
               Horário: {feedback.horario}

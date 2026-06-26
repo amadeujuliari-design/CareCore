@@ -66,12 +66,17 @@ if not exist "%FRONTEND%\node_modules" (
     if errorlevel 1 goto erro
 )
 
-echo [3/4] Ligando o Backend (Python)...
-powershell -NoProfile -Command "if (Test-NetConnection 127.0.0.1 -Port 8000 -InformationLevel Quiet) { exit 0 } else { exit 1 }" >nul 2>&1
+set "API_PORT=8002"
+
+for /f "usebackq delims=" %%V in (`"%PYTHON_BACKEND%" -c "from presenca_operacional import PRESENCA_REGRAS_BUILD; print(PRESENCA_REGRAS_BUILD)" 2^>nul`) do set "PRESENCA_REGRAS_ESPERADAS=%%V"
+if not defined PRESENCA_REGRAS_ESPERADAS set "PRESENCA_REGRAS_ESPERADAS=inativos-sem-presenca-v2"
+
+echo [3/4] Ligando o Backend (Python) na porta %API_PORT%...
+powershell -NoProfile -Command "try { $h = Invoke-RestMethod 'http://127.0.0.1:%API_PORT%/api/health' -TimeoutSec 2; if ($h.presenca_regras -eq '%PRESENCA_REGRAS_ESPERADAS%') { exit 0 } else { exit 1 } } catch { exit 1 }" >nul 2>&1
 if errorlevel 1 (
-    start "CareCore+ Backend - FastAPI" cmd /k "cd /d ""%ROOT%"" && ""%PYTHON_BACKEND%"" -m uvicorn main:app --reload --host 0.0.0.0 --port 8000"
+    start "CareCore+ Backend - FastAPI" cmd /k "cd /d ""%ROOT%"" && ""%PYTHON_BACKEND%"" -m uvicorn main:app --reload --host 127.0.0.1 --port %API_PORT%"
 ) else (
-    echo Backend ja esta rodando na porta 8000.
+    echo Backend ja esta rodando na porta %API_PORT% com regras atuais.
 )
 
 echo [4/4] Ligando o Frontend (React)...
@@ -86,13 +91,13 @@ timeout /t 4 /nobreak >nul
 start "" "http://127.0.0.1:5173"
 
 echo Sucesso! Os dois servidores estao rodando.
-echo Backend:  http://127.0.0.1:8000
+echo Backend:  http://127.0.0.1:8002
 echo Frontend: http://127.0.0.1:5173
 echo.
 echo Para acessar pelo celular na mesma rede Wi-Fi:
 echo http://%IP_LOCAL%:5173
 echo.
-echo Se nao abrir no celular, libere as portas 5173 e 8000 no Firewall do Windows.
+echo Se nao abrir no celular, libere as portas 5173 e 8002 no Firewall do Windows.
 pause
 exit /b 0
 

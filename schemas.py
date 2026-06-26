@@ -902,6 +902,7 @@ class QuartoBase(BaseModel):
     nome: str
     tipo_publico: str
     modalidade: str
+    rotativo: bool = False
 
 
 class QuartoCreate(QuartoBase):
@@ -1201,6 +1202,8 @@ class ConviventeBase(BaseModel):
     data_inativacao: Optional[date] = None
     data_nova_vinculacao: Optional[date] = None
     prontuario_saude: Optional[str] = None
+    preferencial: bool = False
+    leito_provisorio_desde: Optional[datetime] = None
     ausencia_justificada_desde: Optional[date] = None
     leito_id: Optional[str] = None
     tecnico_id: Optional[str] = None

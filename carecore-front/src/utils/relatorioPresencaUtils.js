@@ -22,7 +22,8 @@ export function rotuloStatusAtualConvivente(status) {
 }
 
 export const AJUDA_COLUNA_JUSTIFICADO = (
-  'J reflete a situação cadastral atual (ausência justificada), não o histórico dia a dia do período.'
+  'J indica ausência justificada nos dias sem presença operacional (P) no período. '
+  + 'Dias com fluxo Entrada/Saída permanecem como P mesmo com status AJ no cadastro.'
 );
 
 export const ROTULO_STATUS_PRESENCA_DIA = {
@@ -34,7 +35,7 @@ export const ROTULO_STATUS_PRESENCA_DIA = {
 
 export const DESCRICAO_STATUS_PRESENCA_DIA = {
   presente: 'Presente (fluxo Entrada/Saída)',
-  justificado: 'Ausência justificada no cadastro (situação atual)',
+  justificado: 'Ausência justificada (sem presença operacional no dia)',
   ausente: 'Ausente (admitido, sem presença no dia)',
   na: 'Fora do período de admissão ou após inativação',
 };

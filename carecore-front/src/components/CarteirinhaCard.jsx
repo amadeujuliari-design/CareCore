@@ -5,6 +5,7 @@ import logoCarecore from '../assets/logo.PNG';
 import QRCodeLib from 'react-qr-code';
 import BarcodeLib from 'react-barcode';
 import { obterCodigoCarteirinhaConvivente } from '../utils/rotinaDiariaUtils';
+import { avaliarCarteirinhaConvivente } from '../utils/carteirinhaValidadeUtils';
 
 // Blindagem: aceita funções e objetos React (como forwardRef do QRCode)
 const getValidComponent = (Lib) => {
@@ -56,6 +57,10 @@ export default function CarteirinhaCard({
     : 'Não informada';
 
   const acomodacaoEhTransitoria = tipoAcomodacao === 'Transitório';
+  const carteirinhaStatus = avaliarCarteirinhaConvivente(convivente, quartos);
+  const cabecalhoClasse = carteirinhaStatus.provisoria
+    ? 'bg-orange-600'
+    : (carteirinhaStatus.preferencial ? 'bg-amber-500' : 'bg-brand');
   const foto = fotoCaminho ?? convivente.foto_url ?? null;
   const logoProjeto = identidadeRelatorio?.relatorio_logo_url || null;
   const nomeProjeto = identidadeRelatorio?.relatorio_nome_exibicao || 'Projeto';
@@ -70,7 +75,7 @@ export default function CarteirinhaCard({
       className="bg-white relative overflow-hidden print:border-none border-2 border-gray-200 mx-auto"
       style={{ width: '70mm', height: '100mm' }}
     >
-      <div className="bg-brand text-white px-1.5 py-1">
+      <div className={`${cabecalhoClasse} text-white px-1.5 py-1`}>
         <div className="flex items-center justify-between gap-2">
           <div className="flex h-[10.5mm] flex-1 items-center justify-center rounded bg-white/95 px-1">
             {logoProjeto ? (
@@ -127,6 +132,12 @@ export default function CarteirinhaCard({
           <h3 className="font-black text-[11.5px] text-gray-900 uppercase leading-tight line-clamp-2">
             {convivente.nome_social || convivente.nome_completo}
           </h3>
+          {carteirinhaStatus.provisoria && (
+            <p className="text-[8px] font-black tracking-[0.14em] text-orange-700 uppercase">Provisória</p>
+          )}
+          {carteirinhaStatus.preferencial && (
+            <p className="text-[8px] font-black tracking-[0.14em] text-amber-700 uppercase">Preferencial</p>
+          )}
 
           <div className="grid grid-cols-2 gap-1 text-[8px] text-gray-700 font-mono bg-gray-50 p-1.5 rounded border border-gray-100">
             <p>
@@ -160,16 +171,28 @@ export default function CarteirinhaCard({
           className={`
             p-1.5 rounded text-[7.5px] mb-2 border
             ${
-              acomodacaoEhTransitoria
-                ? 'bg-amber-50 border-amber-200'
-                : 'bg-blue-50/50 border-blue-100'
+              carteirinhaStatus.provisoria
+                ? 'bg-orange-50 border-orange-200'
+                : carteirinhaStatus.preferencial
+                  ? 'bg-amber-50 border-amber-200'
+                  : acomodacaoEhTransitoria
+                    ? 'bg-amber-50 border-amber-200'
+                    : 'bg-blue-50/50 border-blue-100'
             }
           `}
         >
           <p
             className={`
               font-bold uppercase mb-0.5
-              ${acomodacaoEhTransitoria ? 'text-amber-700' : 'text-brand'}
+              ${
+                carteirinhaStatus.provisoria
+                  ? 'text-orange-700'
+                  : carteirinhaStatus.preferencial
+                    ? 'text-amber-700'
+                    : acomodacaoEhTransitoria
+                      ? 'text-amber-700'
+                      : 'text-brand'
+              }
             `}
           >
             Acomodação Atual
@@ -182,7 +205,15 @@ export default function CarteirinhaCard({
           <p
             className={`
               font-bold uppercase mt-0.5
-              ${acomodacaoEhTransitoria ? 'text-amber-700' : 'text-blue-600'}
+              ${
+                carteirinhaStatus.provisoria
+                  ? 'text-orange-700'
+                  : carteirinhaStatus.preferencial
+                    ? 'text-amber-700'
+                    : acomodacaoEhTransitoria
+                      ? 'text-amber-700'
+                      : 'text-blue-600'
+              }
             `}
           >
             Tipo: {tipoAcomodacao}

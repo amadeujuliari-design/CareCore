@@ -18,9 +18,16 @@ from sqlalchemy import and_, case, cast, delete, exists, func, or_, String
 from convivente_datas_cadastro import (
     aplicar_datas_convivente_objeto,
     aplicar_datas_convivente_payload,
+    bloquear_alteracao_data_entrada_convivente,
     preparar_datas_convivente_criacao,
     validar_data_inclusao_convivente,
 )
+from carteirinha_operacional import (
+    data_primeira_vinculacao_convivente,
+    sincronizar_leito_provisorio_convivente,
+    validar_carteirinha_convivente_operacional,
+)
+from refeicao_horario_operacional import validar_horario_refeicao_operacional
 from convivente_ficha_pia import (
     carregar_listas_ficha_pia,
     enriquecer_convivente_response_dict,
@@ -594,7 +601,14 @@ async def criar_convivente(convivente: ConviventeCreate, db: AsyncSession = Depe
 
         if novo_convivente.leito_id and novo_convivente.status == "Ativo":
             leito = (await db.execute(select(LeitoDB).where(LeitoDB.id == novo_convivente.leito_id))).scalar_one_or_none()
-            if leito: leito.status = "Ocupado"
+            if leito:
+                leito.status = "Ocupado"
+            await sincronizar_leito_provisorio_convivente(
+                db,
+                novo_convivente,
+                novo_convivente.leito_id,
+                obter_instituicao_escopo(usuario_atual),
+            )
 
         if novo_convivente.status != "Ativo" and obs_status:
             db.add(OcorrenciaConviventeDB(
@@ -813,6 +827,8 @@ async def listar_conviventes_resumo(
         ConviventeDB.leito_id,
         ConviventeDB.tecnico_id,
         ConviventeDB.foto_url,
+        ConviventeDB.preferencial,
+        ConviventeDB.leito_provisorio_desde,
     ).where(
         ConviventeDB.instituicao_id == obter_instituicao_escopo(usuario_atual),
     )
@@ -841,6 +857,8 @@ async def listar_conviventes_resumo(
             "leito_id": row.leito_id,
             "tecnico_id": row.tecnico_id,
             "foto_url": row.foto_url,
+            "preferencial": bool(row.preferencial),
+            "leito_provisorio_desde": row.leito_provisorio_desde,
         }
         for row in rows
     ]
@@ -1932,6 +1950,7 @@ async def atualizar_convivente(convivente_id: str, dados_atualizacao: Convivente
     status_antigo = convivente.status
     obs_status = getattr(dados_atualizacao, "observacao_status", None)
     dados = dados_atualizacao.model_dump(exclude_unset=True, exclude={"observacao_status"})
+    bloquear_alteracao_data_entrada_convivente(dados)
     listas_payload = {chave: dados.pop(chave) for chave in LISTAS_FICHA_PIA if chave in dados}
     normalizar_campos_ficha_payload(dados)
     campos_enviados = set(dados.keys())
@@ -2004,6 +2023,12 @@ async def atualizar_convivente(convivente_id: str, dados_atualizacao: Convivente
             if convivente.leito_id:
                 l_novo = (await db.execute(select(LeitoDB).where(LeitoDB.id == convivente.leito_id))).scalar_one_or_none()
                 if l_novo: l_novo.status = "Ocupado"
+            await sincronizar_leito_provisorio_convivente(
+                db,
+                convivente,
+                convivente.leito_id,
+                obter_instituicao_escopo(usuario_atual),
+            )
 
         if status_antigo != convivente.status and obs_status:
             db.add(OcorrenciaConviventeDB(
@@ -2974,6 +2999,12 @@ async def registar_rotina(
         )
 
     exigir_convivente_ativo_para_registro(convivente)
+
+    instituicao_id = obter_instituicao_escopo(usuario_atual)
+    await validar_carteirinha_convivente_operacional(db, convivente, instituicao_id)
+
+    if payload.tipo_registro in TIPOS_ROTINA_REFEICOES:
+        validar_horario_refeicao_operacional(payload.tipo_registro, agora_sao_paulo())
 
     if payload.tipo_registro == TIPO_ROTINA_BAGAGEIRO:
         instituicao_id = obter_instituicao_escopo(usuario_atual)
@@ -5868,8 +5899,8 @@ async def relatorio_presenca_periodo(
     ).where(
         ConviventeDB.instituicao_id == instituicao_id,
         or_(
-            ConviventeDB.data_entrada.is_(None),
-            ConviventeDB.data_entrada <= fim,
+            func.coalesce(ConviventeDB.data_inclusao, ConviventeDB.data_entrada).is_(None),
+            func.coalesce(ConviventeDB.data_inclusao, ConviventeDB.data_entrada) <= fim,
         ),
     )
     if status_filtro is not None:
@@ -5930,7 +5961,10 @@ async def relatorio_presenca_periodo(
             movimentos_por_convivente.get(convivente.id, []),
             inicio,
             fim,
-            data_entrada=convivente.data_entrada,
+            data_entrada=data_primeira_vinculacao_convivente(
+                convivente.data_inclusao,
+                convivente.data_entrada,
+            ),
             data_inativacao=convivente.data_inativacao,
             status_convivente=convivente.status,
             ausencia_justificada_desde=convivente.ausencia_justificada_desde,
@@ -6675,7 +6709,10 @@ async def relatorio_sisa_diario(
         presente = convivente_presente_no_dia(
             movimentos_fluxo,
             data_referencia,
-            data_entrada=convivente.data_entrada,
+            data_entrada=data_primeira_vinculacao_convivente(
+                convivente.data_inclusao,
+                convivente.data_entrada,
+            ),
             ausencia_justificada=ausencia_justificada,
         )
         ausente_operacional = (
@@ -6918,7 +6955,10 @@ async def relatorio_sisa_mensal(
             movimentos_por_convivente.get(convivente.id, []),
             inicio.date(),
             fim.date(),
-            convivente.data_entrada,
+            data_primeira_vinculacao_convivente(
+                convivente.data_inclusao,
+                convivente.data_entrada,
+            ),
         ))
         dias_justificados = set()
 

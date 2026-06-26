@@ -300,6 +300,7 @@ class QuartoDB(Base):
     nome = Column(String, nullable=False)
     tipo_publico = Column(String, nullable=False) 
     modalidade = Column(String, nullable=False, default="Fixo") 
+    rotativo = Column(Boolean, default=False, nullable=False)
     is_active = Column(Boolean, default=True)
 
 class LeitoDB(Base):
@@ -340,6 +341,8 @@ class ConviventeDB(Base):
     data_nova_vinculacao = Column(Date, nullable=True)
     prontuario_saude = Column(String, nullable=True)
     leito_id = Column(String, ForeignKey("leitos.id"), nullable=True) 
+    leito_provisorio_desde = Column(DateTime, nullable=True)
+    preferencial = Column(Boolean, default=False, nullable=False)
     
     tecnico_id = Column(String, ForeignKey("usuarios.id"), nullable=True)
     foto_url = Column(String, nullable=True)

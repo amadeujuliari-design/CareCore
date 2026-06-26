@@ -11,12 +11,23 @@ const apiBasePadrao = () => {
     return API_PRODUCAO_PADRAO;
   }
 
+  if (import.meta.env.DEV) {
+    // Em dev, o Vite faz proxy de /api e /uploads para o backend local.
+    return '';
+  }
+
   return `${window.location.protocol}//${window.location.hostname}:8000`;
 };
 
-export const API_BASE_URL = (
-  import.meta.env.VITE_API_BASE_URL ?? apiBasePadrao()
-).replace(/\/$/, '');
+function resolverApiBaseUrl() {
+  const explicito = import.meta.env.VITE_API_BASE_URL;
+  if (explicito !== undefined && explicito !== null && String(explicito).trim() !== '') {
+    return String(explicito).replace(/\/$/, '');
+  }
+  return apiBasePadrao();
+}
+
+export const API_BASE_URL = resolverApiBaseUrl();
 
 export const API_ROOT = `${API_BASE_URL}/api`;
 

@@ -403,7 +403,16 @@ export function ProntuarioFamilia({ formData, handleChange, setFormData, errosVa
                   min="0"
                   placeholder="Idade"
                   value={item.idade ?? ''}
-                  onChange={(e) => atualizarLista(setFormData, 'familiares', idx, 'idade', e.target.value ? Number(e.target.value) : null)}
+                  onChange={(e) => {
+                    const raw = e.target.value;
+                    atualizarLista(
+                      setFormData,
+                      'familiares',
+                      idx,
+                      'idade',
+                      raw === '' ? '' : Number(raw),
+                    );
+                  }}
                   className={campoClasse()}
                 />
                 <div>

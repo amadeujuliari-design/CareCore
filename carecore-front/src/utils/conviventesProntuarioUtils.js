@@ -66,6 +66,7 @@ export function criarEstadoInicialConvivente() {
     data_inclusao: dataLocalISO(),
     data_inativacao: '',
     data_nova_vinculacao: '',
+    preferencial: false,
     prontuario_saude: '',
     origem_encaminhamento_id: '',
     origem_encaminhamento_outros: '',
@@ -335,10 +336,14 @@ export function montarPayloadProntuario(formData, statusOriginal) {
   if (payload.senha_govbr == null) delete payload.senha_govbr;
 
   if (Array.isArray(payload.familiares)) {
-    payload.familiares = payload.familiares.map((item) => ({
-      ...item,
-      endereco: montarEnderecoFamiliarResumo(item),
-    }));
+    payload.familiares = payload.familiares
+      .filter((item) => (item.parentesco || '').trim() && (item.nome || '').trim())
+      .map((item) => ({
+        ...item,
+        idade: item.idade === '' || item.idade == null ? null : Number(item.idade),
+        telefone: (item.telefone || '').trim() || null,
+        endereco: montarEnderecoFamiliarResumo(item),
+      }));
   }
 
   if (Object.prototype.hasOwnProperty.call(formData, 'origem_encaminhamento_id')) {

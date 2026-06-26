@@ -99,8 +99,21 @@ export default function ProntuarioPessoais({
           </div>
 
           <div className="md:col-span-1">
-            <label className={`block text-xs font-semibold mb-1 ${formData.status === 'Ativo' ? 'text-blue-900' : formData.status === 'Saída qualificada' ? 'text-emerald-900' : formData.status === 'Ausência justificada' ? 'text-sky-900' : 'text-red-900'}`}>Data de entrada/vinculação *</label>
-            <input type="date" name="data_entrada" required value={formData.data_entrada ? formData.data_entrada.split('T')[0] : ''} onChange={handleChange} className="w-full px-3 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none bg-white text-sm" />
+            <label className={`block text-xs font-semibold mb-1 ${formData.status === 'Ativo' ? 'text-blue-900' : formData.status === 'Saída qualificada' ? 'text-emerald-900' : formData.status === 'Ausência justificada' ? 'text-sky-900' : 'text-red-900'}`}>
+              Data de cadastro no sistema *
+            </label>
+            <input
+              type="date"
+              name="data_entrada"
+              required
+              readOnly={Boolean(editandoId)}
+              value={formData.data_entrada ? formData.data_entrada.split('T')[0] : ''}
+              onChange={handleChange}
+              className={`w-full px-3 py-1.5 border border-gray-300 rounded-lg outline-none text-sm ${editandoId ? 'bg-gray-100 text-gray-600 cursor-not-allowed' : 'bg-white focus:ring-2 focus:ring-brand'}`}
+            />
+            {editandoId && (
+              <p className="mt-1 text-[10px] text-slate-500">Definida automaticamente no cadastro e não pode ser alterada.</p>
+            )}
           </div>
 
           <div className="md:col-span-1">
@@ -151,7 +164,7 @@ export default function ProntuarioPessoais({
         <h3 className="text-sm font-bold text-slate-800 mb-3">Histórico institucional</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           <div>
-            <label className="block text-xs font-semibold text-gray-700 mb-1">Data de inclusão</label>
+            <label className="block text-xs font-semibold text-gray-700 mb-1">Data da primeira vinculação no projeto</label>
             <input
               type="date"
               name="data_inclusao"
@@ -159,7 +172,7 @@ export default function ProntuarioPessoais({
               onChange={handleChange}
               className="w-full px-3 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none bg-white text-sm"
             />
-            <p className="mt-1 text-[10px] text-slate-500">Primeiro cadastro no projeto. Pode ser retroativa.</p>
+            <p className="mt-1 text-[10px] text-slate-500">Usada para presença/ausência. Pode ser retroativa.</p>
           </div>
           <div>
             <label className="block text-xs font-semibold text-gray-700 mb-1">Data de inativação</label>
@@ -205,6 +218,19 @@ export default function ProntuarioPessoais({
               className="w-full px-3 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none bg-white text-sm"
             />
           </div>
+        </div>
+        <div className="flex items-center gap-2 pt-1">
+          <input
+            type="checkbox"
+            id="preferencial"
+            name="preferencial"
+            checked={Boolean(formData.preferencial)}
+            onChange={(e) => setFormData((prev) => ({ ...prev, preferencial: e.target.checked }))}
+            className="h-4 w-4 rounded border-gray-300 text-brand focus:ring-brand"
+          />
+          <label htmlFor="preferencial" className="text-xs font-semibold text-amber-800">
+            Convivente preferencial (destaque dourado na carteirinha)
+          </label>
         </div>
       </div>
 

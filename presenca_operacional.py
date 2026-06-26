@@ -4,6 +4,8 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta
 
 TIPOS_FLUXO_ENTRADA_SAIDA = frozenset({"Entrada", "Saída"})
+STATUS_INATIVOS_OPERACIONAIS = frozenset({"Inativado", "Bloqueado", "Saída qualificada"})
+PRESENCA_REGRAS_BUILD = "inativos-sem-presenca-v2"
 
 
 def _movimentos_fluxo_ordenados(movimentos: list[dict]) -> list[dict]:
@@ -49,6 +51,8 @@ def calcular_dias_presenca_operacional(
     data_inicio: date,
     data_fim: date,
     data_entrada: date | None = None,
+    *,
+    assumir_dentro_sem_fluxo: bool = True,
 ) -> list[str]:
     movimentos_ordenados = _movimentos_fluxo_ordenados(movimentos)
     dias_presentes: list[str] = []
@@ -83,8 +87,10 @@ def calcular_dias_presenca_operacional(
 
         if ultimo_antes_do_dia is not None:
             amanheceu_dentro = ultimo_antes_do_dia["tipo_registro"] == "Entrada"
-        else:
+        elif assumir_dentro_sem_fluxo:
             amanheceu_dentro = _ja_estava_no_projeto(dia, data_entrada)
+        else:
+            amanheceu_dentro = False
 
         if ultimo_ate_fim_do_dia is not None:
             dentro_no_fechamento = ultimo_ate_fim_do_dia["tipo_registro"] == "Entrada"
@@ -183,6 +189,27 @@ def _dia_com_ausencia_justificada(
     return dia >= ausencia_justificada_desde
 
 
+def _dia_fora_operacao_convivente(
+    dia: date,
+    *,
+    status_convivente: str,
+    data_inativacao: date | None,
+) -> bool:
+    """
+    Dia sem P/J/A no relatório: antes da admissão, após inativação ou
+    convivente com status inativo no período (sem operação assistencial).
+    """
+    if status_convivente in STATUS_INATIVOS_OPERACIONAIS:
+        if data_inativacao is None:
+            return True
+        return dia >= data_inativacao
+
+    if data_inativacao is not None and dia > data_inativacao:
+        return True
+
+    return False
+
+
 def classificar_presenca_dia(
     dia: date,
     *,
@@ -194,16 +221,20 @@ def classificar_presenca_dia(
 ) -> str:
     if data_entrada and dia < data_entrada:
         return STATUS_DIA_NA
-    if data_inativacao is not None and dia > data_inativacao:
+    if _dia_fora_operacao_convivente(
+        dia,
+        status_convivente=status_convivente,
+        data_inativacao=data_inativacao,
+    ):
         return STATUS_DIA_NA
+    if dia.isoformat() in dias_presentes:
+        return STATUS_DIA_PRESENTE
     if _dia_com_ausencia_justificada(
         dia,
         status_convivente=status_convivente,
         ausencia_justificada_desde=ausencia_justificada_desde,
     ):
         return STATUS_DIA_JUSTIFICADO
-    if dia.isoformat() in dias_presentes:
-        return STATUS_DIA_PRESENTE
     return STATUS_DIA_AUSENTE
 
 
@@ -217,12 +248,14 @@ def montar_status_presenca_por_dia(
     status_convivente: str,
     ausencia_justificada_desde: date | None,
 ) -> dict[str, str]:
+    assumir_dentro_sem_fluxo = status_convivente != "Ausência justificada"
     dias_presentes = set(
         calcular_dias_presenca_operacional(
             movimentos_fluxo,
             data_inicio,
             data_fim,
             data_entrada,
+            assumir_dentro_sem_fluxo=assumir_dentro_sem_fluxo,
         )
     )
     return {
