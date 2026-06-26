@@ -5,6 +5,7 @@ import {
   formatarDataRelatorio,
   montarDadosExportacaoCadastrosNovos,
   rotuloCriterioCadastrosNovos,
+  rotulosStatusFiltroCadastrosNovos,
 } from './relatorioCadastrosNovosUtils';
 
 export async function imprimirRelatorioCadastrosNovos({
@@ -21,6 +22,7 @@ export async function imprimirRelatorioCadastrosNovos({
   const subtitulo = [
     `Período: ${formatarDataRelatorio(relatorio.data_inicio)} a ${formatarDataRelatorio(relatorio.data_fim)}`,
     `Critério: ${rotuloCriterioCadastrosNovos(relatorio.criterio)}`,
+    `Situação no abrigo: ${rotulosStatusFiltroCadastrosNovos(relatorio.status_filtro)}`,
     tecnicoNome ? `Técnico: ${tecnicoNome}` : null,
     busca?.trim() ? `Busca: ${busca.trim()}` : null,
   ].filter(Boolean).join(' · ');

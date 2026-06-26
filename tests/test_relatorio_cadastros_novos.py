@@ -1,3 +1,14 @@
+def test_parse_status_filtro_cadastros_novos():
+    from routers.conviventes import (
+        STATUS_CADASTROS_NOVOS_PADRAO,
+        _parse_status_filtro_cadastros_novos,
+    )
+
+    assert _parse_status_filtro_cadastros_novos(None) == list(STATUS_CADASTROS_NOVOS_PADRAO)
+    assert _parse_status_filtro_cadastros_novos('') == list(STATUS_CADASTROS_NOVOS_PADRAO)
+    assert _parse_status_filtro_cadastros_novos('Ativo,Inativado') == ['Ativo', 'Inativado']
+
+
 def test_schema_relatorio_cadastros_novos():
     from schemas import RelatorioCadastrosNovosResponse
 
@@ -5,6 +16,7 @@ def test_schema_relatorio_cadastros_novos():
         "data_inicio": "2026-06-01",
         "data_fim": "2026-06-30",
         "criterio": "inclusoes",
+        "status_filtro": ["Ativo", "Em acolhimento"],
         "total_cadastros": 1,
         "linhas": [{
             "convivente_id": "abc",

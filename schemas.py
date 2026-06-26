@@ -1555,6 +1555,7 @@ class RelatorioCadastrosNovosResponse(BaseModel):
     data_inicio: str
     data_fim: str
     criterio: str
+    status_filtro: List[str] = Field(default_factory=list)
     total_cadastros: int
     linhas: List[RelatorioCadastrosNovosLinha]
 

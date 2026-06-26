@@ -16,6 +16,39 @@ export const CRITERIOS_CADASTROS_NOVOS = [
   },
 ];
 
+export const STATUS_CONVIVENTE_CADASTROS_NOVOS = [
+  { valor: 'Ativo', label: 'Ativo (Presente)' },
+  { valor: 'Em acolhimento', label: 'Em acolhimento' },
+  { valor: 'Ausência justificada', label: 'Ausência justificada' },
+  { valor: 'Inativado', label: 'Inativado (Evadiu/Alta)' },
+  { valor: 'Saída qualificada', label: 'Saída qualificada' },
+  { valor: 'Bloqueado', label: 'Bloqueado (Suspensão)' },
+];
+
+export const STATUS_CADASTROS_NOVOS_PADRAO = [
+  'Ativo',
+  'Em acolhimento',
+  'Ausência justificada',
+];
+
+export function rotuloStatusConviventeCadastrosNovos(valor) {
+  return STATUS_CONVIVENTE_CADASTROS_NOVOS.find((item) => item.valor === valor)?.label || valor;
+}
+
+export function rotulosStatusFiltroCadastrosNovos(statuses = []) {
+  return (statuses || [])
+    .map((status) => rotuloStatusConviventeCadastrosNovos(status))
+    .join(', ');
+}
+
+export function alternarStatusFiltroCadastrosNovos(statusAtual = [], valor) {
+  if (statusAtual.includes(valor)) {
+    const proximo = statusAtual.filter((item) => item !== valor);
+    return proximo.length ? proximo : statusAtual;
+  }
+  return [...statusAtual, valor];
+}
+
 export function rotuloCriterioCadastrosNovos(valor) {
   return CRITERIOS_CADASTROS_NOVOS.find((item) => item.valor === valor)?.label || valor;
 }
@@ -43,6 +76,6 @@ export function montarDadosExportacaoCadastrosNovos(relatorio) {
     'Prontuário da saúde': linha.prontuario_saude || '—',
     'Data de inclusão': formatarDataRelatorio(linha.data_inclusao),
     'Nova vinculação': formatarDataRelatorio(linha.data_nova_vinculacao),
-    Status: linha.status,
+    Status: rotuloStatusConviventeCadastrosNovos(linha.status),
   }));
 }

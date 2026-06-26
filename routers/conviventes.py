@@ -94,6 +94,7 @@ from schemas import (
     RelatorioPiaListaResponse,
     RelatorioPresencaPeriodoResponse,
     RelatorioCadastrosNovosResponse,
+    STATUS_CONVIVENTE_VALIDOS,
     SisaImportacaoListaResponse, FechamentoMensalListaResponse,
     RegistroRotinaCreate,
     RegistroRotinaResponse,
@@ -5942,6 +5943,33 @@ async def relatorio_presenca_periodo(
 
 MAX_DIAS_RELATORIO_CADASTROS_NOVOS = 366
 
+STATUS_CADASTROS_NOVOS_PADRAO = (
+    "Ativo",
+    "Em acolhimento",
+    "Ausência justificada",
+)
+
+
+def _parse_status_filtro_cadastros_novos(status_param: str | None) -> list[str]:
+    if status_param is None or not str(status_param).strip():
+        return list(STATUS_CADASTROS_NOVOS_PADRAO)
+
+    itens = [item.strip() for item in str(status_param).split(",") if item.strip()]
+    if not itens:
+        return list(STATUS_CADASTROS_NOVOS_PADRAO)
+
+    invalidos = [item for item in itens if item not in STATUS_CONVIVENTE_VALIDOS]
+    if invalidos:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Status inválido no filtro. "
+                "Use: Ativo, Em acolhimento, Inativado, Bloqueado, Saída qualificada ou Ausência justificada."
+            ),
+        )
+
+    return itens
+
 
 @router.get("/relatorios/cadastros-novos", response_model=RelatorioCadastrosNovosResponse)
 async def relatorio_cadastros_novos(
@@ -5950,6 +5978,10 @@ async def relatorio_cadastros_novos(
     criterio: str = Query(
         "inclusoes",
         description="inclusoes | nova_vinculacao | ambas",
+    ),
+    status: str | None = Query(
+        None,
+        description="Status do convivente separados por vírgula (padrão: Ativo, Em acolhimento, Ausência justificada)",
     ),
     tecnico_id: str | None = None,
     busca: str | None = None,
@@ -5978,6 +6010,8 @@ async def relatorio_cadastros_novos(
             detail="Critério inválido. Use inclusoes, nova_vinculacao ou ambas.",
         )
 
+    status_filtro = _parse_status_filtro_cadastros_novos(status)
+
     inclusao_no_periodo = and_(
         ConviventeDB.data_inclusao.is_not(None),
         ConviventeDB.data_inclusao >= inicio,
@@ -6002,6 +6036,7 @@ async def relatorio_cadastros_novos(
         .where(
             ConviventeDB.instituicao_id == instituicao_id,
             filtro_periodo,
+            ConviventeDB.status.in_(status_filtro),
         )
     )
 
@@ -6053,6 +6088,7 @@ async def relatorio_cadastros_novos(
         "data_inicio": inicio.isoformat(),
         "data_fim": fim.isoformat(),
         "criterio": criterio_valor,
+        "status_filtro": status_filtro,
         "total_cadastros": len(linhas),
         "linhas": linhas,
     }

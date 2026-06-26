@@ -4,6 +4,7 @@ export async function buscarRelatorioCadastrosNovos({
   dataInicio,
   dataFim,
   criterio,
+  statusFiltro,
   tecnicoId,
   busca,
 }) {
@@ -12,6 +13,7 @@ export async function buscarRelatorioCadastrosNovos({
       data_inicio: dataInicio,
       data_fim: dataFim,
       criterio: criterio || 'inclusoes',
+      status: (statusFiltro || []).length ? statusFiltro.join(',') : undefined,
       tecnico_id: tecnicoId || undefined,
       busca: (busca || '').trim() || undefined,
     },

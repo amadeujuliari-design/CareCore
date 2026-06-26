@@ -21,6 +21,11 @@ import {
   formatarDataRelatorio,
   montarDadosExportacaoCadastrosNovos,
   rotuloCriterioCadastrosNovos,
+  rotulosStatusFiltroCadastrosNovos,
+  rotuloStatusConviventeCadastrosNovos,
+  STATUS_CADASTROS_NOVOS_PADRAO,
+  STATUS_CONVIVENTE_CADASTROS_NOVOS,
+  alternarStatusFiltroCadastrosNovos,
 } from './utils/relatorioCadastrosNovosUtils';
 
 function dataLocalISO(data = new Date()) {
@@ -41,6 +46,7 @@ export default function RelatorioCadastrosNovos() {
   const [tecnicoId, setTecnicoId] = useState('');
   const [busca, setBusca] = useState('');
   const [criterio, setCriterio] = useState('inclusoes');
+  const [statusFiltro, setStatusFiltro] = useState(() => [...STATUS_CADASTROS_NOVOS_PADRAO]);
   const [tecnicos, setTecnicos] = useState([]);
   const [relatorio, setRelatorio] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -70,6 +76,7 @@ export default function RelatorioCadastrosNovos() {
         dataInicio,
         dataFim,
         criterio,
+        statusFiltro,
         tecnicoId,
         busca,
       });
@@ -80,7 +87,7 @@ export default function RelatorioCadastrosNovos() {
     } finally {
       setLoading(false);
     }
-  }, [busca, criterio, dataFim, dataInicio, tecnicoId]);
+  }, [busca, criterio, dataFim, dataInicio, statusFiltro, tecnicoId]);
 
   const linhas = relatorio?.linhas || [];
 
@@ -93,6 +100,7 @@ export default function RelatorioCadastrosNovos() {
       filtros: {
         Período: `${formatarDataRelatorio(relatorio.data_inicio)} a ${formatarDataRelatorio(relatorio.data_fim)}`,
         Critério: rotuloCriterioCadastrosNovos(relatorio.criterio),
+        'Situação no abrigo': rotulosStatusFiltroCadastrosNovos(relatorio.status_filtro),
         Total: relatorio.total_cadastros,
       },
       colunas: COLUNAS_EXPORTACAO_CADASTROS_NOVOS,
@@ -180,6 +188,40 @@ export default function RelatorioCadastrosNovos() {
               </div>
             </fieldset>
 
+            <fieldset className="mt-5 rounded-2xl border border-slate-200 bg-slate-50/80 p-4">
+              <legend className="px-2 text-xs font-black uppercase tracking-wide text-slate-600">
+                Situação no abrigo
+              </legend>
+              <p className="mt-1 px-2 text-xs text-slate-500">
+                Marque uma ou mais situações. Por padrão: ativos, em acolhimento e ausência justificada.
+              </p>
+              <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                {STATUS_CONVIVENTE_CADASTROS_NOVOS.map((opcao) => {
+                  const marcado = statusFiltro.includes(opcao.valor);
+                  return (
+                    <label
+                      key={opcao.valor}
+                      className={`flex cursor-pointer gap-3 rounded-xl border px-3 py-2.5 ${
+                        marcado
+                          ? 'border-brand bg-white shadow-sm'
+                          : 'border-transparent bg-white/70'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={marcado}
+                        onChange={() => setStatusFiltro(
+                          (atual) => alternarStatusFiltroCadastrosNovos(atual, opcao.valor),
+                        )}
+                        className="mt-0.5"
+                      />
+                      <span className="text-sm font-semibold text-slate-800">{opcao.label}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            </fieldset>
+
             <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
               <div>
                 <label className="mb-1 block text-[10px] font-black uppercase text-gray-400">Data inicial</label>
@@ -256,7 +298,7 @@ export default function RelatorioCadastrosNovos() {
 
             {relatorio && !loading && linhas.length === 0 && (
               <p className="p-8 text-center text-sm text-gray-500">
-                Nenhum registro encontrado para o critério e período escolhidos.
+                Nenhum registro encontrado para o critério, situação e período escolhidos.
               </p>
             )}
 
@@ -281,7 +323,7 @@ export default function RelatorioCadastrosNovos() {
                         <td className="px-4 py-3 text-gray-700">{linha.prontuario_saude || '—'}</td>
                         <td className="px-4 py-3 text-gray-700">{formatarDataRelatorio(linha.data_inclusao)}</td>
                         <td className="px-4 py-3 text-gray-700">{formatarDataRelatorio(linha.data_nova_vinculacao)}</td>
-                        <td className="px-4 py-3 text-gray-700">{linha.status}</td>
+                        <td className="px-4 py-3 text-gray-700">{rotuloStatusConviventeCadastrosNovos(linha.status)}</td>
                       </tr>
                     ))}
                   </tbody>
