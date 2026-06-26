@@ -1031,9 +1031,6 @@ export default function RotinaDiaria() {
     );
   const resumoInteracoesLista = Object.entries(contagensInteracoesVisiveis)
     .sort(([, totalA], [, totalB]) => totalB - totalA);
-  const resumoInteracoesTooltip = resumoInteracoesLista.length
-    ? resumoInteracoesLista.map(([tipo, total]) => `${tipo}: ${total}`).join('\n')
-    : 'Nenhuma interação de rotina registrada hoje.';
   const placeholderBusca = modoAutomatico && tipoBipagemAutomatica === 'interacao'
     ? 'Digite o código do prontuário para registrar a interação selecionada...'
     : 'Buscar nome, prontuário, CPF ou bipar leitor USB...';
@@ -1130,7 +1127,6 @@ export default function RotinaDiaria() {
             <button
               type="button"
               onClick={() => setResumoInteracoesAberto(true)}
-              title={resumoInteracoesTooltip}
               className="group relative bg-white p-5 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-between text-left hover:border-blue-200 hover:shadow-md transition-all"
             >
               <div>
