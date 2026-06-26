@@ -1535,7 +1535,7 @@ class RelatorioPresencaPeriodoResponse(BaseModel):
     dias: List[str]
     total_conviventes: int
     filtro_situacao: str
-    status_convivente: str
+    status_filtro: List[str]
     resumo: dict[str, int]
     linhas: List[RelatorioPresencaPeriodoLinha]
 

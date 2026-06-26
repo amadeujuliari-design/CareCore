@@ -187,11 +187,14 @@ def classificar_presenca_dia(
     dia: date,
     *,
     data_entrada: date | None,
+    data_inativacao: date | None,
     dias_presentes: set[str],
     status_convivente: str,
     ausencia_justificada_desde: date | None,
 ) -> str:
     if data_entrada and dia < data_entrada:
+        return STATUS_DIA_NA
+    if data_inativacao is not None and dia > data_inativacao:
         return STATUS_DIA_NA
     if _dia_com_ausencia_justificada(
         dia,
@@ -210,6 +213,7 @@ def montar_status_presenca_por_dia(
     data_fim: date,
     *,
     data_entrada: date | None,
+    data_inativacao: date | None = None,
     status_convivente: str,
     ausencia_justificada_desde: date | None,
 ) -> dict[str, str]:
@@ -225,6 +229,7 @@ def montar_status_presenca_por_dia(
         dia.isoformat(): classificar_presenca_dia(
             dia,
             data_entrada=data_entrada,
+            data_inativacao=data_inativacao,
             dias_presentes=dias_presentes,
             status_convivente=status_convivente,
             ausencia_justificada_desde=ausencia_justificada_desde,
@@ -258,17 +263,42 @@ def totais_status_presenca(status_por_dia: dict[str, str]) -> dict[str, int]:
     }
 
 
+FILTRO_SITUACAO_PRESENTES = "presenca_ou_justificada"
+FILTRO_SITUACAO_AUSENTES = "apenas_ausencia"
+_ALIASES_FILTRO_SITUACAO = {
+    "presentes_no_periodo": FILTRO_SITUACAO_PRESENTES,
+    "ausentes_no_periodo": FILTRO_SITUACAO_AUSENTES,
+}
+
+
+def normalizar_filtro_situacao_presenca(filtro_situacao: str | None) -> str:
+    filtro = (filtro_situacao or FILTRO_SITUACAO_PRESENTES).strip()
+    return _ALIASES_FILTRO_SITUACAO.get(filtro, filtro)
+
+
+def linha_tem_dia_elegivel_no_periodo(totais: dict[str, int], total_dias: int) -> bool:
+    """Exclui linhas em que todos os dias são NA (fora de admissão/inativação)."""
+    if total_dias <= 0:
+        return False
+    return int(totais.get("na") or 0) < total_dias
+
+
 def linha_atende_filtro_situacao_periodo(
     totais: dict[str, int],
     filtro_situacao: str | None,
+    *,
+    total_dias: int | None = None,
 ) -> bool:
     """
     Filtro do relatório matricial:
     - presenca_ou_justificada: pelo menos 1 dia P ou J no período
     - apenas_ausencia: pelo menos 1 dia A no período
     """
-    filtro = (filtro_situacao or "presenca_ou_justificada").strip()
-    if filtro == "apenas_ausencia":
+    if total_dias is not None and not linha_tem_dia_elegivel_no_periodo(totais, total_dias):
+        return False
+
+    filtro = normalizar_filtro_situacao_presenca(filtro_situacao)
+    if filtro == FILTRO_SITUACAO_AUSENTES:
         return int(totais.get("ausentes") or 0) > 0
     return (
         int(totais.get("presentes_operacionais") or 0) > 0

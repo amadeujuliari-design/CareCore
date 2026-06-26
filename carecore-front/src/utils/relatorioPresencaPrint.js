@@ -1,17 +1,20 @@
 import { imprimirRelatorio } from './imprimirRelatorio';
 import { obterLogoRelatorioDataUrl } from './relatorioIdentidadePrint';
 import {
+  AJUDA_COLUNA_JUSTIFICADO,
   formatarDiaColunaCompleto,
   montarColunasImpressaoPresenca,
   montarDadosImpressaoPresenca,
   rotuloFiltroSituacaoPresenca,
-  rotuloFiltroStatusConviventePresenca,
 } from './relatorioPresencaUtils';
 
 const LEGENDA_PRESENCA_HTML = `
   <p style="margin:0 0 10px;font-size:10px;line-height:1.4;color:#4b5563;">
     <strong>Legenda:</strong>
-    P = Presente · J = Ausência justificada · A = Ausente · — = Antes da admissão
+    P = Presente · J = Ausência justificada · A = Ausente · — = Fora de admissão ou após inativação
+  </p>
+  <p style="margin:0 0 10px;font-size:9px;line-height:1.4;color:#6b7280;">
+    ${AJUDA_COLUNA_JUSTIFICADO}
   </p>
 `;
 
@@ -29,8 +32,7 @@ export async function imprimirRelatorioPresencaPeriodo({
 
   const subtitulo = [
     `Período: ${formatarDiaColunaCompleto(relatorio.data_inicio)} a ${formatarDiaColunaCompleto(relatorio.data_fim)}`,
-    `Situação: ${rotuloFiltroSituacaoPresenca(relatorio.filtro_situacao)}`,
-    `Status: ${rotuloFiltroStatusConviventePresenca(relatorio.status_convivente)}`,
+    `Listagem: ${rotuloFiltroSituacaoPresenca(relatorio.filtro_situacao)}`,
     tecnicoNome ? `Técnico: ${tecnicoNome}` : null,
     busca?.trim() ? `Busca: ${busca.trim()}` : null,
   ].filter(Boolean).join(' · ');

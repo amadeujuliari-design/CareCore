@@ -5,7 +5,6 @@ export async function buscarRelatorioPresencaPeriodo({
   dataFim,
   tecnicoId,
   busca,
-  statusConvivente,
   filtroSituacao,
 }) {
   const response = await api.get('/api/relatorios/presenca-periodo', {
@@ -14,7 +13,6 @@ export async function buscarRelatorioPresencaPeriodo({
       data_fim: dataFim,
       tecnico_id: tecnicoId || undefined,
       busca: (busca || '').trim() || undefined,
-      status_convivente: statusConvivente || 'todos',
       filtro_situacao: filtroSituacao || 'presenca_ou_justificada',
     },
   });

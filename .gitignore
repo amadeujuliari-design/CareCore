@@ -76,6 +76,7 @@ minuta_contrato_carecore_aeb*
 !/scripts/migrar_documentos_conviventes_storage.py
 !/scripts/preparar_base_producao_aeb.py
 !/scripts/validar_base_producao_aeb.py
+!/scripts/pos_deploy.sh
 relatorios_importacao/
 preencher_organizacao.py
 RelatorioCidadaoVinculado.xls

@@ -1,33 +1,29 @@
+import { rotuloStatusConviventeCadastrosNovos } from './relatorioCadastrosNovosUtils';
+
 export const FILTROS_SITUACAO_PRESENCA = [
   {
     valor: 'presenca_ou_justificada',
-    label: 'Com presença ou ausência justificada',
-    descricao: 'Lista conviventes com pelo menos 1 dia presente (P) ou justificado (J) no período.',
+    label: 'Presentes no período',
+    descricao: 'Conviventes com pelo menos 1 dia presente (P) ou justificado (J) no intervalo.',
   },
   {
     valor: 'apenas_ausencia',
-    label: 'Com ausência no período',
-    descricao: 'Lista conviventes com pelo menos 1 dia ausente (A) no período.',
+    label: 'Ausentes no período',
+    descricao: 'Conviventes com pelo menos 1 dia ausente (A) no intervalo, conforme regras do programa.',
   },
-];
-
-export const FILTROS_STATUS_CONVIVENTE_PRESENCA = [
-  {
-    valor: 'todos',
-    label: 'Ativos + ausência justificada',
-    descricao: 'Inclui os dois status no relatório (padrão).',
-  },
-  { valor: 'Ativo', label: 'Somente ativos' },
-  { valor: 'Ausência justificada', label: 'Somente ausência justificada' },
 ];
 
 export function rotuloFiltroSituacaoPresenca(valor) {
   return FILTROS_SITUACAO_PRESENCA.find((item) => item.valor === valor)?.label || valor;
 }
 
-export function rotuloFiltroStatusConviventePresenca(valor) {
-  return FILTROS_STATUS_CONVIVENTE_PRESENCA.find((item) => item.valor === valor)?.label || valor;
+export function rotuloStatusAtualConvivente(status) {
+  return rotuloStatusConviventeCadastrosNovos(status);
 }
+
+export const AJUDA_COLUNA_JUSTIFICADO = (
+  'J reflete a situação cadastral atual (ausência justificada), não o histórico dia a dia do período.'
+);
 
 export const ROTULO_STATUS_PRESENCA_DIA = {
   presente: 'P',
@@ -37,10 +33,10 @@ export const ROTULO_STATUS_PRESENCA_DIA = {
 };
 
 export const DESCRICAO_STATUS_PRESENCA_DIA = {
-  presente: 'Presente',
-  justificado: 'Ausência justificada',
-  ausente: 'Ausente',
-  na: 'Fora do período de admissão',
+  presente: 'Presente (fluxo Entrada/Saída)',
+  justificado: 'Ausência justificada no cadastro (situação atual)',
+  ausente: 'Ausente (admitido, sem presença no dia)',
+  na: 'Fora do período de admissão ou após inativação',
 };
 
 export function classeCelulaPresencaDia(status) {
@@ -69,7 +65,7 @@ export function montarDadosExportacaoPresenca(relatorio) {
     const registro = {
       Nome: linha.nome,
       Prontuário: linha.prontuario ? `#${linha.prontuario}` : 'S/N',
-      Status: linha.status,
+      'Situação atual': rotuloStatusAtualConvivente(linha.status),
       Técnico: linha.tecnico_nome || 'Sem técnico',
       SISA: linha.numero_sisa || '-',
     };
@@ -92,7 +88,7 @@ export function montarColunasExportacaoPresenca(relatorio) {
   return [
     'Nome',
     'Prontuário',
-    'Status',
+    'Situação atual',
     'Técnico',
     'SISA',
     ...dias.map((dia) => formatarDiaColunaCompleto(dia)),
@@ -107,7 +103,7 @@ export function montarColunasImpressaoPresenca(relatorio) {
   return [
     'Convivente',
     'Prontuário',
-    'Status',
+    'Situação atual',
     'Técnico',
     ...dias.map((dia) => formatarDiaColuna(dia)),
     'Pres.',
@@ -122,7 +118,7 @@ export function montarDadosImpressaoPresenca(relatorio) {
     const registro = {
       Convivente: linha.nome,
       Prontuário: linha.prontuario ? `#${linha.prontuario}` : 'S/N',
-      Status: linha.status,
+      'Situação atual': rotuloStatusAtualConvivente(linha.status),
       Técnico: linha.tecnico_nome || '—',
     };
 

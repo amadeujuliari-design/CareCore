@@ -4725,8 +4725,11 @@ from presenca_operacional import (
     linha_atende_filtro_situacao_periodo,
     MAX_DIAS_RELATORIO_PRESENCA,
     montar_status_presenca_por_dia,
+    normalizar_filtro_situacao_presenca,
     sem_interacao_rotina_24h,
     totais_status_presenca,
+    FILTRO_SITUACAO_AUSENTES,
+    FILTRO_SITUACAO_PRESENTES,
 )
 
 TIPOS_SISA_PRESENCA_CARECORE = {
@@ -5780,18 +5783,55 @@ async def listar_registros_pia_relatorios(
     }
 
 
+def _parse_status_filtro_presenca(status_param: str | None) -> list[str] | None:
+    """
+    None = todas as situações cadastrais (relatório histórico do período).
+    Aceita lista separada por vírgula ou legado 'todos'.
+    """
+    if status_param is None or not str(status_param).strip():
+        return None
+
+    texto = str(status_param).strip()
+    if texto.lower() == "todos":
+        return None
+
+    itens = [item.strip() for item in texto.split(",") if item.strip()]
+    if not itens:
+        return None
+
+    invalidos = [item for item in itens if item not in STATUS_CONVIVENTE_VALIDOS]
+    if invalidos:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Status inválido no filtro. "
+                "Use: Ativo, Em acolhimento, Inativado, Bloqueado, Saída qualificada ou Ausência justificada."
+            ),
+        )
+
+    return itens
+
+
 @router.get("/relatorios/presenca-periodo", response_model=RelatorioPresencaPeriodoResponse)
 async def relatorio_presenca_periodo(
     data_inicio: str = Query(..., description="Data inicial AAAA-MM-DD"),
     data_fim: str = Query(..., description="Data final AAAA-MM-DD"),
     tecnico_id: str | None = None,
     busca: str | None = None,
-    status_convivente: str = Query(
-        "todos",
-        description="todos | Ativo | Ausência justificada",
+    status: str | None = Query(
+        None,
+        description=(
+            "Situação cadastral atual, separada por vírgula (opcional). "
+            "Omitido = todas as situações."
+        ),
+    ),
+    status_convivente: str | None = Query(
+        None,
+        deprecated=True,
+        description="Legado — use o parâmetro status",
     ),
     filtro_situacao: str = Query(
-        "presenca_ou_justificada",
+        FILTRO_SITUACAO_PRESENTES,
         description="presenca_ou_justificada | apenas_ausencia",
     ),
     db: AsyncSession = Depends(get_db),
@@ -5813,15 +5853,11 @@ async def relatorio_presenca_periodo(
             detail=f"O período máximo é de {MAX_DIAS_RELATORIO_PRESENCA} dias.",
         )
 
-    filtro_status = (status_convivente or "todos").strip()
-    if filtro_status not in {"todos", "Ativo", "Ausência justificada"}:
-        raise HTTPException(
-            status_code=400,
-            detail="Status do convivente inválido. Use todos, Ativo ou Ausência justificada.",
-        )
+    status_param = status if status is not None else status_convivente
+    status_filtro = _parse_status_filtro_presenca(status_param)
 
-    filtro_situacao_valor = (filtro_situacao or "presenca_ou_justificada").strip()
-    if filtro_situacao_valor not in {"presenca_ou_justificada", "apenas_ausencia"}:
+    filtro_situacao_valor = normalizar_filtro_situacao_presenca(filtro_situacao)
+    if filtro_situacao_valor not in {FILTRO_SITUACAO_PRESENTES, FILTRO_SITUACAO_AUSENTES}:
         raise HTTPException(
             status_code=400,
             detail="Filtro de situação inválido.",
@@ -5831,13 +5867,13 @@ async def relatorio_presenca_periodo(
         UsuarioDB, UsuarioDB.id == ConviventeDB.tecnico_id
     ).where(
         ConviventeDB.instituicao_id == instituicao_id,
+        or_(
+            ConviventeDB.data_entrada.is_(None),
+            ConviventeDB.data_entrada <= fim,
+        ),
     )
-    if filtro_status == "todos":
-        query_conviventes = query_conviventes.where(
-            ConviventeDB.status.in_(["Ativo", "Ausência justificada"]),
-        )
-    else:
-        query_conviventes = query_conviventes.where(ConviventeDB.status == filtro_status)
+    if status_filtro is not None:
+        query_conviventes = query_conviventes.where(ConviventeDB.status.in_(status_filtro))
 
     if tecnico_id:
         query_conviventes = query_conviventes.where(ConviventeDB.tecnico_id == tecnico_id)
@@ -5886,6 +5922,7 @@ async def relatorio_presenca_periodo(
             })
 
     dias_iso = [dia.isoformat() for dia in dias_periodo]
+    total_dias = len(dias_periodo)
     linhas = []
 
     for convivente, tecnico_nome in conviventes_resultado:
@@ -5894,12 +5931,17 @@ async def relatorio_presenca_periodo(
             inicio,
             fim,
             data_entrada=convivente.data_entrada,
+            data_inativacao=convivente.data_inativacao,
             status_convivente=convivente.status,
             ausencia_justificada_desde=convivente.ausencia_justificada_desde,
         )
         totais = totais_status_presenca(status_por_dia)
 
-        if not linha_atende_filtro_situacao_periodo(totais, filtro_situacao_valor):
+        if not linha_atende_filtro_situacao_periodo(
+            totais,
+            filtro_situacao_valor,
+            total_dias=total_dias,
+        ):
             continue
 
         linhas.append({
@@ -5935,7 +5977,7 @@ async def relatorio_presenca_periodo(
         "dias": dias_iso,
         "total_conviventes": len(linhas),
         "filtro_situacao": filtro_situacao_valor,
-        "status_convivente": filtro_status,
+        "status_filtro": status_filtro or [],
         "resumo": resumo,
         "linhas": linhas,
     }

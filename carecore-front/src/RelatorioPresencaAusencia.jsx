@@ -16,6 +16,7 @@ import { exportarRelatorioXlsx } from './utils/exportarRelatorioXlsx';
 import { buscarIdentidadeRelatorios } from './utils/relatorioIdentidadePrint';
 import { imprimirRelatorioPresencaPeriodo } from './utils/relatorioPresencaPrint';
 import {
+  AJUDA_COLUNA_JUSTIFICADO,
   classeCelulaPresencaDia,
   DESCRICAO_STATUS_PRESENCA_DIA,
   formatarDiaColuna,
@@ -24,9 +25,8 @@ import {
   montarDadosExportacaoPresenca,
   ROTULO_STATUS_PRESENCA_DIA,
   FILTROS_SITUACAO_PRESENCA,
-  FILTROS_STATUS_CONVIVENTE_PRESENCA,
   rotuloFiltroSituacaoPresenca,
-  rotuloFiltroStatusConviventePresenca,
+  rotuloStatusAtualConvivente,
 } from './utils/relatorioPresencaUtils';
 
 function dataLocalISO(data = new Date()) {
@@ -46,7 +46,6 @@ export default function RelatorioPresencaAusencia() {
   const [dataFim, setDataFim] = useState(periodoInicial.dataFim);
   const [tecnicoId, setTecnicoId] = useState('');
   const [busca, setBusca] = useState('');
-  const [statusConvivente, setStatusConvivente] = useState('todos');
   const [filtroSituacao, setFiltroSituacao] = useState('presenca_ou_justificada');
   const [tecnicos, setTecnicos] = useState([]);
   const [relatorio, setRelatorio] = useState(null);
@@ -78,7 +77,6 @@ export default function RelatorioPresencaAusencia() {
         dataFim,
         tecnicoId,
         busca,
-        statusConvivente,
         filtroSituacao,
       });
       setRelatorio(dados);
@@ -88,7 +86,7 @@ export default function RelatorioPresencaAusencia() {
     } finally {
       setLoading(false);
     }
-  }, [busca, dataFim, dataInicio, filtroSituacao, statusConvivente, tecnicoId]);
+  }, [busca, dataFim, dataInicio, filtroSituacao, tecnicoId]);
 
   const exportarXlsx = async () => {
     if (!relatorio?.linhas?.length) return;
@@ -98,8 +96,7 @@ export default function RelatorioPresencaAusencia() {
       titulo: 'Relatório de presença e ausência',
       filtros: {
         Período: `${formatarDiaColunaCompleto(relatorio.data_inicio)} a ${formatarDiaColunaCompleto(relatorio.data_fim)}`,
-        Situação: rotuloFiltroSituacaoPresenca(relatorio.filtro_situacao),
-        'Status convivente': rotuloFiltroStatusConviventePresenca(relatorio.status_convivente),
+        Listagem: rotuloFiltroSituacaoPresenca(relatorio.filtro_situacao),
         Conviventes: relatorio.total_conviventes,
       },
       colunas: montarColunasExportacaoPresenca(relatorio),
@@ -133,7 +130,7 @@ export default function RelatorioPresencaAusencia() {
         <PageHeader
           eyebrow="Relatórios"
           title="Presença e ausência por período"
-          subtitle="Matriz diária dos conviventes com totais de presenças e ausências no intervalo escolhido."
+          subtitle="Matriz histórica do intervalo: presenças e faltas registradas na rotina, independentemente da situação cadastral atual."
           icon="▦"
           actions={(
             <>
@@ -156,7 +153,7 @@ export default function RelatorioPresencaAusencia() {
           <section className="mb-6 rounded-3xl border border-gray-100 bg-white p-5 shadow-sm">
             <h2 className="text-base font-black text-gray-900">Filtros</h2>
             <p className="mt-1 text-xs text-gray-500">
-              Período livre (até 93 dias). Presente = dentro do projeto ou ausência justificada.
+              Período livre (até 93 dias). Inclui conviventes admitidos no intervalo, mesmo que hoje estejam inativos ou bloqueados.
             </p>
 
             <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -206,71 +203,36 @@ export default function RelatorioPresencaAusencia() {
               </div>
             </div>
 
-            <div className="mt-5 grid grid-cols-1 gap-4 lg:grid-cols-2">
-              <fieldset className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4">
-                <legend className="px-2 text-xs font-black uppercase tracking-wide text-slate-600">
-                  Situação no período
-                </legend>
-                <div className="mt-2 space-y-2">
-                  {FILTROS_SITUACAO_PRESENCA.map((opcao) => (
-                    <label
-                      key={opcao.valor}
-                      className={`flex cursor-pointer gap-3 rounded-xl border px-3 py-3 ${
-                        filtroSituacao === opcao.valor
-                          ? 'border-brand bg-white shadow-sm'
-                          : 'border-transparent bg-white/70'
-                      }`}
-                    >
-                      <input
-                        type="radio"
-                        name="filtro-situacao-presenca"
-                        value={opcao.valor}
-                        checked={filtroSituacao === opcao.valor}
-                        onChange={() => setFiltroSituacao(opcao.valor)}
-                        className="mt-1"
-                      />
-                      <span>
-                        <span className="block text-sm font-bold text-slate-800">{opcao.label}</span>
-                        <span className="mt-0.5 block text-xs text-slate-500">{opcao.descricao}</span>
-                      </span>
-                    </label>
-                  ))}
-                </div>
-              </fieldset>
-
-              <fieldset className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4">
-                <legend className="px-2 text-xs font-black uppercase tracking-wide text-slate-600">
-                  Status do convivente <span className="font-semibold normal-case text-slate-400">(opcional)</span>
-                </legend>
-                <div className="mt-2 space-y-2">
-                  {FILTROS_STATUS_CONVIVENTE_PRESENCA.map((opcao) => (
-                    <label
-                      key={opcao.valor}
-                      className={`flex cursor-pointer gap-3 rounded-xl border px-3 py-3 ${
-                        statusConvivente === opcao.valor
-                          ? 'border-brand bg-white shadow-sm'
-                          : 'border-transparent bg-white/70'
-                      }`}
-                    >
-                      <input
-                        type="radio"
-                        name="status-convivente-presenca"
-                        value={opcao.valor}
-                        checked={statusConvivente === opcao.valor}
-                        onChange={() => setStatusConvivente(opcao.valor)}
-                        className={opcao.descricao ? 'mt-1' : undefined}
-                      />
-                      <span>
-                        <span className="block text-sm font-bold text-slate-800">{opcao.label}</span>
-                        {opcao.descricao && (
-                          <span className="mt-0.5 block text-xs text-slate-500">{opcao.descricao}</span>
-                        )}
-                      </span>
-                    </label>
-                  ))}
-                </div>
-              </fieldset>
-            </div>
+            <fieldset className="mt-5 rounded-2xl border border-slate-200 bg-slate-50/80 p-4">
+              <legend className="px-2 text-xs font-black uppercase tracking-wide text-slate-600">
+                O que listar no período
+              </legend>
+              <div className="mt-2 space-y-2">
+                {FILTROS_SITUACAO_PRESENCA.map((opcao) => (
+                  <label
+                    key={opcao.valor}
+                    className={`flex cursor-pointer gap-3 rounded-xl border px-3 py-3 ${
+                      filtroSituacao === opcao.valor
+                        ? 'border-brand bg-white shadow-sm'
+                        : 'border-transparent bg-white/70'
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="filtro-situacao-presenca"
+                      value={opcao.valor}
+                      checked={filtroSituacao === opcao.valor}
+                      onChange={() => setFiltroSituacao(opcao.valor)}
+                      className="mt-1"
+                    />
+                    <span>
+                      <span className="block text-sm font-bold text-slate-800">{opcao.label}</span>
+                      <span className="mt-0.5 block text-xs text-slate-500">{opcao.descricao}</span>
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </fieldset>
           </section>
 
           {erro && (
@@ -293,8 +255,11 @@ export default function RelatorioPresencaAusencia() {
             <Legenda cor="bg-emerald-50 text-emerald-800 border-emerald-100" rotulo="P — Presente" />
             <Legenda cor="bg-indigo-50 text-indigo-800 border-indigo-100" rotulo="J — Ausência justificada" />
             <Legenda cor="bg-red-50 text-red-800 border-red-100" rotulo="A — Ausente" />
-            <Legenda cor="bg-slate-50 text-slate-400 border-slate-100" rotulo="— — Antes da admissão" />
+            <Legenda cor="bg-slate-50 text-slate-400 border-slate-100" rotulo="— — Fora de admissão ou após inativação" />
           </section>
+          <p className="mb-4 text-xs leading-relaxed text-slate-500">
+            {AJUDA_COLUNA_JUSTIFICADO}
+          </p>
 
           <section className="overflow-hidden rounded-3xl border border-gray-100 bg-white shadow-sm">
             {!relatorio && !loading && (
@@ -316,8 +281,11 @@ export default function RelatorioPresencaAusencia() {
                 <table className="min-w-full border-collapse text-xs">
                   <thead>
                     <tr className="border-b border-gray-100 bg-gray-50">
-                      <th className="sticky left-0 z-10 min-w-[220px] bg-gray-50 px-4 py-3 text-left font-black uppercase text-gray-500">
+                      <th className="sticky left-0 z-10 min-w-[200px] bg-gray-50 px-4 py-3 text-left font-black uppercase text-gray-500">
                         Convivente
+                      </th>
+                      <th className="min-w-[125px] px-3 py-3 text-left font-black uppercase text-gray-500">
+                        Situação atual
                       </th>
                       <th className="px-3 py-3 text-left font-black uppercase text-gray-500">Técnico</th>
                       {dias.map((dia) => (
@@ -339,8 +307,11 @@ export default function RelatorioPresencaAusencia() {
                         <td className="sticky left-0 z-[1] bg-white px-4 py-3">
                           <p className="font-bold text-gray-900">{linha.nome}</p>
                           <p className="text-[11px] text-gray-500">
-                            #{linha.prontuario || 'S/N'} · {linha.status}
+                            #{linha.prontuario || 'S/N'}
                           </p>
+                        </td>
+                        <td className="min-w-[125px] max-w-[140px] px-3 py-3 text-[11px] leading-snug text-gray-700">
+                          {rotuloStatusAtualConvivente(linha.status)}
                         </td>
                         <td className="px-3 py-3 text-gray-600">{linha.tecnico_nome || '—'}</td>
                         {dias.map((dia) => {

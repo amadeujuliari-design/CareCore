@@ -28,7 +28,8 @@ const PERFIS_COLUNA_RELATORIO = {
   "Quais pendências": { largura: "12%", rotulo: "Detalhe pend.", wrap: true },
   "Data/Hora": { largura: "9%", nowrap: true },
   Data: { largura: "9%", nowrap: true },
-  Convivente: { largura: "14%", wrap: true },
+  Convivente: { largura: "13%", wrap: true },
+  "Situação atual": { largura: "8.5%", rotulo: "Situação atual", wrap: true, minWidth: "20mm" },
   Tipo: { largura: "7%", nowrap: true },
   Motivo: { largura: "10%", wrap: true },
   Prioridade: { largura: "7%", nowrap: true },
@@ -36,7 +37,16 @@ const PERFIS_COLUNA_RELATORIO = {
   NIS: { largura: "8%", nowrap: true },
 };
 
+const PERFIL_COLUNA_DIA_PRESENCA = { largura: "2.4%", centro: true, nowrap: true };
+
 function obterPerfilColuna(nomeColuna) {
+  const texto = String(nomeColuna || "");
+  if (/^\d{2}\/\d{2}$/.test(texto)) {
+    return PERFIL_COLUNA_DIA_PRESENCA;
+  }
+  if (texto === "Pres." || texto === "Aus.") {
+    return { largura: "3%", centro: true, nowrap: true };
+  }
   return PERFIS_COLUNA_RELATORIO[nomeColuna] || {};
 }
 
@@ -54,18 +64,39 @@ function montarEstilosColunas(colunas = []) {
     const perfil = obterPerfilColuna(coluna);
     const classe = `col-${slugColuna(coluna)}`;
     const largura = perfil.largura ? `width: ${perfil.largura};` : "";
+    const minLargura = perfil.minWidth ? `min-width: ${perfil.minWidth};` : "";
     const alinhamento = perfil.centro ? "text-align: center;" : "";
-    const quebra = perfil.nowrap
+    const quebraCelula = perfil.nowrap
       ? "white-space: nowrap; overflow: hidden; text-overflow: clip;"
       : perfil.wrap
-        ? "white-space: normal; word-break: break-word; overflow-wrap: anywhere;"
+        ? "white-space: normal; word-break: normal; overflow-wrap: break-word;"
         : "";
+
+    if (perfil.wrap) {
+      return `
+      .tabela-dados th.${classe} {
+        ${largura}
+        ${minLargura}
+        word-break: normal;
+        overflow-wrap: normal;
+        hyphens: manual;
+        line-height: 1.15;
+      }
+      .tabela-dados td.${classe} {
+        ${largura}
+        ${minLargura}
+        ${alinhamento}
+        ${quebraCelula}
+      }
+    `;
+    }
 
     return `
       .tabela-dados .${classe} {
         ${largura}
+        ${minLargura}
         ${alinhamento}
-        ${quebra}
+        ${quebraCelula}
       }
     `;
   });
@@ -408,7 +439,9 @@ export function imprimirRelatorio({
             line-height: 1.2;
             font-size: ${tabelaLarga ? "8px" : "10px"};
             padding: ${tabelaLarga ? "5px 4px" : "8px"};
-            word-break: break-word;
+            word-break: normal;
+            overflow-wrap: normal;
+            hyphens: manual;
           }
 
           .tabela-dados td {

@@ -3,9 +3,12 @@ from datetime import date, datetime
 from presenca_operacional import (
     STATUS_DIA_AUSENTE,
     STATUS_DIA_JUSTIFICADO,
+    STATUS_DIA_NA,
     STATUS_DIA_PRESENTE,
     linha_atende_filtro_situacao_periodo,
+    linha_tem_dia_elegivel_no_periodo,
     montar_status_presenca_por_dia,
+    normalizar_filtro_situacao_presenca,
     totais_status_presenca,
 )
 
@@ -61,30 +64,85 @@ def test_matriz_justificada_conta_como_presenca_no_total():
     assert totais["ausentes"] == 0
 
 
+def test_matriz_dias_apos_inativacao_sao_na():
+    status = montar_status_presenca_por_dia(
+        [_mov("Entrada", 10, 8), _mov("Saída", 10, 18)],
+        date(2026, 6, 10),
+        date(2026, 6, 13),
+        data_entrada=date(2026, 6, 1),
+        data_inativacao=date(2026, 6, 11),
+        status_convivente="Inativado",
+        ausencia_justificada_desde=None,
+    )
+    assert status["2026-06-10"] == STATUS_DIA_PRESENTE
+    assert status["2026-06-11"] == STATUS_DIA_AUSENTE
+    assert status["2026-06-12"] == STATUS_DIA_NA
+    assert status["2026-06-13"] == STATUS_DIA_NA
+
+
+def test_inativado_no_periodo_ainda_aparece_com_presenca():
+    status = montar_status_presenca_por_dia(
+        [_mov("Entrada", 5)],
+        date(2026, 6, 1),
+        date(2026, 6, 30),
+        data_entrada=date(2026, 6, 1),
+        data_inativacao=date(2026, 6, 20),
+        status_convivente="Inativado",
+        ausencia_justificada_desde=None,
+    )
+    totais = totais_status_presenca(status)
+    assert totais["presentes_operacionais"] >= 1
+    assert linha_atende_filtro_situacao_periodo(
+        totais,
+        "presenca_ou_justificada",
+        total_dias=30,
+    )
+
+
 def test_filtro_situacao_presenca_ou_justificada():
     assert linha_atende_filtro_situacao_periodo(
-        {"presentes_operacionais": 1, "justificados": 0, "ausentes": 0},
+        {"presentes_operacionais": 1, "justificados": 0, "ausentes": 0, "na": 0},
         "presenca_ou_justificada",
+        total_dias=5,
     )
     assert linha_atende_filtro_situacao_periodo(
-        {"presentes_operacionais": 0, "justificados": 2, "ausentes": 0},
+        {"presentes_operacionais": 0, "justificados": 2, "ausentes": 0, "na": 0},
         "presenca_ou_justificada",
+        total_dias=5,
     )
     assert not linha_atende_filtro_situacao_periodo(
-        {"presentes_operacionais": 0, "justificados": 0, "ausentes": 3},
+        {"presentes_operacionais": 0, "justificados": 0, "ausentes": 3, "na": 0},
         "presenca_ou_justificada",
+        total_dias=5,
     )
 
 
 def test_filtro_situacao_apenas_ausencia():
     assert linha_atende_filtro_situacao_periodo(
-        {"presentes_operacionais": 0, "justificados": 0, "ausentes": 1},
+        {"presentes_operacionais": 0, "justificados": 0, "ausentes": 1, "na": 0},
         "apenas_ausencia",
+        total_dias=5,
     )
     assert not linha_atende_filtro_situacao_periodo(
-        {"presentes_operacionais": 2, "justificados": 0, "ausentes": 0},
+        {"presentes_operacionais": 2, "justificados": 0, "ausentes": 0, "na": 0},
         "apenas_ausencia",
+        total_dias=5,
     )
+
+
+def test_linha_so_na_nao_atende_filtro():
+    totais = {"presentes_operacionais": 0, "justificados": 0, "ausentes": 0, "na": 10}
+    assert not linha_tem_dia_elegivel_no_periodo(totais, 10)
+    assert not linha_atende_filtro_situacao_periodo(
+        totais,
+        "apenas_ausencia",
+        total_dias=10,
+    )
+
+
+def test_normalizar_filtro_situacao_aliases():
+    assert normalizar_filtro_situacao_presenca("presentes_no_periodo") == "presenca_ou_justificada"
+    assert normalizar_filtro_situacao_presenca("ausentes_no_periodo") == "apenas_ausencia"
 
 
 def test_schema_aceita_prontuario_como_texto():
@@ -94,7 +152,7 @@ def test_schema_aceita_prontuario_como_texto():
         "data_inicio": "2026-06-01",
         "data_fim": "2026-06-25",
         "filtro_situacao": "presenca_ou_justificada",
-        "status_convivente": "todos",
+        "status_filtro": [],
         "dias": ["2026-06-01"],
         "total_conviventes": 1,
         "resumo": {"presentes": 1, "ausentes": 0},
@@ -102,11 +160,11 @@ def test_schema_aceita_prontuario_como_texto():
             "convivente_id": "abc",
             "nome": "Test",
             "prontuario": "123",
-            "status": "Ativo",
+            "status": "Inativado",
             "dias": {"2026-06-01": "presente"},
             "totais": {"presentes": 1, "ausentes": 0},
         }],
     })
     assert payload.linhas[0].prontuario == "123"
     assert payload.filtro_situacao == "presenca_ou_justificada"
-    assert payload.status_convivente == "todos"
+    assert payload.status_filtro == []

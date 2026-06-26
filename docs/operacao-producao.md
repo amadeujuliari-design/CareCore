@@ -31,6 +31,14 @@ pytest -q
 alembic check
 ```
 
+Checklist completo de entrega (commit, push, Fly, migration, health, Vercel): ver [checklist-entrega.md](./checklist-entrega.md).
+
+Pos-deploy parcial (health + `alembic current` no Fly):
+
+```bash
+./scripts/pos_deploy.sh
+```
+
 Frontend operacional:
 
 ```bash
@@ -48,6 +56,16 @@ npm run build
 ```
 
 Use validacoes focadas quando a mudanca for pequena, mas rode a bateria completa antes de publicar alteracoes sensiveis de autenticacao, RBAC, banco, cobranca, uploads ou rotina assistencial.
+
+## CI no GitHub
+
+O workflow `.github/workflows/quality.yml` executa em push e pull request para `main`/`master`:
+
+- `pytest -q`
+- `alembic upgrade head` e `alembic check`
+- lint, testes unitarios e build do `carecore-front`
+
+Falha no CI deve ser corrigida antes de considerar a entrega concluida.
 
 ## Deploy Backend
 
@@ -105,6 +123,7 @@ Ativacao futura deve ser gradual: primeiro visibilidade, depois fechamento, gera
 
 ## Pos-Deploy
 
+- Rodar `./scripts/pos_deploy.sh` (health + `alembic current` remoto quando `fly` estiver disponível).
 - Validar `/api/health`.
 - Conferir logs do Fly nas primeiras chamadas.
 - Confirmar que rotas protegidas retornam `401` sem token, nao `404` nem `500`.
