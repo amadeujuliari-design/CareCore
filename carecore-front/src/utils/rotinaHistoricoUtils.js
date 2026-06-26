@@ -11,6 +11,20 @@ import {
 
 export { TIPOS_ROTINA_REFEICOES };
 
+export const PERFIS_GESTAO_ROTINA = ['Gestor', 'Gestao', 'Gestão', 'Gerente'];
+export const PERFIS_MANUTENCAO_ROTINA = ['Manutenção', 'Manutencao'];
+
+export function usuarioPodeGerenciarHistoricoRotina(
+  perfilUsuario = '',
+  { isManutencao = false } = {},
+) {
+  return (
+    PERFIS_GESTAO_ROTINA.includes(perfilUsuario)
+    || PERFIS_MANUTENCAO_ROTINA.includes(perfilUsuario)
+    || isManutencao
+  );
+}
+
 export const REGISTROS_POR_PAGINA = 20;
 
 // Agrupa os tipos armazenados (ex.: "Retirada de Cobertor" / "Entrega de Cobertor")

@@ -7309,7 +7309,7 @@ async def verificar_permissao_edicao(
     registro: RegistroRotinaDB
 ):
 
-    if usuario_eh_gestor(usuario_atual):
+    if usuario_eh_gestor(usuario_atual) or usuario_eh_manutencao(usuario_atual):
         return
 
     convivente = (

@@ -16,6 +16,7 @@ import {
   ordenarRegistrosRotina,
   resumirRegistrosRotina,
   rotuloTipoRegistroFiltro,
+  usuarioPodeGerenciarHistoricoRotina,
 } from './utils/rotinaHistoricoUtils';
 import { perfilOcultaSomatoriaAlimentacao, tipoRegistroAlimentacao } from './utils/rotinaDiariaUtils';
 import {
@@ -63,6 +64,7 @@ export default function RotinaHistorico() {
 
   // usuário logado
   let perfilUsuario = '';
+  let usuarioEhManutencao = false;
 
   try {
 
@@ -72,6 +74,7 @@ export default function RotinaHistorico() {
 
       perfilUsuario =
         payload?.perfil_acesso || '';
+      usuarioEhManutencao = payload?.is_manutencao === true;
     }
 
   } catch (error) {
@@ -82,10 +85,10 @@ export default function RotinaHistorico() {
     );
   }
 
-  const isGestor =
-    perfilUsuario === 'Gestor' ||
-    perfilUsuario === 'Gestao' ||
-    perfilUsuario === 'Gerente';
+  const podeGerenciarRotina = usuarioPodeGerenciarHistoricoRotina(
+    perfilUsuario,
+    { isManutencao: usuarioEhManutencao },
+  );
 
   const ocultarSomatoriaAlimentacao = perfilOcultaSomatoriaAlimentacao(perfilUsuario);
   const tiposRegistroFiltro = useMemo(
@@ -871,7 +874,7 @@ export default function RotinaHistorico() {
 
                   <div className="mt-3 flex items-center justify-between gap-3 text-xs font-semibold text-gray-500">
                     <span>{registro.usuario_nome || 'Usuário'}</span>
-                    {isGestor && (
+                    {podeGerenciarRotina && (
                       <div className="flex gap-2">
                         <button
                           type="button"
@@ -925,7 +928,7 @@ export default function RotinaHistorico() {
                     Operador
                   </th>
 
-                  {isGestor && (
+                  {podeGerenciarRotina && (
 
                     <th className="px-3 py-3 text-right text-xs font-black text-gray-600 uppercase w-[150px]">
                       Ações
@@ -944,7 +947,7 @@ export default function RotinaHistorico() {
                   <tr>
 
                     <td
-                      colSpan={isGestor ? 6 : 5}
+                      colSpan={podeGerenciarRotina ? 6 : 5}
                       className="text-center py-10 text-gray-500"
                     >
                       Carregando histórico...
@@ -957,7 +960,7 @@ export default function RotinaHistorico() {
                   <tr>
 
                     <td
-                      colSpan={isGestor ? 6 : 5}
+                      colSpan={podeGerenciarRotina ? 6 : 5}
                       className="text-center py-10 text-gray-500"
                     >
                       Nenhum registro encontrado.
@@ -1067,7 +1070,7 @@ export default function RotinaHistorico() {
 
                       </td>
 
-                      {isGestor && (
+                      {podeGerenciarRotina && (
 
                         <td className="px-3 py-3 text-sm">
 
