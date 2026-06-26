@@ -5,7 +5,6 @@ import {
 } from './conviventeBuscaUtils';
 import { formatarDataBr } from './dataBrasilUtils';
 import {
-  perfilOcultaSomatoriaAlimentacao,
   tipoRegistroAlimentacao,
   TIPOS_ROTINA_REFEICOES,
 } from './rotinaDiariaUtils.js';

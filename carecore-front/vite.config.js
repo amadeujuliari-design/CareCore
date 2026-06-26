@@ -1,4 +1,5 @@
 import { readFileSync, writeFileSync } from 'node:fs';
+import process from 'node:process';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 

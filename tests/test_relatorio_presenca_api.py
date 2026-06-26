@@ -66,7 +66,7 @@ async def _criar_banco_seed(session: AsyncSession) -> None:
         numero_institucional=103,
         status="Ausência justificada",
         data_entrada=date(2026, 6, 1),
-        ausencia_justificada_desde=date(2026, 6, 5),
+        ausencia_justificada_desde=None,
     ))
     session.add(RegistroRotinaDB(
         instituicao_id=INSTITUICAO_ID,

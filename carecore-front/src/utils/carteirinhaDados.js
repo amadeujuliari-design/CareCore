@@ -6,7 +6,6 @@ export function resolverDadosCarteirinha(convivente, quartos = [], tecnicos = []
 
   let nomeAcomodacao = 'Sem Cama (Centro Dia)';
   let tipoAcomodacao = '-';
-  let quartoRotativo = false;
 
   if (convivente.leito_id) {
     for (const q of quartos) {
@@ -14,7 +13,6 @@ export function resolverDadosCarteirinha(convivente, quartos = [], tecnicos = []
       if (leito) {
         nomeAcomodacao = `${q.nome} - ${leito.identificacao}`;
         tipoAcomodacao = q.modalidade === 'Transitorio' ? 'Transitório' : 'Fixo';
-        quartoRotativo = Boolean(q.rotativo);
         break;
       }
     }
