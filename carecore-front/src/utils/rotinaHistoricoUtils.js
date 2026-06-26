@@ -3,6 +3,7 @@ import {
   conviventeCorrespondeBusca,
   normalizarTextoBusca,
 } from './conviventeBuscaUtils';
+import { formatarDataBr } from './dataBrasilUtils';
 import {
   perfilOcultaSomatoriaAlimentacao,
   tipoRegistroAlimentacao,
@@ -250,6 +251,45 @@ export function resumirRegistrosRotina(registros) {
 export function formatarDataHoraRotina(data) {
   if (!data) return '-';
   return new Date(data).toLocaleString('pt-BR');
+}
+
+export function montarObservacoesAuditoriaRegistro(registro) {
+  return [
+    registro.observacao ? `Complemento: ${registro.observacao}` : '',
+    registro.justificativa_retorno_rapido ? `Justificativa: ${registro.justificativa_retorno_rapido}` : '',
+    registro.motivo_edicao ? `Edição: ${registro.motivo_edicao}` : '',
+    registro.motivo_cancelamento ? `Cancelamento: ${registro.motivo_cancelamento}` : '',
+  ].filter(Boolean).join(' | ');
+}
+
+export function montarDadosImpressaoHistoricoRotina(registros) {
+  return registros.map((registro) => ({
+    'Data/Hora': formatarDataHoraRotina(registro.data_registro),
+    Convivente: registro.convivente_nome || '-',
+    Prontuário: `#${registro.numero_institucional || 'S/N'}`,
+    Tipo: registro.tipo_registro || '-',
+    Operador: registro.usuario_nome || '-',
+    Status: `${registro.cancelado ? 'Cancelado' : 'Ativo'}${registro.foi_editado ? ' / Editado' : ''}${registro.retorno_rapido ? ' / Retorno rápido' : ''}`,
+    'Observações/Auditoria': montarObservacoesAuditoriaRegistro(registro) || '-',
+  }));
+}
+
+export function montarFiltrosTextoHistoricoRotina({
+  tipoFiltro,
+  dataInicioFiltro,
+  dataFimFiltro,
+  buscaFiltro,
+  statusFiltro,
+  auditoriaFiltro,
+}) {
+  return [
+    tipoFiltro ? `Tipo: ${rotuloTipoRegistroFiltro(tipoFiltro)}` : '',
+    dataInicioFiltro ? `Data inicial: ${formatarDataBr(dataInicioFiltro)}` : '',
+    dataFimFiltro ? `Data final: ${formatarDataBr(dataFimFiltro)}` : '',
+    buscaFiltro?.trim() ? `Busca: ${buscaFiltro.trim()}` : '',
+    statusFiltro ? `Status: ${statusFiltro}` : '',
+    auditoriaFiltro ? `Auditoria: ${auditoriaFiltro}` : '',
+  ].filter(Boolean);
 }
 
 export function classeTipoRegistroRotina(tipo) {

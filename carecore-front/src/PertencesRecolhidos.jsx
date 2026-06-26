@@ -5,6 +5,7 @@ import api from './services/api';
 import {
   baixarPertencesRecolhidosAdministrativo,
   listarPertencesRecolhidos,
+  listarPertencesRecolhidosCompleto,
   registrarPertencesRecolhidos,
   retirarPertencesRecolhidos,
 } from './services/rotinaOperacionalService';
@@ -20,6 +21,7 @@ import {
   LISTAGEM_OPERACIONAL_DIAS_PADRAO,
   REGISTROS_POR_PAGINA_PRONTUARIO,
 } from './utils/prontuarioHistoricoFluxoUtils';
+import { formatarDataBr } from './utils/dataBrasilUtils';
 import LeitorCarteirinhaModal from './components/LeitorCarteirinhaModal';
 import { useLeitorUsbGlobal } from './hooks/useLeitorUsbGlobal';
 import { encontrarConviventePorCodigo } from './utils/conviventeIdentificacaoUtils';
@@ -39,6 +41,21 @@ function statusClasse(status) {
   if (status === 'Esgotado') return 'bg-emerald-50 text-emerald-700 border-emerald-100';
   if (status === 'Baixa administrativa') return 'bg-amber-50 text-amber-700 border-amber-100';
   return 'bg-gray-100 text-gray-600 border-gray-200';
+}
+
+function montarDadosRelatorioPertences(registrosLista) {
+  return (registrosLista || []).map((registro) => ({
+    'Quarto': registro.quarto_nome || '-',
+    'Recolha': formatarDataHora(registro.recolhido_em),
+    'Recolhidos': registro.quantidade_recolhida || 0,
+    'Disponíveis': registro.quantidade_disponivel || 0,
+    'Status': registro.status,
+    'Operador': registro.usuario_recolha_nome || '-',
+    'Observação': registro.observacao || '',
+    'Baixas': (registro.baixas || [])
+      .map((baixa) => `${baixa.quantidade} item(ns) - ${baixa.convivente_nome || baixa.tipo_baixa}`)
+      .join('; '),
+  }));
 }
 
 export default function PertencesRecolhidos() {
@@ -63,6 +80,7 @@ export default function PertencesRecolhidos() {
   const [totalRegistros, setTotalRegistros] = useState(0);
   const [temMais, setTemMais] = useState(false);
   const [carregandoMais, setCarregandoMais] = useState(false);
+  const [preparandoRelatorio, setPreparandoRelatorio] = useState(false);
   const [resumoFila, setResumoFila] = useState(null);
   const [filtrosPeriodo, setFiltrosPeriodo] = useState({ dataInicio: '', dataFim: '', busca: '' });
   const [buscaRascunho, setBuscaRascunho] = useState('');
@@ -123,18 +141,7 @@ export default function PertencesRecolhidos() {
     );
   }, [retirada, conviventesPorQuarto, buscaConviventeRetirada]);
 
-  const dadosRelatorio = useMemo(() => registros.map(registro => ({
-    'Quarto': registro.quarto_nome || '-',
-    'Recolha': formatarDataHora(registro.recolhido_em),
-    'Recolhidos': registro.quantidade_recolhida || 0,
-    'Disponíveis': registro.quantidade_disponivel || 0,
-    'Status': registro.status,
-    'Operador': registro.usuario_recolha_nome || '-',
-    'Observação': registro.observacao || '',
-    'Baixas': (registro.baixas || [])
-      .map(baixa => `${baixa.quantidade} item(ns) - ${baixa.convivente_nome || baixa.tipo_baixa}`)
-      .join('; '),
-  })), [registros]);
+  const dadosRelatorio = useMemo(() => montarDadosRelatorioPertences(registros), [registros]);
 
   const resumo = useMemo(() => {
     if (resumoFila) {
@@ -343,56 +350,89 @@ export default function PertencesRecolhidos() {
     onCodigoLido: processarLeituraGlobal,
   });
 
-  const exportarXlsx = () => {
-    exportarRelatorioXlsx({
-      nomeArquivo: `pertences-recolhidos-${new Date().toISOString().slice(0, 10)}`,
-      titulo: 'Relatório de Pertences Recolhidos',
-      filtros: {
-        Status: statusFiltro,
-        'Total filtrado': totalRegistros,
-        'Exibidos na tela': registros.length,
-      },
-      colunas: [
-        'Quarto',
-        'Recolha',
-        'Recolhidos',
-        'Disponíveis',
-        'Status',
-        'Operador',
-        'Observação',
-        'Baixas',
-      ],
-      dados: dadosRelatorio,
-    });
+  const exportarXlsx = async () => {
+    setPreparandoRelatorio(true);
+    try {
+      const registrosCompletos = await listarPertencesRecolhidosCompleto(statusFiltro, montarParamsLista());
+      const dados = montarDadosRelatorioPertences(registrosCompletos);
+      const periodoTexto = [
+        filtrosPeriodo.dataInicio ? formatarDataBr(filtrosPeriodo.dataInicio) : null,
+        filtrosPeriodo.dataFim ? formatarDataBr(filtrosPeriodo.dataFim) : null,
+      ].filter(Boolean).join(' a ');
+
+      exportarRelatorioXlsx({
+        nomeArquivo: `pertences-recolhidos-${new Date().toISOString().slice(0, 10)}`,
+        titulo: 'Relatório de Pertences Recolhidos',
+        filtros: {
+          Status: statusFiltro,
+          ...(periodoTexto ? { Período: periodoTexto } : {}),
+          'Total filtrado': totalRegistros,
+        },
+        colunas: [
+          'Quarto',
+          'Recolha',
+          'Recolhidos',
+          'Disponíveis',
+          'Status',
+          'Operador',
+          'Observação',
+          'Baixas',
+        ],
+        dados,
+      });
+    } catch (error) {
+      console.error(error);
+      setErro('Erro ao exportar relatório de pertences recolhidos.');
+    } finally {
+      setPreparandoRelatorio(false);
+    }
   };
 
   const imprimir = async () => {
-    const logoRelatorioDataUrl = await obterLogoRelatorioDataUrl(identidadeRelatorio);
+    setPreparandoRelatorio(true);
+    try {
+      const registrosCompletos = await listarPertencesRecolhidosCompleto(statusFiltro, montarParamsLista());
+      const dados = montarDadosRelatorioPertences(registrosCompletos);
+      const logoRelatorioDataUrl = await obterLogoRelatorioDataUrl(identidadeRelatorio);
+      const periodoTexto = [
+        filtrosPeriodo.dataInicio ? `De ${formatarDataBr(filtrosPeriodo.dataInicio)}` : null,
+        filtrosPeriodo.dataFim ? `até ${formatarDataBr(filtrosPeriodo.dataFim)}` : null,
+      ].filter(Boolean).join(' ');
 
-    imprimirRelatorio({
-      titulo: 'Relatório de Pertences Recolhidos',
-      subtitulo: `${totalRegistros} registro(s). Status: ${statusFiltro}.`,
-      metricas: [
-        { label: 'Recolhas abertas', valor: resumo.abertos },
-        { label: 'Itens disponíveis', valor: resumo.itensDisponiveis },
-        { label: 'Itens no recorte', valor: resumo.itensRecolhidos },
-      ],
-      colunas: [
-        'Quarto',
-        'Recolha',
-        'Recolhidos',
-        'Disponíveis',
-        'Status',
-        'Operador',
-        'Observação',
-        'Baixas',
-      ],
-      dados: dadosRelatorio,
-      identidade: {
-        ...(identidadeRelatorio || {}),
-        logo_src: logoRelatorioDataUrl,
-      },
-    });
+      imprimirRelatorio({
+        titulo: 'Relatório de Pertences Recolhidos',
+        subtitulo: [
+          periodoTexto || null,
+          `${totalRegistros} registro(s)`,
+          `Status: ${statusFiltro}`,
+        ].filter(Boolean).join(' · '),
+        metricas: [
+          { label: 'Recolhas abertas', valor: resumo.abertos },
+          { label: 'Itens disponíveis', valor: resumo.itensDisponiveis },
+          { label: 'Itens no recorte', valor: resumo.itensRecolhidos },
+        ],
+        colunas: [
+          'Quarto',
+          'Recolha',
+          'Recolhidos',
+          'Disponíveis',
+          'Status',
+          'Operador',
+          'Observação',
+          'Baixas',
+        ],
+        dados,
+        identidade: {
+          ...(identidadeRelatorio || {}),
+          logo_src: logoRelatorioDataUrl,
+        },
+      });
+    } catch (error) {
+      console.error(error);
+      setErro('Erro ao preparar impressão de pertences recolhidos.');
+    } finally {
+      setPreparandoRelatorio(false);
+    }
   };
 
   const salvarRecolha = async (event) => {
@@ -551,11 +591,11 @@ export default function PertencesRecolhidos() {
           icon="P"
           actions={(
             <>
-              <ReportActionButton action="export" onClick={exportarXlsx} disabled={registros.length === 0}>
-                Exportar
+              <ReportActionButton action="export" onClick={exportarXlsx} disabled={preparandoRelatorio || totalRegistros === 0}>
+                {preparandoRelatorio ? 'Preparando...' : 'Exportar'}
               </ReportActionButton>
-              <ReportActionButton action="print" onClick={imprimir} disabled={registros.length === 0}>
-                Imprimir
+              <ReportActionButton action="print" onClick={imprimir} disabled={preparandoRelatorio || totalRegistros === 0}>
+                {preparandoRelatorio ? 'Preparando...' : 'Imprimir'}
               </ReportActionButton>
               <PremiumButton type="button" variant="brand" onClick={() => carregarDados({ append: false, offset: 0 })}>
                 Atualizar

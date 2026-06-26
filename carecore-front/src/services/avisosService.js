@@ -1,6 +1,7 @@
 import axios from "axios";
 
 import { API_ROOT } from "../config/apiBase";
+import { buscarTodosItensPaginados } from "../utils/buscarTodosPaginados";
 import { criarHeadersAutenticados } from "../utils/requestIdUtils";
 
 function authHeaders(token) {
@@ -85,6 +86,20 @@ export async function listarHistoricoAvisos(token, filtros = {}) {
   });
 
   return normalizarListaPaginada(response.data, limite, offset);
+}
+
+export async function listarMeusAvisosCompleto(token, opcoes = {}) {
+  return buscarTodosItensPaginados({
+    limitePagina: 100,
+    buscarPagina: ({ limite, offset }) => listarMeusAvisos(token, { ...opcoes, limite, offset }),
+  });
+}
+
+export async function listarHistoricoAvisosCompleto(token, filtros = {}) {
+  return buscarTodosItensPaginados({
+    limitePagina: 100,
+    buscarPagina: ({ limite, offset }) => listarHistoricoAvisos(token, { ...filtros, limite, offset }),
+  });
 }
 
 export async function marcarAvisoComoLido(token, avisoId) {

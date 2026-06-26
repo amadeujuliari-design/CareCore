@@ -1,4 +1,5 @@
 import { exportarRelatorioXlsx } from './exportarRelatorioXlsx';
+import { formatarDataBr } from './dataBrasilUtils';
 
 function formatarDataCurta(valor) {
   if (!valor) return '';
@@ -102,9 +103,10 @@ export function montarDadosExportacaoRelatorioAtividades(relatorio, agrupamento)
 export function exportarRelatorioAtividadesXlsx(relatorio, agrupamento) {
   const { colunas, dados } = montarDadosExportacaoRelatorioAtividades(relatorio, agrupamento);
   const sufixo = agrupamento || 'detalhado';
+  const periodoBr = `${formatarDataBr(relatorio.data_inicio)} a ${formatarDataBr(relatorio.data_fim)}`;
   exportarRelatorioXlsx({
     nomeArquivo: `relatorio_atividades_${relatorio.data_inicio}_${relatorio.data_fim}_${sufixo}`,
-    titulo: `Relatório de atividades (${relatorio.data_inicio} a ${relatorio.data_fim})`,
+    titulo: `Relatório de atividades (${periodoBr})`,
     colunas,
     dados,
   });

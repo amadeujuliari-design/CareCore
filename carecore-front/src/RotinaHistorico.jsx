@@ -10,6 +10,9 @@ import {
   classeTipoRegistroRotina,
   formatarDataHoraRotina,
   listarTiposRegistroFiltroRotina,
+  montarDadosImpressaoHistoricoRotina,
+  montarFiltrosTextoHistoricoRotina,
+  montarObservacoesAuditoriaRegistro,
   montarParamsFiltrosRotina,
   obterContagemTipoResumo,
   obterTotalResumoSemAlimentacao,
@@ -25,6 +28,7 @@ import {
   LISTAGEM_OPERACIONAL_DIAS_PADRAO,
 } from './utils/prontuarioHistoricoFluxoUtils';
 import { imprimirRelatorio } from './utils/imprimirRelatorio';
+import { buscarHistoricoRotinaCompleto } from './services/rotinaHistoricoService';
 import { urlArquivoBackend } from './utils/arquivosApi';
 import { decodificarPayloadJwt } from './utils/jwtUtils';
 import { criarHeadersAutenticados } from './utils/requestIdUtils';
@@ -51,6 +55,7 @@ export default function RotinaHistorico() {
   const [statusFiltro, setStatusFiltro] = useState('');
   const [auditoriaFiltro, setAuditoriaFiltro] = useState('');
   const [paginaAtual, setPaginaAtual] = useState(1);
+  const [imprimindoRelatorio, setImprimindoRelatorio] = useState(false);
   const registrosPorPagina = REGISTROS_POR_PAGINA;
 
   // edição
@@ -129,15 +134,6 @@ export default function RotinaHistorico() {
   const avisarSucesso = (mensagem) => {
     setErro('');
     setSucesso(mensagem);
-  };
-
-  const montarObservacoesAuditoriaRegistro = (registro) => {
-    return [
-      registro.observacao ? `Complemento: ${registro.observacao}` : '',
-      registro.justificativa_retorno_rapido ? `Justificativa: ${registro.justificativa_retorno_rapido}` : '',
-      registro.motivo_edicao ? `Edição: ${registro.motivo_edicao}` : '',
-      registro.motivo_cancelamento ? `Cancelamento: ${registro.motivo_cancelamento}` : '',
-    ].filter(Boolean).join(' | ');
   };
 
   const carregarHistorico = useCallback(async ({ page = 1 } = {}) => {
@@ -469,57 +465,63 @@ export default function RotinaHistorico() {
     }
   };
 
+  const montarFiltrosAtuais = () => ({
+    tipoFiltro,
+    buscaFiltro,
+    dataInicioFiltro,
+    dataFimFiltro,
+    statusFiltro,
+    auditoriaFiltro,
+  });
+
   const abrirRelatorioImpressao = async () => {
-    const logoRelatorioDataUrl = await obterLogoRelatorioParaImpressao();
-    const filtrosAtivos = [
-      tipoFiltro ? `Tipo: ${rotuloTipoRegistroFiltro(tipoFiltro)}` : '',
-      dataInicioFiltro ? `Data inicial: ${dataInicioFiltro}` : '',
-      dataFimFiltro ? `Data final: ${dataFimFiltro}` : '',
-      buscaFiltro.trim() ? `Busca: ${buscaFiltro.trim()}` : '',
-      statusFiltro ? `Status: ${statusFiltro}` : '',
-      auditoriaFiltro ? `Auditoria: ${auditoriaFiltro}` : '',
-    ].filter(Boolean);
+    setImprimindoRelatorio(true);
+    try {
+      const logoRelatorioDataUrl = await obterLogoRelatorioParaImpressao();
+      const filtrosAtuais = montarFiltrosAtuais();
+      const filtrosAtivos = montarFiltrosTextoHistoricoRotina(filtrosAtuais);
 
-    const colunas = [
-      'Data/Hora',
-      'Convivente',
-      'Prontuário',
-      'Tipo',
-      'Operador',
-      'Status',
-      'Observações/Auditoria',
-    ];
+      const registrosCompletos = await buscarHistoricoRotinaCompleto(token, filtrosAtuais);
+      const registrosImpressao = ordenarRegistrosRotina(registrosCompletos, buscaFiltro);
 
-    const dados = registrosOrdenados.map((registro) => ({
-      'Data/Hora': formatarDataHoraRotina(registro.data_registro),
-      Convivente: registro.convivente_nome || '-',
-      Prontuário: `#${registro.numero_institucional || 'S/N'}`,
-      Tipo: registro.tipo_registro || '-',
-      Operador: registro.usuario_nome || '-',
-      Status: `${registro.cancelado ? 'Cancelado' : 'Ativo'}${registro.foi_editado ? ' / Editado' : ''}${registro.retorno_rapido ? ' / Retorno rápido' : ''}`,
-      'Observações/Auditoria': montarObservacoesAuditoriaRegistro(registro) || '-',
-    }));
+      const colunas = [
+        'Data/Hora',
+        'Convivente',
+        'Prontuário',
+        'Tipo',
+        'Operador',
+        'Status',
+        'Observações/Auditoria',
+      ];
 
-    imprimirRelatorio({
-      titulo: 'Histórico Geral da Rotina',
-      subtitulo: `${registrosOrdenados.length} registro(s) filtrado(s). Filtros: ${filtrosAtivos.join(' | ') || 'Todos'}.`,
-      metricas: [
-        { label: 'Total', valor: resumo.total },
-        { label: 'Entradas', valor: resumo.entradas },
-        { label: 'Saídas', valor: resumo.saidas },
-        { label: rotuloTipoSelecionado, valor: totalTipoSelecionado },
-        { label: 'Retorno rápido', valor: resumo.retornosRapidos },
-        { label: 'Editados', valor: resumo.editados },
-        { label: 'Cancelados', valor: resumo.cancelados },
-      ],
-      conteudoExtraHtml: '',
-      colunas,
-      dados,
-      identidade: {
-        ...identidadeRelatorio,
-        logo_src: logoRelatorioDataUrl,
-      },
-    });
+      const totalFiltrado = totalRegistros || registrosImpressao.length;
+
+      imprimirRelatorio({
+        titulo: 'Histórico Geral da Rotina',
+        subtitulo: `${totalFiltrado} registro(s) filtrado(s). Filtros: ${filtrosAtivos.join(' | ') || 'Todos'}.`,
+        metricas: [
+          { label: 'Total', valor: resumo.total },
+          { label: 'Entradas', valor: resumo.entradas },
+          { label: 'Saídas', valor: resumo.saidas },
+          { label: rotuloTipoSelecionado, valor: totalTipoSelecionado },
+          { label: 'Retorno rápido', valor: resumo.retornosRapidos },
+          { label: 'Editados', valor: resumo.editados },
+          { label: 'Cancelados', valor: resumo.cancelados },
+        ],
+        conteudoExtraHtml: '',
+        colunas,
+        dados: montarDadosImpressaoHistoricoRotina(registrosImpressao),
+        identidade: {
+          ...identidadeRelatorio,
+          logo_src: logoRelatorioDataUrl,
+        },
+      });
+    } catch (error) {
+      console.error(error);
+      avisarErro('Erro ao preparar impressão do histórico da rotina.');
+    } finally {
+      setImprimindoRelatorio(false);
+    }
   };
 
   // =====================================================================
@@ -565,8 +567,9 @@ export default function RotinaHistorico() {
             <ReportActionButton
               action="print"
               onClick={abrirRelatorioImpressao}
+              disabled={imprimindoRelatorio}
             >
-              Imprimir
+              {imprimindoRelatorio ? 'Preparando...' : 'Imprimir'}
             </ReportActionButton>
             </>
           )}

@@ -18,6 +18,8 @@ import {
   criarAviso,
   listarMeusAvisos,
   listarHistoricoAvisos,
+  listarHistoricoAvisosCompleto,
+  listarMeusAvisosCompleto,
   obterResumoAvisos,
   marcarAvisoComoLido,
   cancelarAviso,
@@ -30,6 +32,7 @@ import {
   dataHojeIsoLocal,
   LISTAGEM_OPERACIONAL_DIAS_PADRAO,
 } from "./utils/prontuarioHistoricoFluxoUtils";
+import { formatarDataBr } from "./utils/dataBrasilUtils";
 
 const CLASSIFICACOES = ["Informativo", "Atenção", "Urgente", "Comunicado", "Rotina", "Gestão"];
 
@@ -281,6 +284,7 @@ export default function Avisos() {
   const [paginaHistorico, setPaginaHistorico] = useState(1);
   const [filtrosHistorico, setFiltrosHistorico] = useState(filtrosHistoricoInicial);
   const [carregandoHistorico, setCarregandoHistorico] = useState(false);
+  const [preparandoRelatorio, setPreparandoRelatorio] = useState(false);
   const [identidadeRelatorio, setIdentidadeRelatorio] = useState(null);
 
   async function carregarUsuariosDestinatarios() {
@@ -587,8 +591,8 @@ export default function Avisos() {
     };
   }, [avisos]);
 
-  function montarDadosRelatorioAvisos() {
-    return (Array.isArray(avisos) ? avisos : []).map((item) => ({
+  function montarDadosRelatorioAvisos(lista = avisos) {
+    return (Array.isArray(lista) ? lista : []).map((item) => ({
       Data: formatarDataHora(item.criado_em),
       Título: item.titulo || "Aviso",
       Classificação: item.classificacao || "-",
@@ -601,41 +605,11 @@ export default function Avisos() {
     }));
   }
 
-  function exportarRelatorioAvisosXLSX() {
-    const colunas = [
-      "Data",
-      "Título",
-      "Classificação",
-      "Prioridade",
-      "Destino",
-      "Status",
-      "Remetente",
-      "Válido até",
-      "Mensagem",
-    ];
-
-    exportarRelatorioXlsx({
-      nomeArquivo: `relatorio-avisos-${new Date().toISOString().slice(0, 10)}`,
-      titulo: "Relatório de Comunicação Interna",
-      filtros: {
-        "Total de avisos": relatorioAvisos.total,
-        "Não lidos": relatorioAvisos.naoLidos,
-        "Lidos": relatorioAvisos.lidos,
-        "Para todos": relatorioAvisos.paraTodos,
-        "Direcionados": relatorioAvisos.direcionados,
-      },
-      colunas,
-      dados: montarDadosRelatorioAvisos(),
-    });
-  }
-
-  async function abrirRelatorioImpressaoAvisos() {
-    const logoRelatorioDataUrl = await obterLogoRelatorioDataUrl(identidadeRelatorio);
-
-    imprimirRelatorio({
-      titulo: "Relatório de Comunicação Interna",
-      subtitulo: `Total: ${relatorioAvisos.total} | Não lidos: ${relatorioAvisos.naoLidos} | Para todos: ${relatorioAvisos.paraTodos} | Direcionados: ${relatorioAvisos.direcionados}`,
-      colunas: [
+  async function exportarRelatorioAvisosXLSX() {
+    setPreparandoRelatorio(true);
+    try {
+      const avisosCompletos = await listarMeusAvisosCompleto(usuario.token, filtrosAtivos);
+      const colunas = [
         "Data",
         "Título",
         "Classificação",
@@ -643,14 +617,77 @@ export default function Avisos() {
         "Destino",
         "Status",
         "Remetente",
+        "Válido até",
         "Mensagem",
-      ],
-      dados: montarDadosRelatorioAvisos(),
-      identidade: {
-        ...identidadeRelatorio,
-        logo_src: obterLogoRelatorioSrc(logoRelatorioDataUrl),
-      },
-    });
+      ];
+
+      exportarRelatorioXlsx({
+        nomeArquivo: `relatorio-avisos-${dataHojeIsoLocal()}`,
+        titulo: "Relatório de Comunicação Interna",
+        filtros: {
+          "Total de avisos": avisosCompletos.length,
+          "Não lidos": avisosCompletos.filter((item) => !item.lido).length,
+          "Lidos": avisosCompletos.filter((item) => item.lido).length,
+          "Para todos": avisosCompletos.filter((item) => item.destino_tipo === "todos").length,
+          "Direcionados": avisosCompletos.filter((item) => item.destino_tipo !== "todos").length,
+          ...(filtrosAtivos.data_inicio ? { "Data inicial": formatarDataBr(filtrosAtivos.data_inicio) } : {}),
+          ...(filtrosAtivos.data_fim ? { "Data final": formatarDataBr(filtrosAtivos.data_fim) } : {}),
+        },
+        colunas,
+        dados: montarDadosRelatorioAvisos(avisosCompletos),
+      });
+    } catch (error) {
+      console.error("Erro ao exportar avisos", error);
+      setErro("Não foi possível exportar o relatório de avisos.");
+    } finally {
+      setPreparandoRelatorio(false);
+    }
+  }
+
+  async function abrirRelatorioImpressaoAvisos() {
+    setPreparandoRelatorio(true);
+    try {
+      const avisosCompletos = await listarMeusAvisosCompleto(usuario.token, filtrosAtivos);
+      const logoRelatorioDataUrl = await obterLogoRelatorioDataUrl(identidadeRelatorio);
+      const totalNaoLidos = avisosCompletos.filter((item) => !item.lido).length;
+      const totalParaTodos = avisosCompletos.filter((item) => item.destino_tipo === "todos").length;
+      const totalDirecionados = avisosCompletos.filter((item) => item.destino_tipo !== "todos").length;
+      const periodoTexto = [
+        filtrosAtivos.data_inicio ? `De ${formatarDataBr(filtrosAtivos.data_inicio)}` : null,
+        filtrosAtivos.data_fim ? `até ${formatarDataBr(filtrosAtivos.data_fim)}` : null,
+      ].filter(Boolean).join(' ');
+
+      imprimirRelatorio({
+        titulo: "Relatório de Comunicação Interna",
+        subtitulo: [
+          periodoTexto || null,
+          `Total: ${avisosCompletos.length}`,
+          `Não lidos: ${totalNaoLidos}`,
+          `Para todos: ${totalParaTodos}`,
+          `Direcionados: ${totalDirecionados}`,
+        ].filter(Boolean).join(' | '),
+        colunas: [
+          "Data",
+          "Título",
+          "Classificação",
+          "Prioridade",
+          "Destino",
+          "Status",
+          "Remetente",
+          "Mensagem",
+        ],
+        dados: montarDadosRelatorioAvisos(avisosCompletos),
+        identidade: {
+          ...identidadeRelatorio,
+          logo_src: obterLogoRelatorioSrc(logoRelatorioDataUrl),
+        },
+      });
+    } catch (error) {
+      console.error("Erro ao imprimir avisos", error);
+      setErro("Não foi possível preparar a impressão dos avisos.");
+    } finally {
+      setPreparandoRelatorio(false);
+    }
   }
 
   function atualizarFiltroHistorico(campo, valor) {
@@ -705,8 +742,8 @@ export default function Avisos() {
     return "Ativo";
   }
 
-  function montarDadosHistoricoAvisos() {
-    return (Array.isArray(historicoAvisos) ? historicoAvisos : []).map((item) => ({
+  function montarDadosHistoricoAvisos(lista = historicoAvisos) {
+    return (Array.isArray(lista) ? lista : []).map((item) => ({
       Data: formatarDataHora(item.criado_em),
       Título: item.titulo || "Aviso",
       Classificação: item.classificacao || "-",
@@ -718,26 +755,44 @@ export default function Avisos() {
   }
 
   async function imprimirHistoricoAvisos() {
-    const logoRelatorioDataUrl = await obterLogoRelatorioDataUrl(identidadeRelatorio);
+    setPreparandoRelatorio(true);
+    try {
+      const historicoCompleto = await listarHistoricoAvisosCompleto(usuario.token, filtrosHistorico);
+      const logoRelatorioDataUrl = await obterLogoRelatorioDataUrl(identidadeRelatorio);
+      const periodoTexto = [
+        filtrosHistorico.data_inicio ? `De ${formatarDataBr(filtrosHistorico.data_inicio)}` : null,
+        filtrosHistorico.data_fim ? `até ${formatarDataBr(filtrosHistorico.data_fim)}` : null,
+      ].filter(Boolean).join(' ');
 
-    imprimirRelatorio({
-      titulo: "Histórico de Avisos Baixados",
-      subtitulo: `Página ${paginaHistoricoSegura} de ${totalPaginasHistorico} | Total filtrado: ${totalHistoricoAvisos} | Status: ${filtrosHistorico.status_filtro} | Classificação: ${filtrosHistorico.classificacao || "Todas"}`,
-      colunas: [
-        "Data",
-        "Título",
-        "Classificação",
-        "Prioridade",
-        "Status",
-        "Baixado em",
-        "Mensagem",
-      ],
-      dados: montarDadosHistoricoAvisos(),
-      identidade: {
-        ...identidadeRelatorio,
-        logo_src: obterLogoRelatorioSrc(logoRelatorioDataUrl),
-      },
-    });
+      imprimirRelatorio({
+        titulo: "Histórico de Avisos Baixados",
+        subtitulo: [
+          periodoTexto || null,
+          `Total filtrado: ${totalHistoricoAvisos}`,
+          `Status: ${filtrosHistorico.status_filtro}`,
+          `Classificação: ${filtrosHistorico.classificacao || "Todas"}`,
+        ].filter(Boolean).join(' | '),
+        colunas: [
+          "Data",
+          "Título",
+          "Classificação",
+          "Prioridade",
+          "Status",
+          "Baixado em",
+          "Mensagem",
+        ],
+        dados: montarDadosHistoricoAvisos(historicoCompleto),
+        identidade: {
+          ...identidadeRelatorio,
+          logo_src: obterLogoRelatorioSrc(logoRelatorioDataUrl),
+        },
+      });
+    } catch (error) {
+      console.error("Erro ao imprimir histórico de avisos", error);
+      setErro("Não foi possível preparar a impressão do histórico.");
+    } finally {
+      setPreparandoRelatorio(false);
+    }
   }
 
   return (
@@ -983,12 +1038,12 @@ export default function Avisos() {
                     </p>
                   </div>
 
-                  <ReportActionButton action="export" onClick={exportarRelatorioAvisosXLSX}>
-                    Exportar
+                  <ReportActionButton action="export" onClick={exportarRelatorioAvisosXLSX} disabled={preparandoRelatorio}>
+                    {preparandoRelatorio ? 'Preparando...' : 'Exportar'}
                   </ReportActionButton>
 
-                  <ReportActionButton action="print" onClick={abrirRelatorioImpressaoAvisos}>
-                    Imprimir
+                  <ReportActionButton action="print" onClick={abrirRelatorioImpressaoAvisos} disabled={preparandoRelatorio}>
+                    {preparandoRelatorio ? 'Preparando...' : 'Imprimir'}
                   </ReportActionButton>
                 </div>
 
@@ -1251,8 +1306,8 @@ export default function Avisos() {
                   <div className="flex flex-wrap gap-2">
                     <Badge tipo="info">{totalHistoricoAvisos} filtrado(s)</Badge>
                     <Badge tipo="roxo">10 por página</Badge>
-                    <ReportActionButton action="print" onClick={imprimirHistoricoAvisos}>
-                      Imprimir
+                    <ReportActionButton action="print" onClick={imprimirHistoricoAvisos} disabled={preparandoRelatorio}>
+                      {preparandoRelatorio ? 'Preparando...' : 'Imprimir'}
                     </ReportActionButton>
                   </div>
                 </div>

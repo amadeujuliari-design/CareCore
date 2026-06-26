@@ -5,6 +5,7 @@ import api from './services/api';
 import {
   cancelarLavanderia,
   listarLavanderia,
+  listarLavanderiaCompleta,
   registrarLavanderia,
   retirarLavanderia,
 } from './services/rotinaOperacionalService';
@@ -20,6 +21,7 @@ import {
   LISTAGEM_OPERACIONAL_DIAS_PADRAO,
   REGISTROS_POR_PAGINA_PRONTUARIO,
 } from './utils/prontuarioHistoricoFluxoUtils';
+import { formatarDataBr } from './utils/dataBrasilUtils';
 import LeitorCarteirinhaModal from './components/LeitorCarteirinhaModal';
 import { useLeitorUsbGlobal } from './hooks/useLeitorUsbGlobal';
 import { encontrarConviventePorCodigo } from './utils/conviventeIdentificacaoUtils';
@@ -47,11 +49,28 @@ function saldoPendenteLavanderia(registro) {
   return Math.max(Number(registro?.quantidade_entregue || 0) - Number(jaRetiradas || 0), 0);
 }
 
+function montarDadosRelatorioLavanderia(registrosLista) {
+  return (registrosLista || []).map((registro) => ({
+    'Convivente': registro.convivente_nome || '-',
+    'Prontuário': registro.prontuario || 'S/N',
+    'Entrega': formatarDataHora(registro.entregue_em),
+    'Prazo': formatarDataHora(registro.prazo_retirada_em),
+    'Peças entregues': registro.quantidade_entregue || 0,
+    'Peças retiradas': registro.quantidade_retirada || '',
+    'Status': registro.status,
+    'Operador entrega': registro.usuario_entrega_nome || '-',
+    'Operador retirada': registro.usuario_retirada_nome || '-',
+    'Observação entrega': registro.observacao_entrega || '',
+    'Observação retirada': registro.observacao_retirada || '',
+  }));
+}
+
 export default function Lavanderia() {
   const [registros, setRegistros] = useState([]);
   const [totalRegistros, setTotalRegistros] = useState(0);
   const [temMais, setTemMais] = useState(false);
   const [carregandoMais, setCarregandoMais] = useState(false);
+  const [preparandoRelatorio, setPreparandoRelatorio] = useState(false);
   const [resumoFila, setResumoFila] = useState(null);
   const [filtrosPeriodo, setFiltrosPeriodo] = useState({ dataInicio: '', dataFim: '', busca: '' });
   const [buscaRascunho, setBuscaRascunho] = useState('');
@@ -79,19 +98,7 @@ export default function Lavanderia() {
     return filtrarOrdenarConviventesPorBusca(ativos, buscaConvivente);
   }, [conviventes, buscaConvivente]);
 
-  const dadosRelatorio = useMemo(() => registros.map(registro => ({
-    'Convivente': registro.convivente_nome || '-',
-    'Prontuário': registro.prontuario || 'S/N',
-    'Entrega': formatarDataHora(registro.entregue_em),
-    'Prazo': formatarDataHora(registro.prazo_retirada_em),
-    'Peças entregues': registro.quantidade_entregue || 0,
-    'Peças retiradas': registro.quantidade_retirada || '',
-    'Status': registro.status,
-    'Operador entrega': registro.usuario_entrega_nome || '-',
-    'Operador retirada': registro.usuario_retirada_nome || '-',
-    'Observação entrega': registro.observacao_entrega || '',
-    'Observação retirada': registro.observacao_retirada || '',
-  })), [registros]);
+  const dadosRelatorio = useMemo(() => montarDadosRelatorioLavanderia(registros), [registros]);
 
   const resumo = useMemo(() => {
     if (resumoFila) {
@@ -307,60 +314,93 @@ export default function Lavanderia() {
     onCodigoLido: processarLeituraGlobal,
   });
 
-  const exportarXlsx = () => {
-    exportarRelatorioXlsx({
-      nomeArquivo: `lavanderia-${new Date().toISOString().slice(0, 10)}`,
-      titulo: 'Relatório de Lavanderia',
-      filtros: {
-        Status: statusFiltro,
-        'Total filtrado': totalRegistros,
-        'Exibidos na tela': registros.length,
-      },
-      colunas: [
-        'Convivente',
-        'Prontuário',
-        'Entrega',
-        'Prazo',
-        'Peças entregues',
-        'Peças retiradas',
-        'Status',
-        'Operador entrega',
-        'Operador retirada',
-        'Observação entrega',
-        'Observação retirada',
-      ],
-      dados: dadosRelatorio,
-    });
+  const exportarXlsx = async () => {
+    setPreparandoRelatorio(true);
+    try {
+      const registrosCompletos = await listarLavanderiaCompleta(statusFiltro, montarParamsLista());
+      const dados = montarDadosRelatorioLavanderia(registrosCompletos);
+      const periodoTexto = [
+        filtrosPeriodo.dataInicio ? formatarDataBr(filtrosPeriodo.dataInicio) : null,
+        filtrosPeriodo.dataFim ? formatarDataBr(filtrosPeriodo.dataFim) : null,
+      ].filter(Boolean).join(' a ');
+
+      exportarRelatorioXlsx({
+        nomeArquivo: `lavanderia-${new Date().toISOString().slice(0, 10)}`,
+        titulo: 'Relatório de Lavanderia',
+        filtros: {
+          Status: statusFiltro,
+          ...(periodoTexto ? { Período: periodoTexto } : {}),
+          'Total filtrado': totalRegistros,
+        },
+        colunas: [
+          'Convivente',
+          'Prontuário',
+          'Entrega',
+          'Prazo',
+          'Peças entregues',
+          'Peças retiradas',
+          'Status',
+          'Operador entrega',
+          'Operador retirada',
+          'Observação entrega',
+          'Observação retirada',
+        ],
+        dados,
+      });
+    } catch (error) {
+      console.error(error);
+      setErro('Erro ao exportar relatório de lavanderia.');
+    } finally {
+      setPreparandoRelatorio(false);
+    }
   };
 
   const imprimir = async () => {
-    const logoRelatorioDataUrl = await obterLogoRelatorioDataUrl(identidadeRelatorio);
+    setPreparandoRelatorio(true);
+    try {
+      const registrosCompletos = await listarLavanderiaCompleta(statusFiltro, montarParamsLista());
+      const dados = montarDadosRelatorioLavanderia(registrosCompletos);
+      const logoRelatorioDataUrl = await obterLogoRelatorioDataUrl(identidadeRelatorio);
+      const periodoTexto = [
+        filtrosPeriodo.dataInicio ? `De ${formatarDataBr(filtrosPeriodo.dataInicio)}` : null,
+        filtrosPeriodo.dataFim ? `até ${formatarDataBr(filtrosPeriodo.dataFim)}` : null,
+      ].filter(Boolean).join(' ');
 
-    imprimirRelatorio({
-      titulo: 'Relatório de Lavanderia',
-      subtitulo: `${totalRegistros} registro(s). Status: ${statusFiltro}.`,
-      metricas: [
-        { label: 'Pendentes', valor: resumo.pendentes },
-        { label: 'Atrasados +48h', valor: resumo.atrasados },
-        { label: 'Peças em aberto', valor: resumo.pecasPendentes },
-      ],
-      colunas: [
-        'Convivente',
-        'Prontuário',
-        'Entrega',
-        'Prazo',
-        'Peças entregues',
-        'Peças retiradas',
-        'Status',
-        'Operador entrega',
-        'Operador retirada',
-      ],
-      dados: dadosRelatorio,
-      identidade: {
-        ...(identidadeRelatorio || {}),
-        logo_src: logoRelatorioDataUrl,
-      },
-    });
+      imprimirRelatorio({
+        titulo: 'Relatório de Lavanderia',
+        subtitulo: [
+          periodoTexto || null,
+          `${totalRegistros} registro(s)`,
+          `Status: ${statusFiltro}`,
+        ].filter(Boolean).join(' · '),
+        metricas: [
+          { label: 'Pendentes', valor: resumo.pendentes },
+          { label: 'Atrasados +48h', valor: resumo.atrasados },
+          { label: 'Peças em aberto', valor: resumo.pecasPendentes },
+        ],
+        colunas: [
+          'Convivente',
+          'Prontuário',
+          'Entrega',
+          'Prazo',
+          'Peças entregues',
+          'Peças retiradas',
+          'Status',
+          'Operador entrega',
+          'Operador retirada',
+        ],
+        dados,
+        identidade: {
+          ...(identidadeRelatorio || {}),
+          logo_src: logoRelatorioDataUrl,
+        },
+      });
+    } catch (error) {
+      console.error(error);
+      setErro('Erro ao preparar impressão da lavanderia.');
+    } finally {
+      setPreparandoRelatorio(false);
+    }
   };
 
   const salvarEntrega = async (event) => {
@@ -492,11 +532,11 @@ export default function Lavanderia() {
           icon="L"
           actions={(
             <>
-              <ReportActionButton action="export" onClick={exportarXlsx} disabled={registros.length === 0}>
-                Exportar
+              <ReportActionButton action="export" onClick={exportarXlsx} disabled={preparandoRelatorio || totalRegistros === 0}>
+                {preparandoRelatorio ? 'Preparando...' : 'Exportar'}
               </ReportActionButton>
-              <ReportActionButton action="print" onClick={imprimir} disabled={registros.length === 0}>
-                Imprimir
+              <ReportActionButton action="print" onClick={imprimir} disabled={preparandoRelatorio || totalRegistros === 0}>
+                {preparandoRelatorio ? 'Preparando...' : 'Imprimir'}
               </ReportActionButton>
               <PremiumButton type="button" variant="brand" onClick={() => carregarDados({ append: false, offset: 0 })}>
                 Atualizar

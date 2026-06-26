@@ -25,6 +25,8 @@ import {
   resumirPrioridadesOcorrencias,
 } from './utils/ocorrenciasUtils';
 import { filtrarOrdenarConviventesPorBusca } from './utils/conviventeBuscaUtils';
+import { buscarTodosItensPaginados } from './utils/buscarTodosPaginados';
+import { formatarDataBr } from './utils/dataBrasilUtils';
 import { deveIgnorarLeituraCodigoRepetida } from './utils/leituraCodigoUtils';
 import {
   calcularDataInicioPadrao,
@@ -94,6 +96,7 @@ export default function CentralOcorrencias() {
 
   const [selecionados, setSelecionados] = useState([]);
   const [baixandoLote, setBaixandoLote] = useState(false);
+  const [preparandoRelatorio, setPreparandoRelatorio] = useState(false);
   const [identidadeRelatorio, setIdentidadeRelatorio] = useState(null);
 
   const estadoNovoChamado = {
@@ -313,8 +316,39 @@ export default function CentralOcorrencias() {
     : montarRelatorioOcorrencias(ocorrencias, ocorrenciasFiltradas);
   const totalPaginas = Math.max(1, Math.ceil(totalOcorrencias / TAMANHO_PAGINA_OCORRENCIAS));
 
-  const montarDadosRelatorioOcorrencias = () => {
-    return (Array.isArray(ocorrenciasFiltradas) ? ocorrenciasFiltradas : []).map((oc) => {
+  const montarParamsOcorrencias = (limit, offset) => ({
+    limit,
+    offset,
+    prioridade: filtroPrioridade,
+    status: filtroStatus,
+    data_inicio: filtroDataInicio || undefined,
+    data_fim: filtroDataFim || undefined,
+    busca: filtroBusca || undefined,
+    tecnico_id: filtroTecnicoId || undefined,
+  });
+
+  const buscarOcorrenciasCompletas = async () => {
+    return buscarTodosItensPaginados({
+      limitePagina: 200,
+      buscarPagina: async ({ limite, offset }) => {
+        const response = await axios.get(`${API_ROOT}/ocorrencias`, {
+          headers: criarHeadersAutenticados(token),
+          params: montarParamsOcorrencias(limite, offset),
+        });
+        const dados = response.data;
+        if (Array.isArray(dados)) {
+          return { items: dados, total: dados.length };
+        }
+        return {
+          items: dados.items || [],
+          total: dados.total || 0,
+        };
+      },
+    });
+  };
+
+  const montarDadosRelatorioOcorrencias = (lista = ocorrenciasFiltradas) => {
+    return (Array.isArray(lista) ? lista : []).map((oc) => {
       const paciente = listaConviventes.find((c) => c.id === oc.convivente_id);
       const nomePaciente = oc.convivente_nome || (paciente ? (paciente.nome_social || paciente.nome_completo) : "-");
       const funcionario = listaFuncionarios.find((u) => u.id === oc.funcionario_envolvido_id);
@@ -349,36 +383,71 @@ export default function CentralOcorrencias() {
     "Descrição",
   ];
 
-  const exportarRelatorioOcorrenciasXLSX = () => {
-    exportarRelatorioXlsx({
-      nomeArquivo: `relatorio-ocorrencias-${new Date().toISOString().slice(0, 10)}`,
-      titulo: "Relatório de Ocorrências",
-      filtros: {
-        "Prioridade": filtroPrioridade,
-        "Status": filtroStatus,
-        "Total filtrado": relatorioOcorrencias.filtrado.total,
-        "Pendentes": relatorioOcorrencias.filtrado.pendentes,
-        "Resolvidas": relatorioOcorrencias.filtrado.resolvidas,
-        "Alta/Crítica pendentes": relatorioOcorrencias.filtrado.altaCriticaPendentes,
-      },
-      colunas: colunasRelatorioOcorrencias,
-      dados: montarDadosRelatorioOcorrencias(),
-    });
+  const montarSubtituloRelatorioOcorrencias = () => {
+    const periodoTexto = [
+      filtroDataInicio ? `De ${formatarDataBr(filtroDataInicio)}` : null,
+      filtroDataFim ? `até ${formatarDataBr(filtroDataFim)}` : null,
+    ].filter(Boolean).join(' ');
+
+    return [
+      periodoTexto || null,
+      `Prioridade: ${filtroPrioridade}`,
+      `Status: ${filtroStatus}`,
+      `Total filtrado: ${relatorioOcorrencias.filtrado.total}`,
+      `Pendentes: ${relatorioOcorrencias.filtrado.pendentes}`,
+    ].filter(Boolean).join(' | ');
+  };
+
+  const exportarRelatorioOcorrenciasXLSX = async () => {
+    setPreparandoRelatorio(true);
+    try {
+      const ocorrenciasCompletas = await buscarOcorrenciasCompletas();
+      exportarRelatorioXlsx({
+        nomeArquivo: `relatorio-ocorrencias-${new Date().toISOString().slice(0, 10)}`,
+        titulo: "Relatório de Ocorrências",
+        filtros: {
+          "Prioridade": filtroPrioridade,
+          "Status": filtroStatus,
+          ...(filtroDataInicio ? { "Data inicial": formatarDataBr(filtroDataInicio) } : {}),
+          ...(filtroDataFim ? { "Data final": formatarDataBr(filtroDataFim) } : {}),
+          "Total filtrado": relatorioOcorrencias.filtrado.total,
+          "Pendentes": relatorioOcorrencias.filtrado.pendentes,
+          "Resolvidas": relatorioOcorrencias.filtrado.resolvidas,
+          "Alta/Crítica pendentes": relatorioOcorrencias.filtrado.altaCriticaPendentes,
+        },
+        colunas: colunasRelatorioOcorrencias,
+        dados: montarDadosRelatorioOcorrencias(ocorrenciasCompletas),
+      });
+    } catch (error) {
+      console.error(error);
+      setErro('Erro ao exportar relatório de ocorrências.');
+    } finally {
+      setPreparandoRelatorio(false);
+    }
   };
 
   const abrirRelatorioImpressaoOcorrencias = async () => {
-    const logoRelatorioDataUrl = await obterLogoRelatorioDataUrl(identidadeRelatorio);
+    setPreparandoRelatorio(true);
+    try {
+      const ocorrenciasCompletas = await buscarOcorrenciasCompletas();
+      const logoRelatorioDataUrl = await obterLogoRelatorioDataUrl(identidadeRelatorio);
 
-    imprimirRelatorio({
-      titulo: "Relatório de Ocorrências",
-      subtitulo: `Prioridade: ${filtroPrioridade} | Status: ${filtroStatus} | Total filtrado: ${relatorioOcorrencias.filtrado.total} | Pendentes: ${relatorioOcorrencias.filtrado.pendentes}`,
-      colunas: colunasRelatorioOcorrencias,
-      dados: montarDadosRelatorioOcorrencias(),
-      identidade: {
-        ...identidadeRelatorio,
-        logo_src: obterLogoRelatorioSrc(logoRelatorioDataUrl),
-      },
-    });
+      imprimirRelatorio({
+        titulo: "Relatório de Ocorrências",
+        subtitulo: montarSubtituloRelatorioOcorrencias(),
+        colunas: colunasRelatorioOcorrencias,
+        dados: montarDadosRelatorioOcorrencias(ocorrenciasCompletas),
+        identidade: {
+          ...identidadeRelatorio,
+          logo_src: obterLogoRelatorioSrc(logoRelatorioDataUrl),
+        },
+      });
+    } catch (error) {
+      console.error(error);
+      setErro('Erro ao preparar impressão de ocorrências.');
+    } finally {
+      setPreparandoRelatorio(false);
+    }
   };
 
   const toggleSelecao = (id) => {
@@ -851,12 +920,12 @@ export default function CentralOcorrencias() {
               </div>
 
               <div className="flex flex-wrap gap-2">
-                <ReportActionButton action="export" onClick={exportarRelatorioOcorrenciasXLSX}>
-                  Exportar
+                <ReportActionButton action="export" onClick={exportarRelatorioOcorrenciasXLSX} disabled={preparandoRelatorio}>
+                  {preparandoRelatorio ? 'Preparando...' : 'Exportar'}
                 </ReportActionButton>
 
-                <ReportActionButton action="print" onClick={abrirRelatorioImpressaoOcorrencias}>
-                  Imprimir
+                <ReportActionButton action="print" onClick={abrirRelatorioImpressaoOcorrencias} disabled={preparandoRelatorio}>
+                  {preparandoRelatorio ? 'Preparando...' : 'Imprimir'}
                 </ReportActionButton>
               </div>
             </div>

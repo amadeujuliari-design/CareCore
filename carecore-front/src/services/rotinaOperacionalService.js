@@ -1,4 +1,5 @@
 import api from './api';
+import { buscarTodosItensPaginados } from '../utils/buscarTodosPaginados';
 import { REGISTROS_POR_PAGINA_PRONTUARIO } from '../utils/prontuarioHistoricoFluxoUtils';
 
 const LISTA_VAZIA = {
@@ -22,6 +23,13 @@ export async function listarLavanderia(statusFiltro = 'pendentes', params = {}) 
     },
   });
   return response.data || LISTA_VAZIA;
+}
+
+export async function listarLavanderiaCompleta(statusFiltro = 'pendentes', params = {}) {
+  return buscarTodosItensPaginados({
+    limitePagina: 100,
+    buscarPagina: ({ limite, offset }) => listarLavanderia(statusFiltro, { ...params, limite, offset }),
+  });
 }
 
 export async function registrarLavanderia(payload) {
@@ -51,6 +59,13 @@ export async function listarPertencesRecolhidos(statusFiltro = 'abertos', params
     },
   });
   return response.data || LISTA_VAZIA;
+}
+
+export async function listarPertencesRecolhidosCompleto(statusFiltro = 'abertos', params = {}) {
+  return buscarTodosItensPaginados({
+    limitePagina: 100,
+    buscarPagina: ({ limite, offset }) => listarPertencesRecolhidos(statusFiltro, { ...params, limite, offset }),
+  });
 }
 
 export async function registrarPertencesRecolhidos(payload) {
