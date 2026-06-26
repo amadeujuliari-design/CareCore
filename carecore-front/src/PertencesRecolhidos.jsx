@@ -141,8 +141,6 @@ export default function PertencesRecolhidos() {
     );
   }, [retirada, conviventesPorQuarto, buscaConviventeRetirada]);
 
-  const dadosRelatorio = useMemo(() => montarDadosRelatorioPertences(registros), [registros]);
-
   const resumo = useMemo(() => {
     if (resumoFila) {
       return {

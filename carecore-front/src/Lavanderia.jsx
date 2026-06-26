@@ -98,8 +98,6 @@ export default function Lavanderia() {
     return filtrarOrdenarConviventesPorBusca(ativos, buscaConvivente);
   }, [conviventes, buscaConvivente]);
 
-  const dadosRelatorio = useMemo(() => montarDadosRelatorioLavanderia(registros), [registros]);
-
   const resumo = useMemo(() => {
     if (resumoFila) {
       return {
