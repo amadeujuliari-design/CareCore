@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 
 test('carrega login e trata falha de autenticacao sem backend real', async ({ page }) => {
-  await page.route('http://127.0.0.1:8000/api/login', async (route) => {
+  await page.route('**/api/login', async (route) => {
     const request = route.request();
     expect(request.headers()['x-carecore-request-id']).toBeTruthy();
 

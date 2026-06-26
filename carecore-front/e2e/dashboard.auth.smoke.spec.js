@@ -39,7 +39,7 @@ test('acessa dashboard protegido com sessao local e APIs mockadas', async ({ pag
     usuarioSessao: usuarioTeste,
   });
 
-  await page.route('http://127.0.0.1:8000/api/**', async (route) => {
+  await page.route('**/api/**', async (route) => {
     const request = route.request();
     const url = new URL(request.url());
     const headers = request.headers();
