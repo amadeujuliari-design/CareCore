@@ -4,6 +4,7 @@ import {
   normalizarTextoBusca,
 } from './conviventeBuscaUtils';
 import { formatarDataBr } from './dataBrasilUtils';
+import { rotuloRepeticaoExtraRefeicao } from './rotinaRefeicaoUtils';
 import {
   tipoRegistroAlimentacao,
   TIPOS_ROTINA_REFEICOES,
@@ -262,7 +263,9 @@ export function montarDadosImpressaoHistoricoRotina(registros) {
     'Data/Hora': formatarDataHoraRotina(registro.data_registro),
     Convivente: registro.convivente_nome || '-',
     Prontuário: `#${registro.numero_institucional || 'S/N'}`,
-    Tipo: registro.tipo_registro || '-',
+    Tipo: rotuloRepeticaoExtraRefeicao(registro.repeticao_extra_refeicao)
+      ? `${registro.tipo_registro || '-'} · ${rotuloRepeticaoExtraRefeicao(registro.repeticao_extra_refeicao)}`
+      : (registro.tipo_registro || '-'),
     Operador: registro.usuario_nome || '-',
     Status: `${registro.cancelado ? 'Cancelado' : 'Ativo'}${registro.foi_editado ? ' / Editado' : ''}${registro.retorno_rapido ? ' / Retorno rápido' : ''}`,
     'Observações/Auditoria': montarObservacoesAuditoriaRegistro(registro) || '-',

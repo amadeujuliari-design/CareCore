@@ -60,6 +60,15 @@ def test_carteirinha_provisoria_tolerancia_apos_5_dias():
     assert "bloqueio" in status["restante_texto"]
 
 
+from routers.conviventes import _repeticao_extra_refeicao_ao_registrar
+
+
+def test_repeticao_extra_refeicao_rotulos():
+    assert _repeticao_extra_refeicao_ao_registrar(0) is None
+    assert _repeticao_extra_refeicao_ao_registrar(1) == 1
+    assert _repeticao_extra_refeicao_ao_registrar(2) == 2
+
+
 def test_horario_refeicao_dentro_da_janela():
     validar_horario_refeicao_operacional(
         "Almoço",

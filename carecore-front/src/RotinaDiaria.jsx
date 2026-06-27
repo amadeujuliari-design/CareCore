@@ -33,6 +33,7 @@ import {
   deveIgnorarLeituraCodigoRepetida,
   deveIgnorarLeituraConviventeRepetida,
 } from './utils/leituraCodigoUtils';
+import { rotuloRepeticaoExtraRefeicao } from './utils/rotinaRefeicaoUtils';
 import ModalImpressaoTermoBagageiro from './components/termoBagageiro/ModalImpressaoTermoBagageiro';
 import { consultarTermoBagageiro } from './services/termoBagageiroService';
 import { abrirPreviewHtml } from './utils/imprimirRelatorio';
@@ -844,6 +845,7 @@ export default function RotinaDiaria() {
           const novoItemRefeicao = {
             id: registroCriado.id || null,
             data_registro: registroCriado.data_registro || new Date().toISOString(),
+            repeticao_extra_refeicao: registroCriado.repeticao_extra_refeicao ?? null,
           };
 
           novoResumo.refeicoes = {
@@ -899,7 +901,8 @@ export default function RotinaDiaria() {
             usuario_id: registroCriado.usuario_id,
             retorno_rapido: registroCriado.retorno_rapido === true,
             justificativa_retorno_rapido:
-              registroCriado.justificativa_retorno_rapido || null
+              registroCriado.justificativa_retorno_rapido || null,
+            repeticao_extra_refeicao: registroCriado.repeticao_extra_refeicao ?? null,
           });
         }
 
@@ -916,8 +919,11 @@ export default function RotinaDiaria() {
 
       const nome = convivente?.nome_social || convivente?.nome_completo || 'Acolhido';
 
+      const repExtra = rotuloRepeticaoExtraRefeicao(registroCriado.repeticao_extra_refeicao);
+      const tipoFeedback = repExtra ? `${tipoRegistro} · ${repExtra}` : tipoRegistro;
+
       setFeedback({
-        tipo: tipoRegistro,
+        tipo: tipoFeedback,
         nome,
         operador: obterNomeUsuarioLogado(),
         horario: horarioFeedbackAgora(),

@@ -679,6 +679,8 @@ class RegistroRotinaDB(Base):
     tipo_registro = Column(String, nullable=False)
     observacao = Column(Text, nullable=True)
     data_registro = Column(DateTime, default=datetime.datetime.utcnow)
+    # 1 = 1ª refeição extra do dia (Rep1), 2 = Rep2, etc.; null na 1ª refeição do tipo.
+    repeticao_extra_refeicao = Column(Integer, nullable=True)
 
     # Retorno rápido: entrada registrada em menos de 10 minutos após uma saída
     retorno_rapido = Column(Boolean, default=False)

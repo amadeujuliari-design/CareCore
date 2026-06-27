@@ -22,6 +22,7 @@ import {
   rotuloTipoRegistroFiltro,
   usuarioPodeGerenciarHistoricoRotina,
 } from './utils/rotinaHistoricoUtils';
+import { rotuloRepeticaoExtraRefeicao } from './utils/rotinaRefeicaoUtils';
 import {
   perfilOcultaSomatoriaAlimentacao,
   tipoRegistroAlimentacao,
@@ -858,9 +859,16 @@ export default function RotinaHistorico() {
                       </p>
                     </div>
 
-                    <span className={`shrink-0 rounded-full border px-3 py-1 text-xs font-black ${classeTipoRegistroRotina(registro.tipo_registro)}`}>
+                    <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
+                    <span className={`rounded-full border px-3 py-1 text-xs font-black ${classeTipoRegistroRotina(registro.tipo_registro)}`}>
                       {registro.tipo_registro}
                     </span>
+                    {rotuloRepeticaoExtraRefeicao(registro.repeticao_extra_refeicao) && (
+                      <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[9px] font-black text-amber-800">
+                        {rotuloRepeticaoExtraRefeicao(registro.repeticao_extra_refeicao)}
+                      </span>
+                    )}
+                    </div>
                   </div>
 
                   <div className="mt-3 flex flex-wrap gap-1.5">
@@ -1023,7 +1031,7 @@ export default function RotinaHistorico() {
                       </td>
 
                       <td className="px-3 py-3">
-
+                        <div className="flex flex-wrap items-center gap-1.5">
                         <span
                           className={`
                             text-xs font-black px-2.5 py-1 rounded-full border
@@ -1032,7 +1040,12 @@ export default function RotinaHistorico() {
                         >
                           {registro.tipo_registro}
                         </span>
-
+                        {rotuloRepeticaoExtraRefeicao(registro.repeticao_extra_refeicao) && (
+                          <span className="text-[9px] font-black px-2 py-0.5 rounded-full border border-amber-200 bg-amber-50 text-amber-800">
+                            {rotuloRepeticaoExtraRefeicao(registro.repeticao_extra_refeicao)}
+                          </span>
+                        )}
+                        </div>
                       </td>
 
                       <td className="px-3 py-3">

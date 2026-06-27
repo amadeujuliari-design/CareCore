@@ -27,6 +27,7 @@ const RelatorioCadastrosNovos = lazy(() => import('../RelatorioCadastrosNovos'))
 const Organizacao = lazy(() => import('../Organizacao'));
 const GestaoGlobal = lazy(() => import('../GestaoGlobal'));
 const HistoricoLegado = lazy(() => import('../HistoricoLegado'));
+const RelatorioPresencaLegado = lazy(() => import('../components/historico-legado/RelatorioPresencaLegado'));
 const Suporte = lazy(() => import('../Suporte'));
 const Cobrancas = lazy(() => import('../Cobrancas'));
 const CobrancasAdmin = lazy(() => import('../CobrancasAdmin'));
@@ -265,6 +266,15 @@ function RotasAplicacao() {
           element={
             <ProtectedRoute perfis={['Gestor', 'Técnico', 'Orientador', 'Administrativo', 'Global']}>
               <HistoricoLegado />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/historico-legado/rotina/presencas"
+          element={
+            <ProtectedRoute perfis={['Gestor', 'Técnico', 'Orientador', 'Administrativo', 'Global']}>
+              <RelatorioPresencaLegado />
             </ProtectedRoute>
           }
         />

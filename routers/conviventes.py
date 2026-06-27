@@ -3195,6 +3195,11 @@ async def registar_rotina(
         acao="registrar movimento de rotina"
     )
 
+    repeticao_extra_refeicao = None
+    if payload.tipo_registro in TIPOS_ROTINA_REFEICOES:
+        qtd_refeicao_hoje = len(refeicoes_registradas.get(payload.tipo_registro, []))
+        repeticao_extra_refeicao = _repeticao_extra_refeicao_ao_registrar(qtd_refeicao_hoje)
+
     novo_registro = RegistroRotinaDB(
         instituicao_id=obter_instituicao_escopo(usuario_atual),
         convivente_id=payload.convivente_id,
@@ -3205,7 +3210,8 @@ async def registar_rotina(
         data_registro=agora_sao_paulo(),
 
         retorno_rapido=retorno_rapido,
-        justificativa_retorno_rapido=justificativa_retorno_rapido
+        justificativa_retorno_rapido=justificativa_retorno_rapido,
+        repeticao_extra_refeicao=repeticao_extra_refeicao,
     )
 
     db.add(novo_registro)
@@ -3306,7 +3312,8 @@ async def resumo_rotina_hoje(
             "data_registro": r.data_registro.isoformat(),
             "usuario_id": r.usuario_id,
             "retorno_rapido": bool(r.retorno_rapido),
-            "justificativa_retorno_rapido": r.justificativa_retorno_rapido
+            "justificativa_retorno_rapido": r.justificativa_retorno_rapido,
+            "repeticao_extra_refeicao": r.repeticao_extra_refeicao,
         })
 
         if r.tipo_registro == "Almoço":
@@ -3325,6 +3332,7 @@ async def resumo_rotina_hoje(
             item_refeicao = {
                 "id": r.id,
                 "data_registro": r.data_registro.isoformat(),
+                "repeticao_extra_refeicao": r.repeticao_extra_refeicao,
             }
             refeicao["quantidade"] += 1
             refeicao["registros"].append(item_refeicao)
@@ -3696,7 +3704,8 @@ async def dashboard_operacional_rotina(
             "cancelado": bool(registro.cancelado),
             "foi_editado": bool(registro.foi_editado),
             "retorno_rapido": bool(registro.retorno_rapido),
-            "justificativa_retorno_rapido": registro.justificativa_retorno_rapido
+            "justificativa_retorno_rapido": registro.justificativa_retorno_rapido,
+            "repeticao_extra_refeicao": registro.repeticao_extra_refeicao,
         })
 
     alertas = []
@@ -3958,6 +3967,7 @@ def _linha_historico_para_dict(
 
         "retorno_rapido": bool(registro.retorno_rapido),
         "justificativa_retorno_rapido": registro.justificativa_retorno_rapido,
+        "repeticao_extra_refeicao": registro.repeticao_extra_refeicao,
 
         "foi_editado": bool(registro.foi_editado),
         "editado_por_id": registro.editado_por_id,
@@ -4786,6 +4796,13 @@ def _texto_planilha(valor):
 
 def _quantidade_extra_refeicao(registros: list) -> int:
     return max(len(registros) - 1, 0)
+
+
+def _repeticao_extra_refeicao_ao_registrar(qtd_ja_registrada_hoje: int) -> int | None:
+    """1ª refeição do dia não recebe marca; extras recebem 1 (Rep1), 2 (Rep2)..."""
+    if qtd_ja_registrada_hoje <= 0:
+        return None
+    return qtd_ja_registrada_hoje
 
 
 def _data_br_para_date(valor):

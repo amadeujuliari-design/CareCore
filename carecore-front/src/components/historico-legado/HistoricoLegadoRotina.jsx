@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import axios from 'axios';
 
 import { PremiumButton } from '../PremiumUI';
@@ -261,7 +262,13 @@ export default function HistoricoLegadoRotina({ headers }) {
             <h2 className="text-lg font-black text-blue-950">Filtros de rotina legada</h2>
             <p className="text-sm font-semibold text-gray-500">A consulta é paginada no servidor e exibe 20 registros por página.</p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
+            <Link
+              to="/historico-legado/rotina/presencas"
+              className="inline-flex items-center rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-black text-blue-800 hover:bg-blue-100"
+            >
+              Relatório de presenças
+            </Link>
             <PremiumButton type="button" variant="soft" onClick={limparFiltros}>Limpar</PremiumButton>
             <PremiumButton type="button" variant="brand" onClick={aplicarFiltros}>Filtrar</PremiumButton>
           </div>

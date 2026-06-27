@@ -5,7 +5,7 @@ from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import get_db
-from models import HistoricoLegadoRotinaSIATDB, HistoricoLegadoSIATDB, InstituicaoDB
+from models import HistoricoLegadoRotinaSIATDB, HistoricoLegadoSIATDB, InstituicaoDB, ConviventeDB
 from schemas import (
     HistoricoLegadoRotinaSIATListResponse,
     HistoricoLegadoRotinaSIATResponse,
@@ -13,7 +13,10 @@ from schemas import (
     HistoricoLegadoSIATListResponse,
     HistoricoLegadoSIATResponse,
     HistoricoLegadoSIATUpdate,
+    RelatorioPresencaLegadoResponse,
 )
+from historico_legado_presenca import montar_relatorio_presenca_legado
+from presenca_operacional import MAX_DIAS_RELATORIO_PRESENCA, listar_dias_periodo
 from security import get_usuario_logado
 
 
@@ -508,6 +511,100 @@ async def meta_rotina_legada(
         "resumo": await _resumo_rotina(db, usuario_atual),
         "opcoes": await _opcoes_filtros_rotina(db, usuario_atual),
     }
+
+
+@router.get("/rotina/relatorio-presencas", response_model=RelatorioPresencaLegadoResponse)
+async def relatorio_presencas_rotina_legada(
+    data_inicio: str = Query(..., description="Data inicial AAAA-MM-DD"),
+    data_fim: str = Query(..., description="Data final AAAA-MM-DD"),
+    busca: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    await _exigir_historico_legado_ativo(db, usuario_atual)
+
+    inicio = _parse_data(data_inicio)
+    fim = _parse_data(data_fim, fim_do_dia=True)
+    if not inicio or not fim:
+        raise HTTPException(status_code=400, detail="Informe data inicial e data final válidas.")
+
+    if inicio > fim:
+        raise HTTPException(status_code=400, detail="A data inicial não pode ser maior que a data final.")
+
+    dias_periodo = listar_dias_periodo(inicio, fim)
+    if len(dias_periodo) > MAX_DIAS_RELATORIO_PRESENCA:
+        raise HTTPException(
+            status_code=400,
+            detail=f"O período máximo é de {MAX_DIAS_RELATORIO_PRESENCA} dias.",
+        )
+
+    inst_id = _instituicao_id(usuario_atual)
+    resultado = await db.execute(
+        select(
+            HistoricoLegadoRotinaSIATDB.chave_natural_convivente,
+            HistoricoLegadoRotinaSIATDB.id_as_atendimento_legado,
+            HistoricoLegadoRotinaSIATDB.nome_convivente,
+            HistoricoLegadoRotinaSIATDB.numero_sisa,
+            HistoricoLegadoRotinaSIATDB.convivente_id,
+            HistoricoLegadoRotinaSIATDB.data_servico,
+            HistoricoLegadoRotinaSIATDB.origem_arquivo,
+            HistoricoLegadoRotinaSIATDB.servico_prestado,
+            HistoricoLegadoRotinaSIATDB.id_servico_prestado_legado,
+            ConviventeDB.numero_institucional,
+        )
+        .outerjoin(ConviventeDB, ConviventeDB.id == HistoricoLegadoRotinaSIATDB.convivente_id)
+        .where(
+            HistoricoLegadoRotinaSIATDB.instituicao_id == inst_id,
+            HistoricoLegadoRotinaSIATDB.data_servico >= inicio,
+            HistoricoLegadoRotinaSIATDB.data_servico <= fim,
+        )
+        .order_by(
+            HistoricoLegadoRotinaSIATDB.data_servico.asc(),
+            HistoricoLegadoRotinaSIATDB.nome_convivente.asc().nullslast(),
+        )
+    )
+
+    linhas_brutas = [
+        {
+            "chave_natural_convivente": chave_natural,
+            "id_as_atendimento_legado": id_atendimento,
+            "nome_convivente": nome,
+            "numero_sisa": numero_sisa,
+            "convivente_id": convivente_id,
+            "data_servico": data_servico,
+            "origem_arquivo": origem_arquivo,
+            "servico_prestado": servico_prestado,
+            "id_servico_prestado_legado": id_servico,
+            "numero_institucional": numero_institucional,
+        }
+        for (
+            chave_natural,
+            id_atendimento,
+            nome,
+            numero_sisa,
+            convivente_id,
+            data_servico,
+            origem_arquivo,
+            servico_prestado,
+            id_servico,
+            numero_institucional,
+        ) in resultado.all()
+    ]
+
+    try:
+        return montar_relatorio_presenca_legado(
+            linhas_brutas,
+            data_inicio=inicio,
+            data_fim=fim,
+            busca=busca,
+        )
+    except ValueError as exc:
+        if str(exc).startswith("periodo_maximo_"):
+            raise HTTPException(
+                status_code=400,
+                detail=f"O período máximo é de {MAX_DIAS_RELATORIO_PRESENCA} dias.",
+            ) from exc
+        raise
 
 
 @router.patch("/rotina/{registro_id}", response_model=HistoricoLegadoRotinaSIATResponse)

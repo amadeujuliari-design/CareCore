@@ -1590,6 +1590,7 @@ class RegistroRotinaResponse(RegistroRotinaBase):
 
     retorno_rapido: Optional[bool] = False
     justificativa_retorno_rapido: Optional[str] = None
+    repeticao_extra_refeicao: Optional[int] = None
 
     foi_editado: Optional[bool] = False
     editado_por_id: Optional[str] = None
@@ -1873,6 +1874,26 @@ class HistoricoLegadoRotinaSIATListResponse(BaseModel):
 class HistoricoLegadoRotinaSIATUpdate(BaseModel):
     status_revisao: Optional[str] = None
     observacoes: Optional[str] = None
+
+
+class RelatorioPresencaLegadoLinha(BaseModel):
+    pessoa_legado_id: str
+    convivente_id: Optional[str] = None
+    nome: str
+    numero_sisa: Optional[str] = None
+    prontuario: Optional[str] = None
+    origem_arquivo: Optional[str] = None
+    dias: dict[str, str]
+    totais: dict[str, int]
+
+
+class RelatorioPresencaLegadoResponse(BaseModel):
+    data_inicio: str
+    data_fim: str
+    dias: List[str]
+    total_pessoas: int
+    resumo: dict[str, int]
+    linhas: List[RelatorioPresencaLegadoLinha]
 
 
 # =====================================================================

@@ -362,6 +362,11 @@ export default function Sidebar() {
               path: '/historico-legado/rotina',
               icon: CalendarClock,
               label: 'Rotina Legada'
+            },
+            {
+              path: '/historico-legado/rotina/presencas',
+              icon: FileBarChart,
+              label: 'Presenças legado'
             }
           ]
         },
