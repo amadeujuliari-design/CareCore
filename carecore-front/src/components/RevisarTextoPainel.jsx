@@ -14,6 +14,7 @@ export function RevisarTextoPainel({
   className = '',
 }) {
   const [status, setStatus] = useState(null);
+  const [ambienteApi, setAmbienteApi] = useState('');
   const [carregandoStatus, setCarregandoStatus] = useState(true);
   const [revisando, setRevisando] = useState(false);
   const [erro, setErro] = useState('');
@@ -46,6 +47,9 @@ export function RevisarTextoPainel({
       try {
         const health = await axios.get(`${API_ROOT}/health`, { timeout: 5000 });
         configurado = Boolean(health.data?.revisao_texto_configurada);
+        if (health.data?.environment) {
+          setAmbienteApi(String(health.data.environment));
+        }
       } catch {
         // Mantém indicador desligado quando /health não responde.
       }
@@ -79,6 +83,18 @@ export function RevisarTextoPainel({
 
   const configurado = Boolean(status?.configurado);
   const disponivel = Boolean(status?.configurado && status?.disponivel);
+
+  const mensagemRevisaoIndisponivel = () => {
+    const hostLocal = typeof window !== 'undefined'
+      && ['localhost', '127.0.0.1'].includes(window.location.hostname);
+    const ambienteLocal = ambienteApi === 'local' || (hostLocal && import.meta.env.DEV);
+
+    if (ambienteLocal) {
+      return 'Indisponível no servidor local. Confira GEMINI_API_KEY no .env e reinicie o backend.';
+    }
+
+    return 'Revisão por IA ainda não está ativa neste ambiente. A manutenção precisa configurar GEMINI_API_KEY no backend online (Fly.io).';
+  };
 
   async function handleRevisar() {
     const tituloAtual = (titulo || '').trim();
@@ -158,7 +174,7 @@ export function RevisarTextoPainel({
             {!carregandoStatus && configurado && !disponivel
               && 'Limite mensal de revisões atingido. Você ainda pode salvar o texto como digitou.'}
             {!carregandoStatus && !configurado
-              && 'Indisponível no servidor local. Confira GEMINI_API_KEY no .env e reinicie o backend.'}
+              && mensagemRevisaoIndisponivel()}
           </p>
           {!carregandoStatus && configurado && contexto === 'ocorrencia' && (
             <p className="text-[10px] text-indigo-600 mt-1">
