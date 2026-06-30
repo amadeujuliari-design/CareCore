@@ -1,0 +1,10 @@
+{
+  "api_port": 8020,
+  "frontend_port": 5173,
+  "legacy_api_ports": [8000, 8002, 8010, 8011, 8013],
+  "health": {
+    "presenca_regras": "inativos-sem-presenca-v2",
+    "cadastro_datas": "ajuste-automatico-v1",
+    "dashboard_api": "contagens-v1"
+  }
+}
