@@ -16,7 +16,8 @@ export default defineConfig({
     trace: 'on-first-retry',
   },
   webServer: {
-    command: 'npm run dev -- --host 127.0.0.1 --port 5173',
+    // E2E mocka a API no browser — não exige backend local (verificarApiLocal).
+    command: 'npm run dev:raw -- --host 127.0.0.1 --port 5173',
     url: 'http://127.0.0.1:5173',
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,

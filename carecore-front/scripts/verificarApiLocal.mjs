@@ -6,6 +6,10 @@ const config = lerConfigDevLocal();
 const healthEsperado = config.health || {};
 
 async function validar() {
+  if (process.env.CI === 'true' || process.env.CARECORE_SKIP_API_CHECK === '1') {
+    return;
+  }
+
   const url = `http://${HOST}:${porta}/api/health`;
 
   let dados;
