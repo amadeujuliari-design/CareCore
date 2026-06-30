@@ -62,6 +62,7 @@ import {
   MIN_CARACTERES_JUSTIFICATIVA_HORARIO,
 } from './utils/rotinaPortariaHorariosUtils';
 import { obterAvisoCarteirinhaConvivente } from './utils/carteirinhaValidadeUtils';
+import { ordenarQuartosComLeitos } from './utils/ordenacaoNatural';
 
 const OPCOES_INTERACAO_ROTINA = [
   { valor: 'Café da manhã', label: 'Café da manhã', grupo: 'refeicao' },
@@ -351,7 +352,7 @@ export default function RotinaDiaria() {
       const ativos = resConv.data.filter(c => c.status === 'Ativo');
 
       setConviventes(ativos);
-      setQuartos(resQuartos.data || []);
+      setQuartos(ordenarQuartosComLeitos(resQuartos.data || []));
       setResumoHoje(resRotina.data || {});
     } catch (error) {
       console.error('Erro ao carregar dados da rotina', error);

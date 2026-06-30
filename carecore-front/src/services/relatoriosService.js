@@ -1,4 +1,5 @@
 import api from './api';
+import { ordenarQuartosComLeitos } from '../utils/ordenacaoNatural';
 
 export const LIMITE_AMOSTRA_OCORRENCIAS_RELATORIOS = 200;
 export const LIMITE_EXPORT_ROTINA_RELATORIOS = 5000;
@@ -78,7 +79,7 @@ export async function carregarDadosRelatorios({ aba, filtros, carregarIdentidade
 
   return {
     conviventes: conviventes.data || [],
-    quartos: quartos.data || [],
+    quartos: ordenarQuartosComLeitos(quartos.data || []),
     ocorrencias: ocorrencias.data,
     tecnicos: tecnicos.data || [],
     equipe: equipe.data || [],

@@ -16,6 +16,7 @@ import {
   obterLogoRelatorioDataUrl,
 } from './utils/relatorioIdentidadePrint';
 import { filtrarOrdenarConviventesPorBusca } from './utils/conviventeBuscaUtils';
+import { ordenarQuartosComLeitos } from './utils/ordenacaoNatural';
 import {
   criarFiltrosListagemOperacionalPadrao,
   LISTAGEM_OPERACIONAL_DIAS_PADRAO,
@@ -203,7 +204,7 @@ export default function PertencesRecolhidos() {
       setResumoFila(lista.resumo_fila || null);
 
       if (!append) {
-        setQuartos(quartosResponse?.data || []);
+        setQuartos(ordenarQuartosComLeitos(quartosResponse?.data || []));
         setConviventes(conviventesResponse?.data || []);
       }
     } catch (error) {

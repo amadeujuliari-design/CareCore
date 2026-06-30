@@ -7,8 +7,15 @@ from typing import Any
 _PARTE_NUMERO = re.compile(r"(\d+)")
 
 
-def chave_ordenacao_natural(valor: Any) -> list[tuple[int, int | str]]:
+def normalizar_texto_ordenacao(valor: Any) -> str:
     texto = str(valor or "").strip().casefold()
+    texto = re.sub(r"\s*-\s*", " - ", texto)
+    texto = re.sub(r"\s+", " ", texto)
+    return texto.strip()
+
+
+def chave_ordenacao_natural(valor: Any) -> list[tuple[int, int | str]]:
+    texto = normalizar_texto_ordenacao(valor)
     if not texto:
         return [(1, "")]
 

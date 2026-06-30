@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 
+import { compararTextoNatural } from '../utils/ordenacaoNatural';
 import {
   campoTexto,
   dataDentroDoPeriodo,
@@ -261,9 +262,15 @@ export function useRelatoriosFiltros({
         return String(a.quarto.modalidade || '').localeCompare(String(b.quarto.modalidade || ''));
       }
 
-      const quartoComparacao = String(a.quarto.nome || '').localeCompare(String(b.quarto.nome || ''));
+      const quartoComparacao = compararTextoNatural(
+        a.quarto.nome || '',
+        b.quarto.nome || '',
+      );
       if (quartoComparacao !== 0) return quartoComparacao;
-      return String(a.leito.identificacao || '').localeCompare(String(b.leito.identificacao || ''));
+      return compararTextoNatural(
+        a.leito.identificacao || '',
+        b.leito.identificacao || '',
+      );
     });
   }, [conviventes, filtros, ordenacaoAcomodacoes, quartos]);
 

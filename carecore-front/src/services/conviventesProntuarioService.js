@@ -1,4 +1,5 @@
 import api from './api';
+import { ordenarQuartosComLeitos } from '../utils/ordenacaoNatural';
 
 export async function carregarListaConviventesCadastro({ status = null } = {}) {
   const params = status ? { status } : {};
@@ -9,7 +10,7 @@ export async function carregarListaConviventesCadastro({ status = null } = {}) {
 
   return {
     conviventes: conviventes.data || [],
-    quartos: quartos.data || [],
+    quartos: ordenarQuartosComLeitos(quartos.data || []),
   };
 }
 

@@ -21,6 +21,15 @@ test('ordenarPorTextoNatural ordena quartos alfanumericamente', () => {
   ]);
 });
 
+test('ordena quartos com hifen sem espaco antes de quartos com espaco', () => {
+  const quartos = [
+    { nome: 'Ala Masculina - Quarto / QR1 ISOLAMENTE' },
+    { nome: 'Ala Masculina -Acessibilidade - Quarto / B' },
+  ];
+  const ordenados = ordenarPorTextoNatural(quartos, (quarto) => quarto.nome);
+  assert.equal(ordenados[0].nome, 'Ala Masculina -Acessibilidade - Quarto / B');
+});
+
 test('ordenarQuartosComLeitos ordena leitos por numero', () => {
   const quartos = [{
     nome: 'Quarto 1',

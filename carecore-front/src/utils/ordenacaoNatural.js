@@ -1,5 +1,14 @@
+export function normalizarTextoOrdenacao(valor) {
+  return String(valor ?? '')
+    .trim()
+    .toLocaleLowerCase('pt-BR')
+    .replace(/\s*-\s*/g, ' - ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function chaveOrdenacaoNatural(valor) {
-  const texto = String(valor ?? '').trim().toLocaleLowerCase('pt-BR');
+  const texto = normalizarTextoOrdenacao(valor);
   if (!texto) return [[1, '']];
 
   const partes = texto.split(/(\d+)/).filter(Boolean);
@@ -26,6 +35,10 @@ function compararOrdenacaoNatural(a, b) {
   }
 
   return 0;
+}
+
+export function compararTextoNatural(textoA, textoB) {
+  return compararOrdenacaoNatural(textoA, textoB);
 }
 
 export function ordenarPorTextoNatural(itens, obterTexto) {

@@ -8,7 +8,8 @@ import Sidebar from './Sidebar';
 import { AppShell, MainShell, PageHeader, ScrollArea } from './components/PremiumUI';
 import { API_ROOT } from './config/apiBase';
 import { filtrarOrdenarConviventesPorBusca } from './utils/conviventeBuscaUtils';
-import { ordenarPorTextoNatural, ordenarQuartosComLeitos } from './utils/ordenacaoNatural';
+import { ordenarPorTextoNatural } from './utils/ordenacaoNatural';
+import { listarQuartosOrdenados } from './services/quartosService';
 import { usuarioPodeEditarAcomodacao } from './hooks/usePermissoesProntuario';
 import { decodificarPayloadJwt } from './utils/jwtUtils';
 import { criarHeadersAutenticados } from './utils/requestIdUtils';
@@ -68,9 +69,8 @@ useEffect(() => {
   const carregarQuartos = async () => {
     try {
       setLoading(true);
-      const config = { headers: criarHeadersAutenticados(token) };
-      const resQuartos = await axios.get(`${API_ROOT}/quartos`, config);
-      setQuartos(resQuartos.data);
+      const lista = await listarQuartosOrdenados();
+      setQuartos(lista);
     } catch {
       setErro('Erro ao carregar lista de quartos.');
     } finally {
@@ -216,10 +216,7 @@ useEffect(() => {
     )
   ), [buscaConvivente, conviventes]);
 
-  const quartosOrdenados = useMemo(
-    () => ordenarQuartosComLeitos(quartos),
-    [quartos],
-  );
+  const quartosOrdenados = quartos;
 
   const abrirModalLeito = (quarto, leito) => {
     if (!podeAlocarLeitos) return;
