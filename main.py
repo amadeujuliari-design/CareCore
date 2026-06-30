@@ -428,6 +428,7 @@ async def healthcheck():
         "presenca_regras": PRESENCA_REGRAS_BUILD,
         "cadastro_datas": "ajuste-automatico-v1",
         "revisao_texto_configurada": gemini_configurado(),
+        "dashboard_api": "contagens-v1",
     }
 
 

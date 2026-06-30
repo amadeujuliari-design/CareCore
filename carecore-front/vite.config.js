@@ -46,8 +46,10 @@ function carecoreVersaoBuildPlugin() {
   };
 }
 
-/** Porta do backend local em dev (8011 — evita zumbis acumulados na 8010). */
-const DEV_API_PORT = Number(process.env.CARECORE_DEV_API_PORT || 8011);
+import { lerPortaApiLocal } from './scripts/carecoreDevPort.mjs';
+
+/** Porta do backend local — fonte única: scripts/dev_local.json */
+const DEV_API_PORT = Number(process.env.CARECORE_DEV_API_PORT || lerPortaApiLocal());
 
 export default defineConfig({
   plugins: [react(), carecoreVersaoBuildPlugin()],

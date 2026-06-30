@@ -47,6 +47,19 @@ test('acessa dashboard protegido com sessao local e APIs mockadas', async ({ pag
     expect(headers.authorization).toBe(`Bearer ${token}`);
     expect(headers['x-carecore-request-id']).toBeTruthy();
 
+    if (url.pathname === '/api/dashboard/contagens-conviventes') {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          ativos: 10,
+          ausenciasJustificadas: 2,
+          ativosComAusenciasJustificadas: 12,
+        }),
+      });
+      return;
+    }
+
     if (url.pathname === '/api/dashboard/resumo') {
       validouHeadersDashboard = true;
 
@@ -56,6 +69,8 @@ test('acessa dashboard protegido com sessao local e APIs mockadas', async ({ pag
         body: JSON.stringify({
           totalConviventes: 12,
           ativos: 10,
+          ausenciasJustificadas: 2,
+          ativosComAusenciasJustificadas: 12,
           leitosOcupados: 8,
           totalLeitos: 16,
           atendimentosMes: 44,

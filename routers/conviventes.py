@@ -8314,6 +8314,40 @@ async def _resumo_ocorrencias_dashboard(
     }
 
 
+async def _contagens_presenca_conviventes(db: AsyncSession, inst_id: str) -> dict:
+    ativos = (await db.execute(
+        select(func.count(ConviventeDB.id)).where(
+            ConviventeDB.instituicao_id == inst_id,
+            ConviventeDB.status == "Ativo",
+        )
+    )).scalar_one()
+
+    ausencias_justificadas = (await db.execute(
+        select(func.count(ConviventeDB.id)).where(
+            ConviventeDB.instituicao_id == inst_id,
+            ConviventeDB.status == "Ausência justificada",
+        )
+    )).scalar_one()
+
+    ativos_int = int(ativos or 0)
+    ausencias_int = int(ausencias_justificadas or 0)
+
+    return {
+        "ativos": ativos_int,
+        "ausenciasJustificadas": ausencias_int,
+        "ativosComAusenciasJustificadas": ativos_int + ausencias_int,
+    }
+
+
+@router.get("/dashboard/contagens-conviventes")
+async def dashboard_contagens_conviventes(
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    inst_id = obter_instituicao_escopo(usuario_atual)
+    return await _contagens_presenca_conviventes(db, inst_id)
+
+
 @router.get("/dashboard/resumo")
 async def dashboard_resumo(
     db: AsyncSession = Depends(get_db),
@@ -8330,12 +8364,10 @@ async def dashboard_resumo(
         )
     )).scalar_one()
 
-    ativos = (await db.execute(
-        select(func.count(ConviventeDB.id)).where(
-            ConviventeDB.instituicao_id == inst_id,
-            ConviventeDB.status == "Ativo"
-        )
-    )).scalar_one()
+    contagens_presenca = await _contagens_presenca_conviventes(db, inst_id)
+    ativos = contagens_presenca["ativos"]
+    ausencias_justificadas = contagens_presenca["ausenciasJustificadas"]
+    ativos_com_ausencias_justificadas = contagens_presenca["ativosComAusenciasJustificadas"]
 
     total_leitos = (await db.execute(
         select(func.count(LeitoDB.id))
@@ -8358,6 +8390,8 @@ async def dashboard_resumo(
     return {
         "totalConviventes": total_conviventes,
         "ativos": ativos,
+        "ausenciasJustificadas": ausencias_justificadas,
+        "ativosComAusenciasJustificadas": ativos_com_ausencias_justificadas,
         "leitosOcupados": leitos_ocupados,
         "totalLeitos": total_leitos,
         "atendimentosMes": series["resumo"]["atendimentos_mes"],

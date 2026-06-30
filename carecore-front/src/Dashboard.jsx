@@ -398,6 +398,7 @@ export default function Dashboard() {
   const [dataFim, setDataFim] = useState(hojeISO());
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState("");
+  const [apiDashboardDesatualizada, setApiDashboardDesatualizada] = useState(false);
 
   useEffect(() => {
     if (!token) {
@@ -416,8 +417,12 @@ export default function Dashboard() {
 
       setCarregandoAvisos(true);
 
-      const [resDashboard, resAvisos, resResumoAvisos] = await Promise.all([
+      const [resDashboard, resContagens, resAvisos, resResumoAvisos] = await Promise.all([
         axios.get(`${API_ROOT}/dashboard/resumo`, { headers }),
+        axios.get(`${API_ROOT}/dashboard/contagens-conviventes`, { headers }).catch((error) => {
+          console.warn("Contagens de conviventes ainda não disponíveis no backend.", error);
+          return null;
+        }),
         listarMeusAvisos(token, { limite: 10 }).catch((error) => {
           console.warn("Avisos ainda não disponíveis no backend.", error);
           return { items: [], total: 0, has_more: false };
@@ -428,8 +433,18 @@ export default function Dashboard() {
         }),
       ]);
 
-      setResumoDashboard(resDashboard.data || null);
-      setSeries(resDashboard.data?.series || null);
+      const dashboardMesclado = {
+        ...(resDashboard.data || {}),
+        ...(resContagens?.data || {}),
+      };
+
+      const resumoBase = resDashboard.data || {};
+      const contagensCarregadas = Boolean(resContagens?.data);
+      const resumoTemContagens = Object.prototype.hasOwnProperty.call(resumoBase, "ausenciasJustificadas");
+      setApiDashboardDesatualizada(!contagensCarregadas && !resumoTemContagens);
+
+      setResumoDashboard(dashboardMesclado);
+      setSeries(dashboardMesclado?.series || null);
       setAvisos(Array.isArray(resAvisos?.items) ? resAvisos.items : (Array.isArray(resAvisos) ? resAvisos : []));
       setResumoAvisos(resResumoAvisos || { total_visiveis: 0, total_nao_lidos: 0, total_alertas_ativos: 0 });
     } catch (error) {
@@ -458,6 +473,9 @@ export default function Dashboard() {
       return {
         totalConviventes: resumoDashboard.totalConviventes || 0,
         ativos: resumoDashboard.ativos || 0,
+        ausenciasJustificadas: resumoDashboard.ausenciasJustificadas || 0,
+        ativosComAusenciasJustificadas: resumoDashboard.ativosComAusenciasJustificadas
+          ?? ((resumoDashboard.ativos || 0) + (resumoDashboard.ausenciasJustificadas || 0)),
         leitosOcupados: resumoDashboard.leitosOcupados || 0,
         totalLeitos: resumoDashboard.totalLeitos || 0,
         atendimentosMes: resumoDashboard.atendimentosMes || 0,
@@ -479,6 +497,7 @@ export default function Dashboard() {
     }
 
     const ativos = conviventes.filter((c) => c.status === "Ativo");
+    const ausenciasJustificadas = conviventes.filter((c) => c.status === "Ausência justificada");
 
     let totalLeitos = 0;
     let leitosOcupados = 0;
@@ -568,6 +587,8 @@ export default function Dashboard() {
     return {
       totalConviventes: conviventes.length,
       ativos: ativos.length,
+      ausenciasJustificadas: ausenciasJustificadas.length,
+      ativosComAusenciasJustificadas: ativos.length + ausenciasJustificadas.length,
       leitosOcupados,
       totalLeitos,
       atendimentosMes: series?.resumo?.atendimentos_mes ?? 0,
@@ -587,7 +608,14 @@ export default function Dashboard() {
   const totalRange = dadosGraficoRange.reduce((total, item) => total + (item.atendimentos || 0), 0);
 
   const cards = [
-    { titulo: "Conviventes ativos", valor: dados.ativos, subtitulo: `${dados.totalConviventes} no cadastro total`, icone: "◇", cor: "text-slate-900" },
+    {
+      titulo: "Conviventes ativos",
+      valor: dados.ativos,
+      subtitulo: `${dados.totalConviventes} no cadastro total`,
+      subtituloExtra: `${dados.ativosComAusenciasJustificadas} — ativos + ausências justificadas`,
+      icone: "◇",
+      cor: "text-slate-900",
+    },
     { titulo: "Atendimentos (mês)", valor: dados.atendimentosMes, subtitulo: "Registros válidos no mês", icone: "▥", cor: "text-slate-900" },
     { titulo: "Atendimentos hoje", valor: dados.atendimentosHoje, subtitulo: `${dados.leitosOcupados} vagas ocupadas`, icone: "✓", cor: "text-slate-900" },
     {
@@ -683,6 +711,11 @@ export default function Dashboard() {
 
         <main className="carecore-scroll-area carecore-dashboard-scroll-area">
           {erro && <div className="mb-3 rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-sm font-semibold text-red-600">{erro}</div>}
+          {apiDashboardDesatualizada && (
+            <div className="mb-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">
+              Backend local desatualizado ou na porta errada. Feche tudo, execute reiniciar_local.bat e depois validar_api_local.bat antes de usar o dashboard.
+            </div>
+          )}
 
           {loading ? (
             <div className="flex min-h-[420px] items-center justify-center">
@@ -700,7 +733,12 @@ export default function Dashboard() {
                       <div className="min-w-0">
                         <p className="carecore-kpi-label">{card.titulo}</p>
                         <p className={`carecore-kpi-value ${card.cor}`}>{card.valor}</p>
-                        <p className="carecore-kpi-subtitle line-clamp-2" title={card.subtitulo}>{card.subtitulo}</p>
+                        <p className="carecore-kpi-subtitle" title={card.subtitulo}>{card.subtitulo}</p>
+                        {card.subtituloExtra && (
+                          <p className="carecore-kpi-subtitle mt-0.5" title={card.subtituloExtra}>
+                            {card.subtituloExtra}
+                          </p>
+                        )}
                       </div>
                       <div className="carecore-kpi-icon">{card.icone}</div>
                     </div>

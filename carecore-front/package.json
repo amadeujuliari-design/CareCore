@@ -4,7 +4,8 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "node scripts/verificarApiLocal.mjs && vite",
+    "dev:raw": "vite",
     "build": "vite build",
     "lint": "eslint .",
     "test": "node --test src/utils/conviventesProntuarioUtils.test.js src/hooks/useConviventesLista.test.js src/services/api.test.js src/App.routes.test.js src/utils/serviceWorkerPolicy.test.js src/utils/atualizacaoAppUtils.test.js src/utils/exportarRelatorioXlsx.test.js src/utils/rotinaDiariaUtils.test.js src/utils/leituraCodigoUtils.test.js src/utils/carteirinhaPrint.test.js src/utils/ordenacaoNatural.test.js",
