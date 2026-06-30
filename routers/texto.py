@@ -169,6 +169,7 @@ async def revisar_texto(
         fragmentos_nomes,
         usar_fragmentos_cadastrados=True,
         usar_heuristica_nomes=not revisao_aviso,
+        apenas_fragmentos_compostos=revisao_aviso,
     )
     if nomes_detectados:
         mensagem_bloqueio = (

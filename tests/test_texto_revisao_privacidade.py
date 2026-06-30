@@ -69,8 +69,27 @@ def test_bloqueia_aviso_com_nome_cadastrado():
         fragmentos,
         usar_fragmentos_cadastrados=True,
         usar_heuristica_nomes=False,
+        apenas_fragmentos_compostos=True,
     )
-    assert any("maria" in item.casefold() for item in encontrados)
+    assert any("maria santos" in item.casefold() for item in encontrados)
+
+
+def test_nao_bloqueia_aviso_com_palavra_manutencao_e_usuario_manutencao_carecore():
+    titulo = "Inteligência Artificial no CARECORE+? Sim, é isso mesmo!!!"
+    texto = (
+        "Se o botão Revisar texto aparecer desabilitado, "
+        "avise a equipe de manutenção/gestão do sistema."
+    )
+    fragmentos = montar_fragmentos_nomes_cadastrados([], ["Manutenção CareCore"])
+    encontrados = detectar_nomes_proprios_no_texto(
+        titulo,
+        texto,
+        fragmentos,
+        usar_fragmentos_cadastrados=True,
+        usar_heuristica_nomes=False,
+        apenas_fragmentos_compostos=True,
+    )
+    assert encontrados == []
 
 
 def test_mensagem_bloqueio_definida():

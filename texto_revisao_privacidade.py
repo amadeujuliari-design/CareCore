@@ -46,6 +46,8 @@ PALAVRAS_PERMITIDAS = {
     "gestão",
     "gestao",
     "gestor",
+    "manutenção",
+    "manutencao",
     "jantar",
     "lavanderia",
     "masculino",
@@ -255,6 +257,7 @@ def detectar_nomes_proprios_no_texto(
     *,
     usar_fragmentos_cadastrados: bool = True,
     usar_heuristica_nomes: bool = True,
+    apenas_fragmentos_compostos: bool = False,
 ) -> list[str]:
     combinado = f"{titulo or ''}\n{texto or ''}".strip()
     if not combinado:
@@ -267,6 +270,8 @@ def detectar_nomes_proprios_no_texto(
     if usar_fragmentos_cadastrados:
         for fragmento in sorted(fragmentos_cadastrados, key=len, reverse=True):
             if len(fragmento) < 3:
+                continue
+            if apenas_fragmentos_compostos and " " not in fragmento:
                 continue
             if fragmento in FRAGMENTOS_IGNORADOS:
                 continue
