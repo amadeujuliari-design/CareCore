@@ -3,7 +3,7 @@
  * Nunca usa window.print() na página principal — evita páginas em branco.
  */
 
-import { gerarHtmlCarteirinhaUnitaria, resolverDadosCarteirinha } from './carteirinhaDados';
+import { gerarHtmlCarteirinhaUnitaria, resolverDadosCarteirinha, prefixarEstiloCarteirinha } from './carteirinhaDados';
 import { obterTokenLocal } from '../services/api';
 import { API_ROOT } from '../config/apiBase';
 import axios from 'axios';
@@ -212,13 +212,14 @@ export async function imprimirCarteirinhasLote({
   const larguraCard = `calc(70mm * ${escala})`;
   const alturaCard = `calc(100mm * ${escala})`;
   const folhas = [];
-  let estiloCarteirinha = '';
+  const estilosCarteirinhas = [];
 
   for (let i = 0; i < conviventes.length; i += porFolha) {
     const grupo = conviventes.slice(i, i + porFolha);
     const cards = [];
 
     for (const convivente of grupo) {
+      const escopoClasse = `cc-lote-${convivente.id}`;
       const cardHtml = await montarHtmlCarteirinhaDeConvivente(
         convivente,
         quartos,
@@ -228,8 +229,12 @@ export async function imprimirCarteirinhasLote({
         identidadeRelatorio,
       );
 
-      if (!estiloCarteirinha) {
-        estiloCarteirinha = extrairStyleHtml(cardHtml);
+      const estiloCarteirinha = prefixarEstiloCarteirinha(
+        extrairStyleHtml(cardHtml),
+        escopoClasse,
+      );
+      if (estiloCarteirinha) {
+        estilosCarteirinhas.push(estiloCarteirinha);
       }
 
       const bodyHtml = extrairBodyHtml(cardHtml);
@@ -237,7 +242,7 @@ export async function imprimirCarteirinhasLote({
 
       cards.push(`
         <div style="width:${larguraCard};height:${alturaCard};overflow:hidden;outline:${guiasCorte ? '1px dashed #cbd5e1' : 'none'};">
-          <div style="transform:scale(${escala});transform-origin:top left;width:70mm;height:100mm;">
+          <div class="${escopoClasse}" style="transform:scale(${escala});transform-origin:top left;width:70mm;height:100mm;">
             ${bodyHtml}
           </div>
         </div>
@@ -260,7 +265,7 @@ export async function imprimirCarteirinhasLote({
     * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     html, body { margin: 0; padding: 0; background: #fff; }
     @page { size: ${pagina.largura} ${pagina.altura}; margin: 6mm; }
-    ${estiloCarteirinha}
+    ${estilosCarteirinhas.join('\n')}
     .folha { page-break-after: always; break-after: page; }
     .folha:last-child { page-break-after: auto; break-after: auto; }
     @media print {

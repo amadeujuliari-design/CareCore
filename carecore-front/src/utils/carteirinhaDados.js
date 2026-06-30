@@ -1,5 +1,5 @@
 /** Dados normalizados da carteirinha — compartilhado entre preview e impressão. */
-import { avaliarCarteirinhaConvivente } from './carteirinhaValidadeUtils';
+import { avaliarCarteirinhaConvivente } from './carteirinhaValidadeUtils.js';
 
 export function resolverDadosCarteirinha(convivente, quartos = [], tecnicos = [], fotoCaminho = null) {
   if (!convivente) return null;
@@ -58,6 +58,25 @@ function escaparHtml(valor) {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
+}
+
+/** Evita que o CSS da 1ª carteirinha do lote sobrescreva cores das demais. */
+export function prefixarEstiloCarteirinha(css, escopoClasse) {
+  if (!css || !escopoClasse) return css;
+
+  const prefix = `.${escopoClasse}`;
+
+  return css.replace(/(^|})\s*([^@{}][^{]*)\{/g, (match, fechamento, seletores) => {
+    const lista = seletores
+      .split(',')
+      .map((sel) => {
+        const limpo = sel.trim();
+        if (!limpo) return limpo;
+        return `${prefix} ${limpo}`;
+      })
+      .join(', ');
+    return `${fechamento} ${lista} {`;
+  });
 }
 
 /**
