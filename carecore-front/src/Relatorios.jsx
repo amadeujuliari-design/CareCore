@@ -37,6 +37,7 @@ import {
   carregarHistoricoRotinaRelatorio,
 } from './services/relatoriosService';
 import { useRelatoriosIdentidade } from './hooks/useRelatoriosIdentidade';
+import { lerUsuarioTextoOriginal, usuarioPodeVerTextoOriginal } from './utils/textoOriginalUtils';
 import {
   ABAS_RELATORIOS,
   criarFiltrosRelatoriosIniciais,
@@ -77,6 +78,9 @@ function obterNomeUsuarioLogado() {
 
 export default function Relatorios() {
   const token = localStorage.getItem('@CareCore:token') || localStorage.getItem('token');
+  const usuarioTextoOriginal = useMemo(() => lerUsuarioTextoOriginal(token), [token]);
+  const podeVerTextoOriginal = usuarioPodeVerTextoOriginal(usuarioTextoOriginal);
+  const [incluirTextoOriginalOcorrencias, setIncluirTextoOriginalOcorrencias] = useState(false);
 
   const [aba, setAba] = useState('conviventes');
   const [loading, setLoading] = useState(true);
@@ -544,6 +548,7 @@ export default function Relatorios() {
     itensPorPaginaTabela,
     leitosAcomodacoesFiltrados,
     ocorrenciasFiltradas,
+    incluirTextoOriginalOcorrencias,
     paginaTabela,
     quartos,
     registrosPiaFiltrados,
@@ -905,6 +910,17 @@ export default function Relatorios() {
           icon="▥"
           actions={['carteirinhas', 'personalizacao'].includes(aba) ? null : (
             <>
+              {aba === 'ocorrencias' && podeVerTextoOriginal && (
+                <label className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700">
+                  <input
+                    type="checkbox"
+                    checked={incluirTextoOriginalOcorrencias}
+                    onChange={(event) => setIncluirTextoOriginalOcorrencias(event.target.checked)}
+                    className="rounded border-slate-300"
+                  />
+                  Incluir texto original
+                </label>
+              )}
               <ReportActionButton
                 action="export"
                 onClick={exportarAbaAtual}
@@ -1021,6 +1037,7 @@ export default function Relatorios() {
               quartos={quartos}
               tecnicos={tecnicos}
               identidadeRelatorio={identidadeRelatorio}
+              token={token}
             />
           ) : (
             <>

@@ -3,6 +3,7 @@ import { describe, it } from 'node:test';
 
 import {
   agruparEvolucoesPiaPorRegistro,
+  corrigirDataInclusaoNoFormulario,
   criarEstadoInicialConvivente,
   dataLocalISO,
   montarFormEvolucaoPia,
@@ -41,6 +42,52 @@ describe('conviventesProntuarioUtils', () => {
       observacao_status: '[EVASÃO] - Saiu sem autorização',
       complemento: null,
     });
+  });
+
+  it('corrige data de inclusao posterior a primeira interacao antes do payload', () => {
+    const corrigido = corrigirDataInclusaoNoFormulario({
+      data_inclusao: '2026-06-30',
+      data_primeira_interacao: '2025-05-21',
+    });
+
+    assert.equal(corrigido.data_inclusao, '2025-05-21');
+
+    const payload = montarPayloadProntuario(
+      { ...corrigido, nome_completo: 'Teste', status: 'Ativo' },
+      'Ativo',
+    );
+    assert.equal(payload.data_inclusao, '2025-05-21');
+    assert.equal(payload.data_primeira_interacao, undefined);
+  });
+
+  it('usa data_entrada quando data_inclusao estiver vazia', () => {
+    const corrigido = corrigirDataInclusaoNoFormulario({
+      data_inclusao: '',
+      data_entrada: '2026-06-30',
+      data_primeira_interacao: '2025-05-21',
+    });
+
+    assert.equal(corrigido.data_inclusao, '2025-05-21');
+  });
+
+  it('nao sobrescreve inclusao valida com primeira interacao legado corrompida', () => {
+    const corrigido = corrigirDataInclusaoNoFormulario({
+      data_inclusao: '2020-01-01',
+      data_entrada: '2025-09-16',
+      data_primeira_interacao: '0206-02-05',
+    });
+
+    assert.equal(corrigido.data_inclusao, '2020-01-01');
+  });
+
+  it('normaliza data de inclusao placeholder legado no formulario', () => {
+    const corrigido = corrigirDataInclusaoNoFormulario({
+      data_inclusao: '2000-01-01',
+      data_entrada: '2020-06-17',
+      data_primeira_interacao: '',
+    });
+
+    assert.equal(corrigido.data_inclusao, '2020-01-01');
   });
 
   it('valida campos e bloqueia prontuario inconsistente', () => {

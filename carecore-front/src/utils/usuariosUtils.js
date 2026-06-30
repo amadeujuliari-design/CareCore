@@ -115,7 +115,20 @@ export function obterMensagemErro(error) {
     return 'Não foi possível se conectar ao servidor.';
   }
 
-  if (typeof data.detail === 'string') {
+  if (Array.isArray(data.erros) && data.erros.length > 0) {
+    return data.erros
+      .map((item) => {
+        const campo = item?.campo
+          ? String(item.campo).replace(/^body\./, '')
+          : '';
+        const mensagem = item?.mensagem || 'Erro de validação.';
+        const textoLimpo = mensagem.replace(/^Value error,\s*/i, '');
+        return campo ? `${campo}: ${textoLimpo}` : textoLimpo;
+      })
+      .join('\n');
+  }
+
+  if (typeof data.detail === 'string' && data.detail !== 'Erro de validação.') {
     return data.detail;
   }
 
@@ -133,13 +146,7 @@ export function obterMensagemErro(error) {
       .join('\n');
   }
 
-  if (Array.isArray(data.erros) && data.erros.length > 0) {
-    return data.erros
-      .map((item) => item?.mensagem || 'Erro de validação.')
-      .join('\n');
-  }
-
-  return 'Erro ao processar solicitação.';
+  return data.detail || 'Erro ao processar solicitação.';
 }
 
 export function cpfValido(valor) {

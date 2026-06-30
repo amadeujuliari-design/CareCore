@@ -257,6 +257,7 @@ PERFIS_ACESSO_VALIDOS = {
     "Orientador",
     "Administrativo",
     "Consulta",
+    "Oficineiro(a)",
 }
 
 MAPEAMENTO_PERFIS_LEGADOS = {
@@ -265,6 +266,7 @@ MAPEAMENTO_PERFIS_LEGADOS = {
     "Tecnico": "Técnico",
     "Manutencao": "Manutenção",
     "Manutenção": "Manutenção",
+    "Oficineiro": "Oficineiro(a)",
 }
 
 
@@ -474,7 +476,7 @@ def normalizar_perfil_acesso(valor: Optional[str]) -> str:
     if perfil not in PERFIS_ACESSO_VALIDOS:
         raise ValueError(
             "Perfil de acesso inválido. "
-            "Use: Gestor, Global, Manutenção, Técnico, Orientador, Administrativo ou Consulta."
+            "Use: Gestor, Global, Manutenção, Técnico, Orientador, Administrativo, Consulta ou Oficineiro(a)."
         )
 
     return perfil
@@ -1055,6 +1057,7 @@ class AssinaturaTermoBagageiroConsultaResponse(BaseModel):
 class InteracaoOcorrenciaBase(BaseModel):
     mensagem: str
     tipo_interacao: str = "Comentário"
+    mensagem_original: Optional[str] = None
 
 
 class InteracaoOcorrenciaCreate(InteracaoOcorrenciaBase):
@@ -1078,10 +1081,20 @@ class ObservadorOcorrenciaResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class FuncionarioEnvolvidoOcorrenciaResponse(BaseModel):
+    id: str
+    usuario_id: str
+    data_marcacao: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class OcorrenciaBase(BaseModel):
     tipo_ocorrencia: str
     motivo: str
     descricao: str
+    motivo_original: Optional[str] = None
+    descricao_original: Optional[str] = None
     requer_acao_tecnica: bool = False
     prioridade: str = "Média"
     convivente_autor_ocorrencia: bool = False
@@ -1094,6 +1107,7 @@ class OcorrenciaCreate(OcorrenciaBase):
     convivente_id: str
     tecnico_responsavel_id: Optional[str] = None
     observadores_ids: List[str] = []
+    funcionarios_envolvidos_ids: List[str] = []
 
 
 class OcorrenciaResponse(OcorrenciaBase):
@@ -1112,9 +1126,12 @@ class OcorrenciaResponse(OcorrenciaBase):
     assinatura_convivente_metodo: Optional[str] = None
     assinatura_convivente_codigo: Optional[str] = None
     assinatura_convivente_validada_em: Optional[datetime] = None
+    motivo_original: Optional[str] = None
+    descricao_original: Optional[str] = None
 
     interacoes: List[InteracaoOcorrenciaResponse] = []
     observadores: List[ObservadorOcorrenciaResponse] = []
+    funcionarios_envolvidos: List[FuncionarioEnvolvidoOcorrenciaResponse] = []
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -1320,6 +1337,11 @@ class ConviventeBase(BaseModel):
     egresso_artigo_motivo: Optional[str] = None
     egresso_ano: Optional[str] = None
 
+    portaria_excecao_motivo: Optional[str] = None
+    portaria_excecao_saida_ate: Optional[str] = None
+    portaria_excecao_entrada_ate: Optional[str] = None
+    impressoes_carteirinha_oficiais: int = 0
+
     familiares: Optional[List[FamiliarConviventeItem]] = None
     documentos_civis: Optional[List[DocumentoCivilItem]] = None
     substancias: Optional[List[SubstanciaItem]] = None
@@ -1389,6 +1411,7 @@ class ConviventeResponse(ConviventeBase):
 
     numero_institucional: Optional[int] = None
     foto_url: Optional[str] = None
+    data_primeira_interacao: Optional[date] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -1575,6 +1598,7 @@ class RegistroRotinaBase(BaseModel):
 class RegistroRotinaCreate(RegistroRotinaBase):
     convivente_id: str
     justificativa_retorno_rapido: Optional[str] = None
+    justificativa_horario_portaria: Optional[str] = None
     confirmar_refeicao_extra: bool = False
 
 
@@ -1590,6 +1614,7 @@ class RegistroRotinaResponse(RegistroRotinaBase):
 
     retorno_rapido: Optional[bool] = False
     justificativa_retorno_rapido: Optional[str] = None
+    justificativa_horario_portaria: Optional[str] = None
     repeticao_extra_refeicao: Optional[int] = None
 
     foi_editado: Optional[bool] = False
@@ -1770,6 +1795,56 @@ class PertenceRecolhidoListaResponse(BaseModel):
     offset: int
     has_more: bool
     resumo_fila: Optional[PertenceRecolhidoResumoFila] = None
+
+
+class CarteirinhaImpressaoOficialCreate(BaseModel):
+    quantidade: int = Field(default=1, ge=1, le=20)
+    origem: str = Field(default="unitaria")
+
+    @field_validator("origem")
+    @classmethod
+    def validar_origem(cls, valor: str) -> str:
+        origem = str(valor or "unitaria").strip().lower()
+        if origem not in {"unitaria", "lote"}:
+            raise ValueError("Origem de impressão inválida.")
+        return origem
+
+
+class CarteirinhaImpressaoOficialResponse(BaseModel):
+    convivente_id: str
+    impressoes_carteirinha_oficiais: int
+    log_id: str
+    quantidade: int
+    origem: str
+    impresso_em: datetime
+
+
+class CarteirinhaImpressaoResumoPeriodo(BaseModel):
+    total_eventos: int
+    total_carteirinhas: int
+    conviventes_distintos: int
+
+
+class CarteirinhaImpressaoLogItem(BaseModel):
+    id: str
+    convivente_id: str
+    convivente_nome: str
+    numero_institucional: Optional[str] = None
+    usuario_id: str
+    usuario_nome: Optional[str] = None
+    quantidade: int
+    origem: str
+    impresso_em: datetime
+    total_acumulado_convivente: int = 0
+
+
+class CarteirinhaImpressaoLogListaResponse(BaseModel):
+    items: List[CarteirinhaImpressaoLogItem]
+    total: int
+    limit: int
+    offset: int
+    has_more: bool
+    resumo: CarteirinhaImpressaoResumoPeriodo
 
 
 # =====================================================================
@@ -2079,6 +2154,8 @@ class AvisoDestinatarioCreate(BaseModel):
 class AvisoCreate(BaseModel):
     titulo: str
     mensagem: str
+    titulo_original: Optional[str] = None
+    mensagem_original: Optional[str] = None
     classificacao: str = "Informativo"
     prioridade: str = "normal"
     destino_tipo: str = "todos"
@@ -2116,6 +2193,8 @@ class AvisoResponse(BaseModel):
 
     titulo: str
     mensagem: str
+    titulo_original: Optional[str] = None
+    mensagem_original: Optional[str] = None
     classificacao: str
     prioridade: str
     destino_tipo: str
@@ -2159,6 +2238,8 @@ class AvisoDashboardResponse(BaseModel):
     valido_ate: Optional[datetime] = None
 
     pode_exibir_titulo: bool = True
+    titulo_original: Optional[str] = None
+    mensagem_original: Optional[str] = None
 
 
 class AvisoMeListResponse(BaseModel):
@@ -2173,6 +2254,31 @@ class AvisosResumoResponse(BaseModel):
     total_visiveis: int
     total_nao_lidos: int
     total_alertas_ativos: int
+
+
+class TextoRevisarRequest(BaseModel):
+    titulo: Optional[str] = None
+    texto: str = ""
+    convivente_id: Optional[str] = None
+    contexto: Optional[str] = None
+
+
+class TextoRevisarResponse(BaseModel):
+    titulo: str
+    texto: str
+    titulo_original: str
+    texto_original: str
+    usado_mes: int
+    limite_mensal: Optional[int] = None
+
+
+class TextoRevisaoStatusResponse(BaseModel):
+    configurado: bool
+    disponivel: bool
+    limite_mensal: int
+    usado_mes: int
+    ano: int
+    mes: int
 
 
 # =====================================================================
@@ -3124,7 +3230,7 @@ class AtividadeSisaConferenciaHistoricoDetalheResponse(BaseModel):
     resultado: AtividadeSisaConferenciaResponse
 
 
-PONTOS_POR_PRESENCA_ATIVIDADE = 10
+PONTOS_POR_PRESENCA_ATIVIDADE = 1
 
 
 class AtividadePontosRankingItem(BaseModel):

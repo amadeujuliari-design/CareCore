@@ -17,6 +17,7 @@ import {
   MENSAGEM_LOGIN_BLOQUEADO_MANUTENCAO,
   usuarioPodeAcessarDuranteManutencao,
 } from './config/manutencao';
+import { rotaInicialPosLogin } from './utils/rbacUtils';
 import CampoSenha from './components/CampoSenha';
 
 export default function Login() {
@@ -171,7 +172,7 @@ export default function Login() {
       // REDIRECIONA
       // =====================================================
 
-      navigate('/dashboard');
+      navigate(rotaInicialPosLogin(data.usuario));
 
     } catch (error) {
 
@@ -232,7 +233,7 @@ export default function Login() {
         usuario: data.usuario,
       });
 
-      navigate('/dashboard');
+      navigate(rotaInicialPosLogin(data.usuario));
     } catch (error) {
       setErro(
         error?.response?.data?.detail ||

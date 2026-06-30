@@ -20,9 +20,13 @@ import {
   filtrarConviventesRotina,
   filtrarContagensInteracaoSemAlimentacao,
   getFotoUrl,
+  interacaoSelecionadaPermiteLeituraRepetida,
   normalizarCodigo,
   normalizarCpf,
   obterPerfilUsuarioLogado,
+  obterProximaInteracaoPar,
+  obterProximaMovimentacaoBagageiro,
+  obterRotuloBotaoInteracao,
   perfilOcultaSomatoriaAlimentacao,
   registroAindaPodeSerDesfeitoRotina,
   TIPOS_ROTINA_REFEICOES,
@@ -43,10 +47,21 @@ import {
 } from './utils/relatorioIdentidadePrint';
 import { montarHtmlTermoBagageiro } from './utils/termoBagageiroPrint';
 import { persistirTermoBagageiroNoGed } from './utils/termoBagageiroGed';
-import { validarHorarioRefeicaoOperacional } from './utils/refeicaoHorarioOperacional';
 import {
-  obterAvisoCarteirinhaConvivente,
-} from './utils/carteirinhaValidadeUtils';
+  validarHorarioRefeicaoOperacional,
+  mensagemIndicaHorarioRefeicaoForaJanela,
+} from './utils/refeicaoHorarioOperacional';
+import {
+  obterApresentacaoInteracaoEnxoval,
+  montarDestaqueInteracaoEnxoval,
+} from './utils/rotinaInteracaoEnxovalUtils';
+import {
+  validarHorarioPortaria,
+  mensagemIndicaJustificativaHorarioPortaria,
+  mensagemIndicaPortariaBloqueadaSemJustificativa,
+  MIN_CARACTERES_JUSTIFICATIVA_HORARIO,
+} from './utils/rotinaPortariaHorariosUtils';
+import { obterAvisoCarteirinhaConvivente } from './utils/carteirinhaValidadeUtils';
 
 const OPCOES_INTERACAO_ROTINA = [
   { valor: 'Café da manhã', label: 'Café da manhã', grupo: 'refeicao' },
@@ -62,6 +77,30 @@ const OPCOES_INTERACAO_ROTINA = [
 ];
 
 const TIPO_ROTINA_BAGAGEIRO = 'Movimentação de Bagageiro';
+
+const VARIANTES_ALERTA_ERRO_OPERACIONAL = {
+  leitura_invalida: {
+    titulo: 'Carteirinha não reconhecida',
+    subtitulo: 'Leitura bloqueada',
+    headerClass: 'bg-red-600',
+    borderClass: 'border-red-500',
+    buttonClass: 'bg-red-600 hover:bg-red-700',
+  },
+  refeicao_horario: {
+    titulo: 'Refeição fora do horário',
+    subtitulo: 'Registro não permitido',
+    headerClass: 'bg-amber-600',
+    borderClass: 'border-amber-500',
+    buttonClass: 'bg-amber-600 hover:bg-amber-700',
+  },
+  portaria_horario: {
+    titulo: 'Horário não permitido',
+    subtitulo: 'Portaria bloqueada',
+    headerClass: 'bg-purple-700',
+    borderClass: 'border-purple-600',
+    buttonClass: 'bg-purple-700 hover:bg-purple-800',
+  },
+};
 
 function rotuloMovimentacaoBagageiro(movimentacao) {
   return movimentacao === 'Saída' ? 'Saída de bagagem' : 'Entrada de bagagem';
@@ -160,6 +199,14 @@ export default function RotinaDiaria() {
   const [identidadeRelatorio, setIdentidadeRelatorio] = useState(null);
   const [termoBagageiroModalAberto, setTermoBagageiroModalAberto] = useState(false);
   const [bagageiroRegistroPendente, setBagageiroRegistroPendente] = useState(null);
+  const [bloqueioConviventeFora, setBloqueioConviventeFora] = useState(null);
+  const [alertaErroOperacional, setAlertaErroOperacional] = useState(null);
+  const [horarioPortariaPendente, setHorarioPortariaPendente] = useState(null);
+  const [justificativaHorarioPortaria, setJustificativaHorarioPortaria] = useState('');
+
+  const MENSAGEM_CONVIVENTE_FORA =
+    'Este convivente está marcado como FORA DA UNIDADE. O registro não será gravado. '
+    + 'Oriente-o a retornar à portaria e registrar a ENTRADA antes de qualquer outra rotina.';
 
   const ultimaLeituraRef = useRef({ codigo: '', horario: 0 });
   const ultimaLeituraConviventeRef = useRef({ conviventeId: '', horario: 0 });
@@ -405,29 +452,6 @@ export default function RotinaDiaria() {
     return exigeJustificativaRetornoRapidoRotina(resumoHoje, conviventeId, tipoRegistro);
   };
 
-  const obterProximaInteracaoPar = (conviventeId, grupo) => {
-    const ultima = resumoHoje[conviventeId]?.ultimas_interacoes?.[grupo]?.tipo_registro || '';
-
-    if (grupo === 'Toalha') {
-      return ultima === 'Retirada de Toalha' ? 'Entrega de Toalha' : 'Retirada de Toalha';
-    }
-
-    if (grupo === 'Cobertor') {
-      return ultima === 'Retirada de Cobertor' ? 'Entrega de Cobertor' : 'Retirada de Cobertor';
-    }
-
-    return null;
-  };
-
-  const obterProximaMovimentacaoBagageiro = (conviventeId) => {
-    const ultima = resumoHoje[conviventeId]?.ultimas_interacoes?.Bagageiro;
-    const movimentacao = String(ultima?.observacao || '').trim().toLowerCase();
-    if (movimentacao === 'entrada') {
-      return 'Saída';
-    }
-    return 'Entrada';
-  };
-
   const registrarInteracaoBagageiro = async (convivente, observacao) => {
     try {
       const status = await consultarTermoBagageiro(convivente.id);
@@ -485,29 +509,50 @@ export default function RotinaDiaria() {
     });
   };
 
+  const obterUltimoMovimentoPortaria = (conviventeId) => {
+    const resumo = resumoHoje[conviventeId];
+    if (!resumo?.ultimo_movimento || !resumo?.ultimo_movimento_data) return null;
+    return {
+      tipo_registro: resumo.ultimo_movimento,
+      data_registro: resumo.ultimo_movimento_data,
+    };
+  };
+
   const avisarConviventeFora = (convivente, tipoRegistro = 'Interação') => {
-    const mensagem = 'Convivente está fora da unidade. Registre uma entrada antes de qualquer interação.';
-
-    setFeedback({
-      tipo: 'Erro',
-      nome: mensagem,
-      horario: new Date().toLocaleTimeString('pt-BR', {
-        hour: '2-digit',
-        minute: '2-digit'
-      })
+    setBloqueioConviventeFora({
+      convivente,
+      tipoRegistro,
     });
-
-    setTimeout(() => {
-      setFeedback(null);
-    }, 3200);
 
     adicionarHistorico({
       convivente,
       tipo: tipoRegistro,
       status: 'Erro',
-      mensagem
+      mensagem: MENSAGEM_CONVIVENTE_FORA,
     });
   };
+
+  const exibirAlertaErroOperacional = ({
+    variant,
+    mensagem,
+    convivente = null,
+    tipoRegistro = null,
+  }) => {
+    setAlertaErroOperacional({
+      variant,
+      mensagem,
+      convivente,
+      tipoRegistro,
+    });
+  };
+
+  const mensagemIndicaConviventeFora = (mensagem) => (
+    typeof mensagem === 'string'
+    && (
+      mensagem.toLowerCase().includes('fora da unidade')
+      || mensagem.toLowerCase().includes('registre uma entrada')
+    )
+  );
 
   const solicitarRegistroInteracao = (convivente) => {
     const opcao = OPCOES_INTERACAO_ROTINA.find(item => item.valor === interacaoSelecionada);
@@ -519,14 +564,14 @@ export default function RotinaDiaria() {
     }
 
     if (opcao.grupo === 'par') {
-      const tipoSugerido = obterProximaInteracaoPar(convivente.id, opcao.valor);
+      const tipoSugerido = obterProximaInteracaoPar(resumoHoje, convivente.id, opcao.valor);
       const ultima = resumoHoje[convivente.id]?.ultimas_interacoes?.[opcao.valor] || null;
       setInteracaoConfirmacao({ convivente, tipoRegistro: tipoSugerido, grupo: opcao.valor, ultima });
       return;
     }
 
     if (opcao.grupo === 'par_bagageiro') {
-      const movimentacao = obterProximaMovimentacaoBagageiro(convivente.id);
+      const movimentacao = obterProximaMovimentacaoBagageiro(resumoHoje, convivente.id);
       const ultima = resumoHoje[convivente.id]?.ultimas_interacoes?.Bagageiro || null;
       setInteracaoConfirmacao({
         convivente,
@@ -580,18 +625,10 @@ export default function RotinaDiaria() {
     if (!pacienteEncontrado) {
       const mensagem = `Código [${codigo}] não pertence a nenhum acolhido ativo.`;
 
-      setFeedback({
-        tipo: 'Erro',
-        nome: mensagem,
-        horario: new Date().toLocaleTimeString('pt-BR', {
-          hour: '2-digit',
-          minute: '2-digit'
-        })
+      exibirAlertaErroOperacional({
+        variant: 'leitura_invalida',
+        mensagem,
       });
-
-      setTimeout(() => {
-        setFeedback(null);
-      }, 3200);
 
       adicionarHistorico({
         convivente: null,
@@ -612,7 +649,11 @@ export default function RotinaDiaria() {
       }
 
       if (deveIgnorarLeituraConviventeRepetida(ultimaLeituraConviventeRef, pacienteEncontrado.id)) {
-        return;
+        const permiteRepetir = tipoBipagemAutomatica === 'interacao'
+          && interacaoSelecionadaPermiteLeituraRepetida(interacaoSelecionada);
+        if (!permiteRepetir) {
+          return;
+        }
       }
 
       if (tipoBipagemAutomatica === 'interacao') {
@@ -638,7 +679,10 @@ export default function RotinaDiaria() {
     && !refeicaoExtraPendente
     && !retornoRapidoPendente
     && !termoBagageiroModalAberto
-    && !bagageiroRegistroPendente;
+    && !bagageiroRegistroPendente
+    && !bloqueioConviventeFora
+    && !alertaErroOperacional
+    && !horarioPortariaPendente;
 
   useLeitorUsbGlobal({
     ativo: leitorUsbAtivo,
@@ -757,12 +801,18 @@ export default function RotinaDiaria() {
     if (TIPOS_ROTINA_REFEICOES.includes(tipoRegistro)) {
       const erroHorario = validarHorarioRefeicaoOperacional(tipoRegistro);
       if (erroHorario) {
-        setFeedback({
-          tipo: 'Erro',
-          nome: erroHorario,
-          horario: horarioFeedbackAgora(),
+        exibirAlertaErroOperacional({
+          variant: 'refeicao_horario',
+          mensagem: erroHorario,
+          convivente,
+          tipoRegistro,
         });
-        setTimeout(() => setFeedback(null), 5000);
+        adicionarHistorico({
+          convivente,
+          tipo: tipoRegistro,
+          status: 'Erro',
+          mensagem: erroHorario,
+        });
         return;
       }
     }
@@ -795,6 +845,46 @@ export default function RotinaDiaria() {
       return;
     }
 
+    if (
+      (tipoRegistro === 'Entrada' || tipoRegistro === 'Saída') &&
+      !opcoes.ignorarChecagemHorarioPortaria
+    ) {
+      const validacaoHorario = validarHorarioPortaria({
+        tipoRegistro,
+        convivente,
+        ultimoMovimento: obterUltimoMovimentoPortaria(conviventeId),
+        justificativaHorario: opcoes.justificativaHorarioPortaria || '',
+      });
+
+      if (validacaoHorario?.bloqueado) {
+        if (validacaoHorario.exigeJustificativa) {
+          setHorarioPortariaPendente({
+            conviventeId,
+            tipoRegistro,
+            convivente,
+            mensagem: validacaoHorario.mensagem,
+            limiteHorario: validacaoHorario.limiteHorario,
+          });
+          setJustificativaHorarioPortaria('');
+        } else {
+          exibirAlertaErroOperacional({
+            variant: 'portaria_horario',
+            mensagem: validacaoHorario.mensagem,
+            convivente,
+            tipoRegistro,
+          });
+          adicionarHistorico({
+            convivente,
+            tipo: tipoRegistro,
+            status: 'Erro',
+            mensagem: validacaoHorario.mensagem,
+          });
+        }
+        setProcessandoAcao(null);
+        return;
+      }
+    }
+
     try {
       const payload = {
         convivente_id: conviventeId,
@@ -807,6 +897,10 @@ export default function RotinaDiaria() {
 
       if (opcoes.justificativaRetornoRapido) {
         payload.justificativa_retorno_rapido = opcoes.justificativaRetornoRapido;
+      }
+
+      if (opcoes.justificativaHorarioPortaria) {
+        payload.justificativa_horario_portaria = opcoes.justificativaHorarioPortaria;
       }
 
       if (opcoes.confirmarRefeicaoExtra) {
@@ -915,7 +1009,10 @@ export default function RotinaDiaria() {
       setPacienteEscaneado(null);
       setRetornoRapidoPendente(null);
       setRefeicaoExtraPendente(null);
+      setHorarioPortariaPendente(null);
       setJustificativaRetornoRapido('');
+      setJustificativaHorarioPortaria('');
+      ultimaLeituraConviventeRef.current = { conviventeId: '', horario: 0 };
 
       const nome = convivente?.nome_social || convivente?.nome_completo || 'Acolhido';
 
@@ -961,6 +1058,57 @@ export default function RotinaDiaria() {
           convivente
         });
         setJustificativaRetornoRapido('');
+        return;
+      }
+
+      if (mensagemIndicaConviventeFora(mensagem)) {
+        avisarConviventeFora(convivente, tipoRegistro);
+        return;
+      }
+
+      if (
+        !opcoes.ignorarChecagemHorarioPortaria &&
+        mensagemIndicaJustificativaHorarioPortaria(mensagem)
+      ) {
+        setHorarioPortariaPendente({
+          conviventeId,
+          tipoRegistro,
+          convivente,
+          mensagem,
+        });
+        setJustificativaHorarioPortaria('');
+        return;
+      }
+
+      if (mensagemIndicaHorarioRefeicaoForaJanela(mensagem)) {
+        exibirAlertaErroOperacional({
+          variant: 'refeicao_horario',
+          mensagem,
+          convivente,
+          tipoRegistro,
+        });
+        adicionarHistorico({
+          convivente,
+          tipo: tipoRegistro,
+          status: 'Erro',
+          mensagem,
+        });
+        return;
+      }
+
+      if (mensagemIndicaPortariaBloqueadaSemJustificativa(mensagem)) {
+        exibirAlertaErroOperacional({
+          variant: 'portaria_horario',
+          mensagem,
+          convivente,
+          tipoRegistro,
+        });
+        adicionarHistorico({
+          convivente,
+          tipo: tipoRegistro,
+          status: 'Erro',
+          mensagem,
+        });
         return;
       }
 
@@ -1013,6 +1161,31 @@ export default function RotinaDiaria() {
         justificativaRetornoRapido: justificativa,
         ignorarChecagemRetornoRapido: true
       }
+    );
+  };
+
+  const handleConfirmarHorarioPortaria = () => {
+    const justificativa = justificativaHorarioPortaria.trim();
+
+    if (justificativa.length < MIN_CARACTERES_JUSTIFICATIVA_HORARIO) {
+      setFeedback({
+        tipo: 'Erro',
+        nome: `Informe uma justificativa com no mínimo ${MIN_CARACTERES_JUSTIFICATIVA_HORARIO} caracteres.`,
+        horario: horarioFeedbackAgora(),
+      });
+      return;
+    }
+
+    if (!horarioPortariaPendente) return;
+
+    handleRegistrar(
+      horarioPortariaPendente.conviventeId,
+      horarioPortariaPendente.tipoRegistro,
+      horarioPortariaPendente.convivente,
+      {
+        justificativaHorarioPortaria: justificativa,
+        ignorarChecagemHorarioPortaria: true,
+      },
     );
   };
 
@@ -1523,11 +1696,13 @@ export default function RotinaDiaria() {
 
                         <button
                           onClick={() => solicitarRegistroInteracao(c)}
-                          disabled={isFora || processandoAcao === `${c.id}-${interacaoSelecionada}`}
+                          disabled={isFora || Boolean(processandoAcao?.startsWith(`${c.id}-`))}
                           className={`min-h-11 md:min-h-0 px-3 py-2 md:py-1.5 rounded-md text-xs font-bold transition-all shadow-sm flex items-center justify-center gap-1.5 md:min-w-[90px]
                             ${isFora ? 'bg-gray-100 text-gray-400 cursor-not-allowed opacity-60' : 'bg-blue-500 hover:bg-blue-600 text-white active:scale-95'}`}
                         >
-                          <span className="text-[11px] sm:text-xs">Interação</span>
+                          <span className="text-[11px] sm:text-xs">
+                            {obterRotuloBotaoInteracao(resumoHoje, c.id, interacaoSelecionada)}
+                          </span>
                         </button>
 
                       </div>
@@ -1732,7 +1907,7 @@ export default function RotinaDiaria() {
                       className={`w-full py-3 rounded-xl font-bold transition-all flex justify-center items-center gap-2 text-sm shadow-md
                         ${isFora ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : 'bg-blue-500 hover:bg-blue-600 text-white'}`}
                     >
-                      Registrar interação selecionada
+                      {obterRotuloBotaoInteracao(resumoHoje, pacienteEscaneado.id, interacaoSelecionada)}
                     </button>
                   </div>
                 </div>
@@ -1742,11 +1917,119 @@ export default function RotinaDiaria() {
         );
       })()}
 
-      {interacaoConfirmacao && (
+      {alertaErroOperacional && (() => {
+        const apresentacao = VARIANTES_ALERTA_ERRO_OPERACIONAL[alertaErroOperacional.variant]
+          || VARIANTES_ALERTA_ERRO_OPERACIONAL.leitura_invalida;
+        const nomeConvivente = (
+          alertaErroOperacional.convivente?.nome_social
+          || alertaErroOperacional.convivente?.nome_completo
+        );
+
+        return (
+        <div className="carecore-modal-overlay fixed inset-0 z-[60] flex items-center justify-center bg-gray-900/70 p-4 backdrop-blur-sm">
+          <div className={`carecore-modal-panel w-full max-w-lg overflow-hidden rounded-2xl border-4 ${apresentacao.borderClass} bg-white shadow-2xl`}>
+            <div className={`${apresentacao.headerClass} px-5 py-4 text-white`}>
+              <p className="text-[10px] font-black uppercase tracking-widest text-white/80">
+                {apresentacao.subtitulo}
+              </p>
+              <h2 className="mt-1 text-xl font-black leading-tight">
+                {apresentacao.titulo}
+              </h2>
+            </div>
+
+            <div className="space-y-4 p-5">
+              {nomeConvivente && (
+                <p className="text-base font-bold leading-relaxed text-gray-900">
+                  {(nomeConvivente).toUpperCase()}
+                </p>
+              )}
+
+              <div className={`rounded-xl border-2 p-4 text-sm font-semibold leading-relaxed ${
+                alertaErroOperacional.variant === 'leitura_invalida'
+                  ? 'border-red-200 bg-red-50 text-red-900'
+                  : alertaErroOperacional.variant === 'refeicao_horario'
+                    ? 'border-amber-200 bg-amber-50 text-amber-950'
+                    : 'border-purple-200 bg-purple-50 text-purple-950'
+              }`}>
+                {alertaErroOperacional.mensagem}
+              </div>
+
+              {alertaErroOperacional.tipoRegistro && (
+                <p className="text-xs font-bold uppercase tracking-wide text-gray-500">
+                  Tentativa bloqueada: {alertaErroOperacional.tipoRegistro}
+                </p>
+              )}
+
+              <button
+                type="button"
+                onClick={() => setAlertaErroOperacional(null)}
+                className={`w-full rounded-xl py-3 text-sm font-black text-white shadow-md ${apresentacao.buttonClass}`}
+              >
+                Entendi — liberar leitura
+              </button>
+            </div>
+          </div>
+        </div>
+        );
+      })()}
+
+      {bloqueioConviventeFora && (
+        <div className="carecore-modal-overlay fixed inset-0 z-[60] flex items-center justify-center bg-gray-900/70 p-4 backdrop-blur-sm">
+          <div className="carecore-modal-panel w-full max-w-lg overflow-hidden rounded-2xl border-4 border-orange-500 bg-white shadow-2xl">
+            <div className="bg-orange-600 px-5 py-4 text-white">
+              <p className="text-[10px] font-black uppercase tracking-widest text-orange-100">
+                Registro bloqueado
+              </p>
+              <h2 className="mt-1 text-xl font-black leading-tight">
+                Convivente fora da unidade
+              </h2>
+            </div>
+
+            <div className="space-y-4 p-5">
+              <p className="text-base font-bold leading-relaxed text-orange-950">
+                {(bloqueioConviventeFora.convivente?.nome_social
+                  || bloqueioConviventeFora.convivente?.nome_completo
+                  || 'Este convivente').toUpperCase()}
+                {' '}está marcado como <span className="underline">FORA DA UNIDADE</span>.
+              </p>
+
+              <div className="rounded-xl border-2 border-orange-200 bg-orange-50 p-4 text-sm font-semibold leading-relaxed text-orange-900">
+                {MENSAGEM_CONVIVENTE_FORA}
+              </div>
+
+              {bloqueioConviventeFora.tipoRegistro && (
+                <p className="text-xs font-bold uppercase tracking-wide text-gray-500">
+                  Tentativa bloqueada: {bloqueioConviventeFora.tipoRegistro}
+                </p>
+              )}
+
+              <button
+                type="button"
+                onClick={() => setBloqueioConviventeFora(null)}
+                className="w-full rounded-xl bg-orange-600 py-3 text-sm font-black text-white shadow-md hover:bg-orange-700"
+              >
+                Entendi — não registrar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {interacaoConfirmacao && (() => {
+        const apresentacao = obterApresentacaoInteracaoEnxoval({
+          tipoRegistro: interacaoConfirmacao.tipoRegistro,
+          grupo: interacaoConfirmacao.grupo,
+          observacaoBagageiro: interacaoConfirmacao.observacao,
+        });
+        const destaque = montarDestaqueInteracaoEnxoval(interacaoConfirmacao.convivente, apresentacao);
+        const headerClass = apresentacao?.headerClass || 'bg-blue-600';
+        const tituloModal = apresentacao?.tituloModal || 'Confirmar interação';
+
+        return (
         <div className="carecore-modal-overlay fixed inset-0 bg-gray-900/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
           <div className="carecore-modal-panel bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden max-h-[calc(100vh-2rem)] flex flex-col">
-            <div className="bg-blue-600 p-5 flex justify-between items-center gap-3 text-white">
-              <h2 className="text-lg font-bold">Confirmar interação</h2>
+            <div className={`${headerClass} p-5 flex justify-between items-center gap-3 text-white`}>
+              <h2 className="text-lg font-bold">{tituloModal}</h2>
               <button
                 onClick={() => setInteracaoConfirmacao(null)}
                 className="text-white/80 hover:text-white text-xl"
@@ -1756,6 +2039,21 @@ export default function RotinaDiaria() {
             </div>
 
             <div className="min-h-0 overflow-y-auto p-4 space-y-4 sm:p-6">
+              {destaque ? (
+                <>
+                  <p className={`rounded-2xl border-2 p-4 text-center text-lg font-black leading-snug ${apresentacao.boxClass}`}>
+                    {destaque}
+                  </p>
+                  <p className="text-center text-sm font-bold text-gray-600">
+                    {apresentacao.instrucao}
+                  </p>
+                </>
+              ) : (
+                <p className="rounded-xl bg-blue-50 border border-blue-100 p-3 text-sm font-black text-blue-800">
+                  Vou registrar: {interacaoConfirmacao.rotuloConfirmacao || interacaoConfirmacao.tipoRegistro}. Confirma?
+                </p>
+              )}
+
               <p className="text-sm text-gray-700 leading-relaxed">
                 {interacaoConfirmacao.ultima
                   ? interacaoConfirmacao.grupo === 'Bagageiro'
@@ -1764,9 +2062,6 @@ export default function RotinaDiaria() {
                   : interacaoConfirmacao.grupo === 'Bagageiro'
                     ? 'Não há movimentação de bagagem registrada hoje.'
                     : `Não há movimentação anterior de ${interacaoConfirmacao.grupo} hoje.`}
-              </p>
-              <p className="rounded-xl bg-blue-50 border border-blue-100 p-3 text-sm font-black text-blue-800">
-                Vou registrar: {interacaoConfirmacao.rotuloConfirmacao || interacaoConfirmacao.tipoRegistro}. Confirma?
               </p>
 
               <AvisoCarteirinhaProvisoria
@@ -1793,15 +2088,16 @@ export default function RotinaDiaria() {
                     }
                     handleRegistrar(convivente.id, tipoRegistro, convivente);
                   }}
-                  className="px-4 py-2 rounded-lg text-sm font-bold bg-blue-600 text-white hover:bg-blue-700 shadow-sm"
+                  className={`px-4 py-2 rounded-lg text-sm font-bold text-white shadow-sm ${apresentacao?.isEntrega === false ? 'bg-orange-600 hover:bg-orange-700' : apresentacao?.isEntrega === true ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-blue-600 hover:bg-blue-700'}`}
                 >
-                  Confirmar
+                  OK — confirmar
                 </button>
               </div>
             </div>
           </div>
         </div>
-      )}
+        );
+      })()}
 
       {refeicaoExtraPendente && (
         <div className="carecore-modal-overlay fixed inset-0 bg-gray-900/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
@@ -1917,6 +2213,66 @@ export default function RotinaDiaria() {
                   className="px-4 py-2 rounded-lg text-sm font-bold bg-brand text-white hover:bg-brandDark shadow-sm disabled:opacity-50"
                 >
                   Registrar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {horarioPortariaPendente && (
+        <div className="carecore-modal-overlay fixed inset-0 bg-gray-900/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+          <div className="carecore-modal-panel bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden max-h-[calc(100vh-2rem)] flex flex-col">
+            <div className="bg-purple-700 p-5 flex justify-between items-center gap-3 text-white">
+              <h2 className="text-lg font-bold">Horário fora do padrão</h2>
+              <button
+                onClick={() => {
+                  setHorarioPortariaPendente(null);
+                  setJustificativaHorarioPortaria('');
+                }}
+                className="text-white/80 hover:text-white text-xl"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="min-h-0 overflow-y-auto p-4 space-y-4 sm:p-6">
+              <p className="text-sm text-gray-700 leading-relaxed">
+                {horarioPortariaPendente.mensagem}
+              </p>
+
+              <textarea
+                value={justificativaHorarioPortaria}
+                onChange={(e) => setJustificativaHorarioPortaria(e.target.value)}
+                rows={4}
+                className="w-full border border-gray-300 rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-purple-400"
+                placeholder={`Justificativa operacional (mínimo ${MIN_CARACTERES_JUSTIFICATIVA_HORARIO} caracteres)...`}
+                autoFocus
+              />
+
+              <p className="text-xs text-gray-500">
+                {justificativaHorarioPortaria.trim().length}/{MIN_CARACTERES_JUSTIFICATIVA_HORARIO} caracteres
+              </p>
+
+              <PainelOperadorRotina />
+
+              <div className="grid grid-cols-1 gap-2 pt-2 sm:flex sm:justify-end sm:gap-3">
+                <button
+                  onClick={() => {
+                    setHorarioPortariaPendente(null);
+                    setJustificativaHorarioPortaria('');
+                  }}
+                  className="px-4 py-2 rounded-lg text-sm font-bold bg-gray-100 text-gray-600 hover:bg-gray-200"
+                >
+                  Cancelar
+                </button>
+
+                <button
+                  onClick={handleConfirmarHorarioPortaria}
+                  disabled={justificativaHorarioPortaria.trim().length < MIN_CARACTERES_JUSTIFICATIVA_HORARIO}
+                  className="px-4 py-2 rounded-lg text-sm font-bold bg-purple-700 text-white hover:bg-purple-800 shadow-sm disabled:opacity-50"
+                >
+                  Confirmar {horarioPortariaPendente.tipoRegistro || 'movimento'}
                 </button>
               </div>
             </div>

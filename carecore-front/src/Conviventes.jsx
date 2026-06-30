@@ -19,6 +19,7 @@ import ProntuarioSensiveis from './components/conviventes/ProntuarioSensiveis';
 import ProntuarioSocial from './components/conviventes/ProntuarioSocial';
 import { AppShell, MainShell, PageHeader, ScrollArea } from './components/PremiumUI';
 import {
+  corrigirDataInclusaoNoFormulario,
   criarEstadoInicialConvivente,
   formatarDadosConviventeParaTela,
   formatarNumeroNIS,
@@ -140,6 +141,7 @@ export default function Conviventes() {
     podeEditarAcomodacao,
   } = usePermissoesProntuario({
     perfilUsuario,
+    usuario: usuarioPayload,
     idUsuarioLogado,
     editandoId,
     tecnicoId: formData.tecnico_id,
@@ -336,12 +338,15 @@ export default function Conviventes() {
 
     const conviventeFormatado = formatarDadosConviventeParaTela(prontuario);
     const dadosEditados = {};
-    Object.keys(estadoInicial).forEach(key => {
-      dadosEditados[key] = conviventeFormatado[key] !== null && conviventeFormatado[key] !== undefined ? conviventeFormatado[key] : '';
+    Object.keys(estadoInicial).forEach((key) => {
+      dadosEditados[key] = conviventeFormatado[key] !== null && conviventeFormatado[key] !== undefined
+        ? conviventeFormatado[key]
+        : '';
     });
-    setFormData(dadosEditados);
+    const dadosCorrigidos = corrigirDataInclusaoNoFormulario(dadosEditados);
+    setFormData(dadosCorrigidos);
     snapshotSalvoRef.current = JSON.stringify(
-      montarPayloadProntuario(dadosEditados, prontuario.status || 'Ativo'),
+      montarPayloadProntuario(dadosCorrigidos, prontuario.status || 'Ativo'),
     );
     setMostrarSenhaEmail(false);
     setMostrarSenhaGovbr(false);
@@ -546,7 +551,11 @@ export default function Conviventes() {
 
     try {
       setSalvandoProntuario(true);
-      const payload = montarPayloadProntuario(formData, statusOriginal);
+      const formDataCorrigido = corrigirDataInclusaoNoFormulario(formData);
+      if (formDataCorrigido.data_inclusao !== formData.data_inclusao) {
+        setFormData(formDataCorrigido);
+      }
+      const payload = montarPayloadProntuario(formDataCorrigido, statusOriginal);
       let conviventeSalvo = null;
       if (editandoId) {
         conviventeSalvo = await atualizarConviventeProntuario(editandoId, payload);
@@ -559,6 +568,33 @@ export default function Conviventes() {
       }
 
       snapshotSalvoRef.current = JSON.stringify(payload);
+
+      if (conviventeSalvo?.data_inclusao) {
+        const dataInclusaoServidor = String(conviventeSalvo.data_inclusao).split('T')[0];
+        const dataInclusaoForm = formDataCorrigido.data_inclusao
+          ? String(formDataCorrigido.data_inclusao).split('T')[0]
+          : '';
+        const dataPrimeiraInteracao = conviventeSalvo.data_primeira_interacao
+          ? String(conviventeSalvo.data_primeira_interacao).split('T')[0]
+          : formDataCorrigido.data_primeira_interacao || '';
+
+        if (
+          dataInclusaoServidor !== dataInclusaoForm
+          || (dataPrimeiraInteracao && formDataCorrigido.data_primeira_interacao !== dataPrimeiraInteracao)
+        ) {
+          setFormData((prev) => {
+            const atualizado = {
+              ...prev,
+              data_inclusao: dataInclusaoServidor,
+              data_primeira_interacao: dataPrimeiraInteracao || prev.data_primeira_interacao,
+            };
+            snapshotSalvoRef.current = JSON.stringify(
+              montarPayloadProntuario(atualizado, conviventeSalvo.status || statusOriginal),
+            );
+            return atualizado;
+          });
+        }
+      }
 
       if (conviventeSalvo?.status) {
         setStatusOriginal(conviventeSalvo.status);
@@ -595,6 +631,27 @@ export default function Conviventes() {
     } finally {
       setSalvandoProntuario(false);
     }
+  };
+
+  const handleImpressaoCarteirinhaOficial = (conviventeId, resultado) => {
+    const total = resultado?.impressoes_carteirinha_oficiais;
+    if (typeof total !== 'number') return;
+
+    setFormData((prev) => (
+      prev.id === conviventeId || editandoId === conviventeId
+        ? { ...prev, impressoes_carteirinha_oficiais: total }
+        : prev
+    ));
+    setConviventes((prev) => prev.map((item) => (
+      item.id === conviventeId
+        ? { ...item, impressoes_carteirinha_oficiais: total }
+        : item
+    )));
+    setCarteirinhaAberta((prev) => (
+      prev?.id === conviventeId
+        ? { ...prev, impressoes_carteirinha_oficiais: total }
+        : prev
+    ));
   };
 
   const handleSalvar = async (e) => {
@@ -643,6 +700,7 @@ export default function Conviventes() {
 
     const payloadAtual = JSON.stringify(montarPayloadProntuario(formData, statusOriginal));
     if (editandoId && snapshotSalvoRef.current === payloadAtual) {
+      setErro('');
       setAbaAtual(novaAba);
       return;
     }
@@ -653,13 +711,10 @@ export default function Conviventes() {
       silencioso: true,
     });
 
-    if (!conviventeSalvo) {
+    if (conviventeSalvo) {
+      setErro('');
+    } else {
       setAbaAtual(novaAba);
-      setErro((mensagemAtual) => (
-        mensagemAtual
-          ? `${mensagemAtual} Você pode continuar navegando; clique em "Atualizar prontuário" quando corrigir.`
-          : mensagemAtual
-      ));
     }
   };
 
@@ -984,6 +1039,7 @@ export default function Conviventes() {
         listaTecnicos={listaTecnicos}
         fotoCarteirinha={fotoCarteirinha}
         identidadeRelatorio={identidadeRelatorio}
+        onImpresso={handleImpressaoCarteirinhaOficial}
       />
 
       <ModalCamera

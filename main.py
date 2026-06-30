@@ -21,10 +21,17 @@ from logging_config import configurar_logging_carecore
 from manutencao_usuario import provisionar_usuario_manutencao
 from observability import configurar_observabilidade_carecore
 from presenca_operacional import PRESENCA_REGRAS_BUILD
+from revisao_texto import gemini_configurado
+from security import (
+    caminho_api_permitido_para_oficineiro,
+    extrair_payload_autorizacao_bearer,
+    usuario_eh_oficineiro,
+)
 
 from routers import usuarios
 from routers import auth
 from routers import quartos
+from routers import carteirinha
 from routers import conviventes
 from routers import avisos
 from routers import arquivos
@@ -38,6 +45,7 @@ from routers import cobrancas
 from routers import acompanhamentos
 from routers import atividades
 from routers import atividades_sisa
+from routers import texto
 
 
 configurar_logging_carecore()
@@ -156,6 +164,11 @@ async def lifespan(app: FastAPI):
                 "ALTER TABLE usuarios ADD COLUMN organizacao_id VARCHAR",
                 "ALTER TABLE usuarios ADD COLUMN is_global BOOLEAN DEFAULT 0",
                 "ALTER TABLE usuarios ADD COLUMN token_version INTEGER DEFAULT 0 NOT NULL",
+                "ALTER TABLE ocorrencias_conviventes ADD COLUMN motivo_original TEXT",
+                "ALTER TABLE ocorrencias_conviventes ADD COLUMN descricao_original TEXT",
+                "ALTER TABLE interacoes_ocorrencias ADD COLUMN mensagem_original TEXT",
+                "ALTER TABLE avisos ADD COLUMN titulo_original TEXT",
+                "ALTER TABLE avisos ADD COLUMN mensagem_original TEXT",
             ):
                 with contextlib.suppress(Exception):
                     await conn.execute(text(ddl))
@@ -261,6 +274,27 @@ app = FastAPI(
 # =====================================================================
 
 app.middleware("http")(middleware_licenciamento)
+
+
+@app.middleware("http")
+async def rbac_oficineiro_middleware(request: Request, call_next):
+    path = request.url.path
+    if not path.startswith("/api/"):
+        return await call_next(request)
+
+    payload = extrair_payload_autorizacao_bearer(request.headers.get("authorization"))
+    if not payload or not usuario_eh_oficineiro(payload):
+        return await call_next(request)
+
+    if caminho_api_permitido_para_oficineiro(path, request.method):
+        return await call_next(request)
+
+    return JSONResponse(
+        status_code=403,
+        content={
+            "detail": "Perfil Oficineiro(a) tem acesso apenas ao módulo de Atividades.",
+        },
+    )
 
 
 # =====================================================================
@@ -392,6 +426,8 @@ async def healthcheck():
         "service": "CARECORE+ API",
         "environment": APP_ENV,
         "presenca_regras": PRESENCA_REGRAS_BUILD,
+        "cadastro_datas": "ajuste-automatico-v1",
+        "revisao_texto_configurada": gemini_configurado(),
     }
 
 
@@ -436,6 +472,7 @@ app.include_router(auth.router)
 app.include_router(passkeys.router)
 app.include_router(arquivos.router)
 app.include_router(quartos.router)
+app.include_router(carteirinha.router)
 app.include_router(conviventes.router)
 app.include_router(rotina_operacional.router)
 app.include_router(avisos.router)
@@ -448,4 +485,5 @@ app.include_router(usuarios.router)
 app.include_router(acompanhamentos.router)
 app.include_router(atividades_sisa.router)
 app.include_router(atividades.router)
+app.include_router(texto.router)
 

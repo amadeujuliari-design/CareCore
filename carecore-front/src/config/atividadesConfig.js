@@ -24,7 +24,7 @@ export const DIAS_SEMANA_ATIVIDADE = [
   { valor: 6, rotulo: 'Dom' },
 ];
 
-export const PONTOS_POR_PRESENCA_ATIVIDADE = 10;
+export const PONTOS_POR_PRESENCA_ATIVIDADE = 1;
 
 export function mesReferenciaAtual() {
   const agora = new Date();
@@ -94,14 +94,7 @@ export function criarFormAtividadeInicial() {
 }
 
 /** Somente leitura para Global puro — Manutenção e Gestor operam no projeto. */
-export function usuarioSomenteLeituraAtividades(usuario, isGlobal) {
-  if (!isGlobal) return false;
-  if (usuario?.is_manutencao === true) return false;
-  if (usuario?.is_master === true) return false;
-  const perfil = usuario?.perfil_acesso;
-  if (perfil === 'Gestor' || perfil === 'Gestão') return false;
-  return true;
-}
+export { usuarioSomenteLeituraAtividades } from '../utils/rbacUtils';
 
 /** Espelho do catálogo padrão SISA (Relatório Resumo de Atividades). */
 export const SISA_CATALOGO_TIPOS_PADRAO = [

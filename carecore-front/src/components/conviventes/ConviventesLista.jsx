@@ -119,6 +119,7 @@ export default function ConviventesLista({
                   <div className="mt-3 grid gap-2 rounded-2xl bg-white px-3 py-2 text-xs text-slate-600">
                     <p><strong>CPF:</strong> {c.cpf ? formatarCPF(c.cpf) : '-'}</p>
                     <p><strong>Acomodação:</strong> {obterLocalizacaoLeito(c.leito_id)}</p>
+                    <p><strong>Carteirinhas impressas:</strong> {Number(c.impressoes_carteirinha_oficiais || 0)}</p>
                   </div>
 
                   <button
@@ -140,6 +141,7 @@ export default function ConviventesLista({
                   <th className="p-4 font-medium">Nome Completo / Social</th>
                   <th className="p-4 font-medium">CPF</th>
                   <th className="p-4 font-medium">Acomodação</th>
+                  <th className="p-4 font-medium">Carteirinhas</th>
                   <th className="p-4 font-medium">Status</th>
                   <th className="p-4 font-medium text-right">Ações</th>
                 </tr>
@@ -164,6 +166,9 @@ export default function ConviventesLista({
                       </td>
                       <td className="p-4 text-gray-600 font-mono text-sm">{c.cpf ? formatarCPF(c.cpf) : '-'}</td>
                       <td className="p-4">{obterLocalizacaoLeito(c.leito_id)}</td>
+                      <td className="p-4 text-gray-600 text-sm font-semibold">
+                        {Number(c.impressoes_carteirinha_oficiais || 0)}
+                      </td>
                       <td className="p-4">
                         <span className={`px-3 py-1.5 rounded-lg text-xs font-medium uppercase tracking-wider ${statusConviventeClasse(c.status)}`}>
                           {c.status}

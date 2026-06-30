@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import CarteirinhaCard from './CarteirinhaCard';
+import LogImpressoesCarteirinha from './LogImpressoesCarteirinha';
 import { imprimirCarteirinhasLote } from '../utils/carteirinhaPrint';
 import { filtrarOrdenarConviventesPorBusca } from '../utils/conviventeBuscaUtils';
 
@@ -9,11 +10,18 @@ const LAYOUTS = {
   '8': { porFolha: 8, colunas: 4, orientacao: 'landscape', escala: 0.9, label: '8 por folha · A4 paisagem' },
 };
 
-export default function CarteirinhasLote({ conviventes = [], quartos = [], tecnicos = [], identidadeRelatorio = null }) {
+export default function CarteirinhasLote({
+  conviventes = [],
+  quartos = [],
+  tecnicos = [],
+  identidadeRelatorio = null,
+  token = null,
+}) {
   const [layoutKey, setLayoutKey] = useState('4');
   const [selecionados, setSelecionados] = useState(() => new Set());
   const [guiasCorte, setGuiasCorte] = useState(true);
   const [busca, setBusca] = useState('');
+  const [recarregarLogChave, setRecarregarLogChave] = useState(0);
 
   const layout = LAYOUTS[layoutKey] || LAYOUTS['6'];
 
@@ -68,6 +76,7 @@ export default function CarteirinhasLote({ conviventes = [], quartos = [], tecni
       guiasCorte,
       identidadeRelatorio,
     });
+    setRecarregarLogChave((valor) => valor + 1);
   };
 
   const escala = layout.escala;
@@ -247,6 +256,8 @@ export default function CarteirinhasLote({ conviventes = [], quartos = [], tecni
           )}
         </div>
       </div>
+
+      <LogImpressoesCarteirinha token={token} recarregarChave={recarregarLogChave} />
     </div>
   );
 }

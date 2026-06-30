@@ -28,6 +28,7 @@ import api, { limparSessaoLocal } from './services/api';
 import { API_ROOT } from './config/apiBase';
 import { carecoreVersaoRotulo } from './config/versao';
 import { MENU_ACOMPANHAMENTOS, MENU_CONVIVENTES } from './config/acompanhamentosConfig';
+import { usuarioEhOficineiro, normalizarPerfilRbac } from './utils/rbacUtils';
 import { decodificarPayloadJwt } from './utils/jwtUtils';
 import {
   DIREITOS_RESERVADOS_TITULO,
@@ -155,7 +156,12 @@ export default function Sidebar() {
     Tecnico: 'Técnico',
     Executivo: 'Global',
     Manutencao: 'Manutenção',
-  }[perfilUsuario] || perfilUsuario;
+  }[perfilUsuario] || normalizarPerfilRbac(perfilUsuario);
+
+  const ehOficineiro = usuarioEhOficineiro({
+    perfil_acesso: perfilNormalizado,
+    is_manutencao: isManutencao,
+  });
 
   const nomeExibicao = nomeExibicaoSidebar(nomeUsuario);
   const novaSenhaForte = senhaAtendePolitica(novaSenha);
@@ -279,7 +285,7 @@ export default function Sidebar() {
           path: '/atividades',
           icon: CalendarRange,
           label: 'Atividades',
-          perfis: ['Gestor', 'Técnico', 'Orientador', 'Administrativo', 'Global'],
+          perfis: ['Gestor', 'Técnico', 'Orientador', 'Administrativo', 'Global', 'Oficineiro(a)'],
           children: [
             {
               path: '/atividades',
@@ -513,6 +519,10 @@ export default function Sidebar() {
 
   const usuarioPodeVerItem = (item) => {
     if (isManutencao) return true;
+
+    if (ehOficineiro) {
+      return Boolean(item.path?.startsWith('/atividades'));
+    }
 
     const perfilPermitido = !item.perfis || item.perfis.includes(perfilNormalizado);
     const globalPermitido = !item.globalOnly || isGlobal;

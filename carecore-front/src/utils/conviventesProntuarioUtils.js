@@ -64,6 +64,7 @@ export function criarEstadoInicialConvivente() {
     status: 'Ativo',
     data_entrada: dataLocalISO(),
     data_inclusao: dataLocalISO(),
+    data_primeira_interacao: '',
     data_inativacao: '',
     data_nova_vinculacao: '',
     preferencial: false,
@@ -160,6 +161,10 @@ export function criarEstadoInicialConvivente() {
     pendencia_eleitoral_qual: '',
     egresso_artigo_motivo: '',
     egresso_ano: '',
+    portaria_excecao_motivo: '',
+    portaria_excecao_saida_ate: '17:00',
+    portaria_excecao_entrada_ate: '19:00',
+    impressoes_carteirinha_oficiais: 0,
     familiares: [],
     documentos_civis: [],
     substancias: [],
@@ -303,6 +308,9 @@ export function formatarDadosConviventeParaTela(convivente = {}) {
     numero_nis: convivente.numero_nis ? formatarNumeroNIS(convivente.numero_nis) : '',
     data_inicio_pia: convivente.data_inicio_pia ? String(convivente.data_inicio_pia).split('T')[0] : '',
     data_inclusao: convivente.data_inclusao ? String(convivente.data_inclusao).split('T')[0] : '',
+    data_primeira_interacao: convivente.data_primeira_interacao
+      ? String(convivente.data_primeira_interacao).split('T')[0]
+      : '',
     data_inativacao: convivente.data_inativacao ? String(convivente.data_inativacao).split('T')[0] : '',
     data_nova_vinculacao: convivente.data_nova_vinculacao ? String(convivente.data_nova_vinculacao).split('T')[0] : '',
     em_sao_paulo_desde: convivente.em_sao_paulo_desde ? String(convivente.em_sao_paulo_desde).split('T')[0] : '',
@@ -317,8 +325,62 @@ export function formatarDadosConviventeParaTela(convivente = {}) {
   };
 }
 
+const DATA_INCLUSAO_SUBSTITUTO_LEGADO = '2020-01-01';
+const DATA_INCLUSAO_PLACEHOLDER_LEGADO = '2000-01-01';
+
+function extrairDataISO(valor) {
+  if (!valor) return '';
+  return String(valor).split('T')[0];
+}
+
+function anoDataISO(dataISO) {
+  const ano = Number.parseInt(String(dataISO).slice(0, 4), 10);
+  return Number.isFinite(ano) ? ano : null;
+}
+
+export function dataInclusaoSuspeitaLegado(dataISO) {
+  const data = extrairDataISO(dataISO);
+  if (!data) return false;
+  if (data === DATA_INCLUSAO_PLACEHOLDER_LEGADO) return true;
+  const ano = anoDataISO(data);
+  return ano != null && ano < 1990;
+}
+
+export function normalizarDataInclusaoLegado(dataISO) {
+  return dataInclusaoSuspeitaLegado(dataISO) ? DATA_INCLUSAO_SUBSTITUTO_LEGADO : extrairDataISO(dataISO);
+}
+
+function compararDatasISO(a, b) {
+  const da = extrairDataISO(a);
+  const db = extrairDataISO(b);
+  if (!da || !db) return 0;
+  if (da === db) return 0;
+  return da < db ? -1 : 1;
+}
+
+export function corrigirDataInclusaoNoFormulario(formData) {
+  const primeiraBruta = extrairDataISO(formData.data_primeira_interacao);
+  const primeira = dataInclusaoSuspeitaLegado(primeiraBruta) ? '' : primeiraBruta;
+  const inclusao = normalizarDataInclusaoLegado(formData.data_inclusao);
+  const entrada = extrairDataISO(formData.data_entrada);
+  const vinculacao = inclusao || entrada;
+
+  let dataInclusaoCorrigida = inclusao || formData.data_inclusao;
+
+  if (primeira && vinculacao && compararDatasISO(vinculacao, primeira) > 0) {
+    dataInclusaoCorrigida = primeira;
+  }
+
+  if (extrairDataISO(dataInclusaoCorrigida) === extrairDataISO(formData.data_inclusao)) {
+    return formData;
+  }
+
+  return { ...formData, data_inclusao: dataInclusaoCorrigida };
+}
+
 export function montarPayloadProntuario(formData, statusOriginal) {
-  const payload = { ...formData };
+  const dadosCorrigidos = corrigirDataInclusaoNoFormulario(formData);
+  const payload = { ...dadosCorrigidos };
 
   if (payload.status !== statusOriginal) {
     payload.observacao_status = `[${payload.motivo_status.toUpperCase()}] - ${payload.relato_status}`;
@@ -327,6 +389,7 @@ export function montarPayloadProntuario(formData, statusOriginal) {
   delete payload.motivo_status;
   delete payload.relato_status;
   delete payload.foto_url;
+  delete payload.impressoes_carteirinha_oficiais;
 
   Object.keys(payload).forEach((key) => {
     if (payload[key] === '') payload[key] = null;
@@ -368,6 +431,7 @@ export function montarPayloadProntuario(formData, statusOriginal) {
   }
   delete payload.naturalidade_uf;
   delete payload.naturalidade_cidade;
+  delete payload.data_primeira_interacao;
 
   return payload;
 }

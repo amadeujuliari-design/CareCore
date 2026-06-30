@@ -23,8 +23,8 @@ function linhaTemPresenca(linha) {
 }
 
 export default function AtividadesGrade() {
-  const { isGlobal, usuario } = useAuth();
-  const somenteLeitura = usuarioSomenteLeituraAtividades(usuario, isGlobal);
+  const { usuario } = useAuth();
+  const somenteLeitura = usuarioSomenteLeituraAtividades(usuario);
   const [atividades, setAtividades] = useState([]);
   const [atividadeId, setAtividadeId] = useState('');
   const [mesReferencia, setMesReferencia] = useState(mesReferenciaAtual());

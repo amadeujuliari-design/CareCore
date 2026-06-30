@@ -74,6 +74,7 @@ PERFIL_TECNICO = "Técnico"
 PERFIL_ORIENTADOR = "Orientador"
 PERFIL_ADMINISTRATIVO = "Administrativo"
 PERFIL_CONSULTA = "Consulta"
+PERFIL_OFICINEIRO = "Oficineiro(a)"
 
 PERFIS_ACESSO_VALIDOS = {
     PERFIL_GESTOR,
@@ -83,6 +84,7 @@ PERFIS_ACESSO_VALIDOS = {
     PERFIL_ORIENTADOR,
     PERFIL_ADMINISTRATIVO,
     PERFIL_CONSULTA,
+    PERFIL_OFICINEIRO,
 }
 
 PERFIS_LEGADOS_MAPEAMENTO = {
@@ -92,7 +94,16 @@ PERFIS_LEGADOS_MAPEAMENTO = {
     "Tecnico": PERFIL_TECNICO,
     "Manutencao": PERFIL_MANUTENCAO,
     "Manutenção": PERFIL_MANUTENCAO,
+    "Oficineiro": PERFIL_OFICINEIRO,
 }
+
+PREFIXOS_API_PERMITIDOS_OFICINEIRO = (
+    "/api/atividades",
+    "/api/auth",
+    "/api/usuarios/me",
+    "/api/passkeys",
+    "/api/health",
+)
 
 
 # =====================================================================
@@ -475,7 +486,15 @@ def usuario_eh_gestor(usuario: dict) -> bool:
     )
 
 
+def usuario_pode_ver_texto_original(usuario: dict) -> bool:
+    """Somente Gestor e Manutenção veem o texto original antes da revisão por IA."""
+    return usuario_eh_gestor(usuario) or usuario_eh_manutencao(usuario)
+
+
 def usuario_eh_global_puro(usuario: dict) -> bool:
+    if usuario_eh_manutencao(usuario):
+        return False
+
     return bool(
         (
             usuario.get("is_global")
@@ -497,9 +516,41 @@ def bloquear_usuario_global_puro(usuario: dict) -> None:
         )
 
 
+def usuario_eh_oficineiro(usuario: dict | None) -> bool:
+    if not usuario or usuario_eh_manutencao(usuario):
+        return False
+    return usuario_tem_perfil(usuario, {PERFIL_OFICINEIRO})
+
+
+def caminho_api_permitido_para_oficineiro(path: str, method: str = "GET") -> bool:
+    for prefixo in PREFIXOS_API_PERMITIDOS_OFICINEIRO:
+        if path == prefixo or path.startswith(prefixo + "/"):
+            return True
+
+    if method.upper() == "GET" and path == "/api/usuarios":
+        return True
+
+    return False
+
+
+def extrair_payload_autorizacao_bearer(authorization: Optional[str]) -> Optional[dict]:
+    if not authorization or not authorization.lower().startswith("bearer "):
+        return None
+
+    token = authorization[7:].strip()
+    if not token:
+        return None
+
+    try:
+        return jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+    except jwt.PyJWTError:
+        return None
+
+
 def usuario_eh_tecnico_ou_superior(usuario: dict) -> bool:
     return bool(
         usuario_eh_gestor(usuario)
+        or usuario_eh_manutencao(usuario)
         or usuario_tem_perfil(
             usuario,
             {
@@ -563,7 +614,7 @@ def exigir_perfis(*perfis: str):
     async def dependencia(
         usuario: dict = Depends(get_usuario_logado),
     ) -> dict:
-        if usuario.get("is_master"):
+        if usuario.get("is_master") or usuario_eh_manutencao(usuario):
             return usuario
 
         if not usuario_tem_perfil(usuario, perfis):

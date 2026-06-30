@@ -31,19 +31,19 @@ export default function Quartos() {
   const [salvandoAlocacao, setSalvandoAlocacao] = useState(false);
 
   let perfilUsuario = '';
-  let usuarioMaster = false;
+  let usuarioToken = null;
 
   try {
     if (token) {
       const payload = decodificarPayloadJwt(token) || {};
       perfilUsuario = payload.perfil_acesso || '';
-      usuarioMaster = Boolean(payload.is_master);
+      usuarioToken = payload;
     }
   } catch (error) {
     console.error('Erro ao ler token no módulo de quartos', error);
   }
 
-  const podeGerenciarQuartos = usuarioPodeEditarAcomodacao(perfilUsuario, usuarioMaster);
+  const podeGerenciarQuartos = usuarioPodeEditarAcomodacao(perfilUsuario, false, usuarioToken);
   const podeAlocarLeitos = podeGerenciarQuartos;
   // Formulário de Quarto
   const [nome, setNome] = useState('');
@@ -378,6 +378,7 @@ useEffect(() => {
                         
                         <div className="grid grid-cols-2 2xl:grid-cols-3 gap-2.5">
                           {q.leitos?.map(l => {
+                            const ausenciaJustificada = l.convivente_status === 'Ausência justificada';
                             const ocupado = l.status === 'Ocupado';
 
                             return (
@@ -389,7 +390,9 @@ useEffect(() => {
                                 onMouseMove={(event) => atualizarTooltipLeito(event, l)}
                                 onMouseLeave={() => setTooltipLeito(null)}
                                 className={`group relative rounded-2xl border px-3 py-2.5 text-center transition-all min-h-[104px] ${podeAlocarLeitos ? 'cursor-pointer' : 'cursor-default'} ${
-                                  ocupado
+                                  ausenciaJustificada
+                                    ? 'bg-blue-50/90 border-blue-300 hover:bg-blue-100/90'
+                                    : ocupado
                                     ? 'bg-amber-50/80 border-amber-200 hover:bg-amber-100/80'
                                     : 'bg-white border-slate-200 hover:bg-slate-50'
                                 }`}
@@ -397,7 +400,9 @@ useEffect(() => {
                                 <div className="text-base mb-1">▣</div>
 
                                 <div className={`text-[12px] font-semibold leading-tight ${
-                                  ocupado
+                                  ausenciaJustificada
+                                    ? 'text-blue-800'
+                                    : ocupado
                                     ? 'text-amber-800'
                                     : 'text-emerald-700'
                                 }`}>
@@ -405,7 +410,9 @@ useEffect(() => {
                                 </div>
 
                                 {ocupado ? (
-                                  <div className="mt-1.5 border-t border-amber-200 pt-1.5">
+                                  <div className={`mt-1.5 border-t pt-1.5 ${
+                                    ausenciaJustificada ? 'border-blue-200' : 'border-amber-200'
+                                  }`}>
                                     <div className="text-[11px] font-semibold text-slate-800 truncate leading-tight">
                                       {l.convivente_nome || 'Ocupado'}
                                     </div>
@@ -413,6 +420,12 @@ useEffect(() => {
                                     <div className="text-[10px] font-semibold text-slate-500 truncate leading-tight">
                                       Pront. {l.numero_institucional ?? '--'}
                                     </div>
+
+                                    {ausenciaJustificada && (
+                                      <div className="text-[9px] font-bold uppercase tracking-wide text-blue-700 mt-1">
+                                        Ausência justificada
+                                      </div>
+                                    )}
                                   </div>
                                 ) : (
                                   <div className="text-[10px] uppercase tracking-wide mt-1 text-emerald-500 font-semibold">
@@ -669,6 +682,12 @@ useEffect(() => {
                   <span className="font-semibold text-slate-800">CPF:</span>{' '}
                   {tooltipLeito.leito.cpf || '--'}
                 </div>
+
+                {tooltipLeito.leito.convivente_status === 'Ausência justificada' && (
+                  <div className="mt-1 rounded-lg bg-blue-50 px-2 py-1 font-semibold text-blue-700">
+                    Ausência justificada — leito reservado
+                  </div>
+                )}
               </div>
             </div>
           )}

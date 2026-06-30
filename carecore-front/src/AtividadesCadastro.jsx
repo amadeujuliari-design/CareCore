@@ -76,8 +76,8 @@ function formDeAtividade(item) {
 }
 
 export default function AtividadesCadastro() {
-  const { isGlobal, usuario } = useAuth();
-  const somenteLeitura = usuarioSomenteLeituraAtividades(usuario, isGlobal);
+  const { usuario } = useAuth();
+  const somenteLeitura = usuarioSomenteLeituraAtividades(usuario);
   const [atividades, setAtividades] = useState([]);
   const [usuarios, setUsuarios] = useState([]);
   const [loading, setLoading] = useState(true);

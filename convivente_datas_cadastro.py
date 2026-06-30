@@ -3,8 +3,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 
-from fastapi import HTTPException
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models import (
@@ -18,6 +17,9 @@ from models import (
 
 STATUS_INATIVOS = frozenset({"Inativado", "Bloqueado", "Saída qualificada"})
 STATUS_VINCULACAO_ATIVA = frozenset({"Ativo", "Em acolhimento"})
+DATA_INCLUSAO_SUBSTITUTO_LEGADO = date(2020, 1, 1)
+DATA_INCLUSAO_PLACEHOLDER_LEGADO = date(2000, 1, 1)
+DATA_INCLUSAO_ANO_MINIMO_CONFIAVEL = 1990
 
 
 def _extrair_data(valor) -> date | None:
@@ -125,20 +127,232 @@ async def obter_data_primeira_interacao(
     return min(candidatos) if candidatos else None
 
 
-async def validar_data_inclusao_convivente(
+def data_inclusao_suspeita_legado(valor: date | None) -> bool:
+    """Datas placeholder/corrompidas de importação legada (ex.: 01/01/2000, ano 0206)."""
+    if valor is None:
+        return False
+    if valor == DATA_INCLUSAO_PLACEHOLDER_LEGADO:
+        return True
+    return valor.year < DATA_INCLUSAO_ANO_MINIMO_CONFIAVEL
+
+
+def normalizar_data_inclusao_legado(valor: date | None) -> date | None:
+    if data_inclusao_suspeita_legado(valor):
+        return DATA_INCLUSAO_SUBSTITUTO_LEGADO
+    return valor
+
+
+def primeira_interacao_operacional(valor: date | None) -> date | None:
+    """Ignora mínimos legados inválidos ao calcular vinculação pela 1ª interação."""
+    if valor is None or data_inclusao_suspeita_legado(valor):
+        return None
+    return valor
+
+
+def corrigir_data_inclusao_apos_primeira_interacao(
+    data_inclusao: date | None,
+    primeira_interacao: date | None,
+) -> date | None:
+    """Se a inclusão for posterior à 1ª interação, usa a data da interação."""
+    if not data_inclusao or not primeira_interacao:
+        return data_inclusao
+    if data_inclusao > primeira_interacao:
+        return primeira_interacao
+    return data_inclusao
+
+
+def data_vinculacao_efetiva_convivente(
+    data_inclusao: date | None,
+    data_entrada: date | None = None,
+) -> date | None:
+    return data_inclusao or data_entrada
+
+
+def resolver_data_inclusao_coerente(
+    data_inclusao: date | None,
+    data_entrada: date | None,
+    primeira_interacao: date | None,
+) -> date | None:
+    """Data de inclusão que deve persistir; None se já está coerente."""
+    if data_inclusao and data_inclusao_suspeita_legado(data_inclusao):
+        destino = DATA_INCLUSAO_SUBSTITUTO_LEGADO
+        return destino if data_inclusao != destino else None
+
+    primeira_util = primeira_interacao_operacional(primeira_interacao)
+    if not primeira_util:
+        return None
+
+    vinculacao = data_vinculacao_efetiva_convivente(data_inclusao, data_entrada)
+    if not vinculacao:
+        return None
+
+    corrigida = normalizar_data_inclusao_legado(
+        corrigir_data_inclusao_apos_primeira_interacao(vinculacao, primeira_util)
+    )
+    if corrigida is None or data_inclusao == corrigida:
+        return None
+    return corrigida
+
+
+async def _listar_conviventes_datas_cadastro(
+    db: AsyncSession,
+    *,
+    instituicao_id: str | None = None,
+) -> list[dict]:
+    """Consulta mínima — compatível com schema online sem migrations pendentes."""
+    sql = """
+        SELECT id, instituicao_id, numero_institucional, nome_completo, status,
+               data_inclusao, data_entrada
+        FROM conviventes
+    """
+    params: dict = {}
+    if instituicao_id:
+        sql += " WHERE instituicao_id = :instituicao_id"
+        params["instituicao_id"] = instituicao_id
+    sql += " ORDER BY nome_completo ASC"
+
+    resultado = await db.execute(text(sql), params)
+    return [dict(linha._mapping) for linha in resultado]
+
+
+async def _atualizar_data_inclusao_conviventes(
+    db: AsyncSession,
+    atualizacoes: dict[str, date],
+) -> int:
+    if not atualizacoes:
+        return 0
+
+    for convivente_id, nova_data in atualizacoes.items():
+        await db.execute(
+            text(
+                "UPDATE conviventes SET data_inclusao = :data_inclusao WHERE id = :convivente_id"
+            ),
+            {"data_inclusao": nova_data, "convivente_id": convivente_id},
+        )
+    await db.commit()
+    return len(atualizacoes)
+
+
+async def listar_divergencias_data_inclusao(
+    db: AsyncSession,
+    *,
+    instituicao_id: str | None = None,
+) -> list[dict]:
+    conviventes = await _listar_conviventes_datas_cadastro(db, instituicao_id=instituicao_id)
+    divergencias: list[dict] = []
+
+    for convivente in conviventes:
+        primeira_interacao = await obter_data_primeira_interacao(db, convivente["id"])
+        nova_inclusao = resolver_data_inclusao_coerente(
+            convivente["data_inclusao"],
+            convivente["data_entrada"],
+            primeira_interacao,
+        )
+        if nova_inclusao is None:
+            continue
+
+        vinculacao = data_vinculacao_efetiva_convivente(
+            convivente["data_inclusao"],
+            convivente["data_entrada"],
+        )
+        divergencias.append(
+            {
+                "convivente_id": convivente["id"],
+                "nome_completo": convivente["nome_completo"],
+                "numero_institucional": convivente["numero_institucional"],
+                "status": convivente["status"],
+                "data_inclusao_atual": convivente["data_inclusao"],
+                "data_entrada": convivente["data_entrada"],
+                "vinculacao_efetiva": vinculacao,
+                "primeira_interacao": primeira_interacao,
+                "data_inclusao_corrigida": nova_inclusao,
+            }
+        )
+
+    return divergencias
+
+
+async def reconciliar_datas_inclusao_conviventes(
+    db: AsyncSession,
+    *,
+    aplicar: bool = False,
+    instituicao_id: str | None = None,
+) -> dict:
+    """Corrige data_inclusao em lote para todos os conviventes com divergência."""
+    divergencias = await listar_divergencias_data_inclusao(db, instituicao_id=instituicao_id)
+    if not aplicar or not divergencias:
+        return {
+            "aplicar": aplicar,
+            "divergentes": len(divergencias),
+            "corrigidos": 0,
+            "registros": divergencias,
+        }
+
+    por_id = {
+        item["convivente_id"]: item["data_inclusao_corrigida"] for item in divergencias
+    }
+    corrigidos = await _atualizar_data_inclusao_conviventes(db, por_id)
+    return {
+        "aplicar": True,
+        "divergentes": len(divergencias),
+        "corrigidos": corrigidos,
+        "registros": divergencias,
+    }
+
+
+async def corrigir_datas_inclusao_suspeitas_legado(
+    db: AsyncSession,
+    *,
+    aplicar: bool = False,
+    instituicao_id: str | None = None,
+) -> dict:
+    """Substitui data_inclusao placeholder/corrompida (2000-01-01 ou ano < 1990) por 2020-01-01."""
+    conviventes = await _listar_conviventes_datas_cadastro(db, instituicao_id=instituicao_id)
+    afetados = [
+        conv
+        for conv in conviventes
+        if data_inclusao_suspeita_legado(conv["data_inclusao"])
+    ]
+
+    registros = [
+        {
+            "convivente_id": conv["id"],
+            "numero_institucional": conv["numero_institucional"],
+            "nome_completo": conv["nome_completo"],
+            "data_inclusao_anterior": conv["data_inclusao"],
+        }
+        for conv in afetados[:50]
+    ]
+
+    if aplicar and afetados:
+        por_id = {conv["id"]: DATA_INCLUSAO_SUBSTITUTO_LEGADO for conv in afetados}
+        await _atualizar_data_inclusao_conviventes(db, por_id)
+
+    return {
+        "aplicar": aplicar,
+        "suspeitos": len(afetados),
+        "corrigidos": len(afetados) if aplicar else 0,
+        "registros": registros,
+    }
+
+
+async def ajustar_data_inclusao_convivente(
     db: AsyncSession,
     convivente_id: str | None,
     data_inclusao: date | None,
-) -> None:
-    if not convivente_id or not data_inclusao:
-        return
+    data_entrada: date | None = None,
+) -> date | None:
+    if not convivente_id:
+        return data_inclusao
 
     primeira_interacao = await obter_data_primeira_interacao(db, convivente_id)
-    if primeira_interacao and data_inclusao > primeira_interacao:
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                "A data de inclusão não pode ser posterior à primeira interação "
-                f"registrada no sistema ({primeira_interacao.strftime('%d/%m/%Y')})."
-            ),
-        )
+    corrigida = resolver_data_inclusao_coerente(
+        data_inclusao,
+        data_entrada,
+        primeira_interacao,
+    )
+    if corrigida is not None:
+        return corrigida
+    if data_inclusao:
+        return data_inclusao
+    return data_vinculacao_efetiva_convivente(data_inclusao, data_entrada)

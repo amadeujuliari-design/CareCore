@@ -33,6 +33,9 @@ import {
   LISTAGEM_OPERACIONAL_DIAS_PADRAO,
 } from "./utils/prontuarioHistoricoFluxoUtils";
 import { formatarDataBr } from "./utils/dataBrasilUtils";
+import { RevisarTextoPainel } from "./components/RevisarTextoPainel";
+import { TextoOriginalBloco } from "./components/TextoOriginalBloco";
+import { lerUsuarioTextoOriginal, usuarioPodeVerTextoOriginal } from "./utils/textoOriginalUtils";
 
 const CLASSIFICACOES = ["Informativo", "Atenção", "Urgente", "Comunicado", "Rotina", "Gestão"];
 
@@ -159,6 +162,8 @@ function dataValidadeParaFimDoDia(data) {
 const estadoInicialFormulario = {
   titulo: "",
   mensagem: "",
+  titulo_original: "",
+  mensagem_original: "",
   classificacao: "Informativo",
   prioridade: "normal",
   destino_tipo: "todos",
@@ -189,7 +194,7 @@ function criarFiltrosAtivosPadrao() {
 }
 
 
-function ModalAvisoCompleto({ aviso, onFechar, onMarcarLido }) {
+function ModalAvisoCompleto({ aviso, onFechar, onMarcarLido, usuarioTextoOriginal }) {
   if (!aviso) return null;
 
   const prioridadeLabel = normalizarPrioridade(aviso.prioridade);
@@ -231,6 +236,11 @@ function ModalAvisoCompleto({ aviso, onFechar, onMarcarLido }) {
 
         <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-5">
           <p className="whitespace-pre-wrap break-words text-sm leading-7 text-slate-700">{mensagem}</p>
+          <TextoOriginalBloco
+            usuario={usuarioTextoOriginal}
+            tituloOriginal={aviso.titulo_original}
+            mensagemOriginal={aviso.mensagem_original}
+          />
         </div>
 
         <div className="flex shrink-0 flex-col gap-2 border-t border-slate-100 bg-slate-50 p-4 sm:flex-row sm:justify-end">
@@ -260,6 +270,11 @@ function ModalAvisoCompleto({ aviso, onFechar, onMarcarLido }) {
 export default function Avisos() {
   const navigate = useNavigate();
   const usuario = useMemo(() => lerUsuarioLogado(), []);
+  const usuarioTextoOriginal = useMemo(
+    () => lerUsuarioTextoOriginal(usuario.token),
+    [usuario.token],
+  );
+  const podeVerTextoOriginal = usuarioPodeVerTextoOriginal(usuarioTextoOriginal);
 
   const [formulario, setFormulario] = useState(estadoInicialFormulario);
   const [avisos, setAvisos] = useState([]);
@@ -285,6 +300,7 @@ export default function Avisos() {
   const [filtrosHistorico, setFiltrosHistorico] = useState(filtrosHistoricoInicial);
   const [carregandoHistorico, setCarregandoHistorico] = useState(false);
   const [preparandoRelatorio, setPreparandoRelatorio] = useState(false);
+  const [incluirTextoOriginalRelatorio, setIncluirTextoOriginalRelatorio] = useState(false);
   const [identidadeRelatorio, setIdentidadeRelatorio] = useState(null);
 
   async function carregarUsuariosDestinatarios() {
@@ -483,6 +499,8 @@ export default function Avisos() {
     const payload = {
       titulo: formulario.titulo.trim(),
       mensagem: formulario.mensagem.trim(),
+      titulo_original: formulario.titulo_original?.trim() || null,
+      mensagem_original: formulario.mensagem_original?.trim() || null,
       classificacao: formulario.classificacao,
       prioridade: formulario.prioridade,
       destino_tipo: formulario.destino_tipo,
@@ -591,35 +609,54 @@ export default function Avisos() {
     };
   }, [avisos]);
 
-  function montarDadosRelatorioAvisos(lista = avisos) {
-    return (Array.isArray(lista) ? lista : []).map((item) => ({
-      Data: formatarDataHora(item.criado_em),
-      Título: item.titulo || "Aviso",
-      Classificação: item.classificacao || "-",
-      Prioridade: normalizarPrioridade(item.prioridade),
-      Destino: item.destino_tipo === "todos" ? "Todos" : "Direcionado",
-      Status: item.lido ? "Lido" : "Não lido",
-      Remetente: item.remetente_nome || item.remetente_id || "-",
-      "Válido até": formatarDataHora(item.valido_ate),
-      Mensagem: item.mensagem || item.mensagem_resumo || "-",
-    }));
+  function montarDadosRelatorioAvisos(lista = avisos, incluirOriginal = false) {
+    return (Array.isArray(lista) ? lista : []).map((item) => {
+      const linha = {
+        Data: formatarDataHora(item.criado_em),
+        Título: item.titulo || "Aviso",
+        Classificação: item.classificacao || "-",
+        Prioridade: normalizarPrioridade(item.prioridade),
+        Destino: item.destino_tipo === "todos" ? "Todos" : "Direcionado",
+        Status: item.lido ? "Lido" : "Não lido",
+        Remetente: item.remetente_nome || item.remetente_id || "-",
+        "Válido até": formatarDataHora(item.valido_ate),
+        Mensagem: item.mensagem || item.mensagem_resumo || "-",
+      };
+
+      if (incluirOriginal) {
+        linha["Título original"] = item.titulo_original || "-";
+        linha["Mensagem original"] = item.mensagem_original || "-";
+      }
+
+      return linha;
+    });
+  }
+
+  function colunasRelatorioAvisos(incluirOriginal = false) {
+    const colunas = [
+      "Data",
+      "Título",
+      "Classificação",
+      "Prioridade",
+      "Destino",
+      "Status",
+      "Remetente",
+      "Válido até",
+      "Mensagem",
+    ];
+
+    if (incluirOriginal) {
+      colunas.push("Título original", "Mensagem original");
+    }
+
+    return colunas;
   }
 
   async function exportarRelatorioAvisosXLSX() {
     setPreparandoRelatorio(true);
     try {
       const avisosCompletos = await listarMeusAvisosCompleto(usuario.token, filtrosAtivos);
-      const colunas = [
-        "Data",
-        "Título",
-        "Classificação",
-        "Prioridade",
-        "Destino",
-        "Status",
-        "Remetente",
-        "Válido até",
-        "Mensagem",
-      ];
+      const colunas = colunasRelatorioAvisos(incluirTextoOriginalRelatorio);
 
       exportarRelatorioXlsx({
         nomeArquivo: `relatorio-avisos-${dataHojeIsoLocal()}`,
@@ -632,9 +669,10 @@ export default function Avisos() {
           "Direcionados": avisosCompletos.filter((item) => item.destino_tipo !== "todos").length,
           ...(filtrosAtivos.data_inicio ? { "Data inicial": formatarDataBr(filtrosAtivos.data_inicio) } : {}),
           ...(filtrosAtivos.data_fim ? { "Data final": formatarDataBr(filtrosAtivos.data_fim) } : {}),
+          ...(incluirTextoOriginalRelatorio ? { "Incluir texto original": "Sim" } : {}),
         },
         colunas,
-        dados: montarDadosRelatorioAvisos(avisosCompletos),
+        dados: montarDadosRelatorioAvisos(avisosCompletos, incluirTextoOriginalRelatorio),
       });
     } catch (error) {
       console.error("Erro ao exportar avisos", error);
@@ -666,17 +704,8 @@ export default function Avisos() {
           `Para todos: ${totalParaTodos}`,
           `Direcionados: ${totalDirecionados}`,
         ].filter(Boolean).join(' | '),
-        colunas: [
-          "Data",
-          "Título",
-          "Classificação",
-          "Prioridade",
-          "Destino",
-          "Status",
-          "Remetente",
-          "Mensagem",
-        ],
-        dados: montarDadosRelatorioAvisos(avisosCompletos),
+        colunas: colunasRelatorioAvisos(incluirTextoOriginalRelatorio).filter((coluna) => coluna !== "Válido até"),
+        dados: montarDadosRelatorioAvisos(avisosCompletos, incluirTextoOriginalRelatorio),
         identidade: {
           ...identidadeRelatorio,
           logo_src: obterLogoRelatorioSrc(logoRelatorioDataUrl),
@@ -742,16 +771,25 @@ export default function Avisos() {
     return "Ativo";
   }
 
-  function montarDadosHistoricoAvisos(lista = historicoAvisos) {
-    return (Array.isArray(lista) ? lista : []).map((item) => ({
-      Data: formatarDataHora(item.criado_em),
-      Título: item.titulo || "Aviso",
-      Classificação: item.classificacao || "-",
-      Prioridade: normalizarPrioridade(item.prioridade),
-      Status: statusAvisoHistorico(item),
-      "Baixado em": formatarDataHora(item.cancelado_em),
-      Mensagem: item.mensagem || "-",
-    }));
+  function montarDadosHistoricoAvisos(lista = historicoAvisos, incluirOriginal = false) {
+    return (Array.isArray(lista) ? lista : []).map((item) => {
+      const linha = {
+        Data: formatarDataHora(item.criado_em),
+        Título: item.titulo || "Aviso",
+        Classificação: item.classificacao || "-",
+        Prioridade: normalizarPrioridade(item.prioridade),
+        Status: statusAvisoHistorico(item),
+        "Baixado em": formatarDataHora(item.cancelado_em),
+        Mensagem: item.mensagem || "-",
+      };
+
+      if (incluirOriginal) {
+        linha["Título original"] = item.titulo_original || "-";
+        linha["Mensagem original"] = item.mensagem_original || "-";
+      }
+
+      return linha;
+    });
   }
 
   async function imprimirHistoricoAvisos() {
@@ -780,8 +818,9 @@ export default function Avisos() {
           "Status",
           "Baixado em",
           "Mensagem",
+          ...(incluirTextoOriginalRelatorio ? ["Título original", "Mensagem original"] : []),
         ],
-        dados: montarDadosHistoricoAvisos(historicoCompleto),
+        dados: montarDadosHistoricoAvisos(historicoCompleto, incluirTextoOriginalRelatorio),
         identidade: {
           ...identidadeRelatorio,
           logo_src: obterLogoRelatorioSrc(logoRelatorioDataUrl),
@@ -803,6 +842,7 @@ export default function Avisos() {
         aviso={avisoAberto}
         onFechar={() => setAvisoAberto(null)}
         onMarcarLido={handleMarcarLido}
+        usuarioTextoOriginal={usuarioTextoOriginal}
       />
 
       <MainShell>
@@ -871,6 +911,22 @@ export default function Avisos() {
                     placeholder="Digite a comunicação interna..."
                   />
                 </div>
+
+                <RevisarTextoPainel
+                  token={usuario.token}
+                  titulo={formulario.titulo}
+                  texto={formulario.mensagem}
+                  contexto="aviso"
+                  onAplicar={({ titulo, texto, titulo_original, texto_original }) => {
+                    setFormulario((atual) => ({
+                      ...atual,
+                      titulo,
+                      mensagem: texto,
+                      titulo_original,
+                      mensagem_original: texto_original,
+                    }));
+                  }}
+                />
 
                 <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                   <div>
@@ -1038,6 +1094,18 @@ export default function Avisos() {
                     </p>
                   </div>
 
+                  <div className="flex flex-wrap items-center gap-2">
+                    {podeVerTextoOriginal && (
+                      <label className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700">
+                        <input
+                          type="checkbox"
+                          checked={incluirTextoOriginalRelatorio}
+                          onChange={(event) => setIncluirTextoOriginalRelatorio(event.target.checked)}
+                          className="rounded border-slate-300"
+                        />
+                        Incluir texto original
+                      </label>
+                    )}
                   <ReportActionButton action="export" onClick={exportarRelatorioAvisosXLSX} disabled={preparandoRelatorio}>
                     {preparandoRelatorio ? 'Preparando...' : 'Exportar'}
                   </ReportActionButton>
@@ -1045,6 +1113,7 @@ export default function Avisos() {
                   <ReportActionButton action="print" onClick={abrirRelatorioImpressaoAvisos} disabled={preparandoRelatorio}>
                     {preparandoRelatorio ? 'Preparando...' : 'Imprimir'}
                   </ReportActionButton>
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">

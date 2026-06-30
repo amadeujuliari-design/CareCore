@@ -18,9 +18,11 @@ from sqlalchemy import and_, case, cast, delete, exists, func, or_, String
 from convivente_datas_cadastro import (
     aplicar_datas_convivente_objeto,
     aplicar_datas_convivente_payload,
+    ajustar_data_inclusao_convivente,
     bloquear_alteracao_data_entrada_convivente,
+    obter_data_primeira_interacao,
+    primeira_interacao_operacional,
     preparar_datas_convivente_criacao,
-    validar_data_inclusao_convivente,
 )
 from carteirinha_operacional import (
     data_primeira_vinculacao_convivente,
@@ -28,6 +30,7 @@ from carteirinha_operacional import (
     validar_carteirinha_convivente_operacional,
 )
 from refeicao_horario_operacional import validar_horario_refeicao_operacional
+from rotina_portaria_horarios import UltimoMovimentoPortaria, validar_horario_portaria
 from convivente_ficha_pia import (
     carregar_listas_ficha_pia,
     enriquecer_convivente_response_dict,
@@ -44,7 +47,7 @@ from audit_log import registrar_evento_auditoria
 from models import (
     ConviventeDB, MotivoInativacaoDB, OrigemEncaminhamentoDB, 
     QuartoDB, LeitoDB, DocumentoConviventeDB, OcorrenciaConviventeDB, UsuarioDB,
-    InteracaoOcorrenciaDB, ObservadorOcorrenciaDB, RegistroRotinaDB,
+    InteracaoOcorrenciaDB, ObservadorOcorrenciaDB, FuncionarioEnvolvidoOcorrenciaDB, RegistroRotinaDB,
     FechamentoMensalDB,
     SisaLancamentoDB,
     SisaImportacaoDB,
@@ -122,6 +125,8 @@ from schemas import (
     SisaDivergenciaStatusUpdate,
     AusenciaJustificadaPendenteResponse,
     AusenciaJustificadaResposta,
+    CarteirinhaImpressaoOficialCreate,
+    CarteirinhaImpressaoOficialResponse,
 )
 from security import (
     bloquear_usuario_global_puro,
@@ -160,6 +165,9 @@ from routers.conviventes_xlsx import (
 )
 from imagem_upload import eh_arquivo_imagem, padronizar_upload_imagem
 from tenant_scope import obter_instituicao_escopo
+from routers.carteirinha import registrar_impressao_carteirinha_oficial as registrar_impressao_carteirinha_core
+from time_operacional import parse_data_filtro_operacional
+from revisao_texto import sanitizar_ocorrencias_para_usuario
 
 logger = logging.getLogger("carecore.conviventes")
 APP_ENV = os.getenv("APP_ENV", "local").strip().lower()
@@ -183,9 +191,11 @@ async def montar_convivente_response(
 ) -> ConviventeResponse:
     base = convivente_para_response(convivente, usuario_atual)
     listas = await carregar_listas_ficha_pia(db, convivente.id)
-    return ConviventeResponse.model_validate(
-        enriquecer_convivente_response_dict(base.model_dump(), listas)
+    payload = enriquecer_convivente_response_dict(base.model_dump(), listas)
+    payload["data_primeira_interacao"] = primeira_interacao_operacional(
+        await obter_data_primeira_interacao(db, convivente.id)
     )
+    return ConviventeResponse.model_validate(payload)
 
 TIPOS_ROTINA_PRINCIPAIS = {"Entrada", "Saída"}
 TIPOS_ROTINA_REFEICOES = {"Café da manhã", "Almoço", "Jantar", "Lanche noturno"}
@@ -863,11 +873,31 @@ async def listar_conviventes_resumo(
         for row in rows
     ]
 
+
 @router.get("/conviventes/{convivente_id}", response_model=ConviventeResponse)
 async def obtener_convivente(convivente_id: str, db: AsyncSession = Depends(get_db), usuario_atual: dict = Depends(get_usuario_logado)):
     convivente = (await db.execute(select(ConviventeDB).where(ConviventeDB.id == convivente_id, ConviventeDB.instituicao_id == obter_instituicao_escopo(usuario_atual)))).scalar_one_or_none()
     if not convivente: raise HTTPException(status_code=404, detail="Convivente não encontrado.")
     return await montar_convivente_response(db, convivente, usuario_atual)
+
+
+@router.post(
+    "/conviventes/{convivente_id}/carteirinha/impressao-oficial",
+    response_model=CarteirinhaImpressaoOficialResponse,
+    include_in_schema=False,
+)
+async def registrar_impressao_carteirinha_oficial_legado(
+    convivente_id: str,
+    payload: CarteirinhaImpressaoOficialCreate | None = None,
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    return await registrar_impressao_carteirinha_core(
+        convivente_id,
+        payload,
+        db,
+        usuario_atual,
+    )
 
 
 @router.get("/conviventes/{convivente_id}/pia", response_model=RegistroPIAListaResponse)
@@ -2002,8 +2032,18 @@ async def atualizar_convivente(convivente_id: str, dados_atualizacao: Convivente
 
     aplicar_credenciais_convivente_salvar(dados)
 
-    if "data_inclusao" in campos_enviados:
-        await validar_data_inclusao_convivente(db, convivente_id, dados.get("data_inclusao"))
+    data_inclusao_atual = (
+        dados.get("data_inclusao")
+        if "data_inclusao" in campos_enviados
+        else convivente.data_inclusao
+    )
+    if data_inclusao_atual or convivente.data_entrada:
+        dados["data_inclusao"] = await ajustar_data_inclusao_convivente(
+            db,
+            convivente_id,
+            data_inclusao_atual,
+            convivente.data_entrada,
+        )
 
     for key, value in dados.items():
         setattr(convivente, key, value)
@@ -2029,6 +2069,14 @@ async def atualizar_convivente(convivente_id: str, dados_atualizacao: Convivente
                 convivente.leito_id,
                 obter_instituicao_escopo(usuario_atual),
             )
+
+        if novo_status in ("Inativado", "Bloqueado", "Saída qualificada") and leito_id_antigo:
+            convivente.leito_id = None
+            l_reserva = (
+                await db.execute(select(LeitoDB).where(LeitoDB.id == leito_id_antigo))
+            ).scalar_one_or_none()
+            if l_reserva:
+                l_reserva.status = "Livre"
 
         if status_antigo != convivente.status and obs_status:
             db.add(OcorrenciaConviventeDB(
@@ -2137,6 +2185,43 @@ async def excluir_convivente_sem_vinculos(
 # ROTAS DO SISTEMA DE TICKETS / OCORRÊNCIAS
 # =====================================================================
 
+def _aplicar_filtro_data_ocorrencia(
+    query,
+    data_inicio: Optional[date],
+    data_fim: Optional[date],
+    *,
+    aplicar: bool = True,
+    sempre_incluir_pendentes: bool = False,
+):
+    """Limites de dia no fuso operacional (SP), alinhados a data_ocorrencia naive."""
+    if not aplicar:
+        return query
+
+    condicoes_periodo = []
+    if data_inicio:
+        inicio = parse_data_filtro_operacional(data_inicio.isoformat(), fim_do_dia=False)
+        condicoes_periodo.append(OcorrenciaConviventeDB.data_ocorrencia >= inicio)
+
+    if data_fim:
+        fim = parse_data_filtro_operacional(data_fim.isoformat(), fim_do_dia=True)
+        condicoes_periodo.append(OcorrenciaConviventeDB.data_ocorrencia <= fim)
+
+    if not condicoes_periodo:
+        return query
+
+    if sempre_incluir_pendentes:
+        query = query.where(
+            or_(
+                OcorrenciaConviventeDB.status_resolucao != "Resolvido",
+                and_(*condicoes_periodo),
+            )
+        )
+    else:
+        query = query.where(and_(*condicoes_periodo))
+
+    return query
+
+
 @router.get("/ocorrencias")
 async def listar_todas_ocorrencias(
     db: AsyncSession = Depends(get_db),
@@ -2185,11 +2270,29 @@ async def listar_todas_ocorrencias(
         )
         query = query.where(OcorrenciaConviventeDB.convivente_id.in_(subq_conviventes_status))
 
-    if data_inicio:
-        query = query.where(OcorrenciaConviventeDB.data_ocorrencia >= data_inicio)
-
-    if data_fim:
-        query = query.where(OcorrenciaConviventeDB.data_ocorrencia < data_fim + timedelta(days=1))
+    if status_filtro == "Pendente":
+        query = _aplicar_filtro_data_ocorrencia(
+            query,
+            data_inicio,
+            data_fim,
+            aplicar=False,
+        )
+    elif status_filtro == "Resolvido":
+        query = _aplicar_filtro_data_ocorrencia(
+            query,
+            data_inicio,
+            data_fim,
+            aplicar=True,
+            sempre_incluir_pendentes=False,
+        )
+    else:
+        query = _aplicar_filtro_data_ocorrencia(
+            query,
+            data_inicio,
+            data_fim,
+            aplicar=bool(data_inicio or data_fim),
+            sempre_incluir_pendentes=True,
+        )
 
     if busca and busca.strip():
         termo_busca = f"%{busca.strip()}%"
@@ -2277,6 +2380,7 @@ async def listar_todas_ocorrencias(
     convivente_ids = [oc.convivente_id for oc in ocorrencias_db if oc.convivente_id]
     interacoes_por_ocorrencia = {oc_id: [] for oc_id in ocorrencia_ids}
     observadores_por_ocorrencia = {oc_id: [] for oc_id in ocorrencia_ids}
+    funcionarios_por_ocorrencia = {oc_id: [] for oc_id in ocorrencia_ids}
     conviventes_por_id = {}
 
     if convivente_ids:
@@ -2307,6 +2411,15 @@ async def listar_todas_ocorrencias(
         for observador in observadores_db:
             observadores_por_ocorrencia.setdefault(observador.ocorrencia_id, []).append(observador)
 
+        funcionarios_db = (
+            await db.execute(
+                select(FuncionarioEnvolvidoOcorrenciaDB)
+                .where(FuncionarioEnvolvidoOcorrenciaDB.ocorrencia_id.in_(ocorrencia_ids))
+            )
+        ).scalars().all()
+        for funcionario in funcionarios_db:
+            funcionarios_por_ocorrencia.setdefault(funcionario.ocorrencia_id, []).append(funcionario)
+
     resultado = []
     for oc in ocorrencias_db:
         oc_dict = {c.name: getattr(oc, c.name) for c in oc.__table__.columns}
@@ -2319,6 +2432,10 @@ async def listar_todas_ocorrencias(
             {c.name: getattr(observador, c.name) for c in observador.__table__.columns}
             for observador in observadores_por_ocorrencia.get(oc.id, [])
         ]
+        oc_dict["funcionarios_envolvidos"] = [
+            {c.name: getattr(funcionario, c.name) for c in funcionario.__table__.columns}
+            for funcionario in funcionarios_por_ocorrencia.get(oc.id, [])
+        ]
         convivente = conviventes_por_id.get(oc.convivente_id)
         if convivente:
             oc_dict["convivente_nome"] = convivente.nome_social or convivente.nome_completo
@@ -2329,7 +2446,7 @@ async def listar_todas_ocorrencias(
         resultado.append(oc_dict)
 
     return {
-        "items": resultado,
+        "items": sanitizar_ocorrencias_para_usuario(resultado, usuario_atual),
         "total": total,
         "limit": limit,
         "offset": offset,
@@ -2427,13 +2544,19 @@ async def listar_pendencias_tecnicas_priorizadas(
         q_obs = select(ObservadorOcorrenciaDB).where(ObservadorOcorrenciaDB.ocorrencia_id == oc.id)
         observadores = (await db.execute(q_obs)).scalars().all()
 
+        q_func = select(FuncionarioEnvolvidoOcorrenciaDB).where(
+            FuncionarioEnvolvidoOcorrenciaDB.ocorrencia_id == oc.id
+        )
+        funcionarios_envolvidos = (await db.execute(q_func)).scalars().all()
+
         oc_dict = {c.name: getattr(oc, c.name) for c in oc.__table__.columns}
         oc_dict["interacoes"] = interacoes
         oc_dict["observadores"] = observadores
+        oc_dict["funcionarios_envolvidos"] = funcionarios_envolvidos
         resultado.append(oc_dict)
 
     resultado.sort(key=lambda oc: (PESO_PRIORIDADE.get(oc.get("prioridade", "Média"), 2), oc.get("data_ocorrencia")), reverse=True)
-    return resultado
+    return sanitizar_ocorrencias_para_usuario(resultado, usuario_atual)
 
 @router.post("/ocorrencias")
 async def criar_ocorrencia_manual(payload: OcorrenciaCreate, db: AsyncSession = Depends(get_db), usuario_atual: dict = Depends(get_usuario_logado)):
@@ -2464,6 +2587,18 @@ async def criar_ocorrencia_manual(payload: OcorrenciaCreate, db: AsyncSession = 
         payload.observadores_ids,
         obter_instituicao_escopo(usuario_atual),
         detail="Um ou mais observadores não pertencem ao projeto atual.",
+    )
+
+    funcionarios_envolvidos_ids = list(dict.fromkeys(payload.funcionarios_envolvidos_ids or []))
+    if payload.convivente_autor_ocorrencia and payload.funcionario_envolvido_id:
+        if payload.funcionario_envolvido_id not in funcionarios_envolvidos_ids:
+            funcionarios_envolvidos_ids.append(payload.funcionario_envolvido_id)
+
+    await validar_usuarios_do_projeto(
+        db,
+        funcionarios_envolvidos_ids,
+        obter_instituicao_escopo(usuario_atual),
+        detail="Um ou mais funcionários envolvidos não pertencem ao projeto atual.",
     )
 
     assinatura_validada_em = None
@@ -2522,6 +2657,9 @@ async def criar_ocorrencia_manual(payload: OcorrenciaCreate, db: AsyncSession = 
         tipo_ocorrencia=payload.tipo_ocorrencia,
         motivo=payload.motivo,
         descricao=payload.descricao,
+        motivo_original=(payload.motivo_original or "").strip() or None,
+        descricao_original=(payload.descricao_original or "").strip() or None,
+        data_ocorrencia=agora_sao_paulo(),
         requer_acao_tecnica=requer_acao_tecnica,
         prioridade=prioridade,
         status_resolucao=status_inicial_ocorrencia_manual()
@@ -2532,6 +2670,14 @@ async def criar_ocorrencia_manual(payload: OcorrenciaCreate, db: AsyncSession = 
     for obs_id in payload.observadores_ids:
         obs = ObservadorOcorrenciaDB(ocorrencia_id=nova_oc.id, usuario_id=obs_id)
         db.add(obs)
+
+    for funcionario_id in funcionarios_envolvidos_ids:
+        db.add(
+            FuncionarioEnvolvidoOcorrenciaDB(
+                ocorrencia_id=nova_oc.id,
+                usuario_id=funcionario_id,
+            )
+        )
 
     await db.commit()
     registrar_evento_auditoria(
@@ -2585,6 +2731,7 @@ async def adicionar_interacao(ocorrencia_id: str, payload: InteracaoOcorrenciaCr
         ocorrencia_id=oc.id,
         usuario_id=usuario_atual["sub"],
         mensagem=payload.mensagem,
+        mensagem_original=(payload.mensagem_original or "").strip() or None,
         tipo_interacao=payload.tipo_interacao
     )
     db.add(nova_int)
@@ -2602,6 +2749,7 @@ async def adicionar_interacao(ocorrencia_id: str, payload: InteracaoOcorrenciaCr
 async def _serializar_ocorrencias_com_vinculos(
     db: AsyncSession,
     ocorrencias_db: list[OcorrenciaConviventeDB],
+    usuario_atual: dict | None = None,
 ) -> list[dict]:
     if not ocorrencias_db:
         return []
@@ -2610,6 +2758,7 @@ async def _serializar_ocorrencias_com_vinculos(
     convivente_ids = [oc.convivente_id for oc in ocorrencias_db if oc.convivente_id]
     interacoes_por_ocorrencia = {oc_id: [] for oc_id in ocorrencia_ids}
     observadores_por_ocorrencia = {oc_id: [] for oc_id in ocorrencia_ids}
+    funcionarios_por_ocorrencia = {oc_id: [] for oc_id in ocorrencia_ids}
     conviventes_por_id = {}
 
     if convivente_ids:
@@ -2639,6 +2788,15 @@ async def _serializar_ocorrencias_com_vinculos(
     for observador in observadores_db:
         observadores_por_ocorrencia.setdefault(observador.ocorrencia_id, []).append(observador)
 
+    funcionarios_db = (
+        await db.execute(
+            select(FuncionarioEnvolvidoOcorrenciaDB)
+            .where(FuncionarioEnvolvidoOcorrenciaDB.ocorrencia_id.in_(ocorrencia_ids))
+        )
+    ).scalars().all()
+    for funcionario in funcionarios_db:
+        funcionarios_por_ocorrencia.setdefault(funcionario.ocorrencia_id, []).append(funcionario)
+
     resultado = []
     for oc in ocorrencias_db:
         oc_dict = {c.name: getattr(oc, c.name) for c in oc.__table__.columns}
@@ -2651,6 +2809,10 @@ async def _serializar_ocorrencias_com_vinculos(
             {c.name: getattr(observador, c.name) for c in observador.__table__.columns}
             for observador in observadores_por_ocorrencia.get(oc.id, [])
         ]
+        oc_dict["funcionarios_envolvidos"] = [
+            {c.name: getattr(funcionario, c.name) for c in funcionario.__table__.columns}
+            for funcionario in funcionarios_por_ocorrencia.get(oc.id, [])
+        ]
         convivente = conviventes_por_id.get(oc.convivente_id)
         if convivente:
             oc_dict["convivente_nome"] = convivente.nome_social or convivente.nome_completo
@@ -2660,10 +2822,16 @@ async def _serializar_ocorrencias_com_vinculos(
             oc_dict["convivente_cpf"] = convivente.cpf
         resultado.append(oc_dict)
 
+    if usuario_atual:
+        return sanitizar_ocorrencias_para_usuario(resultado, usuario_atual)
+
     return resultado
 
 
-@router.get("/conviventes/{convivente_id}/ocorrencias", response_model=OcorrenciaConviventeListaResponse)
+@router.get(
+    "/conviventes/{convivente_id}/ocorrencias",
+    response_model=OcorrenciaConviventeListaResponse,
+)
 async def listar_ocorrencias_convivente(
     convivente_id: str,
     data_inicio: Optional[date] = None,
@@ -2694,11 +2862,36 @@ async def listar_ocorrencias_convivente(
         OcorrenciaConviventeDB.instituicao_id == inst_id,
     ]
 
-    if data_inicio:
-        condicoes.append(OcorrenciaConviventeDB.data_ocorrencia >= data_inicio)
+    if status_filtro and status_filtro != "Todos":
+        if status_filtro == "Resolvido":
+            condicoes.append(OcorrenciaConviventeDB.status_resolucao == "Resolvido")
+        elif status_filtro == "Pendente":
+            condicoes.append(OcorrenciaConviventeDB.status_resolucao != "Resolvido")
 
-    if data_fim:
-        condicoes.append(OcorrenciaConviventeDB.data_ocorrencia < data_fim + timedelta(days=1))
+    if status_filtro == "Pendente":
+        pass
+    elif status_filtro == "Resolvido":
+        if data_inicio:
+            inicio = parse_data_filtro_operacional(data_inicio.isoformat(), fim_do_dia=False)
+            condicoes.append(OcorrenciaConviventeDB.data_ocorrencia >= inicio)
+        if data_fim:
+            fim = parse_data_filtro_operacional(data_fim.isoformat(), fim_do_dia=True)
+            condicoes.append(OcorrenciaConviventeDB.data_ocorrencia <= fim)
+    else:
+        condicoes_periodo = []
+        if data_inicio:
+            inicio = parse_data_filtro_operacional(data_inicio.isoformat(), fim_do_dia=False)
+            condicoes_periodo.append(OcorrenciaConviventeDB.data_ocorrencia >= inicio)
+        if data_fim:
+            fim = parse_data_filtro_operacional(data_fim.isoformat(), fim_do_dia=True)
+            condicoes_periodo.append(OcorrenciaConviventeDB.data_ocorrencia <= fim)
+        if condicoes_periodo:
+            condicoes.append(
+                or_(
+                    OcorrenciaConviventeDB.status_resolucao != "Resolvido",
+                    and_(*condicoes_periodo),
+                )
+            )
 
     if prioridade and prioridade != "Todas":
         condicoes.append(
@@ -2741,7 +2934,7 @@ async def listar_ocorrencias_convivente(
         )
     ).scalars().all()
 
-    registros = await _serializar_ocorrencias_com_vinculos(db, ocorrencias_db)
+    registros = await _serializar_ocorrencias_com_vinculos(db, ocorrencias_db, usuario_atual)
 
     return {
         "registros": registros,
@@ -3088,7 +3281,28 @@ async def registar_rotina(
     if esta_fora and payload.tipo_registro != "Entrada":
         raise HTTPException(
             status_code=400,
-            detail="Convivente está fora da unidade. Registre uma entrada antes de qualquer interação."
+            detail=(
+                "Este convivente está marcado como FORA DA UNIDADE. "
+                "Oriente-o a retornar à portaria e registrar a ENTRADA antes de qualquer outra rotina."
+            ),
+        )
+
+    justificativa_horario_portaria = None
+    if payload.tipo_registro in {"Entrada", "Saída"}:
+        ultimo_para_horario = (
+            UltimoMovimentoPortaria(
+                tipo_registro=ultimo_movimento.tipo_registro,
+                data_registro=ultimo_movimento.data_registro,
+            )
+            if ultimo_movimento
+            else None
+        )
+        justificativa_horario_portaria = validar_horario_portaria(
+            tipo_registro=payload.tipo_registro,
+            momento=agora_sao_paulo(),
+            convivente=convivente,
+            ultimo_movimento=ultimo_para_horario,
+            justificativa_horario=payload.justificativa_horario_portaria,
         )
 
     if payload.tipo_registro in TIPOS_ROTINA_REFEICOES:
@@ -3211,6 +3425,7 @@ async def registar_rotina(
 
         retorno_rapido=retorno_rapido,
         justificativa_retorno_rapido=justificativa_retorno_rapido,
+        justificativa_horario_portaria=justificativa_horario_portaria,
         repeticao_extra_refeicao=repeticao_extra_refeicao,
     )
 
@@ -3384,6 +3599,106 @@ async def resumo_rotina_hoje(
             resumo[r.convivente_id]["ultimo_movimento_data"] = (
                 r.data_registro.isoformat()
             )
+
+    # Última interação de pares (cobertor/toalha/bagageiro) — histórico completo,
+    # alinhado à validação em registar_rotina (não reseta na virada do dia).
+    instituicao_id = obter_instituicao_escopo(usuario_atual)
+    grupos_pares_resumo = {
+        "Cobertor": ["Retirada de Cobertor", "Entrega de Cobertor"],
+        "Toalha": ["Retirada de Toalha", "Entrega de Toalha"],
+    }
+
+    for grupo, tipos in grupos_pares_resumo.items():
+        ultima_data_subq = (
+            select(
+                RegistroRotinaDB.convivente_id.label("convivente_id"),
+                func.max(RegistroRotinaDB.data_registro).label("ultima_data"),
+            )
+            .where(
+                RegistroRotinaDB.instituicao_id == instituicao_id,
+                RegistroRotinaDB.cancelado != True,
+                RegistroRotinaDB.tipo_registro.in_(tipos),
+            )
+            .group_by(RegistroRotinaDB.convivente_id)
+            .subquery()
+        )
+
+        ultimas_pares = (
+            await db.execute(
+                select(RegistroRotinaDB)
+                .join(
+                    ultima_data_subq,
+                    and_(
+                        RegistroRotinaDB.convivente_id == ultima_data_subq.c.convivente_id,
+                        RegistroRotinaDB.data_registro == ultima_data_subq.c.ultima_data,
+                    ),
+                )
+                .where(RegistroRotinaDB.instituicao_id == instituicao_id)
+            )
+        ).scalars().all()
+
+        for registro in ultimas_pares:
+            if registro.convivente_id not in resumo:
+                resumo[registro.convivente_id] = {
+                    "presencas": [],
+                    "ultimo_movimento": None,
+                    "ultimo_movimento_id": None,
+                    "ultimo_movimento_data": None,
+                    "almocou": False,
+                    "refeicoes": {},
+                    "ultimas_interacoes": {},
+                }
+
+            resumo[registro.convivente_id]["ultimas_interacoes"][grupo] = {
+                "tipo_registro": registro.tipo_registro,
+                "data_registro": registro.data_registro.isoformat(),
+            }
+
+    ultima_bagageiro_subq = (
+        select(
+            RegistroRotinaDB.convivente_id.label("convivente_id"),
+            func.max(RegistroRotinaDB.data_registro).label("ultima_data"),
+        )
+        .where(
+            RegistroRotinaDB.instituicao_id == instituicao_id,
+            RegistroRotinaDB.cancelado != True,
+            RegistroRotinaDB.tipo_registro == TIPO_ROTINA_BAGAGEIRO,
+        )
+        .group_by(RegistroRotinaDB.convivente_id)
+        .subquery()
+    )
+
+    ultimos_bagageiro = (
+        await db.execute(
+            select(RegistroRotinaDB)
+            .join(
+                ultima_bagageiro_subq,
+                and_(
+                    RegistroRotinaDB.convivente_id == ultima_bagageiro_subq.c.convivente_id,
+                    RegistroRotinaDB.data_registro == ultima_bagageiro_subq.c.ultima_data,
+                ),
+            )
+            .where(RegistroRotinaDB.instituicao_id == instituicao_id)
+        )
+    ).scalars().all()
+
+    for registro in ultimos_bagageiro:
+        if registro.convivente_id not in resumo:
+            resumo[registro.convivente_id] = {
+                "presencas": [],
+                "ultimo_movimento": None,
+                "ultimo_movimento_id": None,
+                "ultimo_movimento_data": None,
+                "almocou": False,
+                "refeicoes": {},
+                "ultimas_interacoes": {},
+            }
+
+        resumo[registro.convivente_id]["ultimas_interacoes"]["Bagageiro"] = {
+            "tipo_registro": registro.tipo_registro,
+            "observacao": registro.observacao,
+            "data_registro": registro.data_registro.isoformat(),
+        }
 
     return resumo
 

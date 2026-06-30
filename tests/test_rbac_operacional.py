@@ -13,8 +13,10 @@ from routers.conviventes import (
 )
 from security import (
     bloquear_usuario_global_puro,
+    caminho_api_permitido_para_oficineiro,
     usuario_eh_gestor,
     usuario_eh_global_puro,
+    usuario_eh_oficineiro,
     usuario_eh_tecnico_ou_superior,
 )
 
@@ -171,6 +173,30 @@ def test_tecnico_pode_gerenciar_quartos_e_leitos():
     )
 
 
+def test_manutencao_com_visao_global_nao_e_global_puro():
+    usuario = {
+        "perfil_acesso": "Manutenção",
+        "is_global": True,
+        "is_master": False,
+        "is_manutencao": True,
+    }
+
+    assert not usuario_eh_global_puro(usuario)
+    assert usuario_eh_tecnico_ou_superior(usuario)
+    bloquear_usuario_global_puro(usuario)
+
+
+def test_manutencao_por_perfil_nao_e_global_puro_mesmo_sem_master():
+    usuario = {
+        "perfil_acesso": "Manutenção",
+        "is_global": True,
+        "is_master": False,
+    }
+
+    assert not usuario_eh_global_puro(usuario)
+    bloquear_usuario_global_puro(usuario)
+
+
 def test_orientador_nao_pode_gerenciar_quartos_e_leitos():
     assert not usuario_eh_tecnico_ou_superior(
         {
@@ -238,3 +264,31 @@ def test_convivente_inativo_bloqueia_registro_operacional():
 
     assert getattr(erro.value, "status_code", None) == 409
     assert "Ative o convivente" in str(erro.value.detail)
+
+
+def test_oficineiro_eh_identificado_pelo_perfil():
+    usuario = {
+        "perfil_acesso": "Oficineiro(a)",
+        "is_master": False,
+    }
+
+    assert usuario_eh_oficineiro(usuario)
+    assert not usuario_eh_gestor(usuario)
+
+
+def test_oficineiro_legado_eh_normalizado():
+    usuario = {
+        "perfil_acesso": "Oficineiro",
+        "is_master": False,
+    }
+
+    assert usuario_eh_oficineiro(usuario)
+
+
+def test_caminho_api_oficineiro_permite_atividades_e_bloqueia_conviventes():
+    assert caminho_api_permitido_para_oficineiro("/api/atividades", "GET")
+    assert caminho_api_permitido_para_oficineiro("/api/atividades/sisa/catalogo", "GET")
+    assert caminho_api_permitido_para_oficineiro("/api/usuarios", "GET")
+    assert caminho_api_permitido_para_oficineiro("/api/usuarios/me", "GET")
+    assert not caminho_api_permitido_para_oficineiro("/api/conviventes", "GET")
+    assert not caminho_api_permitido_para_oficineiro("/api/rotina", "POST")

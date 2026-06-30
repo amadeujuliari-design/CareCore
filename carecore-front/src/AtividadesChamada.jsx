@@ -23,8 +23,8 @@ function formatarData(valor) {
 }
 
 export default function AtividadesChamada() {
-  const { isGlobal, usuario } = useAuth();
-  const somenteLeitura = usuarioSomenteLeituraAtividades(usuario, isGlobal);
+  const { usuario } = useAuth();
+  const somenteLeitura = usuarioSomenteLeituraAtividades(usuario);
   const [atividades, setAtividades] = useState([]);
   const [ocorrencias, setOcorrencias] = useState([]);
   const [atividadeId, setAtividadeId] = useState('');

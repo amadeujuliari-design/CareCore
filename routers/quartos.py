@@ -11,6 +11,17 @@ from carteirinha_operacional import sincronizar_leito_provisorio_convivente
 
 router = APIRouter(prefix="/api/quartos", tags=["Quartos e Leitos"])
 
+STATUS_CONVIVENTE_OCUPA_LEITO = frozenset({
+    "Ativo",
+    "Em acolhimento",
+    "Ausência justificada",
+})
+STATUS_CONVIVENTE_LIBERA_LEITO = frozenset({
+    "Inativado",
+    "Bloqueado",
+    "Saída qualificada",
+})
+
 exigir_alocacao_leito = exigir_perfis("Gestor", "Técnico", "Administrativo")
 
 
@@ -86,16 +97,18 @@ async def listar_quartos(
                         ConviventeDB.numero_institucional,
                         ConviventeDB.cpf,
                         ConviventeDB.leito_id,
+                        ConviventeDB.status,
                     ).where(
                         ConviventeDB.instituicao_id == instituicao_id,
                         ConviventeDB.leito_id.in_(leito_ids),
-                        ConviventeDB.status == "Ativo",
+                        ConviventeDB.status.in_(STATUS_CONVIVENTE_OCUPA_LEITO),
                     )
                 )
             ).all()
             convivente_por_leito = {row.leito_id: row for row in ocupantes}
 
     lista_quartos = []
+    leitos_orfaos_corrigidos = False
 
     for q in quartos:
         lista_leitos = []
@@ -107,9 +120,12 @@ async def listar_quartos(
             convivente_nome_completo = None
             numero_institucional = None
             cpf = None
+            convivente_status = None
+            status_leito = l.status
 
             if convivente:
                 convivente_id = convivente.id
+                convivente_status = convivente.status
                 convivente_nome_completo = (
                     convivente.nome_social
                     or convivente.nome_completo
@@ -124,12 +140,18 @@ async def listar_quartos(
 
                 numero_institucional = convivente.numero_institucional
                 cpf = convivente.cpf
+                status_leito = "Ocupado"
+            elif l.status == "Ocupado":
+                l.status = "Livre"
+                status_leito = "Livre"
+                leitos_orfaos_corrigidos = True
 
             lista_leitos.append({
                 "id": l.id,
                 "identificacao": l.identificacao,
-                "status": l.status,
+                "status": status_leito,
                 "convivente_id": convivente_id,
+                "convivente_status": convivente_status,
                 "convivente_nome": convivente_nome,
                 "convivente_nome_completo": convivente_nome_completo,
                 "numero_institucional": numero_institucional,
@@ -149,6 +171,9 @@ async def listar_quartos(
         })
 
     lista_quartos.sort(key=lambda quarto: chave_ordenacao_natural(quarto["nome"]))
+
+    if leitos_orfaos_corrigidos:
+        await db.commit()
 
     return lista_quartos
 
@@ -193,7 +218,7 @@ async def alocar_convivente_leito(
             select(ConviventeDB).where(
                 ConviventeDB.instituicao_id == instituicao_id,
                 ConviventeDB.leito_id == leito_id,
-                ConviventeDB.status == "Ativo"
+                ConviventeDB.status.in_(STATUS_CONVIVENTE_OCUPA_LEITO),
             )
         )
     ).scalar_one_or_none()
@@ -260,7 +285,7 @@ async def liberar_leito(
             select(ConviventeDB).where(
                 ConviventeDB.instituicao_id == instituicao_id,
                 ConviventeDB.leito_id == leito_id,
-                ConviventeDB.status == "Ativo"
+                ConviventeDB.status.in_(STATUS_CONVIVENTE_OCUPA_LEITO),
             )
         )
     ).scalar_one_or_none()
@@ -320,7 +345,7 @@ async def atualizar_quarto(
                     select(ConviventeDB.leito_id).where(
                         ConviventeDB.instituicao_id == instituicao_id,
                         ConviventeDB.leito_id.in_(list(mapa_leitos_atuais.keys())),
-                        ConviventeDB.status == "Ativo"
+                        ConviventeDB.status.in_(STATUS_CONVIVENTE_OCUPA_LEITO),
                     )
                 )
             ).scalars().all()
@@ -400,7 +425,7 @@ async def excluir_quarto(
                     select(ConviventeDB.id).where(
                         ConviventeDB.instituicao_id == instituicao_id,
                         ConviventeDB.leito_id.in_(leito_ids),
-                        ConviventeDB.status == "Ativo"
+                        ConviventeDB.status.in_(STATUS_CONVIVENTE_OCUPA_LEITO),
                     )
                 )
             ).scalar_one_or_none()

@@ -2,6 +2,7 @@ import AuthenticatedImage from '../AuthenticatedImage';
 import ProntuarioFamilia from './ProntuarioFamilia';
 import { EQUIPAMENTO_ANTERIOR_OUTROS } from '../../config/piaFichaConfig';
 import { calcularIdade } from '../../utils/conviventesUtils';
+import { MOTIVOS_EXCECAO_PORTARIA } from '../../utils/rotinaPortariaHorariosUtils';
 
 function valorSelectOrigemPrincipal(formData = {}) {
   if (formData.origem_encaminhamento_id === EQUIPAMENTO_ANTERIOR_OUTROS) return EQUIPAMENTO_ANTERIOR_OUTROS;
@@ -74,6 +75,12 @@ export default function ProntuarioPessoais({
         </div>
 
         <div className="flex-1 w-full space-y-3">
+          {editandoId && (
+            <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600">
+              <strong>Carteirinhas impressas (oficial):</strong>{' '}
+              {Number(formData.impressoes_carteirinha_oficiais || 0)}
+            </div>
+          )}
           <div><label className="block text-xs font-semibold text-gray-700 mb-1">Nome Civil Completo *</label><input type="text" required name="nome_completo" value={formData.nome_completo} onChange={handleChange} className="w-full px-3 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none text-sm font-medium" /></div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div><label className="block text-xs font-semibold text-gray-700 mb-1">Nome Social</label><input type="text" name="nome_social" value={formData.nome_social} onChange={handleChange} className="w-full px-3 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none text-sm" /></div>
@@ -269,6 +276,56 @@ export default function ProntuarioPessoais({
             <p className="mt-1 text-[10px] font-bold text-slate-500">
               Apenas Gestor e Técnico podem alterar quarto/cama pelo módulo Acomodações.
             </p>
+          )}
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-indigo-100 bg-indigo-50/60 p-4 space-y-4">
+        <div>
+          <h3 className="text-sm font-bold text-indigo-900">Exceção de horário na portaria</h3>
+          <p className="mt-1 text-xs text-indigo-700">
+            Quando configurada, substitui os limites padrão (saída até 17:00 e entrada até 19:00) para este convivente.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div>
+            <label className="block text-xs font-semibold text-gray-700 mb-1">Motivo</label>
+            <select
+              name="portaria_excecao_motivo"
+              value={formData.portaria_excecao_motivo || ''}
+              onChange={handleChange}
+              className="w-full px-3 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none bg-white text-sm"
+            >
+              {MOTIVOS_EXCECAO_PORTARIA.map((item) => (
+                <option key={item.valor || 'padrao'} value={item.valor}>{item.rotulo}</option>
+              ))}
+            </select>
+          </div>
+
+          {formData.portaria_excecao_motivo && (
+            <>
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">Saída até</label>
+                <input
+                  type="time"
+                  name="portaria_excecao_saida_ate"
+                  value={formData.portaria_excecao_saida_ate || '17:00'}
+                  onChange={handleChange}
+                  className="w-full px-3 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none bg-white text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">Entrada até</label>
+                <input
+                  type="time"
+                  name="portaria_excecao_entrada_ate"
+                  value={formData.portaria_excecao_entrada_ate || '19:00'}
+                  onChange={handleChange}
+                  className="w-full px-3 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none bg-white text-sm"
+                />
+              </div>
+            </>
           )}
         </div>
       </div>

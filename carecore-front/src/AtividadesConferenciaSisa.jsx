@@ -78,8 +78,8 @@ function formatarVariacao(valor, invertido = false) {
 }
 
 export default function AtividadesConferenciaSisa() {
-  const { isGlobal, usuario } = useAuth();
-  const somenteLeitura = usuarioSomenteLeituraAtividades(usuario, isGlobal);
+  const { usuario } = useAuth();
+  const somenteLeitura = usuarioSomenteLeituraAtividades(usuario);
   const arquivoInputRef = useRef(null);
   const detalheConferenciaRef = useRef(null);
   const [arquivo, setArquivo] = useState(null);

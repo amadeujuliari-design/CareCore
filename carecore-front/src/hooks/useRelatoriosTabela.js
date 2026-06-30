@@ -20,6 +20,7 @@ export function useRelatoriosTabela({
   historicoRotinaFiltrado,
   leitosAcomodacoesFiltrados,
   ocorrenciasFiltradas,
+  incluirTextoOriginalOcorrencias = false,
   paginaTabela,
   relatoriosAtuais,
   registrosPiaFiltrados = [],
@@ -110,13 +111,18 @@ export function useRelatoriosTabela({
     }
 
     if (aba === 'ocorrencias') {
+      const colunas = ['Data', 'Convivente', 'Tipo', 'Motivo', 'Prioridade', 'Status', 'Técnico', 'Descrição'];
+      if (incluirTextoOriginalOcorrencias) {
+        colunas.push('Motivo original', 'Descrição original');
+      }
+
       return {
         titulo: 'Ocorrências filtradas',
-        colunas: ['Data', 'Convivente', 'Tipo', 'Motivo', 'Prioridade', 'Status', 'Técnico'],
+        colunas,
         linhas: ocorrenciasFiltradas.map((ocorrencia) => {
           const convivente = conviventes.find((c) => c.id === ocorrencia.convivente_id);
 
-          return {
+          const linha = {
             Data: formatarDataHora(ocorrencia.data_ocorrencia),
             Convivente: convivente?.nome_social || convivente?.nome_completo || '-',
             Tipo: ocorrencia.tipo_ocorrencia || '-',
@@ -124,7 +130,15 @@ export function useRelatoriosTabela({
             Prioridade: normalizarPrioridade(ocorrencia.prioridade),
             Status: ocorrencia.status_resolucao || '-',
             Técnico: mapaTecnicos.get(ocorrencia.tecnico_responsavel_id) || 'Sem técnico',
+            Descrição: ocorrencia.descricao || '-',
           };
+
+          if (incluirTextoOriginalOcorrencias) {
+            linha['Motivo original'] = ocorrencia.motivo_original || '-';
+            linha['Descrição original'] = ocorrencia.descricao_original || '-';
+          }
+
+          return linha;
         }),
       };
     }
@@ -354,7 +368,7 @@ export function useRelatoriosTabela({
         }))
       ),
     };
-  }, [aba, conviventes, conviventesFiltrados, dadosEvolucao.mediaDiaria, dadosEvolucao.pico, dadosEvolucao.tendencia, dadosEvolucao.totalAtendimentos, equipe, filtros.tecnicoId, historicoRotinaFiltrado, leitosAcomodacoesFiltrados, mapaEquipe, mapaLeitos, mapaTecnicos, ocorrenciasFiltradas, registrosPiaFiltrados, relatoriosAtuais, resumoPendenciasTecnicasEvolucao, tecnicoPendenciasSelecionadoNome, tecnicos, totalNovosAcolhimentosEvolucao]);
+  }, [aba, conviventes, conviventesFiltrados, dadosEvolucao.mediaDiaria, dadosEvolucao.pico, dadosEvolucao.tendencia, dadosEvolucao.totalAtendimentos, equipe, filtros.tecnicoId, historicoRotinaFiltrado, incluirTextoOriginalOcorrencias, leitosAcomodacoesFiltrados, mapaEquipe, mapaLeitos, mapaTecnicos, ocorrenciasFiltradas, registrosPiaFiltrados, relatoriosAtuais, resumoPendenciasTecnicasEvolucao, tecnicoPendenciasSelecionadoNome, tecnicos, totalNovosAcolhimentosEvolucao]);
 
   const linhasResumoMetricas = relatoriosAtuais.flatMap((relatorio) =>
     (relatorio.metricas || []).map((metrica) => ({

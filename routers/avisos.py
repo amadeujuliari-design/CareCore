@@ -21,6 +21,7 @@ from schemas import (
 )
 from security import get_usuario_logado
 from time_operacional import agora_operacional_naive, parse_data_filtro_operacional
+from revisao_texto import sanitizar_aviso_para_usuario
 
 router = APIRouter(prefix="/api/avisos", tags=["Avisos e Comunicação Interna"])
 
@@ -79,6 +80,11 @@ def _pode_consultar_historico_avisos(usuario_atual: dict) -> bool:
 
 def _agora_operacional_naive() -> datetime:
     return agora_operacional_naive()
+
+
+def _aviso_para_resposta(aviso: AvisoDB, usuario_atual: dict) -> dict:
+    dados = {c.name: getattr(aviso, c.name) for c in aviso.__table__.columns}
+    return sanitizar_aviso_para_usuario(dados, usuario_atual)
 
 
 def _aviso_ativo_e_valido():
@@ -224,6 +230,8 @@ async def criar_aviso(
         remetente_id=usuario_id,
         titulo=payload.titulo.strip(),
         mensagem=payload.mensagem.strip(),
+        titulo_original=(payload.titulo_original or "").strip() or None,
+        mensagem_original=(payload.mensagem_original or "").strip() or None,
         classificacao=(payload.classificacao or "Informativo").strip(),
         prioridade=(payload.prioridade or "normal").strip().lower(),
         destino_tipo=destino_tipo,
@@ -249,7 +257,7 @@ async def criar_aviso(
     await db.commit()
     await db.refresh(novo_aviso)
 
-    return novo_aviso
+    return _aviso_para_resposta(novo_aviso, usuario_atual)
 
 
 @router.get("/me", response_model=AvisoMeListResponse)
@@ -346,6 +354,10 @@ async def listar_meus_avisos(
     for aviso, remetente_nome, remetente_avatar_url, remetente_perfil_acesso, lido, lido_em in resultado.all():
         lido_bool = bool(lido)
         pode_exibir_titulo = aviso.destino_tipo == "todos" or _usuario_eh_gestor(usuario_atual)
+        dados_sanitizados = sanitizar_aviso_para_usuario(
+            {c.name: getattr(aviso, c.name) for c in aviso.__table__.columns},
+            usuario_atual,
+        )
 
         avisos.append(
             AvisoDashboardResponse(
@@ -369,6 +381,8 @@ async def listar_meus_avisos(
                 criado_em=aviso.criado_em,
                 valido_ate=aviso.valido_ate,
                 pode_exibir_titulo=pode_exibir_titulo,
+                titulo_original=dados_sanitizados.get("titulo_original"),
+                mensagem_original=dados_sanitizados.get("mensagem_original"),
             )
         )
 
@@ -507,7 +521,7 @@ async def listar_historico_avisos(
     total_int = int(total or 0)
 
     return {
-        "items": items,
+        "items": [_aviso_para_resposta(aviso, usuario_atual) for aviso in items],
         "total": total_int,
         "limit": limite,
         "offset": offset,

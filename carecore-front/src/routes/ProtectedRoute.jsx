@@ -1,4 +1,4 @@
-import { Navigate } from 'react-router-dom';
+import { Navigate, useLocation } from 'react-router-dom';
 
 import ChatFlutuante from '../components/ChatFlutuante';
 import { useAuth } from '../context/AuthContext';
@@ -7,6 +7,11 @@ import {
   MENSAGEM_LOGIN_BLOQUEADO_MANUTENCAO,
   usuarioPodeAcessarDuranteManutencao,
 } from '../config/manutencao';
+import {
+  normalizarPerfilRbac,
+  rotaEhModuloAtividades,
+  usuarioEhOficineiro,
+} from '../utils/rbacUtils';
 
 const PERFIS_LEGADOS = {
   Gestao: 'Gestor',
@@ -14,6 +19,7 @@ const PERFIS_LEGADOS = {
   Gerente: 'Gestor',
   Tecnico: 'Técnico',
   Executivo: 'Global',
+  Oficineiro: 'Oficineiro(a)',
 };
 
 function normalizarPerfil(perfil) {
@@ -21,7 +27,7 @@ function normalizarPerfil(perfil) {
     return '';
   }
 
-  return PERFIS_LEGADOS[perfil] || perfil;
+  return PERFIS_LEGADOS[perfil] || normalizarPerfilRbac(perfil);
 }
 
 export default function ProtectedRoute({
@@ -32,6 +38,7 @@ export default function ProtectedRoute({
     usuario,
     loading,
   } = useAuth();
+  const { pathname } = useLocation();
 
   if (loading) {
     return (
@@ -68,6 +75,10 @@ export default function ProtectedRoute({
     );
   }
 
+  if (usuarioEhOficineiro(usuario) && !rotaEhModuloAtividades(pathname)) {
+    return <Navigate to="/atividades/chamada" replace />;
+  }
+
   if (
     perfis.length > 0 &&
     usuario.is_manutencao !== true &&
@@ -91,7 +102,7 @@ export default function ProtectedRoute({
   return (
     <div className="carecore-premium-frame">
       {children}
-      <ChatFlutuante />
+      {!usuarioEhOficineiro(usuario) && <ChatFlutuante />}
     </div>
   );
 }

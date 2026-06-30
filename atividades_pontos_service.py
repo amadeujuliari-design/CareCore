@@ -9,7 +9,7 @@ from sqlalchemy.future import select
 
 from models import AtividadePontosResgateDB, AtividadePresencaDB, ConviventeDB
 
-PONTOS_POR_PRESENCA_ATIVIDADE = 10
+PONTOS_POR_PRESENCA_ATIVIDADE = 1
 STATUS_CONVIVENTE_PONTOS = {"Ativo", "Em acolhimento"}
 
 

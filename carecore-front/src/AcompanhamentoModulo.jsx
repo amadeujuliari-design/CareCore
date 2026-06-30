@@ -16,7 +16,7 @@ import {
   TIPOS_ACAO_ACOMPANHAMENTO,
   obterMetadadosTipoAcao,
 } from './config/tiposAcaoAcompanhamento';
-import DiscussaoEvolucoesModal from './components/acompanhamentos/DiscussaoEvolucoesModal';
+import { usuarioEhGlobalPuro } from './utils/rbacUtils';
 import PotEvolucoesModal from './components/acompanhamentos/PotEvolucoesModal';
 import { filtrarOrdenarConviventesPorBusca } from './utils/conviventeBuscaUtils';
 import { REGISTROS_POR_PAGINA_PRONTUARIO } from './utils/prontuarioHistoricoFluxoUtils';
@@ -107,9 +107,9 @@ function preencherFormularioEdicao(registro, campos) {
 export default function AcompanhamentoModulo() {
   const { slug } = useParams();
   const [searchParams] = useSearchParams();
-  const { isGlobal, usuario } = useAuth();
+  const { usuario } = useAuth();
   const modulo = obterModuloPorSlug(slug);
-  const somenteLeitura = isGlobal && usuario?.is_manutencao !== true;
+  const somenteLeitura = usuarioEhGlobalPuro(usuario);
   const conviventePrefillProcessado = useRef(false);
   const conviventeInputRef = useRef(null);
   const sentinelRef = useRef(null);

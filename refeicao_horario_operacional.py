@@ -34,3 +34,8 @@ def validar_horario_refeicao_operacional(tipo_refeicao: str, momento: datetime) 
             f"{_formatar_hora(inicio)} e {_formatar_hora(fim)} (horário de Brasília)."
         ),
     )
+
+
+def mensagem_indica_horario_refeicao_fora_janela(mensagem: str | None) -> bool:
+    texto = str(mensagem or "").lower()
+    return "permitido apenas entre" in texto and "horário de brasília" in texto

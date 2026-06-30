@@ -8,6 +8,7 @@ export default function ModalCarteirinha({
   listaTecnicos,
   fotoCarteirinha,
   identidadeRelatorio,
+  onImpresso = null,
 }) {
   if (!carteirinhaAberta) return null;
 
@@ -39,6 +40,9 @@ export default function ModalCarteirinha({
               tecnicos: listaTecnicos,
               fotoCaminho: fotoCarteirinha,
               identidadeRelatorio,
+              onImpresso: (resultado) => {
+                onImpresso?.(carteirinhaAberta.id, resultado);
+              },
             })}
             className="px-4 py-2 bg-brand text-white font-bold rounded-lg hover:bg-brandDark transition-colors w-full flex justify-center items-center gap-2 shadow-md text-sm"
           >

@@ -5,6 +5,8 @@ import {
   exigeJustificativaRetornoRapidoRotina,
   filtrarContagensInteracaoSemAlimentacao,
   obterCodigoCarteirinhaConvivente,
+  obterProximaInteracaoPar,
+  obterRotuloBotaoInteracao,
   perfilOcultaSomatoriaAlimentacao,
   totalInteracoesSemAlimentacao,
 } from './rotinaDiariaUtils.js';
@@ -64,5 +66,39 @@ describe('rotinaDiariaUtils', () => {
 
     assert.deepEqual(filtrarContagensInteracaoSemAlimentacao(contagens), { Banho: 3 });
     assert.equal(totalInteracoesSemAlimentacao(contagens), 3);
+  });
+
+  it('sugere entrega de cobertor apos retirada', () => {
+    const resumoHoje = {
+      pessoa1: {
+        ultimas_interacoes: {
+          Cobertor: { tipo_registro: 'Retirada de Cobertor' },
+        },
+      },
+    };
+
+    assert.equal(
+      obterProximaInteracaoPar(resumoHoje, 'pessoa1', 'Cobertor'),
+      'Entrega de Cobertor',
+    );
+    assert.equal(
+      obterRotuloBotaoInteracao(resumoHoje, 'pessoa1', 'Cobertor'),
+      'Entregar cobertor',
+    );
+  });
+
+  it('usa presencas do dia como fallback para sugerir proxima interacao', () => {
+    const resumoHoje = {
+      pessoa1: {
+        presencas: [
+          { tipo_registro: 'Retirada de Cobertor', data_registro: '2026-06-29T12:26:00' },
+        ],
+      },
+    };
+
+    assert.equal(
+      obterProximaInteracaoPar(resumoHoje, 'pessoa1', 'Cobertor'),
+      'Entrega de Cobertor',
+    );
   });
 });

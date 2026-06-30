@@ -5,9 +5,25 @@
 
 import { gerarHtmlCarteirinhaUnitaria, resolverDadosCarteirinha } from './carteirinhaDados';
 import { obterTokenLocal } from '../services/api';
+import { API_ROOT } from '../config/apiBase';
+import axios from 'axios';
 import { urlArquivoBackend } from './arquivosApi';
 import { criarHeadersAutenticados, criarHeadersCareCore } from './requestIdUtils';
 import logoCarecore from '../assets/logo.PNG';
+
+export async function registrarImpressaoCarteirinhaOficial(
+  conviventeId,
+  { quantidade = 1, origem = 'unitaria' } = {},
+) {
+  if (!conviventeId) return null;
+  const token = obterTokenLocal();
+  const resposta = await axios.post(
+    `${API_ROOT}/carteirinha/conviventes/${conviventeId}/impressao-oficial`,
+    { quantidade, origem },
+    { headers: criarHeadersAutenticados(token) },
+  );
+  return resposta.data;
+}
 
 async function urlImagemParaDataUrl(url) {
   if (!url) return '';
@@ -141,6 +157,7 @@ export async function imprimirCarteirinhaUnitaria({
   tecnicos = [],
   fotoCaminho = null,
   identidadeRelatorio = null,
+  onImpresso = null,
 }) {
   const html = await montarHtmlCarteirinhaDeConvivente(
     convivente,
@@ -154,6 +171,13 @@ export async function imprimirCarteirinhaUnitaria({
   if (!html) return;
 
   await imprimirHtmlNoIframe(html);
+
+  try {
+    const resultado = await registrarImpressaoCarteirinhaOficial(convivente?.id, { origem: 'unitaria' });
+    onImpresso?.(resultado);
+  } catch (erro) {
+    console.error('Falha ao registrar impressão oficial da carteirinha', erro);
+  }
 }
 
 /** Impressão em lote — aba Carteirinhas da central de relatórios. */
@@ -167,6 +191,7 @@ export async function imprimirCarteirinhasLote({
   escala = 0.9,
   guiasCorte = true,
   identidadeRelatorio = null,
+  onImpresso = null,
 }) {
   if (!conviventes.length) return;
 
@@ -251,4 +276,13 @@ export async function imprimirCarteirinhasLote({
 </html>`;
 
   await imprimirHtmlNoIframe(html);
+
+  for (const convivente of conviventes) {
+    try {
+      const resultado = await registrarImpressaoCarteirinhaOficial(convivente.id, { origem: 'lote' });
+      onImpresso?.(convivente.id, resultado);
+    } catch (erro) {
+      console.error('Falha ao registrar impressão oficial da carteirinha', convivente.id, erro);
+    }
+  }
 }

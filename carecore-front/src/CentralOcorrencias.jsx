@@ -35,6 +35,9 @@ import {
 } from './utils/prontuarioHistoricoFluxoUtils';
 import { decodificarPayloadJwt } from './utils/jwtUtils';
 import { criarHeadersAutenticados } from './utils/requestIdUtils';
+import { RevisarTextoPainel } from './components/RevisarTextoPainel';
+import { TextoOriginalBloco } from './components/TextoOriginalBloco';
+import { lerUsuarioTextoOriginal, usuarioPodeVerTextoOriginal } from './utils/textoOriginalUtils';
 
 
 const TAMANHO_PAGINA_OCORRENCIAS = 30;
@@ -46,17 +49,20 @@ export default function CentralOcorrencias() {
 
   let perfilUsuario = '';
   let idUsuarioLogado = '';
+  let usuarioTextoOriginal = { perfil: '', isMaster: false, is_manutencao: false };
   try {
     if (token) {
       const payload = decodificarPayloadJwt(token) || {};
       perfilUsuario = payload.perfil_acesso || '';
       idUsuarioLogado = payload.sub || '';
+      usuarioTextoOriginal = lerUsuarioTextoOriginal(token);
     }
   } catch (e) {
     console.error('Erro ao ler token', e);
   }
 
   const isGestor = ['Gestor', 'Gestao', 'Gestão', 'Gerente'].includes(perfilUsuario);
+  const podeVerTextoOriginal = usuarioPodeVerTextoOriginal(usuarioTextoOriginal);
 
   const [ocorrencias, setOcorrencias] = useState([]);
   const [totalOcorrencias, setTotalOcorrencias] = useState(0);
@@ -68,6 +74,8 @@ export default function CentralOcorrencias() {
   
   const [chamadoSelecionado, setChamadoSelecionado] = useState(null);
   const [novaMensagem, setNovaMensagem] = useState('');
+  const [novaMensagemOriginal, setNovaMensagemOriginal] = useState('');
+  const [incluirTextoOriginalRelatorio, setIncluirTextoOriginalRelatorio] = useState(false);
   const [enviando, setEnviando] = useState(false);
   const [encerrarChamado, setEncerrarChamado] = useState(false);
 
@@ -104,13 +112,16 @@ export default function CentralOcorrencias() {
     tipo_ocorrencia: 'Comportamental',
     motivo: '',
     descricao: '',
+    motivo_original: '',
+    descricao_original: '',
     requer_acao_tecnica: false,
     prioridade: 'Média',
     convivente_autor_ocorrencia: false,
     funcionario_envolvido_id: '',
     assinatura_convivente_metodo: 'Carteirinha',
     assinatura_convivente_codigo: '',
-    observadores_ids: []
+    observadores_ids: [],
+    funcionarios_envolvidos_ids: [],
   };
   const [formNovo, setFormNovo] = useState(estadoNovoChamado);
 
@@ -230,7 +241,13 @@ export default function CentralOcorrencias() {
     };
   }, [scannerAssinaturaAberto]);
 
-  const carregarOcorrencias = async (pagina = paginaAtual) => {
+  const carregarOcorrencias = async (pagina = paginaAtual, filtrosSobrepor = null) => {
+    const dataInicio = filtrosSobrepor?.dataInicio ?? filtroDataInicio;
+    const dataFim = filtrosSobrepor?.dataFim ?? filtroDataFim;
+
+    if (filtrosSobrepor?.dataInicio) setFiltroDataInicio(filtrosSobrepor.dataInicio);
+    if (filtrosSobrepor?.dataFim) setFiltroDataFim(filtrosSobrepor.dataFim);
+
     setLoading(true);
     try {
       const paginaNormalizada = Math.max(1, Number(pagina) || 1);
@@ -241,8 +258,8 @@ export default function CentralOcorrencias() {
           offset: (paginaNormalizada - 1) * TAMANHO_PAGINA_OCORRENCIAS,
           prioridade: filtroPrioridade,
           status: filtroStatus,
-          data_inicio: filtroDataInicio || undefined,
-          data_fim: filtroDataFim || undefined,
+          data_inicio: dataInicio || undefined,
+          data_fim: dataFim || undefined,
           busca: filtroBusca || undefined,
           tecnico_id: filtroTecnicoId || undefined,
         },
@@ -347,13 +364,13 @@ export default function CentralOcorrencias() {
     });
   };
 
-  const montarDadosRelatorioOcorrencias = (lista = ocorrenciasFiltradas) => {
+  const montarDadosRelatorioOcorrencias = (lista = ocorrenciasFiltradas, incluirOriginal = false) => {
     return (Array.isArray(lista) ? lista : []).map((oc) => {
       const paciente = listaConviventes.find((c) => c.id === oc.convivente_id);
       const nomePaciente = oc.convivente_nome || (paciente ? (paciente.nome_social || paciente.nome_completo) : "-");
       const funcionario = listaFuncionarios.find((u) => u.id === oc.funcionario_envolvido_id);
 
-      return {
+      const linha = {
         Data: oc.data_ocorrencia ? new Date(oc.data_ocorrencia).toLocaleString("pt-BR") : "-",
         Convivente: nomePaciente,
         "Autor convivente": oc.convivente_autor_ocorrencia ? "Sim" : "Não",
@@ -366,6 +383,13 @@ export default function CentralOcorrencias() {
         "Requer ação técnica": oc.requer_acao_tecnica ? "Sim" : "Não",
         Descrição: oc.descricao || "-",
       };
+
+      if (incluirOriginal) {
+        linha["Motivo original"] = oc.motivo_original || "-";
+        linha["Descrição original"] = oc.descricao_original || "-";
+      }
+
+      return linha;
     });
   };
 
@@ -381,6 +405,7 @@ export default function CentralOcorrencias() {
     "Responsável técnico",
     "Requer ação técnica",
     "Descrição",
+    ...(incluirTextoOriginalRelatorio ? ["Motivo original", "Descrição original"] : []),
   ];
 
   const montarSubtituloRelatorioOcorrencias = () => {
@@ -416,7 +441,7 @@ export default function CentralOcorrencias() {
           "Alta/Crítica pendentes": relatorioOcorrencias.filtrado.altaCriticaPendentes,
         },
         colunas: colunasRelatorioOcorrencias,
-        dados: montarDadosRelatorioOcorrencias(ocorrenciasCompletas),
+        dados: montarDadosRelatorioOcorrencias(ocorrenciasCompletas, incluirTextoOriginalRelatorio),
       });
     } catch (error) {
       console.error(error);
@@ -436,7 +461,7 @@ export default function CentralOcorrencias() {
         titulo: "Relatório de Ocorrências",
         subtitulo: montarSubtituloRelatorioOcorrencias(),
         colunas: colunasRelatorioOcorrencias,
-        dados: montarDadosRelatorioOcorrencias(ocorrenciasCompletas),
+        dados: montarDadosRelatorioOcorrencias(ocorrenciasCompletas, incluirTextoOriginalRelatorio),
         identidade: {
           ...identidadeRelatorio,
           logo_src: obterLogoRelatorioSrc(logoRelatorioDataUrl),
@@ -493,12 +518,14 @@ export default function CentralOcorrencias() {
   const abrirChamado = (chamado) => {
     setChamadoSelecionado(chamado);
     setNovaMensagem('');
+    setNovaMensagemOriginal('');
     setEncerrarChamado(false);
   };
 
   const fecharChamado = () => {
     setChamadoSelecionado(null);
     setNovaMensagem('');
+    setNovaMensagemOriginal('');
     setEncerrarChamado(false);
     carregarOcorrencias(paginaAtual);
   };
@@ -664,6 +691,19 @@ export default function CentralOcorrencias() {
     });
   };
 
+  const handleToggleFuncionarioEnvolvido = (id) => {
+    setFormNovo((prev) => {
+      const ids = prev.funcionarios_envolvidos_ids || [];
+      const jaMarcado = ids.includes(id);
+      return {
+        ...prev,
+        funcionarios_envolvidos_ids: jaMarcado
+          ? ids.filter((item) => item !== id)
+          : [...ids, id],
+      };
+    });
+  };
+
   const handleSelecionarTodos = () => {
     if (formNovo.observadores_ids.length === listaEquipe.length) {
       setFormNovo({ ...formNovo, observadores_ids: [] }); 
@@ -702,6 +742,7 @@ export default function CentralOcorrencias() {
         ...formNovo,
         tipo_ocorrencia: formNovo.convivente_autor_ocorrencia ? 'Reclamação do convivente' : formNovo.tipo_ocorrencia,
         funcionario_envolvido_id: formNovo.convivente_autor_ocorrencia ? formNovo.funcionario_envolvido_id : null,
+        funcionarios_envolvidos_ids: formNovo.funcionarios_envolvidos_ids || [],
         assinatura_convivente_metodo: formNovo.convivente_autor_ocorrencia ? formNovo.assinatura_convivente_metodo : null,
         assinatura_convivente_codigo: formNovo.convivente_autor_ocorrencia ? formNovo.assinatura_convivente_codigo : null,
         tecnico_responsavel_id: paciente?.tecnico_id || null
@@ -720,7 +761,10 @@ export default function CentralOcorrencias() {
           id: resposta.data?.id,
         });
       }
-      carregarOcorrencias(1);
+      carregarOcorrencias(1, {
+        dataInicio: calcularDataInicioPadrao(LISTAGEM_OPERACIONAL_DIAS_PADRAO),
+        dataFim: dataHojeIsoLocal(),
+      });
     } catch (error) {
       setSucesso('');
       setErroNovoChamado(error.response?.data?.detail || 'Erro ao criar o chamado. Verifique a conexão com o servidor.');
@@ -737,6 +781,7 @@ export default function CentralOcorrencias() {
     try {
       const payload = {
         mensagem: novaMensagem,
+        mensagem_original: novaMensagemOriginal || null,
         tipo_interacao: encerrarChamado ? "Parecer Técnico" : "Comentário"
       };
 
@@ -750,6 +795,7 @@ export default function CentralOcorrencias() {
         fecharChamado();
       } else {
         setNovaMensagem('');
+        setNovaMensagemOriginal('');
         const response = await axios.get(`${API_ROOT}/ocorrencias`, {
           headers: criarHeadersAutenticados(token),
           params: {
@@ -823,7 +869,7 @@ export default function CentralOcorrencias() {
               <div>
                 <h2 className="font-black text-gray-800 text-sm">Filtros de ocorrências</h2>
                 <p className="text-xs text-gray-500">
-                  Por padrão, últimos {LISTAGEM_OPERACIONAL_DIAS_PADRAO} dias. Amplie o período quando precisar.
+                  Por padrão, últimos {LISTAGEM_OPERACIONAL_DIAS_PADRAO} dias (resolvidas). Pendentes sempre aparecem na fila.
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">
@@ -920,6 +966,17 @@ export default function CentralOcorrencias() {
               </div>
 
               <div className="flex flex-wrap gap-2">
+                {podeVerTextoOriginal && (
+                  <label className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={incluirTextoOriginalRelatorio}
+                      onChange={(e) => setIncluirTextoOriginalRelatorio(e.target.checked)}
+                      className="rounded border-slate-300"
+                    />
+                    Incluir texto original
+                  </label>
+                )}
                 <ReportActionButton action="export" onClick={exportarRelatorioOcorrenciasXLSX} disabled={preparandoRelatorio}>
                   {preparandoRelatorio ? 'Preparando...' : 'Exportar'}
                 </ReportActionButton>
@@ -1194,6 +1251,11 @@ export default function CentralOcorrencias() {
                   </span>
                 </div>
                 <h2 className="text-lg font-bold mt-2 leading-tight break-words">{chamadoSelecionado.motivo}</h2>
+                <TextoOriginalBloco
+                  usuario={usuarioTextoOriginal}
+                  motivoOriginal={chamadoSelecionado.motivo_original}
+                  className="mt-2"
+                />
                 
                 {(() => {
                   const pModal = listaConviventes.find(c => c.id === chamadoSelecionado.convivente_id);
@@ -1253,10 +1315,25 @@ export default function CentralOcorrencias() {
                 );
               })()}
               
+              {chamadoSelecionado.funcionarios_envolvidos?.length > 0 && (
+                <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                  <p className="text-[10px] font-black uppercase text-slate-500">Funcionários envolvidos</p>
+                  <p className="mt-1 text-sm font-semibold text-slate-800">
+                    {chamadoSelecionado.funcionarios_envolvidos
+                      .map((item) => listaFuncionarios.find((u) => u.id === item.usuario_id)?.nome || 'Não identificado')
+                      .join(', ')}
+                  </p>
+                </div>
+              )}
+
               <div className="flex flex-col">
                 <span className="text-[10px] font-bold text-gray-400 ml-4 mb-1">RELATO INICIAL (ABERTURA)</span>
                 <div className="bg-white p-4 rounded-2xl rounded-tl-none border border-gray-200 shadow-sm self-start max-w-full sm:max-w-[85%]">
                   <p className="text-sm text-gray-700 whitespace-pre-wrap">{chamadoSelecionado.descricao}</p>
+                  <TextoOriginalBloco
+                    usuario={usuarioTextoOriginal}
+                    descricaoOriginal={chamadoSelecionado.descricao_original}
+                  />
                 </div>
               </div>
 
@@ -1274,6 +1351,10 @@ export default function CentralOcorrencias() {
                       souEu ? 'bg-brand text-white rounded-tr-none' : 'bg-white border border-gray-200 text-gray-700 rounded-tl-none'
                     }`}>
                       <p className="text-sm whitespace-pre-wrap">{int.mensagem}</p>
+                      <TextoOriginalBloco
+                        usuario={usuarioTextoOriginal}
+                        mensagemOriginal={int.mensagem_original}
+                      />
                     </div>
                   </div>
                 );
@@ -1289,12 +1370,27 @@ export default function CentralOcorrencias() {
                 <form onSubmit={handleEnviarInteracao} className="space-y-3">
                   <textarea 
                     value={novaMensagem}
-                    onChange={(e) => setNovaMensagem(e.target.value)}
+                    onChange={(e) => {
+                      setNovaMensagem(e.target.value);
+                      if (!e.target.value.trim()) setNovaMensagemOriginal('');
+                    }}
                     placeholder="Escreva sua interação ou relato adicional aqui..."
                     className="w-full p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-brand outline-none text-sm resize-none"
                     rows="3"
                     required
                   ></textarea>
+
+                  <RevisarTextoPainel
+                    token={token}
+                    exibirTitulo={false}
+                    texto={novaMensagem}
+                    conviventeId={chamadoSelecionado?.convivente_id || null}
+                    contexto="ocorrencia"
+                    onAplicar={({ texto, texto_original }) => {
+                      setNovaMensagem(texto);
+                      setNovaMensagemOriginal(texto_original);
+                    }}
+                  />
 
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     {(isGestor || (perfilUsuario === 'Técnico' && chamadoSelecionado.tecnico_responsavel_id === idUsuarioLogado)) ? (
@@ -1392,6 +1488,37 @@ export default function CentralOcorrencias() {
                   )}
                 </div>
 
+                {formNovo.convivente_id && (
+                  <div className="bg-white p-4 sm:p-5 rounded-xl border border-gray-200 shadow-sm">
+                    <label className="block text-xs font-bold text-gray-700 uppercase mb-2">
+                      2. Funcionário(s) envolvido(s)
+                    </label>
+                    <p className="text-[11px] text-gray-500 mb-3">
+                      Selecione quem participou ou foi citado no fato. Use este campo em vez de digitar nomes no relato — necessário para a revisão por IA.
+                    </p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-48 overflow-y-auto border border-gray-100 rounded-lg p-3 bg-gray-50">
+                      {listaFuncionarios.map((usuario) => (
+                        <label
+                          key={usuario.id}
+                          className="flex items-center gap-2 cursor-pointer text-sm text-gray-700 hover:bg-white px-2 py-1.5 rounded-lg"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={(formNovo.funcionarios_envolvidos_ids || []).includes(usuario.id)}
+                            onChange={() => handleToggleFuncionarioEnvolvido(usuario.id)}
+                            className="rounded border-gray-300 text-brand focus:ring-brand"
+                          />
+                          <span className="font-medium">{usuario.nome}</span>
+                          <span className="text-[10px] text-gray-400">({usuario.perfil_acesso || 'Equipe'})</span>
+                        </label>
+                      ))}
+                      {listaFuncionarios.length === 0 && (
+                        <p className="text-xs text-gray-500 col-span-full">Nenhum funcionário cadastrado.</p>
+                      )}
+                    </div>
+                  </div>
+                )}
+
                 <div className="bg-white p-4 sm:p-5 rounded-xl border border-amber-200 shadow-sm space-y-4">
                   <label className="flex items-start gap-3 cursor-pointer">
                     <input
@@ -1423,7 +1550,18 @@ export default function CentralOcorrencias() {
                         <label className="block text-xs font-semibold text-gray-600 mb-1">Funcionário citado *</label>
                         <select
                           value={formNovo.funcionario_envolvido_id}
-                          onChange={(e) => setFormNovo({ ...formNovo, funcionario_envolvido_id: e.target.value })}
+                          onChange={(e) => {
+                            const funcionarioId = e.target.value;
+                            setFormNovo((prev) => {
+                              const ids = new Set(prev.funcionarios_envolvidos_ids || []);
+                              if (funcionarioId) ids.add(funcionarioId);
+                              return {
+                                ...prev,
+                                funcionario_envolvido_id: funcionarioId,
+                                funcionarios_envolvidos_ids: [...ids],
+                              };
+                            });
+                          }}
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none bg-white text-sm"
                           required={formNovo.convivente_autor_ocorrencia}
                         >
@@ -1535,7 +1673,24 @@ export default function CentralOcorrencias() {
                     ></textarea>
                   </div>
 
-
+                  <RevisarTextoPainel
+                    token={token}
+                    titulo={formNovo.motivo}
+                    texto={formNovo.descricao}
+                    conviventeId={formNovo.convivente_id || null}
+                    contexto="ocorrencia"
+                    rotuloTitulo="Título resumido"
+                    rotuloTexto="Relato completo"
+                    onAplicar={({ titulo, texto, titulo_original, texto_original }) => {
+                      setFormNovo((atual) => ({
+                        ...atual,
+                        motivo: titulo,
+                        descricao: texto,
+                        motivo_original: titulo_original,
+                        descricao_original: texto_original,
+                      }));
+                    }}
+                  />
 
                   <div>
                     <label className="block text-xs font-semibold text-gray-600 mb-1">Prioridade *</label>

@@ -35,3 +35,11 @@ export function validarHorarioRefeicaoOperacional(tipoRefeicao, momento = new Da
     + `${janela.inicio} e ${janela.fim} (horário de Brasília).`
   );
 }
+
+export function mensagemIndicaHorarioRefeicaoForaJanela(mensagem) {
+  const texto = String(mensagem || '').toLowerCase();
+  return (
+    texto.includes('permitido apenas entre')
+    && texto.includes('horário de brasília')
+  );
+}

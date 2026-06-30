@@ -4,6 +4,7 @@ import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import AusenciaJustificadaAlerta from '../components/AusenciaJustificadaAlerta';
 import AlertaPresencaOperacional from '../components/AlertaPresencaOperacional';
 import ProtectedRoute from './ProtectedRoute';
+import { PERFIS_MODULO_ATIVIDADES } from '../utils/rbacUtils';
 import { deveExibirManutencaoProgramada } from '../config/manutencao';
 
 const Login = lazy(() => import('../Login'));
@@ -156,7 +157,7 @@ function RotasAplicacao() {
         <Route
           path="/atividades"
           element={
-            <ProtectedRoute perfis={['Gestor', 'Técnico', 'Orientador', 'Administrativo', 'Global']}>
+            <ProtectedRoute perfis={PERFIS_MODULO_ATIVIDADES}>
               <AtividadesCadastro />
             </ProtectedRoute>
           }
@@ -165,7 +166,7 @@ function RotasAplicacao() {
         <Route
           path="/atividades/chamada"
           element={
-            <ProtectedRoute perfis={['Gestor', 'Técnico', 'Orientador', 'Administrativo', 'Global']}>
+            <ProtectedRoute perfis={PERFIS_MODULO_ATIVIDADES}>
               <AtividadesChamada />
             </ProtectedRoute>
           }
@@ -174,7 +175,7 @@ function RotasAplicacao() {
         <Route
           path="/atividades/grade"
           element={
-            <ProtectedRoute perfis={['Gestor', 'Técnico', 'Orientador', 'Administrativo', 'Global']}>
+            <ProtectedRoute perfis={PERFIS_MODULO_ATIVIDADES}>
               <AtividadesGrade />
             </ProtectedRoute>
           }
@@ -183,7 +184,7 @@ function RotasAplicacao() {
         <Route
           path="/atividades/conteudo"
           element={
-            <ProtectedRoute perfis={['Gestor', 'Técnico', 'Orientador', 'Administrativo', 'Global']}>
+            <ProtectedRoute perfis={PERFIS_MODULO_ATIVIDADES}>
               <AtividadesConteudo />
             </ProtectedRoute>
           }
@@ -192,7 +193,7 @@ function RotasAplicacao() {
         <Route
           path="/atividades/relatorios"
           element={
-            <ProtectedRoute perfis={['Gestor', 'Técnico', 'Orientador', 'Administrativo', 'Global']}>
+            <ProtectedRoute perfis={PERFIS_MODULO_ATIVIDADES}>
               <AtividadesRelatorios />
             </ProtectedRoute>
           }
@@ -201,7 +202,7 @@ function RotasAplicacao() {
         <Route
           path="/atividades/conferencia-sisa"
           element={
-            <ProtectedRoute perfis={['Gestor', 'Técnico', 'Orientador', 'Administrativo', 'Global']}>
+            <ProtectedRoute perfis={PERFIS_MODULO_ATIVIDADES}>
               <AtividadesConferenciaSisa />
             </ProtectedRoute>
           }
@@ -210,7 +211,7 @@ function RotasAplicacao() {
         <Route
           path="/atividades/pontos-brindes"
           element={
-            <ProtectedRoute perfis={['Gestor', 'Técnico', 'Orientador', 'Administrativo', 'Global']}>
+            <ProtectedRoute perfis={PERFIS_MODULO_ATIVIDADES}>
               <AtividadesPontosBrindes />
             </ProtectedRoute>
           }

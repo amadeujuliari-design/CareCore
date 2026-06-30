@@ -30,6 +30,7 @@ from security import (
     gerar_hash_senha,
     usuario_eh_gestor,
     usuario_eh_manutencao,
+    usuario_eh_oficineiro,
     verificar_senha,
 )
 
@@ -52,6 +53,7 @@ PERFIS_ACESSO_VALIDOS = {
     "Orientador",
     "Administrativo",
     "Consulta",
+    "Oficineiro(a)",
 }
 
 PERFIS_LEGADOS_MAPEAMENTO = {
@@ -60,6 +62,7 @@ PERFIS_LEGADOS_MAPEAMENTO = {
     "Tecnico": "Técnico",
     "Manutencao": "Manutenção",
     "Manutenção": "Manutenção",
+    "Oficineiro": "Oficineiro(a)",
 }
 
 
@@ -110,7 +113,7 @@ def normalizar_perfil_acesso(perfil: Optional[str]) -> str:
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=(
                 "Perfil de acesso inválido. "
-                "Use: Gestor, Global, Manutenção, Técnico, Orientador, Administrativo ou Consulta."
+                "Use: Gestor, Global, Manutenção, Técnico, Orientador, Administrativo, Consulta ou Oficineiro(a)."
             ),
         )
 
@@ -288,6 +291,22 @@ async def exigir_gestor_ou_global(
     )
 
 
+async def exigir_gestor_global_ou_oficineiro_listagem(
+    usuario_atual: dict = Depends(get_usuario_logado),
+) -> dict:
+    if (
+        usuario_eh_gestor(usuario_atual)
+        or usuario_atual.get("is_global")
+        or usuario_eh_oficineiro(usuario_atual)
+    ):
+        return usuario_atual
+
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Sem permissão para listar usuários da equipe.",
+    )
+
+
 def validar_alteracao_global(
     usuario_atual: dict,
     valor_global_solicitado: Optional[bool],
@@ -340,7 +359,7 @@ async def listar_usuarios(
     limite: int = Query(default=100, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
     db: AsyncSession = Depends(get_db),
-    usuario_atual: dict = Depends(exigir_gestor_ou_global),
+    usuario_atual: dict = Depends(exigir_gestor_global_ou_oficineiro_listagem),
 ):
     instituicao_id = obter_instituicao_escopo(usuario_atual)
     filtros = [

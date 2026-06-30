@@ -446,6 +446,23 @@ class ConviventeDB(Base):
     egresso_artigo_motivo = Column(Text, nullable=True)
     egresso_ano = Column(String, nullable=True)
 
+    portaria_excecao_motivo = Column(String, nullable=True)
+    portaria_excecao_saida_ate = Column(String, nullable=True)
+    portaria_excecao_entrada_ate = Column(String, nullable=True)
+    impressoes_carteirinha_oficiais = Column(Integer, default=0, nullable=False)
+
+
+class CarteirinhaImpressaoLogDB(Base):
+    __tablename__ = "carteirinha_impressao_logs"
+
+    id = Column(String, primary_key=True, default=get_uuid)
+    instituicao_id = Column(String, ForeignKey("instituicoes.id"), nullable=False, index=True)
+    convivente_id = Column(String, ForeignKey("conviventes.id"), nullable=False, index=True)
+    usuario_id = Column(String, ForeignKey("usuarios.id"), nullable=False, index=True)
+    quantidade = Column(Integer, nullable=False, default=1)
+    origem = Column(String, nullable=False, default="unitaria", index=True)
+    impresso_em = Column(DateTime, nullable=False, index=True)
+
 
 class ConviventeFamiliarDB(Base):
     __tablename__ = "convivente_familiares"
@@ -636,8 +653,10 @@ class OcorrenciaConviventeDB(Base):
     
     tipo_ocorrencia = Column(String, nullable=False)
     motivo = Column(String, nullable=False) 
-    descricao = Column(Text, nullable=False) 
-    data_ocorrencia = Column(DateTime, default=datetime.datetime.utcnow)
+    descricao = Column(Text, nullable=False)
+    motivo_original = Column(Text, nullable=True)
+    descricao_original = Column(Text, nullable=True)
+    data_ocorrencia = Column(DateTime, default=agora_operacional_naive)
     
     requer_acao_tecnica = Column(Boolean, default=False)
     prioridade = Column(String, default="Média")
@@ -655,12 +674,22 @@ class InteracaoOcorrenciaDB(Base):
     usuario_id = Column(String, ForeignKey("usuarios.id"), nullable=False)
     
     mensagem = Column(Text, nullable=False)
+    mensagem_original = Column(Text, nullable=True)
     tipo_interacao = Column(String, default="Comentário")
     data_interacao = Column(DateTime, default=datetime.datetime.utcnow)
 
 class ObservadorOcorrenciaDB(Base):
     __tablename__ = "observadores_ocorrencias"
-    
+
+    id = Column(String, primary_key=True, default=get_uuid)
+    ocorrencia_id = Column(String, ForeignKey("ocorrencias_conviventes.id"), nullable=False)
+    usuario_id = Column(String, ForeignKey("usuarios.id"), nullable=False)
+    data_marcacao = Column(DateTime, default=datetime.datetime.utcnow)
+
+
+class FuncionarioEnvolvidoOcorrenciaDB(Base):
+    __tablename__ = "funcionarios_envolvidos_ocorrencias"
+
     id = Column(String, primary_key=True, default=get_uuid)
     ocorrencia_id = Column(String, ForeignKey("ocorrencias_conviventes.id"), nullable=False)
     usuario_id = Column(String, ForeignKey("usuarios.id"), nullable=False)
@@ -685,6 +714,7 @@ class RegistroRotinaDB(Base):
     # Retorno rápido: entrada registrada em menos de 10 minutos após uma saída
     retorno_rapido = Column(Boolean, default=False)
     justificativa_retorno_rapido = Column(Text, nullable=True)
+    justificativa_horario_portaria = Column(Text, nullable=True)
 
     # Auditoria de edição/correção
     foi_editado = Column(Boolean, default=False)
@@ -1004,6 +1034,8 @@ class AvisoDB(Base):
 
     titulo = Column(String, nullable=False)
     mensagem = Column(Text, nullable=False)
+    titulo_original = Column(Text, nullable=True)
+    mensagem_original = Column(Text, nullable=True)
 
     # Ex.: "Informativo", "Atenção", "Urgente", "Comunicado", "Pendência"
     classificacao = Column(String, default="Informativo")
@@ -1463,4 +1495,18 @@ class AtividadePontosResgateDB(Base):
     metodo_leitura = Column(String, nullable=False)
     codigo_lido = Column(String, nullable=True)
     registrado_em = Column(DateTime, default=agora_operacional_naive)
+
+
+class TextoRevisaoUsoMensalDB(Base):
+    __tablename__ = "texto_revisao_uso_mensal"
+    __table_args__ = (
+        UniqueConstraint("instituicao_id", "ano", "mes", name="uq_texto_revisao_uso_mensal"),
+    )
+
+    id = Column(String, primary_key=True, default=get_uuid)
+    instituicao_id = Column(String, ForeignKey("instituicoes.id"), nullable=False)
+    ano = Column(Integer, nullable=False)
+    mes = Column(Integer, nullable=False)
+    contagem = Column(Integer, default=0, nullable=False)
+    atualizado_em = Column(DateTime, default=agora_operacional_naive)
 

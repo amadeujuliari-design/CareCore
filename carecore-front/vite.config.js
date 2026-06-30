@@ -46,8 +46,8 @@ function carecoreVersaoBuildPlugin() {
   };
 }
 
-/** Porta do backend local em dev (evita conflito com instâncias zumbis na 8000). */
-const DEV_API_PORT = Number(process.env.CARECORE_DEV_API_PORT || 8002);
+/** Porta do backend local em dev (8011 — evita zumbis acumulados na 8010). */
+const DEV_API_PORT = Number(process.env.CARECORE_DEV_API_PORT || 8011);
 
 export default defineConfig({
   plugins: [react(), carecoreVersaoBuildPlugin()],

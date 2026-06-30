@@ -167,6 +167,88 @@ export function filtrarConviventesRotina(conviventes, busca) {
   return filtrarOrdenarConviventesPorBusca(conviventes, busca);
 }
 
+const TIPOS_INTERACAO_POR_GRUPO = {
+  Cobertor: ['Retirada de Cobertor', 'Entrega de Cobertor'],
+  Toalha: ['Retirada de Toalha', 'Entrega de Toalha'],
+};
+
+export function obterUltimaInteracaoGrupo(resumoConvivente, grupo) {
+  const ultima = resumoConvivente?.ultimas_interacoes?.[grupo];
+  if (ultima?.tipo_registro) {
+    return ultima;
+  }
+
+  const tipos = TIPOS_INTERACAO_POR_GRUPO[grupo];
+  if (!tipos) return null;
+
+  const presencas = Array.isArray(resumoConvivente?.presencas) ? resumoConvivente.presencas : [];
+  for (let indice = presencas.length - 1; indice >= 0; indice -= 1) {
+    const registro = presencas[indice];
+    if (tipos.includes(registro.tipo_registro)) {
+      return registro;
+    }
+  }
+
+  return null;
+}
+
+export function obterProximaInteracaoPar(resumoHoje, conviventeId, grupo) {
+  const ultima = obterUltimaInteracaoGrupo(resumoHoje[conviventeId], grupo)?.tipo_registro || '';
+
+  if (grupo === 'Toalha') {
+    return ultima === 'Retirada de Toalha' ? 'Entrega de Toalha' : 'Retirada de Toalha';
+  }
+
+  if (grupo === 'Cobertor') {
+    return ultima === 'Retirada de Cobertor' ? 'Entrega de Cobertor' : 'Retirada de Cobertor';
+  }
+
+  return null;
+}
+
+export function obterProximaMovimentacaoBagageiro(resumoHoje, conviventeId) {
+  const ultima = resumoHoje[conviventeId]?.ultimas_interacoes?.Bagageiro;
+  let movimentacao = String(ultima?.observacao || '').trim().toLowerCase();
+
+  if (!movimentacao) {
+    const presencas = Array.isArray(resumoHoje[conviventeId]?.presencas)
+      ? resumoHoje[conviventeId].presencas
+      : [];
+    for (let indice = presencas.length - 1; indice >= 0; indice -= 1) {
+      const registro = presencas[indice];
+      if (registro.tipo_registro === 'Movimentação de Bagageiro' && registro.observacao) {
+        movimentacao = String(registro.observacao).trim().toLowerCase();
+        break;
+      }
+    }
+  }
+
+  if (movimentacao === 'entrada') {
+    return 'Saída';
+  }
+  return 'Entrada';
+}
+
+export function obterRotuloBotaoInteracao(resumoHoje, conviventeId, interacaoSelecionada) {
+  if (interacaoSelecionada === 'Cobertor') {
+    const proxima = obterProximaInteracaoPar(resumoHoje, conviventeId, 'Cobertor');
+    return proxima === 'Entrega de Cobertor' ? 'Entregar cobertor' : 'Retirar cobertor';
+  }
+  if (interacaoSelecionada === 'Toalha') {
+    const proxima = obterProximaInteracaoPar(resumoHoje, conviventeId, 'Toalha');
+    return proxima === 'Entrega de Toalha' ? 'Entregar toalha' : 'Retirar toalha';
+  }
+  if (interacaoSelecionada === 'Bagageiro') {
+    const proxima = obterProximaMovimentacaoBagageiro(resumoHoje, conviventeId);
+    return proxima === 'Saída' ? 'Retirar bagagem' : 'Guardar bagagem';
+  }
+  return 'Interação';
+}
+
+export function interacaoSelecionadaPermiteLeituraRepetida(interacaoSelecionada) {
+  return ['Cobertor', 'Toalha', 'Bagageiro'].includes(interacaoSelecionada);
+}
+
 export function calcularResumoRotinaDiaria(conviventes, resumoHoje) {
   const totalAtivos = conviventes.length;
   const totalFora = Object.values(resumoHoje).filter((r) => r.ultimo_movimento === 'Saída').length;

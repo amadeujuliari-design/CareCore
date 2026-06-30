@@ -14,6 +14,11 @@ import {
   registrarAtividadeSessao,
   sessaoExpiradaPorInatividade,
 } from '../utils/sessionInatividadeUtils';
+import {
+  usuarioEhGlobalPuro,
+  usuarioEhManutencao,
+  usuarioPodeOperarProjeto,
+} from '../utils/rbacUtils';
 import { decodificarPayloadJwt } from '../utils/jwtUtils';
 import {
   manutencaoProgramadaAtiva,
@@ -200,6 +205,9 @@ export function AuthProvider({ children }) {
       isAuthenticated: !!usuario,
       isMaster: usuario?.is_master === true,
       isGlobal: usuario?.is_global === true,
+      isGlobalPuro: usuarioEhGlobalPuro(usuario),
+      isManutencao: usuarioEhManutencao(usuario),
+      podeOperarProjeto: usuarioPodeOperarProjeto(usuario),
       perfil: usuario?.perfil_acesso || null,
       instituicaoId: usuario?.instituicao_id || null,
       organizacaoId: usuario?.organizacao_id || null,

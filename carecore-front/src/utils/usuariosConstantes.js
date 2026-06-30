@@ -5,6 +5,7 @@ export const PERFIS = [
   'Orientador',
   'Administrativo',
   'Consulta',
+  'Oficineiro(a)',
 ];
 
 export const GENEROS = [

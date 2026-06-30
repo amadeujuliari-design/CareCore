@@ -19,8 +19,8 @@ function formatarDataHora(valor) {
 }
 
 export default function AtividadesPontosBrindes() {
-  const { isGlobal, usuario } = useAuth();
-  const somenteLeitura = usuarioSomenteLeituraAtividades(usuario, isGlobal);
+  const { usuario } = useAuth();
+  const somenteLeitura = usuarioSomenteLeituraAtividades(usuario);
 
   const [ranking, setRanking] = useState([]);
   const [resgates, setResgates] = useState([]);

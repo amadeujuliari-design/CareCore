@@ -1,6 +1,8 @@
 from fastapi.params import Depends
 
 from routers.quartos import (
+    STATUS_CONVIVENTE_LIBERA_LEITO,
+    STATUS_CONVIVENTE_OCUPA_LEITO,
     alocar_convivente_leito,
     atualizar_quarto,
     criar_quarto,
@@ -34,3 +36,9 @@ def test_manutencao_quartos_exige_tecnico_ou_gestor():
 def test_alocacao_leitos_usa_permissao_operacional():
     assert _dependencia_usuario(alocar_convivente_leito) is exigir_alocacao_leito
     assert _dependencia_usuario(liberar_leito) is exigir_alocacao_leito
+
+
+def test_status_que_mantem_leito_inclui_ausencia_justificada():
+    assert "Ausência justificada" in STATUS_CONVIVENTE_OCUPA_LEITO
+    assert "Ativo" in STATUS_CONVIVENTE_OCUPA_LEITO
+    assert "Inativado" in STATUS_CONVIVENTE_LIBERA_LEITO
