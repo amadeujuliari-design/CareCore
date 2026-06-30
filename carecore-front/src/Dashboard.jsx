@@ -414,15 +414,12 @@ export default function Dashboard() {
       setLoading(true);
       setErro("");
       const headers = criarHeadersAutenticados(token);
+      const opcoesApi = { headers, timeout: 45_000 };
 
       setCarregandoAvisos(true);
 
-      const [resDashboard, resContagens, resAvisos, resResumoAvisos] = await Promise.all([
-        axios.get(`${API_ROOT}/dashboard/resumo`, { headers }),
-        axios.get(`${API_ROOT}/dashboard/contagens-conviventes`, { headers }).catch((error) => {
-          console.warn("Contagens de conviventes ainda não disponíveis no backend.", error);
-          return null;
-        }),
+      const [resDashboard, resAvisos, resResumoAvisos] = await Promise.all([
+        axios.get(`${API_ROOT}/dashboard/resumo`, opcoesApi),
         listarMeusAvisos(token, { limite: 10 }).catch((error) => {
           console.warn("Avisos ainda não disponíveis no backend.", error);
           return { items: [], total: 0, has_more: false };
@@ -433,20 +430,28 @@ export default function Dashboard() {
         }),
       ]);
 
-      const dashboardMesclado = {
-        ...(resDashboard.data || {}),
-        ...(resContagens?.data || {}),
-      };
-
       const resumoBase = resDashboard.data || {};
-      const contagensCarregadas = Boolean(resContagens?.data);
       const resumoTemContagens = Object.prototype.hasOwnProperty.call(resumoBase, "ausenciasJustificadas");
-      setApiDashboardDesatualizada(!contagensCarregadas && !resumoTemContagens);
 
-      setResumoDashboard(dashboardMesclado);
-      setSeries(dashboardMesclado?.series || null);
+      setResumoDashboard(resumoBase);
+      setSeries(resumoBase?.series || null);
+      setApiDashboardDesatualizada(!resumoTemContagens);
+
       setAvisos(Array.isArray(resAvisos?.items) ? resAvisos.items : (Array.isArray(resAvisos) ? resAvisos : []));
       setResumoAvisos(resResumoAvisos || { total_visiveis: 0, total_nao_lidos: 0, total_alertas_ativos: 0 });
+
+      if (!resumoTemContagens) {
+        axios
+          .get(`${API_ROOT}/dashboard/contagens-conviventes`, { ...opcoesApi, timeout: 12_000 })
+          .then((resContagens) => {
+            if (!resContagens?.data) return;
+            setResumoDashboard((anterior) => ({ ...(anterior || {}), ...resContagens.data }));
+            setApiDashboardDesatualizada(false);
+          })
+          .catch((error) => {
+            console.warn("Contagens de conviventes ainda não disponíveis no backend.", error);
+          });
+      }
     } catch (error) {
       console.error("Erro ao carregar dashboard", error);
       setErro("Não foi possível carregar os dados do dashboard.");
