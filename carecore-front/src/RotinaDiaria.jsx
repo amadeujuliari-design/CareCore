@@ -212,6 +212,7 @@ export default function RotinaDiaria() {
   const ultimaLeituraRef = useRef({ codigo: '', horario: 0 });
   const ultimaLeituraConviventeRef = useRef({ conviventeId: '', horario: 0 });
   const assinaturaSyncRotinaRef = useRef(null);
+  const syncRotinaEmAndamentoRef = useRef(false);
   const processarCodigoLidoRef = useRef(null);
   const campoLeitorPistolaRef = useRef(null);
 
@@ -381,9 +382,13 @@ export default function RotinaDiaria() {
   };
 
   const verificarSincronizacaoRotina = async () => {
+    if (syncRotinaEmAndamentoRef.current) return;
+
+    syncRotinaEmAndamentoRef.current = true;
     try {
       const response = await axios.get(`${API_ROOT}/rotina/sync-status`, {
-        headers: criarHeadersAutenticados(token)
+        headers: criarHeadersAutenticados(token),
+        timeout: 12_000,
       });
       const assinaturaAtual = obterAssinaturaSyncRotina(response.data || {});
 
@@ -398,6 +403,8 @@ export default function RotinaDiaria() {
       }
     } catch (error) {
       console.warn('Não foi possível verificar sincronização da rotina', error);
+    } finally {
+      syncRotinaEmAndamentoRef.current = false;
     }
   };
 
@@ -405,7 +412,7 @@ export default function RotinaDiaria() {
     if (!token) return undefined;
 
     const sincronizar = () => verificarSincronizacaoRotina();
-    const intervalo = window.setInterval(sincronizar, 5000);
+    const intervalo = window.setInterval(sincronizar, 30_000);
     const sincronizarAoVoltar = () => {
       if (document.visibilityState === 'visible') {
         sincronizar();

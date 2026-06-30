@@ -18,6 +18,7 @@ import {
 
 const api = axios.create({
   baseURL: API_BASE_URL,
+  timeout: 60_000,
 });
 
 const STORAGE_BLOQUEIO_LICENCA_KEY = '@CareCore:bloqueioLicenca';
