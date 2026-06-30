@@ -2,7 +2,7 @@
 // ARQUIVO: src/RotinaDiaria.jsx
 // CONTROLE DE FLUXO DIÁRIO: QR CODE, LEITOR USB, MODO AUTOMÁTICO E MANUAL
 // =====================================================================
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import Sidebar from './Sidebar';
@@ -1136,6 +1136,28 @@ export default function RotinaDiaria() {
     }
   };
 
+  const handleRegistrarRef = useRef(handleRegistrar);
+
+  useEffect(() => {
+    handleRegistrarRef.current = handleRegistrar;
+  });
+
+  const confirmarInteracaoEnxovalPendente = useCallback(() => {
+    setInteracaoConfirmacao((pendente) => {
+      if (!pendente) return null;
+
+      const { convivente, tipoRegistro, observacao } = pendente;
+
+      if (tipoRegistro === TIPO_ROTINA_BAGAGEIRO && observacao) {
+        void registrarInteracaoBagageiro(convivente, observacao);
+      } else {
+        void handleRegistrarRef.current(convivente.id, tipoRegistro, convivente);
+      }
+
+      return null;
+    });
+  }, [registrarInteracaoBagageiro]);
+
   const handleConfirmarRetornoRapido = () => {
     const justificativa = justificativaRetornoRapido.trim();
 
@@ -1269,6 +1291,18 @@ export default function RotinaDiaria() {
   const ultimoRegistroDesfazivel = historicoLeituras.find(
     item => item.registroId && item.status === 'Sucesso' && registroAindaPodeSerDesfeito(item)
   );
+  const apresentacaoInteracaoConfirmacao = interacaoConfirmacao
+    ? obterApresentacaoInteracaoEnxoval({
+      tipoRegistro: interacaoConfirmacao.tipoRegistro,
+      grupo: interacaoConfirmacao.grupo,
+      observacaoBagageiro: interacaoConfirmacao.observacao,
+    })
+    : null;
+  const destaqueInteracaoConfirmacao = interacaoConfirmacao
+    ? montarDestaqueInteracaoEnxoval(interacaoConfirmacao.convivente, apresentacaoInteracaoConfirmacao)
+    : '';
+  const headerClassInteracaoConfirmacao = apresentacaoInteracaoConfirmacao?.headerClass || 'bg-blue-600';
+  const tituloModalInteracaoConfirmacao = apresentacaoInteracaoConfirmacao?.tituloModal || 'Confirmar interação';
 
   return (
     <AppShell>
@@ -2015,21 +2049,11 @@ export default function RotinaDiaria() {
         </div>
       )}
 
-      {interacaoConfirmacao && (() => {
-        const apresentacao = obterApresentacaoInteracaoEnxoval({
-          tipoRegistro: interacaoConfirmacao.tipoRegistro,
-          grupo: interacaoConfirmacao.grupo,
-          observacaoBagageiro: interacaoConfirmacao.observacao,
-        });
-        const destaque = montarDestaqueInteracaoEnxoval(interacaoConfirmacao.convivente, apresentacao);
-        const headerClass = apresentacao?.headerClass || 'bg-blue-600';
-        const tituloModal = apresentacao?.tituloModal || 'Confirmar interação';
-
-        return (
+      {interacaoConfirmacao && (
         <div className="carecore-modal-overlay fixed inset-0 bg-gray-900/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
           <div className="carecore-modal-panel bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden max-h-[calc(100vh-2rem)] flex flex-col">
-            <div className={`${headerClass} p-5 flex justify-between items-center gap-3 text-white`}>
-              <h2 className="text-lg font-bold">{tituloModal}</h2>
+            <div className={`${headerClassInteracaoConfirmacao} p-5 flex justify-between items-center gap-3 text-white`}>
+              <h2 className="text-lg font-bold">{tituloModalInteracaoConfirmacao}</h2>
               <button
                 onClick={() => setInteracaoConfirmacao(null)}
                 className="text-white/80 hover:text-white text-xl"
@@ -2039,13 +2063,13 @@ export default function RotinaDiaria() {
             </div>
 
             <div className="min-h-0 overflow-y-auto p-4 space-y-4 sm:p-6">
-              {destaque ? (
+              {destaqueInteracaoConfirmacao ? (
                 <>
-                  <p className={`rounded-2xl border-2 p-4 text-center text-lg font-black leading-snug ${apresentacao.boxClass}`}>
-                    {destaque}
+                  <p className={`rounded-2xl border-2 p-4 text-center text-lg font-black leading-snug ${apresentacaoInteracaoConfirmacao.boxClass}`}>
+                    {destaqueInteracaoConfirmacao}
                   </p>
                   <p className="text-center text-sm font-bold text-gray-600">
-                    {apresentacao.instrucao}
+                    {apresentacaoInteracaoConfirmacao.instrucao}
                   </p>
                 </>
               ) : (
@@ -2079,16 +2103,8 @@ export default function RotinaDiaria() {
                   Cancelar
                 </button>
                 <button
-                  onClick={() => {
-                    const { convivente, tipoRegistro, observacao } = interacaoConfirmacao;
-                    setInteracaoConfirmacao(null);
-                    if (tipoRegistro === TIPO_ROTINA_BAGAGEIRO && observacao) {
-                      registrarInteracaoBagageiro(convivente, observacao);
-                      return;
-                    }
-                    handleRegistrar(convivente.id, tipoRegistro, convivente);
-                  }}
-                  className={`px-4 py-2 rounded-lg text-sm font-bold text-white shadow-sm ${apresentacao?.isEntrega === false ? 'bg-orange-600 hover:bg-orange-700' : apresentacao?.isEntrega === true ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-blue-600 hover:bg-blue-700'}`}
+                  onClick={confirmarInteracaoEnxovalPendente}
+                  className={`px-4 py-2 rounded-lg text-sm font-bold text-white shadow-sm ${apresentacaoInteracaoConfirmacao?.isEntrega === false ? 'bg-orange-600 hover:bg-orange-700' : apresentacaoInteracaoConfirmacao?.isEntrega === true ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-blue-600 hover:bg-blue-700'}`}
                 >
                   OK — confirmar
                 </button>
@@ -2096,8 +2112,7 @@ export default function RotinaDiaria() {
             </div>
           </div>
         </div>
-        );
-      })()}
+      )}
 
       {refeicaoExtraPendente && (
         <div className="carecore-modal-overlay fixed inset-0 bg-gray-900/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">

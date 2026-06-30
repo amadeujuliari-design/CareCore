@@ -18,6 +18,7 @@ import {
 } from './config/tiposAcaoAcompanhamento';
 import { usuarioEhGlobalPuro } from './utils/rbacUtils';
 import PotEvolucoesModal from './components/acompanhamentos/PotEvolucoesModal';
+import DiscussaoEvolucoesModal from './components/acompanhamentos/DiscussaoEvolucoesModal';
 import { filtrarOrdenarConviventesPorBusca } from './utils/conviventeBuscaUtils';
 import { REGISTROS_POR_PAGINA_PRONTUARIO } from './utils/prontuarioHistoricoFluxoUtils';
 

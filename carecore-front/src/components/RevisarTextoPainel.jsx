@@ -47,21 +47,22 @@ export function RevisarTextoPainel({
         const health = await axios.get(`${API_ROOT}/health`, { timeout: 5000 });
         configurado = Boolean(health.data?.revisao_texto_configurada);
       } catch {
-        configurado = false;
+        // Mantém indicador desligado quando /health não responde.
       }
 
       try {
         dadosStatus = await obterStatusRevisaoTexto(token);
-        configurado = Boolean(dadosStatus?.configurado ?? configurado);
       } catch {
         // Mantém o indicador do /health quando o status autenticado falhar.
       }
 
+      const configuradoFinal = Boolean(dadosStatus?.configurado ?? configurado);
+
       if (ativo) {
         setStatus(
           dadosStatus || {
-            configurado,
-            disponivel: configurado,
+            configurado: configuradoFinal,
+            disponivel: configuradoFinal,
             limite_mensal: 100,
             usado_mes: 0,
           },
