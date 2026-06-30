@@ -254,6 +254,7 @@ def detectar_nomes_proprios_no_texto(
     fragmentos_cadastrados: set[str],
     *,
     usar_fragmentos_cadastrados: bool = True,
+    usar_heuristica_nomes: bool = True,
 ) -> list[str]:
     combinado = f"{titulo or ''}\n{texto or ''}".strip()
     if not combinado:
@@ -276,8 +277,11 @@ def detectar_nomes_proprios_no_texto(
                     vistos.add(chave)
                     encontrados.append(fragmento)
 
+    if not usar_heuristica_nomes:
+        return encontrados
+
     for match in re.finditer(
-        r"\b([A-ZÁÉÍÓÚÂÊÔÃÕÇ][a-záéíóúâêôãõç]{2,})(?:\s+([A-ZÁÉÍÓÚÂÊÔÃÕÇ][a-záéíóúâêôãõç]{2,}))+\b",
+        r"\b([A-ZÁÉÍÓÚÂÊÔÃÕÇ][a-záéíóúâêôãõç]{2,})(?:[ \t]+([A-ZÁÉÍÓÚÂÊÔÃÕÇ][a-záéíóúâêôãõç]{2,}))+\b",
         combinado,
     ):
         trecho = match.group(0)

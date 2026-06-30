@@ -44,6 +44,35 @@ def test_nao_bloqueia_palavras_permitidas():
     assert encontrados == []
 
 
+def test_nao_bloqueia_aviso_institucional_com_palavras_capitalizadas():
+    titulo = "Inteligência Artificial no CARECORE+?"
+    texto = (
+        "Nova ferramenta em Comunicação → Avisos e Ocorrências.\n"
+        "Digite o texto, clique em Revisar texto e leia a sugestão.\n"
+        "Use o campo Funcionários envolvidos em ocorrências."
+    )
+    encontrados = detectar_nomes_proprios_no_texto(
+        titulo,
+        texto,
+        montar_fragmentos_nomes_cadastrados([], []),
+        usar_fragmentos_cadastrados=True,
+        usar_heuristica_nomes=False,
+    )
+    assert encontrados == []
+
+
+def test_bloqueia_aviso_com_nome_cadastrado():
+    fragmentos = montar_fragmentos_nomes_cadastrados([], ["Maria Santos"])
+    encontrados = detectar_nomes_proprios_no_texto(
+        "Aviso",
+        "Informamos que a técnica Maria Santos estará de férias.",
+        fragmentos,
+        usar_fragmentos_cadastrados=True,
+        usar_heuristica_nomes=False,
+    )
+    assert any("maria" in item.casefold() for item in encontrados)
+
+
 def test_mensagem_bloqueio_definida():
     assert "nomes próprios" in MENSAGEM_NOMES_REVISAO.lower()
     assert "funcionários envolvidos" in MENSAGEM_NOMES_REVISAO_OCORRENCIA.lower()
@@ -69,6 +98,7 @@ def test_nao_bloqueia_aviso_reuniao_com_fragmentos_dos_e_nao_possui():
         "",
         texto,
         fragmentos,
-        usar_fragmentos_cadastrados=False,
+        usar_fragmentos_cadastrados=True,
+        usar_heuristica_nomes=False,
     )
     assert encontrados_aviso == []

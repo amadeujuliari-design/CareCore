@@ -167,7 +167,8 @@ async def revisar_texto(
         titulo,
         texto,
         fragmentos_nomes,
-        usar_fragmentos_cadastrados=not revisao_aviso,
+        usar_fragmentos_cadastrados=True,
+        usar_heuristica_nomes=not revisao_aviso,
     )
     if nomes_detectados:
         mensagem_bloqueio = (
