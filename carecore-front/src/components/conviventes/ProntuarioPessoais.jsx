@@ -3,6 +3,10 @@ import ProntuarioFamilia from './ProntuarioFamilia';
 import { EQUIPAMENTO_ANTERIOR_OUTROS } from '../../config/piaFichaConfig';
 import { calcularIdade } from '../../utils/conviventesUtils';
 import { MOTIVOS_EXCECAO_PORTARIA } from '../../utils/rotinaPortariaHorariosUtils';
+import {
+  rotuloModalidadeQuarto,
+  situacaoTbParaModalidade,
+} from '../../utils/quartosModalidadeUtils';
 
 function valorSelectOrigemPrincipal(formData = {}) {
   if (formData.origem_encaminhamento_id === EQUIPAMENTO_ANTERIOR_OUTROS) return EQUIPAMENTO_ANTERIOR_OUTROS;
@@ -46,6 +50,36 @@ export default function ProntuarioPessoais({
   setFormData,
   setErrosValidacao,
 }) {
+  const situacaoTb = formData.tb_remanejamento_situacao || '';
+  const modalidadeTbEsperada = situacaoTbParaModalidade(situacaoTb);
+  const podeReservarFixo = Boolean(
+    editandoId
+    && situacaoTb
+    && (formData.leito_reservado_id || formData.leito_id),
+  );
+
+  const quartosFiltrados = situacaoTb
+    ? quartos.filter((q) => (
+      q.modalidade === modalidadeTbEsperada
+      || (formData.leito_reservado_id && q.leitos?.some((l) => l.id === formData.leito_reservado_id))
+    ))
+    : quartos;
+
+  const handleMudancaSituacaoTb = (event) => {
+    const valor = event.target.value;
+    if (!valor && formData.reservar_leito_fixo && formData.leito_reservado_id) {
+      setFormData((prev) => ({
+        ...prev,
+        tb_remanejamento_situacao: '',
+        leito_id: prev.leito_reservado_id,
+        reservar_leito_fixo: false,
+        leito_reservado_id: '',
+      }));
+      return;
+    }
+    handleChange(event);
+  };
+
   return (
     <div className="space-y-5">
       <div className="flex flex-col md:flex-row items-start gap-5 p-4 bg-gray-50 rounded-xl border border-gray-100 shadow-inner">
@@ -247,8 +281,53 @@ export default function ProntuarioPessoais({
         <div><label className="block text-xs font-semibold text-gray-700 mb-1">Nascimento {formData.data_nascimento && <span className="ml-1 text-brand font-bold bg-blue-50 px-1.5 py-0.5 rounded-md text-[10px]">{calcularIdade(formData.data_nascimento)} anos</span>}</label><input type="date" name="data_nascimento" value={formData.data_nascimento} onChange={handleChange} className="w-full px-3 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none text-sm" /></div>
         <div><label className="block text-xs font-semibold text-gray-700 mb-1">Estado Civil</label><select name="estado_civil" value={formData.estado_civil} onChange={handleChange} className="w-full px-3 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none bg-white text-sm"><option value="">Selecione...</option><option value="Solteiro(a)">Solteiro(a)</option><option value="Casado(a)">Casado(a)</option><option value="Divorciado(a)">Divorciado(a)</option><option value="Viúvo(a)">Viúvo(a)</option><option value="União Estável">União Estável</option></select></div>
         <div><label className="block text-xs font-semibold text-gray-700 mb-1">Telefone / Celular</label><input type="text" name="telefone_celular" value={formData.telefone_celular} onChange={handleChange} onBlur={handleBlur} className={`w-full px-3 py-1.5 border rounded-lg outline-none text-sm ${errosValidacao.telefone_celular ? 'border-red-500 focus:ring-red-500 bg-red-50' : 'border-gray-300 focus:ring-brand'}`} placeholder="(00) 00000-0000" />{errosValidacao.telefone_celular && <p className="text-red-500 text-[10px] mt-0.5 font-bold">{errosValidacao.telefone_celular}</p>}</div>
+        <div className="lg:col-span-3 rounded-xl border border-amber-100 bg-amber-50/50 p-4 space-y-4">
+          <div>
+            <h3 className="text-sm font-bold text-amber-900">Remanejamento TB (acomodação)</h3>
+            <p className="mt-1 text-xs text-amber-800">
+              Marque a situação TB para alocar o convivente em quarto específico. Opcionalmente reserve o leito fixo anterior.
+            </p>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-semibold text-gray-700 mb-1">Situação TB</label>
+              <select
+                name="tb_remanejamento_situacao"
+                value={situacaoTb}
+                onChange={handleMudancaSituacaoTb}
+                disabled={!podeEditarLeitoPeloProntuario}
+                className="w-full px-3 py-1.5 border border-amber-200 rounded-lg outline-none bg-white text-sm"
+              >
+                <option value="">Sem remanejamento TB</option>
+                <option value="Suspeita">TB Suspeita</option>
+                <option value="Confirmado">TB Confirmado</option>
+              </select>
+            </div>
+            {podeReservarFixo && (
+              <div className="flex items-end">
+                <label className="flex items-center gap-2 text-xs font-semibold text-violet-900">
+                  <input
+                    type="checkbox"
+                    name="reservar_leito_fixo"
+                    checked={Boolean(formData.reservar_leito_fixo)}
+                    onChange={(e) => setFormData((prev) => ({
+                      ...prev,
+                      reservar_leito_fixo: e.target.checked,
+                    }))}
+                    disabled={!podeEditarLeitoPeloProntuario}
+                    className="h-4 w-4 rounded border-violet-300 text-violet-700"
+                  />
+                  Reservar leito fixo anterior
+                </label>
+              </div>
+            )}
+          </div>
+        </div>
+
         <div className="lg:col-span-3">
-          <label className="block text-xs font-bold text-brand mb-1">Alocação de Quarto / Cama</label>
+          <label className="block text-xs font-bold text-brand mb-1">
+            {situacaoTb ? 'Alocação no quarto TB' : 'Alocação de Quarto / Cama'}
+          </label>
           <select
             name="leito_id"
             value={formData.leito_id}
@@ -257,21 +336,41 @@ export default function ProntuarioPessoais({
             className={`w-full px-3 py-1.5 border border-brand/50 rounded-lg outline-none text-sm ${podeEditarLeitoPeloProntuario ? 'bg-white focus:ring-2 focus:ring-brand' : 'bg-gray-100 cursor-not-allowed text-gray-500'}`}
           >
             <option value="">Apenas Convivência Diurna (Sem Pernoite)</option>
-            {quartos.map(q => (
-              <optgroup key={q.id} label={`${q.nome} - [${q.tipo_publico} / ${q.modalidade === 'Transitorio' ? 'Transitório' : 'Fixo'}]`}>
+            {quartosFiltrados.map(q => (
+              <optgroup key={q.id} label={`${q.nome} - [${q.tipo_publico} / ${rotuloModalidadeQuarto(q.modalidade)}]`}>
                 {q.leitos?.map(l => {
-                  if (l.status === 'Livre' || l.id === formData.leito_id) {
-                    return (
-                      <option key={l.id} value={l.id}>
-                        {q.nome} - {l.identificacao} {l.id === formData.leito_id ? '(Cama Atual)' : '(Livre)'}
-                      </option>
-                    );
-                  }
-                  return null;
+                  const ehLeitoReservadoProprio = Boolean(
+                    formData.reservar_leito_fixo && formData.leito_reservado_id === l.id,
+                  );
+                  const disponivel = l.status === 'Livre' || l.id === formData.leito_id || ehLeitoReservadoProprio;
+                  if (!disponivel) return null;
+                  const rotuloLeito = ehLeitoReservadoProprio && situacaoTb
+                    ? '(Leito fixo reservado — retorno)'
+                    : (l.id === formData.leito_id ? '(Cama Atual)' : '(Livre)');
+                  return (
+                    <option key={l.id} value={l.id}>
+                      {q.nome} - {l.identificacao} {rotuloLeito}
+                    </option>
+                  );
                 })}
               </optgroup>
             ))}
           </select>
+          {situacaoTb && (
+            <p className="mt-1 text-[10px] font-semibold text-amber-800">
+              Selecione um leito em quarto {situacaoTb === 'Suspeita' ? 'TB Suspeita' : 'TB Confirmado'}.
+            </p>
+          )}
+          {formData.leito_reservado_id && formData.reservar_leito_fixo && (
+            <p className="mt-1 text-[10px] font-semibold text-violet-800">
+              Leito fixo reservado enquanto a opção de reserva estiver ativa.
+            </p>
+          )}
+          {!formData.leito_id && formData.leito_reservado_id && formData.reservar_leito_fixo && (
+            <p className="mt-1 text-[10px] font-semibold text-fuchsia-800">
+              Sem leito atual no cadastro. Selecione o leito fixo reservado acima ou encerre o remanejamento TB para retornar automaticamente.
+            </p>
+          )}
           {!podeEditarLeitoPeloProntuario && (
             <p className="mt-1 text-[10px] font-bold text-slate-500">
               Apenas Gestor e Técnico podem alterar quarto/cama pelo módulo Acomodações.

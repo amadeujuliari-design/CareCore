@@ -46,14 +46,18 @@ function carecoreVersaoBuildPlugin() {
   };
 }
 
-import { lerPortaApiLocal } from './scripts/carecoreDevPort.mjs';
+import { lerPortaApiLocal, lerPortaFrontendLocal } from './scripts/carecoreDevPort.mjs';
 
-/** Porta do backend local — fonte única: scripts/dev_local.json */
+/** Portas locais — fonte única: scripts/dev_local.json */
 const DEV_API_PORT = Number(process.env.CARECORE_DEV_API_PORT || lerPortaApiLocal());
+const DEV_FRONTEND_PORT = Number(process.env.CARECORE_DEV_FRONTEND_PORT || lerPortaFrontendLocal());
 
 export default defineConfig({
   plugins: [react(), carecoreVersaoBuildPlugin()],
   server: {
+    host: '127.0.0.1',
+    port: DEV_FRONTEND_PORT,
+    strictPort: true,
     proxy: {
       '/api': {
         target: `http://127.0.0.1:${DEV_API_PORT}`,

@@ -155,8 +155,14 @@ export default function ProntuarioFluxo({
                 </p>
               )}
 
-              {(registro.motivo_edicao || registro.motivo_cancelamento || registro.justificativa_retorno_rapido) && (
+              {(registro.motivo_edicao || registro.motivo_cancelamento || registro.justificativa_retorno_rapido || registro.justificativa_horario_portaria) && (
                 <div className="mt-3 grid grid-cols-1 gap-2 text-xs md:grid-cols-3">
+                  {registro.justificativa_horario_portaria && (
+                    <div className="rounded-lg border border-purple-100 bg-purple-50 p-3 text-purple-800">
+                      <p className="font-black uppercase">Horário fora do padrão</p>
+                      <p className="mt-1 whitespace-pre-wrap">{registro.justificativa_horario_portaria}</p>
+                    </div>
+                  )}
                   {registro.justificativa_retorno_rapido && (
                     <div className="rounded-lg border border-amber-100 bg-amber-50 p-3 text-amber-800">
                       <p className="font-black uppercase">Retorno rápido</p>

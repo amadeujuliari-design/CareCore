@@ -15,7 +15,7 @@ class ConviventeFake:
             setattr(self, chave, valor)
 
 
-def test_entrada_apos_pernoite_fora_bloqueia_antes_das_11():
+def test_entrada_apos_pernoite_fora_exige_justificativa_antes_das_11():
     ultimo = UltimoMovimentoPortaria("Saída", datetime(2026, 6, 27, 18, 0))
     momento = datetime(2026, 6, 28, 10, 30)
     with pytest.raises(HTTPException) as exc:
@@ -25,7 +25,21 @@ def test_entrada_apos_pernoite_fora_bloqueia_antes_das_11():
             convivente=ConviventeFake(),
             ultimo_movimento=ultimo,
         )
-    assert "pernoitou fora" in exc.value.detail.lower()
+    assert "justificativa" in exc.value.detail.lower()
+
+
+def test_entrada_apos_pernoite_fora_permite_com_justificativa_antes_das_11():
+    ultimo = UltimoMovimentoPortaria("Saída", datetime(2026, 6, 27, 18, 0))
+    momento = datetime(2026, 6, 28, 10, 30)
+    justificativa = "Retorno excepcional autorizado pela coordenação assistencial."
+    resultado = validar_horario_portaria(
+        tipo_registro="Entrada",
+        momento=momento,
+        convivente=ConviventeFake(),
+        ultimo_movimento=ultimo,
+        justificativa_horario=justificativa,
+    )
+    assert resultado == justificativa
 
 
 def test_entrada_apos_pernoite_fora_permite_as_11():
@@ -39,7 +53,7 @@ def test_entrada_apos_pernoite_fora_permite_as_11():
     )
 
 
-def test_saida_antes_das_4_bloqueia_quem_pernoitou_dentro():
+def test_saida_antes_das_4_exige_justificativa_quem_pernoitou_dentro():
     ultimo = UltimoMovimentoPortaria("Entrada", datetime(2026, 6, 27, 20, 0))
     momento = datetime(2026, 6, 28, 3, 30)
     with pytest.raises(HTTPException) as exc:
@@ -49,7 +63,7 @@ def test_saida_antes_das_4_bloqueia_quem_pernoitou_dentro():
             convivente=ConviventeFake(),
             ultimo_movimento=ultimo,
         )
-    assert "pernoitou dentro" in exc.value.detail.lower()
+    assert "justificativa" in exc.value.detail.lower()
 
 
 def test_saida_apos_17_exige_justificativa():

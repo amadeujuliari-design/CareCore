@@ -32,6 +32,7 @@ async def _contar_presencas_convivente(
             AtividadePresencaDB.instituicao_id == instituicao_id,
             AtividadePresencaDB.convivente_id == convivente_id,
             AtividadePresencaDB.cancelado.is_(False),
+            AtividadePresencaDB.contou_pontos.is_(True),
         )
     )
     return int(total or 0)
@@ -87,6 +88,7 @@ async def montar_ranking_pontos(
         .where(
             AtividadePresencaDB.instituicao_id == instituicao_id,
             AtividadePresencaDB.cancelado.is_(False),
+            AtividadePresencaDB.contou_pontos.is_(True),
         )
         .group_by(AtividadePresencaDB.convivente_id)
         .subquery()

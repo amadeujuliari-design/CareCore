@@ -79,24 +79,32 @@ export function validarHorarioPortaria({
   if (pernoitouFora(ultimoMovimento, momento) && tipoRegistro === 'Entrada') {
     const limite = parseHora(HORA_ENTRADA_APOS_PERNOITE_FORA);
     if (minutosAtuais < limite) {
-      return {
-        bloqueado: true,
-        exigeJustificativa: false,
-        mensagem:
-          'Este convivente pernoitou fora da unidade. A entrada só pode ser registrada a partir das 11:00.',
-      };
+      if (justificativa.length < MIN_CARACTERES_JUSTIFICATIVA_HORARIO) {
+        return {
+          bloqueado: true,
+          exigeJustificativa: true,
+          mensagem:
+            `Este convivente pernoitou fora da unidade. A entrada antes das ${HORA_ENTRADA_APOS_PERNOITE_FORA} exige justificativa de no mínimo ${MIN_CARACTERES_JUSTIFICATIVA_HORARIO} caracteres.`,
+          limiteHorario: HORA_ENTRADA_APOS_PERNOITE_FORA,
+        };
+      }
+      return { bloqueado: false, justificativaHorario: justificativa };
     }
   }
 
   if (pernoitouDentro(ultimoMovimento, momento)) {
     const limite = parseHora(HORA_MOVIMENTO_PERNOITE_DENTRO);
     if (minutosAtuais < limite) {
-      return {
-        bloqueado: true,
-        exigeJustificativa: false,
-        mensagem:
-          'Este convivente pernoitou dentro da unidade. Saída e entrada só podem ser registradas a partir das 04:00.',
-      };
+      if (justificativa.length < MIN_CARACTERES_JUSTIFICATIVA_HORARIO) {
+        return {
+          bloqueado: true,
+          exigeJustificativa: true,
+          mensagem:
+            `Este convivente pernoitou dentro da unidade. Movimentação antes das ${HORA_MOVIMENTO_PERNOITE_DENTRO} exige justificativa de no mínimo ${MIN_CARACTERES_JUSTIFICATIVA_HORARIO} caracteres.`,
+          limiteHorario: HORA_MOVIMENTO_PERNOITE_DENTRO,
+        };
+      }
+      return { bloqueado: false, justificativaHorario: justificativa };
     }
   }
 
@@ -133,7 +141,13 @@ export function mensagemIndicaJustificativaHorarioPortaria(mensagem) {
   const texto = String(mensagem || '').toLowerCase();
   return (
     texto.includes('justificativa')
-    && (texto.includes('saída após') || texto.includes('saida apos') || texto.includes('entrada após') || texto.includes('entrada apos'))
+    && (
+      texto.includes('saída após') || texto.includes('saida apos')
+      || texto.includes('entrada após') || texto.includes('entrada apos')
+      || texto.includes('entrada antes') || texto.includes('entrada antes')
+      || texto.includes('movimentação antes') || texto.includes('movimentacao antes')
+      || texto.includes('pernoitou fora') || texto.includes('pernoitou dentro')
+    )
   );
 }
 

@@ -44,14 +44,17 @@ export default function ConviventesLista({
   abrirParaEdicao,
   obterLocalizacaoLeito,
   statusConviventeClasse,
+  somenteLeitura = false,
 }) {
   return (
     <div className="bg-white p-4 sm:p-8 rounded-2xl shadow-sm border border-gray-100">
       <div className="flex flex-col gap-3 sm:flex-row sm:justify-between sm:items-center mb-8 border-b pb-4">
         <h2 className="text-2xl font-bold text-gray-800">População Acolhida</h2>
-        <button onClick={abrirFormulario} className="w-full bg-brand text-white px-6 py-2.5 rounded-xl hover:bg-brandDark font-semibold transition-all shadow-md transform hover:-translate-y-0.5 sm:w-auto">
-          + Novo Acolhimento
-        </button>
+        {!somenteLeitura && (
+          <button onClick={abrirFormulario} className="w-full bg-brand text-white px-6 py-2.5 rounded-xl hover:bg-brandDark font-semibold transition-all shadow-md transform hover:-translate-y-0.5 sm:w-auto">
+            + Novo Acolhimento
+          </button>
+        )}
       </div>
 
       <div className="mb-6 grid grid-cols-1 md:grid-cols-4 gap-4 p-5 bg-gray-50/50 rounded-xl border border-gray-200 shadow-inner">

@@ -66,6 +66,11 @@ export function usuarioPodeOperarProjeto(usuario) {
   return !usuarioEhGlobalPuro(usuario);
 }
 
+/** Alias usado nas telas operacionais (conviventes, rotina). */
+export function usuarioSomenteLeituraProjeto(usuario) {
+  return usuarioEhGlobalPuro(usuario);
+}
+
 /** Visão multi-projeto (seletor de projeto, menus globalOnly). */
 export function usuarioTemVisaoGlobal(usuario) {
   if (!usuario) return false;

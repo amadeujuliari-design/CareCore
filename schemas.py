@@ -1223,6 +1223,9 @@ class ConviventeBase(BaseModel):
     leito_provisorio_desde: Optional[datetime] = None
     ausencia_justificada_desde: Optional[date] = None
     leito_id: Optional[str] = None
+    leito_reservado_id: Optional[str] = None
+    reservar_leito_fixo: bool = False
+    tb_remanejamento_situacao: Optional[str] = None
     tecnico_id: Optional[str] = None
 
     motivo_inativacao_id: Optional[str] = None
@@ -1384,6 +1387,16 @@ class ConviventeBase(BaseModel):
     def validar_status(cls, valor: Optional[str]):
         return normalizar_status_convivente(valor)
 
+    @field_validator("tb_remanejamento_situacao", mode="before")
+    @classmethod
+    def normalizar_tb_remanejamento(cls, valor):
+        if valor is None or str(valor).strip() == "":
+            return None
+        texto = str(valor).strip()
+        if texto not in {"Suspeita", "Confirmado"}:
+            raise ValueError("Situação TB deve ser Suspeita ou Confirmado.")
+        return texto
+
     @field_validator(
         "possui_renda",
         "egresso_prisional",
@@ -1524,6 +1537,12 @@ class RotinaHistoricoResumoPeriodo(BaseModel):
     cancelados: int = 0
     retornos_rapidos: int = 0
     contagens_por_tipo: dict[str, int] = Field(default_factory=dict)
+    tem_ajuste_manual: bool = False
+    total_complemento_ajuste: int = 0
+    total_registrado: Optional[int] = None
+    entradas_registradas: Optional[int] = None
+    saidas_registradas: Optional[int] = None
+    ajustes_por_tipo: dict[str, int] = Field(default_factory=dict)
 
 
 class RotinaHistoricoListaResponse(BaseModel):
@@ -1641,6 +1660,34 @@ class RegistroRotinaEdicao(BaseModel):
 
 class RegistroRotinaCancelamento(BaseModel):
     motivo_cancelamento: str
+
+
+class RotinaAjusteDiarioItemInput(BaseModel):
+    tipo_registro: str
+    quantidade_ajuste: int = 0
+
+
+class RotinaAjusteDiarioSalvarRequest(BaseModel):
+    data_referencia: date
+    justificativa: str
+    ajustes: list[RotinaAjusteDiarioItemInput] = []
+
+
+class RotinaAjusteDiarioItemResponse(BaseModel):
+    tipo_registro: str
+    registrados: int
+    ajuste_manual: int
+    total_exibido: int
+    ajuste_id: Optional[str] = None
+
+
+class RotinaAjusteDiarioPainelResponse(BaseModel):
+    data_referencia: date
+    bloqueado: bool = False
+    motivo_bloqueio: Optional[str] = None
+    justificativa_existente: Optional[str] = None
+    tem_ajuste_manual: bool = False
+    itens: list[RotinaAjusteDiarioItemResponse] = []
 
 
 class RegistroRotinaDesfazerRapido(BaseModel):
@@ -2952,6 +2999,7 @@ class AtividadeCreate(BaseModel):
     sisa_descricao_tema: Optional[str] = None
     sisa_horario_padrao: Optional[str] = None
     ativo: bool = True
+    contabiliza_pontos: bool = True
 
 
 class AtividadeUpdate(BaseModel):
@@ -2966,6 +3014,7 @@ class AtividadeUpdate(BaseModel):
     sisa_descricao_tema: Optional[str] = None
     sisa_horario_padrao: Optional[str] = None
     ativo: Optional[bool] = None
+    contabiliza_pontos: Optional[bool] = None
 
 
 class AtividadeResponse(BaseModel):
@@ -2983,6 +3032,7 @@ class AtividadeResponse(BaseModel):
     sisa_descricao_tema: Optional[str] = None
     sisa_horario_padrao: Optional[str] = None
     ativo: bool = True
+    contabiliza_pontos: bool = True
     criado_por_id: str
     criado_em: datetime
     atualizado_em: Optional[datetime] = None

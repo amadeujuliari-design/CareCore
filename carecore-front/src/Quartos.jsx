@@ -13,6 +13,12 @@ import { listarQuartosOrdenados } from './services/quartosService';
 import { usuarioPodeEditarAcomodacao } from './hooks/usePermissoesProntuario';
 import { decodificarPayloadJwt } from './utils/jwtUtils';
 import { criarHeadersAutenticados } from './utils/requestIdUtils';
+import {
+  classesLeitoReservadoTb,
+  classesQuartoPorModalidade,
+  rotuloModalidadeQuarto,
+  rotuloReservaTb,
+} from './utils/quartosModalidadeUtils';
 
 export default function Quartos() {
   const navigate = useNavigate();
@@ -221,9 +227,17 @@ useEffect(() => {
   const abrirModalLeito = (quarto, leito) => {
     if (!podeAlocarLeitos) return;
 
+    const reservaTb = leito.tipo_reserva === 'tb_fixo' || leito.status === 'Reservado';
     setModalLeito({ quarto, leito });
-    setConviventeSelecionadoId('');
-    setBuscaConvivente('');
+    if (reservaTb && leito.convivente_id) {
+      setConviventeSelecionadoId(leito.convivente_id);
+      setBuscaConvivente(
+        `#${leito.numero_institucional || 'S/N'} - ${leito.convivente_nome_completo || leito.convivente_nome || 'Convivente'}`
+      );
+    } else {
+      setConviventeSelecionadoId('');
+      setBuscaConvivente('');
+    }
     setMostrarDropdownConvivente(false);
     setErro('');
     void carregarConviventesParaAlocacao();
@@ -257,7 +271,11 @@ useEffect(() => {
       );
       setModalLeito(null);
       conviventesCarregadosRef.current = false;
-      setSucesso('Convivente alocado com sucesso.');
+      setSucesso(
+        modalLeito.leito.tipo_reserva === 'tb_fixo' || modalLeito.leito.status === 'Reservado'
+          ? 'Convivente retornou ao leito fixo com sucesso.'
+          : 'Convivente alocado com sucesso.'
+      );
       await carregarQuartos();
       setTimeout(() => setSucesso(''), 3000);
     } catch (error) {
@@ -290,10 +308,13 @@ useEffect(() => {
   };
 
   const atualizarTooltipLeito = (event, leito) => {
-    if (leito.status !== 'Ocupado') return;
+    const exibirTooltip = leito.status === 'Ocupado'
+      || leito.status === 'Reservado'
+      || leito.tipo_reserva === 'tb_fixo';
+    if (!exibirTooltip) return;
 
-    const larguraTooltip = 260;
-    const alturaTooltip = 150;
+    const larguraTooltip = 280;
+    const alturaTooltip = leito.tipo_reserva === 'tb_fixo' ? 190 : 150;
     const margem = 16;
 
     const x = Math.min(
@@ -350,14 +371,20 @@ useEffect(() => {
                 // MAPA VISUAL EM GRID DOS QUARTOS
                 <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4 items-start">
                   {quartosOrdenados.map(q => (
-                    <div key={q.id} className="bg-white rounded-3xl border border-slate-200 shadow-sm flex flex-col hover:shadow-md transition-all duration-200 min-h-[300px]" >
+                    <div key={q.id} className={`rounded-3xl border shadow-sm flex flex-col hover:shadow-md transition-all duration-200 min-h-[300px] ${classesQuartoPorModalidade(q.modalidade)}`} >
                       
                       {/* Topo do Quarto */}
-                      <div className="bg-slate-800 px-3 py-2.5 text-white flex justify-between items-start">
+                      <div className={`px-3 py-2.5 text-white flex justify-between items-start ${
+                        q.modalidade === 'TB_Suspeita'
+                          ? 'bg-amber-700'
+                          : q.modalidade === 'TB_Confirmado'
+                            ? 'bg-rose-800'
+                            : 'bg-slate-800'
+                      }`}>
                         <div>
                           <h3 className="font-semibold text-[15px] tracking-tight">{q.nome}</h3>
-                          <p className="text-[9px] text-slate-300 font-medium uppercase tracking-wide mt-0.5">
-                            {q.tipo_publico} • {q.modalidade === 'Transitorio' ? 'Transitório' : 'Fixo'}
+                          <p className="text-[9px] text-slate-100 font-medium uppercase tracking-wide mt-0.5">
+                            {q.tipo_publico} • {rotuloModalidadeQuarto(q.modalidade)}
                             {q.rotativo ? ' • Rotativo' : ''}
                           </p>
                         </div>
@@ -376,6 +403,7 @@ useEffect(() => {
                         <div className="grid grid-cols-2 2xl:grid-cols-3 gap-2.5">
                           {q.leitos?.map(l => {
                             const ausenciaJustificada = l.convivente_status === 'Ausência justificada';
+                            const reservaTb = l.tipo_reserva === 'tb_fixo' || l.convivente_status === 'Reservado TB';
                             const ocupado = l.status === 'Ocupado';
 
                             return (
@@ -386,8 +414,10 @@ useEffect(() => {
                                 onMouseEnter={(event) => atualizarTooltipLeito(event, l)}
                                 onMouseMove={(event) => atualizarTooltipLeito(event, l)}
                                 onMouseLeave={() => setTooltipLeito(null)}
-                                className={`group relative rounded-2xl border px-3 py-2.5 text-center transition-all min-h-[104px] ${podeAlocarLeitos ? 'cursor-pointer' : 'cursor-default'} ${
-                                  ausenciaJustificada
+                                className={`group relative rounded-2xl border px-2.5 py-2 text-center transition-all min-h-[104px] ${podeAlocarLeitos ? 'cursor-pointer' : 'cursor-default'} ${
+                                  reservaTb
+                                    ? classesLeitoReservadoTb()
+                                    : ausenciaJustificada
                                     ? 'bg-blue-50/90 border-blue-300 hover:bg-blue-100/90'
                                     : ocupado
                                     ? 'bg-amber-50/80 border-amber-200 hover:bg-amber-100/80'
@@ -397,7 +427,9 @@ useEffect(() => {
                                 <div className="text-base mb-1">▣</div>
 
                                 <div className={`text-[12px] font-semibold leading-tight ${
-                                  ausenciaJustificada
+                                  reservaTb
+                                    ? 'text-fuchsia-900'
+                                    : ausenciaJustificada
                                     ? 'text-blue-800'
                                     : ocupado
                                     ? 'text-amber-800'
@@ -406,7 +438,19 @@ useEffect(() => {
                                   {l.identificacao}
                                 </div>
 
-                                {ocupado ? (
+                                {reservaTb ? (
+                                  <div className="mt-1.5 border-t border-fuchsia-200 pt-1.5 space-y-1">
+                                    <div className="text-[10px] font-semibold text-fuchsia-950 truncate leading-tight">
+                                      {l.convivente_nome || 'Convivente'}
+                                    </div>
+                                    <div className="text-[9px] font-medium text-fuchsia-800 truncate leading-tight">
+                                      Pront. {l.numero_institucional ?? '--'}
+                                    </div>
+                                    <span className="block rounded-md bg-fuchsia-600/15 px-1 py-0.5 text-[8px] font-bold leading-tight text-fuchsia-800 whitespace-normal">
+                                      {rotuloReservaTb(l.tb_remanejamento_situacao)}
+                                    </span>
+                                  </div>
+                                ) : ocupado ? (
                                   <div className={`mt-1.5 border-t pt-1.5 ${
                                     ausenciaJustificada ? 'border-blue-200' : 'border-amber-200'
                                   }`}>
@@ -476,6 +520,8 @@ useEffect(() => {
                     <select value={modalidade} onChange={(e) => setModalidade(e.target.value)} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none bg-white">
                       <option value="Fixo">Fixo (Pernoite Regular)</option>
                       <option value="Transitorio">Transitório (Passagem de Curto Prazo)</option>
+                      <option value="TB_Suspeita">TB Suspeita</option>
+                      <option value="TB_Confirmado">TB Confirmado</option>
                     </select>
                   </div>
 
@@ -543,7 +589,13 @@ useEffect(() => {
             </div>
           )}
 
-          {modalLeito && (
+          {modalLeito && (() => {
+            const leitoReservaTb = modalLeito.leito.tipo_reserva === 'tb_fixo'
+              || modalLeito.leito.status === 'Reservado';
+            const leitoOcupado = modalLeito.leito.status === 'Ocupado'
+              || (modalLeito.leito.convivente_id && !leitoReservaTb);
+
+            return (
             <div className="carecore-modal-overlay fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4">
               <div className="carecore-modal-panel w-full max-w-lg rounded-3xl bg-white p-6 shadow-2xl">
                 <div className="flex items-start justify-between gap-4 border-b border-slate-100 pb-4">
@@ -555,7 +607,9 @@ useEffect(() => {
                       {modalLeito.leito.identificacao}
                     </h2>
                     <p className="mt-1 text-sm font-semibold text-slate-500">
-                      {modalLeito.leito.convivente_id
+                      {leitoReservaTb
+                        ? `Reservado para ${modalLeito.leito.convivente_nome_completo || modalLeito.leito.convivente_nome || 'convivente'}`
+                        : leitoOcupado
                         ? `Ocupado por ${modalLeito.leito.convivente_nome_completo || modalLeito.leito.convivente_nome}`
                         : 'Leito livre para alocação'}
                     </p>
@@ -570,7 +624,29 @@ useEffect(() => {
                   </button>
                 </div>
 
-                {modalLeito.leito.convivente_id ? (
+                {leitoReservaTb ? (
+                  <div className="mt-5 space-y-4">
+                    <div className="rounded-2xl border border-fuchsia-100 bg-fuchsia-50 p-4 text-sm text-fuchsia-900">
+                      <p className="font-bold">
+                        {rotuloReservaTb(modalLeito.leito.tb_remanejamento_situacao)}
+                      </p>
+                      <p className="mt-2">
+                        Confirme para realocar{' '}
+                        <strong>{modalLeito.leito.convivente_nome_completo || modalLeito.leito.convivente_nome}</strong>
+                        {' '}neste leito fixo e encerrar o remanejamento TB.
+                      </p>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={alocarConviventeNoLeito}
+                      disabled={salvandoAlocacao || !conviventeSelecionadoId}
+                      className="w-full rounded-2xl bg-fuchsia-700 px-4 py-3 text-sm font-black text-white hover:bg-fuchsia-800 disabled:opacity-50"
+                    >
+                      {salvandoAlocacao ? 'Retornando...' : 'Retornar ao leito fixo'}
+                    </button>
+                  </div>
+                ) : leitoOcupado ? (
                   <div className="mt-5 space-y-4">
                     <div className="rounded-2xl border border-amber-100 bg-amber-50 p-4 text-sm text-amber-800">
                       Liberar este leito remove apenas o vínculo de acomodação. O convivente permanece ativo no sistema.
@@ -654,15 +730,18 @@ useEffect(() => {
                 )}
               </div>
             </div>
-          )}
+            );
+          })()}
 
           {tooltipLeito && (
             <div
-              className="pointer-events-none fixed z-[10000] w-64 rounded-2xl border border-slate-200 bg-white p-3 text-left shadow-2xl"
+              className="pointer-events-none fixed z-[10000] w-72 rounded-2xl border border-slate-200 bg-white p-3 text-left shadow-2xl"
               style={{ left: tooltipLeito.x, top: tooltipLeito.y }}
             >
               <div className="text-xs font-bold uppercase tracking-wide text-slate-400">
-                Convivente alocado
+                {tooltipLeito.leito.tipo_reserva === 'tb_fixo'
+                  ? 'Leito reservado — remanejamento TB'
+                  : 'Convivente alocado'}
               </div>
 
               <div className="mt-1 text-sm font-semibold text-slate-900">
@@ -670,6 +749,11 @@ useEffect(() => {
               </div>
 
               <div className="mt-2 grid gap-1 text-xs text-slate-600">
+                <div>
+                  <span className="font-semibold text-slate-800">Leito:</span>{' '}
+                  {tooltipLeito.leito.identificacao || '--'}
+                </div>
+
                 <div>
                   <span className="font-semibold text-slate-800">Prontuário:</span>{' '}
                   {tooltipLeito.leito.numero_institucional ?? '--'}
@@ -683,6 +767,11 @@ useEffect(() => {
                 {tooltipLeito.leito.convivente_status === 'Ausência justificada' && (
                   <div className="mt-1 rounded-lg bg-blue-50 px-2 py-1 font-semibold text-blue-700">
                     Ausência justificada — leito reservado
+                  </div>
+                )}
+                {tooltipLeito.leito.tipo_reserva === 'tb_fixo' && (
+                  <div className="mt-1 rounded-lg bg-fuchsia-50 px-2 py-1 font-semibold text-fuchsia-800">
+                    {rotuloReservaTb(tooltipLeito.leito.tb_remanejamento_situacao)}
                   </div>
                 )}
               </div>

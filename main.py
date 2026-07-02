@@ -60,6 +60,8 @@ if AMBIENTE_LOCAL:
     ORIGENS_PERMITIDAS.update({
         "http://localhost:5173",
         "http://127.0.0.1:5173",
+        "http://localhost:8765",
+        "http://127.0.0.1:8765",
     })
 
 ORIGEM_LAN_REGEX_VALOR = r"^http://(192\.168\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}):5173$"
@@ -429,6 +431,7 @@ async def healthcheck():
         "cadastro_datas": "ajuste-automatico-v1",
         "revisao_texto_configurada": gemini_configurado(),
         "dashboard_api": "contagens-v1",
+        "rotina_ajustes_resumo": "historico-v1",
     }
 
 

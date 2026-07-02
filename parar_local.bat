@@ -8,12 +8,11 @@ echo ==========================================
 echo    PARANDO CARECORE+ (LOCAL)
 echo ==========================================
 
+cd /d "%ROOT%"
 if exist "%PYTHON_BACKEND%" (
-  cd /d "%ROOT%"
   "%PYTHON_BACKEND%" scripts\dev_local.py stop
 ) else (
-  echo Python local nao encontrado; tentando liberar portas via PowerShell...
-  powershell -NoProfile -ExecutionPolicy Bypass -Command "foreach ($port in 5173,8020,8000,8002,8010,8011,8013) { Get-NetTCPConnection -LocalPort $port -State Listen -EA SilentlyContinue | Select -Expand OwningProcess -Unique | ForEach-Object { if ($_ -gt 0) { Stop-Process -Id $_ -Force -EA SilentlyContinue } } }"
+  python scripts\dev_local.py stop 2>nul || py -3 scripts\dev_local.py stop 2>nul
 )
 
 echo.

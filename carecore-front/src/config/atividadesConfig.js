@@ -90,6 +90,7 @@ export function criarFormAtividadeInicial() {
     sisa_descricao_tema: '',
     sisa_horario_padrao: '',
     ativo: true,
+    contabiliza_pontos: true,
   };
 }
 

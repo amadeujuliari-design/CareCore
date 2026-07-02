@@ -7,7 +7,9 @@ import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import Sidebar from './Sidebar';
 import AuthenticatedImage from './components/AuthenticatedImage';
+import BannerSomenteLeituraGlobal from './components/BannerSomenteLeituraGlobal';
 import { AppShell, MainShell, PageHeader, PremiumButton, ScrollArea } from './components/PremiumUI';
+import { useAuth } from './context/AuthContext';
 import { API_ROOT } from './config/apiBase';
 import { useDeviceInfo } from './hooks/useDeviceInfo';
 import { useLeitorUsbGlobal } from './hooks/useLeitorUsbGlobal';
@@ -169,6 +171,7 @@ const ROTULOS_REFEICAO_EXTRA = {
 
 export default function RotinaDiaria() {
   const navigate = useNavigate();
+  const { isGlobalPuro: somenteLeitura } = useAuth();
   const token = localStorage.getItem('@CareCore:token');
   const deviceInfo = useDeviceInfo();
 
@@ -563,6 +566,8 @@ export default function RotinaDiaria() {
   );
 
   const solicitarRegistroInteracao = (convivente) => {
+    if (somenteLeitura) return;
+
     const opcao = OPCOES_INTERACAO_ROTINA.find(item => item.valor === interacaoSelecionada);
     if (!opcao) return;
 
@@ -611,6 +616,8 @@ export default function RotinaDiaria() {
   };
 
   const processarCodigoLido = (codigoBruto) => {
+    if (somenteLeitura) return;
+
     if (deveIgnorarLeituraCodigoRepetida(ultimaLeituraRef, codigoBruto)) {
       return;
     }
@@ -680,7 +687,8 @@ export default function RotinaDiaria() {
     processarCodigoLidoRef.current = processarCodigoLido;
   });
 
-  const leitorUsbAtivo = modoAutomatico
+  const leitorUsbAtivo = !somenteLeitura
+    && modoAutomatico
     && !scannerAberto
     && !interacaoConfirmacao
     && !interacaoObservacaoPendente
@@ -786,6 +794,8 @@ export default function RotinaDiaria() {
     conviventePreCarregado = null,
     opcoes = {}
   ) => {
+    if (somenteLeitura) return;
+
     const convivente =
       conviventePreCarregado ||
       conviventes.find(c => c.id === conviventeId);
@@ -1220,7 +1230,7 @@ export default function RotinaDiaria() {
   };
 
   const handleDesfazerRegistro = async (item) => {
-    if (!item?.registroId) return;
+    if (!item?.registroId || somenteLeitura) return;
 
     try {
       setProcessandoAcao(`desfazer-${item.registroId}`);
@@ -1293,7 +1303,9 @@ export default function RotinaDiaria() {
     );
   const resumoInteracoesLista = Object.entries(contagensInteracoesVisiveis)
     .sort(([, totalA], [, totalB]) => totalB - totalA);
-  const placeholderBusca = modoAutomatico && tipoBipagemAutomatica === 'interacao'
+  const placeholderBusca = somenteLeitura
+    ? 'Buscar nome, prontuário ou CPF...'
+    : modoAutomatico && tipoBipagemAutomatica === 'interacao'
     ? 'Digite o código do prontuário para registrar a interação selecionada...'
     : 'Buscar nome, prontuário, CPF ou bipar leitor USB...';
   const ultimoRegistroDesfazivel = historicoLeituras.find(
@@ -1320,9 +1332,13 @@ export default function RotinaDiaria() {
         <PageHeader
           eyebrow="Rotina"
           title="Controle de Fluxo Diário"
-          subtitle="Entradas, saídas e alimentação da população acolhida."
+          subtitle={
+            somenteLeitura
+              ? 'Consulta de presença, entradas, saídas e interações do dia (somente leitura).'
+              : 'Entradas, saídas e alimentação da população acolhida.'
+          }
           icon="◷"
-          actions={(
+          actions={!somenteLeitura ? (
             <>
             <button
               onClick={() => setModoAutomatico(prev => !prev)}
@@ -1364,11 +1380,14 @@ export default function RotinaDiaria() {
               Hoje
             </div>
             </>
-          )}
+          ) : null}
         />
 
         <ScrollArea className="pb-24">
           <div className="w-full max-w-7xl mx-auto space-y-6">
+          {somenteLeitura && (
+            <BannerSomenteLeituraGlobal modulo="a rotina diária" />
+          )}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-between">
               <div>
@@ -1440,10 +1459,11 @@ export default function RotinaDiaria() {
                   placeholder={placeholderBusca}
                   value={busca}
                   onChange={(e) => setBusca(e.target.value)}
-                  onKeyDown={handleBuscaKeyDown}
+                  onKeyDown={somenteLeitura ? undefined : handleBuscaKeyDown}
                   className="min-h-12 flex-1 px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-brand outline-none bg-gray-50 text-sm font-medium shadow-inner"
-                  autoFocus
+                  autoFocus={!somenteLeitura}
                 />
+                {!somenteLeitura && (
                 <button
                   type="button"
                   onClick={() => {
@@ -1454,8 +1474,10 @@ export default function RotinaDiaria() {
                 >
                   Registrar manual
                 </button>
+                )}
               </div>
 
+              {!somenteLeitura && (
               <div className="text-xs text-gray-400 flex items-center gap-2">
                 <span className="font-bold bg-gray-200 px-2 py-1 rounded">
                   Modo atual:
@@ -1466,9 +1488,10 @@ export default function RotinaDiaria() {
                     : 'Bipou, registra Entrada/Saída automaticamente.'
                   : 'Bipou, abre modal para escolher a ação.'}
               </div>
+              )}
             </div>
 
-            {modoAutomatico && (
+            {!somenteLeitura && modoAutomatico && (
               <div className="mb-6 rounded-2xl border border-blue-100 bg-blue-50/70 p-4">
                 <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                   <div>
@@ -1535,7 +1558,7 @@ export default function RotinaDiaria() {
               </div>
             )}
 
-            {ultimoRegistroDesfazivel && (
+            {ultimoRegistroDesfazivel && !somenteLeitura && (
               <div className="mb-6 rounded-2xl border border-red-100 bg-red-50 p-4 shadow-sm">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <div className="min-w-0">
@@ -1615,7 +1638,7 @@ export default function RotinaDiaria() {
                           </span>
                         )}
 
-                        {item.registroId && item.status === 'Sucesso' && registroAindaPodeSerDesfeito(item) && (
+                        {item.registroId && item.status === 'Sucesso' && registroAindaPodeSerDesfeito(item) && !somenteLeitura && (
                           <button
                             onClick={() => handleDesfazerRegistro(item)}
                             disabled={processandoAcao === `desfazer-${item.registroId}`}
@@ -1717,7 +1740,7 @@ export default function RotinaDiaria() {
                         )}
                       </div>
 
-                      <div className="grid w-full grid-cols-1 gap-2 sm:grid-cols-3 md:mt-0 md:flex md:w-[380px] md:flex-shrink-0 md:items-center md:justify-end">
+                      <div className={`grid w-full grid-cols-1 gap-2 sm:grid-cols-3 md:mt-0 md:flex md:w-[380px] md:flex-shrink-0 md:items-center md:justify-end ${somenteLeitura ? 'hidden' : ''}`}>
                         <button
                           onClick={() => handleRegistrar(c.id, 'Entrada')}
                           disabled={!isFora || processandoAcao === `${c.id}-Entrada`}

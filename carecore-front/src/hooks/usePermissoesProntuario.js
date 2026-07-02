@@ -1,6 +1,9 @@
 import { useMemo } from 'react';
 
-import { usuarioPodeEditarAcomodacao as rbacPodeEditarAcomodacao } from '../utils/rbacUtils';
+import {
+  usuarioEhGlobalPuro,
+  usuarioPodeEditarAcomodacao as rbacPodeEditarAcomodacao,
+} from '../utils/rbacUtils';
 
 const PERFIS_GESTAO = ['Gestor', 'Gestao', 'Gestão', 'Gerente'];
 const PERFIS_DOCUMENTOS_RESTRITOS = [...PERFIS_GESTAO, 'Master'];
@@ -29,6 +32,7 @@ export function usePermissoesProntuario({
 }) {
   return useMemo(() => {
     const usuarioRbac = usuario || { perfil_acesso: perfilUsuario };
+    const somenteLeitura = usuarioEhGlobalPuro(usuarioRbac);
     const usuarioPodeGerenciarDocumentosRestritos = PERFIS_DOCUMENTOS_RESTRITOS.includes(perfilUsuario);
     const usuarioEhTecnico = PERFIS_TECNICOS.includes(perfilUsuario);
     const usuarioEhGestao = PERFIS_GESTAO.includes(perfilUsuario);
@@ -39,16 +43,29 @@ export function usePermissoesProntuario({
     const tecnicoPodeMudarStatus = usuarioEhTecnico && (conviventeSemTecnicoAtrelado || usuarioEhTecnicoResponsavel);
 
     return {
-      usuarioPodeGerenciarDocumentosRestritos,
-      usuarioPodeEnviarDocumentosRestritos: usuarioPodeGerenciarDocumentosRestritos || usuarioEhTecnico,
-      podeMudarStatus: !editandoId || usuarioEhGestao || usuarioEhManutencao || tecnicoPodeMudarStatus,
-      podeCriarHistoricoConvivente: usuarioEhGestao || usuarioEhTecnico,
-      podeEditarHistoricoConvivente: usuarioEhGestao || usuarioEhTecnicoResponsavel,
-      podeGerenciarPiaConvivente: usuarioEhGestao || usuarioEhTecnico || usuarioEhManutencao,
-      podeEditarAcomodacao: rbacPodeEditarAcomodacao(usuarioRbac),
+      somenteLeitura,
+      usuarioPodeGerenciarDocumentosRestritos: somenteLeitura
+        ? false
+        : usuarioPodeGerenciarDocumentosRestritos,
+      usuarioPodeEnviarDocumentosRestritos: somenteLeitura
+        ? false
+        : (usuarioPodeGerenciarDocumentosRestritos || usuarioEhTecnico),
+      podeMudarStatus: somenteLeitura
+        ? false
+        : (!editandoId || usuarioEhGestao || usuarioEhManutencao || tecnicoPodeMudarStatus),
+      podeCriarHistoricoConvivente: somenteLeitura ? false : (usuarioEhGestao || usuarioEhTecnico),
+      podeEditarHistoricoConvivente: somenteLeitura
+        ? false
+        : (usuarioEhGestao || usuarioEhTecnicoResponsavel),
+      podeGerenciarPiaConvivente: somenteLeitura
+        ? false
+        : (usuarioEhGestao || usuarioEhTecnico || usuarioEhManutencao),
+      podeEditarAcomodacao: somenteLeitura ? false : rbacPodeEditarAcomodacao(usuarioRbac),
       usuarioPodeImprimirSensiveisConvivente: (convivente) => (
-        usuarioEhGestao ||
-        (usuarioEhTecnico && convivente?.tecnico_id === idUsuarioLogado)
+        !somenteLeitura && (
+          usuarioEhGestao ||
+          (usuarioEhTecnico && convivente?.tecnico_id === idUsuarioLogado)
+        )
       ),
     };
   }, [editandoId, idUsuarioLogado, perfilUsuario, tecnicoId, usuario]);

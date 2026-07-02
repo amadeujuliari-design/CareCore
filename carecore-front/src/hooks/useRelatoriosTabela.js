@@ -193,7 +193,12 @@ export function useRelatoriosTabela({
             Operador: registro.usuario_nome || '-',
             Status: status || '-',
             'Retorno rápido': registro.retorno_rapido ? 'Sim' : 'Não',
-            'Auditoria/Observação': registro.justificativa_retorno_rapido || registro.motivo_edicao || registro.motivo_cancelamento || '-',
+            'Auditoria/Observação': [
+              registro.justificativa_horario_portaria,
+              registro.justificativa_retorno_rapido,
+              registro.motivo_edicao,
+              registro.motivo_cancelamento,
+            ].filter(Boolean).join(' | ') || '-',
           };
         }),
       };
@@ -324,7 +329,10 @@ export function useRelatoriosTabela({
           eventos.push({
             ...base,
             Evento: 'Retorno rápido',
-            'Justificativa/Motivo': registro.justificativa_retorno_rapido || '-',
+            'Justificativa/Motivo': [
+              registro.justificativa_horario_portaria,
+              registro.justificativa_retorno_rapido,
+            ].filter(Boolean).join(' | ') || '-',
           });
         }
 

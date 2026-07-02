@@ -341,6 +341,9 @@ class ConviventeDB(Base):
     data_nova_vinculacao = Column(Date, nullable=True)
     prontuario_saude = Column(String, nullable=True)
     leito_id = Column(String, ForeignKey("leitos.id"), nullable=True) 
+    leito_reservado_id = Column(String, ForeignKey("leitos.id"), nullable=True)
+    reservar_leito_fixo = Column(Boolean, default=False, nullable=False)
+    tb_remanejamento_situacao = Column(String, nullable=True)
     leito_provisorio_desde = Column(DateTime, nullable=True)
     preferencial = Column(Boolean, default=False, nullable=False)
     
@@ -462,6 +465,29 @@ class CarteirinhaImpressaoLogDB(Base):
     quantidade = Column(Integer, nullable=False, default=1)
     origem = Column(String, nullable=False, default="unitaria", index=True)
     impresso_em = Column(DateTime, nullable=False, index=True)
+
+
+class RotinaAjusteDiarioDB(Base):
+    """Complemento manual de totais da rotina por dia (não altera eventos por convivente)."""
+    __tablename__ = "rotina_ajustes_diarios"
+    __table_args__ = (
+        UniqueConstraint(
+            "instituicao_id",
+            "data_referencia",
+            "tipo_registro",
+            name="uq_rotina_ajuste_diario_inst_data_tipo",
+        ),
+    )
+
+    id = Column(String, primary_key=True, default=get_uuid)
+    instituicao_id = Column(String, ForeignKey("instituicoes.id"), nullable=False, index=True)
+    data_referencia = Column(Date, nullable=False, index=True)
+    tipo_registro = Column(String, nullable=False)
+    quantidade_ajuste = Column(Integer, nullable=False, default=0)
+    justificativa = Column(Text, nullable=False)
+    usuario_id = Column(String, ForeignKey("usuarios.id"), nullable=False)
+    criado_em = Column(DateTime, default=agora_operacional_naive)
+    atualizado_em = Column(DateTime, default=agora_operacional_naive, onupdate=agora_operacional_naive)
 
 
 class ConviventeFamiliarDB(Base):
@@ -1344,6 +1370,7 @@ class AtividadeDB(Base):
     sisa_descricao_tema = Column(String, nullable=True)
     sisa_horario_padrao = Column(String, nullable=True)
     ativo = Column(Boolean, default=True)
+    contabiliza_pontos = Column(Boolean, default=True, nullable=False)
     criado_por_id = Column(String, ForeignKey("usuarios.id"), nullable=False)
     criado_em = Column(DateTime, default=agora_operacional_naive)
     atualizado_em = Column(DateTime, default=agora_operacional_naive)
@@ -1387,6 +1414,7 @@ class AtividadePresencaDB(Base):
     codigo_lido = Column(String, nullable=True)
     registrado_em = Column(DateTime, default=agora_operacional_naive)
     cancelado = Column(Boolean, default=False)
+    contou_pontos = Column(Boolean, default=True, nullable=False)
     cancelado_por_id = Column(String, ForeignKey("usuarios.id"), nullable=True)
     cancelado_em = Column(DateTime, nullable=True)
     motivo_cancelamento = Column(Text, nullable=True)

@@ -12,7 +12,16 @@ No Windows, use:
 iniciar.bat
 ```
 
-O script confere Python, Node/npm, dependencias do backend e frontend, inicia a API na porta `8000`, inicia o Vite na porta `5173` e abre o sistema no navegador.
+O script confere Python, Node/npm, dependencias do backend e frontend, para instancias antigas, inicia a API na porta `8020`, inicia o Vite na porta `5173` e abre o sistema no navegador.
+
+Portas e health check: `scripts/dev_local.json` (fonte unica). Orquestrador: `scripts/dev_local.py`.
+
+| Script | Funcao |
+|--------|--------|
+| `iniciar.bat` | Primeira vez (venv + deps) e sobe tudo |
+| `reiniciar_local.bat` | Para zumbis, sobe API + Vite, abre navegador |
+| `parar_local.bat` | Para backend/frontend e libera portas |
+| `validar_api_local.bat` | Confere health e rotas criticas |
 
 Para evitar conflito entre computadores usando a mesma pasta sincronizada, o ambiente virtual Python e criado por maquina em `%LOCALAPPDATA%\CareCorePlus\venv`. Nao copie nem sincronize `venv/` entre computadores.
 
@@ -22,7 +31,7 @@ Para acessar pelo celular ou tablet na mesma rede, use o endereco mostrado no fi
 http://192.168.0.10:5173
 ```
 
-O notebook pode estar no cabo e o celular no Wi-Fi, desde que ambos estejam na mesma rede e as portas `5173` e `8000` estejam liberadas no Firewall do Windows.
+O notebook pode estar no cabo e o celular no Wi-Fi, desde que ambos estejam na mesma rede e as portas `5173` e `8020` estejam liberadas no Firewall do Windows.
 
 Observacao importante: navegadores de celular geralmente bloqueiam camera em endereco local `http://IP`. Por isso o sistema oferece upload/camera nativa como alternativa em cadastros. Leitura direta por `getUserMedia` fica mais confiavel quando houver HTTPS em producao.
 
@@ -33,8 +42,10 @@ python -m venv "%LOCALAPPDATA%\CareCorePlus\venv"
 "%LOCALAPPDATA%\CareCorePlus\venv\Scripts\activate"
 pip install -r requirements.txt
 copy env.example .env
-python -m uvicorn main:app --reload --host 0.0.0.0 --port 8000
+python scripts/dev_local.py start-backend
 ```
+
+API local padrao: `http://127.0.0.1:8020` (ver `scripts/dev_local.json`).
 
 ### Frontend
 
@@ -42,10 +53,13 @@ python -m uvicorn main:app --reload --host 0.0.0.0 --port 8000
 cd carecore-front
 copy .env.example .env
 npm install
+set CARECORE_DEV_API_PORT=8020
 npm run dev
 ```
 
-A variavel `VITE_API_BASE_URL` no frontend pode sobrescrever a origem da API. Sem `.env`, o frontend usa automaticamente o mesmo hostname aberto no navegador e troca apenas a porta para `8000`, o que permite acesso pelo IP da rede local.
+Recomendado no Windows: `reiniciar_local.bat` sobe backend e frontend juntos com portas alinhadas.
+
+A variavel `VITE_API_BASE_URL` no frontend pode sobrescrever a origem da API. Sem `.env`, o Vite faz proxy de `/api` para a porta definida em `scripts/dev_local.json`.
 
 ### Validação local
 

@@ -252,12 +252,13 @@ export default function Sidebar() {
           path: '/rotina',
           icon: CalendarClock,
           label: 'Rotina Diária',
-          perfis: ['Gestor', 'Técnico', 'Orientador', 'Administrativo'],
+          perfis: ['Gestor', 'Técnico', 'Orientador', 'Administrativo', 'Global'],
           children: [
             {
               path: '/rotina',
               icon: CalendarClock,
-              label: 'Registro da Rotina'
+              label: 'Registro da Rotina',
+              perfis: ['Gestor', 'Técnico', 'Orientador', 'Administrativo', 'Global'],
             },
             {
               path: '/rotina/lavanderia',
@@ -272,12 +273,20 @@ export default function Sidebar() {
             {
               path: '/rotina/dashboard',
               icon: ChartNoAxesColumnIncreasing,
-              label: 'Dashboard Operacional'
+              label: 'Dashboard Operacional',
+              perfis: ['Gestor', 'Técnico', 'Orientador', 'Administrativo', 'Global'],
             },
             {
               path: '/rotina/historico',
               icon: ClipboardList,
-              label: 'Histórico da Rotina'
+              label: 'Histórico da Rotina',
+              perfis: ['Gestor', 'Técnico', 'Orientador', 'Administrativo', 'Global'],
+            },
+            {
+              path: '/rotina/ajustes-totais',
+              icon: ClipboardList,
+              label: 'Ajustes de Totais',
+              perfis: ['Gestor']
             }
           ]
         },

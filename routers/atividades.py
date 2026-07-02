@@ -431,6 +431,7 @@ async def criar_atividade(
         sisa_descricao_tema=(payload.sisa_descricao_tema or "").strip() or None,
         sisa_horario_padrao=(payload.sisa_horario_padrao or "").strip() or None,
         ativo=payload.ativo,
+        contabiliza_pontos=payload.contabiliza_pontos,
         criado_por_id=usuario_atual["sub"],
         criado_em=agora,
         atualizado_em=agora,
@@ -839,6 +840,8 @@ async def atualizar_atividade(
         atividade.sisa_horario_padrao = payload.sisa_horario_padrao.strip() or None
     if payload.ativo is not None:
         atividade.ativo = payload.ativo
+    if payload.contabiliza_pontos is not None:
+        atividade.contabiliza_pontos = payload.contabiliza_pontos
 
     atividade.atualizado_em = agora_sao_paulo()
     await registrar_catalogos_de_atividade(
@@ -1096,6 +1099,7 @@ async def registrar_presenca_atividade(
         codigo_lido=(payload.codigo_lido or "").strip() or None,
         registrado_em=agora_sao_paulo(),
         cancelado=False,
+        contou_pontos=bool(getattr(atividade, "contabiliza_pontos", True)),
     )
     db.add(presenca)
     await db.commit()

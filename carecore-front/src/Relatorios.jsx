@@ -95,6 +95,7 @@ export default function Relatorios() {
   const [registrosPia, setRegistrosPia] = useState([]);
   const [rotinaOperacional, setRotinaOperacional] = useState(null);
   const [historicoRotina, setHistoricoRotina] = useState([]);
+  const [resumoRotinaPeriodo, setResumoRotinaPeriodo] = useState(null);
   const [resumoRotinaEvolucao, setResumoRotinaEvolucao] = useState([]);
   const [resumoAvisos, setResumoAvisos] = useState(null);
   const [avisos, setAvisos] = useState([]);
@@ -162,8 +163,10 @@ export default function Relatorios() {
             limite: LIMITE_EXPORT_ROTINA_RELATORIOS,
           });
           setHistoricoRotina(historico.registros || []);
+          setResumoRotinaPeriodo(historico.resumo_periodo || null);
         } else {
           setHistoricoRotina([]);
+          setResumoRotinaPeriodo(null);
         }
         if (dadosRelatorios.resumoRotinaEvolucao) setResumoRotinaEvolucao(dadosRelatorios.resumoRotinaEvolucao);
         if (dadosRelatorios.avisos) setAvisos(Array.isArray(dadosRelatorios.avisos) ? dadosRelatorios.avisos : []);
@@ -244,6 +247,7 @@ export default function Relatorios() {
     resumoAvisos,
     resumoOcorrencias,
     rotinaOperacional,
+    resumoRotinaPeriodo,
     tecnicoId: filtros.tecnicoId,
     tecnicos,
     equipe,
@@ -300,8 +304,15 @@ export default function Relatorios() {
           rotulo: rotuloDia(chave),
           atendimentos: 0,
           entradas: 0,
+          entradasRegistradas: 0,
+          ajusteEntradas: 0,
           saidas: 0,
+          saidasRegistradas: 0,
+          ajusteSaidas: 0,
           almocos: 0,
+          almocosRegistrados: 0,
+          ajusteAlmocos: 0,
+          temAjusteManual: false,
           ocorrencias: 0,
           resolvidas: 0,
           pendenciasAbertas: 0,
@@ -317,10 +328,17 @@ export default function Relatorios() {
         const chave = chaveDia(registro.data);
         const item = basePorDia[chave];
         if (!item) return;
-        item.atendimentos += Number(registro.atendimentos || 0);
-        item.entradas += Number(registro.entradas || 0);
-        item.saidas += Number(registro.saidas || 0);
-        item.almocos += Number(registro.almocos || 0);
+        item.atendimentos += Number(registro.atendimentos_total ?? (registro.atendimentos || 0));
+        item.entradas += Number(registro.entradas_total ?? (registro.entradas || 0));
+        item.entradasRegistradas += Number(registro.entradas || 0);
+        item.ajusteEntradas += Number(registro.ajuste_entradas || 0);
+        item.saidas += Number(registro.saidas_total ?? (registro.saidas || 0));
+        item.saidasRegistradas += Number(registro.saidas || 0);
+        item.ajusteSaidas += Number(registro.ajuste_saidas || 0);
+        item.almocos += Number(registro.almocos_total ?? (registro.almocos || 0));
+        item.almocosRegistrados += Number(registro.almocos || 0);
+        item.ajusteAlmocos += Number(registro.ajuste_refeicoes || 0);
+        item.temAjusteManual = item.temAjusteManual || Boolean(registro.tem_ajuste_manual);
       });
     } else {
       historicoRotinaFiltrado.forEach((registro) => {
@@ -376,6 +394,7 @@ export default function Relatorios() {
     const totalPrimeira = primeiraMetade.reduce((total, item) => total + item.atendimentos, 0);
     const totalSegunda = segundaMetade.reduce((total, item) => total + item.atendimentos, 0);
     const tendencia = totalSegunda > totalPrimeira ? 'Alta' : totalSegunda < totalPrimeira ? 'Queda' : 'Estável';
+    const diasComAjusteManual = serie.filter((item) => item.temAjusteManual);
 
     return {
       serie,
@@ -383,6 +402,7 @@ export default function Relatorios() {
       mediaDiaria,
       pico,
       tendencia,
+      diasComAjusteManual,
     };
   }, [conviventesFiltrados, historicoRotinaFiltrado, ocorrenciasFiltradas, resumoRotinaEvolucao]);
 
@@ -1042,6 +1062,16 @@ export default function Relatorios() {
           ) : (
             <>
               <RelatoriosCardsAba relatoriosAtuaisVisiveis={relatoriosAtuaisVisiveis} />
+
+              {aba === 'evolucao' && dadosEvolucao.diasComAjusteManual?.length > 0 && (
+                <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+                  <p className="font-bold">Totais com ajuste manual de rotina</p>
+                  <p className="mt-1">
+                    {dadosEvolucao.diasComAjusteManual.length} dia(s) no período incluem complementos lançados pelo Gestor
+                    (falha de registro em tempo real). Os gráficos exibem registrados + ajuste; presença por convivente e SISA individual não são alterados.
+                  </p>
+                </div>
+              )}
 
               {aba === 'evolucao' && (
                 <RelatoriosEvolucaoGraficos

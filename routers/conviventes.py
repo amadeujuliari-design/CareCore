@@ -31,6 +31,11 @@ from carteirinha_operacional import (
 )
 from refeicao_horario_operacional import validar_horario_refeicao_operacional
 from rotina_portaria_horarios import UltimoMovimentoPortaria, validar_horario_portaria
+from acomodacao_tb import (
+    aplicar_regras_acomodacao_tb,
+    leito_esta_reservado_por_outro,
+    sincronizar_status_leitos_convivente,
+)
 from convivente_ficha_pia import (
     carregar_listas_ficha_pia,
     enriquecer_convivente_response_dict,
@@ -174,6 +179,9 @@ APP_ENV = os.getenv("APP_ENV", "local").strip().lower()
 
 router = APIRouter(prefix="/api", tags=["Conviventes e Ocorrencias"])
 
+from routers.rotina_ajustes_totais import router as rotina_ajustes_totais_router
+router.include_router(rotina_ajustes_totais_router, prefix="/rotina")
+
 LISTAS_FICHA_PIA = (
     "familiares",
     "documentos_civis",
@@ -260,6 +268,7 @@ async def validar_leito_do_projeto(
     db: AsyncSession,
     leito_id: str | None,
     instituicao_id: str,
+    convivente_id: str | None = None,
 ) -> None:
     if not leito_id:
         return
@@ -277,6 +286,17 @@ async def validar_leito_do_projeto(
 
     if not leito:
         raise HTTPException(status_code=404, detail="Leito não encontrado neste projeto.")
+
+    if await leito_esta_reservado_por_outro(
+        db,
+        leito_id,
+        instituicao_id,
+        convivente_id,
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="Este leito está reservado para remanejamento TB.",
+        )
 
 
 async def validar_usuario_do_projeto(
@@ -392,8 +412,14 @@ async def validar_referencias_convivente_do_projeto(
     db: AsyncSession,
     dados: dict,
     instituicao_id: str,
+    convivente_id: str | None = None,
 ) -> None:
-    await validar_leito_do_projeto(db, dados.get("leito_id"), instituicao_id)
+    await validar_leito_do_projeto(
+        db,
+        dados.get("leito_id"),
+        instituicao_id,
+        convivente_id,
+    )
     await validar_usuario_do_projeto(
         db,
         dados.get("tecnico_id"),
@@ -581,6 +607,9 @@ async def criar_convivente(convivente: ConviventeCreate, db: AsyncSession = Depe
 
         if dados.get("status") in ["Inativado", "Bloqueado", "Saída qualificada"]:
             dados["leito_id"] = None
+            dados["leito_reservado_id"] = None
+            dados["reservar_leito_fixo"] = False
+            dados["tb_remanejamento_situacao"] = None
             dados["inativado_em"] = agora_sao_paulo()
             dados["ausencia_justificada_desde"] = None
         elif dados.get("status") == "Ausência justificada":
@@ -597,7 +626,16 @@ async def criar_convivente(convivente: ConviventeCreate, db: AsyncSession = Depe
 
         aplicar_credenciais_convivente_salvar(dados)
 
-        novo_convivente = ConviventeDB(instituicao_id=obter_instituicao_escopo(usuario_atual), **dados)
+        instituicao_id = obter_instituicao_escopo(usuario_atual)
+        await aplicar_regras_acomodacao_tb(
+            db,
+            dados=dados,
+            convivente=None,
+            instituicao_id=instituicao_id,
+            leito_id_antigo=None,
+        )
+
+        novo_convivente = ConviventeDB(instituicao_id=instituicao_id, **dados)
         maior_numero = (await db.execute(select(func.max(ConviventeDB.numero_institucional)).where(ConviventeDB.instituicao_id == obter_instituicao_escopo(usuario_atual)))).scalar()
         novo_convivente.numero_institucional = (maior_numero or 0) + 1
         db.add(novo_convivente)
@@ -2009,6 +2047,9 @@ async def atualizar_convivente(convivente_id: str, dados_atualizacao: Convivente
 
     if dados.get("status") in ["Inativado", "Bloqueado", "Saída qualificada"]:
         dados["leito_id"] = None
+        dados["leito_reservado_id"] = None
+        dados["reservar_leito_fixo"] = False
+        dados["tb_remanejamento_situacao"] = None
 
     novo_status = dados.get("status", status_antigo)
     aplicar_datas_convivente_payload(dados, status_antigo, novo_status, hoje, campos_enviados)
@@ -2028,6 +2069,7 @@ async def atualizar_convivente(convivente_id: str, dados_atualizacao: Convivente
         db,
         dados,
         obter_instituicao_escopo(usuario_atual),
+        convivente_id,
     )
 
     aplicar_credenciais_convivente_salvar(dados)
@@ -2045,6 +2087,15 @@ async def atualizar_convivente(convivente_id: str, dados_atualizacao: Convivente
             convivente.data_entrada,
         )
 
+    instituicao_id = obter_instituicao_escopo(usuario_atual)
+    await aplicar_regras_acomodacao_tb(
+        db,
+        dados=dados,
+        convivente=convivente,
+        instituicao_id=instituicao_id,
+        leito_id_antigo=leito_id_antigo,
+    )
+
     for key, value in dados.items():
         setattr(convivente, key, value)
 
@@ -2056,19 +2107,15 @@ async def atualizar_convivente(convivente_id: str, dados_atualizacao: Convivente
     )
 
     try:
-        if leito_id_antigo != convivente.leito_id:
-            if leito_id_antigo:
-                l_antigo = (await db.execute(select(LeitoDB).where(LeitoDB.id == leito_id_antigo))).scalar_one_or_none()
-                if l_antigo: l_antigo.status = "Livre"
-            if convivente.leito_id:
-                l_novo = (await db.execute(select(LeitoDB).where(LeitoDB.id == convivente.leito_id))).scalar_one_or_none()
-                if l_novo: l_novo.status = "Ocupado"
-            await sincronizar_leito_provisorio_convivente(
-                db,
-                convivente,
-                convivente.leito_id,
-                obter_instituicao_escopo(usuario_atual),
-            )
+        if leito_id_antigo != convivente.leito_id or convivente.leito_reservado_id:
+            await sincronizar_status_leitos_convivente(db, convivente, leito_id_antigo)
+            if leito_id_antigo != convivente.leito_id:
+                await sincronizar_leito_provisorio_convivente(
+                    db,
+                    convivente,
+                    convivente.leito_id,
+                    instituicao_id,
+                )
 
         if novo_status in ("Inativado", "Bloqueado", "Saída qualificada") and leito_id_antigo:
             convivente.leito_id = None
@@ -4020,6 +4067,7 @@ async def dashboard_operacional_rotina(
             "foi_editado": bool(registro.foi_editado),
             "retorno_rapido": bool(registro.retorno_rapido),
             "justificativa_retorno_rapido": registro.justificativa_retorno_rapido,
+            "justificativa_horario_portaria": registro.justificativa_horario_portaria,
             "repeticao_extra_refeicao": registro.repeticao_extra_refeicao,
         })
 
@@ -4282,6 +4330,7 @@ def _linha_historico_para_dict(
 
         "retorno_rapido": bool(registro.retorno_rapido),
         "justificativa_retorno_rapido": registro.justificativa_retorno_rapido,
+        "justificativa_horario_portaria": registro.justificativa_horario_portaria,
         "repeticao_extra_refeicao": registro.repeticao_extra_refeicao,
 
         "foi_editado": bool(registro.foi_editado),
@@ -4708,7 +4757,7 @@ async def resumo_evolucao_historico_rotina(
     query = query.group_by(data_dia).order_by(data_dia.asc())
     resultado = await db.execute(query)
 
-    return [
+    resumo_base = [
         {
             "data": data,
             "atendimentos": int(atendimentos or 0),
@@ -4718,6 +4767,42 @@ async def resumo_evolucao_historico_rotina(
         }
         for data, atendimentos, entradas, saidas, almocos in resultado.all()
     ]
+
+    from datetime import date as date_cls, timedelta
+    from rotina_ajustes_totais import (
+        data_operacional_hoje,
+        enriquecer_resumo_evolucao_com_ajustes,
+        obter_ajustes_agregados_periodo,
+    )
+
+    instituicao_id = obter_instituicao_escopo(usuario_atual)
+
+    def _normalizar_data_valor(valor) -> date_cls:
+        if isinstance(valor, date_cls):
+            return valor
+        return date_cls.fromisoformat(str(valor))
+
+    if data_inicio:
+        periodo_inicio = date_cls.fromisoformat(data_inicio.strip())
+    elif resumo_base:
+        periodo_inicio = min(_normalizar_data_valor(item["data"]) for item in resumo_base)
+    else:
+        periodo_inicio = data_operacional_hoje() - timedelta(days=6)
+
+    if data_fim:
+        periodo_fim = date_cls.fromisoformat(data_fim.strip())
+    elif resumo_base:
+        periodo_fim = max(_normalizar_data_valor(item["data"]) for item in resumo_base)
+    else:
+        periodo_fim = data_operacional_hoje()
+
+    ajustes_por_dia = await obter_ajustes_agregados_periodo(
+        db,
+        instituicao_id,
+        periodo_inicio,
+        periodo_fim,
+    )
+    return enriquecer_resumo_evolucao_com_ajustes(resumo_base, ajustes_por_dia)
 
 
 @router.get("/rotina/historico", response_model=RotinaHistoricoListaResponse)
@@ -4858,6 +4943,35 @@ async def listar_historico_rotina(
         "retornos_rapidos": int((await db.execute(contar_resumo(RegistroRotinaDB.retorno_rapido == True))).scalar_one() or 0),
         "contagens_por_tipo": contagens_por_tipo,
     }
+
+    from datetime import date as date_cls
+    from rotina_ajustes_totais import (
+        agregar_ajustes_periodo_por_tipo,
+        ajustes_aplicaveis_historico,
+        enriquecer_resumo_periodo_historico,
+        obter_ajustes_agregados_periodo,
+    )
+
+    if ajustes_aplicaveis_historico(
+        status_registro=status_registro,
+        apenas_editados=apenas_editados,
+        apenas_cancelados=apenas_cancelados,
+        apenas_retorno_rapido=apenas_retorno_rapido,
+    ):
+        periodo_inicio = date_cls.fromisoformat(data_inicio.strip())
+        periodo_fim = date_cls.fromisoformat(data_fim.strip())
+        ajustes_por_dia = await obter_ajustes_agregados_periodo(
+            db,
+            obter_instituicao_escopo(usuario_atual),
+            periodo_inicio,
+            periodo_fim,
+        )
+        ajustes_por_tipo = agregar_ajustes_periodo_por_tipo(ajustes_por_dia)
+        resumo_periodo = enriquecer_resumo_periodo_historico(
+            resumo_periodo,
+            ajustes_por_tipo,
+            tipo_registro_filtro=tipo_registro,
+        )
 
     query = query.offset(deslocamento_seguro).limit(limite_seguro)
     resultado = await db.execute(query)

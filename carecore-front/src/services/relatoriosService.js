@@ -119,6 +119,7 @@ export async function carregarHistoricoRotinaRelatorio(filtros, {
     registros: data?.registros || [],
     total: data?.total || 0,
     has_more: Boolean(data?.has_more),
+    resumo_periodo: data?.resumo_periodo || null,
   };
 }
 

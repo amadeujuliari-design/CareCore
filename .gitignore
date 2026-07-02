@@ -116,3 +116,6 @@ atualizar_fechamento_reabertura_local.py
 atualizar_prioridade_ocorrencias.py
 preparar_base_demo_completa.py
 carecore-site/scripts/gerar-tabela-precos-xlsx.py
+
+# Laboratório local (não versionar)
+teste_reconhecimento_facial/

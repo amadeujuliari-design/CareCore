@@ -49,6 +49,7 @@ function montarPayload(form) {
     sisa_descricao_tema: form.sisa_descricao_tema || null,
     sisa_horario_padrao: form.sisa_horario_padrao || null,
     ativo: Boolean(form.ativo),
+    contabiliza_pontos: form.contabiliza_pontos !== false,
   };
 }
 
@@ -72,6 +73,7 @@ function formDeAtividade(item) {
     sisa_descricao_tema: item.sisa_descricao_tema || '',
     sisa_horario_padrao: item.sisa_horario_padrao || '',
     ativo: item.ativo !== false,
+    contabiliza_pontos: item.contabiliza_pontos !== false,
   };
 }
 
@@ -478,9 +480,22 @@ export default function AtividadesCadastro() {
                     type="checkbox"
                     checked={Boolean(form.ativo)}
                     onChange={(event) => setForm({ ...form, ativo: event.target.checked })}
+                    disabled={somenteLeitura}
                   />
                   Atividade ativa
                 </label>
+                <label className="flex items-center gap-2 text-sm font-semibold text-gray-700">
+                  <input
+                    type="checkbox"
+                    checked={form.contabiliza_pontos !== false}
+                    onChange={(event) => setForm({ ...form, contabiliza_pontos: event.target.checked })}
+                    disabled={somenteLeitura}
+                  />
+                  Esta atividade pontua para brindes
+                </label>
+                <p className="text-xs text-gray-500 -mt-2">
+                  Desmarcar afeta apenas presenças futuras; pontos já creditados permanecem.
+                </p>
                 <div className="flex justify-end gap-2 pt-2">
                   <PremiumButton type="button" variant="secondary" onClick={() => setModalAberto(false)}>
                     Cancelar

@@ -1,4 +1,4 @@
-import { Navigate, useLocation } from 'react-router-dom';
+import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 
 import ChatFlutuante from '../components/ChatFlutuante';
 import { useAuth } from '../context/AuthContext';
@@ -10,6 +10,7 @@ import {
 import {
   normalizarPerfilRbac,
   rotaEhModuloAtividades,
+  rotaInicialPosLogin,
   usuarioEhOficineiro,
 } from '../utils/rbacUtils';
 
@@ -34,11 +35,12 @@ export default function ProtectedRoute({
   children,
   perfis = [],
 }) {
+  const navigate = useNavigate();
+  const { pathname } = useLocation();
   const {
     usuario,
     loading,
   } = useAuth();
-  const { pathname } = useLocation();
 
   if (loading) {
     return (
@@ -85,7 +87,7 @@ export default function ProtectedRoute({
     !perfis.map(normalizarPerfil).includes(normalizarPerfil(usuario.perfil_acesso))
   ) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
         <div className="bg-white p-8 rounded-xl shadow-xl border border-red-100 max-w-md text-center">
           <h1 className="text-xl font-bold text-red-600">
             Acesso negado
@@ -94,6 +96,14 @@ export default function ProtectedRoute({
           <p className="mt-3 text-sm text-gray-600">
             Você não possui permissão para acessar este módulo.
           </p>
+
+          <button
+            type="button"
+            onClick={() => navigate(rotaInicialPosLogin(usuario))}
+            className="mt-6 inline-flex items-center justify-center rounded-xl bg-brand px-5 py-2.5 text-sm font-bold text-white shadow-sm hover:bg-brandDark transition-colors"
+          >
+            Voltar
+          </button>
         </div>
       </div>
     );

@@ -5,6 +5,7 @@ import {
   normalizarPrioridade,
   porcentagem,
 } from '../utils/relatoriosUtils';
+import { mapearResumoPeriodoHistorico } from '../utils/rotinaHistoricoUtils';
 
 export function useRelatoriosIndicadores({
   aba,
@@ -15,6 +16,7 @@ export function useRelatoriosIndicadores({
   leitosAcomodacoesFiltrados,
   ocorrenciasFiltradas,
   registrosPiaFiltrados = [],
+  resumoRotinaPeriodo = null,
   quartos,
   resumoAvisos,
   resumoOcorrencias,
@@ -65,7 +67,8 @@ export function useRelatoriosIndicadores({
     const piaPendentesOuRevisar = contar(registrosPiaFiltrados, (registro) => ['Pendente', 'Revisar'].includes(registro.status));
 
     const rotinaResumo = rotinaOperacional?.resumo || {};
-    const rotinaFiltradaResumo = {
+    const resumoHistoricoApi = mapearResumoPeriodoHistorico(resumoRotinaPeriodo);
+    const rotinaFiltradaResumo = resumoHistoricoApi || {
       total: historicoRotinaFiltrado.length,
       entradas: contar(historicoRotinaFiltrado, (r) => r.tipo_registro === 'Entrada'),
       saidas: contar(historicoRotinaFiltrado, (r) => r.tipo_registro === 'Saída'),
@@ -73,6 +76,8 @@ export function useRelatoriosIndicadores({
       retornosRapidos: contar(historicoRotinaFiltrado, (r) => r.retorno_rapido),
       editados: contar(historicoRotinaFiltrado, (r) => r.foi_editado),
       cancelados: contar(historicoRotinaFiltrado, (r) => r.cancelado),
+      temAjusteManual: false,
+      totalComplementoAjuste: 0,
     };
     const tecnicosComCasos = new Set(
       conviventesFiltrados
@@ -122,7 +127,7 @@ export function useRelatoriosIndicadores({
       avisosTotal: avisosFiltrados.length || resumoAvisos?.total_visiveis || 0,
       avisosNaoLidos: contar(avisosFiltrados, (a) => !a.lido),
     };
-  }, [avisosFiltrados, conviventesFiltrados, equipe.length, historicoRotinaFiltrado, idsConviventesFiltrados, leitosAcomodacoesFiltrados, ocorrenciasFiltradas, quartos, registrosPiaFiltrados, resumoAvisos, resumoOcorrencias, rotinaOperacional, tecnicoId, tecnicos]);
+  }, [avisosFiltrados, conviventesFiltrados, equipe.length, historicoRotinaFiltrado, idsConviventesFiltrados, leitosAcomodacoesFiltrados, ocorrenciasFiltradas, quartos, registrosPiaFiltrados, resumoAvisos, resumoOcorrencias, resumoRotinaPeriodo, rotinaOperacional, tecnicoId, tecnicos]);
 
   const relatoriosPorAba = useMemo(() => {
     return {

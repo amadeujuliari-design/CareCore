@@ -236,7 +236,7 @@ export const MENU_CONVIVENTES = {
   path: '/conviventes',
   icon: UserRound,
   label: 'Cadastro',
-  perfis: ['Gestor', 'Técnico', 'Orientador', 'Administrativo'],
+  perfis: ['Gestor', 'Técnico', 'Orientador', 'Administrativo', 'Global'],
 };
 
 export function obterModuloPorSlug(slug) {

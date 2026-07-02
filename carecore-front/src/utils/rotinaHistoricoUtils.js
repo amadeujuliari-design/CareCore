@@ -87,6 +87,23 @@ export function obterTotalResumoSemAlimentacao(resumoPeriodo, registros = []) {
   return registros.filter((registro) => !tipoRegistroAlimentacao(registro.tipo_registro)).length;
 }
 
+export function mapearResumoPeriodoHistorico(resumoPeriodo) {
+  if (!resumoPeriodo) return null;
+  const contagens = resumoPeriodo.contagens_por_tipo || {};
+  return {
+    total: Number(resumoPeriodo.total || 0),
+    entradas: Number(resumoPeriodo.entradas || 0),
+    saidas: Number(resumoPeriodo.saidas || 0),
+    almocos: Number(contagens['Almoço'] || 0),
+    retornosRapidos: Number(resumoPeriodo.retornos_rapidos || 0),
+    editados: Number(resumoPeriodo.editados || 0),
+    cancelados: Number(resumoPeriodo.cancelados || 0),
+    temAjusteManual: Boolean(resumoPeriodo.tem_ajuste_manual),
+    totalComplementoAjuste: Number(resumoPeriodo.total_complemento_ajuste || 0),
+    totalRegistrado: resumoPeriodo.total_registrado ?? null,
+  };
+}
+
 export function tipoRegistroCorresponde(tipoRegistro, filtro) {
   if (!filtro) return true;
   const grupo = GRUPOS_TIPO_REGISTRO[filtro];
@@ -252,7 +269,10 @@ export function formatarDataHoraRotina(data) {
 export function montarObservacoesAuditoriaRegistro(registro) {
   return [
     registro.observacao ? `Complemento: ${registro.observacao}` : '',
-    registro.justificativa_retorno_rapido ? `Justificativa: ${registro.justificativa_retorno_rapido}` : '',
+    registro.justificativa_horario_portaria
+      ? `Horário fora do padrão: ${registro.justificativa_horario_portaria}`
+      : '',
+    registro.justificativa_retorno_rapido ? `Retorno rápido: ${registro.justificativa_retorno_rapido}` : '',
     registro.motivo_edicao ? `Edição: ${registro.motivo_edicao}` : '',
     registro.motivo_cancelamento ? `Cancelamento: ${registro.motivo_cancelamento}` : '',
   ].filter(Boolean).join(' | ');

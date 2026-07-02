@@ -87,23 +87,29 @@ def validar_horario_portaria(
 
     if pernoitou_fora(ultimo_movimento, momento) and tipo_registro == "Entrada":
         if hora_atual < HORA_ENTRADA_APOS_PERNOITE_FORA:
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    "Este convivente pernoitou fora da unidade. "
-                    f"A entrada só pode ser registrada a partir das {_formatar_hora(HORA_ENTRADA_APOS_PERNOITE_FORA)}."
-                ),
-            )
+            if len(justificativa) < MIN_CARACTERES_JUSTIFICATIVA_HORARIO:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        "Este convivente pernoitou fora da unidade. "
+                        f"A entrada antes das {_formatar_hora(HORA_ENTRADA_APOS_PERNOITE_FORA)} "
+                        f"exige justificativa de no mínimo {MIN_CARACTERES_JUSTIFICATIVA_HORARIO} caracteres."
+                    ),
+                )
+            return justificativa
 
     if pernoitou_dentro(ultimo_movimento, momento):
         if hora_atual < HORA_MOVIMENTO_PERNOITE_DENTRO:
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    "Este convivente pernoitou dentro da unidade. "
-                    f"Saída e entrada só podem ser registradas a partir das {_formatar_hora(HORA_MOVIMENTO_PERNOITE_DENTRO)}."
-                ),
-            )
+            if len(justificativa) < MIN_CARACTERES_JUSTIFICATIVA_HORARIO:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        "Este convivente pernoitou dentro da unidade. "
+                        f"Movimentação antes das {_formatar_hora(HORA_MOVIMENTO_PERNOITE_DENTRO)} "
+                        f"exige justificativa de no mínimo {MIN_CARACTERES_JUSTIFICATIVA_HORARIO} caracteres."
+                    ),
+                )
+            return justificativa
 
     saida_ate, entrada_ate = obter_limites_horario_portaria(convivente)
 
@@ -141,6 +147,11 @@ def mensagem_indica_justificativa_horario_portaria(mensagem: str | None) -> bool
             or "saida apos" in texto
             or "entrada após" in texto
             or "entrada apos" in texto
+            or "entrada antes" in texto
+            or "movimentação antes" in texto
+            or "movimentacao antes" in texto
+            or "pernoitou fora" in texto
+            or "pernoitou dentro" in texto
         )
     )
 

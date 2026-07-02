@@ -5,6 +5,7 @@
   "health": {
     "presenca_regras": "inativos-sem-presenca-v2",
     "cadastro_datas": "ajuste-automatico-v1",
-    "dashboard_api": "contagens-v1"
+    "dashboard_api": "contagens-v1",
+    "rotina_ajustes_resumo": "historico-v1"
   }
 }

@@ -4,6 +4,7 @@ export default function ProntuarioCabecalho({
   formData,
   perfilUsuario,
   podeGerenciarPiaConvivente,
+  somenteLeitura = false,
   salvandoProntuario,
   conviventeAtual,
   abrirCarteirinha,
@@ -77,7 +78,7 @@ export default function ProntuarioCabecalho({
         <button type="button" disabled={salvandoProntuario} onClick={() => trocarAbaComSalvamento('pessoais')} className={classeAba('pessoais', 'border-brand text-brand bg-white', 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-white/70')}>Pessoais e status</button>
         <button type="button" disabled={salvandoProntuario} onClick={() => trocarAbaComSalvamento('historico')} className={classeAba('historico', 'border-brand text-brand bg-white', 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-white/70')}>Histórico</button>
         <button type="button" disabled={salvandoProntuario} onClick={() => trocarAbaComSalvamento('social')} className={classeAba('social', 'border-brand text-brand bg-white', 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-white/70')}>Assistência social</button>
-        {podeGerenciarPiaConvivente && (
+        {(podeGerenciarPiaConvivente || somenteLeitura) && (
           <button type="button" disabled={salvandoProntuario} onClick={() => trocarAbaComSalvamento('pia')} className={classeAba('pia', 'border-indigo-500 text-indigo-600 bg-indigo-50/50', 'border-transparent text-slate-500 hover:text-indigo-600 hover:bg-indigo-50/30')}>PIA</button>
         )}
         <button type="button" disabled={salvandoProntuario} onClick={() => trocarAbaComSalvamento('fluxo')} className={classeAba('fluxo', 'border-emerald-500 text-emerald-600 bg-white', 'border-transparent text-slate-500 hover:text-slate-700')}>Fluxo Diário</button>

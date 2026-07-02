@@ -382,6 +382,9 @@ export default function RotinaHistorico() {
         editados: resumoPeriodo.editados || 0,
         cancelados: resumoPeriodo.cancelados || 0,
         retornosRapidos: resumoPeriodo.retornos_rapidos || 0,
+        temAjusteManual: Boolean(resumoPeriodo.tem_ajuste_manual),
+        totalComplementoAjuste: Number(resumoPeriodo.total_complemento_ajuste || 0),
+        totalRegistrado: resumoPeriodo.total_registrado ?? null,
       };
     }
     return resumirRegistrosRotina(registros);
@@ -396,6 +399,9 @@ export default function RotinaHistorico() {
     if (!tipoFiltro) {
       if (ocultarSomatoriaAlimentacao) {
         return obterTotalResumoSemAlimentacao(resumoPeriodo, registros);
+      }
+      if (resumoPeriodo) {
+        return resumoPeriodo.total || 0;
       }
       return totalRegistros;
     }
@@ -606,6 +612,22 @@ export default function RotinaHistorico() {
         {sucesso && (
           <div className="mb-5 rounded-2xl border border-green-100 bg-green-50 p-4 text-sm font-semibold text-green-700">
             {sucesso}
+          </div>
+        )}
+
+        {resumo.temAjusteManual && (
+          <div className="mb-5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+            <p className="font-bold">Totais com ajuste manual de rotina</p>
+            <p className="mt-1">
+              Os cards abaixo somam os registros do período
+              {resumo.totalRegistrado !== null && resumo.totalRegistrado !== undefined
+                ? ` (${resumo.totalRegistrado} registrado(s))`
+                : ''}
+              {' '}
+              + complemento lançado pelo Gestor
+              {resumo.totalComplementoAjuste > 0 ? ` (+${resumo.totalComplementoAjuste})` : ''}.
+              A tabela continua listando apenas os eventos reais gravados no sistema.
+            </p>
           </div>
         )}
 

@@ -17,6 +17,7 @@ import ProntuarioPessoais from './components/conviventes/ProntuarioPessoais';
 import ProntuarioSaude from './components/conviventes/ProntuarioSaude';
 import ProntuarioSensiveis from './components/conviventes/ProntuarioSensiveis';
 import ProntuarioSocial from './components/conviventes/ProntuarioSocial';
+import BannerSomenteLeituraGlobal from './components/BannerSomenteLeituraGlobal';
 import { AppShell, MainShell, PageHeader, ScrollArea } from './components/PremiumUI';
 import {
   corrigirDataInclusaoNoFormulario,
@@ -132,6 +133,7 @@ export default function Conviventes() {
   } = useProntuarioPia({ editandoId, setErro, setSucesso });
 
   const {
+    somenteLeitura,
     usuarioPodeGerenciarDocumentosRestritos,
     usuarioPodeEnviarDocumentosRestritos,
     podeMudarStatus,
@@ -189,10 +191,12 @@ export default function Conviventes() {
   const fotoPerfilUrl = fotoPerfilData?.caminho_arquivo || formData.foto_url || null;
   const usuarioLogadoEhTecnico = usuarioEhTecnico(perfilUsuario);
   const podeExcluirConviventeSemVinculos =
-    perfilUsuario === 'Gestor' ||
-    perfilUsuario === 'Manutenção' ||
-    usuarioPayload?.is_manutencao === true ||
-    usuarioPayload?.is_master === true;
+    !somenteLeitura && (
+      perfilUsuario === 'Gestor' ||
+      perfilUsuario === 'Manutenção' ||
+      usuarioPayload?.is_manutencao === true ||
+      usuarioPayload?.is_master === true
+    );
   const {
     abrirCarteirinha,
     carteirinhaAberta,
@@ -310,6 +314,7 @@ export default function Conviventes() {
   }
 
   const abrirFormulario = () => {
+    if (somenteLeitura) return;
     setFormData(estadoInicial);
     setMostrarSenhaEmail(false);
     setMostrarSenhaGovbr(false);
@@ -538,6 +543,7 @@ export default function Conviventes() {
   };
 
   const salvarProntuario = async ({ permanecerNaFicha = false, abaDestino = null, silencioso = false } = {}) => {
+    if (somenteLeitura) return null;
     setErro('');
     if (!silencioso) setSucesso('');
 
@@ -698,6 +704,12 @@ export default function Conviventes() {
   const trocarAbaComSalvamento = async (novaAba) => {
     if (novaAba === abaAtual || salvandoProntuario) return;
 
+    if (somenteLeitura) {
+      setErro('');
+      setAbaAtual(novaAba);
+      return;
+    }
+
     const payloadAtual = JSON.stringify(montarPayloadProntuario(formData, statusOriginal));
     if (editandoId && snapshotSalvoRef.current === payloadAtual) {
       setErro('');
@@ -769,6 +781,9 @@ export default function Conviventes() {
 
         <ScrollArea ref={scrollAreaRef}>
           <div className="w-full max-w-7xl mx-auto">
+          {somenteLeitura && (
+            <BannerSomenteLeituraGlobal modulo="prontuários e cadastros" />
+          )}
           {erro && telaAtual === 'lista' && <div className="bg-red-50 text-red-600 p-4 rounded-xl text-sm mb-6 font-semibold border border-red-100 flex items-center gap-2">! {erro}</div>}
           {sucesso && telaAtual === 'lista' && <div className="bg-green-50 text-green-700 p-4 rounded-xl text-sm mb-6 font-semibold border border-green-100 flex items-center gap-2">{sucesso}</div>}
 
@@ -796,6 +811,7 @@ export default function Conviventes() {
               abrirParaEdicao={abrirParaEdicao}
               obterLocalizacaoLeito={obterLocalizacaoLeito}
               statusConviventeClasse={statusConviventeClasse}
+              somenteLeitura={somenteLeitura}
             />
           )}
 {/* === FIM DA SEÇÃO 4 === */}
@@ -814,6 +830,7 @@ export default function Conviventes() {
                 formData={formData}
                 perfilUsuario={perfilUsuario}
                 podeGerenciarPiaConvivente={podeGerenciarPiaConvivente}
+                somenteLeitura={somenteLeitura}
                 salvandoProntuario={salvandoProntuario}
                 conviventeAtual={conviventeAtual}
                 abrirCarteirinha={abrirCarteirinha}
@@ -825,6 +842,7 @@ export default function Conviventes() {
               />
 
               <form onSubmit={handleSalvar}>
+                <fieldset disabled={somenteLeitura} className="min-w-0 border-0 p-0 m-0">
                 <div className="p-5 min-h-[300px]">
                   
                   {abaAtual === 'pessoais' && (
@@ -994,10 +1012,20 @@ export default function Conviventes() {
                     />
                   )}
                 </div>
+                </fieldset>
 
                 <div className="bg-gray-100 p-4 border-t flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 rounded-b-xl">
                   <div className="flex-1 w-full text-left">{erro && telaAtual === 'form' && (<span className="text-red-600 font-bold text-xs bg-red-100 px-3 py-1.5 rounded flex items-center w-fit animate-pulse shadow-sm">! {erro}</span>)}</div>
-                  <div className="grid w-full grid-cols-1 gap-2 sm:flex sm:w-auto sm:gap-3"><button type="button" onClick={() => setTelaAtual('lista')} className="px-5 py-2 bg-white border border-gray-300 rounded-lg text-gray-700 text-sm font-semibold hover:bg-gray-50 transition-colors">Cancelar</button><button type="submit" disabled={salvandoProntuario} className="px-6 py-2 bg-brand text-white rounded-lg text-sm font-bold hover:bg-brandDark shadow transition-all disabled:opacity-60">{salvandoProntuario ? 'Salvando...' : (editandoId ? 'Atualizar prontuário' : 'Salvar prontuário')}</button></div>
+                  <div className="grid w-full grid-cols-1 gap-2 sm:flex sm:w-auto sm:gap-3">
+                    <button type="button" onClick={() => setTelaAtual('lista')} className="px-5 py-2 bg-white border border-gray-300 rounded-lg text-gray-700 text-sm font-semibold hover:bg-gray-50 transition-colors">
+                      {somenteLeitura ? 'Voltar à lista' : 'Cancelar'}
+                    </button>
+                    {!somenteLeitura && (
+                      <button type="submit" disabled={salvandoProntuario} className="px-6 py-2 bg-brand text-white rounded-lg text-sm font-bold hover:bg-brandDark shadow transition-all disabled:opacity-60">
+                        {salvandoProntuario ? 'Salvando...' : (editandoId ? 'Atualizar prontuário' : 'Salvar prontuário')}
+                      </button>
+                    )}
+                  </div>
                 </div>
               </form>
             </div>

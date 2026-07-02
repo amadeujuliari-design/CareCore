@@ -18,6 +18,7 @@ const RotinaDiaria = lazy(() => import('../RotinaDiaria'));
 const Lavanderia = lazy(() => import('../Lavanderia'));
 const PertencesRecolhidos = lazy(() => import('../PertencesRecolhidos'));
 const RotinaHistorico = lazy(() => import('../RotinaHistorico'));
+const RotinaAjustesTotais = lazy(() => import('../RotinaAjustesTotais'));
 const DashboardOperacional = lazy(() => import('../DashboardOperacional'));
 const ConvenioSisa = lazy(() => import('../ConvenioSisa'));
 const Avisos = lazy(() => import('../Avisos'));
@@ -71,7 +72,7 @@ function RotasAplicacao() {
         <Route
           path="/conviventes"
           element={
-            <ProtectedRoute perfis={['Gestor', 'Técnico', 'Orientador', 'Administrativo']}>
+            <ProtectedRoute perfis={['Gestor', 'Técnico', 'Orientador', 'Administrativo', 'Global']}>
               <Conviventes />
             </ProtectedRoute>
           }
@@ -112,7 +113,7 @@ function RotasAplicacao() {
         <Route
           path="/rotina"
           element={
-            <ProtectedRoute perfis={['Gestor', 'Técnico', 'Orientador', 'Administrativo']}>
+            <ProtectedRoute perfis={['Gestor', 'Técnico', 'Orientador', 'Administrativo', 'Global']}>
               <RotinaDiaria />
             </ProtectedRoute>
           }
@@ -121,7 +122,7 @@ function RotasAplicacao() {
         <Route
           path="/rotina/dashboard"
           element={
-            <ProtectedRoute perfis={['Gestor', 'Técnico', 'Orientador', 'Administrativo']}>
+            <ProtectedRoute perfis={['Gestor', 'Técnico', 'Orientador', 'Administrativo', 'Global']}>
               <DashboardOperacional />
             </ProtectedRoute>
           }
@@ -148,8 +149,17 @@ function RotasAplicacao() {
         <Route
           path="/rotina/historico"
           element={
-            <ProtectedRoute perfis={['Gestor', 'Técnico', 'Orientador', 'Administrativo']}>
+            <ProtectedRoute perfis={['Gestor', 'Técnico', 'Orientador', 'Administrativo', 'Global']}>
               <RotinaHistorico />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/rotina/ajustes-totais"
+          element={
+            <ProtectedRoute perfis={['Gestor', 'Manutenção']}>
+              <RotinaAjustesTotais />
             </ProtectedRoute>
           }
         />

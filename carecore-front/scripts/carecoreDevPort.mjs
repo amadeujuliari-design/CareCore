@@ -18,3 +18,12 @@ export function lerPortaApiLocal() {
   }
   return porta;
 }
+
+export function lerPortaFrontendLocal() {
+  const config = lerConfigDevLocal();
+  const porta = Number(config.frontend_port ?? 5173);
+  if (!Number.isFinite(porta) || porta <= 0) {
+    throw new Error(`frontend_port inválida em ${configPath}`);
+  }
+  return porta;
+}
