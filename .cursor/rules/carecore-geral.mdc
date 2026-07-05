@@ -17,12 +17,15 @@ O CareCore+ e um SaaS institucional de gestao assistencial. Trate cada mudanca c
 
 # Operação CareCore+
 
-Antes de alterações sensíveis, deploys, migrations, cobrança, RBAC, autenticação, uploads ou dados reais, consultar `docs/operacao-producao.md`.
+Antes de alterações sensíveis, deploys, migrations, cobrança, RBAC, autenticação, uploads ou dados reais:
+
+1. Seguir `carecore-deploy.mdc` (ordem migration → deploy; leitura obrigatoria do checklist).
+2. Consultar `docs/operacao-producao.md` quando houver schema, rollback ou incidente.
 
 Nunca commitar artefatos locais de continuidade, contrato, importação ou manutenção manual:
 `CHECKPOINT_COMPLETO_*.txt`, `relatorios_importacao/`, `minuta_contrato_carecore_aeb*`, `preencher_organizacao.py`.
 
-Diferenciar sempre: commit local, push GitHub, deploy Fly, deploy Vercel e migration aplicada.
+Diferenciar sempre: commit local, push GitHub, deploy Fly, deploy Vercel e migration aplicada. Nao inverter migration e deploy quando houver schema novo.
 
 # Fuso operacional
 

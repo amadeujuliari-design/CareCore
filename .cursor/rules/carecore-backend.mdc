@@ -12,7 +12,9 @@ O backend usa FastAPI, SQLAlchemy async e Alembic. Trate dados assistenciais com
 - Valide permissao, perfil, status ativo e escopo antes de criar, editar ou vincular registros.
 - Usuarios inativos nao devem aparecer em fluxos operacionais nem receber novos vinculos; preserve historico sem manter vinculos ativos indevidos.
 - Nao exponha segredos, tokens, senhas, chaves Fernet, dados criptografados ou detalhes internos em logs/respostas.
-- Alteracoes de schema exigem migration Alembic. Alteracoes de regra que limpam dados existentes podem exigir migration de dados.
+- Alteracoes de schema exigem migration Alembic no mesmo commit/entrega. Alteracoes de regra que limpam dados existentes podem exigir migration de dados.
+- Ao alterar `models.py`, criar revision em `alembic/versions/` antes de considerar a tarefa pronta para producao.
+- Em producao, schema so via Alembic (`CARECORE_AUTO_CREATE_TABLES=false`). Ver `carecore-deploy.mdc`: migration no Postgres **antes** de `fly deploy`.
 - Prefira invariantes claras no backend a correcoes apenas no frontend.
 - Evite consultas N+1 e filtros em memoria quando o banco puder filtrar com seguranca.
 - Antes de deploy com migration, confirme que a migration e reversivel ou que o risco foi explicado.

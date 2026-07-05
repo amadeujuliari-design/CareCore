@@ -2,6 +2,8 @@
 
 Este guia concentra os cuidados obrigatorios para manter o CareCore+ em padrao SaaS de producao. Ele nao substitui revisao tecnica da mudanca, mas deve ser usado antes de commits, deploys, migrations e manutencoes em dados reais.
 
+**Agentes Cursor:** regras obrigatorias em `.cursor/rules/carecore-deploy.mdc` e `carecore-git-entrega.mdc` (`alwaysApply: true`). Ler `docs/checklist-entrega.md` antes de todo `fly deploy`.
+
 ## Ambientes
 
 | Camada | Tecnologia | Producao | Cuidados |
@@ -71,13 +73,7 @@ Falha no CI deve ser corrigida antes de considerar a entrega concluida.
 
 1. Confirmar que migrations necessarias existem em `alembic/versions/`.
 2. Confirmar backup/ponto de restauracao do Supabase quando houver mudanca de schema ou dados.
-3. Aplicar migration no banco de destino:
-
-```bash
-alembic upgrade head
-alembic current
-```
-
+3. **Aplicar migration no Postgres de producao antes do deploy** (ver secao abaixo se houver schema novo).
 4. Publicar API a partir da raiz:
 
 ```bash
@@ -91,6 +87,55 @@ curl https://carecoreplus-api.fly.dev/api/health
 ```
 
 O retorno esperado em producao deve conter `status: ok` e `environment: production`.
+
+### Deploy backend com migration de schema
+
+**Por que a ordem importa**
+
+| Ambiente | `CARECORE_AUTO_CREATE_TABLES` | Efeito |
+| --- | --- | --- |
+| Local (`.env`) | normalmente `true` | `main.py` pode criar tabelas/colunas no startup |
+| Producao (Fly) | `false` em `fly.toml` | schema so via **Alembic**; codigo novo + banco antigo = crash |
+
+Sintomas tipicos ao subir codigo sem migration: health check `critical`, logs com erro de coluna inexistente no Postgres, maquina Fly reiniciando ate o limite.
+
+**Procedimento correto (schema novo)**
+
+1. Commit com migration em `alembic/versions/` junto da mudanca em `models.py`.
+2. Aplicar no banco de **producao** (nao apenas no SQLite local):
+
+```bash
+# Opcao A — da maquina de trabalho, com URL do Postgres de producao:
+# obter URL sem expor em chat/log: fly ssh console -a carecoreplus-api -C "printenv DATABASE_URL"
+# export DATABASE_URL='postgresql+asyncpg://...'   # usar a URL obtida
+alembic upgrade head
+alembic current
+```
+
+```bash
+# Opcao B — via SSH na imagem que JA contem o arquivo da migration (codigo atual no repo):
+fly ssh console -a carecoreplus-api -C "sh -c 'cd /app && alembic upgrade head && alembic current'"
+```
+
+A opcao B so funciona se a imagem em execucao tiver o revision novo. Apos um deploy falho, a imagem antiga pode nao ter o arquivo — use a opcao A ou faca rollback antes (ver recuperacao).
+
+3. So entao: `fly deploy -a carecoreplus-api`.
+4. Confirmar health e `alembic current` na head esperada.
+
+**Recuperacao se o deploy ja foi feito sem migration**
+
+1. Restaurar API rapidamente — rollback para release anterior:
+
+```bash
+fly releases -a carecoreplus-api --image
+fly deploy -a carecoreplus-api --image registry.fly.io/carecoreplus-api:<tag-da-release-anterior> --strategy immediate
+```
+
+2. Com a API estavel, aplicar `alembic upgrade head` no Postgres (opcao A acima).
+3. Redeploy da versao nova: `fly deploy -a carecoreplus-api`.
+4. Validar `/api/health`.
+
+Incidente de referencia: entrega config operacional (2026-07-05) — deploy antes da migration; resolvido com rollback v57, migration `w8x9y0z1a2b3`, redeploy v60.
 
 ## Deploy Frontend e Site
 

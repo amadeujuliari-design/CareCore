@@ -13,5 +13,13 @@ Ao commitar no CareCore+, seja conservador: inclua somente arquivos relacionados
 - Nao usar comandos destrutivos de Git sem autorizacao explicita.
 - Se houver mudancas do usuario na arvore de trabalho, preserve-as e nao reverta.
 - Push deve ir para o remoto correto apos commit bem sucedido.
-- Quando o usuario pedir "commitar e subir", interpretar como: commit, push e, se necessario para a arquitetura online, deploy do backend e validacao basica.
-- Se a alteracao exigir Vercel/Fly/secrets/migration, narrar claramente o que foi feito e o que ainda depende do provedor.
+
+## "Commitar e subir" / entrega em producao
+
+Quando o usuario pedir **commitar e subir**, **subir**, **publicar** ou equivalente:
+
+1. Seguir **integralmente** a regra `carecore-deploy.mdc` (ordem migration → deploy, leitura do checklist).
+2. Interpretar como: commit, push e, se a entrega incluir backend online, **migration (se schema) antes de** `fly deploy`, health e validacao basica.
+3. Se a alteracao exigir Vercel/Fly/secrets/migration, narrar cada etapa concluida e a pendente — nunca marcar como "subido" sem health ok.
+
+Se o diff incluir `models.py` ou `alembic/versions/`, tratar como **entrega com schema** e aplicar a ordem obrigatoria de migration antes do Fly.

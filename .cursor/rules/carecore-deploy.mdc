@@ -1,18 +1,93 @@
 ---
-description: Processo online CareCore+ com Fly.io, Vercel e migrations
+description: Deploy Fly/Vercel, migrations e ordem obrigatoria de entrega — sempre aplicar antes de subir
 alwaysApply: true
 ---
 
-# Deploy e Ambientes
+# Deploy e Ambientes CareCore+
 
-O CareCore+ tem ambientes separados. Local usa `.env`; backend online usa secrets/env da Fly.io; frontend online usa env da Vercel.
+Regra **obrigatoria** em qualquer chat (novo ou continuo) ao trabalhar neste repositorio. Nao pular etapas nem inverter a ordem.
 
-- Commit e push nao garantem que o backend online foi publicado.
-- Backend online: publicar com `fly deploy -a carecoreplus-api` a partir da raiz do projeto.
-- Depois de deploy backend, validar `https://carecoreplus-api.fly.dev/api/health`.
-- Se houver migration Alembic nova, aplicar no ambiente online e confirmar `alembic current`.
-- Frontend online e publicado pela Vercel apos push, mas pode levar alguns minutos.
-- Variaveis sensiveis devem ser configuradas como secrets/env no provedor, nunca no Git.
-- `DATABASE_URL` local e online normalmente devem ser diferentes.
-- Chaves de criptografia que protegem dados persistidos, como `CREDENCIAIS_CONVIVENTE_KEY`, precisam ser consistentes no ambiente que le aqueles dados.
-- Antes de dizer que esta "subido", diferencie: commit local, push GitHub, deploy Fly, deploy Vercel e migration aplicada.
+## Quando esta regra se aplica
+
+Sempre que a tarefa envolver qualquer um destes:
+
+- `fly deploy`, publicar backend, API online, Fly.io
+- pedido de **subir**, **commitar e subir**, **deploy**, **publicar em producao**
+- alteracao em `models.py`, `alembic/versions/`, schema de banco
+- dizer que a entrega esta **no ar** / **subida** / **em producao**
+
+## Leitura obrigatoria antes de deploy ou "subir"
+
+Antes de executar `fly deploy` ou afirmar que o backend esta publicado, o agente **deve ler** (ferramenta Read):
+
+1. `docs/checklist-entrega.md` — ordem das etapas
+2. Se houver mudanca de schema ou deploy falhou antes: secao de migration em `docs/operacao-producao.md`
+
+Nao executar `fly deploy` sem essa leitura na mesma sessao de trabalho.
+
+## Producao nao cria schema no startup
+
+- `CARECORE_AUTO_CREATE_TABLES=false` em `fly.toml` (producao).
+- Colunas/tabelas novas no Postgres **somente via Alembic**.
+- `ALTER TABLE` no `main.py` **nao** protege producao.
+
+## Ordem obrigatoria (backend com schema novo)
+
+Detectar schema novo: mudanca em `models.py` e/ou arquivo novo em `alembic/versions/` no diff ou na entrega.
+
+```
+1. commit + push (se pedido)
+2. alembic upgrade head  →  Postgres de PRODUCAO (nao so SQLite local)
+3. alembic current       →  conferir head esperada
+4. fly deploy -a carecoreplus-api
+5. GET /api/health       →  status: ok
+6. narrar: commit, push, migration, deploy Fly, Vercel (se aplicavel)
+```
+
+**Proibido:** `fly deploy` antes do passo 2 quando houver schema novo.
+
+Sem schema novo: pode ir direto ao `fly deploy` apos leitura do checklist.
+
+## Como aplicar migration em producao
+
+Preferir da maquina de trabalho (funciona mesmo se a imagem Fly antiga nao tiver o revision):
+
+```bash
+# Obter URL sem expor em chat: fly ssh console -a carecoreplus-api -C "printenv DATABASE_URL"
+# export DATABASE_URL='postgresql+asyncpg://...'
+alembic upgrade head
+alembic current
+```
+
+Alternativa: `fly ssh console` com `alembic upgrade head` **somente** se a imagem em execucao ja contiver o arquivo da migration.
+
+## Validacao antes de dizer "subido"
+
+Separar explicitamente:
+
+| Etapa | Confirmado? |
+| --- | --- |
+| Commit local | sim/nao |
+| Push GitHub | sim/nao |
+| Migration aplicada (se schema) | sim/nao/nao aplicavel |
+| `fly deploy` | sim/nao |
+| `/api/health` ok | sim/nao |
+| Vercel / versao sidebar | sim/nao/nao aplicavel |
+
+Nunca declarar entrega completa com backend se health falhar ou migration pendente.
+
+## Recuperacao (deploy feito sem migration)
+
+1. Rollback Fly para release anterior (`fly releases -a carecoreplus-api --image` + `fly deploy --image ... --strategy immediate`)
+2. `alembic upgrade head` no Postgres de producao
+3. `fly deploy` da versao nova
+4. Validar health
+
+Detalhes: `docs/operacao-producao.md` (secao deploy com migration de schema).
+
+## Outros cuidados
+
+- Commit/push nao publicam backend nem aplicam migration.
+- Frontend Vercel: apos push; conferir `carecore-front/src/config/versao.js` em mudancas visiveis.
+- Secrets so no Fly/Vercel, nunca no Git.
+- `DATABASE_URL` e `CREDENCIAIS_CONVIVENTE_KEY` devem ser consistentes no ambiente que le os dados.
