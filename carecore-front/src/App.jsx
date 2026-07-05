@@ -9,6 +9,7 @@ import { BrowserRouter } from 'react-router-dom';
 import './carecore-premium.css';
 
 import AtualizacaoAppBanner from './components/AtualizacaoAppBanner.jsx';
+import { ConfigOperacionalProvider } from './hooks/useConfigOperacional';
 import AppRouter from './routes/AppRouter';
 
 function PageFallback() {
@@ -22,10 +23,12 @@ function PageFallback() {
 export default function App() {
   return (
     <BrowserRouter>
-      <AtualizacaoAppBanner />
-      <Suspense fallback={<PageFallback />}>
-        <AppRouter />
-      </Suspense>
+      <ConfigOperacionalProvider>
+        <AtualizacaoAppBanner />
+        <Suspense fallback={<PageFallback />}>
+          <AppRouter />
+        </Suspense>
+      </ConfigOperacionalProvider>
     </BrowserRouter>
   );
 }

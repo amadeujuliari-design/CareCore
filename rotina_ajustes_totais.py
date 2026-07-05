@@ -55,7 +55,9 @@ async def contar_registrados_por_tipo_dia(
     db: AsyncSession,
     instituicao_id: str,
     data_referencia: date,
+    tipos_ajuste: tuple[str, ...] | None = None,
 ) -> dict[str, int]:
+    tipos = tipos_ajuste or TIPOS_AJUSTE_TOTAIS_ROTINA
     inicio = parse_data_filtro_operacional(data_referencia.isoformat())
     fim = parse_data_filtro_operacional(data_referencia.isoformat(), fim_do_dia=True)
     linhas = (
@@ -69,7 +71,7 @@ async def contar_registrados_por_tipo_dia(
                 RegistroRotinaDB.cancelado != True,  # noqa: E712
                 RegistroRotinaDB.data_registro >= inicio,
                 RegistroRotinaDB.data_registro <= fim,
-                RegistroRotinaDB.tipo_registro.in_(TIPOS_AJUSTE_TOTAIS_ROTINA),
+                RegistroRotinaDB.tipo_registro.in_(tipos),
             )
             .group_by(RegistroRotinaDB.tipo_registro)
         )
@@ -97,12 +99,16 @@ async def montar_itens_painel_dia(
     db: AsyncSession,
     instituicao_id: str,
     data_referencia: date,
+    tipos_ajuste: tuple[str, ...] | None = None,
 ) -> list[dict]:
-    registrados = await contar_registrados_por_tipo_dia(db, instituicao_id, data_referencia)
+    tipos = tipos_ajuste or TIPOS_AJUSTE_TOTAIS_ROTINA
+    registrados = await contar_registrados_por_tipo_dia(
+        db, instituicao_id, data_referencia, tipos_ajuste=tipos
+    )
     ajustes = await obter_ajustes_por_tipo_dia(db, instituicao_id, data_referencia)
     itens: list[dict] = []
 
-    for tipo in TIPOS_AJUSTE_TOTAIS_ROTINA:
+    for tipo in tipos:
         registrado = int(registrados.get(tipo, 0))
         ajuste_registro = ajustes.get(tipo)
         ajuste = int(ajuste_registro.quantidade_ajuste if ajuste_registro else 0)

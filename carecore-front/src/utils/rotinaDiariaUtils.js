@@ -172,13 +172,18 @@ const TIPOS_INTERACAO_POR_GRUPO = {
   Toalha: ['Retirada de Toalha', 'Entrega de Toalha'],
 };
 
-export function obterUltimaInteracaoGrupo(resumoConvivente, grupo) {
+function resolverMapaPares(mapaPares) {
+  return mapaPares && Object.keys(mapaPares).length ? mapaPares : TIPOS_INTERACAO_POR_GRUPO;
+}
+
+export function obterUltimaInteracaoGrupo(resumoConvivente, grupo, mapaPares = null) {
+  const mapa = resolverMapaPares(mapaPares);
   const ultima = resumoConvivente?.ultimas_interacoes?.[grupo];
   if (ultima?.tipo_registro) {
     return ultima;
   }
 
-  const tipos = TIPOS_INTERACAO_POR_GRUPO[grupo];
+  const tipos = mapa[grupo];
   if (!tipos) return null;
 
   const presencas = Array.isArray(resumoConvivente?.presencas) ? resumoConvivente.presencas : [];
@@ -192,18 +197,14 @@ export function obterUltimaInteracaoGrupo(resumoConvivente, grupo) {
   return null;
 }
 
-export function obterProximaInteracaoPar(resumoHoje, conviventeId, grupo) {
-  const ultima = obterUltimaInteracaoGrupo(resumoHoje[conviventeId], grupo)?.tipo_registro || '';
+export function obterProximaInteracaoPar(resumoHoje, conviventeId, grupo, mapaPares = null) {
+  const mapa = resolverMapaPares(mapaPares);
+  const tipos = mapa[grupo];
+  if (!tipos || tipos.length < 2) return null;
 
-  if (grupo === 'Toalha') {
-    return ultima === 'Retirada de Toalha' ? 'Entrega de Toalha' : 'Retirada de Toalha';
-  }
-
-  if (grupo === 'Cobertor') {
-    return ultima === 'Retirada de Cobertor' ? 'Entrega de Cobertor' : 'Retirada de Cobertor';
-  }
-
-  return null;
+  const [retirada, entrega] = tipos;
+  const ultima = obterUltimaInteracaoGrupo(resumoHoje[conviventeId], grupo, mapa)?.tipo_registro || '';
+  return ultima === retirada ? entrega : retirada;
 }
 
 export function obterProximaMovimentacaoBagageiro(resumoHoje, conviventeId) {
@@ -229,23 +230,38 @@ export function obterProximaMovimentacaoBagageiro(resumoHoje, conviventeId) {
   return 'Entrada';
 }
 
-export function obterRotuloBotaoInteracao(resumoHoje, conviventeId, interacaoSelecionada) {
-  if (interacaoSelecionada === 'Cobertor') {
-    const proxima = obterProximaInteracaoPar(resumoHoje, conviventeId, 'Cobertor');
-    return proxima === 'Entrega de Cobertor' ? 'Entregar cobertor' : 'Retirar cobertor';
+function rotuloParBotao(proxima, nomeCurto) {
+  if (proxima?.startsWith('Entrega')) return `Entregar ${nomeCurto}`;
+  if (proxima?.startsWith('Retirada')) return `Retirar ${nomeCurto}`;
+  return nomeCurto;
+}
+
+export function obterRotuloBotaoInteracao(
+  resumoHoje,
+  conviventeId,
+  interacaoSelecionada,
+  { mapaPares = null, opcoes = null } = {},
+) {
+  const opcao = opcoes?.find((item) => item.valor === interacaoSelecionada);
+  const mapa = resolverMapaPares(mapaPares);
+
+  if (opcao?.grupo === 'par' || mapa[interacaoSelecionada]) {
+    const proxima = obterProximaInteracaoPar(resumoHoje, conviventeId, interacaoSelecionada, mapa);
+    const nomeCurto = (opcao?.valor || interacaoSelecionada).toLowerCase();
+    return rotuloParBotao(proxima, nomeCurto);
   }
-  if (interacaoSelecionada === 'Toalha') {
-    const proxima = obterProximaInteracaoPar(resumoHoje, conviventeId, 'Toalha');
-    return proxima === 'Entrega de Toalha' ? 'Entregar toalha' : 'Retirar toalha';
-  }
-  if (interacaoSelecionada === 'Bagageiro') {
+
+  if (interacaoSelecionada === 'Bagageiro' || opcao?.grupo === 'par_bagageiro') {
     const proxima = obterProximaMovimentacaoBagageiro(resumoHoje, conviventeId);
     return proxima === 'Saída' ? 'Retirar bagagem' : 'Guardar bagagem';
   }
-  return 'Interação';
+
+  return opcao?.label || 'Interação';
 }
 
-export function interacaoSelecionadaPermiteLeituraRepetida(interacaoSelecionada) {
+export function interacaoSelecionadaPermiteLeituraRepetida(interacaoSelecionada, opcoes = null) {
+  const opcao = opcoes?.find((item) => item.valor === interacaoSelecionada);
+  if (opcao) return ['par', 'par_bagageiro'].includes(opcao.grupo);
   return ['Cobertor', 'Toalha', 'Bagageiro'].includes(interacaoSelecionada);
 }
 

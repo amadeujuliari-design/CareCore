@@ -31,6 +31,11 @@ from carteirinha_operacional import (
 )
 from refeicao_horario_operacional import validar_horario_refeicao_operacional
 from rotina_portaria_horarios import UltimoMovimentoPortaria, validar_horario_portaria
+from config_operacional import (
+    obter_tipos_refeicao_ativos,
+    obter_tipos_rotina_validos,
+)
+from config_operacional_service import carregar_config_operacional_instituicao
 from acomodacao_tb import (
     aplicar_regras_acomodacao_tb,
     leito_esta_reservado_por_outro,
@@ -3206,7 +3211,12 @@ async def registar_rotina(
     usuario_atual: dict = Depends(get_usuario_logado)
 ):
     bloquear_usuario_global_puro(usuario_atual)
-    if payload.tipo_registro not in TIPOS_ROTINA_VALIDOS:
+    instituicao_id = obter_instituicao_escopo(usuario_atual)
+    config_operacional, _, _ = await carregar_config_operacional_instituicao(db, instituicao_id)
+    tipos_rotina_validos = obter_tipos_rotina_validos(config_operacional)
+    tipos_refeicoes = obter_tipos_refeicao_ativos(config_operacional)
+
+    if payload.tipo_registro not in tipos_rotina_validos:
         raise HTTPException(
             status_code=400,
             detail="Tipo de registro inválido."
@@ -3243,8 +3253,12 @@ async def registar_rotina(
     instituicao_id = obter_instituicao_escopo(usuario_atual)
     await validar_carteirinha_convivente_operacional(db, convivente, instituicao_id)
 
-    if payload.tipo_registro in TIPOS_ROTINA_REFEICOES:
-        validar_horario_refeicao_operacional(payload.tipo_registro, agora_sao_paulo())
+    if payload.tipo_registro in tipos_refeicoes:
+        validar_horario_refeicao_operacional(
+            payload.tipo_registro,
+            agora_sao_paulo(),
+            config_operacional,
+        )
 
     if payload.tipo_registro == TIPO_ROTINA_BAGAGEIRO:
         instituicao_id = obter_instituicao_escopo(usuario_atual)
@@ -3284,7 +3298,7 @@ async def registar_rotina(
 
     refeicoes_registradas = {}
     for registro in registros_hoje:
-        if registro.tipo_registro in TIPOS_ROTINA_REFEICOES:
+        if registro.tipo_registro in tipos_refeicoes:
             refeicoes_registradas.setdefault(registro.tipo_registro, []).append(registro)
 
     # Entrada/Saída não podem resetar na virada do dia.
@@ -3350,9 +3364,10 @@ async def registar_rotina(
             convivente=convivente,
             ultimo_movimento=ultimo_para_horario,
             justificativa_horario=payload.justificativa_horario_portaria,
+            config=config_operacional,
         )
 
-    if payload.tipo_registro in TIPOS_ROTINA_REFEICOES:
+    if payload.tipo_registro in tipos_refeicoes:
 
         if payload.tipo_registro in refeicoes_registradas:
             registros_refeicao = refeicoes_registradas[payload.tipo_registro]
@@ -7906,7 +7921,11 @@ async def editar_registro_rotina(
     usuario_atual: dict = Depends(get_usuario_logado)
 ):
     bloquear_usuario_global_puro(usuario_atual)
-    if payload.tipo_registro not in TIPOS_ROTINA_VALIDOS:
+    instituicao_id = obter_instituicao_escopo(usuario_atual)
+    config_operacional, _, _ = await carregar_config_operacional_instituicao(db, instituicao_id)
+    tipos_rotina_validos = obter_tipos_rotina_validos(config_operacional)
+
+    if payload.tipo_registro not in tipos_rotina_validos:
         raise HTTPException(
             status_code=400,
             detail="Tipo de registro inválido."

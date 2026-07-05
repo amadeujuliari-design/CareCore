@@ -6,6 +6,7 @@ import {
   TERMO_BAGAGEIRO_RETIRADA_TITULO,
   TERMO_BAGAGEIRO_TITULO,
 } from '../config/termoBagageiroTexto';
+import { montarConfigOperacionalPadrao } from '../config/configOperacionalDefaults';
 import { obterLogoRelatorioSrc } from './relatorioIdentidadePrint';
 import {
   DIREITOS_RESERVADOS_TITULO,
@@ -252,14 +253,25 @@ export function montarHtmlTermoBagageiro({
   logoRelatorioDataUrl = '',
   assinaturaDigital = null,
   nomeFuncionario = '',
+  configOperacional = null,
 }) {
+  const configBase = configOperacional || montarConfigOperacionalPadrao();
+  const bagageiro = configBase.documentos?.termo_bagageiro || {};
+  const titulo = bagageiro.titulo || TERMO_BAGAGEIRO_TITULO;
+  const itens = (bagageiro.itens?.length ? bagageiro.itens : TERMO_BAGAGEIRO_ITENS);
+  const compromisso = bagageiro.compromisso || TERMO_BAGAGEIRO_COMPROMISSO;
+  const retiradaTitulo = bagageiro.retirada_titulo || TERMO_BAGAGEIRO_RETIRADA_TITULO;
+  const retiradaSubtitulo = bagageiro.retirada_subtitulo || TERMO_BAGAGEIRO_RETIRADA_SUBTITULO;
+  const retiradaTexto = bagageiro.retirada_texto || TERMO_BAGAGEIRO_RETIRADA_TEXTO;
+  const rotuloFuncionario = bagageiro.rotulo_assinatura_funcionario || 'Funcionário SIAT II Armênia';
+
   const logoSrc = obterLogoRelatorioSrc(logoRelatorioDataUrl);
   const nomeExibicao = identidadeRelatorio?.relatorio_nome_exibicao || 'CARECORE+';
   const nomeConvivente = convivente?.nome_social || convivente?.nome_completo || '';
   const prontuario = convivente?.numero_institucional ? `#${convivente.numero_institucional}` : 'S/N';
   const dataHoje = dataBr(new Date().toISOString());
 
-  const itensHtml = TERMO_BAGAGEIRO_ITENS.map(
+  const itensHtml = itens.map(
     (item, index) => `<li value="${index + 1}">${escaparHtml(item)}</li>`,
   ).join('');
 
@@ -268,7 +280,7 @@ export function montarHtmlTermoBagageiro({
     <html lang="pt-BR">
       <head>
         <meta charset="UTF-8" />
-        <title>${escaparHtml(TERMO_BAGAGEIRO_TITULO)} - ${escaparHtml(nomeConvivente)}</title>
+        <title>${escaparHtml(titulo)} - ${escaparHtml(nomeConvivente)}</title>
         <style>${estilosTermoBagageiro()}</style>
       </head>
       <body>
@@ -279,7 +291,7 @@ export function montarHtmlTermoBagageiro({
             <strong style="font-size:11px;color:#1e3a8a;">CARECORE+</strong>
           </div>
 
-          <h1 class="titulo">${escaparHtml(TERMO_BAGAGEIRO_TITULO)}</h1>
+          <h1 class="titulo">${escaparHtml(titulo)}</h1>
 
           <div class="convivente-resumo">
             <div><strong>Nome</strong><br>${escaparHtml(nomeConvivente)}</div>
@@ -290,7 +302,7 @@ export function montarHtmlTermoBagageiro({
 
           <ol class="termo-itens" type="I">${itensHtml}</ol>
 
-          <p class="compromisso">${escaparHtml(TERMO_BAGAGEIRO_COMPROMISSO)}</p>
+          <p class="compromisso">${escaparHtml(compromisso)}</p>
 
           <div class="campos-linha">
             <div class="campo-linha">
@@ -313,19 +325,19 @@ export function montarHtmlTermoBagageiro({
 
           <div class="assinaturas">
             ${montarBlocoAssinatura('Assinatura do atendido', assinaturaDigital, true)}
-            ${montarBlocoAssinatura('Funcionário SIAT II Armênia', null, false)}
+            ${montarBlocoAssinatura(rotuloFuncionario, null, false)}
           </div>
           </div>
 
           <div class="secao-retirada">
-            <h3>${escaparHtml(TERMO_BAGAGEIRO_RETIRADA_TITULO)}</h3>
-            <p>${escaparHtml(TERMO_BAGAGEIRO_RETIRADA_SUBTITULO)}</p>
-            <p>${escaparHtml(TERMO_BAGAGEIRO_RETIRADA_TEXTO)}</p>
+            <h3>${escaparHtml(retiradaTitulo)}</h3>
+            <p>${escaparHtml(retiradaSubtitulo)}</p>
+            <p>${escaparHtml(retiradaTexto)}</p>
             <div class="obs-label">OBS:</div>
             <div class="obs-linha"></div>
             <div class="assinaturas assinaturas-compactas">
               ${montarBlocoAssinatura('Assinatura do atendido', null, false)}
-              ${montarBlocoAssinatura('Funcionário SIAT II Armênia', null, false)}
+              ${montarBlocoAssinatura(rotuloFuncionario, null, false)}
             </div>
           </div>
 
@@ -345,6 +357,7 @@ export function montarHtmlTermoBagageiroLote({
   logoRelatorioDataUrl = '',
   assinaturasPorConvivente = {},
   nomeFuncionario = '',
+  configOperacional = null,
 }) {
   const paginas = conviventes.map((convivente) => {
     const html = montarHtmlTermoBagageiro({
@@ -353,6 +366,7 @@ export function montarHtmlTermoBagageiroLote({
       logoRelatorioDataUrl,
       assinaturaDigital: assinaturasPorConvivente[convivente.id] || null,
       nomeFuncionario,
+      configOperacional,
     });
     const match = html.match(/<section class="pagina">[\s\S]*<\/section>/);
     return match ? match[0] : '';

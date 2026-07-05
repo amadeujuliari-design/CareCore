@@ -2,7 +2,7 @@
 // ARQUIVO: src/RotinaDiaria.jsx
 // CONTROLE DE FLUXO DIÁRIO: QR CODE, LEITOR USB, MODO AUTOMÁTICO E MANUAL
 // =====================================================================
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import Sidebar from './Sidebar';
@@ -31,7 +31,6 @@ import {
   obterRotuloBotaoInteracao,
   perfilOcultaSomatoriaAlimentacao,
   registroAindaPodeSerDesfeitoRotina,
-  TIPOS_ROTINA_REFEICOES,
   tocarBeep,
   totalInteracoesSemAlimentacao,
 } from './utils/rotinaDiariaUtils';
@@ -64,20 +63,9 @@ import {
   MIN_CARACTERES_JUSTIFICATIVA_HORARIO,
 } from './utils/rotinaPortariaHorariosUtils';
 import { obterAvisoCarteirinhaConvivente } from './utils/carteirinhaValidadeUtils';
+import { obterOpcoesInteracaoRotina, obterJanelasRefeicao, obterMapaInteracoesPar } from './config/configOperacionalDefaults';
+import { useConfigOperacional } from './hooks/useConfigOperacional';
 import { ordenarQuartosComLeitos } from './utils/ordenacaoNatural';
-
-const OPCOES_INTERACAO_ROTINA = [
-  { valor: 'Café da manhã', label: 'Café da manhã', grupo: 'refeicao' },
-  { valor: 'Almoço', label: 'Almoço', grupo: 'refeicao' },
-  { valor: 'Jantar', label: 'Jantar', grupo: 'refeicao' },
-  { valor: 'Lanche noturno', label: 'Lanche noturno', grupo: 'refeicao' },
-  { valor: 'Banho', label: 'Banho', grupo: 'simples' },
-  { valor: 'Cobertor', label: 'Cobertor (sugerir retirada/entrega)', grupo: 'par' },
-  { valor: 'Toalha', label: 'Toalha (sugerir retirada/entrega)', grupo: 'par' },
-  { valor: 'Bagageiro', label: 'Bagageiro (entrada/saída)', grupo: 'par_bagageiro' },
-  { valor: 'Bipar documentos guardados', label: 'Documentos guardados', grupo: 'observacao' },
-  { valor: 'Bipar documentos retirados', label: 'Documentos retirados', grupo: 'observacao' },
-];
 
 const TIPO_ROTINA_BAGAGEIRO = 'Movimentação de Bagageiro';
 
@@ -172,6 +160,23 @@ const ROTULOS_REFEICAO_EXTRA = {
 export default function RotinaDiaria() {
   const navigate = useNavigate();
   const { isGlobalPuro: somenteLeitura } = useAuth();
+  const { config: configOperacional } = useConfigOperacional();
+  const opcoesInteracaoRotina = useMemo(
+    () => obterOpcoesInteracaoRotina(configOperacional),
+    [configOperacional],
+  );
+  const mapaInteracoesPar = useMemo(
+    () => obterMapaInteracoesPar(configOperacional),
+    [configOperacional],
+  );
+  const contextoInteracaoRotina = useMemo(
+    () => ({ mapaPares: mapaInteracoesPar, opcoes: opcoesInteracaoRotina }),
+    [mapaInteracoesPar, opcoesInteracaoRotina],
+  );
+  const tiposRefeicaoRotina = useMemo(
+    () => Object.keys(obterJanelasRefeicao(configOperacional)),
+    [configOperacional],
+  );
   const token = localStorage.getItem('@CareCore:token');
   const deviceInfo = useDeviceInfo();
 
@@ -207,6 +212,13 @@ export default function RotinaDiaria() {
   const [alertaErroOperacional, setAlertaErroOperacional] = useState(null);
   const [horarioPortariaPendente, setHorarioPortariaPendente] = useState(null);
   const [justificativaHorarioPortaria, setJustificativaHorarioPortaria] = useState('');
+
+  useEffect(() => {
+    if (!opcoesInteracaoRotina.length) return;
+    if (!opcoesInteracaoRotina.some((item) => item.valor === interacaoSelecionada)) {
+      setInteracaoSelecionada(opcoesInteracaoRotina[0].valor);
+    }
+  }, [opcoesInteracaoRotina, interacaoSelecionada]);
 
   const MENSAGEM_CONVIVENTE_FORA =
     'Este convivente está marcado como FORA DA UNIDADE. O registro não será gravado. '
@@ -568,7 +580,7 @@ export default function RotinaDiaria() {
   const solicitarRegistroInteracao = (convivente) => {
     if (somenteLeitura) return;
 
-    const opcao = OPCOES_INTERACAO_ROTINA.find(item => item.valor === interacaoSelecionada);
+    const opcao = opcoesInteracaoRotina.find(item => item.valor === interacaoSelecionada);
     if (!opcao) return;
 
     if (conviventeEstaFora(convivente.id)) {
@@ -577,7 +589,12 @@ export default function RotinaDiaria() {
     }
 
     if (opcao.grupo === 'par') {
-      const tipoSugerido = obterProximaInteracaoPar(resumoHoje, convivente.id, opcao.valor);
+      const tipoSugerido = obterProximaInteracaoPar(
+        resumoHoje,
+        convivente.id,
+        opcao.valor,
+        mapaInteracoesPar,
+      );
       const ultima = resumoHoje[convivente.id]?.ultimas_interacoes?.[opcao.valor] || null;
       setInteracaoConfirmacao({ convivente, tipoRegistro: tipoSugerido, grupo: opcao.valor, ultima });
       return;
@@ -665,7 +682,7 @@ export default function RotinaDiaria() {
 
       if (deveIgnorarLeituraConviventeRepetida(ultimaLeituraConviventeRef, pacienteEncontrado.id)) {
         const permiteRepetir = tipoBipagemAutomatica === 'interacao'
-          && interacaoSelecionadaPermiteLeituraRepetida(interacaoSelecionada);
+          && interacaoSelecionadaPermiteLeituraRepetida(interacaoSelecionada, opcoesInteracaoRotina);
         if (!permiteRepetir) {
           return;
         }
@@ -745,6 +762,7 @@ export default function RotinaDiaria() {
       logoRelatorioDataUrl,
       assinaturaDigital,
       nomeFuncionario: obterNomeUsuarioLogado(),
+      configOperacional,
     });
 
     abrirPreviewHtml({
@@ -816,8 +834,8 @@ export default function RotinaDiaria() {
       return;
     }
 
-    if (TIPOS_ROTINA_REFEICOES.includes(tipoRegistro)) {
-      const erroHorario = validarHorarioRefeicaoOperacional(tipoRegistro);
+    if (tiposRefeicaoRotina.includes(tipoRegistro)) {
+      const erroHorario = validarHorarioRefeicaoOperacional(tipoRegistro, new Date(), configOperacional);
       if (erroHorario) {
         exibirAlertaErroOperacional({
           variant: 'refeicao_horario',
@@ -836,7 +854,7 @@ export default function RotinaDiaria() {
     }
 
     if (
-      TIPOS_ROTINA_REFEICOES.includes(tipoRegistro) &&
+      tiposRefeicaoRotina.includes(tipoRegistro) &&
       !opcoes.confirmarRefeicaoExtra
     ) {
       const resumoRefeicao = obterResumoRefeicao(conviventeId, tipoRegistro);
@@ -872,6 +890,7 @@ export default function RotinaDiaria() {
         convivente,
         ultimoMovimento: obterUltimoMovimentoPortaria(conviventeId),
         justificativaHorario: opcoes.justificativaHorarioPortaria || '',
+        configOperacional,
       });
 
       if (validacaoHorario?.bloqueado) {
@@ -949,7 +968,7 @@ export default function RotinaDiaria() {
           novoResumo.almocou = true;
         }
 
-        if (TIPOS_ROTINA_REFEICOES.includes(tipoRegistro)) {
+        if (tiposRefeicaoRotina.includes(tipoRegistro)) {
           const refeicaoAtual = novoResumo.refeicoes?.[tipoRegistro] || {};
           const registrosAtuais = Array.isArray(refeicaoAtual.registros)
             ? refeicaoAtual.registros
@@ -1484,7 +1503,7 @@ export default function RotinaDiaria() {
                 </span>
                 {modoAutomatico
                   ? tipoBipagemAutomatica === 'interacao'
-                    ? `Bipou, registra interação: ${OPCOES_INTERACAO_ROTINA.find(item => item.valor === interacaoSelecionada)?.label || interacaoSelecionada}.`
+                    ? `Bipou, registra interação: ${opcoesInteracaoRotina.find(item => item.valor === interacaoSelecionada)?.label || interacaoSelecionada}.`
                     : 'Bipou, registra Entrada/Saída automaticamente.'
                   : 'Bipou, abre modal para escolher a ação.'}
               </div>
@@ -1543,7 +1562,7 @@ export default function RotinaDiaria() {
                         onChange={(event) => setInteracaoSelecionada(event.target.value)}
                         className="min-h-11 w-full rounded-xl border border-blue-100 bg-white px-3 py-2 text-sm font-bold text-blue-800 outline-none"
                       >
-                        {OPCOES_INTERACAO_ROTINA.map((opcao) => (
+                        {opcoesInteracaoRotina.map((opcao) => (
                           <option key={opcao.valor} value={opcao.valor}>
                             {opcao.label}
                           </option>
@@ -1766,7 +1785,12 @@ export default function RotinaDiaria() {
                             ${isFora ? 'bg-gray-100 text-gray-400 cursor-not-allowed opacity-60' : 'bg-blue-500 hover:bg-blue-600 text-white active:scale-95'}`}
                         >
                           <span className="text-[11px] sm:text-xs">
-                            {obterRotuloBotaoInteracao(resumoHoje, c.id, interacaoSelecionada)}
+                            {obterRotuloBotaoInteracao(
+                              resumoHoje,
+                              c.id,
+                              interacaoSelecionada,
+                              contextoInteracaoRotina,
+                            )}
                           </span>
                         </button>
 
@@ -1828,7 +1852,7 @@ export default function RotinaDiaria() {
                     onChange={(event) => setInteracaoSelecionada(event.target.value)}
                     className="mt-2 min-h-11 w-full rounded-xl border border-blue-100 bg-white px-3 py-2 text-sm font-bold text-blue-800 outline-none"
                   >
-                    {OPCOES_INTERACAO_ROTINA.map((opcao) => (
+                    {opcoesInteracaoRotina.map((opcao) => (
                       <option key={opcao.valor} value={opcao.valor}>
                         {opcao.label}
                       </option>
@@ -1960,7 +1984,7 @@ export default function RotinaDiaria() {
                       onChange={(event) => setInteracaoSelecionada(event.target.value)}
                       className="mb-2 min-h-11 w-full rounded-xl border border-blue-100 bg-white px-3 py-2 text-sm font-bold text-blue-800 outline-none"
                     >
-                      {OPCOES_INTERACAO_ROTINA.map((opcao) => (
+                      {opcoesInteracaoRotina.map((opcao) => (
                         <option key={opcao.valor} value={opcao.valor}>
                           {opcao.label}
                         </option>
@@ -1972,7 +1996,12 @@ export default function RotinaDiaria() {
                       className={`w-full py-3 rounded-xl font-bold transition-all flex justify-center items-center gap-2 text-sm shadow-md
                         ${isFora ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : 'bg-blue-500 hover:bg-blue-600 text-white'}`}
                     >
-                      {obterRotuloBotaoInteracao(resumoHoje, pacienteEscaneado.id, interacaoSelecionada)}
+                      {obterRotuloBotaoInteracao(
+                        resumoHoje,
+                        pacienteEscaneado.id,
+                        interacaoSelecionada,
+                        contextoInteracaoRotina,
+                      )}
                     </button>
                   </div>
                 </div>

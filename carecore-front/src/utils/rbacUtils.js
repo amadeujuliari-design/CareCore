@@ -28,6 +28,26 @@ export function usuarioEhManutencao(usuario) {
   return normalizarPerfilRbac(usuario.perfil_acesso) === 'Manutenção';
 }
 
+export function usuarioPodeConfigOperacionalProjeto(usuarioOuPerfil, tokenPayload = null) {
+  const perfil = typeof usuarioOuPerfil === 'string'
+    ? normalizarPerfilRbac(usuarioOuPerfil)
+    : normalizarPerfilRbac(usuarioOuPerfil?.perfil_acesso);
+  if (['Gestor', 'Técnico', 'Global', 'Manutenção'].includes(perfil)) return true;
+  if (usuarioEhManutencao(usuarioOuPerfil)) return true;
+  if (tokenPayload?.is_manutencao === true) return true;
+  return false;
+}
+
+export function usuarioPodeSalvarConfigOperacionalProjeto(usuarioOuPerfil, tokenPayload = null) {
+  const perfil = typeof usuarioOuPerfil === 'string'
+    ? normalizarPerfilRbac(usuarioOuPerfil)
+    : normalizarPerfilRbac(usuarioOuPerfil?.perfil_acesso);
+  if (perfil === 'Gestor' || perfil === 'Manutenção') return true;
+  if (usuarioEhManutencao(usuarioOuPerfil)) return true;
+  if (tokenPayload?.is_manutencao === true) return true;
+  return false;
+}
+
 export function usuarioEhGestor(usuario) {
   if (!usuario) return false;
   if (usuario.is_master === true) return true;

@@ -28,6 +28,8 @@ import api, { limparSessaoLocal } from './services/api';
 import { API_ROOT } from './config/apiBase';
 import { carecoreVersaoRotulo } from './config/versao';
 import { MENU_ACOMPANHAMENTOS, MENU_CONVIVENTES } from './config/acompanhamentosConfig';
+import { acompanhamentoAtivo, moduloAtivo } from './config/configOperacionalDefaults';
+import { useConfigOperacional } from './hooks/useConfigOperacional';
 import { usuarioEhOficineiro, normalizarPerfilRbac } from './utils/rbacUtils';
 import { decodificarPayloadJwt } from './utils/jwtUtils';
 import {
@@ -100,12 +102,18 @@ function senhaAtendePolitica(senha = '') {
   return Object.values(obterRegrasSenha(senha)).every(Boolean);
 }
 
+function extrairSlugAcompanhamento(path) {
+  const match = String(path || '').match(/^\/conviventes\/acompanhamentos\/([^/]+)$/);
+  return match ? match[1] : null;
+}
+
 export default function Sidebar() {
   const location = useLocation();
   const navigate = useNavigate();
+  const { config: configOperacional } = useConfigOperacional();
   const [menuMobileAberto, setMenuMobileAberto] = useState(false);
   const [menusExpandidos, setMenusExpandidos] = useState({});
-  const [historicoLegadoAtivo, setHistoricoLegadoAtivo] = useState(false);
+  const [historicoLegadoApiAtivo, setHistoricoLegadoApiAtivo] = useState(false);
   const [cobrancasClienteVisivel, setCobrancasClienteVisivel] = useState(false);
   const [modalSenhaAberto, setModalSenhaAberto] = useState(false);
   const [modalPasskeysAberto, setModalPasskeysAberto] = useState(false);
@@ -166,9 +174,13 @@ export default function Sidebar() {
   const nomeExibicao = nomeExibicaoSidebar(nomeUsuario);
   const novaSenhaForte = senhaAtendePolitica(novaSenha);
 
+  const historicoLegadoAtivo = configOperacional
+    ? moduloAtivo(configOperacional, 'historico_legado')
+    : historicoLegadoApiAtivo;
+
   useEffect(() => {
     if (!token) {
-      setHistoricoLegadoAtivo(false);
+      setHistoricoLegadoApiAtivo(false);
       setCobrancasClienteVisivel(false);
       return;
     }
@@ -176,10 +188,10 @@ export default function Sidebar() {
     let ativo = true;
     api.get(`${API_ROOT}/historico-legado/config`)
       .then((response) => {
-        if (ativo) setHistoricoLegadoAtivo(response.data?.ativo === true);
+        if (ativo) setHistoricoLegadoApiAtivo(response.data?.ativo === true);
       })
       .catch(() => {
-        if (ativo) setHistoricoLegadoAtivo(false);
+        if (ativo) setHistoricoLegadoApiAtivo(false);
       });
 
     api.get(`${API_ROOT}/cobrancas/modulo/status`)
@@ -527,14 +539,17 @@ export default function Sidebar() {
   );
 
   const usuarioPodeVerItem = (item) => {
-    if (isManutencao) return true;
-
     if (ehOficineiro) {
       return Boolean(item.path?.startsWith('/atividades'));
     }
 
-    const perfilPermitido = !item.perfis || item.perfis.includes(perfilNormalizado);
+    const perfilPermitido = isManutencao
+      || !item.perfis
+      || item.perfis.includes(perfilNormalizado);
     const globalPermitido = !item.globalOnly || isGlobal;
+    if (item.path === '/convenio-sisa' && configOperacional && !moduloAtivo(configOperacional, 'sisa')) {
+      return false;
+    }
     const featurePermitida =
       (item.feature !== 'historicoLegado' || historicoLegadoAtivo) &&
       (item.feature !== 'cobrancasCliente' || cobrancasClienteVisivel);
@@ -543,7 +558,14 @@ export default function Sidebar() {
 
   const filtrarChildrenRecursivo = (children) => (
     children
-      ?.filter(usuarioPodeVerItem)
+      ?.filter((child) => {
+        if (!usuarioPodeVerItem(child)) return false;
+        const slug = extrairSlugAcompanhamento(child.path);
+        if (slug && configOperacional && !acompanhamentoAtivo(configOperacional, slug)) {
+          return false;
+        }
+        return true;
+      })
       .map(child => ({
         ...child,
         children: filtrarChildrenRecursivo(child.children),

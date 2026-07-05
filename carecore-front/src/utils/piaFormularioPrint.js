@@ -4,6 +4,7 @@ import {
   TERMO_LGPD_TEXTO,
   TERMO_LGPD_TITULO,
 } from '../config/piaTemplatesTexto';
+import { montarConfigOperacionalPadrao } from '../config/configOperacionalDefaults';
 import {
   RELACAO_FAMILIAR_SITUACOES,
   SUBSTANCIAS_PIA,
@@ -267,12 +268,16 @@ function montarRodapeFormularioLgpd(convivente, modo = 'manual', assinaturaDigit
   `;
 }
 
-function montarConteudoPaginaLgpd(convivente, modo = 'manual', assinaturaDigital = null) {
+function montarConteudoPaginaLgpd(convivente, modo = 'manual', assinaturaDigital = null, lgpdConfig = null) {
+  const titulo = lgpdConfig?.titulo || TERMO_LGPD_TITULO;
+  const subtitulo = lgpdConfig?.subtitulo || TERMO_LGPD_SUBTITULO;
+  const texto = lgpdConfig?.texto || TERMO_LGPD_TEXTO;
+
   return `
     <div class="secao secao-lgpd">
-      <h2 class="titulo-lgpd">${escaparHtml(TERMO_LGPD_TITULO)}</h2>
-      <h3 class="subtitulo-lgpd">${escaparHtml(TERMO_LGPD_SUBTITULO)}</h3>
-      <p class="texto-lgpd-corpo">${destacarTermosLgpd(TERMO_LGPD_TEXTO)}</p>
+      <h2 class="titulo-lgpd">${escaparHtml(titulo)}</h2>
+      <h3 class="subtitulo-lgpd">${escaparHtml(subtitulo)}</h3>
+      <p class="texto-lgpd-corpo">${destacarTermosLgpd(texto)}</p>
     </div>
     ${montarRodapeFormularioLgpd(convivente, modo, assinaturaDigital)}
   `;
@@ -671,8 +676,21 @@ export function montarHtmlFormularioPia({
   logoRelatorioDataUrl = '',
   modo = 'manual',
   assinaturaDigital = null,
+  configOperacional = null,
 }) {
   const modoValido = modo === 'completo' ? 'completo' : 'manual';
+  const configBase = configOperacional || montarConfigOperacionalPadrao();
+  const documentos = configBase.documentos || {};
+  const incluirTermoCompromisso = documentos.termo_compromisso?.imprimir !== false;
+  const incluirTermoLgpd = documentos.termo_lgpd?.imprimir !== false;
+  const termoCompromisso = documentos.termo_compromisso || {};
+  const termoLgpd = documentos.termo_lgpd || {};
+  const textoTermoCompromisso = termoCompromisso.texto || TERMO_COMPROMISSO_TEXTO.replace(
+    /^TERMO DE COMPROMISSO E RESPONSABILIDADE DO CONVIVENTE NO SIAT II ARMÊNIA\n\n/,
+    '',
+  );
+  const tituloTermoCompromisso = termoCompromisso.titulo
+    || 'Termo de compromisso e responsabilidade';
   const logoSrc = obterLogoRelatorioSrc(logoRelatorioDataUrl);
   const nomeExibicao = identidadeRelatorio?.relatorio_nome_exibicao || 'CARECORE+';
   const dataInicialPia = dataBr(convivente?.data_inicio_pia || convivente?.data_entrada);
@@ -704,7 +722,50 @@ export function montarHtmlFormularioPia({
     : equipamentosAnteriores;
 
   const rodapeHtml = montarRodapePagina(identidadeRelatorio);
-  const totalPaginas = 8;
+  const totalPaginas = 6 + (incluirTermoCompromisso ? 1 : 0) + (incluirTermoLgpd ? 1 : 0);
+  const paginaTermoCompromissoNum = 7;
+  const paginaLgpdNum = totalPaginas;
+
+  const paginaTermoCompromisso = incluirTermoCompromisso
+    ? montarPaginaPia(`
+          ${montarCabecalhoPagina({
+            convivente,
+            logoSrc,
+            nomeExibicao,
+            numeroPagina: String(paginaTermoCompromissoNum),
+            totalPaginas,
+            tituloPagina: 'Termo de compromisso',
+            dataInicialPia,
+            nomeTecnico: tecnicoNome,
+            modo: modoValido,
+          })}
+          <div class="secao secao-termo">
+            <h2>${escaparHtml(tituloTermoCompromisso)}</h2>
+            ${formatarTextoTermoCompromissoHtml(textoTermoCompromisso)}
+          </div>
+          ${montarBlocoAssinaturas([
+            'Assinatura do convivente',
+            'Assinatura do responsável pelo atendimento',
+          ], { termo: true, assinaturaDigital })}
+        `, rodapeHtml, { classeExtra: 'pagina-termo' })
+    : '';
+
+  const paginaTermoLgpd = incluirTermoLgpd
+    ? montarPaginaPia(`
+          ${montarCabecalhoPagina({
+            convivente,
+            logoSrc,
+            nomeExibicao,
+            numeroPagina: String(paginaLgpdNum),
+            totalPaginas,
+            tituloPagina: 'Termo LGPD',
+            dataInicialPia,
+            nomeTecnico: tecnicoNome,
+            modo: modoValido,
+          })}
+          ${montarConteudoPaginaLgpd(convivente, modoValido, assinaturaDigital, termoLgpd)}
+        `, rodapeHtml, { classeExtra: 'pagina-lgpd' })
+    : '';
 
   return `
     <!doctype html>
@@ -982,42 +1043,9 @@ export function montarHtmlFormularioPia({
           ], { assinaturaDigital })}
         `, rodapeHtml)}
 
-        ${montarPaginaPia(`
-          ${montarCabecalhoPagina({
-            convivente,
-            logoSrc,
-            nomeExibicao,
-            numeroPagina: '7',
-            totalPaginas,
-            tituloPagina: 'Termo de compromisso',
-            dataInicialPia,
-            nomeTecnico: tecnicoNome,
-            modo: modoValido,
-          })}
-          <div class="secao secao-termo">
-            <h2>Termo de compromisso e responsabilidade</h2>
-            ${formatarTextoTermoCompromissoHtml(TERMO_COMPROMISSO_TEXTO)}
-          </div>
-          ${montarBlocoAssinaturas([
-            'Assinatura do convivente',
-            'Assinatura do responsável pelo atendimento',
-          ], { termo: true, assinaturaDigital })}
-        `, rodapeHtml, { classeExtra: 'pagina-termo' })}
+        ${paginaTermoCompromisso}
 
-        ${montarPaginaPia(`
-          ${montarCabecalhoPagina({
-            convivente,
-            logoSrc,
-            nomeExibicao,
-            numeroPagina: '8',
-            totalPaginas,
-            tituloPagina: 'Termo LGPD',
-            dataInicialPia,
-            nomeTecnico: tecnicoNome,
-            modo: modoValido,
-          })}
-          ${montarConteudoPaginaLgpd(convivente, modoValido, assinaturaDigital)}
-        `, rodapeHtml, { classeExtra: 'pagina-lgpd' })}
+        ${paginaTermoLgpd}
       </body>
     </html>
   `;

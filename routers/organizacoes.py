@@ -9,6 +9,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 from database import get_db
+from config_operacional import ConfigOperacionalProjeto, config_operacional_para_resposta
+from config_operacional_service import (
+    carregar_config_operacional_instituicao,
+    salvar_config_operacional_instituicao,
+)
 from models import (
     AvisoDB,
     ConviventeDB,
@@ -121,6 +126,15 @@ def exigir_gestor_projeto(usuario_atual: dict) -> None:
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Apenas gestores podem alterar a identidade dos relatórios.",
         )
+
+
+def exigir_gestor_ou_manutencao_projeto(usuario_atual: dict) -> None:
+    if usuario_eh_gestor(usuario_atual) or usuario_eh_manutencao(usuario_atual):
+        return
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Apenas gestores ou manutenção podem alterar a configuração operacional.",
+    )
 
 
 def montar_payload_token(usuario: UsuarioDB, projeto: InstituicaoDB | None = None) -> dict:
@@ -498,6 +512,28 @@ async def obter_projeto_da_sessao(
         )
 
     return projeto
+
+
+@router.get("/config-operacional")
+async def obter_config_operacional(
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    instituicao_id = usuario_atual["instituicao_id"]
+    config, personalizado, perfil = await carregar_config_operacional_instituicao(db, instituicao_id)
+    return config_operacional_para_resposta(config, personalizado=personalizado, perfil_defaults=perfil)
+
+
+@router.put("/config-operacional")
+async def atualizar_config_operacional(
+    payload: ConfigOperacionalProjeto,
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    exigir_gestor_ou_manutencao_projeto(usuario_atual)
+    projeto = await obter_projeto_da_sessao(db, usuario_atual)
+    config, perfil = await salvar_config_operacional_instituicao(db, projeto, payload)
+    return config_operacional_para_resposta(config, personalizado=True, perfil_defaults=perfil)
 
 
 @router.get("/identidade-relatorios", response_model=IdentidadeRelatorioResponse)

@@ -7,13 +7,14 @@ from audit_log import registrar_evento_auditoria
 from database import get_db
 from rotina_ajustes_totais import (
     JUSTIFICATIVA_AJUSTE_MIN_CHARS,
-    TIPOS_AJUSTE_TOTAIS_SET,
     data_operacional_hoje,
     mes_tem_importacao_sisa,
     montar_itens_painel_dia,
     obter_ajustes_por_tipo_dia,
     validar_data_ajuste_permitida,
 )
+from config_operacional import obter_tipos_ajuste_totais
+from config_operacional_service import carregar_config_operacional_instituicao
 from models import RotinaAjusteDiarioDB
 from schemas import (
     RotinaAjusteDiarioItemResponse,
@@ -62,10 +63,15 @@ async def obter_painel_ajustes_dia(
     _exigir_gestor_ajuste_totais(usuario_atual)
 
     instituicao_id = obter_instituicao_escopo(usuario_atual)
+    config_operacional, _, _ = await carregar_config_operacional_instituicao(db, instituicao_id)
+    tipos_ajuste = obter_tipos_ajuste_totais(config_operacional)
+    tipos_ajuste_set = frozenset(tipos_ajuste)
     data_referencia = _parse_data_referencia(data)
 
     bloqueado_sisa = await mes_tem_importacao_sisa(db, instituicao_id, data_referencia)
-    itens_db = await montar_itens_painel_dia(db, instituicao_id, data_referencia)
+    itens_db = await montar_itens_painel_dia(
+        db, instituicao_id, data_referencia, tipos_ajuste=tipos_ajuste
+    )
     ajustes = await obter_ajustes_por_tipo_dia(db, instituicao_id, data_referencia)
     justificativa_existente = next(
         (item.justificativa for item in ajustes.values() if (item.justificativa or "").strip()),
@@ -100,6 +106,9 @@ async def salvar_ajustes_dia(
     _exigir_gestor_ajuste_totais(usuario_atual)
 
     instituicao_id = obter_instituicao_escopo(usuario_atual)
+    config_operacional, _, _ = await carregar_config_operacional_instituicao(db, instituicao_id)
+    tipos_ajuste = obter_tipos_ajuste_totais(config_operacional)
+    tipos_ajuste_set = frozenset(tipos_ajuste)
     data_referencia = payload.data_referencia
 
     try:
@@ -122,13 +131,13 @@ async def salvar_ajustes_dia(
 
     ajustes_map = {item.tipo_registro: item for item in payload.ajustes}
     for tipo in ajustes_map:
-        if tipo not in TIPOS_AJUSTE_TOTAIS_SET:
+        if tipo not in tipos_ajuste_set:
             raise HTTPException(status_code=400, detail=f"Tipo de ajuste inválido: {tipo}.")
 
     existentes = await obter_ajustes_por_tipo_dia(db, instituicao_id, data_referencia)
     agora = agora_operacional_naive()
 
-    for tipo in TIPOS_AJUSTE_TOTAIS_SET:
+    for tipo in tipos_ajuste:
         item = ajustes_map.get(tipo)
         quantidade = int(item.quantidade_ajuste if item else 0)
         if quantidade < 0:
@@ -178,7 +187,9 @@ async def salvar_ajustes_dia(
         ],
     )
 
-    itens_db = await montar_itens_painel_dia(db, instituicao_id, data_referencia)
+    itens_db = await montar_itens_painel_dia(
+        db, instituicao_id, data_referencia, tipos_ajuste=tipos_ajuste
+    )
     ajustes = await obter_ajustes_por_tipo_dia(db, instituicao_id, data_referencia)
 
     return RotinaAjusteDiarioPainelResponse(

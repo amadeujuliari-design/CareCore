@@ -24,6 +24,7 @@ const ConvenioSisa = lazy(() => import('../ConvenioSisa'));
 const Avisos = lazy(() => import('../Avisos'));
 const Usuarios = lazy(() => import('../Usuarios'));
 const Relatorios = lazy(() => import('../Relatorios'));
+const RelatoriosConfigOperacional = lazy(() => import('../RelatoriosConfigOperacional'));
 const RelatorioPresencaAusencia = lazy(() => import('../RelatorioPresencaAusencia'));
 const RelatorioCadastrosNovos = lazy(() => import('../RelatorioCadastrosNovos'));
 const Organizacao = lazy(() => import('../Organizacao'));
@@ -250,6 +251,15 @@ function RotasAplicacao() {
           element={
             <ProtectedRoute perfis={['Gestor', 'Técnico', 'Orientador', 'Administrativo']}>
               <RelatorioPresencaAusencia />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/relatorios/config-operacional"
+          element={
+            <ProtectedRoute perfis={['Gestor', 'Técnico', 'Global', 'Manutenção']}>
+              <RelatoriosConfigOperacional />
             </ProtectedRoute>
           }
         />

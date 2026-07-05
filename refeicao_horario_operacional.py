@@ -2,14 +2,19 @@
 from __future__ import annotations
 
 from datetime import datetime, time
+from typing import Optional
 
 from fastapi import HTTPException
 
+from config_operacional import ConfigOperacionalProjeto, obter_janelas_refeicao
+from config_operacional_defaults import REFEICOES_PADRAO
+
 JANELAS_REFEICAO_OPERACIONAL: dict[str, tuple[time, time]] = {
-    "Café da manhã": (time(6, 55), time(8, 30)),
-    "Almoço": (time(11, 50), time(14, 30)),
-    "Jantar": (time(17, 50), time(20, 30)),
-    "Lanche noturno": (time(21, 0), time(22, 30)),
+    item["nome"]: (
+        time(*map(int, item["inicio"].split(":"))),
+        time(*map(int, item["fim"].split(":"))),
+    )
+    for item in REFEICOES_PADRAO
 }
 
 
@@ -17,8 +22,21 @@ def _formatar_hora(valor: time) -> str:
     return valor.strftime("%H:%M")
 
 
-def validar_horario_refeicao_operacional(tipo_refeicao: str, momento: datetime) -> None:
-    janela = JANELAS_REFEICAO_OPERACIONAL.get(tipo_refeicao)
+def obter_janelas_refeicao_operacional(
+    config: Optional[ConfigOperacionalProjeto] = None,
+) -> dict[str, tuple[time, time]]:
+    if config is None:
+        return dict(JANELAS_REFEICAO_OPERACIONAL)
+    return obter_janelas_refeicao(config)
+
+
+def validar_horario_refeicao_operacional(
+    tipo_refeicao: str,
+    momento: datetime,
+    config: Optional[ConfigOperacionalProjeto] = None,
+) -> None:
+    janelas = obter_janelas_refeicao_operacional(config)
+    janela = janelas.get(tipo_refeicao)
     if not janela:
         return
 

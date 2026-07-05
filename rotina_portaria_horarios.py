@@ -7,13 +7,19 @@ from typing import Any, Optional
 
 from fastapi import HTTPException
 
-HORA_SAIDA_PADRAO = time(17, 0)
-HORA_ENTRADA_PADRAO = time(19, 0)
-HORA_ENTRADA_APOS_PERNOITE_FORA = time(11, 0)
-HORA_MOVIMENTO_PERNOITE_DENTRO = time(4, 0)
-MIN_CARACTERES_JUSTIFICATIVA_HORARIO = 30
+from config_operacional import ConfigOperacionalProjeto, portaria_para_validacao
+from config_operacional_defaults import PORTARIA_PADRAO
 
-MOTIVOS_EXCECAO_PORTARIA = frozenset({"estudante", "trabalho", "saude", "eventual"})
+HORA_SAIDA_PADRAO = time(*map(int, PORTARIA_PADRAO["hora_saida_padrao"].split(":")))
+HORA_ENTRADA_PADRAO = time(*map(int, PORTARIA_PADRAO["hora_entrada_padrao"].split(":")))
+HORA_ENTRADA_APOS_PERNOITE_FORA = time(
+    *map(int, PORTARIA_PADRAO["hora_entrada_apos_pernoite_fora"].split(":"))
+)
+HORA_MOVIMENTO_PERNOITE_DENTRO = time(
+    *map(int, PORTARIA_PADRAO["hora_movimento_pernoite_dentro"].split(":"))
+)
+MIN_CARACTERES_JUSTIFICATIVA_HORARIO = PORTARIA_PADRAO["min_caracteres_justificativa"]
+MOTIVOS_EXCECAO_PORTARIA = frozenset(PORTARIA_PADRAO["motivos_excecao"])
 
 
 @dataclass(frozen=True)
@@ -47,16 +53,33 @@ def _formatar_hora(valor: time) -> str:
     return valor.strftime("%H:%M")
 
 
-def obter_limites_horario_portaria(convivente: Any) -> tuple[time, time]:
+def _limites_portaria(config: Optional[ConfigOperacionalProjeto] = None) -> dict[str, Any]:
+    if config is None:
+        return {
+            "hora_saida_padrao": HORA_SAIDA_PADRAO,
+            "hora_entrada_padrao": HORA_ENTRADA_PADRAO,
+            "hora_entrada_apos_pernoite_fora": HORA_ENTRADA_APOS_PERNOITE_FORA,
+            "hora_movimento_pernoite_dentro": HORA_MOVIMENTO_PERNOITE_DENTRO,
+            "min_caracteres_justificativa": MIN_CARACTERES_JUSTIFICATIVA_HORARIO,
+            "motivos_excecao": MOTIVOS_EXCECAO_PORTARIA,
+        }
+    return portaria_para_validacao(config)
+
+
+def obter_limites_horario_portaria(
+    convivente: Any,
+    config: Optional[ConfigOperacionalProjeto] = None,
+) -> tuple[time, time]:
+    limites = _limites_portaria(config)
     motivo = (getattr(convivente, "portaria_excecao_motivo", None) or "").strip().lower()
-    if motivo in MOTIVOS_EXCECAO_PORTARIA:
+    if motivo in limites["motivos_excecao"]:
         saida_ate = _parse_hora_opcional(getattr(convivente, "portaria_excecao_saida_ate", None))
         entrada_ate = _parse_hora_opcional(getattr(convivente, "portaria_excecao_entrada_ate", None))
         return (
-            saida_ate or HORA_SAIDA_PADRAO,
-            entrada_ate or HORA_ENTRADA_PADRAO,
+            saida_ate or limites["hora_saida_padrao"],
+            entrada_ate or limites["hora_entrada_padrao"],
         )
-    return HORA_SAIDA_PADRAO, HORA_ENTRADA_PADRAO
+    return limites["hora_saida_padrao"], limites["hora_entrada_padrao"]
 
 
 def pernoitou_fora(ultimo_movimento: Optional[UltimoMovimentoPortaria], momento: datetime) -> bool:
@@ -78,59 +101,64 @@ def validar_horario_portaria(
     convivente: Any,
     ultimo_movimento: Optional[UltimoMovimentoPortaria],
     justificativa_horario: Optional[str] = None,
+    config: Optional[ConfigOperacionalProjeto] = None,
 ) -> Optional[str]:
     if tipo_registro not in {"Entrada", "Saída"}:
         return None
 
+    limites = _limites_portaria(config)
     hora_atual = _hora_atual(momento)
     justificativa = (justificativa_horario or "").strip()
+    min_chars = limites["min_caracteres_justificativa"]
+    hora_entrada_pernoite_fora = limites["hora_entrada_apos_pernoite_fora"]
+    hora_movimento_pernoite_dentro = limites["hora_movimento_pernoite_dentro"]
 
     if pernoitou_fora(ultimo_movimento, momento) and tipo_registro == "Entrada":
-        if hora_atual < HORA_ENTRADA_APOS_PERNOITE_FORA:
-            if len(justificativa) < MIN_CARACTERES_JUSTIFICATIVA_HORARIO:
+        if hora_atual < hora_entrada_pernoite_fora:
+            if len(justificativa) < min_chars:
                 raise HTTPException(
                     status_code=400,
                     detail=(
                         "Este convivente pernoitou fora da unidade. "
-                        f"A entrada antes das {_formatar_hora(HORA_ENTRADA_APOS_PERNOITE_FORA)} "
-                        f"exige justificativa de no mínimo {MIN_CARACTERES_JUSTIFICATIVA_HORARIO} caracteres."
+                        f"A entrada antes das {_formatar_hora(hora_entrada_pernoite_fora)} "
+                        f"exige justificativa de no mínimo {min_chars} caracteres."
                     ),
                 )
             return justificativa
 
     if pernoitou_dentro(ultimo_movimento, momento):
-        if hora_atual < HORA_MOVIMENTO_PERNOITE_DENTRO:
-            if len(justificativa) < MIN_CARACTERES_JUSTIFICATIVA_HORARIO:
+        if hora_atual < hora_movimento_pernoite_dentro:
+            if len(justificativa) < min_chars:
                 raise HTTPException(
                     status_code=400,
                     detail=(
                         "Este convivente pernoitou dentro da unidade. "
-                        f"Movimentação antes das {_formatar_hora(HORA_MOVIMENTO_PERNOITE_DENTRO)} "
-                        f"exige justificativa de no mínimo {MIN_CARACTERES_JUSTIFICATIVA_HORARIO} caracteres."
+                        f"Movimentação antes das {_formatar_hora(hora_movimento_pernoite_dentro)} "
+                        f"exige justificativa de no mínimo {min_chars} caracteres."
                     ),
                 )
             return justificativa
 
-    saida_ate, entrada_ate = obter_limites_horario_portaria(convivente)
+    saida_ate, entrada_ate = obter_limites_horario_portaria(convivente, config)
 
     if tipo_registro == "Saída" and hora_atual > saida_ate:
-        if len(justificativa) < MIN_CARACTERES_JUSTIFICATIVA_HORARIO:
+        if len(justificativa) < min_chars:
             raise HTTPException(
                 status_code=400,
                 detail=(
                     f"Saída após {_formatar_hora(saida_ate)} exige justificativa de no mínimo "
-                    f"{MIN_CARACTERES_JUSTIFICATIVA_HORARIO} caracteres."
+                    f"{min_chars} caracteres."
                 ),
             )
         return justificativa
 
     if tipo_registro == "Entrada" and hora_atual > entrada_ate:
-        if len(justificativa) < MIN_CARACTERES_JUSTIFICATIVA_HORARIO:
+        if len(justificativa) < min_chars:
             raise HTTPException(
                 status_code=400,
                 detail=(
                     f"Entrada após {_formatar_hora(entrada_ate)} exige justificativa de no mínimo "
-                    f"{MIN_CARACTERES_JUSTIFICATIVA_HORARIO} caracteres."
+                    f"{min_chars} caracteres."
                 ),
             )
         return justificativa

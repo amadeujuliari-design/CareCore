@@ -13,6 +13,8 @@ import { listarQuartosOrdenados } from './services/quartosService';
 import { usuarioPodeEditarAcomodacao } from './hooks/usePermissoesProntuario';
 import { decodificarPayloadJwt } from './utils/jwtUtils';
 import { criarHeadersAutenticados } from './utils/requestIdUtils';
+import { useConfigOperacional } from './hooks/useConfigOperacional';
+import { moduloAtivo } from './config/configOperacionalDefaults';
 import {
   classesLeitoReservadoTb,
   classesQuartoPorModalidade,
@@ -22,6 +24,8 @@ import {
 
 export default function Quartos() {
   const navigate = useNavigate();
+  const { config: configOperacional } = useConfigOperacional();
+  const tbHabilitado = moduloAtivo(configOperacional, 'tb');
   const token = localStorage.getItem('@CareCore:token');
   const [quartos, setQuartos] = useState([]);
   const [conviventes, setConviventes] = useState([]);
@@ -520,8 +524,12 @@ useEffect(() => {
                     <select value={modalidade} onChange={(e) => setModalidade(e.target.value)} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none bg-white">
                       <option value="Fixo">Fixo (Pernoite Regular)</option>
                       <option value="Transitorio">Transitório (Passagem de Curto Prazo)</option>
-                      <option value="TB_Suspeita">TB Suspeita</option>
-                      <option value="TB_Confirmado">TB Confirmado</option>
+                      {tbHabilitado ? (
+                        <>
+                          <option value="TB_Suspeita">TB Suspeita</option>
+                          <option value="TB_Confirmado">TB Confirmado</option>
+                        </>
+                      ) : null}
                     </select>
                   </div>
 

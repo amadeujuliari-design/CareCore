@@ -163,6 +163,7 @@ async def lifespan(app: FastAPI):
                 "ALTER TABLE instituicoes ADD COLUMN relatorio_email VARCHAR",
                 "ALTER TABLE instituicoes ADD COLUMN relatorio_site VARCHAR",
                 "ALTER TABLE instituicoes ADD COLUMN historico_legado_ativo BOOLEAN DEFAULT 0",
+                "ALTER TABLE instituicoes ADD COLUMN config_operacional_json TEXT",
                 "ALTER TABLE usuarios ADD COLUMN organizacao_id VARCHAR",
                 "ALTER TABLE usuarios ADD COLUMN is_global BOOLEAN DEFAULT 0",
                 "ALTER TABLE usuarios ADD COLUMN token_version INTEGER DEFAULT 0 NOT NULL",

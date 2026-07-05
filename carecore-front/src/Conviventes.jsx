@@ -60,6 +60,7 @@ import {
   obterConviventeProntuario,
 } from './services/conviventesProntuarioService';
 import { consultarCep } from './services/cepService';
+import { useConfigOperacional } from './hooks/useConfigOperacional';
 
 const BNMP_PORTAL_URL = 'https://portalbnmp.cnj.jus.br/#/captcha/';
 const TIPO_DOC_CONSULTA_BNMP = 'Consulta BNMP';
@@ -69,6 +70,7 @@ export default function Conviventes() {
   const token = localStorage.getItem('@CareCore:token');
   const deviceInfo = useDeviceInfo();
   const { payload: usuarioPayload, perfilUsuario, idUsuarioLogado } = useTokenIdentity(token);
+  const { config: configOperacional } = useConfigOperacional();
 
   // Dados Principais
   const [conviventes, setConviventes] = useState([]);
@@ -446,6 +448,7 @@ export default function Conviventes() {
       logoRelatorioDataUrl,
       modo,
       assinaturaDigital,
+      configOperacional,
     });
 
     abrirPreviewHtml({

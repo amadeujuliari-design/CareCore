@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 
 import Sidebar from './Sidebar';
 import { AppShell, MainShell, PageHeader, ReportActionButton, ScrollArea } from './components/PremiumUI';
@@ -37,7 +38,10 @@ import {
   carregarHistoricoRotinaRelatorio,
 } from './services/relatoriosService';
 import { useRelatoriosIdentidade } from './hooks/useRelatoriosIdentidade';
+import { useConfigOperacional } from './hooks/useConfigOperacional';
 import { lerUsuarioTextoOriginal, usuarioPodeVerTextoOriginal } from './utils/textoOriginalUtils';
+import { decodificarPayloadJwt } from './utils/jwtUtils';
+import { normalizarPerfilRbac, usuarioPodeConfigOperacionalProjeto } from './utils/rbacUtils';
 import {
   ABAS_RELATORIOS,
   criarFiltrosRelatoriosIniciais,
@@ -78,6 +82,12 @@ function obterNomeUsuarioLogado() {
 
 export default function Relatorios() {
   const token = localStorage.getItem('@CareCore:token') || localStorage.getItem('token');
+  const tokenPayload = token ? decodificarPayloadJwt(token) : null;
+  const perfilRelatorios = tokenPayload
+    ? normalizarPerfilRbac(tokenPayload.perfil_acesso)
+    : '';
+  const podeConfigOperacional = usuarioPodeConfigOperacionalProjeto(perfilRelatorios, tokenPayload);
+  const { config: configOperacional } = useConfigOperacional();
   const usuarioTextoOriginal = useMemo(() => lerUsuarioTextoOriginal(token), [token]);
   const podeVerTextoOriginal = usuarioPodeVerTextoOriginal(usuarioTextoOriginal);
   const [incluirTextoOriginalOcorrencias, setIncluirTextoOriginalOcorrencias] = useState(false);
@@ -736,6 +746,7 @@ export default function Relatorios() {
       logoRelatorioDataUrl,
       assinaturaDigital,
       nomeFuncionario: obterNomeUsuarioLogado(),
+      configOperacional,
     });
 
     abrirPreviewHtml({
@@ -770,6 +781,7 @@ export default function Relatorios() {
         identidadeRelatorio,
         logoRelatorioDataUrl,
         nomeFuncionario: obterNomeUsuarioLogado(),
+        configOperacional,
       });
 
       abrirPreviewHtml({
@@ -1030,6 +1042,14 @@ export default function Relatorios() {
                   {item.label}
                 </button>
               ))}
+              {podeConfigOperacional && (
+                <Link
+                  to="/relatorios/config-operacional"
+                  className="min-w-fit px-4 py-2 rounded-xl text-xs font-black border transition-colors bg-white text-gray-600 border-gray-200 hover:bg-gray-50"
+                >
+                  Config. operacional
+                </Link>
+              )}
             </div>
           </section>
 
@@ -1038,7 +1058,26 @@ export default function Relatorios() {
               Carregando central de relatórios...
             </div>
           ) : aba === 'personalizacao' ? (
-            <RelatoriosPersonalizacao
+            <>
+              {podeConfigOperacional && (
+                <div className="mb-4 rounded-3xl border border-gray-100 bg-white p-4 shadow-sm">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <h2 className="text-sm font-black text-gray-900">Configuração operacional</h2>
+                      <p className="mt-1 text-xs font-semibold text-gray-500">
+                        Refeições, portaria, módulos e textos de documentos do projeto.
+                      </p>
+                    </div>
+                    <Link
+                      to="/relatorios/config-operacional"
+                      className="inline-flex items-center rounded-xl bg-brand px-4 py-2 text-xs font-black text-white hover:bg-brand-dark"
+                    >
+                      Abrir configuração operacional
+                    </Link>
+                  </div>
+                </div>
+              )}
+              <RelatoriosPersonalizacao
               atualizarCampoIdentidade={atualizarCampoIdentidade}
               enviarLogoRelatorio={enviarLogoRelatorio}
               errosIdentidade={errosIdentidade}
@@ -1051,6 +1090,7 @@ export default function Relatorios() {
               salvandoIdentidade={salvandoIdentidade}
               validarCampoIdentidade={validarCampoIdentidade}
             />
+            </>
           ) : aba === 'carteirinhas' ? (
             <CarteirinhasLote
               conviventes={conviventesFiltrados}

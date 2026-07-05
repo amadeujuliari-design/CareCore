@@ -61,6 +61,7 @@ class InstituicaoDB(Base):
     relatorio_email = Column(String, nullable=True)
     relatorio_site = Column(String, nullable=True)
     historico_legado_ativo = Column(Boolean, default=False)
+    config_operacional_json = Column(Text, nullable=True)
 
 class UsuarioDB(Base):
     __tablename__ = "usuarios"

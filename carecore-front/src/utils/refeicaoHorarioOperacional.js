@@ -1,5 +1,7 @@
 /** Janelas de horário para registro de refeições (fuso operacional SP). */
 
+import { obterJanelasRefeicao } from '../config/configOperacionalDefaults';
+
 export const JANELAS_REFEICAO_OPERACIONAL = {
   'Café da manhã': { inicio: '06:55', fim: '08:30' },
   Almoço: { inicio: '11:50', fim: '14:30' },
@@ -16,8 +18,13 @@ function minutosDoDia(data) {
   return data.getHours() * 60 + data.getMinutes();
 }
 
-export function validarHorarioRefeicaoOperacional(tipoRefeicao, momento = new Date()) {
-  const janela = JANELAS_REFEICAO_OPERACIONAL[tipoRefeicao];
+export function validarHorarioRefeicaoOperacional(
+  tipoRefeicao,
+  momento = new Date(),
+  configOperacional = null,
+) {
+  const janelas = configOperacional ? obterJanelasRefeicao(configOperacional) : JANELAS_REFEICAO_OPERACIONAL;
+  const janela = janelas[tipoRefeicao];
   if (!janela) return null;
 
   const inicio = parseHoraMinuto(janela.inicio);
