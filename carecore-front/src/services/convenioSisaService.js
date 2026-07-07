@@ -64,6 +64,32 @@ export async function listarDivergenciasImportacaoSisa(importacaoId, params = {}
   return response.data;
 }
 
+const LIMITE_DIVERGENCIAS_SISA_API = 200;
+
+/** Busca todas as divergências paginando dentro do limite aceito pela API (200). */
+export async function listarTodasDivergenciasImportacaoSisa(importacaoId, params = {}) {
+  const itens = [];
+  let offset = 0;
+  let hasMore = true;
+
+  while (hasMore) {
+    const resposta = await listarDivergenciasImportacaoSisa(importacaoId, {
+      ...params,
+      limit: LIMITE_DIVERGENCIAS_SISA_API,
+      offset,
+    });
+    const pagina = resposta?.items || [];
+    itens.push(...pagina);
+    hasMore = Boolean(resposta?.has_more) && pagina.length > 0;
+    offset += pagina.length;
+    if (pagina.length < LIMITE_DIVERGENCIAS_SISA_API) {
+      break;
+    }
+  }
+
+  return itens;
+}
+
 export async function buscarDetalheImportacaoSisa(importacaoId) {
   const response = await api.get(`${BASE_CONVENIO_SISA}/importacoes/${importacaoId}`);
   return response.data;

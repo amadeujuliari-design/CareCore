@@ -38,6 +38,10 @@ import {
   deveIgnorarLeituraCodigoRepetida,
   deveIgnorarLeituraConviventeRepetida,
 } from './utils/leituraCodigoUtils';
+import {
+  conviventeEstaInativoParaRotina,
+  encontrarConviventePorCodigo,
+} from './utils/conviventeIdentificacaoUtils';
 import { rotuloRepeticaoExtraRefeicao } from './utils/rotinaRefeicaoUtils';
 import ModalImpressaoTermoBagageiro from './components/termoBagageiro/ModalImpressaoTermoBagageiro';
 import { consultarTermoBagageiro } from './services/termoBagageiroService';
@@ -76,6 +80,18 @@ const VARIANTES_ALERTA_ERRO_OPERACIONAL = {
     headerClass: 'bg-red-600',
     borderClass: 'border-red-500',
     buttonClass: 'bg-red-600 hover:bg-red-700',
+    panelClass: 'max-w-lg',
+  },
+  atendido_inativo: {
+    titulo: 'Atendido bloqueado/inatividade',
+    subtitulo: 'Leitura bloqueada',
+    headerClass: 'bg-red-700',
+    borderClass: 'border-red-600',
+    buttonClass: 'bg-red-700 hover:bg-red-800',
+    panelClass: 'max-w-5xl',
+    tituloClass: 'text-2xl',
+    mensagemClass: 'text-lg p-6',
+    nomeClass: 'text-xl',
   },
   refeicao_horario: {
     titulo: 'Refeição fora do horário',
@@ -83,6 +99,7 @@ const VARIANTES_ALERTA_ERRO_OPERACIONAL = {
     headerClass: 'bg-amber-600',
     borderClass: 'border-amber-500',
     buttonClass: 'bg-amber-600 hover:bg-amber-700',
+    panelClass: 'max-w-lg',
   },
   portaria_horario: {
     titulo: 'Horário não permitido',
@@ -90,6 +107,7 @@ const VARIANTES_ALERTA_ERRO_OPERACIONAL = {
     headerClass: 'bg-purple-700',
     borderClass: 'border-purple-600',
     buttonClass: 'bg-purple-700 hover:bg-purple-800',
+    panelClass: 'max-w-lg',
   },
 };
 
@@ -181,6 +199,7 @@ export default function RotinaDiaria() {
   const deviceInfo = useDeviceInfo();
 
   const [conviventes, setConviventes] = useState([]);
+  const [conviventesResumoTodos, setConviventesResumoTodos] = useState([]);
   const [quartos, setQuartos] = useState([]);
   const [resumoHoje, setResumoHoje] = useState({});
   const [loading, setLoading] = useState(true);
@@ -365,8 +384,10 @@ export default function RotinaDiaria() {
         axios.get(`${API_ROOT}/quartos`, config),
       ]);
 
-      const ativos = resConv.data.filter(c => c.status === 'Ativo');
+      const resumoTodos = resConv.data || [];
+      const ativos = resumoTodos.filter(c => c.status === 'Ativo');
 
+      setConviventesResumoTodos(resumoTodos);
       setConviventes(ativos);
       setQuartos(ordenarQuartosComLeitos(resQuartos.data || []));
       setResumoHoje(resRotina.data || {});
@@ -640,21 +661,31 @@ export default function RotinaDiaria() {
     }
 
     const codigo = ultimaLeituraRef.current.codigo || normalizarCodigo(codigoBruto);
-    const codigoNumerico = codigo.replace(/\D/g, '');
 
-    const pacienteEncontrado = conviventes.find(c => {
-      const cpfLimpo = normalizarCpf(c.cpf);
-      const prontuario = c.numero_institucional ? String(c.numero_institucional) : '';
-
-      return (
-        c.id === codigo ||
-        cpfLimpo === codigoNumerico ||
-        prontuario === codigo ||
-        prontuario === codigoNumerico
-      );
-    });
+    const pacienteEncontrado = encontrarConviventePorCodigo(conviventes, codigo);
 
     if (!pacienteEncontrado) {
+      const conviventeInativo = encontrarConviventePorCodigo(conviventesResumoTodos, codigo);
+      if (conviventeInativo && conviventeEstaInativoParaRotina(conviventeInativo.status)) {
+        const nomeServico = identidadeRelatorio?.relatorio_nome_exibicao || 'SIAT II Armênia';
+        const mensagem = `Esta pessoa não pertence mais ao serviço ${nomeServico}.`;
+
+        exibirAlertaErroOperacional({
+          variant: 'atendido_inativo',
+          mensagem,
+          convivente: conviventeInativo,
+        });
+
+        adicionarHistorico({
+          convivente: conviventeInativo,
+          tipo: 'Leitura bloqueada',
+          status: 'Erro',
+          mensagem,
+        });
+
+        return;
+      }
+
       const mensagem = `Código [${codigo}] não pertence a nenhum acolhido ativo.`;
 
       exibirAlertaErroOperacional({
@@ -2021,30 +2052,32 @@ export default function RotinaDiaria() {
 
         return (
         <div className="carecore-modal-overlay fixed inset-0 z-[60] flex items-center justify-center bg-gray-900/70 p-4 backdrop-blur-sm">
-          <div className={`carecore-modal-panel w-full max-w-lg overflow-hidden rounded-2xl border-4 ${apresentacao.borderClass} bg-white shadow-2xl`}>
-            <div className={`${apresentacao.headerClass} px-5 py-4 text-white`}>
+          <div className={`carecore-modal-panel w-full ${apresentacao.panelClass || 'max-w-lg'} overflow-hidden rounded-2xl border-4 ${apresentacao.borderClass} bg-white shadow-2xl`}>
+            <div className={`${apresentacao.headerClass} px-6 py-5 text-white`}>
               <p className="text-[10px] font-black uppercase tracking-widest text-white/80">
                 {apresentacao.subtitulo}
               </p>
-              <h2 className="mt-1 text-xl font-black leading-tight">
+              <h2 className={`mt-1 font-black leading-tight ${apresentacao.tituloClass || 'text-xl'}`}>
                 {apresentacao.titulo}
               </h2>
             </div>
 
-            <div className="space-y-4 p-5">
+            <div className="space-y-4 p-6">
               {nomeConvivente && (
-                <p className="text-base font-bold leading-relaxed text-gray-900">
+                <p className={`font-bold leading-relaxed text-gray-900 ${apresentacao.nomeClass || 'text-base'}`}>
                   {(nomeConvivente).toUpperCase()}
                 </p>
               )}
 
-              <div className={`rounded-xl border-2 p-4 text-sm font-semibold leading-relaxed ${
-                alertaErroOperacional.variant === 'leitura_invalida'
+              <div className={`rounded-xl border-2 font-semibold leading-relaxed ${
+                alertaErroOperacional.variant === 'atendido_inativo'
+                  ? 'border-red-300 bg-red-50 text-red-950'
+                  : alertaErroOperacional.variant === 'leitura_invalida'
                   ? 'border-red-200 bg-red-50 text-red-900'
                   : alertaErroOperacional.variant === 'refeicao_horario'
                     ? 'border-amber-200 bg-amber-50 text-amber-950'
                     : 'border-purple-200 bg-purple-50 text-purple-950'
-              }`}>
+              } ${apresentacao.mensagemClass || 'p-4 text-sm'}`}>
                 {alertaErroOperacional.mensagem}
               </div>
 
@@ -2059,7 +2092,7 @@ export default function RotinaDiaria() {
                 onClick={() => setAlertaErroOperacional(null)}
                 className={`w-full rounded-xl py-3 text-sm font-black text-white shadow-md ${apresentacao.buttonClass}`}
               >
-                Entendi — liberar leitura
+                Entendi
               </button>
             </div>
           </div>

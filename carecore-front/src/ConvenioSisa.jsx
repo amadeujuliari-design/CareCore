@@ -19,6 +19,7 @@ import {
   importarPlanilhaConvenioSisa,
   listarImportacoesSisa,
   listarDivergenciasImportacaoSisa,
+  listarTodasDivergenciasImportacaoSisa,
   previsualizarImportacaoConvenioSisa,
   reabrirMesSisa,
 } from './services/convenioSisaService';
@@ -27,7 +28,6 @@ import {
   FILTROS_DIVERGENCIA_PADRAO,
   IMPORTACOES_POR_PAGINA_SISA,
   DIVERGENCIAS_POR_PAGINA_SISA,
-  EXPORT_DIVERGENCIAS_SISA_LIMITE,
   montarParamsDivergenciasSisaApi,
   calcularResumoDiarioSisa,
   calcularResumoMensalSisa,
@@ -661,6 +661,7 @@ export default function ConvenioSisa() {
 
 
   const imprimir = async () => {
+    try {
     const logoRelatorioDataUrl = await obterLogoRelatorioDataUrl(identidadeRelatorio);
     const logoRelatorioSrc = obterLogoRelatorioSrc(logoRelatorioDataUrl);
     const nomeExibicaoRelatorio = identidadeRelatorio?.relatorio_nome_exibicao || 'CARECORE+';
@@ -691,14 +692,10 @@ export default function ConvenioSisa() {
       let divergencias = divergenciasSisa;
 
       if (importacao?.id) {
-        const respostaCompleta = await listarDivergenciasImportacaoSisa(
+        divergencias = await listarTodasDivergenciasImportacaoSisa(
           importacao.id,
-          montarParamsDivergenciasSisaApi(filtrosDivergencia, {
-            limit: EXPORT_DIVERGENCIAS_SISA_LIMITE,
-            offset: 0,
-          }),
+          montarParamsDivergenciasSisaApi(filtrosDivergencia, {}),
         );
-        divergencias = respostaCompleta.items || [];
       }
 
       const alertasCriticos = divergencias.filter(item => item.tipo === 'SISA_MENOR' || item.prioridade === 'Crítica');
@@ -923,6 +920,10 @@ export default function ConvenioSisa() {
       html,
       orientacaoInicial: 'landscape',
     });
+    } catch (error) {
+      console.error('Erro ao preparar impressão do Convênio/SISA', error);
+      avisarErro('Erro ao preparar impressão. Tente novamente.');
+    }
   };
 
   const fecharMes = async () => {

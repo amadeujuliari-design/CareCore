@@ -9,6 +9,16 @@ export function somenteDigitos(valor) {
   return String(valor || '').replace(/\D/g, '');
 }
 
+export const STATUS_CONVIVENTE_INATIVOS_ROTINA = new Set([
+  'Inativado',
+  'Bloqueado',
+  'Saída qualificada',
+]);
+
+export function conviventeEstaInativoParaRotina(status) {
+  return STATUS_CONVIVENTE_INATIVOS_ROTINA.has(String(status || '').trim());
+}
+
 export function encontrarConviventePorCodigo(conviventes, codigo) {
   const codigoNormalizado = normalizarCodigoCarteirinha(codigo);
   const codigoDigitos = somenteDigitos(codigoNormalizado);
