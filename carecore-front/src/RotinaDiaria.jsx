@@ -24,7 +24,6 @@ import {
   getFotoUrl,
   interacaoSelecionadaPermiteLeituraRepetida,
   normalizarCodigo,
-  normalizarCpf,
   obterPerfilUsuarioLogado,
   obterProximaInteracaoPar,
   obterProximaMovimentacaoBagageiro,
