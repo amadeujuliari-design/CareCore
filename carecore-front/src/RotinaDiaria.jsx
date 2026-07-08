@@ -82,7 +82,7 @@ const VARIANTES_ALERTA_ERRO_OPERACIONAL = {
     panelClass: 'max-w-lg',
   },
   atendido_inativo: {
-    titulo: 'Atendido bloqueado/inatividade',
+    titulo: 'Atendido Bloqueado/Inativo',
     subtitulo: 'Leitura bloqueada',
     headerClass: 'bg-red-700',
     borderClass: 'border-red-600',
