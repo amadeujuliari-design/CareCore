@@ -3,8 +3,11 @@ import { useMemo } from 'react';
 import { compararTextoNatural } from '../utils/ordenacaoNatural';
 import {
   campoTexto,
+  conviventeAtendeFiltroTecnico,
   dataDentroDoPeriodo,
+  FILTRO_TECNICO_SEM_VINCULADO,
   normalizarPrioridade,
+  tecnicoIdEspecificoRelatorios,
 } from '../utils/relatoriosUtils';
 
 export function useRelatoriosFiltros({
@@ -27,7 +30,7 @@ export function useRelatoriosFiltros({
         return false;
       }
 
-      if (filtros.tecnicoId && convivente.tecnico_id !== filtros.tecnicoId) {
+      if (!conviventeAtendeFiltroTecnico(convivente, filtros.tecnicoId)) {
         return false;
       }
 
@@ -75,7 +78,9 @@ export function useRelatoriosFiltros({
       const convivente = conviventesPorId.get(ocorrencia.convivente_id);
       const tecnico = usuariosPorId.get(ocorrencia.tecnico_responsavel_id);
 
-      if (filtros.tecnicoId && ocorrencia.tecnico_responsavel_id !== filtros.tecnicoId) {
+      if (filtros.tecnicoId === FILTRO_TECNICO_SEM_VINCULADO) {
+        if (convivente?.tecnico_id) return false;
+      } else if (filtros.tecnicoId && ocorrencia.tecnico_responsavel_id !== filtros.tecnicoId) {
         return false;
       }
 
@@ -215,7 +220,9 @@ export function useRelatoriosFiltros({
             return false;
           }
 
-          if (filtros.tecnicoId) {
+          if (filtros.tecnicoId === FILTRO_TECNICO_SEM_VINCULADO) {
+            if (!convivente || convivente.tecnico_id) return false;
+          } else if (tecnicoIdEspecificoRelatorios(filtros.tecnicoId)) {
             if (!convivente || convivente.tecnico_id !== filtros.tecnicoId) return false;
           }
 
@@ -288,7 +295,9 @@ export function useRelatoriosFiltros({
         return false;
       }
 
-      if (filtros.tecnicoId && (registro.convivente_tecnico_id || convivente?.tecnico_id) !== filtros.tecnicoId) {
+      if (filtros.tecnicoId === FILTRO_TECNICO_SEM_VINCULADO) {
+        if (convivente?.tecnico_id || registro.convivente_tecnico_id) return false;
+      } else if (filtros.tecnicoId && (registro.convivente_tecnico_id || convivente?.tecnico_id) !== filtros.tecnicoId) {
         return false;
       }
 

@@ -47,6 +47,8 @@ import {
   criarFiltrosRelatoriosIniciais,
   descreverFiltrosAtivosRelatorios,
   formatarData,
+  rotuloFiltroTecnicoRelatorios,
+  tecnicoIdEspecificoRelatorios,
 } from './utils/relatoriosUtils';
 
 function dataLocalISO(data) {
@@ -416,7 +418,9 @@ export default function Relatorios() {
     };
   }, [conviventesFiltrados, historicoRotinaFiltrado, ocorrenciasFiltradas, resumoRotinaEvolucao]);
 
-  const tecnicoPendenciasSelecionadoId = filtros.tecnicoId || tecnicoPendenciasEvolucaoId;
+  const tecnicoPendenciasSelecionadoId = tecnicoIdEspecificoRelatorios(filtros.tecnicoId)
+    ? filtros.tecnicoId
+    : tecnicoPendenciasEvolucaoId;
 
   const tecnicoPendenciasSelecionadoNome = useMemo(() => {
     if (!tecnicoPendenciasSelecionadoId) return 'todos os técnicos';
@@ -597,7 +601,7 @@ export default function Relatorios() {
       Período: filtros.dataInicio || filtros.dataFim
         ? `${filtros.dataInicio ? formatarData(filtros.dataInicio) : 'início'} a ${filtros.dataFim ? formatarData(filtros.dataFim) : 'hoje'}`
         : 'Todos',
-      Técnico: tecnicos.find((t) => t.id === filtros.tecnicoId)?.nome || 'Todos',
+      Técnico: rotuloFiltroTecnicoRelatorios(filtros.tecnicoId, tecnicos),
       'Status convivente': filtros.statusConvivente,
       Busca: filtros.busca || '-',
     };

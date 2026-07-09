@@ -1,5 +1,6 @@
 import api from './api';
 import { ordenarQuartosComLeitos } from '../utils/ordenacaoNatural';
+import { tecnicoIdEspecificoRelatorios } from '../utils/relatoriosUtils';
 
 export const LIMITE_AMOSTRA_OCORRENCIAS_RELATORIOS = 200;
 export const LIMITE_EXPORT_ROTINA_RELATORIOS = 5000;
@@ -42,7 +43,7 @@ export async function carregarDadosRelatorios({ aba, filtros, carregarIdentidade
         offset: 0,
         prioridade: filtros.prioridadeOcorrencia,
         status: statusOcorrenciaApi,
-        tecnico_id: filtros.tecnicoId || undefined,
+        tecnico_id: tecnicoIdEspecificoRelatorios(filtros.tecnicoId) ? filtros.tecnicoId : undefined,
         status_convivente: filtros.statusConvivente,
         data_inicio: filtros.dataInicio || undefined,
         data_fim: filtros.dataFim || undefined,
@@ -65,7 +66,7 @@ export async function carregarDadosRelatorios({ aba, filtros, carregarIdentidade
         params: {
           data_inicio: filtros.dataInicio || undefined,
           data_fim: filtros.dataFim || undefined,
-          tecnico_id: filtros.tecnicoId || undefined,
+          tecnico_id: tecnicoIdEspecificoRelatorios(filtros.tecnicoId) ? filtros.tecnicoId : undefined,
           status_convivente: filtros.statusConvivente !== 'Todos' ? filtros.statusConvivente : undefined,
         },
       }).catch(() => ({ data: [] }))

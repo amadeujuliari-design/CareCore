@@ -12,6 +12,24 @@ export const ABAS_RELATORIOS = [
   { id: 'personalizacao', label: 'Personalização' },
 ];
 
+export const FILTRO_TECNICO_SEM_VINCULADO = '__sem_tecnico__';
+
+export function tecnicoIdEspecificoRelatorios(tecnicoId) {
+  return Boolean(tecnicoId) && tecnicoId !== FILTRO_TECNICO_SEM_VINCULADO;
+}
+
+export function rotuloFiltroTecnicoRelatorios(tecnicoId, tecnicos = []) {
+  if (!tecnicoId) return 'Todos';
+  if (tecnicoId === FILTRO_TECNICO_SEM_VINCULADO) return 'Sem Técnico Vinculado';
+  return tecnicos.find((t) => t.id === tecnicoId)?.nome || tecnicoId;
+}
+
+export function conviventeAtendeFiltroTecnico(convivente, tecnicoId) {
+  if (!tecnicoId) return true;
+  if (tecnicoId === FILTRO_TECNICO_SEM_VINCULADO) return !convivente?.tecnico_id;
+  return convivente?.tecnico_id === tecnicoId;
+}
+
 export function criarFiltrosRelatoriosIniciais() {
   return {
     dataInicio: '',
@@ -37,8 +55,7 @@ export function descreverFiltrosAtivosRelatorios({ aba, filtros, tecnicos }) {
   if (filtros.dataInicio) lista.push(`Início: ${formatarData(filtros.dataInicio)}`);
   if (filtros.dataFim) lista.push(`Fim: ${formatarData(filtros.dataFim)}`);
   if (filtros.tecnicoId) {
-    const tecnico = tecnicos.find((t) => t.id === filtros.tecnicoId);
-    lista.push(`Técnico: ${tecnico?.nome || filtros.tecnicoId}`);
+    lista.push(`Técnico: ${rotuloFiltroTecnicoRelatorios(filtros.tecnicoId, tecnicos)}`);
   }
   if (filtros.statusConvivente !== 'Todos') lista.push(`Status convivente: ${filtros.statusConvivente}`);
   if (aba === 'ocorrencias') {

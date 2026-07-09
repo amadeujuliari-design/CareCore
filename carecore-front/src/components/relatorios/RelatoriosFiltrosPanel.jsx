@@ -1,3 +1,5 @@
+import { FILTRO_TECNICO_SEM_VINCULADO } from '../../utils/relatoriosUtils';
+
 export function RelatoriosFiltrosPanel({
   aba,
   atualizarFiltro,
@@ -73,6 +75,7 @@ export function RelatoriosFiltrosPanel({
                 className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand bg-white"
               >
                 <option value="">Todos</option>
+                <option value={FILTRO_TECNICO_SEM_VINCULADO}>Sem Técnico Vinculado</option>
                 {tecnicos.map((tecnico) => (
                   <option key={tecnico.id} value={tecnico.id}>
                     {tecnico.nome}

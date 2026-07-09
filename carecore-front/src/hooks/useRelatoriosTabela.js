@@ -5,6 +5,7 @@ import {
   formatarData,
   formatarDataHora,
   normalizarPrioridade,
+  tecnicoIdEspecificoRelatorios,
 } from '../utils/relatoriosUtils';
 import { formatarCPF } from '../utils/conviventesUtils';
 
@@ -103,7 +104,7 @@ export function useRelatoriosTabela({
     if (aba === 'conviventes') {
       return {
         titulo: 'Conviventes filtrados',
-        colunas: filtros.tecnicoId
+        colunas: tecnicoIdEspecificoRelatorios(filtros.tecnicoId)
           ? ['Prontuário', 'Nome', 'Status', 'Entrada', 'Leito', 'CPF', 'Cidade', 'Ocorrências pendentes', 'Pendências de cadastro', 'Quais pendências']
           : ['Prontuário', 'Nome', 'Status', 'Técnico', 'Entrada', 'Leito', 'CPF', 'Cidade', 'Ocorrências pendentes', 'Pendências de cadastro', 'Quais pendências'],
         linhas: conviventesFiltrados.map(montarLinhaConvivente),
@@ -144,7 +145,7 @@ export function useRelatoriosTabela({
     }
 
     if (aba === 'pia') {
-      const colunas = filtros.tecnicoId
+      const colunas = tecnicoIdEspecificoRelatorios(filtros.tecnicoId)
         ? ['Data/Hora', 'Prontuário', 'Convivente', 'Tipo', 'Título/Tema', 'Status', 'Registrado por', 'Descrição', 'Objetivos', 'Encaminhamentos']
         : ['Data/Hora', 'Prontuário', 'Convivente', 'Técnico', 'Tipo', 'Título/Tema', 'Status', 'Registrado por', 'Descrição', 'Objetivos', 'Encaminhamentos'];
 
@@ -166,7 +167,7 @@ export function useRelatoriosTabela({
             Encaminhamentos: registro.encaminhamentos || '-',
           };
 
-          if (!filtros.tecnicoId) {
+          if (!tecnicoIdEspecificoRelatorios(filtros.tecnicoId)) {
             linha.Técnico = mapaEquipe.get(registro.convivente_tecnico_id) || 'Sem técnico';
           }
 
@@ -205,7 +206,7 @@ export function useRelatoriosTabela({
     }
 
     if (aba === 'acomodacoes') {
-      const colunas = filtros.tecnicoId
+      const colunas = tecnicoIdEspecificoRelatorios(filtros.tecnicoId)
         ? ['Quarto', 'Modalidade', 'Público', 'Leito', 'Status leito', 'Convivente', 'Prontuário', 'Status convivente']
         : ['Quarto', 'Modalidade', 'Público', 'Leito', 'Status leito', 'Convivente', 'Prontuário', 'Status convivente', 'Técnico'];
 
@@ -226,7 +227,7 @@ export function useRelatoriosTabela({
             'Status convivente': convivente?.status || (leito.status === 'Ocupado' ? 'Ocupado sem vinculo cadastral' : '-'),
           };
 
-          if (!filtros.tecnicoId) {
+          if (!tecnicoIdEspecificoRelatorios(filtros.tecnicoId)) {
             linha.Técnico = mapaTecnicos.get(convivente?.tecnico_id) || (convivente ? 'Sem técnico' : '-');
           }
 
@@ -236,7 +237,7 @@ export function useRelatoriosTabela({
     }
 
     if (aba === 'documentacao') {
-      const colunas = filtros.tecnicoId
+      const colunas = tecnicoIdEspecificoRelatorios(filtros.tecnicoId)
         ? ['Prontuário', 'Nome', 'Status', 'N SISA', 'NIS', 'Sem foto', 'Sem CPF', 'Sem contato']
         : ['Prontuário', 'Nome', 'Status', 'Técnico', 'N SISA', 'NIS', 'Sem foto', 'Sem CPF', 'Sem contato'];
 
@@ -255,7 +256,7 @@ export function useRelatoriosTabela({
             'Sem contato': convivente.contato_emergencia_nome && convivente.contato_emergencia_telefone ? 'Não' : 'Sim',
           };
 
-          if (!filtros.tecnicoId) {
+          if (!tecnicoIdEspecificoRelatorios(filtros.tecnicoId)) {
             linha.Técnico = mapaTecnicos.get(convivente.tecnico_id) || 'Sem técnico';
           }
 
@@ -287,7 +288,7 @@ export function useRelatoriosTabela({
     }
 
     if (aba === 'auditoria') {
-      const colunas = filtros.tecnicoId
+      const colunas = tecnicoIdEspecificoRelatorios(filtros.tecnicoId)
         ? ['Data/Hora', 'Evento', 'Prontuário', 'Convivente', 'Registro', 'Operador', 'Justificativa/Motivo']
         : ['Data/Hora', 'Evento', 'Prontuário', 'Convivente', 'Técnico', 'Registro', 'Operador', 'Justificativa/Motivo'];
 
@@ -303,7 +304,7 @@ export function useRelatoriosTabela({
           Operador: registro.usuario_nome || '-',
         };
 
-        if (!filtros.tecnicoId) {
+        if (!tecnicoIdEspecificoRelatorios(filtros.tecnicoId)) {
           base.Técnico = mapaTecnicos.get(convivente?.tecnico_id) || (convivente ? 'Sem técnico' : '-');
         }
 

@@ -2,8 +2,10 @@ import { useMemo } from 'react';
 
 import {
   contar,
+  FILTRO_TECNICO_SEM_VINCULADO,
   normalizarPrioridade,
   porcentagem,
+  tecnicoIdEspecificoRelatorios,
 } from '../utils/relatoriosUtils';
 import { mapearResumoPeriodoHistorico } from '../utils/rotinaHistoricoUtils';
 
@@ -113,7 +115,9 @@ export function useRelatoriosIndicadores({
       ocorrenciasPendentes,
       ocorrenciasResolvidas,
       ocorrenciasAltaCritica,
-      tecnicos: tecnicoId ? 1 : tecnicos.length,
+      tecnicos: tecnicoIdEspecificoRelatorios(tecnicoId)
+        ? 1
+        : (tecnicoId === FILTRO_TECNICO_SEM_VINCULADO ? 0 : tecnicos.length),
       equipe: equipe.length,
       tecnicosComCasos,
       piaTotal: registrosPiaFiltrados.length,
