@@ -1,0 +1,40 @@
+---
+description: Ambiente local — usar orquestrador, nao brigar com portas
+alwaysApply: true
+---
+
+# Ambiente local CareCore+ (API / Vite)
+
+Nunca gastar tempo “brigando” com portas, PIDs ou vários `uvicorn` manuais. O caminho oficial é o orquestrador.
+
+## Fonte única
+
+- Portas: `scripts/dev_local.json` (API padrão **8020**, front **5173**)
+- Orquestrador: `scripts/dev_local.py`
+- Atalhos: `iniciar.bat`, `reiniciar_local.bat`, `parar_local.bat`
+
+## O que fazer
+
+| Situação | Ação |
+| --- | --- |
+| Subir ambiente | `python scripts/dev_local.py start` ou `iniciar.bat` |
+| API antiga / rota 404 / código novo não pegou | **Um** `reiniciar_local.bat` ou `python scripts/dev_local.py restart` |
+| Só checar se está no ar | `python scripts/dev_local.py validate` |
+| Parar tudo | `parar_local.bat` ou `python scripts/dev_local.py stop` |
+
+Com a API já no ar (`--reload`), mudanças em `.py` costumam valer sem reinício. Se a rota nova não aparecer no OpenAPI/health, aí sim **um** restart pelo orquestrador.
+
+## Proibido (a menos que o usuário peça explicitamente)
+
+- Matar porta com `Get-NetTCPConnection` / `netstat` / `taskkill` em loop
+- Subir segundo `uvicorn` “por cima” sem `stop`/`restart` do orquestrador
+- Abrir várias janelas de API/Vite e ficar alternando porta
+- Sequência longa de stop → kill → start manual que atrasa o usuário
+
+## Se travar
+
+1. `python scripts/dev_local.py stop`
+2. `python scripts/dev_local.py start` (ou `reiniciar_local.bat`)
+3. `python scripts/dev_local.py validate`
+
+Se ainda falhar, **avise o usuário** e peça para rodar `reiniciar_local.bat` uma vez — não invente guerra de processos.

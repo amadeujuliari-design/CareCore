@@ -490,9 +490,10 @@ export default function Cobrancas() {
                 <InfoCard titulo="Chave" valor={statusAsaas?.api_key_mascarada || 'Não configurada'} />
               </div>
 
-              <div className="mt-6 rounded-2xl border border-amber-100 bg-amber-50 p-4 text-sm font-semibold text-amber-800">
-                Nesta fase, use somente a chave Sandbox do Asaas, que começa com <code>$aact_hmlg_</code>.
-                A chave de produção começa com <code>$aact_prod_</code> e será ativada apenas depois dos testes.
+              <div className="mt-6 rounded-2xl border border-slate-100 bg-slate-50 p-4 text-sm font-semibold text-slate-700">
+                Ambiente atual vem de <code>ASAAS_ENV</code>. Sandbox usa chave <code>$aact_hmlg_</code>;
+                produção usa <code>$aact_prod_</code>. Gerar cobrança de ciclo emite boleto no Asaas
+                do ambiente configurado (manual; automação continua desligada).
               </div>
             </section>
 
@@ -514,7 +515,8 @@ export default function Cobrancas() {
 
               {!prontoParaTeste ? (
                 <p className="mt-3 text-xs font-bold text-slate-500">
-                  Configure `ASAAS_ENV=sandbox` e a chave `ASAAS_API_KEY_SANDBOX` ou `ASAAS_API_KEY`.
+                  Configure `ASAAS_ENV` e a chave correspondente (`ASAAS_API_KEY_PRODUCTION` /
+                  `ASAAS_API_KEY_SANDBOX` ou `ASAAS_API_KEY`).
                 </p>
               ) : null}
 

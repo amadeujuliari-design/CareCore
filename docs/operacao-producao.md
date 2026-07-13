@@ -158,6 +158,16 @@ SAAS_BLOQUEIO_ATIVO=false
 
 Ativacao futura deve ser gradual: primeiro visibilidade, depois fechamento, geracao Asaas, ambiente de producao Asaas e, por ultimo, bloqueio por cobranca.
 
+Secrets Asaas em producao (Fly), quando a cobranca real estiver liberada:
+
+```text
+ASAAS_ENV=production
+ASAAS_API_KEY_PRODUCTION=$aact_prod_...
+ASAAS_WEBHOOK_TOKEN=<mesmo token do webhook no painel Asaas>
+```
+
+Manter `CARECORE_COBRANCAS_GERACAO_ASAAS_AUTOMATICA=false` enquanto a emissao for manual.
+
 ## Regras Assistenciais Sensiveis
 
 - Orientador pode alocar/liberar cama apenas pelo modulo `Acomodacoes`.

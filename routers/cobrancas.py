@@ -5,6 +5,7 @@ from datetime import UTC, date, datetime, timedelta
 import hmac
 import json
 import os
+import re
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
@@ -539,14 +540,28 @@ def montar_cliente_asaas_organizacao(organizacao: OrganizacaoDB) -> dict:
             detail="A organização precisa ter CPF/CNPJ válido para gerar cobrança Asaas.",
         )
 
+    email_principal = (organizacao.email or "").strip() or None
+    emails_adicionais = (getattr(organizacao, "emails_adicionais", None) or "").strip() or None
+
     dados_cliente = {
         "name": organizacao.nome.strip(),
         "cpfCnpj": documento,
         "externalReference": f"carecore-organizacao-{organizacao.id}",
-        "notificationDisabled": True,
+        # Notificações Asaas ligadas quando há e-mail para receber boleto/avisos.
+        "notificationDisabled": not bool(email_principal),
     }
-    if organizacao.email:
-        dados_cliente["email"] = organizacao.email.strip()
+    if email_principal:
+        dados_cliente["email"] = email_principal
+
+    if emails_adicionais:
+        # API Asaas: additionalEmails — string, e-mails separados por vírgula (limite ~100 chars).
+        adicionais = ",".join(
+            parte.strip()
+            for parte in re.split(r"[,;]+", emails_adicionais)
+            if parte.strip() and parte.strip().lower() != (email_principal or "").lower()
+        )
+        if adicionais:
+            dados_cliente["additionalEmails"] = adicionais[:100]
 
     return dados_cliente
 
@@ -1098,10 +1113,6 @@ async def gerar_cobranca_asaas_ciclo(
 
     try:
         cliente = AsaasClient()
-        if cliente.config.ambiente != "sandbox":
-            raise AsaasConfigErro(
-                "Nesta fase, cobranças de ciclo só podem ser geradas no ambiente Sandbox."
-            )
 
         dados_cliente = montar_cliente_asaas_organizacao(organizacao)
         cliente_asaas = await asyncio.to_thread(cliente.criar_cliente, dados_cliente)
@@ -1112,7 +1123,7 @@ async def gerar_cobranca_asaas_ciclo(
         referencia = f"carecore-ciclo-{ciclo.id}"
         dados_cobranca = {
             "customer": cliente_id,
-            "billingType": "UNDEFINED",
+            "billingType": "BOLETO",
             "value": round(float(ciclo.valor_total_mensalidade), 2),
             "dueDate": ciclo.data_vencimento.isoformat(),
             "description": (

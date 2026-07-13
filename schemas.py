@@ -70,6 +70,7 @@ class OrganizacaoBase(EnderecoBase):
     cnpj: Optional[str] = None
     telefone: Optional[str] = None
     email: Optional[str] = None
+    emails_adicionais: Optional[str] = None
 
     @field_validator("nome")
     @classmethod
@@ -94,6 +95,11 @@ class OrganizacaoBase(EnderecoBase):
     def validar_email(cls, valor: Optional[str]):
         return normalizar_email(valor)
 
+    @field_validator("emails_adicionais")
+    @classmethod
+    def validar_emails_adicionais(cls, valor: Optional[str]):
+        return normalizar_emails_adicionais(valor)
+
 
 class OrganizacaoCreate(OrganizacaoBase):
     pass
@@ -112,6 +118,7 @@ class InstituicaoBase(EnderecoBase):
     cnpj: Optional[str] = None
     telefone: str
     email: Optional[str] = None
+    emails_adicionais: Optional[str] = None
     tipo_projeto: Optional[str] = "Projeto"
     projeto_unico: Optional[bool] = True
 
@@ -141,9 +148,37 @@ class InstituicaoBase(EnderecoBase):
     def validar_email(cls, valor: Optional[str]):
         return normalizar_email(valor)
 
+    @field_validator("emails_adicionais")
+    @classmethod
+    def validar_emails_adicionais(cls, valor: Optional[str]):
+        return normalizar_emails_adicionais(valor)
+
 
 class InstituicaoCreate(InstituicaoBase):
     pass
+
+
+class CadastroContatoUpdate(EnderecoBase):
+    """Atualização de telefone, e-mail e endereço (organização ou projeto)."""
+
+    telefone: Optional[str] = None
+    email: Optional[str] = None
+    emails_adicionais: Optional[str] = None
+
+    @field_validator("telefone")
+    @classmethod
+    def validar_telefone(cls, valor: Optional[str]):
+        return normalizar_telefone(valor)
+
+    @field_validator("email")
+    @classmethod
+    def validar_email(cls, valor: Optional[str]):
+        return normalizar_email(valor)
+
+    @field_validator("emails_adicionais")
+    @classmethod
+    def validar_emails_adicionais(cls, valor: Optional[str]):
+        return normalizar_emails_adicionais(valor)
 
 
 class InstituicaoResponse(InstituicaoBase):
@@ -285,6 +320,30 @@ def normalizar_email(valor: Optional[str]) -> Optional[str]:
         raise ValueError("E-mail inválido.")
 
     return valor
+
+
+def normalizar_emails_adicionais(valor: Optional[str]) -> Optional[str]:
+    """Normaliza lista de e-mails separados por vírgula, ponto-e-vírgula ou quebra de linha."""
+    if valor is None:
+        return None
+
+    texto = str(valor).strip()
+    if not texto:
+        return None
+
+    emails: list[str] = []
+    for pedaco in re.split(r"[,;\n]+", texto):
+        candidato = pedaco.strip()
+        if not candidato:
+            continue
+        email = normalizar_email(candidato)
+        if email and email not in emails:
+            emails.append(email)
+
+    if not emails:
+        return None
+
+    return ", ".join(emails)
 
 
 def normalizar_cnpj(valor: Optional[str]) -> Optional[str]:

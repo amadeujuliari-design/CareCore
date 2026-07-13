@@ -28,6 +28,7 @@ from models import (
     UsuarioDB,
 )
 from schemas import (
+    CadastroContatoUpdate,
     GestaoGlobalProjetoResumo,
     GestaoGlobalResumoResponse,
     GestaoGlobalTotais,
@@ -35,6 +36,7 @@ from schemas import (
     IdentidadeRelatorioUpdate,
     InstituicaoCreate,
     InstituicaoResponse,
+    OrganizacaoResponse,
     Token,
 )
 from security import (
@@ -135,6 +137,98 @@ def exigir_gestor_ou_manutencao_projeto(usuario_atual: dict) -> None:
         status_code=status.HTTP_403_FORBIDDEN,
         detail="Apenas gestores ou manutenção podem alterar a configuração operacional.",
     )
+
+
+def exigir_manutencao_ou_global(usuario_atual: dict) -> None:
+    if usuario_eh_manutencao(usuario_atual) or usuario_atual.get("is_global"):
+        return
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Apenas manutenção ou usuários globais podem alterar o cadastro da organização/projeto.",
+    )
+
+
+def aplicar_cadastro_contato(
+    entidade: OrganizacaoDB | InstituicaoDB,
+    payload: CadastroContatoUpdate,
+    *,
+    telefone_obrigatorio: bool = False,
+) -> None:
+    dados = payload.model_dump()
+    telefone = (dados.get("telefone") or "").strip() if dados.get("telefone") else None
+    if telefone_obrigatorio and not telefone:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Telefone é obrigatório.",
+        )
+
+    for campo, valor in dados.items():
+        if isinstance(valor, str):
+            valor = valor.strip() or None
+        setattr(entidade, campo, valor)
+
+
+async def obter_projeto_para_cadastro(
+    db: AsyncSession,
+    usuario_atual: dict,
+    projeto_id: str,
+) -> InstituicaoDB:
+    if usuario_eh_manutencao(usuario_atual):
+        resultado = await db.execute(
+            select(InstituicaoDB).where(InstituicaoDB.id == projeto_id)
+        )
+    else:
+        organizacao_id = usuario_atual.get("organizacao_id")
+        if not organizacao_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Usuário sem organização vinculada.",
+            )
+        resultado = await db.execute(
+            select(InstituicaoDB).where(
+                InstituicaoDB.id == projeto_id,
+                InstituicaoDB.organizacao_id == organizacao_id,
+            )
+        )
+
+    projeto = resultado.scalar_one_or_none()
+    if not projeto:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Projeto não encontrado.",
+        )
+    return projeto
+
+
+async def obter_organizacao_para_cadastro(
+    db: AsyncSession,
+    usuario_atual: dict,
+    organizacao_id: str | None = None,
+) -> OrganizacaoDB:
+    alvo_id = organizacao_id or usuario_atual.get("organizacao_id")
+    if not alvo_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Organização não informada.",
+        )
+
+    if not usuario_eh_manutencao(usuario_atual):
+        if usuario_atual.get("organizacao_id") != alvo_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Sem permissão para alterar esta organização.",
+            )
+
+    resultado = await db.execute(
+        select(OrganizacaoDB).where(OrganizacaoDB.id == alvo_id)
+    )
+    organizacao = resultado.scalar_one_or_none()
+    if not organizacao:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Organização não encontrada.",
+        )
+    return organizacao
 
 
 def montar_payload_token(usuario: UsuarioDB, projeto: InstituicaoDB | None = None) -> dict:
@@ -479,6 +573,97 @@ async def obter_projeto_atual(
     return projeto
 
 
+@router.get("/cadastro", response_model=OrganizacaoResponse)
+async def obter_cadastro_organizacao(
+    organizacao_id: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    exigir_manutencao_ou_global(usuario_atual)
+    return await obter_organizacao_para_cadastro(db, usuario_atual, organizacao_id)
+
+
+@router.put("/cadastro", response_model=OrganizacaoResponse)
+async def atualizar_cadastro_organizacao(
+    payload: CadastroContatoUpdate,
+    organizacao_id: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    exigir_manutencao_ou_global(usuario_atual)
+    organizacao = await obter_organizacao_para_cadastro(db, usuario_atual, organizacao_id)
+    aplicar_cadastro_contato(organizacao, payload, telefone_obrigatorio=False)
+    await db.commit()
+    await db.refresh(organizacao)
+    return organizacao
+
+
+@router.put("/projeto-atual/cadastro", response_model=InstituicaoResponse)
+async def atualizar_cadastro_projeto_atual(
+    payload: CadastroContatoUpdate,
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    exigir_gestor_ou_manutencao_projeto(usuario_atual)
+    projeto = await obter_projeto_da_sessao(db, usuario_atual)
+    aplicar_cadastro_contato(projeto, payload, telefone_obrigatorio=True)
+    await db.commit()
+    await db.refresh(projeto)
+    return projeto
+
+
+@router.put("/projetos/{projeto_id}/cadastro", response_model=InstituicaoResponse)
+async def atualizar_cadastro_projeto(
+    projeto_id: str,
+    payload: CadastroContatoUpdate,
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    exigir_manutencao_ou_global(usuario_atual)
+    projeto = await obter_projeto_para_cadastro(db, usuario_atual, projeto_id)
+    aplicar_cadastro_contato(projeto, payload, telefone_obrigatorio=True)
+    await db.commit()
+    await db.refresh(projeto)
+    return projeto
+
+
+@router.get("/projetos/{projeto_id}/organizacao-cadastro", response_model=OrganizacaoResponse)
+async def obter_organizacao_cadastro_do_projeto(
+    projeto_id: str,
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    exigir_manutencao_ou_global(usuario_atual)
+    projeto = await obter_projeto_para_cadastro(db, usuario_atual, projeto_id)
+    if not projeto.organizacao_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Projeto sem organização vinculada.",
+        )
+    return await obter_organizacao_para_cadastro(db, usuario_atual, projeto.organizacao_id)
+
+
+@router.put("/projetos/{projeto_id}/organizacao-cadastro", response_model=OrganizacaoResponse)
+async def atualizar_organizacao_cadastro_do_projeto(
+    projeto_id: str,
+    payload: CadastroContatoUpdate,
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    exigir_manutencao_ou_global(usuario_atual)
+    projeto = await obter_projeto_para_cadastro(db, usuario_atual, projeto_id)
+    if not projeto.organizacao_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Projeto sem organização vinculada.",
+        )
+    organizacao = await obter_organizacao_para_cadastro(db, usuario_atual, projeto.organizacao_id)
+    aplicar_cadastro_contato(organizacao, payload, telefone_obrigatorio=False)
+    await db.commit()
+    await db.refresh(organizacao)
+    return organizacao
+
+
 def montar_identidade_relatorio(projeto: InstituicaoDB) -> IdentidadeRelatorioResponse:
     logo_url = projeto.relatorio_logo_url
     if _logo_relatorio_local_indisponivel(logo_url):
@@ -668,6 +853,7 @@ async def criar_projeto_organizacao(
         cnpj=payload.cnpj,
         telefone=payload.telefone,
         email=payload.email,
+        emails_adicionais=payload.emails_adicionais,
         cep=payload.cep,
         logradouro=payload.logradouro,
         numero=payload.numero,

@@ -17,6 +17,35 @@ import {
 const inputClassName = 'min-h-11 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-brand';
 const inputErroClassName = 'border-red-400 bg-red-50 focus:border-red-500';
 
+const FORM_PROJETO_VAZIO = {
+  nome_fantasia: '',
+  cnpj: '',
+  telefone: '',
+  email: '',
+  emails_adicionais: '',
+  cep: '',
+  logradouro: '',
+  numero: '',
+  complemento: '',
+  bairro: '',
+  cidade: '',
+  uf: '',
+  tipo_projeto: 'Projeto',
+};
+
+const FORM_CONTATO_VAZIO = {
+  telefone: '',
+  email: '',
+  emails_adicionais: '',
+  cep: '',
+  logradouro: '',
+  numero: '',
+  complemento: '',
+  bairro: '',
+  cidade: '',
+  uf: '',
+};
+
 function formatarCNPJ(valor) {
   const v = limparMascara(valor).slice(0, 14);
 
@@ -63,6 +92,140 @@ function Campo({ label, erro, children }) {
   );
 }
 
+function montarFormContato(origem = {}) {
+  return {
+    telefone: origem.telefone ? formatarTelefone(origem.telefone) : '',
+    email: origem.email || '',
+    emails_adicionais: origem.emails_adicionais || '',
+    cep: origem.cep ? formatarCEP(origem.cep) : '',
+    logradouro: origem.logradouro || '',
+    numero: origem.numero || '',
+    complemento: origem.complemento || '',
+    bairro: origem.bairro || '',
+    cidade: origem.cidade || '',
+    uf: (origem.uf || '').toUpperCase(),
+  };
+}
+
+function FormularioContato({
+  form,
+  errosCampo,
+  buscandoCep,
+  telefoneObrigatorio,
+  onChange,
+  onBuscarCep,
+}) {
+  return (
+    <div className="space-y-3">
+      <Campo label={telefoneObrigatorio ? 'Telefone *' : 'Telefone'} erro={errosCampo.telefone}>
+        <input
+          className={`${inputClassName} w-full ${errosCampo.telefone ? inputErroClassName : ''}`}
+          value={form.telefone}
+          onChange={(e) => onChange('telefone', formatarTelefone(e.target.value))}
+          placeholder="(11) 99999-9999"
+        />
+      </Campo>
+
+      <Campo label="E-mail" erro={errosCampo.email}>
+        <input
+          type="email"
+          className={`${inputClassName} w-full ${errosCampo.email ? inputErroClassName : ''}`}
+          value={form.email}
+          onChange={(e) => onChange('email', e.target.value)}
+          placeholder="contato@organizacao.org"
+        />
+      </Campo>
+
+      <Campo
+        label="E-mails adicionais"
+        erro={errosCampo.emails_adicionais}
+      >
+        <input
+          className={`${inputClassName} w-full ${errosCampo.emails_adicionais ? inputErroClassName : ''}`}
+          value={form.emails_adicionais}
+          onChange={(e) => onChange('emails_adicionais', e.target.value)}
+          placeholder="financeiro@org.br, gestao@org.br"
+        />
+        <span className="mt-1 block text-[11px] font-semibold text-gray-500">
+          Separe por vírgula. Usados nas notificações do boleto (Asaas).
+        </span>
+      </Campo>
+
+      <Campo label={buscandoCep ? 'CEP - buscando endereço...' : 'CEP'} erro={errosCampo.cep}>
+        <input
+          className={`${inputClassName} w-full ${errosCampo.cep ? inputErroClassName : ''}`}
+          value={form.cep}
+          onChange={(e) => {
+            const cepFormatado = formatarCEP(e.target.value);
+            onChange('cep', cepFormatado);
+            if (limparMascara(cepFormatado).length === 8) {
+              onBuscarCep(cepFormatado);
+            }
+          }}
+          placeholder="00000-000"
+        />
+      </Campo>
+
+      <Campo label="Logradouro">
+        <input
+          className={`${inputClassName} w-full`}
+          value={form.logradouro}
+          onChange={(e) => onChange('logradouro', e.target.value)}
+          placeholder="Rua / Avenida"
+        />
+      </Campo>
+
+      <div className="grid grid-cols-2 gap-3">
+        <Campo label="Número">
+          <input
+            className={`${inputClassName} w-full`}
+            value={form.numero}
+            onChange={(e) => onChange('numero', e.target.value)}
+            placeholder="Número"
+          />
+        </Campo>
+        <Campo label="Complemento">
+          <input
+            className={`${inputClassName} w-full`}
+            value={form.complemento}
+            onChange={(e) => onChange('complemento', e.target.value)}
+            placeholder="Complemento"
+          />
+        </Campo>
+      </div>
+
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_80px]">
+        <Campo label="Cidade">
+          <input
+            className={`${inputClassName} w-full`}
+            value={form.cidade}
+            onChange={(e) => onChange('cidade', e.target.value)}
+            placeholder="Cidade"
+          />
+        </Campo>
+        <Campo label="UF" erro={errosCampo.uf}>
+          <input
+            className={`${inputClassName} w-full ${errosCampo.uf ? inputErroClassName : ''}`}
+            value={form.uf}
+            onChange={(e) => onChange('uf', e.target.value.toUpperCase().slice(0, 2))}
+            placeholder="UF"
+            maxLength={2}
+          />
+        </Campo>
+      </div>
+
+      <Campo label="Bairro">
+        <input
+          className={`${inputClassName} w-full`}
+          value={form.bairro}
+          onChange={(e) => onChange('bairro', e.target.value)}
+          placeholder="Bairro"
+        />
+      </Campo>
+    </div>
+  );
+}
+
 export default function Organizacao() {
   const navigate = useNavigate();
   const { login } = useAuth();
@@ -74,20 +237,14 @@ export default function Organizacao() {
   const [sucesso, setSucesso] = useState('');
   const [buscandoCep, setBuscandoCep] = useState(false);
   const [errosCampo, setErrosCampo] = useState({});
-  const [form, setForm] = useState({
-    nome_fantasia: '',
-    cnpj: '',
-    telefone: '',
-    email: '',
-    cep: '',
-    logradouro: '',
-    numero: '',
-    complemento: '',
-    bairro: '',
-    cidade: '',
-    uf: '',
-    tipo_projeto: 'Projeto',
-  });
+  const [form, setForm] = useState(FORM_PROJETO_VAZIO);
+
+  const [edicaoAlvo, setEdicaoAlvo] = useState(null);
+  const [formEdicao, setFormEdicao] = useState(FORM_CONTATO_VAZIO);
+  const [metaEdicao, setMetaEdicao] = useState({ titulo: '', subtitulo: '' });
+  const [salvandoEdicao, setSalvandoEdicao] = useState(false);
+  const [buscandoCepEdicao, setBuscandoCepEdicao] = useState(false);
+  const [errosEdicao, setErrosEdicao] = useState({});
 
   const usuarioSessao = (() => {
     try {
@@ -119,23 +276,28 @@ export default function Organizacao() {
     setErrosCampo((prev) => ({ ...prev, [campo]: '' }));
   };
 
-  const buscarCep = async (cepBuscado) => {
+  const atualizarCampoEdicao = (campo, valor) => {
+    setFormEdicao((prev) => ({ ...prev, [campo]: valor }));
+    setErrosEdicao((prev) => ({ ...prev, [campo]: '' }));
+  };
+
+  const buscarCepGenerico = async (cepBuscado, setFormAlvo, setErrosAlvo, setBuscando) => {
     const cepLimpo = limparMascara(cepBuscado);
 
     if (cepLimpo.length !== 8) {
       return;
     }
 
-    setBuscandoCep(true);
+    setBuscando(true);
     try {
       const endereco = await consultarCep(cepLimpo);
 
       if (!endereco) {
-        setErrosCampo((prev) => ({ ...prev, cep: 'CEP não encontrado.' }));
+        setErrosAlvo((prev) => ({ ...prev, cep: 'CEP não encontrado.' }));
         return;
       }
 
-      setForm((prev) => ({
+      setFormAlvo((prev) => ({
         ...prev,
         logradouro: endereco.logradouro || prev.logradouro,
         bairro: endereco.bairro || prev.bairro,
@@ -143,10 +305,18 @@ export default function Organizacao() {
         uf: endereco.uf || prev.uf,
       }));
     } catch {
-      setErrosCampo((prev) => ({ ...prev, cep: 'Não foi possível buscar o CEP agora.' }));
+      setErrosAlvo((prev) => ({ ...prev, cep: 'Não foi possível buscar o CEP agora.' }));
     } finally {
-      setBuscandoCep(false);
+      setBuscando(false);
     }
+  };
+
+  const buscarCep = async (cepBuscado) => {
+    await buscarCepGenerico(cepBuscado, setForm, setErrosCampo, setBuscandoCep);
+  };
+
+  const buscarCepEdicao = async (cepBuscado) => {
+    await buscarCepGenerico(cepBuscado, setFormEdicao, setErrosEdicao, setBuscandoCepEdicao);
   };
 
   const validarFormulario = () => {
@@ -170,6 +340,14 @@ export default function Organizacao() {
       novosErros.email = 'E-mail inválido.';
     }
 
+    if (form.emails_adicionais) {
+      const emails = form.emails_adicionais.split(/[,;\n]+/).map((e) => e.trim()).filter(Boolean);
+      const invalido = emails.find((email) => !emailValido(email));
+      if (invalido) {
+        novosErros.emails_adicionais = `E-mail adicional inválido: ${invalido}`;
+      }
+    }
+
     if (form.cep && !cepValido(form.cep)) {
       novosErros.cep = 'CEP incompleto.';
     }
@@ -179,6 +357,39 @@ export default function Organizacao() {
     }
 
     setErrosCampo(novosErros);
+    return Object.keys(novosErros).length === 0;
+  };
+
+  const validarFormularioContato = (dados, telefoneObrigatorio) => {
+    const novosErros = {};
+
+    if (telefoneObrigatorio && !dados.telefone.trim()) {
+      novosErros.telefone = 'Informe o telefone.';
+    } else if (dados.telefone && !telefoneValido(dados.telefone)) {
+      novosErros.telefone = 'Telefone inválido.';
+    }
+
+    if (dados.email && !emailValido(dados.email)) {
+      novosErros.email = 'E-mail inválido.';
+    }
+
+    if (dados.emails_adicionais) {
+      const emails = dados.emails_adicionais.split(/[,;\n]+/).map((e) => e.trim()).filter(Boolean);
+      const invalido = emails.find((email) => !emailValido(email));
+      if (invalido) {
+        novosErros.emails_adicionais = `E-mail adicional inválido: ${invalido}`;
+      }
+    }
+
+    if (dados.cep && !cepValido(dados.cep)) {
+      novosErros.cep = 'CEP incompleto.';
+    }
+
+    if (dados.uf && dados.uf.length !== 2) {
+      novosErros.uf = 'UF deve ter 2 letras.';
+    }
+
+    setErrosEdicao(novosErros);
     return Object.keys(novosErros).length === 0;
   };
 
@@ -203,20 +414,7 @@ export default function Organizacao() {
         uf: form.uf.trim().toUpperCase(),
       });
 
-      setForm({
-        nome_fantasia: '',
-        cnpj: '',
-        telefone: '',
-        email: '',
-        cep: '',
-        logradouro: '',
-        numero: '',
-        complemento: '',
-        bairro: '',
-        cidade: '',
-        uf: '',
-        tipo_projeto: 'Projeto',
-      });
+      setForm(FORM_PROJETO_VAZIO);
       setSucesso('Projeto cadastrado e vinculado à organização.');
       setErrosCampo({});
       await carregarProjetos();
@@ -250,6 +448,92 @@ export default function Organizacao() {
     }
   };
 
+  const abrirEdicaoProjeto = (projeto) => {
+    setErro('');
+    setSucesso('');
+    setEdicaoAlvo({ tipo: 'projeto', projetoId: projeto.id });
+    setMetaEdicao({
+      titulo: `Editar cadastro — ${projeto.nome_fantasia}`,
+      subtitulo: `CNPJ do projeto: ${projeto.cnpj || 'Não informado'} (somente contato e endereço)`,
+    });
+    setFormEdicao(montarFormContato(projeto));
+    setErrosEdicao({});
+  };
+
+  const abrirEdicaoOrganizacaoDoProjeto = async (projeto) => {
+    setErro('');
+    setSucesso('');
+    setSalvandoEdicao(true);
+
+    try {
+      const response = await api.get(`/api/organizacao/projetos/${projeto.id}/organizacao-cadastro`);
+      const organizacao = response.data || {};
+      setEdicaoAlvo({ tipo: 'organizacao', projetoId: projeto.id, organizacaoId: organizacao.id });
+      setMetaEdicao({
+        titulo: `Editar organização — ${organizacao.nome || 'Organização'}`,
+        subtitulo: `CNPJ: ${organizacao.cnpj || 'Não informado'} · vinculado ao projeto ${projeto.nome_fantasia}`,
+      });
+      setFormEdicao(montarFormContato(organizacao));
+      setErrosEdicao({});
+    } catch (error) {
+      setErro(error.response?.data?.detail || 'Não foi possível carregar o cadastro da organização.');
+      setEdicaoAlvo(null);
+    } finally {
+      setSalvandoEdicao(false);
+    }
+  };
+
+  const fecharEdicao = () => {
+    setEdicaoAlvo(null);
+    setFormEdicao(FORM_CONTATO_VAZIO);
+    setErrosEdicao({});
+    setMetaEdicao({ titulo: '', subtitulo: '' });
+  };
+
+  const salvarEdicao = async (event) => {
+    event.preventDefault();
+    if (!edicaoAlvo) return;
+
+    setErro('');
+    setSucesso('');
+
+    const telefoneObrigatorio = edicaoAlvo.tipo === 'projeto';
+    if (!validarFormularioContato(formEdicao, telefoneObrigatorio)) {
+      setErro('Corrija os campos destacados antes de salvar.');
+      return;
+    }
+
+    const payload = {
+      telefone: formEdicao.telefone.trim() || null,
+      email: formEdicao.email.trim() || null,
+      emails_adicionais: formEdicao.emails_adicionais.trim() || null,
+      cep: formEdicao.cep.trim() || null,
+      logradouro: formEdicao.logradouro.trim() || null,
+      numero: formEdicao.numero.trim() || null,
+      complemento: formEdicao.complemento.trim() || null,
+      bairro: formEdicao.bairro.trim() || null,
+      cidade: formEdicao.cidade.trim() || null,
+      uf: formEdicao.uf.trim().toUpperCase() || null,
+    };
+
+    setSalvandoEdicao(true);
+    try {
+      if (edicaoAlvo.tipo === 'projeto') {
+        await api.put(`/api/organizacao/projetos/${edicaoAlvo.projetoId}/cadastro`, payload);
+        setSucesso('Cadastro do projeto atualizado.');
+      } else {
+        await api.put(`/api/organizacao/projetos/${edicaoAlvo.projetoId}/organizacao-cadastro`, payload);
+        setSucesso('Cadastro da organização atualizado.');
+      }
+      fecharEdicao();
+      await carregarProjetos();
+    } catch (error) {
+      setErro(error.response?.data?.detail || 'Não foi possível salvar as alterações.');
+    } finally {
+      setSalvandoEdicao(false);
+    }
+  };
+
   return (
     <AppShell>
       <Sidebar />
@@ -257,7 +541,7 @@ export default function Organizacao() {
         <PageHeader
           eyebrow="Organização"
           title="Projetos da Organização"
-          subtitle="Cadastre projetos/unidades vinculados à mesma organização mãe."
+          subtitle="Cadastre projetos e atualize telefone, e-mail e endereço da organização ou do projeto."
           icon="◇"
         />
 
@@ -266,8 +550,16 @@ export default function Organizacao() {
             <section className="min-w-0 rounded-3xl border border-gray-100 bg-white p-4 shadow-sm sm:p-5">
               <h2 className="text-lg font-black text-gray-900">Projetos cadastrados</h2>
               <p className="mt-1 text-sm text-gray-500">
-                Cada projeto funciona como operação separada, mas fica vinculado à mesma organização.
+                Cada projeto funciona como operação separada. Use editar para corrigir contato e endereço
+                (ex.: endereço real do SIAT, distinto da organização).
               </p>
+
+              {erro && !edicaoAlvo ? (
+                <div className="mt-4 rounded-xl bg-red-50 p-3 text-sm font-bold text-red-700">{erro}</div>
+              ) : null}
+              {sucesso && !edicaoAlvo ? (
+                <div className="mt-4 rounded-xl bg-green-50 p-3 text-sm font-bold text-green-700">{sucesso}</div>
+              ) : null}
 
               {loading ? (
                 <p className="mt-6 text-sm font-semibold text-gray-500">Carregando...</p>
@@ -286,7 +578,13 @@ export default function Organizacao() {
                             CNPJ: {projeto.cnpj || 'Não informado'} · Telefone: {projeto.telefone || '-'}
                           </p>
                           <p className="mt-1 text-xs text-gray-500">
-                            {projeto.cidade ? `${projeto.cidade}/${projeto.uf || ''}` : 'Endereço não informado'}
+                            {projeto.email || 'E-mail não informado'}
+                            {projeto.emails_adicionais ? ` · + ${projeto.emails_adicionais}` : ''}
+                          </p>
+                          <p className="mt-1 text-xs text-gray-500">
+                            {[projeto.logradouro, projeto.numero, projeto.bairro, projeto.cidade, projeto.uf]
+                              .filter(Boolean)
+                              .join(', ') || 'Endereço não informado'}
                           </p>
                         </div>
                         <div className="flex flex-col gap-2 sm:items-end">
@@ -307,12 +605,69 @@ export default function Organizacao() {
                               {selecionandoProjetoId === projeto.id ? 'Entrando...' : 'Entrar neste projeto'}
                             </button>
                           )}
+                          <button
+                            type="button"
+                            onClick={() => abrirEdicaoProjeto(projeto)}
+                            className="w-full rounded-full border border-slate-300 bg-white px-4 py-2 text-xs font-black text-slate-800 transition hover:bg-slate-50 sm:w-auto"
+                          >
+                            Editar projeto
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => abrirEdicaoOrganizacaoDoProjeto(projeto)}
+                            className="w-full rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-600 transition hover:bg-slate-50 sm:w-auto"
+                          >
+                            Editar organização
+                          </button>
                         </div>
                       </div>
                     </article>
                   ))}
                 </div>
               )}
+
+              {edicaoAlvo ? (
+                <form
+                  onSubmit={salvarEdicao}
+                  className="mt-6 rounded-2xl border border-brand/20 bg-brand/5 p-4"
+                >
+                  <h3 className="text-base font-black text-gray-900">{metaEdicao.titulo}</h3>
+                  <p className="mt-1 text-xs text-gray-600">{metaEdicao.subtitulo}</p>
+
+                  {erro ? (
+                    <div className="mt-3 rounded-xl bg-red-50 p-3 text-sm font-bold text-red-700">{erro}</div>
+                  ) : null}
+
+                  <div className="mt-4">
+                    <FormularioContato
+                      form={formEdicao}
+                      errosCampo={errosEdicao}
+                      buscandoCep={buscandoCepEdicao}
+                      telefoneObrigatorio={edicaoAlvo.tipo === 'projeto'}
+                      onChange={atualizarCampoEdicao}
+                      onBuscarCep={buscarCepEdicao}
+                    />
+                  </div>
+
+                  <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+                    <button
+                      type="submit"
+                      disabled={salvandoEdicao || buscandoCepEdicao}
+                      className="min-h-11 flex-1 rounded-2xl bg-brand px-4 py-2 text-sm font-black text-white shadow-sm disabled:opacity-60"
+                    >
+                      {salvandoEdicao ? 'Salvando...' : 'Salvar alterações'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={fecharEdicao}
+                      disabled={salvandoEdicao}
+                      className="min-h-11 rounded-2xl border border-gray-200 bg-white px-4 py-2 text-sm font-bold text-gray-700 disabled:opacity-60"
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+                </form>
+              ) : null}
             </section>
 
             <section className="min-w-0 rounded-3xl border border-gray-100 bg-white p-4 shadow-sm sm:p-5">
@@ -320,9 +675,6 @@ export default function Organizacao() {
               <p className="mt-1 text-sm text-gray-500">
                 Use para implantar Projeto B, filial ou unidade vinculada à organização atual.
               </p>
-
-              {erro && <div className="mt-4 rounded-xl bg-red-50 p-3 text-sm font-bold text-red-700">{erro}</div>}
-              {sucesso && <div className="mt-4 rounded-xl bg-green-50 p-3 text-sm font-bold text-green-700">{sucesso}</div>}
 
               <form onSubmit={criarProjeto} className="mt-5 space-y-3">
                 <Campo label="Nome do projeto *" erro={errosCampo.nome_fantasia}>
@@ -353,97 +705,18 @@ export default function Organizacao() {
                   />
                 </Campo>
 
-                <Campo label="Telefone *" erro={errosCampo.telefone}>
-                  <input
-                    className={`${inputClassName} w-full ${errosCampo.telefone ? inputErroClassName : ''}`}
-                    value={form.telefone}
-                    onChange={(e) => atualizarCampo('telefone', formatarTelefone(e.target.value))}
-                    onBlur={() => {
-                      if (!form.telefone.trim()) {
-                        setErrosCampo((prev) => ({ ...prev, telefone: 'Informe o telefone.' }));
-                      } else if (!telefoneValido(form.telefone)) {
-                        setErrosCampo((prev) => ({ ...prev, telefone: 'Telefone inválido.' }));
-                      }
-                    }}
-                    placeholder="(11) 99999-9999"
-                  />
-                </Campo>
-
-                <Campo label="E-mail do projeto" erro={errosCampo.email}>
-                  <input
-                    type="email"
-                    className={`${inputClassName} w-full ${errosCampo.email ? inputErroClassName : ''}`}
-                    value={form.email}
-                    onChange={(e) => atualizarCampo('email', e.target.value)}
-                    onBlur={() => {
-                      if (form.email && !emailValido(form.email)) {
-                        setErrosCampo((prev) => ({ ...prev, email: 'E-mail inválido.' }));
-                      }
-                    }}
-                    placeholder="projeto@organizacao.org"
-                  />
-                </Campo>
-
-                <Campo label={buscandoCep ? 'CEP - buscando endereço...' : 'CEP'} erro={errosCampo.cep}>
-                  <input
-                    className={`${inputClassName} w-full ${errosCampo.cep ? inputErroClassName : ''}`}
-                    value={form.cep}
-                    onChange={(e) => {
-                      const cepFormatado = formatarCEP(e.target.value);
-                      atualizarCampo('cep', cepFormatado);
-                      if (limparMascara(cepFormatado).length === 8) {
-                        buscarCep(cepFormatado);
-                      }
-                    }}
-                    onBlur={() => {
-                      if (form.cep && !cepValido(form.cep)) {
-                        setErrosCampo((prev) => ({ ...prev, cep: 'CEP incompleto.' }));
-                      }
-                    }}
-                    placeholder="00000-000"
-                  />
-                </Campo>
-
-                <Campo label="Logradouro">
-                  <input className={`${inputClassName} w-full`} value={form.logradouro} onChange={(e) => atualizarCampo('logradouro', e.target.value)} placeholder="Rua / Avenida" />
-                </Campo>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <Campo label="Número">
-                    <input className={`${inputClassName} w-full`} value={form.numero} onChange={(e) => atualizarCampo('numero', e.target.value)} placeholder="Número" />
-                  </Campo>
-                  <Campo label="Complemento">
-                    <input className={`${inputClassName} w-full`} value={form.complemento} onChange={(e) => atualizarCampo('complemento', e.target.value)} placeholder="Complemento" />
-                  </Campo>
-                </div>
-
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_80px]">
-                  <Campo label="Cidade">
-                    <input className={`${inputClassName} w-full`} value={form.cidade} onChange={(e) => atualizarCampo('cidade', e.target.value)} placeholder="Cidade" />
-                  </Campo>
-                  <Campo label="UF" erro={errosCampo.uf}>
-                    <input
-                      className={`${inputClassName} w-full ${errosCampo.uf ? inputErroClassName : ''}`}
-                      value={form.uf}
-                      onChange={(e) => atualizarCampo('uf', e.target.value.toUpperCase().slice(0, 2))}
-                      onBlur={() => {
-                        if (form.uf && form.uf.length !== 2) {
-                          setErrosCampo((prev) => ({ ...prev, uf: 'UF deve ter 2 letras.' }));
-                        }
-                      }}
-                      placeholder="UF"
-                      maxLength={2}
-                    />
-                  </Campo>
-                </div>
-
-                <Campo label="Bairro">
-                  <input className={`${inputClassName} w-full`} value={form.bairro} onChange={(e) => atualizarCampo('bairro', e.target.value)} placeholder="Bairro" />
-                </Campo>
+                <FormularioContato
+                  form={form}
+                  errosCampo={errosCampo}
+                  buscandoCep={buscandoCep}
+                  telefoneObrigatorio
+                  onChange={atualizarCampo}
+                  onBuscarCep={buscarCep}
+                />
 
                 <button
                   type="submit"
-                  disabled={salvando || buscandoCep}
+                  disabled={salvando || buscandoCep || Boolean(edicaoAlvo)}
                   className="min-h-11 w-full rounded-2xl bg-brand px-4 py-2 text-sm font-black text-white shadow-sm disabled:opacity-60"
                 >
                   {salvando ? 'Salvando...' : 'Cadastrar projeto'}
