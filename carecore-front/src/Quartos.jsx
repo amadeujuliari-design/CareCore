@@ -6,11 +6,13 @@ import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import Sidebar from './Sidebar';
 import { AppShell, MainShell, PageHeader, ScrollArea } from './components/PremiumUI';
+import BannerSomenteLeituraGlobal from './components/BannerSomenteLeituraGlobal';
 import { API_ROOT } from './config/apiBase';
 import { filtrarOrdenarConviventesPorBusca } from './utils/conviventeBuscaUtils';
 import { ordenarPorTextoNatural } from './utils/ordenacaoNatural';
 import { listarQuartosOrdenados } from './services/quartosService';
 import { usuarioPodeEditarAcomodacao } from './hooks/usePermissoesProntuario';
+import { usuarioEhGlobalPuro } from './utils/rbacUtils';
 import { decodificarPayloadJwt } from './utils/jwtUtils';
 import { criarHeadersAutenticados } from './utils/requestIdUtils';
 import { useConfigOperacional } from './hooks/useConfigOperacional';
@@ -54,7 +56,9 @@ export default function Quartos() {
     console.error('Erro ao ler token no módulo de quartos', error);
   }
 
-  const podeGerenciarQuartos = usuarioPodeEditarAcomodacao(perfilUsuario, false, usuarioToken);
+  const somenteLeitura = usuarioEhGlobalPuro(usuarioToken);
+  const podeGerenciarQuartos = !somenteLeitura
+    && usuarioPodeEditarAcomodacao(perfilUsuario, false, usuarioToken);
   const podeAlocarLeitos = podeGerenciarQuartos;
   // Formulário de Quarto
   const [nome, setNome] = useState('');
@@ -347,6 +351,9 @@ useEffect(() => {
 
         <ScrollArea>
           <div className="w-full max-w-7xl mx-auto">
+          {somenteLeitura && (
+            <BannerSomenteLeituraGlobal modulo="acomodações (mapa de quartos e leitos)" />
+          )}
           {erro && <div className="bg-red-50 text-red-600 p-4 rounded-xl text-sm mb-6 font-bold border border-red-100">! {erro}</div>}
           {sucesso && <div className="bg-green-50 text-green-700 p-4 rounded-xl text-sm mb-6 font-bold border border-green-100">{sucesso}</div>}
 

@@ -230,7 +230,7 @@ export default function Sidebar() {
           path: '/quartos',
           icon: BedDouble,
           label: 'Acomodações',
-          perfis: ['Gestor', 'Técnico', 'Orientador', 'Administrativo']
+          perfis: ['Gestor', 'Técnico', 'Orientador', 'Administrativo', 'Global']
         },
         {
           path: '/ocorrencias',

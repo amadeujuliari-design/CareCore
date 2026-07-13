@@ -64,7 +64,7 @@ function RotasAplicacao() {
         <Route
           path="/quartos"
           element={
-            <ProtectedRoute perfis={['Gestor', 'Técnico', 'Orientador', 'Administrativo']}>
+            <ProtectedRoute perfis={['Gestor', 'Técnico', 'Orientador', 'Administrativo', 'Global']}>
               <Quartos />
             </ProtectedRoute>
           }
