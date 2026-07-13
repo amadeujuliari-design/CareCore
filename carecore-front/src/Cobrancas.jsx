@@ -27,6 +27,40 @@ function usuarioPodeAdministrarIntegracaoAsaas() {
   }
 }
 
+function usuarioEhManutencaoFinanceira() {
+  try {
+    const usuarioRaw = localStorage.getItem('@CareCore:user') || localStorage.getItem('usuario');
+    const usuario = usuarioRaw ? JSON.parse(usuarioRaw) : {};
+    const token = localStorage.getItem('@CareCore:token') || localStorage.getItem('token');
+    const payload = token ? decodificarPayloadJwt(token) || {} : {};
+    const perfil = usuario?.perfil_acesso || payload?.perfil_acesso || '';
+    return Boolean(
+      usuario?.is_manutencao === true ||
+      payload?.is_manutencao === true ||
+      perfil === 'Manutenção'
+    );
+  } catch {
+    return false;
+  }
+}
+
+function dataIsoHoje() {
+  const agora = new Date();
+  const yyyy = agora.getFullYear();
+  const mm = String(agora.getMonth() + 1).padStart(2, '0');
+  const dd = String(agora.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+function dataIsoDaquiDias(dias) {
+  const data = new Date();
+  data.setDate(data.getDate() + dias);
+  const yyyy = data.getFullYear();
+  const mm = String(data.getMonth() + 1).padStart(2, '0');
+  const dd = String(data.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
+
 function obterBloqueioLicencaLocal() {
   try {
     const raw = localStorage.getItem(STORAGE_BLOQUEIO_LICENCA_KEY);
@@ -38,6 +72,7 @@ function obterBloqueioLicencaLocal() {
 
 export default function Cobrancas() {
   const [podeAdministrarAsaas] = useState(usuarioPodeAdministrarIntegracaoAsaas);
+  const [ehManutencao] = useState(usuarioEhManutencaoFinanceira);
   const [resumoCobranca, setResumoCobranca] = useState(null);
   const [historicoCobrancas, setHistoricoCobrancas] = useState([]);
   const [statusAsaas, setStatusAsaas] = useState(null);
@@ -53,6 +88,18 @@ export default function Cobrancas() {
   const [erro, setErro] = useState('');
   const [resultadoTeste, setResultadoTeste] = useState(null);
   const [cobrancaTeste, setCobrancaTeste] = useState(null);
+  const [contextoBoleto, setContextoBoleto] = useState(null);
+  const [emitindoBoleto, setEmitindoBoleto] = useState(false);
+  const [resultadoBoleto, setResultadoBoleto] = useState(null);
+  const [formBoleto, setFormBoleto] = useState({
+    escopo_documento: 'projeto',
+    valor: '',
+    vencimento: dataIsoDaquiDias(5),
+    fechar_ciclo: false,
+    confirmar_divergencia: false,
+    descricao: '',
+  });
+
 
   async function carregarStatus() {
     setErro('');
@@ -93,6 +140,26 @@ export default function Cobrancas() {
         }
       } else {
         setStatusAsaas(null);
+      }
+
+      if (ehManutencao) {
+        try {
+          const contextoResponse = await api.get('/api/cobrancas/asaas/boleto-manual/contexto');
+          setContextoBoleto(contextoResponse.data);
+          const valorSugerido = contextoResponse.data?.resumo_calculado?.valor_total_mensalidade;
+          const vencimentoSugerido = contextoResponse.data?.resumo_calculado?.data_vencimento;
+          setFormBoleto((prev) => ({
+            ...prev,
+            valor: prev.valor || (valorSugerido != null ? String(valorSugerido) : ''),
+            vencimento: prev.vencimento || vencimentoSugerido || dataIsoDaquiDias(5),
+            escopo_documento: contextoResponse.data?.projeto?.cnpj ? prev.escopo_documento : 'organizacao',
+          }));
+        } catch (error) {
+          if (error?.response?.status !== 403) {
+            throw error;
+          }
+          setContextoBoleto(null);
+        }
       }
     } catch (error) {
       setErro(error?.response?.data?.detail || 'Não foi possível carregar a configuração de cobrança.');
@@ -147,6 +214,59 @@ export default function Cobrancas() {
       setErro(error?.response?.data?.detail || 'Não foi possível criar a cobrança teste no Sandbox.');
     } finally {
       setCriandoTeste(false);
+    }
+  }
+
+  function mensagemErroApi(error, fallback) {
+    const detail = error?.response?.data?.detail;
+    if (!detail) return fallback;
+    if (typeof detail === 'string') return detail;
+    if (typeof detail === 'object' && detail.mensagem) return detail.mensagem;
+    return fallback;
+  }
+
+  async function emitirBoletoManual({ confirmarDivergencia = false } = {}) {
+    setErro('');
+    setResultadoBoleto(null);
+    const valorNumero = Number(String(formBoleto.valor).replace(',', '.'));
+    if (!Number.isFinite(valorNumero) || valorNumero <= 0) {
+      setErro('Informe um valor válido para o boleto.');
+      return;
+    }
+    if (!formBoleto.vencimento) {
+      setErro('Informe a data de vencimento.');
+      return;
+    }
+
+    try {
+      setEmitindoBoleto(true);
+      const response = await api.post('/api/cobrancas/asaas/boleto-manual', {
+        escopo_documento: formBoleto.escopo_documento,
+        valor: valorNumero,
+        vencimento: formBoleto.vencimento,
+        fechar_ciclo: formBoleto.fechar_ciclo,
+        confirmar_divergencia: confirmarDivergencia || formBoleto.confirmar_divergencia,
+        descricao: formBoleto.descricao.trim() || null,
+      });
+      setResultadoBoleto(response.data);
+      setFormBoleto((prev) => ({ ...prev, confirmar_divergencia: false }));
+      await carregarStatus();
+    } catch (error) {
+      const detail = error?.response?.data?.detail;
+      if (error?.response?.status === 409 && detail?.codigo === 'divergencia_valor_ciclo') {
+        const confirmar = window.confirm(
+          `${detail.mensagem}\n\nCalculado: R$ ${Number(detail.valor_calculado).toFixed(2)}\nInformado: R$ ${Number(detail.valor_informado).toFixed(2)}\n\nDeseja fechar o ciclo com o valor informado?`,
+        );
+        if (confirmar) {
+          await emitirBoletoManual({ confirmarDivergencia: true });
+          return;
+        }
+        setErro(detail.mensagem);
+        return;
+      }
+      setErro(mensagemErroApi(error, 'Não foi possível emitir o boleto manual.'));
+    } finally {
+      setEmitindoBoleto(false);
     }
   }
 
@@ -342,6 +462,158 @@ export default function Cobrancas() {
                 </button>
               )}
             </div>
+          </section>
+          ) : null}
+
+          {ehManutencao ? (
+          <section className="rounded-3xl border border-emerald-100 bg-white p-5 shadow-sm">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <h2 className="text-lg font-black text-slate-900">Boleto manual (livre)</h2>
+                <p className="mt-1 text-sm font-medium text-slate-500">
+                  Emite boleto no Asaas com valor e vencimento definidos por você. Automação mensal permanece desligada.
+                </p>
+              </div>
+              <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-black text-emerald-700">
+                Só Manutenção
+              </span>
+            </div>
+
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <InfoCard
+                titulo="Cadastros calculados"
+                valor={String(contextoBoleto?.resumo_calculado?.total_cadastros_faturaveis ?? '-')}
+              />
+              <InfoCard
+                titulo="Valor sugerido"
+                valor={formatarMoeda(contextoBoleto?.resumo_calculado?.valor_total_mensalidade)}
+              />
+              <InfoCard
+                titulo="CNPJ organização"
+                valor={contextoBoleto?.organizacao?.cnpj || '-'}
+              />
+              <InfoCard
+                titulo="CNPJ projeto"
+                valor={contextoBoleto?.projeto?.cnpj || 'Projeto sem CNPJ'}
+              />
+            </div>
+
+            <div className="mt-5 grid gap-3 md:grid-cols-2">
+              <label className="block">
+                <span className="mb-1 block text-xs font-black uppercase tracking-wide text-slate-500">CNPJ do boleto</span>
+                <select
+                  className="min-h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800"
+                  value={formBoleto.escopo_documento}
+                  onChange={(e) => setFormBoleto((prev) => ({ ...prev, escopo_documento: e.target.value }))}
+                >
+                  <option value="organizacao">
+                    Organização — {contextoBoleto?.organizacao?.nome || 'AEB'} ({contextoBoleto?.organizacao?.cnpj || 'sem CNPJ'})
+                  </option>
+                  <option value="projeto" disabled={!contextoBoleto?.projeto?.cnpj}>
+                    Projeto — {contextoBoleto?.projeto?.nome || 'atual'} ({contextoBoleto?.projeto?.cnpj || 'sem CNPJ'})
+                  </option>
+                </select>
+              </label>
+
+              <label className="block">
+                <span className="mb-1 block text-xs font-black uppercase tracking-wide text-slate-500">Valor (R$)</span>
+                <input
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  className="min-h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800"
+                  value={formBoleto.valor}
+                  onChange={(e) => setFormBoleto((prev) => ({ ...prev, valor: e.target.value }))}
+                  placeholder="0,00"
+                />
+              </label>
+
+              <label className="block">
+                <span className="mb-1 block text-xs font-black uppercase tracking-wide text-slate-500">Vencimento</span>
+                <input
+                  type="date"
+                  min={dataIsoHoje()}
+                  className="min-h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800"
+                  value={formBoleto.vencimento}
+                  onChange={(e) => setFormBoleto((prev) => ({ ...prev, vencimento: e.target.value }))}
+                />
+              </label>
+
+              <label className="block">
+                <span className="mb-1 block text-xs font-black uppercase tracking-wide text-slate-500">Descrição (opcional)</span>
+                <input
+                  className="min-h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800"
+                  value={formBoleto.descricao}
+                  onChange={(e) => setFormBoleto((prev) => ({ ...prev, descricao: e.target.value }))}
+                  placeholder="Ex.: Mensalidade SIAT julho/2026"
+                />
+              </label>
+            </div>
+
+            <label className="mt-4 flex items-start gap-3 rounded-2xl border border-slate-100 bg-slate-50 p-4 text-sm font-semibold text-slate-700">
+              <input
+                type="checkbox"
+                className="mt-1"
+                checked={formBoleto.fechar_ciclo}
+                onChange={(e) => setFormBoleto((prev) => ({ ...prev, fechar_ciclo: e.target.checked }))}
+              />
+              <span>
+                Também fechar o ciclo de cobrança com este valor.
+                Se divergir do calculado, o sistema pede confirmação e fecha mesmo assim.
+              </span>
+            </label>
+
+            <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center">
+              <button
+                type="button"
+                onClick={() => emitirBoletoManual()}
+                disabled={emitindoBoleto || !statusAsaas?.valido}
+                className="inline-flex items-center justify-center gap-2 rounded-2xl bg-emerald-600 px-5 py-3 text-sm font-black text-white shadow-lg shadow-emerald-600/20 transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:shadow-none"
+              >
+                <CreditCard size={17} />
+                {emitindoBoleto ? 'Emitindo...' : 'Emitir boleto no Asaas'}
+              </button>
+              {!statusAsaas?.valido ? (
+                <p className="text-xs font-bold text-amber-700">
+                  Configure/valide a integração Asaas antes de emitir.
+                </p>
+              ) : null}
+            </div>
+
+            {resultadoBoleto?.cobranca ? (
+              <div className="mt-5 rounded-2xl border border-emerald-100 bg-emerald-50 p-4 text-sm font-semibold text-emerald-800">
+                <div className="flex items-center gap-2 font-black">
+                  <CheckCircle2 size={18} />
+                  Boleto gerado — {resultadoBoleto.cobranca.pagador}
+                </div>
+                <p className="mt-2">
+                  Valor: {formatarMoeda(resultadoBoleto.cobranca.valor)} · Vencimento: {formatarData(resultadoBoleto.cobranca.vencimento)}
+                  {resultadoBoleto.fechar_ciclo ? ' · Ciclo fechado' : ' · Sem fechar ciclo'}
+                </p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {resultadoBoleto.cobranca.invoice_url ? (
+                    <a
+                      href={resultadoBoleto.cobranca.invoice_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="rounded-xl bg-emerald-700 px-4 py-2 text-xs font-black text-white"
+                    >
+                      Abrir fatura / pagar
+                    </a>
+                  ) : null}
+                  {resultadoBoleto.cobranca.bank_slip_url ? (
+                    <a
+                      href={resultadoBoleto.cobranca.bank_slip_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="rounded-xl border border-emerald-700 px-4 py-2 text-xs font-black text-emerald-800"
+                    >
+                      Baixar boleto
+                    </a>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
           </section>
           ) : null}
 

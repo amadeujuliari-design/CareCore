@@ -98,6 +98,24 @@ class SimularStatusCobrancaRequest(BaseModel):
         return normalizado
 
 
+class BoletoManualRequest(BaseModel):
+    escopo_documento: str = Field(default="organizacao")
+    valor: float = Field(gt=0, le=500000)
+    vencimento: date
+    fechar_ciclo: bool = False
+    data_fechamento: date | None = None
+    confirmar_divergencia: bool = False
+    descricao: str | None = Field(default=None, max_length=200)
+
+    @field_validator("escopo_documento")
+    @classmethod
+    def validar_escopo(cls, valor: str) -> str:
+        normalizado = (valor or "").strip().lower()
+        if normalizado not in {"organizacao", "projeto"}:
+            raise ValueError("Escopo deve ser 'organizacao' ou 'projeto'.")
+        return normalizado
+
+
 class LiberacaoTemporariaRequest(BaseModel):
     dias: int = Field(ge=1, le=30)
     motivo: str = Field(min_length=10, max_length=600)
@@ -532,38 +550,70 @@ def serializar_ciclo(ciclo: CobrancaCicloDB, rateios: list[CobrancaProjetoRateio
     }
 
 
-def montar_cliente_asaas_organizacao(organizacao: OrganizacaoDB) -> dict:
-    documento = limpar_documento_asaas(organizacao.cnpj)
+def montar_cliente_asaas_cadastro(
+    *,
+    nome: str,
+    cnpj: str | None,
+    email: str | None,
+    emails_adicionais: str | None,
+    external_reference: str,
+) -> dict:
+    documento = limpar_documento_asaas(cnpj)
     if len(documento) not in {11, 14}:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="A organização precisa ter CPF/CNPJ válido para gerar cobrança Asaas.",
+            detail="CNPJ/CPF inválido para gerar cobrança Asaas.",
         )
 
-    email_principal = (organizacao.email or "").strip() or None
-    emails_adicionais = (getattr(organizacao, "emails_adicionais", None) or "").strip() or None
+    nome_limpo = (nome or "").strip()
+    if not nome_limpo:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Nome do pagador é obrigatório para gerar cobrança Asaas.",
+        )
+
+    email_principal = (email or "").strip() or None
+    emails_extra = (emails_adicionais or "").strip() or None
 
     dados_cliente = {
-        "name": organizacao.nome.strip(),
+        "name": nome_limpo,
         "cpfCnpj": documento,
-        "externalReference": f"carecore-organizacao-{organizacao.id}",
-        # Notificações Asaas ligadas quando há e-mail para receber boleto/avisos.
+        "externalReference": external_reference,
         "notificationDisabled": not bool(email_principal),
     }
     if email_principal:
         dados_cliente["email"] = email_principal
 
-    if emails_adicionais:
-        # API Asaas: additionalEmails — string, e-mails separados por vírgula (limite ~100 chars).
+    if emails_extra:
         adicionais = ",".join(
             parte.strip()
-            for parte in re.split(r"[,;]+", emails_adicionais)
+            for parte in re.split(r"[,;]+", emails_extra)
             if parte.strip() and parte.strip().lower() != (email_principal or "").lower()
         )
         if adicionais:
             dados_cliente["additionalEmails"] = adicionais[:100]
 
     return dados_cliente
+
+
+def montar_cliente_asaas_organizacao(organizacao: OrganizacaoDB) -> dict:
+    return montar_cliente_asaas_cadastro(
+        nome=organizacao.nome,
+        cnpj=organizacao.cnpj,
+        email=organizacao.email,
+        emails_adicionais=getattr(organizacao, "emails_adicionais", None),
+        external_reference=f"carecore-organizacao-{organizacao.id}",
+    )
+
+
+def montar_cliente_asaas_projeto(projeto: InstituicaoDB) -> dict:
+    return montar_cliente_asaas_cadastro(
+        nome=projeto.nome_fantasia,
+        cnpj=projeto.cnpj,
+        email=projeto.email,
+        emails_adicionais=getattr(projeto, "emails_adicionais", None),
+        external_reference=f"carecore-projeto-{projeto.id}",
+    )
 
 
 async def calcular_resumo_cobranca_organizacao(
@@ -1239,6 +1289,284 @@ async def simular_status_cobranca_ciclo(
         "ok": True,
         "simulado": True,
         "ciclo": serializar_ciclo(ciclo, list(rateios)),
+    }
+
+
+@router.get("/asaas/boleto-manual/contexto")
+async def contexto_boleto_manual(
+    data_fechamento: date | None = Query(None),
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    exigir_usuario_manutencao_financeira(usuario_atual)
+
+    resumo = await calcular_resumo_cobranca_organizacao(
+        db,
+        usuario_atual,
+        data_fechamento,
+        None,
+    )
+    organizacao = (
+        await db.execute(
+            select(OrganizacaoDB).where(OrganizacaoDB.id == resumo["organizacao_id"])
+        )
+    ).scalar_one_or_none()
+    if not organizacao:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organização não encontrada.")
+
+    projeto = None
+    instituicao_id = usuario_atual.get("instituicao_id")
+    if instituicao_id:
+        projeto = (
+            await db.execute(
+                select(InstituicaoDB).where(InstituicaoDB.id == instituicao_id)
+            )
+        ).scalar_one_or_none()
+
+    return {
+        "organizacao": {
+            "id": organizacao.id,
+            "nome": organizacao.nome,
+            "cnpj": organizacao.cnpj,
+            "email": organizacao.email,
+            "emails_adicionais": getattr(organizacao, "emails_adicionais", None),
+        },
+        "projeto": {
+            "id": projeto.id,
+            "nome": projeto.nome_fantasia,
+            "cnpj": projeto.cnpj,
+            "email": projeto.email,
+            "emails_adicionais": getattr(projeto, "emails_adicionais", None),
+        } if projeto else None,
+        "resumo_calculado": {
+            "data_fechamento": resumo["data_fechamento"],
+            "data_vencimento": resumo["data_vencimento"],
+            "total_cadastros_faturaveis": resumo["total_cadastros_faturaveis"],
+            "valor_total_mensalidade": resumo["valor_total_mensalidade"],
+            "modo": resumo["modo"],
+            "projetos": resumo["projetos"],
+        },
+        "automacao": cobrancas_automacao_config(),
+    }
+
+
+@router.post("/asaas/boleto-manual")
+async def emitir_boleto_manual(
+    payload: BoletoManualRequest,
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    exigir_usuario_manutencao_financeira(usuario_atual)
+
+    if payload.vencimento < date.today():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="A data de vencimento não pode ser anterior a hoje.",
+        )
+
+    resumo = await calcular_resumo_cobranca_organizacao(
+        db,
+        usuario_atual,
+        payload.data_fechamento,
+        None,
+    )
+    organizacao = (
+        await db.execute(
+            select(OrganizacaoDB).where(OrganizacaoDB.id == resumo["organizacao_id"])
+        )
+    ).scalar_one_or_none()
+    if not organizacao:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organização não encontrada.")
+
+    projeto = None
+    instituicao_id = usuario_atual.get("instituicao_id")
+    if instituicao_id:
+        projeto = (
+            await db.execute(
+                select(InstituicaoDB).where(InstituicaoDB.id == instituicao_id)
+            )
+        ).scalar_one_or_none()
+
+    if payload.escopo_documento == "projeto":
+        if not projeto:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Entre em um projeto para emitir boleto no CNPJ do projeto.",
+            )
+        dados_cliente = montar_cliente_asaas_projeto(projeto)
+        nome_pagador = projeto.nome_fantasia
+    else:
+        dados_cliente = montar_cliente_asaas_organizacao(organizacao)
+        nome_pagador = organizacao.nome
+
+    valor_informado = round(float(payload.valor), 2)
+    valor_calculado = round(float(resumo["valor_total_mensalidade"] or 0), 2)
+    divergencia = abs(valor_informado - valor_calculado) >= 0.01
+
+    ciclo = None
+    rateios_criados: list[CobrancaProjetoRateioDB] = []
+
+    if payload.fechar_ciclo:
+        if divergencia and not payload.confirmar_divergencia:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={
+                    "codigo": "divergencia_valor_ciclo",
+                    "mensagem": (
+                        "O valor informado diverge do calculado. "
+                        "Confirme a divergência para fechar o ciclo com o valor manual."
+                    ),
+                    "valor_informado": valor_informado,
+                    "valor_calculado": valor_calculado,
+                    "total_cadastros_faturaveis": resumo["total_cadastros_faturaveis"],
+                },
+            )
+
+        data_fechamento = date.fromisoformat(resumo["data_fechamento"])
+        ciclo = (
+            await db.execute(
+                select(CobrancaCicloDB).where(
+                    CobrancaCicloDB.organizacao_id == resumo["organizacao_id"],
+                    CobrancaCicloDB.data_fechamento == data_fechamento,
+                )
+            )
+        ).scalar_one_or_none()
+
+        agora = agora_utc_naive()
+        if not ciclo:
+            ciclo = CobrancaCicloDB(
+                organizacao_id=resumo["organizacao_id"],
+                data_fechamento=data_fechamento,
+                data_corte_inativacao=date.fromisoformat(resumo["data_corte_inativacao"]),
+                data_vencimento=payload.vencimento,
+                criado_por_id=usuario_atual.get("sub") or usuario_atual.get("id"),
+                criado_em=agora,
+            )
+            db.add(ciclo)
+        else:
+            if ciclo.asaas_payment_id:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Este ciclo já possui cobrança vinculada ao Asaas.",
+                )
+            ciclo.atualizado_em = agora
+            ciclo.data_vencimento = payload.vencimento
+
+        ciclo.modo = "manual" if divergencia else resumo["modo"]
+        ciclo.total_cadastros_faturaveis = resumo["total_cadastros_faturaveis"]
+        ciclo.valor_total_mensalidade = valor_informado
+        ciclo.status = "Calculado"
+        ciclo.status_pagamento = ciclo.status_pagamento or "Pendente"
+
+        await db.flush()
+        await db.execute(delete(CobrancaProjetoRateioDB).where(CobrancaProjetoRateioDB.ciclo_id == ciclo.id))
+
+        for projeto_rateio in resumo["projetos"]:
+            rateio = CobrancaProjetoRateioDB(
+                ciclo_id=ciclo.id,
+                organizacao_id=resumo["organizacao_id"],
+                instituicao_id=projeto_rateio["projeto_id"],
+                projeto_nome=projeto_rateio["projeto_nome"],
+                conviventes_faturaveis=projeto_rateio.get("conviventes_faturaveis") or 0,
+                usuarios_faturaveis=projeto_rateio.get("usuarios_faturaveis") or 0,
+                cadastros_faturaveis=projeto_rateio.get("cadastros_faturaveis") or 0,
+                percentual_rateio=projeto_rateio.get("percentual_rateio"),
+                valor_mensalidade=projeto_rateio.get("valor_mensalidade") or 0,
+            )
+            db.add(rateio)
+            rateios_criados.append(rateio)
+
+        await db.flush()
+        referencia = f"carecore-ciclo-{ciclo.id}"
+        descricao = payload.descricao or (
+            f"Mensalidade CareCore+ - {nome_pagador} - ciclo {data_fechamento.strftime('%m/%Y')}"
+        )
+    else:
+        referencia = f"carecore-avulsa-{uuid.uuid4()}"
+        descricao = payload.descricao or f"Cobrança CareCore+ - {nome_pagador}"
+
+    try:
+        cliente = AsaasClient()
+        cliente_asaas = await asyncio.to_thread(cliente.criar_cliente, dados_cliente)
+        cliente_id = cliente_asaas.get("id")
+        if not cliente_id:
+            raise AsaasErro(None, "Asaas não retornou o identificador do cliente.")
+
+        dados_cobranca = {
+            "customer": cliente_id,
+            "billingType": "BOLETO",
+            "value": valor_informado,
+            "dueDate": payload.vencimento.isoformat(),
+            "description": descricao,
+            "externalReference": referencia,
+        }
+        cobranca_asaas = await asyncio.to_thread(cliente.criar_cobranca, dados_cobranca)
+    except AsaasConfigErro as erro:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(erro)) from erro
+    except AsaasErro as erro:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(erro)) from erro
+
+    payment_id = cobranca_asaas.get("id")
+    if not payment_id:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Asaas não retornou o identificador da cobrança.",
+        )
+
+    if ciclo is not None:
+        ciclo.asaas_customer_id = cliente_id
+        ciclo.asaas_payment_id = payment_id
+        ciclo.asaas_invoice_url = cobranca_asaas.get("invoiceUrl")
+        ciclo.asaas_bank_slip_url = cobranca_asaas.get("bankSlipUrl")
+        ciclo.status = "CobrancaGerada"
+        ciclo.status_pagamento = status_pagamento_asaas_para_carecore(cobranca_asaas.get("status"))
+        ciclo.atualizado_em = agora_utc_naive()
+
+    evento = CobrancaEventoAsaasDB(
+        ciclo_id=ciclo.id if ciclo else None,
+        organizacao_id=organizacao.id,
+        asaas_event_id=f"manual-{payment_id}-{uuid.uuid4()}",
+        evento_tipo="PAYMENT_CREATED_MANUAL",
+        payload=json.dumps(
+            {
+                "payment": cobranca_asaas,
+                "escopo_documento": payload.escopo_documento,
+                "fechar_ciclo": payload.fechar_ciclo,
+                "valor_informado": valor_informado,
+                "valor_calculado": valor_calculado,
+                "referencia": referencia,
+            },
+            ensure_ascii=False,
+            default=str,
+        ),
+        recebido_em=agora_utc_naive(),
+    )
+    db.add(evento)
+    await db.commit()
+
+    if ciclo is not None:
+        await db.refresh(ciclo)
+
+    return {
+        "ok": True,
+        "ambiente": cliente.config.ambiente,
+        "fechar_ciclo": payload.fechar_ciclo,
+        "divergencia": divergencia,
+        "valor_informado": valor_informado,
+        "valor_calculado": valor_calculado,
+        "ciclo": serializar_ciclo(ciclo, rateios_criados) if ciclo else None,
+        "cobranca": {
+            "id": payment_id,
+            "status": cobranca_asaas.get("status"),
+            "billing_type": cobranca_asaas.get("billingType"),
+            "valor": cobranca_asaas.get("value"),
+            "vencimento": cobranca_asaas.get("dueDate"),
+            "invoice_url": cobranca_asaas.get("invoiceUrl"),
+            "bank_slip_url": cobranca_asaas.get("bankSlipUrl"),
+            "external_reference": referencia,
+            "pagador": nome_pagador,
+            "escopo_documento": payload.escopo_documento,
+        },
     }
 
 

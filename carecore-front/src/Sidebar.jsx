@@ -431,8 +431,7 @@ export default function Sidebar() {
           path: '/cobrancas',
           icon: CreditCard,
           label: 'Cobranças',
-          perfis: ['Gestor', 'Global'],
-          feature: 'cobrancasCliente'
+          perfis: ['Manutenção'],
         },
         {
           path: '/admin/cobrancas',
@@ -552,7 +551,7 @@ export default function Sidebar() {
     }
     const featurePermitida =
       (item.feature !== 'historicoLegado' || historicoLegadoAtivo) &&
-      (item.feature !== 'cobrancasCliente' || cobrancasClienteVisivel);
+      (item.feature !== 'cobrancasCliente' || cobrancasClienteVisivel || isManutencao);
     return perfilPermitido && globalPermitido && featurePermitida;
   };
 

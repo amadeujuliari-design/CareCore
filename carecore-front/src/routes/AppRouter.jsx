@@ -330,7 +330,7 @@ function RotasAplicacao() {
         <Route
           path="/cobrancas"
           element={
-            <ProtectedRoute perfis={['Gestor', 'Global']}>
+            <ProtectedRoute perfis={['Manutenção']}>
               <Cobrancas />
             </ProtectedRoute>
           }
