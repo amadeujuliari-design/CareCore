@@ -865,7 +865,10 @@ async def responder_ausencia_justificada(
 async def listar_conviventes_resumo(
     status: str | None = Query(
         None,
-        description="Filtra por status exato (ex.: Ativo). Sem filtro, retorna todos.",
+        description=(
+            "Filtra por status exato. Aceita um valor (ex.: Ativo) ou vários "
+            "separados por vírgula (ex.: Ativo,Ausência justificada)."
+        ),
     ),
     db: AsyncSession = Depends(get_db),
     usuario_atual: dict = Depends(get_usuario_logado)
@@ -888,7 +891,11 @@ async def listar_conviventes_resumo(
 
     status_filtro = (status or "").strip()
     if status_filtro:
-        query = query.where(ConviventeDB.status == status_filtro)
+        statuses = [parte.strip() for parte in status_filtro.split(",") if parte.strip()]
+        if len(statuses) == 1:
+            query = query.where(ConviventeDB.status == statuses[0])
+        elif statuses:
+            query = query.where(ConviventeDB.status.in_(statuses))
 
     rows = (
         await db.execute(
@@ -3500,6 +3507,82 @@ async def registar_rotina(
     return novo_registro
 
 
+STATUS_CONVIVENTE_OPERACIONAIS_ROTINA = (
+    "Ativo",
+    "Em acolhimento",
+    "Ausência justificada",
+)
+
+
+async def _ultimos_registros_rotina_por_grupo(
+    db: AsyncSession,
+    *,
+    instituicao_id: str,
+    tipos: list[str] | set[str],
+    convivente_ids: list[str] | None = None,
+    grupo_por_tipo: dict[str, str] | None = None,
+) -> list[RegistroRotinaDB]:
+    """Último registro por convivente (e opcionalmente por grupo de tipos)."""
+    tipos_lista = list(tipos)
+    if not tipos_lista:
+        return []
+    if convivente_ids is not None and len(convivente_ids) == 0:
+        return []
+
+    filtros = [
+        RegistroRotinaDB.instituicao_id == instituicao_id,
+        RegistroRotinaDB.cancelado != True,
+        RegistroRotinaDB.tipo_registro.in_(tipos_lista),
+    ]
+    if convivente_ids is not None:
+        filtros.append(RegistroRotinaDB.convivente_id.in_(convivente_ids))
+
+    if grupo_por_tipo:
+        grupo_expr = case(
+            *[
+                (RegistroRotinaDB.tipo_registro == tipo, grupo)
+                for tipo, grupo in grupo_por_tipo.items()
+            ],
+            else_="outro",
+        )
+        particoes = (RegistroRotinaDB.convivente_id, grupo_expr)
+    else:
+        particoes = (RegistroRotinaDB.convivente_id,)
+
+    ranked = (
+        select(
+            RegistroRotinaDB.id.label("registro_id"),
+            func.row_number()
+            .over(
+                partition_by=particoes,
+                order_by=RegistroRotinaDB.data_registro.desc(),
+            )
+            .label("rn"),
+        )
+        .where(*filtros)
+        .subquery()
+    )
+
+    resultado = await db.execute(
+        select(RegistroRotinaDB)
+        .join(ranked, RegistroRotinaDB.id == ranked.c.registro_id)
+        .where(ranked.c.rn == 1)
+    )
+    return list(resultado.scalars().all())
+
+
+def _estrutura_resumo_rotina_vazia() -> dict:
+    return {
+        "presencas": [],
+        "ultimo_movimento": None,
+        "ultimo_movimento_id": None,
+        "ultimo_movimento_data": None,
+        "almocou": False,
+        "refeicoes": {},
+        "ultimas_interacoes": {},
+    }
+
+
 @router.get("/rotina/hoje")
 async def resumo_rotina_hoje(
     db: AsyncSession = Depends(get_db),
@@ -3511,6 +3594,7 @@ async def resumo_rotina_hoje(
     # ============================================================
 
     hoje = agora_sao_paulo().date()
+    instituicao_id = obter_instituicao_escopo(usuario_atual)
 
     inicio_dia = datetime.combine(
         hoje,
@@ -3520,7 +3604,7 @@ async def resumo_rotina_hoje(
     registros_hoje = (
         await db.execute(
             select(RegistroRotinaDB).where(
-                RegistroRotinaDB.instituicao_id == obter_instituicao_escopo(usuario_atual),
+                RegistroRotinaDB.instituicao_id == instituicao_id,
                 RegistroRotinaDB.cancelado != True,
                 RegistroRotinaDB.data_registro >= inicio_dia
             ).order_by(
@@ -3529,38 +3613,29 @@ async def resumo_rotina_hoje(
         )
     ).scalars().all()
 
-    # ============================================================
-    # ÚLTIMO MOVIMENTO HISTÓRICO REAL
-    # (não pode resetar na virada do dia)
-    # ============================================================
-
-    ultimo_movimento_subq = (
-        select(
-            RegistroRotinaDB.convivente_id.label("convivente_id"),
-            func.max(RegistroRotinaDB.data_registro).label("ultima_data")
-        )
-        .where(
-            RegistroRotinaDB.instituicao_id == obter_instituicao_escopo(usuario_atual),
-            RegistroRotinaDB.cancelado != True,
-            RegistroRotinaDB.tipo_registro.in_(["Entrada", "Saída"])
-        )
-        .group_by(RegistroRotinaDB.convivente_id)
-        .subquery()
-    )
-
-    ultimos_movimentos = (
-        await db.execute(
-            select(RegistroRotinaDB)
-            .join(
-                ultimo_movimento_subq,
-                and_(
-                    RegistroRotinaDB.convivente_id == ultimo_movimento_subq.c.convivente_id,
-                    RegistroRotinaDB.data_registro == ultimo_movimento_subq.c.ultima_data
+    ids_operacionais = list(
+        (
+            await db.execute(
+                select(ConviventeDB.id).where(
+                    ConviventeDB.instituicao_id == instituicao_id,
+                    ConviventeDB.status.in_(STATUS_CONVIVENTE_OPERACIONAIS_ROTINA),
                 )
             )
-            .where(RegistroRotinaDB.instituicao_id == obter_instituicao_escopo(usuario_atual))
-        )
-    ).scalars().all()
+        ).scalars().all()
+    )
+    ids_escopo = list({*ids_operacionais, *(r.convivente_id for r in registros_hoje)})
+
+    # ============================================================
+    # ÚLTIMO MOVIMENTO HISTÓRICO REAL
+    # (não pode resetar na virada do dia; escopo = conviventes operacionais)
+    # ============================================================
+
+    ultimos_movimentos = await _ultimos_registros_rotina_por_grupo(
+        db,
+        instituicao_id=instituicao_id,
+        tipos=["Entrada", "Saída"],
+        convivente_ids=ids_escopo,
+    )
 
     resumo = {}
 
@@ -3571,16 +3646,7 @@ async def resumo_rotina_hoje(
     for r in registros_hoje:
 
         if r.convivente_id not in resumo:
-
-            resumo[r.convivente_id] = {
-                "presencas": [],
-                "ultimo_movimento": None,
-                "ultimo_movimento_id": None,
-                "ultimo_movimento_data": None,
-                "almocou": False,
-                "refeicoes": {},
-                "ultimas_interacoes": {},
-            }
+            resumo[r.convivente_id] = _estrutura_resumo_rotina_vazia()
 
         resumo[r.convivente_id]["presencas"].append({
             "id": r.id,
@@ -3636,131 +3702,44 @@ async def resumo_rotina_hoje(
 
     for r in ultimos_movimentos:
         if r.convivente_id not in resumo:
+            resumo[r.convivente_id] = _estrutura_resumo_rotina_vazia()
 
-            resumo[r.convivente_id] = {
-                "presencas": [],
-                "ultimo_movimento": None,
-                "ultimo_movimento_id": None,
-                "ultimo_movimento_data": None,
-                "almocou": False,
-                "refeicoes": {},
-                "ultimas_interacoes": {},
-            }
-
-        if r.tipo_registro in [
-            "Entrada",
-            "Saída"
-        ]:
-
-            resumo[r.convivente_id]["ultimo_movimento"] = (
-                r.tipo_registro
-            )
-
+        if r.tipo_registro in {"Entrada", "Saída"}:
+            resumo[r.convivente_id]["ultimo_movimento"] = r.tipo_registro
             resumo[r.convivente_id]["ultimo_movimento_id"] = r.id
-
-            resumo[r.convivente_id]["ultimo_movimento_data"] = (
-                r.data_registro.isoformat()
-            )
+            resumo[r.convivente_id]["ultimo_movimento_data"] = r.data_registro.isoformat()
 
     # Última interação de pares (cobertor/toalha/bagageiro) — histórico completo,
     # alinhado à validação em registar_rotina (não reseta na virada do dia).
-    instituicao_id = obter_instituicao_escopo(usuario_atual)
-    grupos_pares_resumo = {
-        "Cobertor": ["Retirada de Cobertor", "Entrega de Cobertor"],
-        "Toalha": ["Retirada de Toalha", "Entrega de Toalha"],
+    grupo_por_tipo = {
+        "Retirada de Cobertor": "Cobertor",
+        "Entrega de Cobertor": "Cobertor",
+        "Retirada de Toalha": "Toalha",
+        "Entrega de Toalha": "Toalha",
+        TIPO_ROTINA_BAGAGEIRO: "Bagageiro",
     }
-
-    for grupo, tipos in grupos_pares_resumo.items():
-        ultima_data_subq = (
-            select(
-                RegistroRotinaDB.convivente_id.label("convivente_id"),
-                func.max(RegistroRotinaDB.data_registro).label("ultima_data"),
-            )
-            .where(
-                RegistroRotinaDB.instituicao_id == instituicao_id,
-                RegistroRotinaDB.cancelado != True,
-                RegistroRotinaDB.tipo_registro.in_(tipos),
-            )
-            .group_by(RegistroRotinaDB.convivente_id)
-            .subquery()
-        )
-
-        ultimas_pares = (
-            await db.execute(
-                select(RegistroRotinaDB)
-                .join(
-                    ultima_data_subq,
-                    and_(
-                        RegistroRotinaDB.convivente_id == ultima_data_subq.c.convivente_id,
-                        RegistroRotinaDB.data_registro == ultima_data_subq.c.ultima_data,
-                    ),
-                )
-                .where(RegistroRotinaDB.instituicao_id == instituicao_id)
-            )
-        ).scalars().all()
-
-        for registro in ultimas_pares:
-            if registro.convivente_id not in resumo:
-                resumo[registro.convivente_id] = {
-                    "presencas": [],
-                    "ultimo_movimento": None,
-                    "ultimo_movimento_id": None,
-                    "ultimo_movimento_data": None,
-                    "almocou": False,
-                    "refeicoes": {},
-                    "ultimas_interacoes": {},
-                }
-
-            resumo[registro.convivente_id]["ultimas_interacoes"][grupo] = {
-                "tipo_registro": registro.tipo_registro,
-                "data_registro": registro.data_registro.isoformat(),
-            }
-
-    ultima_bagageiro_subq = (
-        select(
-            RegistroRotinaDB.convivente_id.label("convivente_id"),
-            func.max(RegistroRotinaDB.data_registro).label("ultima_data"),
-        )
-        .where(
-            RegistroRotinaDB.instituicao_id == instituicao_id,
-            RegistroRotinaDB.cancelado != True,
-            RegistroRotinaDB.tipo_registro == TIPO_ROTINA_BAGAGEIRO,
-        )
-        .group_by(RegistroRotinaDB.convivente_id)
-        .subquery()
+    ultimas_interacoes_hist = await _ultimos_registros_rotina_por_grupo(
+        db,
+        instituicao_id=instituicao_id,
+        tipos=list(grupo_por_tipo.keys()),
+        convivente_ids=ids_escopo,
+        grupo_por_tipo=grupo_por_tipo,
     )
 
-    ultimos_bagageiro = (
-        await db.execute(
-            select(RegistroRotinaDB)
-            .join(
-                ultima_bagageiro_subq,
-                and_(
-                    RegistroRotinaDB.convivente_id == ultima_bagageiro_subq.c.convivente_id,
-                    RegistroRotinaDB.data_registro == ultima_bagageiro_subq.c.ultima_data,
-                ),
-            )
-            .where(RegistroRotinaDB.instituicao_id == instituicao_id)
-        )
-    ).scalars().all()
-
-    for registro in ultimos_bagageiro:
+    for registro in ultimas_interacoes_hist:
+        grupo = grupo_por_tipo.get(registro.tipo_registro)
+        if not grupo:
+            continue
         if registro.convivente_id not in resumo:
-            resumo[registro.convivente_id] = {
-                "presencas": [],
-                "ultimo_movimento": None,
-                "ultimo_movimento_id": None,
-                "ultimo_movimento_data": None,
-                "almocou": False,
-                "refeicoes": {},
-                "ultimas_interacoes": {},
-            }
+            resumo[registro.convivente_id] = _estrutura_resumo_rotina_vazia()
 
-        resumo[registro.convivente_id]["ultimas_interacoes"]["Bagageiro"] = {
+        interacao = {
             "tipo_registro": registro.tipo_registro,
-            "observacao": registro.observacao,
             "data_registro": registro.data_registro.isoformat(),
         }
+        if grupo == "Bagageiro":
+            interacao["observacao"] = registro.observacao
+        resumo[registro.convivente_id]["ultimas_interacoes"][grupo] = interacao
 
     return resumo
 

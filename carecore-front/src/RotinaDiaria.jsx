@@ -367,7 +367,7 @@ export default function RotinaDiaria() {
 };
 }, [scannerAberto, deviceInfo.isSecureCameraContext, deviceInfo.isTouchDevice]);
 
-  const carregarDados = async ({ silencioso = false } = {}) => {
+  const carregarDados = async ({ silencioso = false, somenteRotina = false } = {}) => {
     if (!silencioso) {
       setLoading(true);
     }
@@ -377,19 +377,50 @@ export default function RotinaDiaria() {
         headers: criarHeadersAutenticados(token)
       };
 
-      const [resConv, resRotina, resQuartos] = await Promise.all([
-        axios.get(`${API_ROOT}/conviventes/resumo`, config),
+      // Sync em segundo plano: só atualiza o mapa do dia (lista continua organizada e “ao vivo”).
+      if (somenteRotina) {
+        const resRotina = await axios.get(`${API_ROOT}/rotina/hoje`, config);
+        setResumoHoje(resRotina.data || {});
+        return;
+      }
+
+      const statusOperacionais = 'Ativo,Em acolhimento,Ausência justificada';
+      const statusBloqueioLeitura = 'Inativado,Bloqueado,Saída qualificada';
+
+      const [resConvOperacionais, resRotina, resQuartos] = await Promise.all([
+        axios.get(`${API_ROOT}/conviventes/resumo`, {
+          ...config,
+          params: { status: statusOperacionais },
+        }),
         axios.get(`${API_ROOT}/rotina/hoje`, config),
         axios.get(`${API_ROOT}/quartos`, config),
       ]);
 
-      const resumoTodos = resConv.data || [];
-      const ativos = resumoTodos.filter(c => c.status === 'Ativo');
+      const operacionais = resConvOperacionais.data || [];
 
-      setConviventesResumoTodos(resumoTodos);
-      setConviventes(ativos);
+      setConviventes(operacionais.filter((c) => c.status === 'Ativo'));
+      setConviventesResumoTodos(operacionais);
       setQuartos(ordenarQuartosComLeitos(resQuartos.data || []));
       setResumoHoje(resRotina.data || {});
+
+      // Libera a tela cedo; bloqueio de bip de inativos completa em seguida.
+      if (!silencioso) {
+        setLoading(false);
+      }
+
+      try {
+        const resBloqueio = await axios.get(`${API_ROOT}/conviventes/resumo`, {
+          ...config,
+          params: { status: statusBloqueioLeitura },
+        });
+        const bloqueados = resBloqueio.data || [];
+        setConviventesResumoTodos((prev) => {
+          const porId = new Map([...(prev || []), ...bloqueados].map((item) => [item.id, item]));
+          return Array.from(porId.values());
+        });
+      } catch (errorBloqueio) {
+        console.warn('Não foi possível complementar conviventes para bloqueio de leitura', errorBloqueio);
+      }
     } catch (error) {
       console.error('Erro ao carregar dados da rotina', error);
       if (!silencioso) {
@@ -434,7 +465,7 @@ export default function RotinaDiaria() {
 
       if (assinaturaSyncRotinaRef.current !== assinaturaAtual) {
         assinaturaSyncRotinaRef.current = assinaturaAtual;
-        await carregarDados({ silencioso: true });
+        await carregarDados({ silencioso: true, somenteRotina: true });
       }
     } catch (error) {
       console.warn('Não foi possível verificar sincronização da rotina', error);
