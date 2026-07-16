@@ -12,10 +12,12 @@ import {
 import { mesReferenciaAtual, usuarioSomenteLeituraAtividades } from './config/atividadesConfig';
 import { registroAindaPodeSerDesfeitoRotina } from './utils/rotinaDiariaUtils';
 import { exportarGradeAtividadeXlsx } from './utils/exportarAtividadesXlsx';
+import { formatarDataBr } from './utils/dataBrasilUtils';
 
 function formatarDataCurta(valor) {
   if (!valor) return '-';
-  return new Date(`${valor}T12:00:00`).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+  const completo = formatarDataBr(valor);
+  return completo ? completo.slice(0, 5) : '-';
 }
 
 function linhaTemPresenca(linha) {

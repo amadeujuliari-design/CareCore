@@ -15,6 +15,7 @@ import {
   obterUrlDireitosReservados,
 } from './direitosReservados';
 import { obterLogoRelatorioSrc } from './relatorioIdentidadePrint';
+import { formatarDataBr } from './dataBrasilUtils';
 
 function escaparHtml(valor) {
   return String(valor ?? '')
@@ -40,10 +41,7 @@ function texto(valor) {
 
 function dataBr(valor) {
   if (!valor) return '';
-  const parte = String(valor).split('T')[0];
-  const [ano, mes, dia] = parte.split('-');
-  if (!ano || !mes || !dia) return '';
-  return `${dia}/${mes}/${ano}`;
+  return formatarDataBr(valor) || '';
 }
 
 function obterLocalizacaoLeitoTexto(leitoId, quartos = []) {

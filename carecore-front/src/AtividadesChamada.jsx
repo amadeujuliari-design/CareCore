@@ -16,10 +16,11 @@ import { mesReferenciaAtual, usuarioSomenteLeituraAtividades } from './config/at
 import { encontrarConviventePorCodigo } from './utils/conviventeIdentificacaoUtils';
 import { registroAindaPodeSerDesfeitoRotina } from './utils/rotinaDiariaUtils';
 import { filtrarOrdenarConviventesPorBusca } from './utils/conviventeBuscaUtils';
+import { formatarDataBr } from './utils/dataBrasilUtils';
 
 function formatarData(valor) {
   if (!valor) return '-';
-  return new Date(`${valor}T12:00:00`).toLocaleDateString('pt-BR');
+  return formatarDataBr(valor) || '-';
 }
 
 export default function AtividadesChamada() {

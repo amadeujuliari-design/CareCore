@@ -1,3 +1,5 @@
+import { formatarDataBr } from './dataBrasilUtils';
+
 export const FLUXO_DIAS_PADRAO = 7;
 export const HISTORICO_DIAS_PADRAO = 30;
 export const LISTAGEM_OPERACIONAL_DIAS_PADRAO = 7;
@@ -115,10 +117,10 @@ export function montarParamsHistoricoProntuario(filtros, { limite = REGISTROS_PO
 export function resumirPeriodoFiltro(dataInicio, dataFim) {
   if (!dataInicio && !dataFim) return 'Todo o período';
   if (dataInicio && dataFim) {
-    return `${new Date(`${dataInicio}T00:00:00`).toLocaleDateString('pt-BR')} a ${new Date(`${dataFim}T00:00:00`).toLocaleDateString('pt-BR')}`;
+    return `${formatarDataBr(dataInicio)} a ${formatarDataBr(dataFim)}`;
   }
   if (dataInicio) {
-    return `A partir de ${new Date(`${dataInicio}T00:00:00`).toLocaleDateString('pt-BR')}`;
+    return `A partir de ${formatarDataBr(dataInicio)}`;
   }
-  return `Até ${new Date(`${dataFim}T00:00:00`).toLocaleDateString('pt-BR')}`;
+  return `Até ${formatarDataBr(dataFim)}`;
 }

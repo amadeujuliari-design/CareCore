@@ -3,7 +3,7 @@ import { formatarDataBr } from './dataBrasilUtils';
 
 function formatarDataCurta(valor) {
   if (!valor) return '';
-  return new Date(`${valor}T12:00:00`).toLocaleDateString('pt-BR');
+  return formatarDataBr(valor) || '';
 }
 
 export function montarDadosExportacaoGradeAtividade(grade, { somenteComPresenca = true } = {}) {

@@ -1,3 +1,5 @@
+import { formatarDataBr } from './dataBrasilUtils';
+
 export const ABAS_RELATORIOS = [
   { id: 'conviventes', label: 'Conviventes' },
   { id: 'rotina', label: 'Rotina' },
@@ -103,8 +105,14 @@ export function dataDentroDoPeriodo(valor, dataInicio, dataFim) {
   if (!dataInicio && !dataFim) return true;
   if (!valor) return false;
 
-  const data = new Date(valor);
+  const valorIso = String(valor).slice(0, 10);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(valorIso)) {
+    if (dataInicio && valorIso < String(dataInicio).slice(0, 10)) return false;
+    if (dataFim && valorIso > String(dataFim).slice(0, 10)) return false;
+    return true;
+  }
 
+  const data = new Date(valor);
   if (Number.isNaN(data.getTime())) return false;
 
   if (dataInicio) {
@@ -130,9 +138,17 @@ export function campoTexto(item, campos) {
 export function formatarData(valor) {
   if (!valor) return '-';
 
-  if (/^\d{4}-\d{2}-\d{2}$/.test(String(valor))) {
-    const [ano, mes, dia] = String(valor).split('-');
-    return `${dia}/${mes}/${ano}`;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(String(valor).slice(0, 10)) && !String(valor).includes('T')) {
+    return formatarDataBr(valor) || '-';
+  }
+
+  if (/^\d{4}-\d{2}-\d{2}T/.test(String(valor))) {
+    // Datetime: mantém hora; se só a data for usada em relatório, formatarDataBr no caller.
+    try {
+      return new Date(valor).toLocaleDateString('pt-BR');
+    } catch {
+      return '-';
+    }
   }
 
   try {

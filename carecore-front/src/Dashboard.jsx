@@ -12,6 +12,7 @@ import ProjetoAtualBadge from "./components/ProjetoAtualBadge";
 import { listarMeusAvisos, obterResumoAvisos, marcarAvisoComoLido } from "./services/avisosService";
 import { API_ROOT } from "./config/apiBase";
 import { criarHeadersAutenticados } from "./utils/requestIdUtils";
+import { formatarDataBr } from "./utils/dataBrasilUtils";
 
 function dataLocalISO(data = new Date()) {
   const pad = (numero) => String(numero).padStart(2, "0");
@@ -30,6 +31,10 @@ function hojeISO() {
 
 function formatarData(data) {
   if (!data) return "-";
+  const soData = String(data).slice(0, 10);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(soData) && !String(data).includes("T")) {
+    return formatarDataBr(data) || "-";
+  }
   try {
     return new Date(data).toLocaleDateString("pt-BR", {
       day: "2-digit",

@@ -1,3 +1,5 @@
+import { formatarDataBr } from './dataBrasilUtils';
+
 export const CRITERIOS_CADASTROS_NOVOS = [
   {
     valor: 'inclusoes',
@@ -55,9 +57,7 @@ export function rotuloCriterioCadastrosNovos(valor) {
 
 export function formatarDataRelatorio(iso) {
   if (!iso) return '—';
-  const [ano, mes, dia] = String(iso).split('T')[0].split('-');
-  if (!ano || !mes || !dia) return '—';
-  return `${dia}/${mes}/${ano}`;
+  return formatarDataBr(iso) || '—';
 }
 
 export const COLUNAS_EXPORTACAO_CADASTROS_NOVOS = [

@@ -32,7 +32,7 @@ import {
   dataHojeIsoLocal,
   LISTAGEM_OPERACIONAL_DIAS_PADRAO,
 } from "./utils/prontuarioHistoricoFluxoUtils";
-import { formatarDataBr } from "./utils/dataBrasilUtils";
+import { compararDatasIso, formatarDataBr, hojeIsoLocal } from "./utils/dataBrasilUtils";
 import { RevisarTextoPainel } from "./components/RevisarTextoPainel";
 import { TextoOriginalBloco } from "./components/TextoOriginalBloco";
 import { lerUsuarioTextoOriginal, usuarioPodeVerTextoOriginal } from "./utils/textoOriginalUtils";
@@ -767,7 +767,7 @@ export default function Avisos() {
 
   function statusAvisoHistorico(aviso) {
     if (aviso.ativo === false || aviso.cancelado_em) return "Baixado/Cancelado";
-    if (aviso.valido_ate && new Date(aviso.valido_ate) < new Date()) return "Expirado";
+    if (aviso.valido_ate && compararDatasIso(aviso.valido_ate, hojeIsoLocal()) < 0) return "Expirado";
     return "Ativo";
   }
 

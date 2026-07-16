@@ -1,6 +1,10 @@
+import { dataLocalDeIso } from './dataBrasilUtils';
+
 export function calcularIdade(dataNascimento) {
   if (!dataNascimento) return '';
-  const hoje = new Date(), nascimento = new Date(dataNascimento);
+  const nascimento = dataLocalDeIso(dataNascimento) || new Date(dataNascimento);
+  if (Number.isNaN(nascimento.getTime())) return '';
+  const hoje = new Date();
   let idade = hoje.getFullYear() - nascimento.getFullYear();
   const m = hoje.getMonth() - nascimento.getMonth();
   if (m < 0 || (m === 0 && hoje.getDate() < nascimento.getDate())) idade--;

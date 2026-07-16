@@ -15,6 +15,7 @@ import {
   DIREITOS_RESERVADOS_TITULO,
   obterUrlDireitosReservados,
 } from './direitosReservados';
+import { formatarDataBr } from './dataBrasilUtils';
 
 function escaparHtml(valor) {
   return String(valor ?? '')
@@ -27,13 +28,7 @@ function escaparHtml(valor) {
 
 function dataBr(valor) {
   if (!valor) return '';
-  try {
-    const data = String(valor).includes('T') ? new Date(valor) : new Date(`${valor}T00:00:00`);
-    if (Number.isNaN(data.getTime())) return '';
-    return data.toLocaleDateString('pt-BR');
-  } catch {
-    return '';
-  }
+  return formatarDataBr(valor) || '';
 }
 
 function normalizarLista(valor) {

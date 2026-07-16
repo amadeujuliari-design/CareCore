@@ -10,6 +10,7 @@ import {
   buscarIdentidadeRelatorios,
   obterLogoRelatorioDataUrl,
 } from './utils/relatorioIdentidadePrint';
+import { formatarDataBr } from './utils/dataBrasilUtils';
 
 function dataLocalISO(data) {
   const pad = (numero) => String(numero).padStart(2, '0');
@@ -24,7 +25,7 @@ function periodoPadraoRelatorio() {
 
 function formatarData(valor) {
   if (!valor) return '-';
-  return new Date(`${valor}T12:00:00`).toLocaleDateString('pt-BR');
+  return formatarDataBr(valor) || '-';
 }
 
 const AGRUPAMENTOS = [

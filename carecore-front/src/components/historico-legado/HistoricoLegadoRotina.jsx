@@ -9,6 +9,7 @@ import {
   dataHojeIsoLocal,
   HISTORICO_DIAS_PADRAO,
 } from '../../utils/prontuarioHistoricoFluxoUtils';
+import { formatarDataBr } from '../../utils/dataBrasilUtils';
 
 const LIMITE_ROTINA = 20;
 
@@ -29,7 +30,7 @@ const filtrosIniciais = {
 
 function formatarData(data) {
   if (!data) return '-';
-  return new Date(`${data}T00:00:00`).toLocaleDateString('pt-BR');
+  return formatarDataBr(data) || '-';
 }
 
 function textoDetalhado(registro) {

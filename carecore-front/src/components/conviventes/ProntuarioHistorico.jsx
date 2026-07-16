@@ -1,5 +1,6 @@
 import ProntuarioFiltrosLista from './ProntuarioFiltrosLista';
 import ProntuarioAcompanhamentos from './ProntuarioAcompanhamentos';
+import { formatarDataBr } from '../../utils/dataBrasilUtils';
 
 export default function ProntuarioHistorico({
   editandoId,
@@ -192,7 +193,7 @@ export default function ProntuarioHistorico({
                     <h4 className="mt-2 text-sm font-black text-slate-900">{registro.titulo || 'Histórico registrado'}</h4>
                   </div>
                   <div className="text-xs text-slate-500 md:text-right">
-                    <p>Origem: {new Date(`${registro.data_origem}T00:00:00`).toLocaleDateString('pt-BR')}</p>
+                    <p>Origem: {formatarDataBr(registro.data_origem) || '-'}</p>
                     <p>Lançado por {registro.usuario_nome || 'usuário'} em {new Date(registro.criado_em).toLocaleString('pt-BR')}</p>
                   </div>
                 </div>
