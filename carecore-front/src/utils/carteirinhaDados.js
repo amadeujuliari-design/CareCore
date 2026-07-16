@@ -1,5 +1,6 @@
 /** Dados normalizados da carteirinha — compartilhado entre preview e impressão. */
 import { avaliarCarteirinhaConvivente } from './carteirinhaValidadeUtils.js';
+import { formatarDataBr } from './dataBrasilUtils.js';
 
 export function resolverDadosCarteirinha(convivente, quartos = [], tecnicos = [], fotoCaminho = null) {
   if (!convivente) return null;
@@ -26,8 +27,9 @@ export function resolverDadosCarteirinha(convivente, quartos = [], tecnicos = []
       ? convivente.cpf.replace(/\D/g, '')
       : String(convivente.id || '').substring(0, 8);
 
+  // Não usar new Date('AAAA-MM-DD'): vira UTC e atrasa 1 dia em America/Sao_Paulo.
   const dataEntradaFormatada = convivente.data_entrada
-    ? new Date(convivente.data_entrada).toLocaleDateString('pt-BR')
+    ? (formatarDataBr(convivente.data_entrada) || 'Não informada')
     : 'Não informada';
 
   const tecnicoResponsavel = tecnicos.find((tec) => tec.id === convivente.tecnico_id);

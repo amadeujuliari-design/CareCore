@@ -6,6 +6,7 @@ import QRCodeLib from 'react-qr-code';
 import BarcodeLib from 'react-barcode';
 import { obterCodigoCarteirinhaConvivente } from '../utils/rotinaDiariaUtils';
 import { avaliarCarteirinhaConvivente } from '../utils/carteirinhaValidadeUtils';
+import { formatarDataBr } from '../utils/dataBrasilUtils';
 
 // Blindagem: aceita funções e objetos React (como forwardRef do QRCode)
 const getValidComponent = (Lib) => {
@@ -52,8 +53,9 @@ export default function CarteirinhaCard({
 
   const codigoBarrasValor = obterCodigoCarteirinhaConvivente(convivente);
 
+  // Não usar new Date('AAAA-MM-DD'): vira UTC e atrasa 1 dia em America/Sao_Paulo.
   const dataEntradaFormatada = convivente.data_entrada
-    ? new Date(convivente.data_entrada).toLocaleDateString('pt-BR')
+    ? (formatarDataBr(convivente.data_entrada) || 'Não informada')
     : 'Não informada';
 
   const acomodacaoEhTransitoria = tipoAcomodacao === 'Transitório';
