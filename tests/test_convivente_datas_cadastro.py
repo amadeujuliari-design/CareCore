@@ -28,6 +28,21 @@ def test_nova_vinculacao_automatica_apos_inativacao():
     hoje = date(2026, 6, 25)
     aplicar_datas_convivente_payload(dados, "Inativado", "Ativo", hoje, set())
     assert dados["data_nova_vinculacao"] == hoje
+    assert dados["data_inativacao"] is None
+
+
+def test_reativacao_limpa_data_inativacao_em_objeto():
+    from types import SimpleNamespace
+
+    from convivente_datas_cadastro import aplicar_datas_convivente_objeto
+
+    convivente = SimpleNamespace(
+        data_inativacao=date(2026, 5, 31),
+        data_nova_vinculacao=None,
+    )
+    aplicar_datas_convivente_objeto(convivente, "Inativado", "Ativo", date(2026, 6, 25))
+    assert convivente.data_inativacao is None
+    assert convivente.data_nova_vinculacao == date(2026, 6, 25)
 
 
 def test_respeita_data_manual_no_payload():

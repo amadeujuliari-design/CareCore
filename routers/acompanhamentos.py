@@ -8,7 +8,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 from database import get_db
-from convivente_datas_cadastro import aplicar_datas_convivente_objeto
+from convivente_datas_cadastro import (
+    aplicar_datas_convivente_objeto,
+    registrar_historico_inativacao,
+    STATUS_INATIVOS,
+    STATUS_OPERACIONAIS,
+)
 from models import (
     AcompanhamentoDiscussaoHospitalarDB,
     AcompanhamentoPotDB,
@@ -214,6 +219,7 @@ async def _aplicar_status_convivente(
         return
 
     leito_id_antigo = convivente.leito_id
+    data_inativacao_antes = convivente.data_inativacao
     convivente.status = status_novo
     aplicar_datas_convivente_objeto(convivente, status_antigo, status_novo, agora_sao_paulo().date())
 
@@ -233,6 +239,29 @@ async def _aplicar_status_convivente(
             convivente.inativado_em = agora_sao_paulo()
         convivente.ausencia_justificada_desde = None
         await _liberar_leito_convivente(db, leito_id_antigo)
+
+    if status_novo in STATUS_INATIVOS and convivente.data_inativacao:
+        await registrar_historico_inativacao(
+            db,
+            instituicao_id=instituicao_id,
+            convivente_id=convivente.id,
+            usuario_id=usuario_id,
+            data_inativacao=convivente.data_inativacao,
+            descricao=f"Inativação registrada na mudança de status de {status_antigo} para {status_novo}.",
+        )
+    elif (
+        status_antigo in STATUS_INATIVOS
+        and status_novo in STATUS_OPERACIONAIS
+        and data_inativacao_antes
+    ):
+        await registrar_historico_inativacao(
+            db,
+            instituicao_id=instituicao_id,
+            convivente_id=convivente.id,
+            usuario_id=usuario_id,
+            data_inativacao=data_inativacao_antes,
+            descricao=f"Data de inativação arquivada na reativação de {status_antigo} para {status_novo}.",
+        )
 
     await _registrar_ocorrencia_status(
         db,

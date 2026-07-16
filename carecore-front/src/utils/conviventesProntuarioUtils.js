@@ -67,6 +67,7 @@ export function criarEstadoInicialConvivente() {
     data_primeira_interacao: '',
     data_inativacao: '',
     data_nova_vinculacao: '',
+    inativacoes_anteriores: [],
     preferencial: false,
     prontuario_saude: '',
     origem_encaminhamento_id: '',
@@ -316,6 +317,9 @@ export function formatarDadosConviventeParaTela(convivente = {}) {
       : '',
     data_inativacao: convivente.data_inativacao ? String(convivente.data_inativacao).split('T')[0] : '',
     data_nova_vinculacao: convivente.data_nova_vinculacao ? String(convivente.data_nova_vinculacao).split('T')[0] : '',
+    inativacoes_anteriores: Array.isArray(convivente.inativacoes_anteriores)
+      ? convivente.inativacoes_anteriores
+      : [],
     em_sao_paulo_desde: convivente.em_sao_paulo_desde ? String(convivente.em_sao_paulo_desde).split('T')[0] : '',
     beneficios_pia: beneficios || {},
     situacoes_trabalho: Array.isArray(situacoesTrabalho) ? situacoesTrabalho : [],
@@ -435,6 +439,7 @@ export function montarPayloadProntuario(formData, statusOriginal) {
   delete payload.naturalidade_uf;
   delete payload.naturalidade_cidade;
   delete payload.data_primeira_interacao;
+  delete payload.inativacoes_anteriores;
 
   return payload;
 }

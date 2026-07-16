@@ -198,14 +198,14 @@ def _dia_fora_operacao_convivente(
     """
     Dia sem P/J/A no relatório: antes da admissão, após inativação ou
     convivente com status inativo no período (sem operação assistencial).
+
+    Com status operacional (Ativo etc.), data_inativacao residual no cadastro
+    não corta o período — só status inativo usa esse campo como corte.
     """
     if status_convivente in STATUS_INATIVOS_OPERACIONAIS:
         if data_inativacao is None:
             return True
         return dia >= data_inativacao
-
-    if data_inativacao is not None and dia > data_inativacao:
-        return True
 
     return False
 

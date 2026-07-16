@@ -98,6 +98,24 @@ def test_matriz_dias_apos_inativacao_sao_na():
     assert status["2026-06-13"] == STATUS_DIA_NA
 
 
+def test_ativo_com_data_inativacao_residual_nao_corta_presenca():
+    """Cadastro Ativo com data_inativacao residual (bug legado) não gera NA."""
+    status = montar_status_presenca_por_dia(
+        [_mov("Entrada", 10, 8), _mov("Saída", 10, 18)],
+        date(2026, 6, 10),
+        date(2026, 6, 13),
+        data_entrada=date(2026, 6, 1),
+        data_inativacao=date(2026, 6, 11),
+        status_convivente="Ativo",
+        ausencia_justificada_desde=None,
+    )
+    assert status["2026-06-10"] == STATUS_DIA_PRESENTE
+    assert status["2026-06-11"] == STATUS_DIA_AUSENTE
+    assert status["2026-06-12"] == STATUS_DIA_AUSENTE
+    assert status["2026-06-13"] == STATUS_DIA_AUSENTE
+    assert STATUS_DIA_NA not in status.values()
+
+
 def test_inativado_sem_data_inativacao_nao_ganha_presenca():
     status = montar_status_presenca_por_dia(
         [],

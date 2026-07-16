@@ -38,7 +38,6 @@ export function useRelatoriosIndicadores({
     const semLeitoAtivo = contar(conviventesFiltrados, (c) => c.status === 'Ativo' && !c.leito_id);
     const semFoto = contar(conviventesFiltrados, (c) => !c.foto_url);
     const semCpf = contar(conviventesFiltrados, (c) => !c.cpf);
-    const semContato = contar(conviventesFiltrados, (c) => !c.contato_emergencia_nome || !c.contato_emergencia_telefone);
     const semSisa = contar(conviventesFiltrados, (c) => !c.numero_sisa);
     const semNis = contar(conviventesFiltrados, (c) => !c.numero_nis);
 
@@ -98,7 +97,6 @@ export function useRelatoriosIndicadores({
       semLeitoAtivo,
       semFoto,
       semCpf,
-      semContato,
       semSisa,
       semNis,
       quartos: quartos.length,
@@ -242,12 +240,11 @@ export function useRelatoriosIndicadores({
       documentacao: [
         {
           titulo: 'Pendências de prontuário',
-          descricao: 'Acolhidos sem foto, CPF, contato de emergência, número SISA, NIS ou documentação essencial.',
+          descricao: 'Acolhidos sem foto, CPF, número SISA, NIS ou documentação essencial.',
           status: 'pronto',
           metricas: [
             { label: 'Sem foto', valor: dados.semFoto },
             { label: 'Sem CPF', valor: dados.semCpf },
-            { label: 'Sem contato', valor: dados.semContato },
             { label: 'Sem SISA', valor: dados.semSisa },
             { label: 'Sem NIS', valor: dados.semNis },
           ],
@@ -333,8 +330,8 @@ export function useRelatoriosIndicadores({
       documentacao: [
         { label: 'Sem foto', valor: dados.semFoto, detalhe: 'Prontuários filtrados' },
         { label: 'Sem CPF', valor: dados.semCpf, detalhe: 'Cadastro incompleto' },
-        { label: 'Sem contato', valor: dados.semContato, detalhe: 'Contato de emergência' },
-        { label: 'Sem SISA/NIS', valor: dados.semSisa + dados.semNis, detalhe: `${dados.semSisa} sem SISA, ${dados.semNis} sem NIS` },
+        { label: 'Sem SISA', valor: dados.semSisa, detalhe: 'Número SISA não informado' },
+        { label: 'Sem NIS', valor: dados.semNis, detalhe: 'Número NIS não informado' },
       ],
       equipe: [
         { label: 'Equipe', valor: dados.equipe, detalhe: 'Ativos, sem Global/Manutenção' },

@@ -67,7 +67,6 @@ export function useRelatoriosTabela({
 
       if (!convivente.foto_url) pendencias.push('Foto');
       if (!convivente.cpf) pendencias.push('CPF');
-      if (!convivente.contato_emergencia_nome || !convivente.contato_emergencia_telefone) pendencias.push('Contato');
       if (!convivente.tecnico_id) pendencias.push('Técnico');
       if (!convivente.numero_sisa) pendencias.push('SISA');
 
@@ -238,8 +237,8 @@ export function useRelatoriosTabela({
 
     if (aba === 'documentacao') {
       const colunas = tecnicoIdEspecificoRelatorios(filtros.tecnicoId)
-        ? ['Prontuário', 'Nome', 'Status', 'N SISA', 'NIS', 'Sem foto', 'Sem CPF', 'Sem contato']
-        : ['Prontuário', 'Nome', 'Status', 'Técnico', 'N SISA', 'NIS', 'Sem foto', 'Sem CPF', 'Sem contato'];
+        ? ['Prontuário', 'Nome', 'Status', 'N SISA', 'NIS', 'Sem foto', 'Sem CPF', 'Sem SISA']
+        : ['Prontuário', 'Nome', 'Status', 'Técnico', 'N SISA', 'NIS', 'Sem foto', 'Sem CPF', 'Sem SISA'];
 
       return {
         titulo: 'Pendências documentais filtradas',
@@ -253,7 +252,7 @@ export function useRelatoriosTabela({
             NIS: convivente.numero_nis || '-',
             'Sem foto': convivente.foto_url ? 'Não' : 'Sim',
             'Sem CPF': convivente.cpf ? 'Não' : 'Sim',
-            'Sem contato': convivente.contato_emergencia_nome && convivente.contato_emergencia_telefone ? 'Não' : 'Sim',
+            'Sem SISA': convivente.numero_sisa ? 'Não' : 'Sim',
           };
 
           if (!tecnicoIdEspecificoRelatorios(filtros.tecnicoId)) {

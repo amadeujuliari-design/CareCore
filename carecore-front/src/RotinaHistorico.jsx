@@ -37,6 +37,10 @@ import { buscarHistoricoRotinaCompleto } from './services/rotinaHistoricoService
 import { urlArquivoBackend } from './utils/arquivosApi';
 import { decodificarPayloadJwt } from './utils/jwtUtils';
 import { criarHeadersAutenticados } from './utils/requestIdUtils';
+import {
+  FILTRO_TECNICO_SEM_VINCULADO,
+  rotuloFiltroTecnicoRelatorios,
+} from './utils/relatoriosUtils';
 
 export default function RotinaHistorico() {
 
@@ -49,6 +53,7 @@ export default function RotinaHistorico() {
   const [erro, setErro] = useState('');
   const [sucesso, setSucesso] = useState('');
   const [identidadeRelatorio, setIdentidadeRelatorio] = useState(null);
+  const [tecnicos, setTecnicos] = useState([]);
 
   // filtros
   const [tipoFiltro, setTipoFiltro] = useState('');
@@ -59,6 +64,7 @@ export default function RotinaHistorico() {
   const [dataFimFiltro, setDataFimFiltro] = useState(() => dataHojeIsoLocal());
   const [statusFiltro, setStatusFiltro] = useState('');
   const [auditoriaFiltro, setAuditoriaFiltro] = useState('');
+  const [tecnicoIdFiltro, setTecnicoIdFiltro] = useState('');
   const [paginaAtual, setPaginaAtual] = useState(1);
   const [imprimindoRelatorio, setImprimindoRelatorio] = useState(false);
   const registrosPorPagina = REGISTROS_POR_PAGINA;
@@ -119,6 +125,7 @@ export default function RotinaHistorico() {
         dataFimFiltro,
         statusFiltro,
         auditoriaFiltro,
+        tecnicoIdFiltro,
       }),
       limite: registrosPorPagina,
     };
@@ -169,9 +176,22 @@ export default function RotinaHistorico() {
     dataInicioFiltro,
     registrosPorPagina,
     statusFiltro,
+    tecnicoIdFiltro,
     tipoFiltro,
     token,
   ]);
+
+  const carregarTecnicos = async () => {
+    try {
+      const response = await axios.get(`${API_ROOT}/tecnicos`, {
+        headers: criarHeadersAutenticados(token),
+      });
+      setTecnicos(Array.isArray(response.data) ? response.data : []);
+    } catch (error) {
+      console.error('Erro ao carregar técnicos para histórico da rotina', error);
+      setTecnicos([]);
+    }
+  };
 
   const carregarIdentidadeRelatorio = async () => {
     try {
@@ -231,11 +251,13 @@ export default function RotinaHistorico() {
     dataFimFiltro,
     dataInicioFiltro,
     statusFiltro,
+    tecnicoIdFiltro,
     tipoFiltro,
   ]);
 
   useEffect(() => {
     carregarIdentidadeRelatorio();
+    carregarTecnicos();
   }, []);
 
   // =====================================================================
@@ -438,6 +460,7 @@ export default function RotinaHistorico() {
     setDataFimFiltro(dataHojeIsoLocal());
     setStatusFiltro('');
     setAuditoriaFiltro('');
+    setTecnicoIdFiltro('');
     setPaginaAtual(1);
   };
 
@@ -496,6 +519,8 @@ export default function RotinaHistorico() {
     dataFimFiltro,
     statusFiltro,
     auditoriaFiltro,
+    tecnicoIdFiltro,
+    tecnicoNomeFiltro: rotuloFiltroTecnicoRelatorios(tecnicoIdFiltro, tecnicos),
   });
 
   const abrirRelatorioImpressao = async () => {
@@ -760,6 +785,31 @@ export default function RotinaHistorico() {
                 {tiposRegistroFiltro.map((opcao) => (
                   <option key={opcao.valor || 'todos'} value={opcao.valor}>
                     {opcao.label}
+                  </option>
+                ))}
+              </select>
+
+            </div>
+
+            <div>
+
+              <label className="block text-xs font-bold text-gray-500 uppercase mb-1">
+                Por técnico
+              </label>
+
+              <select
+                value={tecnicoIdFiltro}
+                onChange={(e) => {
+                  setTecnicoIdFiltro(e.target.value);
+                  setPaginaAtual(1);
+                }}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+              >
+                <option value="">Todos</option>
+                <option value={FILTRO_TECNICO_SEM_VINCULADO}>Sem Técnico Vinculado</option>
+                {tecnicos.map((tecnico) => (
+                  <option key={tecnico.id} value={tecnico.id}>
+                    {tecnico.nome}
                   </option>
                 ))}
               </select>

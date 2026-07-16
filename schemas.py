@@ -1484,6 +1484,7 @@ class ConviventeResponse(ConviventeBase):
     numero_institucional: Optional[int] = None
     foto_url: Optional[str] = None
     data_primeira_interacao: Optional[date] = None
+    inativacoes_anteriores: List[date] = []
 
     model_config = ConfigDict(from_attributes=True)
 

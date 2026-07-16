@@ -17,6 +17,9 @@ from models import (
 
 STATUS_INATIVOS = frozenset({"Inativado", "Bloqueado", "Saída qualificada"})
 STATUS_VINCULACAO_ATIVA = frozenset({"Ativo", "Em acolhimento"})
+STATUS_OPERACIONAIS = frozenset({"Ativo", "Em acolhimento", "Ausência justificada"})
+TITULO_HISTORICO_INATIVACAO = "Inativação institucional"
+ORIGEM_HISTORICO_INATIVACAO = "Mudança de status"
 DATA_INCLUSAO_SUBSTITUTO_LEGADO = date(2020, 1, 1)
 DATA_INCLUSAO_PLACEHOLDER_LEGADO = date(2000, 1, 1)
 DATA_INCLUSAO_ANO_MINIMO_CONFIAVEL = 1990
@@ -64,12 +67,15 @@ def aplicar_datas_convivente_payload(
     if novo_status != status_antigo:
         if novo_status in STATUS_INATIVOS and "data_inativacao" not in campos_enviados:
             dados["data_inativacao"] = hoje
-        if (
-            status_antigo in STATUS_INATIVOS
-            and novo_status in STATUS_VINCULACAO_ATIVA
-            and "data_nova_vinculacao" not in campos_enviados
-        ):
-            dados["data_nova_vinculacao"] = hoje
+        if status_antigo in STATUS_INATIVOS and novo_status in STATUS_OPERACIONAIS:
+            if (
+                novo_status in STATUS_VINCULACAO_ATIVA
+                and "data_nova_vinculacao" not in campos_enviados
+            ):
+                dados["data_nova_vinculacao"] = hoje
+            # Campo operacional: limpa na reativação; a data fica só no histórico.
+            if "data_inativacao" not in campos_enviados:
+                dados["data_inativacao"] = None
 
     if "prontuario_saude" in dados:
         dados["prontuario_saude"] = normalizar_prontuario_saude(dados.get("prontuario_saude"))
@@ -85,8 +91,10 @@ def aplicar_datas_convivente_objeto(
         return
     if novo_status in STATUS_INATIVOS:
         convivente.data_inativacao = hoje
-    if status_antigo in STATUS_INATIVOS and novo_status in STATUS_VINCULACAO_ATIVA:
-        convivente.data_nova_vinculacao = hoje
+    if status_antigo in STATUS_INATIVOS and novo_status in STATUS_OPERACIONAIS:
+        if novo_status in STATUS_VINCULACAO_ATIVA:
+            convivente.data_nova_vinculacao = hoje
+        convivente.data_inativacao = None
 
 
 async def obter_data_primeira_interacao(
@@ -356,3 +364,72 @@ async def ajustar_data_inclusao_convivente(
     if data_inclusao:
         return data_inclusao
     return data_vinculacao_efetiva_convivente(data_inclusao, data_entrada)
+
+
+async def registrar_historico_inativacao(
+    db: AsyncSession,
+    *,
+    instituicao_id: str,
+    convivente_id: str,
+    usuario_id: str,
+    data_inativacao: date,
+    descricao: str,
+) -> bool:
+    """Grava a data de inativação no histórico do prontuário (idempotente por data)."""
+    existente = (
+        await db.execute(
+            select(HistoricoConviventeDB.id).where(
+                HistoricoConviventeDB.convivente_id == convivente_id,
+                HistoricoConviventeDB.titulo == TITULO_HISTORICO_INATIVACAO,
+                HistoricoConviventeDB.data_origem == data_inativacao,
+            ).limit(1)
+        )
+    ).scalar_one_or_none()
+    if existente:
+        return False
+
+    db.add(
+        HistoricoConviventeDB(
+            instituicao_id=instituicao_id,
+            convivente_id=convivente_id,
+            usuario_id=usuario_id,
+            origem_informacao=ORIGEM_HISTORICO_INATIVACAO,
+            data_origem=data_inativacao,
+            titulo=TITULO_HISTORICO_INATIVACAO,
+            descricao=descricao,
+        )
+    )
+    return True
+
+
+async def listar_datas_inativacao_historico(
+    db: AsyncSession,
+    convivente_id: str,
+    data_inativacao_atual: date | None = None,
+) -> list[date]:
+    """Datas de inativação arquivadas + data operacional atual (se houver)."""
+    rows = (
+        await db.execute(
+            select(HistoricoConviventeDB.data_origem)
+            .where(
+                HistoricoConviventeDB.convivente_id == convivente_id,
+                HistoricoConviventeDB.titulo == TITULO_HISTORICO_INATIVACAO,
+            )
+            .order_by(HistoricoConviventeDB.data_origem.desc())
+        )
+    ).scalars().all()
+
+    datas: list[date] = []
+    vistos: set[date] = set()
+    for valor in rows:
+        data = _extrair_data(valor)
+        if data and data not in vistos:
+            vistos.add(data)
+            datas.append(data)
+
+    atual = _extrair_data(data_inativacao_atual)
+    if atual and atual not in vistos:
+        datas.append(atual)
+        datas.sort(reverse=True)
+
+    return datas

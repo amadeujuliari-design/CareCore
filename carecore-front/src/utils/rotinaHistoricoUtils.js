@@ -136,6 +136,7 @@ export function montarParamsFiltrosRotina({
   dataFimFiltro,
   statusFiltro,
   auditoriaFiltro,
+  tecnicoIdFiltro,
 }) {
   const params = {};
 
@@ -146,6 +147,7 @@ export function montarParamsFiltrosRotina({
   if (statusFiltro) params.status_registro = statusFiltro;
   if (auditoriaFiltro === 'editados') params.apenas_editados = true;
   if (auditoriaFiltro === 'retorno_rapido') params.apenas_retorno_rapido = true;
+  if (tecnicoIdFiltro) params.tecnico_id = tecnicoIdFiltro;
 
   return params;
 }
@@ -299,6 +301,8 @@ export function montarFiltrosTextoHistoricoRotina({
   buscaFiltro,
   statusFiltro,
   auditoriaFiltro,
+  tecnicoIdFiltro,
+  tecnicoNomeFiltro,
 }) {
   return [
     tipoFiltro ? `Tipo: ${rotuloTipoRegistroFiltro(tipoFiltro)}` : '',
@@ -307,6 +311,9 @@ export function montarFiltrosTextoHistoricoRotina({
     buscaFiltro?.trim() ? `Busca: ${buscaFiltro.trim()}` : '',
     statusFiltro ? `Status: ${statusFiltro}` : '',
     auditoriaFiltro ? `Auditoria: ${auditoriaFiltro}` : '',
+    tecnicoIdFiltro
+      ? `Técnico: ${tecnicoNomeFiltro || tecnicoIdFiltro}`
+      : '',
   ].filter(Boolean);
 }
 

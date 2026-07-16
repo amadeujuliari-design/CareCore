@@ -20,9 +20,13 @@ from convivente_datas_cadastro import (
     aplicar_datas_convivente_payload,
     ajustar_data_inclusao_convivente,
     bloquear_alteracao_data_entrada_convivente,
+    listar_datas_inativacao_historico,
     obter_data_primeira_interacao,
     primeira_interacao_operacional,
     preparar_datas_convivente_criacao,
+    registrar_historico_inativacao,
+    STATUS_INATIVOS,
+    STATUS_OPERACIONAIS,
 )
 from carteirinha_operacional import (
     data_primeira_vinculacao_convivente,
@@ -207,6 +211,11 @@ async def montar_convivente_response(
     payload = enriquecer_convivente_response_dict(base.model_dump(), listas)
     payload["data_primeira_interacao"] = primeira_interacao_operacional(
         await obter_data_primeira_interacao(db, convivente.id)
+    )
+    payload["inativacoes_anteriores"] = await listar_datas_inativacao_historico(
+        db,
+        convivente.id,
+        convivente.data_inativacao,
     )
     return ConviventeResponse.model_validate(payload)
 
@@ -825,16 +834,46 @@ async def responder_ausencia_justificada(
 
     if not payload.continua_ausente:
         status_antigo = convivente.status
+        data_inativacao_antes = convivente.data_inativacao
         convivente.status = status_atribuido
         convivente.ausencia_justificada_desde = None
+        aplicar_datas_convivente_objeto(
+            convivente,
+            status_antigo,
+            status_atribuido,
+            hoje,
+        )
 
         if status_atribuido == "Ativo":
             convivente.inativado_em = None
+            if data_inativacao_antes:
+                await registrar_historico_inativacao(
+                    db,
+                    instituicao_id=obter_instituicao_escopo(usuario_atual),
+                    convivente_id=convivente.id,
+                    usuario_id=usuario_atual["sub"],
+                    data_inativacao=data_inativacao_antes,
+                    descricao=(
+                        "Data de inativação arquivada ao encerrar ausência justificada "
+                        f"com retorno para {status_atribuido}."
+                    ),
+                )
         else:
             leito_id_antigo = convivente.leito_id
             convivente.leito_id = None
             convivente.inativado_em = agora_sao_paulo()
-            convivente.data_inativacao = hoje
+            if convivente.data_inativacao:
+                await registrar_historico_inativacao(
+                    db,
+                    instituicao_id=obter_instituicao_escopo(usuario_atual),
+                    convivente_id=convivente.id,
+                    usuario_id=usuario_atual["sub"],
+                    data_inativacao=convivente.data_inativacao,
+                    descricao=(
+                        "Inativação registrada ao encerrar ausência justificada "
+                        f"com status {status_atribuido}."
+                    ),
+                )
 
             if leito_id_antigo:
                 leito = (
@@ -885,6 +924,10 @@ async def listar_conviventes_resumo(
         ConviventeDB.foto_url,
         ConviventeDB.preferencial,
         ConviventeDB.leito_provisorio_desde,
+        ConviventeDB.numero_sisa,
+        ConviventeDB.numero_nis,
+        ConviventeDB.data_entrada,
+        ConviventeDB.cidade,
     ).where(
         ConviventeDB.instituicao_id == obter_instituicao_escopo(usuario_atual),
     )
@@ -919,6 +962,10 @@ async def listar_conviventes_resumo(
             "foto_url": row.foto_url,
             "preferencial": bool(row.preferencial),
             "leito_provisorio_desde": row.leito_provisorio_desde,
+            "numero_sisa": row.numero_sisa,
+            "numero_nis": row.numero_nis,
+            "data_entrada": row.data_entrada,
+            "cidade": row.cidade,
         }
         for row in rows
     ]
@@ -2064,6 +2111,7 @@ async def atualizar_convivente(convivente_id: str, dados_atualizacao: Convivente
         dados["tb_remanejamento_situacao"] = None
 
     novo_status = dados.get("status", status_antigo)
+    data_inativacao_antes = convivente.data_inativacao
     aplicar_datas_convivente_payload(dados, status_antigo, novo_status, hoje, campos_enviados)
 
     if novo_status in ("Ativo", "Em acolhimento"):
@@ -2076,6 +2124,41 @@ async def atualizar_convivente(convivente_id: str, dados_atualizacao: Convivente
     elif novo_status != status_antigo and novo_status in ["Inativado", "Bloqueado", "Saída qualificada"]:
         dados["inativado_em"] = agora_sao_paulo()
         dados["ausencia_justificada_desde"] = None
+
+    data_inativacao_nova = dados.get("data_inativacao", data_inativacao_antes)
+    if (
+        status_antigo != novo_status
+        and novo_status in STATUS_INATIVOS
+        and data_inativacao_nova
+    ):
+        await registrar_historico_inativacao(
+            db,
+            instituicao_id=obter_instituicao_escopo(usuario_atual),
+            convivente_id=convivente.id,
+            usuario_id=usuario_atual["sub"],
+            data_inativacao=data_inativacao_nova,
+            descricao=(
+                f"Inativação registrada na mudança de status "
+                f"de {status_antigo} para {novo_status}."
+            ),
+        )
+    elif (
+        status_antigo in STATUS_INATIVOS
+        and novo_status in STATUS_OPERACIONAIS
+        and data_inativacao_antes
+        and dados.get("data_inativacao", data_inativacao_antes) is None
+    ):
+        await registrar_historico_inativacao(
+            db,
+            instituicao_id=obter_instituicao_escopo(usuario_atual),
+            convivente_id=convivente.id,
+            usuario_id=usuario_atual["sub"],
+            data_inativacao=data_inativacao_antes,
+            descricao=(
+                f"Data de inativação arquivada na reativação "
+                f"de {status_antigo} para {novo_status}."
+            ),
+        )
 
     await validar_referencias_convivente_do_projeto(
         db,
@@ -4164,6 +4247,9 @@ async def dashboard_operacional_rotina(
 # =====================================================================
 
 
+FILTRO_TECNICO_SEM_VINCULADO_ROTINA = "__sem_tecnico__"
+
+
 def _aplicar_filtros_historico_rotina(
     query,
     data_inicio: str = None,
@@ -4174,7 +4260,8 @@ def _aplicar_filtros_historico_rotina(
     status_registro: str = None,
     apenas_editados: bool = False,
     apenas_cancelados: bool = False,
-    apenas_retorno_rapido: bool = False
+    apenas_retorno_rapido: bool = False,
+    tecnico_id: str = None,
 ):
     if data_inicio:
         try:
@@ -4239,6 +4326,13 @@ def _aplicar_filtros_historico_rotina(
 
     if apenas_retorno_rapido:
         query = query.where(RegistroRotinaDB.retorno_rapido == True)
+
+    tecnico_filtro = (tecnico_id or "").strip()
+    if tecnico_filtro:
+        if tecnico_filtro == FILTRO_TECNICO_SEM_VINCULADO_ROTINA:
+            query = query.where(ConviventeDB.tecnico_id.is_(None))
+        else:
+            query = query.where(ConviventeDB.tecnico_id == tecnico_filtro)
 
     return query
 
@@ -4743,7 +4837,11 @@ async def resumo_evolucao_historico_rotina(
     )
 
     if tecnico_id:
-        query = query.where(ConviventeDB.tecnico_id == tecnico_id)
+        tecnico_filtro = (tecnico_id or "").strip()
+        if tecnico_filtro == FILTRO_TECNICO_SEM_VINCULADO_ROTINA:
+            query = query.where(ConviventeDB.tecnico_id.is_(None))
+        else:
+            query = query.where(ConviventeDB.tecnico_id == tecnico_filtro)
 
     if status_convivente and status_convivente != "Todos":
         query = query.where(ConviventeDB.status == status_convivente)
@@ -4810,6 +4908,7 @@ async def listar_historico_rotina(
     apenas_editados: bool = False,
     apenas_cancelados: bool = False,
     apenas_retorno_rapido: bool = False,
+    tecnico_id: str = None,
     limite: int = Query(REGISTROS_POR_PAGINA_PADRAO, ge=1, le=EXPORT_ROTINA_HISTORICO_LIMITE_MAX),
     deslocamento: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
@@ -4831,6 +4930,7 @@ async def listar_historico_rotina(
         apenas_editados=apenas_editados,
         apenas_cancelados=apenas_cancelados,
         apenas_retorno_rapido=apenas_retorno_rapido,
+        tecnico_id=tecnico_id,
     )
     query = _aplicar_filtros_historico_rotina(
         query=query,
@@ -4843,6 +4943,7 @@ async def listar_historico_rotina(
         apenas_editados=apenas_editados,
         apenas_cancelados=apenas_cancelados,
         apenas_retorno_rapido=apenas_retorno_rapido,
+        tecnico_id=tecnico_id,
     )
 
     if convivente_id:
@@ -5004,6 +5105,7 @@ async def exportar_historico_rotina_xlsx(
     apenas_editados: bool = False,
     apenas_cancelados: bool = False,
     apenas_retorno_rapido: bool = False,
+    tecnico_id: str = None,
     db: AsyncSession = Depends(get_db),
     usuario_atual: dict = Depends(get_usuario_logado)
 ):
@@ -5020,7 +5122,8 @@ async def exportar_historico_rotina_xlsx(
         status_registro=status_registro,
         apenas_editados=apenas_editados,
         apenas_cancelados=apenas_cancelados,
-        apenas_retorno_rapido=apenas_retorno_rapido
+        apenas_retorno_rapido=apenas_retorno_rapido,
+        tecnico_id=tecnico_id,
     )
 
     resultado = await db.execute(
@@ -5722,8 +5825,24 @@ async def _aplicar_acoes_cadastros_sisa(
 
         convivente.numero_sisa = numero_sisa
         if _linha_sisa_ativa_no_recorte(linha, data_referencia) and convivente.status != "Ativo":
+            data_inativacao_antes = convivente.data_inativacao
             convivente.status = "Ativo"
             convivente.inativado_em = None
+            convivente.data_inativacao = None
+            convivente.data_nova_vinculacao = data_referencia
+            if data_inativacao_antes:
+                await registrar_historico_inativacao(
+                    db,
+                    instituicao_id=instituicao_id,
+                    convivente_id=convivente.id,
+                    usuario_id=usuario_id,
+                    data_inativacao=data_inativacao_antes,
+                    descricao=(
+                        "Data de inativação arquivada na mescla SISA com reativação "
+                        f"do recorte {data_inicio_referencia.strftime('%d/%m/%Y')} "
+                        f"a {data_referencia.strftime('%d/%m/%Y')}."
+                    ),
+                )
         if not convivente.data_nascimento:
             convivente.data_nascimento = linha["data_nascimento"]
         if not convivente.data_entrada:
@@ -5805,6 +5924,19 @@ async def _aplicar_acoes_cadastros_sisa(
         for convivente in conviventes_para_inativar:
             convivente.status = "Inativado"
             convivente.inativado_em = agora_sao_paulo()
+            convivente.data_inativacao = data_referencia
+            await registrar_historico_inativacao(
+                db,
+                instituicao_id=instituicao_id,
+                convivente_id=convivente.id,
+                usuario_id=usuario_id,
+                data_inativacao=data_referencia,
+                descricao=(
+                    "Inativação registrada após confirmação manual da importação SISA "
+                    f"do recorte {data_inicio_referencia.strftime('%d/%m/%Y')} "
+                    f"a {data_referencia.strftime('%d/%m/%Y')}."
+                ),
+            )
             await _registrar_historico_importacao_sisa(
                 db,
                 instituicao_id=instituicao_id,
@@ -5831,8 +5963,24 @@ async def _aplicar_acoes_cadastros_sisa(
         ).scalars().all()
 
         for convivente in conviventes_para_reativar:
+            data_inativacao_antes = convivente.data_inativacao
             convivente.status = "Ativo"
             convivente.inativado_em = None
+            convivente.data_inativacao = None
+            convivente.data_nova_vinculacao = data_referencia
+            if data_inativacao_antes:
+                await registrar_historico_inativacao(
+                    db,
+                    instituicao_id=instituicao_id,
+                    convivente_id=convivente.id,
+                    usuario_id=usuario_id,
+                    data_inativacao=data_inativacao_antes,
+                    descricao=(
+                        "Data de inativação arquivada na reativação sugerida pela importação SISA "
+                        f"do recorte {data_inicio_referencia.strftime('%d/%m/%Y')} "
+                        f"a {data_referencia.strftime('%d/%m/%Y')}."
+                    ),
+                )
             await _registrar_historico_importacao_sisa(
                 db,
                 instituicao_id=instituicao_id,
