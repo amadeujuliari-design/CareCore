@@ -20,10 +20,11 @@ Antes de qualquer `git push` — sempre que o pedido for **commitar e subir**, *
 
 - Se o diff tocar o **frontend** (`carecore-front/src/**` ou config do front), rodar em `carecore-front`:
   1. `npm run lint` — deve terminar com **0 erros**. Lint com erro quebra o CI `Frontend lint and build` e **impede a publicacao no Vercel**.
-  2. `npm run build` — deve concluir com sucesso (avisos como `PLUGIN_TIMINGS` sao apenas informativos).
+  2. `npm test` — deve passar (o job do CI roda lint + **test** + build; só lint/build local nao basta).
+  3. `npm run build` — deve concluir com sucesso (avisos como `PLUGIN_TIMINGS` sao apenas informativos).
 - Se o diff tocar o **backend** (`.py`, testes), rodar os testes pertinentes (`pytest`) antes do push.
-- **Nao fazer push com lint/build/teste falhando.** Corrigir primeiro (ex.: import nao usado, variavel morta), revalidar e so entao commitar/subir.
-- Narrar o resultado (lint ok, build ok) junto com as etapas de entrega.
+- **Nao fazer push com lint/build/teste falhando.** Corrigir primeiro (ex.: import nao usado, variavel morta, import ESM sem `.js` em `utils/` usado por `node --test`), revalidar e so entao commitar/subir.
+- Narrar o resultado (lint ok, test ok, build ok) junto com as etapas de entrega.
 
 ## "Commitar e subir" / entrega em producao
 

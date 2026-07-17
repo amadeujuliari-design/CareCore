@@ -15,7 +15,7 @@ import {
   obterUrlDireitosReservados,
 } from './direitosReservados';
 import { obterLogoRelatorioSrc } from './relatorioIdentidadePrint';
-import { formatarDataBr } from './dataBrasilUtils';
+import { formatarDataBr } from './dataBrasilUtils.js';
 
 function escaparHtml(valor) {
   return String(valor ?? '')

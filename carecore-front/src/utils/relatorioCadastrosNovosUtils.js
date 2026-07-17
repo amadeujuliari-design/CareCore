@@ -1,4 +1,4 @@
-import { formatarDataBr } from './dataBrasilUtils';
+import { formatarDataBr } from './dataBrasilUtils.js';
 
 export const CRITERIOS_CADASTROS_NOVOS = [
   {

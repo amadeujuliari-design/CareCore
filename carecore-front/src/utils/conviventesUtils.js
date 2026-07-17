@@ -1,4 +1,4 @@
-import { dataLocalDeIso } from './dataBrasilUtils';
+import { dataLocalDeIso } from './dataBrasilUtils.js';
 
 export function calcularIdade(dataNascimento) {
   if (!dataNascimento) return '';

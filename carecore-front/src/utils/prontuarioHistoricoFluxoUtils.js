@@ -1,4 +1,4 @@
-import { formatarDataBr } from './dataBrasilUtils';
+import { formatarDataBr } from './dataBrasilUtils.js';
 
 export const FLUXO_DIAS_PADRAO = 7;
 export const HISTORICO_DIAS_PADRAO = 30;

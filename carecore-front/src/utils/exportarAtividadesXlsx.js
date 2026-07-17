@@ -1,5 +1,5 @@
 import { exportarRelatorioXlsx } from './exportarRelatorioXlsx';
-import { formatarDataBr } from './dataBrasilUtils';
+import { formatarDataBr } from './dataBrasilUtils.js';
 
 function formatarDataCurta(valor) {
   if (!valor) return '';

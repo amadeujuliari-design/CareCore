@@ -3,7 +3,7 @@ import {
   conviventeCorrespondeBusca,
   normalizarTextoBusca,
 } from './conviventeBuscaUtils';
-import { formatarDataBr } from './dataBrasilUtils';
+import { formatarDataBr } from './dataBrasilUtils.js';
 import { rotuloRepeticaoExtraRefeicao } from './rotinaRefeicaoUtils';
 import {
   tipoRegistroAlimentacao,

@@ -12,7 +12,7 @@ import {
   DIREITOS_RESERVADOS_TITULO,
   obterUrlDireitosReservados,
 } from './direitosReservados';
-import { formatarDataBr } from './dataBrasilUtils';
+import { formatarDataBr } from './dataBrasilUtils.js';
 
 function escaparHtml(valor) {
   return String(valor ?? '')
