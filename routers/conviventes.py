@@ -4371,7 +4371,11 @@ async def montar_dashboard_operacional_payload(
             "cancelados_hoje": cancelados_hoje,
             "editados_hoje": editados_hoje,
             "total_registros_hoje": len(registros_validos_hoje),
-            "total_interacoes_hoje": sum(interacoes_hoje.values()),
+            # Sem Entrada/Saída — fluxo fica em entradas_hoje/saidas_hoje.
+            "total_interacoes_hoje": sum(
+                qtd for tipo, qtd in interacoes_hoje.items()
+                if tipo not in {"Entrada", "Saída"}
+            ),
         },
         "interacoes_hoje": interacoes_hoje,
         "listas_totais": {
@@ -4422,6 +4426,7 @@ async def listar_dashboard_operacional_snapshots(
     """Lista retratos diários (22:00 SP) e séries para gráfico."""
     from dashboard_operacional_snapshot import (
         METRICAS_GRAFICO,
+        coletar_metricas_disponiveis,
         listar_snapshots,
         montar_series_grafico,
         periodo_padrao_30_dias,
@@ -4444,11 +4449,12 @@ async def listar_dashboard_operacional_snapshots(
         data_fim=fim,
         limite=limite,
     )
-    # Sempre devolve todas as séries; o front filtra a visualização.
-    metricas_filtro = list(METRICAS_GRAFICO)
+    metricas_disponiveis = coletar_metricas_disponiveis(items)
+    metricas_filtro = list(metricas_disponiveis)
     if metrica:
         pedidas = [m.strip() for m in metrica.split(",") if m.strip()]
-        escolhidas = [m for m in pedidas if m in METRICAS_GRAFICO]
+        permitidas = set(metricas_disponiveis) | set(METRICAS_GRAFICO)
+        escolhidas = [m for m in pedidas if m in permitidas]
         if escolhidas:
             metricas_filtro = escolhidas
 
@@ -4457,7 +4463,8 @@ async def listar_dashboard_operacional_snapshots(
         "data_inicio": inicio.isoformat() if inicio else None,
         "data_fim": fim.isoformat() if fim else None,
         "metricas": list(series.keys()),
-        "metricas_disponiveis": list(METRICAS_GRAFICO),
+        "metricas_disponiveis": metricas_disponiveis,
+        "metricas_padrao": ["dentro_projeto", "fora_projeto", "total_interacoes_hoje"],
         "series": series,
         "serie": series.get("dentro_projeto", []),
         "items": items,

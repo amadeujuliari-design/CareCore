@@ -16,16 +16,13 @@ from time_operacional import agora_operacional_naive
 logger = logging.getLogger("carecore.dashboard_operacional_snapshot")
 
 HORA_CAPTURA = 22
+TIPOS_FLUXO = frozenset({"Entrada", "Saída"})
+PREFIXO_INTERACAO = "interacao:"
+
 METRICAS_GRAFICO = (
     "dentro_projeto",
     "fora_projeto",
     "conviventes_ativos",
-    "entradas_hoje",
-    "saidas_hoje",
-    "cafes_hoje",
-    "almocos_hoje",
-    "jantares_hoje",
-    "lanches_noturnos_hoje",
     "sem_interacao_24h",
     "ausentes_operacionais",
     "total_interacoes_hoje",
@@ -35,15 +32,144 @@ METRICAS_GRAFICO = (
     "editados_hoje",
 )
 
-# Visão inicial do gráfico: evolução dos totais principais (filtro opcional depois).
+# Cobertas por interacao:<tipo> — não listar de novo nos filtros.
+METRICAS_REDUNDANTES_COM_INTERACAO = frozenset({
+    "entradas_hoje",
+    "saidas_hoje",
+    "cafes_hoje",
+    "almocos_hoje",
+    "jantares_hoje",
+    "lanches_noturnos_hoje",
+})
+
+# Visão inicial: só as três séries pedidas pelo operacional.
 METRICAS_PADRAO_GRAFICO = (
     "dentro_projeto",
     "fora_projeto",
-    "entradas_hoje",
-    "saidas_hoje",
     "total_interacoes_hoje",
-    "conviventes_ativos",
 )
+
+# Ordem operacional dos filtros (fluxo, alimentação e enxoval agrupados).
+ORDEM_METRICAS_BASE = (
+    "dentro_projeto",
+    "fora_projeto",
+    "conviventes_ativos",
+    "total_interacoes_hoje",
+    "total_registros_hoje",
+)
+
+ORDEM_TIPOS_INTERACAO = (
+    "Entrada",
+    "Saída",
+    "Café da manhã",
+    "Almoço",
+    "Jantar",
+    "Lanche noturno",
+    "Banho",
+    "Banheiro / Ducha",
+    "Retirada de Cobertor",
+    "Entrega de Cobertor",
+    "Retirada de Toalha",
+    "Entrega de Toalha",
+    "Movimentação de Bagageiro",
+    "Bipar documentos guardados",
+    "Bipar documentos retirados",
+)
+
+ORDEM_METRICAS_FINAIS = (
+    "sem_interacao_24h",
+    "ausentes_operacionais",
+    "retornos_rapidos_hoje",
+    "cancelados_hoje",
+    "editados_hoje",
+)
+
+
+def total_interacoes_sem_fluxo(interacoes: dict | None) -> int:
+    """Interações do dia sem Entrada/Saída (fluxo fica em entradas/saídas)."""
+    return sum(
+        int(v or 0)
+        for tipo, v in (interacoes or {}).items()
+        if tipo not in TIPOS_FLUXO
+    )
+
+
+def chave_metrica_interacao(tipo: str) -> str:
+    return f"{PREFIXO_INTERACAO}{tipo}"
+
+
+def valor_metrica_item(item: dict, chave: str) -> int:
+    resumo = item.get("resumo") or {}
+    interacoes = item.get("interacoes_hoje") or {}
+
+    if chave == "total_interacoes_hoje":
+        return total_interacoes_sem_fluxo(interacoes)
+
+    if chave == "total_registros_hoje":
+        if resumo.get("total_registros_hoje") is not None:
+            return int(resumo.get("total_registros_hoje") or 0)
+        return sum(int(v or 0) for v in interacoes.values())
+
+    if chave.startswith(PREFIXO_INTERACAO):
+        tipo = chave[len(PREFIXO_INTERACAO):]
+        return int(interacoes.get(tipo) or 0)
+
+    # Compat: aliases antigos apontam para o tipo de interação.
+    alias_tipo = {
+        "entradas_hoje": "Entrada",
+        "saidas_hoje": "Saída",
+        "cafes_hoje": "Café da manhã",
+        "almocos_hoje": "Almoço",
+        "jantares_hoje": "Jantar",
+        "lanches_noturnos_hoje": "Lanche noturno",
+    }
+    if chave in alias_tipo:
+        tipo = alias_tipo[chave]
+        if tipo in interacoes:
+            return int(interacoes.get(tipo) or 0)
+        return int(resumo.get(chave) or 0)
+
+    return int(resumo.get(chave) or 0)
+
+
+def _prioridade_metrica(chave: str) -> tuple:
+    if chave in ORDEM_METRICAS_BASE:
+        return (0, ORDEM_METRICAS_BASE.index(chave), "")
+
+    if chave.startswith(PREFIXO_INTERACAO):
+        tipo = chave[len(PREFIXO_INTERACAO):]
+        if tipo in ORDEM_TIPOS_INTERACAO:
+            return (1, ORDEM_TIPOS_INTERACAO.index(tipo), "")
+        return (2, 0, tipo.casefold())
+
+    if chave in ORDEM_METRICAS_FINAIS:
+        return (3, ORDEM_METRICAS_FINAIS.index(chave), "")
+
+    return (4, 0, chave.casefold())
+
+
+def ordenar_metricas_disponiveis(metricas: list[str] | tuple[str, ...]) -> list[str]:
+    unicas: list[str] = []
+    vistas: set[str] = set()
+    for chave in metricas:
+        if chave in vistas:
+            continue
+        vistas.add(chave)
+        unicas.append(chave)
+    return sorted(unicas, key=_prioridade_metrica)
+
+
+def coletar_metricas_disponiveis(items: list[dict]) -> list[str]:
+    """Métricas de estado/totais + tipos de interação, em ordem operacional."""
+    metricas = [m for m in METRICAS_GRAFICO if m not in METRICAS_REDUNDANTES_COM_INTERACAO]
+    tipos: set[str] = set()
+    for item in items:
+        tipos.update((item.get("interacoes_hoje") or {}).keys())
+    for tipo in tipos:
+        chave = chave_metrica_interacao(tipo)
+        if chave not in metricas:
+            metricas.append(chave)
+    return ordenar_metricas_disponiveis(metricas)
 
 
 def _json_default(valor: Any):
@@ -55,11 +181,15 @@ def _json_default(valor: Any):
 def extrair_retrato_para_snapshot(payload: dict) -> dict:
     """Guarda totais/alertas/interações — sem listas nominais grandes."""
     resumo = dict(payload.get("resumo") or {})
+    interacoes_hoje = dict(payload.get("interacoes_hoje") or {})
+    resumo["total_interacoes_hoje"] = total_interacoes_sem_fluxo(interacoes_hoje)
+    if resumo.get("total_registros_hoje") is None:
+        resumo["total_registros_hoje"] = sum(int(v or 0) for v in interacoes_hoje.values())
     return {
         "data_referencia": payload.get("data_referencia"),
         "atualizado_em": payload.get("atualizado_em"),
         "resumo": resumo,
-        "interacoes_hoje": dict(payload.get("interacoes_hoje") or {}),
+        "interacoes_hoje": interacoes_hoje,
         "listas_totais": dict(payload.get("listas_totais") or {}),
         "alertas": list(payload.get("alertas") or []),
     }
@@ -364,32 +494,26 @@ async def obter_snapshot_por_data(
 
 
 def montar_serie_grafico(items: list[dict], metrica: str) -> list[dict]:
-    chave = metrica if metrica in METRICAS_GRAFICO else "dentro_projeto"
+    chave = metrica or "dentro_projeto"
     ordenados = sorted(items, key=lambda item: item.get("data_referencia") or "")
-    serie = []
-    for item in ordenados:
-        resumo = item.get("resumo") or {}
-        valor = resumo.get(chave)
-        if valor is None and chave == "total_interacoes_hoje":
-            interacoes = item.get("interacoes_hoje") or {}
-            valor = sum(int(v or 0) for v in interacoes.values())
-        serie.append(
-            {
-                "data": item.get("data_referencia"),
-                "valor": int(valor or 0),
-                "metrica": chave,
-            }
-        )
-    return serie
+    return [
+        {
+            "data": item.get("data_referencia"),
+            "valor": valor_metrica_item(item, chave),
+            "metrica": chave,
+        }
+        for item in ordenados
+    ]
 
 
 def montar_series_grafico(
     items: list[dict],
     metricas: list[str] | tuple[str, ...] | None = None,
 ) -> dict[str, list[dict]]:
-    """Várias séries (visão geral). Se metricas for None, usa o conjunto padrão."""
-    chaves = list(metricas) if metricas else list(METRICAS_PADRAO_GRAFICO)
-    chaves = [c for c in chaves if c in METRICAS_GRAFICO] or list(METRICAS_PADRAO_GRAFICO)
+    """Várias séries. Se metricas for None, devolve todas (fixas + tipos do período)."""
+    chaves = list(metricas) if metricas else coletar_metricas_disponiveis(items)
+    if not chaves:
+        chaves = list(METRICAS_PADRAO_GRAFICO)
     return {chave: montar_serie_grafico(items, chave) for chave in chaves}
 
 

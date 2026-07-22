@@ -15,12 +15,6 @@ const METRICAS_LABEL = {
   dentro_projeto: 'Dentro do projeto',
   fora_projeto: 'Fora do projeto',
   conviventes_ativos: 'Conviventes ativos',
-  entradas_hoje: 'Entradas',
-  saidas_hoje: 'Saídas',
-  cafes_hoje: 'Cafés',
-  almocos_hoje: 'Almoços',
-  jantares_hoje: 'Jantares',
-  lanches_noturnos_hoje: 'Lanches noturnos',
   sem_interacao_24h: 'Sem interação 24h',
   ausentes_operacionais: 'Ausentes operacionais',
   total_interacoes_hoje: 'Total de interações',
@@ -28,28 +22,27 @@ const METRICAS_LABEL = {
   retornos_rapidos_hoje: 'Retornos rápidos',
   cancelados_hoje: 'Cancelados',
   editados_hoje: 'Editados',
+  'interacao:Entrada': 'Entradas',
+  'interacao:Saída': 'Saídas',
+  'interacao:Café da manhã': 'Café da manhã',
+  'interacao:Almoço': 'Almoço',
+  'interacao:Jantar': 'Jantar',
+  'interacao:Lanche noturno': 'Lanche noturno',
 };
 
 const METRICAS_PADRAO = [
   'dentro_projeto',
   'fora_projeto',
-  'entradas_hoje',
-  'saidas_hoje',
   'total_interacoes_hoje',
-  'conviventes_ativos',
 ];
 
 const CORES_SERIE = {
   dentro_projeto: '#059669',
   fora_projeto: '#ea580c',
-  entradas_hoje: '#2563eb',
-  saidas_hoje: '#0284c7',
+  'interacao:Entrada': '#2563eb',
+  'interacao:Saída': '#e11d48',
   total_interacoes_hoje: '#7c3aed',
   conviventes_ativos: '#334155',
-  cafes_hoje: '#ca8a04',
-  almocos_hoje: '#b45309',
-  jantares_hoje: '#9a3412',
-  lanches_noturnos_hoje: '#6d28d9',
   sem_interacao_24h: '#d97706',
   ausentes_operacionais: '#dc2626',
   total_registros_hoje: '#0f766e',
@@ -57,6 +50,30 @@ const CORES_SERIE = {
   cancelados_hoje: '#991b1b',
   editados_hoje: '#a16207',
 };
+
+const PALETA_INTERACOES = [
+  '#0891b2', '#4f46e5', '#16a34a', '#d97706', '#db2777',
+  '#0d9488', '#7c3aed', '#b45309', '#0369a1', '#be123c',
+];
+
+function labelMetrica(chave) {
+  if (METRICAS_LABEL[chave]) return METRICAS_LABEL[chave];
+  if (String(chave).startsWith('interacao:')) {
+    return String(chave).slice('interacao:'.length);
+  }
+  return chave;
+}
+
+function corSerie(chave) {
+  if (CORES_SERIE[chave]) return CORES_SERIE[chave];
+  const texto = String(chave);
+  let hash = 0;
+  for (let i = 0; i < texto.length; i += 1) {
+    hash = ((hash << 5) - hash) + texto.charCodeAt(i);
+    hash |= 0;
+  }
+  return PALETA_INTERACOES[Math.abs(hash) % PALETA_INTERACOES.length];
+}
 
 function dataLocalISO(diasAtras = 0) {
   const d = new Date();
@@ -113,7 +130,7 @@ function GraficoMultiSerie({ series, metricasAtivas, onSelecionar }) {
           const path = pontos
             .map((p, i) => `${i === 0 ? 'M' : 'L'} ${xDe(i).toFixed(1)} ${yDe(p.valor).toFixed(1)}`)
             .join(' ');
-          const cor = CORES_SERIE[chave] || '#0f766e';
+          const cor = corSerie(chave);
           return (
             <g key={chave}>
               <path d={path} fill="none" stroke={cor} strokeWidth="2.2" strokeLinejoin="round" strokeLinecap="round" />
@@ -129,7 +146,7 @@ function GraficoMultiSerie({ series, metricasAtivas, onSelecionar }) {
                   className="cursor-pointer"
                   onClick={() => onSelecionar?.(p.data)}
                 >
-                  <title>{`${METRICAS_LABEL[chave] || chave} · ${formatarDataCurta(p.data)}: ${p.valor}`}</title>
+                  <title>{`${labelMetrica(chave)} · ${formatarDataCurta(p.data)}: ${p.valor}`}</title>
                 </circle>
               ))}
             </g>
@@ -147,8 +164,8 @@ function GraficoMultiSerie({ series, metricasAtivas, onSelecionar }) {
       <div className="mt-2 flex flex-wrap gap-3 justify-center">
         {chaves.map((chave) => (
           <span key={chave} className="inline-flex items-center gap-1.5 text-[11px] font-black text-gray-600">
-            <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: CORES_SERIE[chave] || '#0f766e' }} />
-            {METRICAS_LABEL[chave] || chave}
+            <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: corSerie(chave) }} />
+            {labelMetrica(chave)}
           </span>
         ))}
       </div>
@@ -355,11 +372,19 @@ export default function DashboardOperacional() {
   }, [listaAtual]);
 
   const metricasSelect = useMemo(() => {
+    const vistas = new Set();
     return histMetricas.filter((chave) => {
-      if (ocultarSomatoriaAlimentacao) {
-        return !['cafes_hoje', 'almocos_hoje', 'jantares_hoje', 'lanches_noturnos_hoje'].includes(chave);
-      }
-      return true;
+      const rotulo = labelMetrica(chave).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      if (vistas.has(rotulo)) return false;
+      vistas.add(rotulo);
+
+      if (!ocultarSomatoriaAlimentacao) return true;
+      return !(
+        rotulo.includes('cafe')
+        || rotulo.includes('almoco')
+        || rotulo.includes('jantar')
+        || rotulo.includes('lanche')
+      );
     });
   }, [histMetricas, ocultarSomatoriaAlimentacao]);
 
@@ -396,7 +421,7 @@ export default function DashboardOperacional() {
       label: 'Saídas hoje',
       valor: resumo.saidas_hoje || 0,
       detalhe: 'registros válidos',
-      classe: 'bg-sky-50 text-sky-700 border-sky-100'
+      classe: 'bg-rose-50 text-rose-700 border-rose-100'
     }
   ];
 
@@ -411,6 +436,7 @@ export default function DashboardOperacional() {
       : []),
     { label: 'Total de conviventes ativos', valor: resumo.conviventes_ativos || 0 },
     { label: 'Total de interações hoje', valor: resumo.total_interacoes_hoje || 0 },
+    { label: 'Total de registros hoje', valor: resumo.total_registros_hoje || 0 },
     { label: 'Sem interação 24h', valor: resumo.sem_interacao_24h ?? resumo.sem_movimento ?? 0 },
     { label: 'Ausentes (saída ontem)', valor: resumo.ausentes_operacionais || 0 }
   ];
@@ -584,7 +610,7 @@ export default function DashboardOperacional() {
                               : 'border-gray-200 bg-white text-gray-600'
                           }`}
                         >
-                          {METRICAS_LABEL[chave] || chave}
+                          {labelMetrica(chave)}
                         </button>
                       );
                     })}
@@ -593,9 +619,12 @@ export default function DashboardOperacional() {
                       onClick={() => setMetricasAtivas(METRICAS_PADRAO.filter((k) => metricasSelect.includes(k)))}
                       className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-1.5 text-[11px] font-black text-gray-600"
                     >
-                      Resetar visão geral
+                      Resetar (dentro/fora/interações)
                     </button>
                   </div>
+                  <p className="mb-3 text-[11px] font-semibold text-gray-400">
+                    Padrão: dentro, fora e total de interações (sem entrada/saída). Ative Entradas, Saídas, Banho, Bagageiro e demais tipos conforme precisar.
+                  </p>
 
                   {histErro && (
                     <div className="mb-3 rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">
