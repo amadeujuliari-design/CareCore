@@ -69,6 +69,7 @@ export function criarEstadoInicialConvivente() {
     data_nova_vinculacao: '',
     inativacoes_anteriores: [],
     preferencial: false,
+    observacao_operacional: '',
     prontuario_saude: '',
     origem_encaminhamento_id: '',
     origem_encaminhamento_outros: '',
@@ -192,6 +193,29 @@ export function montarFormEvolucaoPia(registroPrincipal) {
     tipo_registro: 'Evolução',
     titulo: 'Evolução',
     status: registroPrincipal?.status || FORM_PIA_INICIAL.status,
+  };
+}
+
+export function montarFormEdicaoPia(registro) {
+  const ehEvolucao = Boolean(registro?.registro_pai_id);
+  return {
+    ...FORM_PIA_INICIAL,
+    id: registro?.id || '',
+    registro_pai_id: registro?.registro_pai_id || '',
+    tipo_registro: ehEvolucao ? 'Evolução' : (registro?.tipo_registro || 'PIA'),
+    titulo: ehEvolucao ? 'Evolução' : (registro?.titulo || ''),
+    subtitulo: registro?.subtitulo || '',
+    descricao: registro?.descricao || '',
+    objetivos: registro?.objetivos || '',
+    encaminhamentos: registro?.encaminhamentos || '',
+    status: registro?.status || FORM_PIA_INICIAL.status,
+    expectativas_servico: registro?.expectativas_servico || '',
+    expectativas_vida_projetos: registro?.expectativas_vida_projetos || '',
+    destino_siat_iii: Boolean(registro?.destino_siat_iii),
+    destino_moradia_autonoma: Boolean(registro?.destino_moradia_autonoma),
+    destino_retorno_familiar: Boolean(registro?.destino_retorno_familiar),
+    destino_explicacao: registro?.destino_explicacao || '',
+    dificuldades_planos: registro?.dificuldades_planos || '',
   };
 }
 

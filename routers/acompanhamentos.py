@@ -27,6 +27,8 @@ from models import (
     UsuarioDB,
 )
 from routers.conviventes_helpers import agora_sao_paulo
+from ocorrencias_status_bloqueio import exigir_sem_ocorrencias_abertas_para_saida_institucional
+from ausencia_justificada_periodo import registrar_periodo_ausencia_justificada_encerrada
 from hospitais_sao_paulo_sus import HOSPITAIS_SAOPAULO_SUS
 from tipos_acao_acompanhamento import (
     DESTINOS_TRANSFERENCIA,
@@ -218,10 +220,31 @@ async def _aplicar_status_convivente(
     if status_antigo == status_novo:
         return
 
+    await exigir_sem_ocorrencias_abertas_para_saida_institucional(
+        db,
+        convivente_id=convivente.id,
+        instituicao_id=instituicao_id,
+        status_antigo=status_antigo,
+        status_novo=status_novo,
+    )
+
     leito_id_antigo = convivente.leito_id
     data_inativacao_antes = convivente.data_inativacao
+    data_inicio_aj = convivente.ausencia_justificada_desde
+    hoje = agora_sao_paulo().date()
     convivente.status = status_novo
-    aplicar_datas_convivente_objeto(convivente, status_antigo, status_novo, agora_sao_paulo().date())
+    aplicar_datas_convivente_objeto(convivente, status_antigo, status_novo, hoje)
+
+    if status_antigo == "Ausência justificada" and status_novo != "Ausência justificada":
+        await registrar_periodo_ausencia_justificada_encerrada(
+            db,
+            instituicao_id=instituicao_id,
+            convivente_id=convivente.id,
+            data_inicio=data_inicio_aj,
+            data_fim=hoje,
+            usuario_id=usuario_id,
+            origem_encerramento="acompanhamentos",
+        )
 
     if status_novo == "Ativo":
         convivente.inativado_em = None
@@ -232,7 +255,7 @@ async def _aplicar_status_convivente(
     elif status_novo == "Ausência justificada":
         convivente.inativado_em = None
         if status_antigo != "Ausência justificada" or not convivente.ausencia_justificada_desde:
-            convivente.ausencia_justificada_desde = agora_sao_paulo().date()
+            convivente.ausencia_justificada_desde = hoje
     elif status_novo in {"Inativado", "Bloqueado", "Saída qualificada"}:
         convivente.leito_id = None
         if status_novo == "Inativado":
@@ -709,6 +732,7 @@ def _map_pot(
         status_evolucao=registro.status_evolucao,
         data_evolucao=registro.data_evolucao,
         situacao_atual=situacao_atual,
+        status_convivente=getattr(convivente, "status", None) if convivente else None,
         data_insercao=registro.data_insercao,
         data_desligamento=registro.data_desligamento,
         congelamento_ativo=bool(registro.congelamento_ativo),
@@ -1546,6 +1570,10 @@ async def listar_pot(
     busca: Optional[str] = Query(None),
     data_inicio: Optional[str] = Query(None),
     data_fim: Optional[str] = Query(None),
+    status_convivente: Optional[str] = Query(
+        None,
+        description="Filtra pelo status atual do convivente. Vazio ou 'Todos' lista todos.",
+    ),
     offset: int = Query(0, ge=0),
     limite: int = Query(REGISTROS_POR_PAGINA_PADRAO, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
@@ -1565,6 +1593,10 @@ async def listar_pot(
 
     if busca:
         query = _aplicar_busca_convivente(query, busca)
+
+    status_filtro = (status_convivente or "").strip()
+    if status_filtro and status_filtro.lower() not in {"todos", "todas", "all"}:
+        query = query.where(ConviventeDB.status == status_filtro)
 
     if data_inicio:
         query = query.where(AcompanhamentoPotDB.data_insercao >= _parse_data_filtro(data_inicio))
@@ -1667,7 +1699,6 @@ async def criar_pot(
         db,
         instituicao_id,
         payload.convivente_id,
-        status_permitidos=STATUS_CONVIVENTE_ATIVO,
     )
     agora = agora_sao_paulo()
 

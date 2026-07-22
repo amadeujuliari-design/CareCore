@@ -35,6 +35,7 @@ from carteirinha_operacional import (
 )
 from refeicao_horario_operacional import validar_horario_refeicao_operacional
 from rotina_portaria_horarios import UltimoMovimentoPortaria, validar_horario_portaria
+from ocorrencias_status_bloqueio import exigir_sem_ocorrencias_abertas_para_saida_institucional
 from config_operacional import (
     obter_tipos_refeicao_ativos,
     obter_tipos_rotina_validos,
@@ -104,7 +105,7 @@ from schemas import (
     OrigemEncaminhamentoCreate, OrigemEncaminhamentoResponse,
     DocumentoResponse, OcorrenciaResponse, OcorrenciaConviventeListaResponse, InteracaoOcorrenciaCreate, OcorrenciaCreate,
     OcorrenciaRelatorioPrioridades, OcorrenciaPrioridadeResumo,
-    RegistroPIACreate, RegistroPIAResponse, RegistroPIAListaResponse,
+    RegistroPIACreate, RegistroPIAUpdate, RegistroPIAResponse, RegistroPIAListaResponse,
     AssinaturaFormularioPiaConsultaResponse,
     AssinaturaFormularioPiaRegistrar,
     AssinaturaFormularioPiaReimpressao,
@@ -803,6 +804,14 @@ async def responder_ausencia_justificada(
         if status_atribuido == "Inativado" and not justificativa:
             raise HTTPException(status_code=400, detail="Informe a justificativa para inativar o convivente.")
 
+        await exigir_sem_ocorrencias_abertas_para_saida_institucional(
+            db,
+            convivente_id=convivente.id,
+            instituicao_id=obter_instituicao_escopo(usuario_atual),
+            status_antigo=convivente.status,
+            status_novo=status_atribuido,
+        )
+
     confirmacao = (
         await db.execute(
             select(AusenciaJustificadaConfirmacaoDB).where(
@@ -835,7 +844,17 @@ async def responder_ausencia_justificada(
     if not payload.continua_ausente:
         status_antigo = convivente.status
         data_inativacao_antes = convivente.data_inativacao
+        data_inicio_aj = convivente.ausencia_justificada_desde
         convivente.status = status_atribuido
+        await registrar_periodo_ausencia_justificada_encerrada(
+            db,
+            instituicao_id=obter_instituicao_escopo(usuario_atual),
+            convivente_id=convivente.id,
+            data_inicio=data_inicio_aj,
+            data_fim=hoje,
+            usuario_id=usuario_atual["sub"],
+            origem_encerramento="responder_ausencia_justificada",
+        )
         convivente.ausencia_justificada_desde = None
         aplicar_datas_convivente_objeto(
             convivente,
@@ -923,6 +942,7 @@ async def listar_conviventes_resumo(
         ConviventeDB.tecnico_id,
         ConviventeDB.foto_url,
         ConviventeDB.preferencial,
+        ConviventeDB.observacao_operacional,
         ConviventeDB.leito_provisorio_desde,
         ConviventeDB.numero_sisa,
         ConviventeDB.numero_nis,
@@ -961,6 +981,7 @@ async def listar_conviventes_resumo(
             "tecnico_id": row.tecnico_id,
             "foto_url": row.foto_url,
             "preferencial": bool(row.preferencial),
+            "observacao_operacional": row.observacao_operacional,
             "leito_provisorio_desde": row.leito_provisorio_desde,
             "numero_sisa": row.numero_sisa,
             "numero_nis": row.numero_nis,
@@ -1127,6 +1148,13 @@ async def criar_registro_pia(
         encaminhamentos=(payload.encaminhamentos or "").strip() or None,
         status=payload.status.strip() or "Em acompanhamento",
         data_registro=agora_sao_paulo(),
+        expectativas_servico=(payload.expectativas_servico or "").strip() or None,
+        expectativas_vida_projetos=(payload.expectativas_vida_projetos or "").strip() or None,
+        destino_siat_iii=bool(payload.destino_siat_iii),
+        destino_moradia_autonoma=bool(payload.destino_moradia_autonoma),
+        destino_retorno_familiar=bool(payload.destino_retorno_familiar),
+        destino_explicacao=(payload.destino_explicacao or "").strip() or None,
+        dificuldades_planos=(payload.dificuldades_planos or "").strip() or None,
     )
 
     db.add(registro)
@@ -1136,6 +1164,100 @@ async def criar_registro_pia(
     return {
         **{coluna.name: getattr(registro, coluna.name) for coluna in registro.__table__.columns},
         "usuario_nome": usuario_atual.get("nome"),
+    }
+
+
+@router.put("/conviventes/{convivente_id}/pia/{registro_id}", response_model=RegistroPIAResponse)
+async def atualizar_registro_pia(
+    convivente_id: str,
+    registro_id: str,
+    payload: RegistroPIAUpdate,
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    bloquear_usuario_global_puro(usuario_atual)
+
+    if not usuario_pode_gerenciar_pia_convivente(usuario_atual):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Apenas Gestores, Técnicos ou Manutenção podem editar o PIA.",
+        )
+
+    convivente = (
+        await db.execute(
+            select(ConviventeDB).where(
+                ConviventeDB.id == convivente_id,
+                ConviventeDB.instituicao_id == obter_instituicao_escopo(usuario_atual),
+            )
+        )
+    ).scalar_one_or_none()
+
+    if not convivente:
+        raise HTTPException(status_code=404, detail="Convivente não encontrado.")
+
+    exigir_convivente_ativo_para_registro(convivente)
+
+    instituicao_id = obter_instituicao_escopo(usuario_atual)
+    registro = (
+        await db.execute(
+            select(RegistroPIADB).where(
+                RegistroPIADB.id == registro_id,
+                RegistroPIADB.convivente_id == convivente_id,
+                RegistroPIADB.instituicao_id == instituicao_id,
+            )
+        )
+    ).scalar_one_or_none()
+
+    if not registro:
+        raise HTTPException(status_code=404, detail="Registro PIA não encontrado.")
+
+    eh_evolucao = bool(registro.registro_pai_id)
+
+    if not payload.descricao.strip():
+        raise HTTPException(status_code=400, detail="Informe a descrição do registro PIA.")
+
+    if eh_evolucao:
+        if not (payload.subtitulo or "").strip():
+            raise HTTPException(status_code=400, detail="Informe o subtítulo/tema da evolução.")
+        registro.tipo_registro = "Evolução"
+        registro.titulo = "Evolução"
+        registro.subtitulo = (payload.subtitulo or "").strip() or None
+        registro.expectativas_servico = None
+        registro.expectativas_vida_projetos = None
+        registro.destino_siat_iii = False
+        registro.destino_moradia_autonoma = False
+        registro.destino_retorno_familiar = False
+        registro.destino_explicacao = None
+        registro.dificuldades_planos = None
+    else:
+        if not payload.titulo.strip():
+            raise HTTPException(status_code=400, detail="Informe o título do PIA principal.")
+        registro.tipo_registro = (payload.tipo_registro or "").strip() or "PIA"
+        registro.titulo = payload.titulo.strip()
+        registro.subtitulo = (payload.subtitulo or "").strip() or None
+        registro.expectativas_servico = (payload.expectativas_servico or "").strip() or None
+        registro.expectativas_vida_projetos = (payload.expectativas_vida_projetos or "").strip() or None
+        registro.destino_siat_iii = bool(payload.destino_siat_iii)
+        registro.destino_moradia_autonoma = bool(payload.destino_moradia_autonoma)
+        registro.destino_retorno_familiar = bool(payload.destino_retorno_familiar)
+        registro.destino_explicacao = (payload.destino_explicacao or "").strip() or None
+        registro.dificuldades_planos = (payload.dificuldades_planos or "").strip() or None
+
+    registro.descricao = payload.descricao.strip()
+    registro.objetivos = (payload.objetivos or "").strip() or None
+    registro.encaminhamentos = (payload.encaminhamentos or "").strip() or None
+    registro.status = payload.status.strip() or "Em acompanhamento"
+
+    await db.commit()
+    await db.refresh(registro)
+
+    usuario_nome = (
+        await db.execute(select(UsuarioDB.nome).where(UsuarioDB.id == registro.usuario_id))
+    ).scalar_one_or_none()
+
+    return {
+        **{coluna.name: getattr(registro, coluna.name) for coluna in registro.__table__.columns},
+        "usuario_nome": usuario_nome or usuario_atual.get("nome"),
     }
 
 
@@ -1770,7 +1892,7 @@ def exigir_convivente_ativo_para_registro(convivente: ConviventeDB) -> None:
         status_code=status.HTTP_409_CONFLICT,
         detail=(
             "Convivente inativo. Ative o convivente antes de registrar "
-            "movimentações, ocorrências, interações ou novos registros."
+            "movimentações, novas ocorrências ou novos registros operacionais."
         ),
     )
 
@@ -2111,8 +2233,30 @@ async def atualizar_convivente(convivente_id: str, dados_atualizacao: Convivente
         dados["tb_remanejamento_situacao"] = None
 
     novo_status = dados.get("status", status_antigo)
+    await exigir_sem_ocorrencias_abertas_para_saida_institucional(
+        db,
+        convivente_id=convivente.id,
+        instituicao_id=obter_instituicao_escopo(usuario_atual),
+        status_antigo=status_antigo,
+        status_novo=novo_status,
+    )
     data_inativacao_antes = convivente.data_inativacao
+    data_inicio_aj_antes = convivente.ausencia_justificada_desde
     aplicar_datas_convivente_payload(dados, status_antigo, novo_status, hoje, campos_enviados)
+
+    if (
+        status_antigo == "Ausência justificada"
+        and novo_status != "Ausência justificada"
+    ):
+        await registrar_periodo_ausencia_justificada_encerrada(
+            db,
+            instituicao_id=obter_instituicao_escopo(usuario_atual),
+            convivente_id=convivente.id,
+            data_inicio=data_inicio_aj_antes,
+            data_fim=hoje,
+            usuario_id=usuario_atual["sub"],
+            origem_encerramento="atualizar_convivente",
+        )
 
     if novo_status in ("Ativo", "Em acolhimento"):
         dados["inativado_em"] = None
@@ -2842,24 +2986,14 @@ async def adicionar_interacao(ocorrencia_id: str, payload: InteracaoOcorrenciaCr
     if not oc: 
         raise HTTPException(status_code=404, detail="Ocorrência não encontrada.")
 
-    convivente = (
-        await db.execute(
-            select(ConviventeDB).where(
-                ConviventeDB.id == oc.convivente_id,
-                ConviventeDB.instituicao_id == obter_instituicao_escopo(usuario_atual),
-            )
-        )
-    ).scalar_one_or_none()
-
-    if convivente:
-        exigir_convivente_ativo_para_registro(convivente)
-    
+    # Interações e encerramento (parecer técnico) permanecem permitidos
+    # mesmo com convivente Inativado/Bloqueado/Saída qualificada.
     if payload.tipo_interacao == "Parecer Técnico":
         if not usuario_pode_resolver_ocorrencia(usuario_atual, oc):
             raise HTTPException(
                 status_code=403,
                 detail=(
-                    "Apenas um Gestor ou o Técnico responsável podem "
+                    "Apenas um Gestor, Manutenção ou o Técnico responsável podem "
                     "registrar parecer técnico e encerrar a ocorrência."
                 ),
             )
@@ -3109,7 +3243,7 @@ async def upload_documento(
 
     if not convivente:
         raise HTTPException(status_code=404, detail="Convivente não encontrado.")
-    exigir_convivente_ativo_para_registro(convivente)
+    # Upload de documentos permanece permitido em qualquer status institucional.
     if sensivel and not (
         usuario_eh_gestor(usuario_atual)
         or usuario_tem_perfil(usuario_atual, {PERFIL_TECNICO})
@@ -3867,14 +4001,15 @@ async def status_sincronizacao_rotina(
 # DASHBOARD OPERACIONAL DA ROTINA
 # =====================================================================
 
-@router.get("/rotina/dashboard-operacional")
-async def dashboard_operacional_rotina(
+async def montar_dashboard_operacional_payload(
+    db: AsyncSession,
+    instituicao_id: str,
+    *,
     limite_listas: int = 120,
-    db: AsyncSession = Depends(get_db),
-    usuario_atual: dict = Depends(get_usuario_logado)
-):
+    agora: datetime | None = None,
+) -> dict:
     """
-    Dashboard operacional da rotina.
+    Monta o payload do dashboard operacional da rotina para uma instituição.
 
     Regra importante:
     - "Presentes agora" e "Fora agora" representam o estado real atual
@@ -3883,27 +4018,34 @@ async def dashboard_operacional_rotina(
     - Os indicadores "Entradas hoje", "Saídas hoje", "Almoços hoje" etc.
       representam apenas a movimentação do dia.
     """
-    hoje = agora_sao_paulo().date()
-    agora = agora_sao_paulo()
+    agora = agora or agora_sao_paulo()
+    hoje = agora.date()
     inicio_dia = datetime.combine(hoje, datetime.min.time())
-    fim_dia = datetime.combine(hoje, datetime.max.time())
+    # Corte temporal: ao vivo = agora; retrato 22h / backfill = 22:00 do dia.
+    fim_corte = agora
     ontem = hoje - timedelta(days=1)
     inicio_ontem = datetime.combine(ontem, datetime.min.time())
 
-    inst_id = obter_instituicao_escopo(usuario_atual)
+    inst_id = instituicao_id
 
-    # Base operacional: conviventes ativos da instituição.
-    # Eles compõem o universo para "presentes agora" e "fora agora".
+    # Base operacional: conviventes ativos na instituição no instante do corte.
+    # Inclui quem estava ativo na época (inativado depois do corte).
     conviventes_ativos = (
         await db.execute(
             select(ConviventeDB).where(
                 ConviventeDB.instituicao_id == inst_id,
-                ConviventeDB.status == "Ativo"
+                or_(
+                    ConviventeDB.status == "Ativo",
+                    and_(
+                        ConviventeDB.inativado_em.isnot(None),
+                        ConviventeDB.inativado_em > agora,
+                    ),
+                ),
             ).order_by(ConviventeDB.nome_completo.asc())
         )
     ).scalars().all()
 
-    # Movimentação do dia: usada somente para métricas diárias e últimos registros.
+    # Movimentação do dia até o corte (métricas diárias e últimos registros).
     registros_hoje = (
         await db.execute(
             select(
@@ -3918,13 +4060,13 @@ async def dashboard_operacional_rotina(
             .where(
                 RegistroRotinaDB.instituicao_id == inst_id,
                 RegistroRotinaDB.data_registro >= inicio_dia,
-                RegistroRotinaDB.data_registro <= fim_dia
+                RegistroRotinaDB.data_registro <= fim_corte,
             )
             .order_by(RegistroRotinaDB.data_registro.desc())
         )
     ).all()
 
-    # Estado atual real: busca apenas o último movimento de fluxo por convivente.
+    # Estado no corte: último movimento de fluxo até o instante.
     ultimo_movimento_subq = (
         select(
             RegistroRotinaDB.convivente_id.label("convivente_id"),
@@ -3933,7 +4075,8 @@ async def dashboard_operacional_rotina(
         .where(
             RegistroRotinaDB.instituicao_id == inst_id,
             RegistroRotinaDB.cancelado != True,
-            RegistroRotinaDB.tipo_registro.in_(["Entrada", "Saída"])
+            RegistroRotinaDB.tipo_registro.in_(["Entrada", "Saída"]),
+            RegistroRotinaDB.data_registro <= fim_corte,
         )
         .group_by(RegistroRotinaDB.convivente_id)
         .subquery()
@@ -3980,6 +4123,7 @@ async def dashboard_operacional_rotina(
         .where(
             RegistroRotinaDB.instituicao_id == inst_id,
             RegistroRotinaDB.cancelado != True,
+            RegistroRotinaDB.data_registro <= fim_corte,
         )
         .group_by(RegistroRotinaDB.convivente_id)
         .subquery()
@@ -4018,7 +4162,7 @@ async def dashboard_operacional_rotina(
                 RegistroRotinaDB.convivente_id.in_(convivente_ids_ativos),
                 RegistroRotinaDB.tipo_registro.in_(["Entrada", "Saída"]),
                 RegistroRotinaDB.data_registro >= inicio_ontem,
-                RegistroRotinaDB.data_registro <= fim_dia,
+                RegistroRotinaDB.data_registro <= fim_corte,
             ).order_by(
                 RegistroRotinaDB.data_registro.asc()
             )
@@ -4193,9 +4337,15 @@ async def dashboard_operacional_rotina(
     )
     limite_listas_seguro = min(max(int(limite_listas or 120), 20), 500)
 
+    interacoes_hoje: dict[str, int] = {}
+    for registro in registros_validos_hoje:
+        tipo = (registro.tipo_registro or "").strip() or "Sem tipo"
+        interacoes_hoje[tipo] = interacoes_hoje.get(tipo, 0) + 1
+    interacoes_hoje = dict(sorted(interacoes_hoje.items(), key=lambda item: (-item[1], item[0])))
+
     return {
         "data_referencia": hoje.isoformat(),
-        "atualizado_em": agora_sao_paulo().isoformat(),
+        "atualizado_em": agora.isoformat(),
         "resumo": {
             "conviventes_ativos": capacidade_operacional,
 
@@ -4220,8 +4370,10 @@ async def dashboard_operacional_rotina(
             "retornos_rapidos_hoje": retornos_rapidos_hoje,
             "cancelados_hoje": cancelados_hoje,
             "editados_hoje": editados_hoje,
-            "total_registros_hoje": len(registros_validos_hoje)
+            "total_registros_hoje": len(registros_validos_hoje),
+            "total_interacoes_hoje": sum(interacoes_hoje.values()),
         },
+        "interacoes_hoje": interacoes_hoje,
         "listas_totais": {
             "presentes": len(presentes),
             "fora": len(fora_por_saida),
@@ -4240,6 +4392,123 @@ async def dashboard_operacional_rotina(
         "ultimos_registros": ultimos_registros,
         "alertas": alertas
     }
+
+
+
+@router.get("/rotina/dashboard-operacional")
+async def dashboard_operacional_rotina(
+    limite_listas: int = 120,
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado)
+):
+    """Dashboard operacional da rotina (estado ao vivo — não grava snapshot)."""
+    inst_id = obter_instituicao_escopo(usuario_atual)
+    return await montar_dashboard_operacional_payload(
+        db,
+        inst_id,
+        limite_listas=limite_listas,
+    )
+
+
+@router.get("/rotina/dashboard-operacional/snapshots")
+async def listar_dashboard_operacional_snapshots(
+    data_inicio: str | None = Query(None),
+    data_fim: str | None = Query(None),
+    metrica: str | None = Query(None),
+    limite: int = Query(60, ge=1, le=120),
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    """Lista retratos diários (22:00 SP) e séries para gráfico."""
+    from dashboard_operacional_snapshot import (
+        METRICAS_GRAFICO,
+        listar_snapshots,
+        montar_series_grafico,
+        periodo_padrao_30_dias,
+    )
+    from time_operacional import parse_data_filtro_operacional
+
+    inst_id = obter_instituicao_escopo(usuario_atual)
+    inicio_padrao, fim_padrao = periodo_padrao_30_dias()
+    inicio_dt = parse_data_filtro_operacional(data_inicio) if data_inicio else None
+    fim_dt = parse_data_filtro_operacional(data_fim) if data_fim else None
+    inicio = inicio_dt.date() if inicio_dt else inicio_padrao
+    fim = fim_dt.date() if fim_dt else fim_padrao
+    if inicio and fim and inicio > fim:
+        raise HTTPException(status_code=400, detail="data_inicio deve ser anterior ou igual a data_fim.")
+
+    items = await listar_snapshots(
+        db,
+        instituicao_id=inst_id,
+        data_inicio=inicio,
+        data_fim=fim,
+        limite=limite,
+    )
+    # Sempre devolve todas as séries; o front filtra a visualização.
+    metricas_filtro = list(METRICAS_GRAFICO)
+    if metrica:
+        pedidas = [m.strip() for m in metrica.split(",") if m.strip()]
+        escolhidas = [m for m in pedidas if m in METRICAS_GRAFICO]
+        if escolhidas:
+            metricas_filtro = escolhidas
+
+    series = montar_series_grafico(items, metricas_filtro)
+    return {
+        "data_inicio": inicio.isoformat() if inicio else None,
+        "data_fim": fim.isoformat() if fim else None,
+        "metricas": list(series.keys()),
+        "metricas_disponiveis": list(METRICAS_GRAFICO),
+        "series": series,
+        "serie": series.get("dentro_projeto", []),
+        "items": items,
+        "total": len(items),
+    }
+
+
+@router.get("/rotina/dashboard-operacional/snapshots/{data_referencia}")
+async def obter_dashboard_operacional_snapshot(
+    data_referencia: str,
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    from dashboard_operacional_snapshot import obter_snapshot_por_data
+    from time_operacional import parse_data_filtro_operacional
+
+    data_dt = parse_data_filtro_operacional(data_referencia)
+    if not data_dt:
+        raise HTTPException(status_code=400, detail="Data inválida. Use AAAA-MM-DD.")
+    # Coluna data_referencia é Date; parse_data_filtro devolve datetime (00:00).
+    data_ref = data_dt.date()
+
+    inst_id = obter_instituicao_escopo(usuario_atual)
+    item = await obter_snapshot_por_data(
+        db,
+        instituicao_id=inst_id,
+        data_referencia=data_ref,
+    )
+    if not item:
+        raise HTTPException(status_code=404, detail="Retrato não encontrado para esta data.")
+    return item
+
+
+@router.post("/rotina/dashboard-operacional/snapshots/capturar")
+async def capturar_dashboard_operacional_snapshots(
+    forcar: bool = Query(False),
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    """Executa a captura do dia (job 22:00). Manutenção/gestor; forcar=true ignora horário."""
+    from dashboard_operacional_snapshot import capturar_snapshots_pendentes_todas_instituicoes
+
+    if not (
+        usuario_eh_gestor(usuario_atual)
+        or usuario_eh_manutencao(usuario_atual)
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail="Apenas gestores ou manutenção podem forçar a captura dos snapshots.",
+        )
+    return await capturar_snapshots_pendentes_todas_instituicoes(db, forcar=forcar)
 
 
 # =====================================================================
@@ -5297,6 +5566,12 @@ from presenca_operacional import (
     totais_status_presenca,
     FILTRO_SITUACAO_AUSENTES,
     FILTRO_SITUACAO_PRESENTES,
+)
+from ausencia_justificada_periodo import (
+    carregar_periodos_ausencia_justificada,
+    dia_tem_ausencia_justificada,
+    expandir_dias_justificados,
+    registrar_periodo_ausencia_justificada_encerrada,
 )
 
 TIPOS_SISA_PRESENCA_CARECORE = {
@@ -6542,6 +6817,13 @@ async def relatorio_presenca_periodo(
 
     dias_iso = [dia.isoformat() for dia in dias_periodo]
     total_dias = len(dias_periodo)
+    periodos_aj_por_convivente = await carregar_periodos_ausencia_justificada(
+        db,
+        instituicao_id=instituicao_id,
+        convivente_ids=convivente_ids,
+        data_inicio=inicio,
+        data_fim=fim,
+    )
     linhas = []
 
     for convivente, tecnico_nome in conviventes_resultado:
@@ -6556,6 +6838,7 @@ async def relatorio_presenca_periodo(
             data_inativacao=convivente.data_inativacao,
             status_convivente=convivente.status,
             ausencia_justificada_desde=convivente.ausencia_justificada_desde,
+            periodos_ausencia_justificada=periodos_aj_por_convivente.get(convivente.id, []),
         )
         totais = totais_status_presenca(status_por_dia)
 
@@ -7246,6 +7529,15 @@ async def relatorio_sisa_diario(
             "data_registro": data_registro,
         })
 
+    instituicao_id = obter_instituicao_escopo(usuario_atual)
+    periodos_aj_por_convivente = await carregar_periodos_ausencia_justificada(
+        db,
+        instituicao_id=instituicao_id,
+        convivente_ids=convivente_ids,
+        data_inicio=data_referencia,
+        data_fim=data_referencia,
+    )
+
     linhas = []
 
     for convivente in conviventes:
@@ -7286,12 +7578,11 @@ async def relatorio_sisa_diario(
             if r["tipo_registro"] == "Banho"
         ]
 
-        ausencia_justificada = (
-            convivente.status == "Ausência justificada"
-            and (
-                convivente.ausencia_justificada_desde is None
-                or convivente.ausencia_justificada_desde <= data_referencia
-            )
+        ausencia_justificada = dia_tem_ausencia_justificada(
+            data_referencia,
+            status_convivente=convivente.status,
+            ausencia_justificada_desde=convivente.ausencia_justificada_desde,
+            periodos_fechados=periodos_aj_por_convivente.get(convivente.id, []),
         )
         movimentos_fluxo = movimentos_por_convivente.get(convivente.id, [])
         presente = convivente_presente_no_dia(
@@ -7534,6 +7825,15 @@ async def relatorio_sisa_mensal(
         for lancamento, usuario_nome in lancamentos_resultado.all()
     }
 
+    instituicao_id = obter_instituicao_escopo(usuario_atual)
+    periodos_aj_por_convivente = await carregar_periodos_ausencia_justificada(
+        db,
+        instituicao_id=instituicao_id,
+        convivente_ids=convivente_ids,
+        data_inicio=inicio.date(),
+        data_fim=fim.date(),
+    )
+
     linhas = []
 
     for convivente in conviventes:
@@ -7548,16 +7848,13 @@ async def relatorio_sisa_mensal(
                 convivente.data_entrada,
             ),
         ))
-        dias_justificados = set()
-
-        if convivente.status == "Ausência justificada":
-            data_base_justificativa = convivente.ausencia_justificada_desde or inicio.date()
-            dia = max(data_base_justificativa, inicio.date())
-            fim_periodo = fim.date()
-
-            while dia <= fim_periodo:
-                dias_justificados.add(dia.isoformat())
-                dia += timedelta(days=1)
+        dias_justificados = expandir_dias_justificados(
+            inicio.date(),
+            fim.date(),
+            status_convivente=convivente.status,
+            ausencia_justificada_desde=convivente.ausencia_justificada_desde,
+            periodos_fechados=periodos_aj_por_convivente.get(convivente.id, []),
+        )
 
         dias_presentes = sorted(dias_presenca_operacional | dias_justificados)
 

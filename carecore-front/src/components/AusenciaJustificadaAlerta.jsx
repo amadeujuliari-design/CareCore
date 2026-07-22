@@ -5,6 +5,7 @@ import {
   listarAusenciasJustificadasPendentes,
   responderAusenciaJustificada,
 } from '../services/ausenciasJustificadasService';
+import ModalAlertaOk from './ModalAlertaOk';
 
 function obterTokenLocal() {
   return localStorage.getItem('@CareCore:token') || localStorage.getItem('token');
@@ -19,6 +20,7 @@ export default function AusenciaJustificadaAlerta() {
   const [statusAtribuido, setStatusAtribuido] = useState('Ativo');
   const [justificativa, setJustificativa] = useState('');
   const [erro, setErro] = useState('');
+  const [alertaOk, setAlertaOk] = useState({ aberto: false, titulo: 'Atenção', mensagem: '' });
   const [enviando, setEnviando] = useState(false);
 
   const selecionado = useMemo(
@@ -104,7 +106,15 @@ export default function AusenciaJustificadaAlerta() {
       setPendencias((itens) => itens.filter((item) => item.convivente_id !== selecionado.convivente_id));
       setMostrandoEncerramento(false);
     } catch (error) {
-      setErro(error?.response?.data?.detail || 'Não foi possível encerrar a ausência justificada.');
+      const mensagem = error?.response?.data?.detail || 'Não foi possível encerrar a ausência justificada.';
+      setErro(mensagem);
+      if (typeof mensagem === 'string' && mensagem.includes('ocorrência(s) em aberto')) {
+        setAlertaOk({
+          aberto: true,
+          titulo: 'Ocorrências em aberto',
+          mensagem,
+        });
+      }
     } finally {
       setEnviando(false);
     }
@@ -266,6 +276,13 @@ export default function AusenciaJustificadaAlerta() {
           )}
         </div>
       </div>
+
+      <ModalAlertaOk
+        aberto={alertaOk.aberto}
+        titulo={alertaOk.titulo}
+        mensagem={alertaOk.mensagem}
+        onFechar={() => setAlertaOk({ aberto: false, titulo: 'Atenção', mensagem: '' })}
+      />
     </div>
   );
 }

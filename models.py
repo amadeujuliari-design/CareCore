@@ -352,6 +352,7 @@ class ConviventeDB(Base):
     
     tecnico_id = Column(String, ForeignKey("usuarios.id"), nullable=True)
     foto_url = Column(String, nullable=True)
+    observacao_operacional = Column(Text, nullable=True)
     
     nome_completo = Column(String, nullable=False)
     nome_social = Column(String, nullable=True)
@@ -1011,6 +1012,35 @@ class AusenciaJustificadaConfirmacaoDB(Base):
     respondido_em = Column(DateTime, default=datetime.datetime.utcnow)
 
 
+class AusenciaJustificadaPeriodoDB(Base):
+    """Intervalo histórico de ausência justificada (permanece após retorno a Ativo)."""
+
+    __tablename__ = "ausencias_justificadas_periodos"
+    __table_args__ = (
+        Index("ix_aus_just_per_instituicao_id", "instituicao_id"),
+        Index("ix_aus_just_per_convivente_id", "convivente_id"),
+        Index("ix_aus_just_per_intervalo", "data_inicio", "data_fim"),
+        Index(
+            "ux_aus_just_per_convivente_intervalo",
+            "instituicao_id",
+            "convivente_id",
+            "data_inicio",
+            "data_fim",
+            unique=True,
+        ),
+    )
+
+    id = Column(String, primary_key=True, default=get_uuid)
+    instituicao_id = Column(String, ForeignKey("instituicoes.id"), nullable=False)
+    convivente_id = Column(String, ForeignKey("conviventes.id"), nullable=False)
+    usuario_id = Column(String, ForeignKey("usuarios.id"), nullable=True)
+
+    data_inicio = Column(Date, nullable=False)
+    data_fim = Column(Date, nullable=False)
+    origem_encerramento = Column(String, nullable=True)
+    criado_em = Column(DateTime, default=agora_operacional_naive)
+
+
 class SisaDivergenciaDB(Base):
     __tablename__ = "sisa_divergencias"
 
@@ -1540,4 +1570,25 @@ class TextoRevisaoUsoMensalDB(Base):
     mes = Column(Integer, nullable=False)
     contagem = Column(Integer, default=0, nullable=False)
     atualizado_em = Column(DateTime, default=agora_operacional_naive)
+
+
+class DashboardOperacionalSnapshotDB(Base):
+    """Retrato diário do dashboard operacional (captura às 22:00 SP)."""
+
+    __tablename__ = "dashboard_operacional_snapshots"
+    __table_args__ = (
+        UniqueConstraint(
+            "instituicao_id",
+            "data_referencia",
+            name="uq_dashboard_operacional_snapshot_dia",
+        ),
+        Index("ix_dash_op_snap_instituicao", "instituicao_id"),
+        Index("ix_dash_op_snap_data", "instituicao_id", "data_referencia"),
+    )
+
+    id = Column(String, primary_key=True, default=get_uuid)
+    instituicao_id = Column(String, ForeignKey("instituicoes.id"), nullable=False)
+    data_referencia = Column(Date, nullable=False)
+    capturado_em = Column(DateTime, nullable=False, default=agora_operacional_naive)
+    payload_json = Column(Text, nullable=False)
 

@@ -25,6 +25,8 @@ from schemas import (
     LavanderiaResumoFila,
     LavanderiaRetirada,
     PertenceRecolhidoBaixaAdministrativa,
+    PertenceRecolhidoBaixaAdministrativaLote,
+    PertenceRecolhidoBaixaAdministrativaLoteResponse,
     PertenceRecolhidoBaixaResponse,
     PertenceRecolhidoCreate,
     PertenceRecolhidoListaResponse,
@@ -132,6 +134,45 @@ def usuario_pode_baixa_administrativa_pertences(usuario_atual: dict) -> bool:
         usuario_eh_manutencao(usuario_atual)
         or usuario_eh_gestor(usuario_atual)
         or usuario_tem_perfil(usuario_atual, {PERFIL_TECNICO})
+    )
+
+
+def _aplicar_baixa_administrativa_registro(
+    *,
+    registro: PertenceRecolhidoDB,
+    quantidade: int,
+    justificativa: str,
+    destino: str,
+    usuario_id: str,
+    instituicao_id: str,
+    agora: datetime,
+) -> PertenceRecolhidoBaixaDB:
+    if quantidade > registro.quantidade_disponivel:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Há apenas {registro.quantidade_disponivel} item(ns) disponível(is) "
+                f"para baixa na recolha do quarto selecionado."
+            ),
+        )
+
+    registro.quantidade_disponivel -= quantidade
+    if registro.quantidade_disponivel == 0:
+        registro.status = "Baixa administrativa"
+        registro.encerrado_por_id = usuario_id
+        registro.encerrado_em = agora
+        registro.justificativa_encerramento = justificativa
+        registro.destino_encerramento = destino
+
+    return PertenceRecolhidoBaixaDB(
+        instituicao_id=instituicao_id,
+        pertence_recolhido_id=registro.id,
+        usuario_id=usuario_id,
+        quantidade=quantidade,
+        tipo_baixa="Baixa administrativa",
+        justificativa=justificativa,
+        destino=destino,
+        baixado_em=agora,
     )
 
 
@@ -832,29 +873,15 @@ async def baixa_administrativa_pertences_recolhidos(
             detail="Baixa administrativa exige justificativa e destino.",
         )
 
-    if payload.quantidade > registro.quantidade_disponivel:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Há apenas {registro.quantidade_disponivel} item(ns) disponível(is) para baixa.",
-        )
-
-    registro.quantidade_disponivel -= payload.quantidade
-    if registro.quantidade_disponivel == 0:
-        registro.status = "Baixa administrativa"
-        registro.encerrado_por_id = usuario_atual["sub"]
-        registro.encerrado_em = agora_sao_paulo()
-        registro.justificativa_encerramento = justificativa
-        registro.destino_encerramento = destino
-
-    baixa = PertenceRecolhidoBaixaDB(
-        instituicao_id=instituicao_id,
-        pertence_recolhido_id=registro.id,
-        usuario_id=usuario_atual["sub"],
+    agora = agora_sao_paulo()
+    baixa = _aplicar_baixa_administrativa_registro(
+        registro=registro,
         quantidade=payload.quantidade,
-        tipo_baixa="Baixa administrativa",
         justificativa=justificativa,
         destino=destino,
-        baixado_em=agora_sao_paulo(),
+        usuario_id=usuario_atual["sub"],
+        instituicao_id=instituicao_id,
+        agora=agora,
     )
     db.add(baixa)
 
@@ -864,3 +891,115 @@ async def baixa_administrativa_pertences_recolhidos(
 
     usuarios = await _mapear_usuarios(db, {registro.usuario_recolha_id, baixa.usuario_id})
     return _pertence_response(registro, quarto, [baixa], {}, usuarios)
+
+
+@router.post(
+    "/pertences-recolhidos/baixa-administrativa-lote",
+    response_model=PertenceRecolhidoBaixaAdministrativaLoteResponse,
+)
+async def baixa_administrativa_pertences_recolhidos_lote(
+    payload: PertenceRecolhidoBaixaAdministrativaLote,
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    if not usuario_pode_baixa_administrativa_pertences(usuario_atual):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Baixa administrativa de pertences é restrita a Gestores, Técnicos e Manutenção.",
+        )
+
+    justificativa = (payload.justificativa or "").strip()
+    destino = (payload.destino or "").strip()
+    if not justificativa or not destino:
+        raise HTTPException(
+            status_code=400,
+            detail="Baixa administrativa em lote exige justificativa e destino.",
+        )
+
+    instituicao_id = obter_instituicao_escopo(usuario_atual)
+    linhas = (
+        await db.execute(
+            select(PertenceRecolhidoDB, QuartoDB)
+            .join(QuartoDB, QuartoDB.id == PertenceRecolhidoDB.quarto_id)
+            .where(
+                PertenceRecolhidoDB.instituicao_id == instituicao_id,
+                PertenceRecolhidoDB.id.in_(payload.registro_ids),
+            )
+        )
+    ).all()
+
+    por_id = {registro.id: (registro, quarto) for registro, quarto in linhas}
+    faltando = [registro_id for registro_id in payload.registro_ids if registro_id not in por_id]
+    if faltando:
+        raise HTTPException(
+            status_code=404,
+            detail=f"{len(faltando)} recolha(s) não encontrada(s) no projeto atual.",
+        )
+
+    sem_saldo = [
+        registro.id
+        for registro, _quarto in por_id.values()
+        if int(registro.quantidade_disponivel or 0) <= 0
+    ]
+    if sem_saldo:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"{len(sem_saldo)} recolha(s) selecionada(s) não possuem saldo disponível "
+                "para baixa administrativa."
+            ),
+        )
+
+    agora = agora_sao_paulo()
+    baixas_criadas: list[PertenceRecolhidoBaixaDB] = []
+    itens_baixados = 0
+
+    for registro_id in payload.registro_ids:
+        registro, _quarto = por_id[registro_id]
+        quantidade = int(registro.quantidade_disponivel or 0)
+        baixa = _aplicar_baixa_administrativa_registro(
+            registro=registro,
+            quantidade=quantidade,
+            justificativa=justificativa,
+            destino=destino,
+            usuario_id=usuario_atual["sub"],
+            instituicao_id=instituicao_id,
+            agora=agora,
+        )
+        db.add(baixa)
+        baixas_criadas.append(baixa)
+        itens_baixados += quantidade
+
+    await db.commit()
+
+    for baixa in baixas_criadas:
+        await db.refresh(baixa)
+    for registro, _quarto in por_id.values():
+        await db.refresh(registro)
+
+    usuarios = await _mapear_usuarios(
+        db,
+        {
+            *(registro.usuario_recolha_id for registro, _ in por_id.values()),
+            usuario_atual["sub"],
+        },
+    )
+    baixas_por_registro = {baixa.pertence_recolhido_id: [baixa] for baixa in baixas_criadas}
+    registros_resp = [
+        _pertence_response(
+            por_id[registro_id][0],
+            por_id[registro_id][1],
+            baixas_por_registro.get(registro_id, []),
+            {},
+            usuarios,
+        )
+        for registro_id in payload.registro_ids
+    ]
+
+    return PertenceRecolhidoBaixaAdministrativaLoteResponse(
+        processados=len(registros_resp),
+        itens_baixados=itens_baixados,
+        justificativa=justificativa,
+        destino=destino,
+        registros=registros_resp,
+    )

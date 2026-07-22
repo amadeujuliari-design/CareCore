@@ -18,6 +18,7 @@ import ProntuarioSaude from './components/conviventes/ProntuarioSaude';
 import ProntuarioSensiveis from './components/conviventes/ProntuarioSensiveis';
 import ProntuarioSocial from './components/conviventes/ProntuarioSocial';
 import BannerSomenteLeituraGlobal from './components/BannerSomenteLeituraGlobal';
+import ModalAlertaOk from './components/ModalAlertaOk';
 import { AppShell, MainShell, PageHeader, ScrollArea } from './components/PremiumUI';
 import {
   corrigirDataInclusaoNoFormulario,
@@ -76,6 +77,7 @@ export default function Conviventes() {
   const [conviventes, setConviventes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState('');
+  const [alertaOk, setAlertaOk] = useState({ aberto: false, titulo: 'Atenção', mensagem: '' });
   const [sucesso, setSucesso] = useState('');
   const [quartos, setQuartos] = useState([]);
 
@@ -115,9 +117,12 @@ export default function Conviventes() {
   const {
     evolucoesPorRegistroPia,
     formPia,
+    formularioPiaEdicao,
     formularioPiaEvolucao,
     loadingPia,
     piaCarregadoPara,
+    prepararEdicaoPia,
+    cancelarEdicaoPia,
     prepararEvolucaoPia,
     prepararNovoPiaPrincipal,
     registroPiaMaisRecente,
@@ -635,7 +640,15 @@ export default function Conviventes() {
       }
       return conviventeSalvo;
     } catch (error) {
-      setErro(obterMensagemErro(error) || 'Erro ao salvar dados no servidor.');
+      const mensagem = obterMensagemErro(error) || 'Erro ao salvar dados no servidor.';
+      setErro(mensagem);
+      if (typeof mensagem === 'string' && mensagem.includes('ocorrência(s) em aberto')) {
+        setAlertaOk({
+          aberto: true,
+          titulo: 'Ocorrências em aberto',
+          mensagem,
+        });
+      }
       return null;
     } finally {
       setSalvandoProntuario(false);
@@ -932,6 +945,7 @@ export default function Conviventes() {
                       editandoId={editandoId}
                       formPia={formPia}
                       setFormPia={setFormPia}
+                      formularioPiaEdicao={formularioPiaEdicao}
                       formularioPiaEvolucao={formularioPiaEvolucao}
                       registroPiaMaisRecente={registroPiaMaisRecente}
                       registrosPia={registrosPia}
@@ -944,6 +958,8 @@ export default function Conviventes() {
                       loadingPia={loadingPia}
                       salvandoPia={salvandoPia}
                       temasEvolucaoPia={temasEvolucaoPia}
+                      prepararEdicaoPia={prepararEdicaoPia}
+                      cancelarEdicaoPia={cancelarEdicaoPia}
                       prepararEvolucaoPia={prepararEvolucaoPia}
                       prepararNovoPiaPrincipal={prepararNovoPiaPrincipal}
                       handleSalvarRegistroPia={handleSalvarRegistroPia}
@@ -1079,6 +1095,13 @@ export default function Conviventes() {
         canvasRef={canvasRef}
         fecharCamera={fecharCamera}
         capturarFoto={capturarFoto}
+      />
+
+      <ModalAlertaOk
+        aberto={alertaOk.aberto}
+        titulo={alertaOk.titulo}
+        mensagem={alertaOk.mensagem}
+        onFechar={() => setAlertaOk({ aberto: false, titulo: 'Atenção', mensagem: '' })}
       />
 
       {sucesso && telaAtual === 'form' && (

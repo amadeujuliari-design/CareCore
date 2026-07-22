@@ -19,10 +19,36 @@ import {
 import { usuarioEhGlobalPuro } from './utils/rbacUtils';
 import PotEvolucoesModal from './components/acompanhamentos/PotEvolucoesModal';
 import DiscussaoEvolucoesModal from './components/acompanhamentos/DiscussaoEvolucoesModal';
+import ModalAlertaOk from './components/ModalAlertaOk';
 import { filtrarOrdenarConviventesPorBusca } from './utils/conviventeBuscaUtils';
 import { REGISTROS_POR_PAGINA_PRONTUARIO } from './utils/prontuarioHistoricoFluxoUtils';
 
 const BUSCA_DEBOUNCE_MS = 350;
+
+function montarFiltrosExtrasPadrao(moduloAtual) {
+  const padrao = {};
+  (moduloAtual?.filtrosExtras || []).forEach((filtro) => {
+    if (filtro.padrao != null && filtro.padrao !== '') {
+      padrao[filtro.nome] = filtro.padrao;
+    }
+  });
+  return padrao;
+}
+
+function extrairMensagemErroApi(error, fallback) {
+  const detail = error?.response?.data?.detail;
+  if (Array.isArray(detail)) {
+    return detail.map((item) => item.msg || item).join(' ') || fallback;
+  }
+  return detail || fallback;
+}
+
+function tituloAlertaOperacional(mensagem) {
+  if (typeof mensagem === 'string' && mensagem.includes('ocorrência(s) em aberto')) {
+    return 'Ocorrências em aberto';
+  }
+  return 'Atenção';
+}
 
 function nomeConvivente(convivente) {
   return convivente?.nome_social || convivente?.nome_completo || 'Convivente';
@@ -125,12 +151,16 @@ export default function AcompanhamentoModulo() {
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState('');
   const [sucesso, setSucesso] = useState('');
+  const [alertaOk, setAlertaOk] = useState({ aberto: false, titulo: 'Atenção', mensagem: '' });
 
   const [busca, setBusca] = useState('');
   const [buscaDebounced, setBuscaDebounced] = useState('');
   const [dataInicio, setDataInicio] = useState('');
   const [dataFim, setDataFim] = useState('');
-  const [filtrosExtras, setFiltrosExtras] = useState({});
+  const [filtrosExtras, setFiltrosExtras] = useState(() => montarFiltrosExtrasPadrao(obterModuloPorSlug(slug)));
+  const [filtroStatusModal, setFiltroStatusModal] = useState(
+    () => obterModuloPorSlug(slug)?.statusFiltroModalPadrao || 'Ativo',
+  );
 
   const [conviventes, setConviventes] = useState([]);
   const [carregandoConviventes, setCarregandoConviventes] = useState(false);
@@ -143,12 +173,26 @@ export default function AcompanhamentoModulo() {
 
   const campos = modulo?.campos || [];
   const colunas = modulo?.colunas || [];
+  const filtrosExtrasPadrao = useMemo(
+    () => montarFiltrosExtrasPadrao(obterModuloPorSlug(slug)),
+    [slug],
+  );
+
   const statusFiltros = STATUS_FILTRO_POR_MODULO[slug];
 
   const conviventesElegiveis = useMemo(() => {
-    if (!statusFiltros?.length) return conviventes;
-    return conviventes.filter(convivente => statusFiltros.includes(convivente.status));
-  }, [conviventes, statusFiltros]);
+    let lista = conviventes;
+    if (statusFiltros?.length) {
+      lista = lista.filter((convivente) => statusFiltros.includes(convivente.status));
+    }
+    const padraoModal = obterModuloPorSlug(slug)?.statusFiltroModalPadrao;
+    if (padraoModal != null) {
+      if (filtroStatusModal && filtroStatusModal !== 'Todos') {
+        lista = lista.filter((convivente) => convivente.status === filtroStatusModal);
+      }
+    }
+    return lista;
+  }, [conviventes, statusFiltros, slug, filtroStatusModal]);
 
   const conviventesFiltrados = useMemo(
     () => filtrarOrdenarConviventesPorBusca(conviventesElegiveis, buscaConvivente),
@@ -234,6 +278,15 @@ export default function AcompanhamentoModulo() {
   }, [busca]);
 
   useEffect(() => {
+    setFiltrosExtras(montarFiltrosExtrasPadrao(obterModuloPorSlug(slug)));
+    setFiltroStatusModal(obterModuloPorSlug(slug)?.statusFiltroModalPadrao || 'Ativo');
+    setBusca('');
+    setBuscaDebounced('');
+    setDataInicio('');
+    setDataFim('');
+  }, [slug]);
+
+  useEffect(() => {
     carregarConviventes();
   }, [carregarConviventes]);
 
@@ -247,14 +300,18 @@ export default function AcompanhamentoModulo() {
 
   useEffect(() => {
     const conviventeId = searchParams.get('convivente_id');
-    if (!conviventeId || conviventePrefillProcessado.current || !modulo || conviventesElegiveis.length === 0) {
+    if (!conviventeId || conviventePrefillProcessado.current || !modulo || conviventes.length === 0) {
       return;
     }
 
-    const convivente = conviventesElegiveis.find(item => item.id === conviventeId);
+    const convivente = conviventes.find(item => item.id === conviventeId);
     if (!convivente) return;
+    if (statusFiltros?.length && !statusFiltros.includes(convivente.status)) return;
 
     conviventePrefillProcessado.current = true;
+    if (modulo.statusFiltroModalPadrao != null && convivente.status) {
+      setFiltroStatusModal(convivente.status);
+    }
     const hoje = new Date();
     const mesRef = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}`;
     const dataHoje = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-${String(hoje.getDate()).padStart(2, '0')}`;
@@ -270,7 +327,7 @@ export default function AcompanhamentoModulo() {
     setForm(inicial);
     setBuscaConvivente(nomeConvivente(convivente));
     setModalAberto(true);
-  }, [searchParams, conviventesElegiveis, modulo, campos]);
+  }, [searchParams, conviventes, statusFiltros, modulo, campos]);
 
   useEffect(() => {
     if (!sucesso) return undefined;
@@ -283,6 +340,7 @@ export default function AcompanhamentoModulo() {
     setForm(valorInicialFormulario(campos));
     setBuscaConvivente('');
     setMostrarDropdownConvivente(false);
+    setFiltroStatusModal(modulo?.statusFiltroModalPadrao || 'Ativo');
     setModalAberto(true);
     await carregarConviventes();
   };
@@ -397,12 +455,13 @@ export default function AcompanhamentoModulo() {
       fecharModal();
       await carregarDados();
     } catch (error) {
-      const detail = error?.response?.data?.detail;
-      if (Array.isArray(detail)) {
-        setErro(detail.map(item => item.msg || item).join(' '));
-      } else {
-        setErro(detail || 'Não foi possível salvar o registro.');
-      }
+      const mensagem = extrairMensagemErroApi(error, 'Não foi possível salvar o registro.');
+      // Exibe na frente do formulário, exigindo OK — evita banner atrás do modal.
+      setAlertaOk({
+        aberto: true,
+        titulo: tituloAlertaOperacional(mensagem),
+        mensagem,
+      });
     } finally {
       setSalvando(false);
     }
@@ -456,7 +515,12 @@ export default function AcompanhamentoModulo() {
           </div>
         )}
 
-        {modulo.statusFiltros?.length > 0 && (
+        {modulo.statusFiltroModalPadrao != null ? (
+          <div className="rounded-xl border border-violet-100 bg-violet-50/60 px-4 py-2 text-xs text-violet-800">
+            A lista inicia filtrada por conviventes <strong>Ativos</strong>.
+            Use o filtro <strong>Status do convivente</strong> (Todos ou outro status) para ampliar a visão.
+          </div>
+        ) : modulo.statusFiltros?.length > 0 && (
           <div className="rounded-xl border border-violet-100 bg-violet-50/60 px-4 py-2 text-xs text-violet-800">
             Conviventes elegíveis neste módulo: <strong>{modulo.statusFiltros.join(', ')}</strong>.
           </div>
@@ -542,7 +606,7 @@ export default function AcompanhamentoModulo() {
                 setBuscaDebounced('');
                 setDataInicio('');
                 setDataFim('');
-                setFiltrosExtras({});
+                setFiltrosExtras(filtrosExtrasPadrao);
               }}
             >
               Limpar
@@ -713,6 +777,26 @@ export default function AcompanhamentoModulo() {
               <p className="mt-1 text-sm text-slate-500">{modulo.titulo}</p>
 
               <div className="mt-4 grid gap-3">
+                {!registroEdicao && modulo.statusFiltroModalPadrao != null && (
+                  <label className="text-sm">
+                    <span className="mb-1 block font-medium text-slate-600">Status do convivente</span>
+                    <select
+                      value={filtroStatusModal}
+                      onChange={(event) => {
+                        setFiltroStatusModal(event.target.value);
+                        setForm((prev) => ({ ...prev, convivente_id: '' }));
+                        setBuscaConvivente('');
+                      }}
+                      className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
+                    >
+                      <option value="Todos">Todos</option>
+                      {(modulo.statusFiltros || []).map((statusOpcao) => (
+                        <option key={statusOpcao} value={statusOpcao}>{statusOpcao}</option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+
                 {!registroEdicao && (
                   <label className="text-sm">
                     <span className="mb-1 block font-medium text-slate-600">Convivente *</span>
@@ -767,7 +851,9 @@ export default function AcompanhamentoModulo() {
                             <div className="p-3 text-center text-sm text-slate-500">
                               {buscaConvivente.trim()
                                 ? 'Nenhum convivente elegível encontrado.'
-                                : `Nenhum convivente com status ${modulo.statusFiltros?.join(' ou ') || 'permitido'} disponível.`}
+                                : filtroStatusModal && filtroStatusModal !== 'Todos'
+                                  ? `Nenhum convivente com status ${filtroStatusModal} disponível.`
+                                  : `Nenhum convivente com status ${modulo.statusFiltros?.join(' ou ') || 'permitido'} disponível.`}
                             </div>
                           )}
                         </div>
@@ -866,6 +952,13 @@ export default function AcompanhamentoModulo() {
           onAtualizado={carregarDados}
         />
       )}
+
+      <ModalAlertaOk
+        aberto={alertaOk.aberto}
+        titulo={alertaOk.titulo}
+        mensagem={alertaOk.mensagem}
+        onFechar={() => setAlertaOk({ aberto: false, titulo: 'Atenção', mensagem: '' })}
+      />
     </AppShell>
   );
 }

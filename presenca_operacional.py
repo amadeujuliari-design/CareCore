@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta
+from typing import Sequence
 
 TIPOS_FLUXO_ENTRADA_SAIDA = frozenset({"Entrada", "Saída"})
 STATUS_INATIVOS_OPERACIONAIS = frozenset({"Inativado", "Bloqueado", "Saída qualificada"})
@@ -181,12 +182,16 @@ def _dia_com_ausencia_justificada(
     *,
     status_convivente: str,
     ausencia_justificada_desde: date | None,
+    periodos_fechados: Sequence[tuple[date, date]] | None = None,
 ) -> bool:
-    if status_convivente != "Ausência justificada":
-        return False
-    if ausencia_justificada_desde is None:
-        return True
-    return dia >= ausencia_justificada_desde
+    from ausencia_justificada_periodo import dia_tem_ausencia_justificada
+
+    return dia_tem_ausencia_justificada(
+        dia,
+        status_convivente=status_convivente,
+        ausencia_justificada_desde=ausencia_justificada_desde,
+        periodos_fechados=periodos_fechados,
+    )
 
 
 def _dia_fora_operacao_convivente(
@@ -218,6 +223,7 @@ def classificar_presenca_dia(
     dias_presentes: set[str],
     status_convivente: str,
     ausencia_justificada_desde: date | None,
+    periodos_ausencia_justificada: Sequence[tuple[date, date]] | None = None,
 ) -> str:
     if data_entrada and dia < data_entrada:
         return STATUS_DIA_NA
@@ -233,6 +239,7 @@ def classificar_presenca_dia(
         dia,
         status_convivente=status_convivente,
         ausencia_justificada_desde=ausencia_justificada_desde,
+        periodos_fechados=periodos_ausencia_justificada,
     ):
         return STATUS_DIA_JUSTIFICADO
     return STATUS_DIA_AUSENTE
@@ -247,6 +254,7 @@ def montar_status_presenca_por_dia(
     data_inativacao: date | None = None,
     status_convivente: str,
     ausencia_justificada_desde: date | None,
+    periodos_ausencia_justificada: Sequence[tuple[date, date]] | None = None,
 ) -> dict[str, str]:
     assumir_dentro_sem_fluxo = status_convivente != "Ausência justificada"
     dias_presentes = set(
@@ -266,6 +274,7 @@ def montar_status_presenca_por_dia(
             dias_presentes=dias_presentes,
             status_convivente=status_convivente,
             ausencia_justificada_desde=ausencia_justificada_desde,
+            periodos_ausencia_justificada=periodos_ausencia_justificada,
         )
         for dia in listar_dias_periodo(data_inicio, data_fim)
     }

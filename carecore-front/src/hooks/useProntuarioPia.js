@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react';
 import {
   TEMAS_EVOLUCAO_PIA,
   agruparEvolucoesPiaPorRegistro,
+  montarFormEdicaoPia,
   montarFormEvolucaoPia,
   montarFormPiaPrincipal,
   ordenarRegistrosPiaPrincipais,
@@ -34,6 +35,7 @@ export function useProntuarioPia({ editandoId, setErro, setSucesso }) {
   );
 
   const registroPiaMaisRecente = registrosPiaPrincipais[0] || null;
+  const formularioPiaEdicao = Boolean(formPia.id);
   const formularioPiaEvolucao = Boolean(formPia.registro_pai_id);
 
   const resetarPia = () => {
@@ -92,6 +94,19 @@ export function useProntuarioPia({ editandoId, setErro, setSucesso }) {
     setFormPia(montarFormEvolucaoPia(registroPrincipal));
   };
 
+  const prepararEdicaoPia = (registro) => {
+    if (!registro?.id) return;
+    setFormPia(montarFormEdicaoPia(registro));
+  };
+
+  const cancelarEdicaoPia = () => {
+    if (registroPiaMaisRecente) {
+      setFormPia(montarFormEvolucaoPia(registroPiaMaisRecente));
+      return;
+    }
+    setFormPia(montarFormPiaPrincipal());
+  };
+
   const handleSalvarRegistroPia = async () => {
     if (!editandoId) {
       setErro('Salve o prontuário antes de registrar o PIA.');
@@ -113,7 +128,7 @@ export function useProntuarioPia({ editandoId, setErro, setSucesso }) {
       return;
     }
 
-    if (!formularioPiaEvolucao && registrosPiaPrincipais.length > 0) {
+    if (!formularioPiaEdicao && !formularioPiaEvolucao && registrosPiaPrincipais.length > 0) {
       const confirmarNovo = window.confirm(MENSAGEM_NOVO_PIA);
 
       if (!confirmarNovo) {
@@ -124,22 +139,47 @@ export function useProntuarioPia({ editandoId, setErro, setSucesso }) {
 
     try {
       setSalvandoPia(true);
+      const { id: registroId, ...campos } = formPia;
       const payload = {
-        ...formPia,
-        tipo_registro: formularioPiaEvolucao ? 'Evolução' : 'PIA',
+        ...campos,
+        tipo_registro: formularioPiaEvolucao ? 'Evolução' : formPia.tipo_registro,
         titulo: formularioPiaEvolucao ? 'Evolução' : formPia.titulo,
       };
-      const registroSalvo = await salvarRegistroPiaConvivente(editandoId, payload);
-      setRegistrosPia(prev => [registroSalvo, ...prev]);
+      if (formularioPiaEdicao) {
+        delete payload.registro_pai_id;
+      }
+
+      const registroSalvo = await salvarRegistroPiaConvivente(
+        editandoId,
+        payload,
+        formularioPiaEdicao ? registroId : null,
+      );
+
+      setRegistrosPia((prev) => {
+        if (formularioPiaEdicao) {
+          return prev.map((item) => (item.id === registroSalvo.id ? { ...item, ...registroSalvo } : item));
+        }
+        return [registroSalvo, ...prev];
+      });
 
       if (registroSalvo.registro_pai_id) {
-        const registroPrincipal = registrosPiaPrincipais.find(registro => registro.id === registroSalvo.registro_pai_id);
-        setFormPia(montarFormEvolucaoPia(registroPrincipal || { id: registroSalvo.registro_pai_id, status: registroSalvo.status }));
+        const registroPrincipal = registrosPiaPrincipais.find(
+          (registro) => registro.id === registroSalvo.registro_pai_id,
+        );
+        setFormPia(
+          montarFormEvolucaoPia(
+            registroPrincipal || { id: registroSalvo.registro_pai_id, status: registroSalvo.status },
+          ),
+        );
       } else {
         setFormPia(montarFormEvolucaoPia(registroSalvo));
       }
 
-      setSucesso('Registro do PIA salvo com sucesso.');
+      setSucesso(
+        formularioPiaEdicao
+          ? 'Registro do PIA atualizado com sucesso.'
+          : 'Registro do PIA salvo com sucesso.',
+      );
       setTimeout(() => setSucesso(''), 3000);
     } catch (error) {
       setErro(error.response?.data?.detail || 'Erro ao salvar registro do PIA.');
@@ -151,9 +191,12 @@ export function useProntuarioPia({ editandoId, setErro, setSucesso }) {
   return {
     evolucoesPorRegistroPia,
     formPia,
+    formularioPiaEdicao,
     formularioPiaEvolucao,
     loadingPia,
     piaCarregadoPara,
+    prepararEdicaoPia,
+    cancelarEdicaoPia,
     prepararEvolucaoPia,
     prepararNovoPiaPrincipal,
     registroPiaMaisRecente,

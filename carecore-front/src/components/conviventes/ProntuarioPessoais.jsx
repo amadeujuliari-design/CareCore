@@ -82,44 +82,58 @@ export default function ProntuarioPessoais({
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-col md:flex-row items-start gap-5 p-4 bg-gray-50 rounded-xl border border-gray-100 shadow-inner">
-        <div className="relative flex-shrink-0 group">
-          <div className="w-24 aspect-[3/4] bg-white border-2 border-gray-300 rounded-md shadow-sm flex items-center justify-center overflow-hidden ring-2 ring-white">
-            {fotoPerfilUrl ? (
-              <AuthenticatedImage caminhoOuUrl={fotoPerfilUrl} alt="Foto Oficial" className="w-full h-full object-cover" />
-            ) : (
-              <div className="flex flex-col items-center justify-center text-gray-300"><span className="text-4xl">○</span><span className="text-[9px] uppercase font-bold mt-1">Sem Foto</span></div>
+      <div className="flex flex-col gap-4 p-4 bg-gray-50 rounded-xl border border-gray-100 shadow-inner">
+        <div className="flex flex-col md:flex-row items-start gap-5">
+          <div className="relative flex-shrink-0 group">
+            <div className="w-24 aspect-[3/4] bg-white border-2 border-gray-300 rounded-md shadow-sm flex items-center justify-center overflow-hidden ring-2 ring-white">
+              {fotoPerfilUrl ? (
+                <AuthenticatedImage caminhoOuUrl={fotoPerfilUrl} alt="Foto Oficial" className="w-full h-full object-cover" />
+              ) : (
+                <div className="flex flex-col items-center justify-center text-gray-300"><span className="text-4xl">○</span><span className="text-[9px] uppercase font-bold mt-1">Sem Foto</span></div>
+              )}
+            </div>
+            {editandoId && (
+              <div className="absolute -bottom-2 -right-2 flex gap-1">
+                {fotoPerfilUrl && (
+                  <button
+                    type="button"
+                    onClick={handleRemoverFotoPerfil}
+                    className="rounded-full bg-red-600 px-2 py-1 text-[10px] font-black text-white shadow transition-transform hover:scale-110 hover:bg-red-700"
+                    title="Remover foto de perfil"
+                  >
+                    Remover
+                  </button>
+                )}
+                <button type="button" onClick={() => trocarAbaComSalvamento('documentos')} className="bg-brand text-white rounded-full p-1.5 text-xs hover:bg-brandDark shadow transition-transform hover:scale-110" title="Alterar fotografia">+</button>
+              </div>
             )}
           </div>
-          {editandoId && (
-            <div className="absolute -bottom-2 -right-2 flex gap-1">
-              {fotoPerfilUrl && (
-                <button
-                  type="button"
-                  onClick={handleRemoverFotoPerfil}
-                  className="rounded-full bg-red-600 px-2 py-1 text-[10px] font-black text-white shadow transition-transform hover:scale-110 hover:bg-red-700"
-                  title="Remover foto de perfil"
-                >
-                  Remover
-                </button>
-              )}
-              <button type="button" onClick={() => trocarAbaComSalvamento('documentos')} className="bg-brand text-white rounded-full p-1.5 text-xs hover:bg-brandDark shadow transition-transform hover:scale-110" title="Alterar fotografia">+</button>
+
+          <div className="flex-1 w-full space-y-3">
+            {editandoId && (
+              <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600">
+                <strong>Carteirinhas impressas (oficial):</strong>{' '}
+                {Number(formData.impressoes_carteirinha_oficiais || 0)}
+              </div>
+            )}
+            <div><label className="block text-xs font-semibold text-gray-700 mb-1">Nome Civil Completo *</label><input type="text" required name="nome_completo" value={formData.nome_completo} onChange={handleChange} className="w-full px-3 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none text-sm font-medium" /></div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div><label className="block text-xs font-semibold text-gray-700 mb-1">Nome Social</label><input type="text" name="nome_social" value={formData.nome_social} onChange={handleChange} className="w-full px-3 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none text-sm" /></div>
+              <div><label className="block text-xs font-bold text-brand mb-1">Técnico de Referência</label><select name="tecnico_id" value={formData.tecnico_id} onChange={handleChange} className="w-full px-3 py-1.5 border border-brand/40 rounded-lg focus:ring-2 focus:ring-brand outline-none bg-white text-sm font-medium text-gray-700"><option value="">Não Definido (Atendimento Geral)</option>{listaTecnicos.map(tec => <option key={tec.id} value={tec.id}>{tec.nome} ({tec.perfil_acesso})</option>)}</select></div>
             </div>
-          )}
+          </div>
         </div>
 
-        <div className="flex-1 w-full space-y-3">
-          {editandoId && (
-            <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600">
-              <strong>Carteirinhas impressas (oficial):</strong>{' '}
-              {Number(formData.impressoes_carteirinha_oficiais || 0)}
-            </div>
-          )}
-          <div><label className="block text-xs font-semibold text-gray-700 mb-1">Nome Civil Completo *</label><input type="text" required name="nome_completo" value={formData.nome_completo} onChange={handleChange} className="w-full px-3 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none text-sm font-medium" /></div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div><label className="block text-xs font-semibold text-gray-700 mb-1">Nome Social</label><input type="text" name="nome_social" value={formData.nome_social} onChange={handleChange} className="w-full px-3 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none text-sm" /></div>
-            <div><label className="block text-xs font-bold text-brand mb-1">Técnico de Referência</label><select name="tecnico_id" value={formData.tecnico_id} onChange={handleChange} className="w-full px-3 py-1.5 border border-brand/40 rounded-lg focus:ring-2 focus:ring-brand outline-none bg-white text-sm font-medium text-gray-700"><option value="">Não Definido (Atendimento Geral)</option>{listaTecnicos.map(tec => <option key={tec.id} value={tec.id}>{tec.nome} ({tec.perfil_acesso})</option>)}</select></div>
-          </div>
+        <div>
+          <label className="block text-xs font-semibold text-amber-900 mb-1">Observação operacional</label>
+          <textarea
+            name="observacao_operacional"
+            value={formData.observacao_operacional || ''}
+            onChange={handleChange}
+            rows={2}
+            placeholder="Aviso operacional (aparece na lista com ícone; apague e salve para remover)"
+            className="w-full px-3 py-1.5 border border-amber-200 rounded-lg bg-white focus:ring-2 focus:ring-amber-400 outline-none text-sm text-slate-800 resize-y min-h-[2.75rem]"
+          />
         </div>
       </div>
 

@@ -123,6 +123,7 @@ async def _ids_destinatarios_validos(
         select(UsuarioDB.id).where(
             UsuarioDB.instituicao_id == instituicao_id,
             UsuarioDB.id.in_(ids_limpos),
+            UsuarioDB.ativo == True,  # noqa: E712
         )
     )
     ids_validos = [linha[0] for linha in resultado.all()]
@@ -130,7 +131,7 @@ async def _ids_destinatarios_validos(
     if len(ids_validos) != len(ids_limpos):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Um ou mais destinatários não pertencem à instituição atual.",
+            detail="Um ou mais destinatários são inválidos, inativos ou não pertencem à instituição atual.",
         )
 
     return ids_validos
@@ -177,7 +178,10 @@ async def listar_usuarios_para_destinatarios(
 
     resultado = await db.execute(
         select(UsuarioDB)
-        .where(UsuarioDB.instituicao_id == instituicao_id)
+        .where(
+            UsuarioDB.instituicao_id == instituicao_id,
+            UsuarioDB.ativo == True,  # noqa: E712
+        )
         .order_by(UsuarioDB.nome.asc())
     )
 

@@ -164,6 +164,18 @@ def test_gestor_pode_resolver_ocorrencia_de_qualquer_tecnico():
     assert usuario_pode_resolver_ocorrencia(usuario, ocorrencia)
 
 
+def test_manutencao_pode_resolver_ocorrencia_de_qualquer_tecnico():
+    usuario = {
+        "sub": "manutencao-1",
+        "perfil_acesso": "Manutenção",
+        "is_master": False,
+        "is_manutencao": True,
+    }
+    ocorrencia = SimpleNamespace(tecnico_responsavel_id="tecnico-1")
+
+    assert usuario_pode_resolver_ocorrencia(usuario, ocorrencia)
+
+
 def test_tecnico_pode_gerenciar_quartos_e_leitos():
     assert usuario_eh_tecnico_ou_superior(
         {
@@ -264,6 +276,58 @@ def test_convivente_inativo_bloqueia_registro_operacional():
 
     assert getattr(erro.value, "status_code", None) == 409
     assert "Ative o convivente" in str(erro.value.detail)
+
+
+def test_saida_institucional_exige_encerrar_ocorrencias_abertas(monkeypatch):
+    import asyncio
+
+    from ocorrencias_status_bloqueio import exigir_sem_ocorrencias_abertas_para_saida_institucional
+
+    async def _contar(*_args, **_kwargs):
+        return 2
+
+    monkeypatch.setattr(
+        "ocorrencias_status_bloqueio.contar_ocorrencias_abertas_convivente",
+        _contar,
+    )
+
+    with pytest.raises(HTTPException) as erro:
+        asyncio.run(
+            exigir_sem_ocorrencias_abertas_para_saida_institucional(
+                db=SimpleNamespace(),
+                convivente_id="c1",
+                instituicao_id="i1",
+                status_antigo="Ativo",
+                status_novo="Inativado",
+            )
+        )
+
+    assert erro.value.status_code == 409
+    assert "2 ocorrência(s) em aberto" in str(erro.value.detail)
+
+
+def test_saida_institucional_libera_sem_ocorrencias_abertas(monkeypatch):
+    import asyncio
+
+    from ocorrencias_status_bloqueio import exigir_sem_ocorrencias_abertas_para_saida_institucional
+
+    async def _contar(*_args, **_kwargs):
+        return 0
+
+    monkeypatch.setattr(
+        "ocorrencias_status_bloqueio.contar_ocorrencias_abertas_convivente",
+        _contar,
+    )
+
+    asyncio.run(
+        exigir_sem_ocorrencias_abertas_para_saida_institucional(
+            db=SimpleNamespace(),
+            convivente_id="c1",
+            instituicao_id="i1",
+            status_antigo="Ativo",
+            status_novo="Bloqueado",
+        )
+    )
 
 
 def test_oficineiro_eh_identificado_pelo_perfil():

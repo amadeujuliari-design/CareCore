@@ -32,12 +32,22 @@ export const STATUS_EVOLUCAO_POT = [
   'Encerrado',
 ];
 
-/** Status permitidos na busca de convivente por módulo. */
+/** Status permitidos na busca de convivente por módulo (novo registro). */
+export const STATUS_CONVIVENTE_TODOS = [
+  'Ativo',
+  'Em acolhimento',
+  'Ausência justificada',
+  'Inativado',
+  'Bloqueado',
+  'Saída qualificada',
+];
+
 export const STATUS_FILTRO_POR_MODULO = {
   transferencias: ['Ativo', 'Ausência justificada'],
   'discussoes-hospitalares': ['Ativo', 'Em acolhimento'],
   tuberculose: ['Ativo'],
-  pot: ['Ativo'],
+  /** POT: todos os status; UI filtra por Ativo por padrão. */
+  pot: STATUS_CONVIVENTE_TODOS,
   suspensoes: ['Ativo'],
 };
 
@@ -159,11 +169,15 @@ export const MODULOS_ACOMPANHAMENTO = {
     endpoint: 'pot',
     icone: ShieldPlus,
     statusFiltros: STATUS_FILTRO_POR_MODULO.pot,
+    /** Filtro padrão do seletor de convivente no modal (pode mudar para Todos). */
+    statusFiltroModalPadrao: 'Ativo',
+    filtroStatusListaPadrao: 'Ativo',
     suportaEvolucoes: true,
     modalEvolucoes: 'pot',
     colunas: [
       { chave: 'convivente_nome', rotulo: 'Convivente' },
       { chave: 'prontuario', rotulo: 'Prontuário' },
+      { chave: 'status_convivente', rotulo: 'Status' },
       { chave: 'situacao_atual', rotulo: 'Situação' },
       { chave: 'data_insercao', rotulo: 'Inserção', tipo: 'data' },
       { chave: 'data_desligamento', rotulo: 'Desligamento', tipo: 'data' },
@@ -177,6 +191,15 @@ export const MODULOS_ACOMPANHAMENTO = {
       { nome: 'congelamento_inicio', rotulo: 'Início congelamento', tipo: 'data', visivelQuando: { campo: 'congelamento_ativo', valor: true } },
       { nome: 'congelamento_fim', rotulo: 'Fim congelamento', tipo: 'data', visivelQuando: { campo: 'congelamento_ativo', valor: true } },
       { nome: 'observacoes', rotulo: 'Observações', tipo: 'textarea' },
+    ],
+    filtrosExtras: [
+      {
+        nome: 'status_convivente',
+        rotulo: 'Status do convivente',
+        tipo: 'select',
+        opcoes: STATUS_CONVIVENTE_TODOS,
+        padrao: 'Ativo',
+      },
     ],
   },
   suspensoes: {

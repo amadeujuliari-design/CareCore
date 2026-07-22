@@ -10,7 +10,7 @@ function BadgeOrigemPia({ origemModulo }) {
   );
 }
 
-function EvolucaoPiaCard({ evolucao, evolucoesPorRegistroPia, profundidade = 0 }) {
+function EvolucaoPiaCard({ evolucao, evolucoesPorRegistroPia, profundidade = 0, onEditar }) {
   const filhas = evolucoesPorRegistroPia[evolucao.id] || [];
 
   return (
@@ -51,6 +51,14 @@ function EvolucaoPiaCard({ evolucao, evolucoesPorRegistroPia, profundidade = 0 }
             )}
           </div>
         )}
+
+        {onEditar && (
+          <div className="mt-3 flex justify-end">
+            <button type="button" onClick={() => onEditar(evolucao)} className="text-[11px] font-black text-indigo-600 hover:underline">
+              Editar
+            </button>
+          </div>
+        )}
       </div>
 
       {filhas.length > 0 && (
@@ -61,6 +69,7 @@ function EvolucaoPiaCard({ evolucao, evolucoesPorRegistroPia, profundidade = 0 }
               evolucao={filha}
               evolucoesPorRegistroPia={evolucoesPorRegistroPia}
               profundidade={profundidade + 1}
+              onEditar={onEditar}
             />
           ))}
         </div>
@@ -69,12 +78,26 @@ function EvolucaoPiaCard({ evolucao, evolucoesPorRegistroPia, profundidade = 0 }
   );
 }
 
+function tituloFormularioPia({ formularioPiaEdicao, formularioPiaEvolucao }) {
+  if (formularioPiaEdicao) {
+    return formularioPiaEvolucao ? 'Editar evolução do PIA' : 'Editar PIA principal';
+  }
+  return formularioPiaEvolucao ? 'Evoluir PIA existente' : 'Novo PIA principal';
+}
+
+function rotuloBotaoSalvarPia({ formularioPiaEdicao, formularioPiaEvolucao, salvandoPia }) {
+  if (salvandoPia) return 'Salvando...';
+  if (formularioPiaEdicao) return 'Salvar alterações';
+  return formularioPiaEvolucao ? 'Salvar evolução' : 'Criar PIA principal';
+}
+
 export default function ProntuarioPia({
   editandoId,
   formData,
   handleChange,
   formPia,
   setFormPia,
+  formularioPiaEdicao,
   formularioPiaEvolucao,
   registroPiaMaisRecente,
   registrosPia,
@@ -85,6 +108,8 @@ export default function ProntuarioPia({
   loadingPia,
   salvandoPia,
   temasEvolucaoPia,
+  prepararEdicaoPia,
+  cancelarEdicaoPia,
   prepararEvolucaoPia,
   prepararNovoPiaPrincipal,
   handleSalvarRegistroPia,
@@ -129,15 +154,19 @@ export default function ProntuarioPia({
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         <div className="lg:col-span-1 bg-indigo-50 p-4 rounded-xl border border-indigo-100 h-fit space-y-3">
           <div>
-            <h3 className="text-sm font-black text-indigo-900">{formularioPiaEvolucao ? 'Evoluir PIA existente' : 'Novo PIA principal'}</h3>
+            <h3 className="text-sm font-black text-indigo-900">
+              {tituloFormularioPia({ formularioPiaEdicao, formularioPiaEvolucao })}
+            </h3>
             <p className="text-[11px] text-indigo-700 mt-1">
-              {formularioPiaEvolucao
-                ? 'A evolução fica vinculada ao PIA selecionado, com data, hora e responsável.'
-                : 'Abra um registro principal para concentrar as evoluções futuras deste plano.'}
+              {formularioPiaEdicao
+                ? 'Altere o texto e salve para corrigir o registro já gravado.'
+                : formularioPiaEvolucao
+                  ? 'A evolução fica vinculada ao PIA selecionado, com data, hora e responsável.'
+                  : 'Abra um registro principal para concentrar as evoluções futuras deste plano.'}
             </p>
           </div>
 
-          {registroPiaMaisRecente && (
+          {!formularioPiaEdicao && registroPiaMaisRecente && (
             <div className="grid grid-cols-1 gap-2">
               <button type="button" onClick={() => prepararEvolucaoPia(registroPiaMaisRecente)} className="w-full rounded-lg border border-indigo-200 bg-white px-3 py-2 text-xs font-black text-indigo-700 hover:bg-indigo-100">
                 Evoluir PIA atual
@@ -148,7 +177,7 @@ export default function ProntuarioPia({
             </div>
           )}
 
-          {formularioPiaEvolucao && registrosPiaPrincipais.length > 1 && (
+          {!formularioPiaEdicao && formularioPiaEvolucao && registrosPiaPrincipais.length > 1 && (
             <select
               value={formPia.registro_pai_id}
               onChange={(e) => prepararEvolucaoPia(registrosPiaPrincipais.find(registro => registro.id === e.target.value))}
@@ -200,7 +229,7 @@ export default function ProntuarioPia({
             onChange={(e) => setFormPia(prev => ({ ...prev, descricao: e.target.value }))}
             rows="4"
             placeholder={formularioPiaEvolucao ? 'Descrição da evolução do atendimento' : 'Descrição inicial do plano individual'}
-            className="w-full px-3 py-2 border border-indigo-200 rounded-lg outline-none bg-white text-sm resize-none"
+            className="w-full px-3 py-2 border border-indigo-200 rounded-lg outline-none bg-white text-sm resize-y min-h-[6rem]"
           />
 
           <textarea
@@ -254,8 +283,19 @@ export default function ProntuarioPia({
             disabled={salvandoPia}
             className="w-full py-2 bg-indigo-600 text-white rounded-lg text-sm font-black disabled:opacity-50"
           >
-            {salvandoPia ? 'Salvando...' : (formularioPiaEvolucao ? 'Salvar evolução' : 'Criar PIA principal')}
+            {rotuloBotaoSalvarPia({ formularioPiaEdicao, formularioPiaEvolucao, salvandoPia })}
           </button>
+
+          {formularioPiaEdicao && (
+            <button
+              type="button"
+              onClick={cancelarEdicaoPia}
+              disabled={salvandoPia}
+              className="w-full py-2 rounded-lg border border-indigo-200 bg-white text-sm font-black text-indigo-700 hover:bg-indigo-100 disabled:opacity-50"
+            >
+              Cancelar edição
+            </button>
+          )}
         </div>
 
         <div className="lg:col-span-2">
@@ -285,9 +325,13 @@ export default function ProntuarioPia({
             <div className="space-y-4">
               {registrosPiaPrincipais.map((registro) => {
                 const evolucoes = evolucoesPorRegistroPia[registro.id] || [];
+                const editandoEste = formularioPiaEdicao && formPia.id === registro.id;
 
                 return (
-                  <article key={registro.id} className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
+                  <article
+                    key={registro.id}
+                    className={`bg-white border rounded-xl p-4 shadow-sm ${editandoEste ? 'border-amber-300 ring-2 ring-amber-100' : 'border-gray-200'}`}
+                  >
                     <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-2">
                       <div>
                         <div className="flex flex-wrap items-center gap-2">
@@ -328,9 +372,14 @@ export default function ProntuarioPia({
 
                     <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                       <span className="rounded-full bg-gray-100 px-3 py-1 text-[10px] font-black uppercase text-gray-600 w-fit">{registro.status}</span>
-                      <button type="button" onClick={() => prepararEvolucaoPia(registro)} className="text-[11px] font-black text-indigo-600 hover:underline">
-                        Evoluir este PIA
-                      </button>
+                      <div className="flex flex-wrap gap-3">
+                        <button type="button" onClick={() => prepararEdicaoPia(registro)} className="text-[11px] font-black text-amber-700 hover:underline">
+                          Editar
+                        </button>
+                        <button type="button" onClick={() => prepararEvolucaoPia(registro)} className="text-[11px] font-black text-indigo-600 hover:underline">
+                          Evoluir este PIA
+                        </button>
+                      </div>
                     </div>
 
                     {evolucoes.length > 0 && (
@@ -340,6 +389,7 @@ export default function ProntuarioPia({
                             key={evolucao.id}
                             evolucao={evolucao}
                             evolucoesPorRegistroPia={evolucoesPorRegistroPia}
+                            onEditar={prepararEdicaoPia}
                           />
                         ))}
                       </div>

@@ -22,6 +22,11 @@ export async function atualizarAtividade(atividadeId, payload) {
   return response.data;
 }
 
+export async function excluirAtividade(atividadeId) {
+  const response = await api.delete(`/api/atividades/${atividadeId}`);
+  return response.data;
+}
+
 export async function gerarOcorrenciasAtividade(atividadeId, mesReferencia) {
   const response = await api.post(`/api/atividades/${atividadeId}/gerar-ocorrencias`, {
     mes_referencia: mesReferencia,

@@ -82,6 +82,29 @@ def test_matriz_justificada_conta_como_presenca_no_total():
     assert totais["ausentes"] == 0
 
 
+def test_periodo_aj_fechado_permanece_apos_retorno_ativo():
+    """Após voltar a Ativo, dias do período AJ continuam J e somam presença."""
+    status = montar_status_presenca_por_dia(
+        [
+            {"tipo_registro": "Entrada", "data_registro": datetime(2026, 6, 20, 8, 0)},
+            {"tipo_registro": "Saída", "data_registro": datetime(2026, 6, 30, 18, 0)},
+        ],
+        date(2026, 7, 1),
+        date(2026, 7, 10),
+        data_entrada=date(2026, 1, 1),
+        status_convivente="Ativo",
+        ausencia_justificada_desde=None,
+        periodos_ausencia_justificada=[(date(2026, 7, 2), date(2026, 7, 8))],
+    )
+    assert status["2026-07-01"] == STATUS_DIA_AUSENTE
+    assert status["2026-07-02"] == STATUS_DIA_JUSTIFICADO
+    assert status["2026-07-08"] == STATUS_DIA_JUSTIFICADO
+    assert status["2026-07-09"] == STATUS_DIA_AUSENTE
+    totais = totais_status_presenca(status)
+    assert totais["justificados"] == 7
+    assert totais["presentes"] == 7
+
+
 def test_matriz_dias_apos_inativacao_sao_na():
     status = montar_status_presenca_por_dia(
         [_mov("Entrada", 10, 8), _mov("Saída", 10, 18)],

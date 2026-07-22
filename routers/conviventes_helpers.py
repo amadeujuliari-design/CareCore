@@ -7,6 +7,7 @@ from security import (
     PERFIL_TECNICO,
     normalizar_perfil_acesso,
     usuario_eh_gestor,
+    usuario_eh_manutencao,
 )
 from credenciais_convivente import (
     criptografar_credencial,
@@ -73,7 +74,7 @@ def usuario_pode_resolver_ocorrencia(
     usuario_atual: dict,
     ocorrencia: OcorrenciaConviventeDB,
 ) -> bool:
-    if usuario_eh_gestor(usuario_atual):
+    if usuario_eh_gestor(usuario_atual) or usuario_eh_manutencao(usuario_atual):
         return True
 
     perfil = normalizar_perfil_acesso(usuario_atual.get("perfil_acesso"))

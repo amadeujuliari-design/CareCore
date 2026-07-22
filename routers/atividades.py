@@ -4,7 +4,7 @@ from datetime import date, datetime, timedelta
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import func
+from sqlalchemy import delete, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
@@ -23,6 +23,7 @@ from models import (
     AtividadePontosResgateDB,
     AtividadePresencaDB,
     AtividadeSessaoConteudoDB,
+    AtividadeSisaVinculoDB,
     ConviventeDB,
     UsuarioDB,
 )
@@ -257,7 +258,21 @@ async def _contar_presentes(db: AsyncSession, ocorrencia_id: str) -> int:
 async def _montar_ocorrencia_response(
     db: AsyncSession,
     ocorrencia: AtividadeOcorrenciaDB,
+    *,
+    acoes_realizadas: str | None = None,
+    incluir_conteudo: bool = False,
 ) -> AtividadeOcorrenciaResponse:
+    texto = acoes_realizadas
+    if incluir_conteudo and texto is None:
+        conteudo = (
+            await db.execute(
+                select(AtividadeSessaoConteudoDB.acoes_realizadas).where(
+                    AtividadeSessaoConteudoDB.ocorrencia_id == ocorrencia.id
+                )
+            )
+        ).scalar_one_or_none()
+        texto = conteudo
+
     return AtividadeOcorrenciaResponse(
         id=ocorrencia.id,
         atividade_id=ocorrencia.atividade_id,
@@ -268,6 +283,8 @@ async def _montar_ocorrencia_response(
         status=ocorrencia.status,
         criado_em=ocorrencia.criado_em,
         total_presentes=await _contar_presentes(db, ocorrencia.id),
+        acoes_realizadas=texto,
+        tem_conteudo=bool((texto or "").strip()),
     )
 
 
@@ -856,6 +873,90 @@ async def atualizar_atividade(
     return await _montar_atividade_response(db, atividade)
 
 
+@router.delete("/{atividade_id}")
+async def excluir_atividade(
+    atividade_id: str,
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(exigir_edicao_atividades),
+):
+    """Remove a atividade das opções operacionais.
+
+    - Com presença registrada: apenas inativa (some das listas ativas).
+    - Sem presença: exclusão definitiva com limpeza de sessões/conteúdos/vínculos SISA.
+    """
+    instituicao_id = obter_instituicao_escopo(usuario_atual)
+    atividade = await _buscar_atividade(db, atividade_id, instituicao_id)
+
+    total_presencas = (
+        await db.execute(
+            select(func.count(AtividadePresencaDB.id)).where(
+                AtividadePresencaDB.atividade_id == atividade.id,
+                AtividadePresencaDB.instituicao_id == instituicao_id,
+            )
+        )
+    ).scalar()
+    total_presencas = int(total_presencas or 0)
+
+    if total_presencas > 0:
+        atividade.ativo = False
+        atividade.atualizado_em = agora_sao_paulo()
+        await db.commit()
+        return {
+            "status": "inativada",
+            "id": atividade.id,
+            "mensagem": (
+                "A atividade possui registro de presença e foi inativada. "
+                "Ela deixa de aparecer nas opções de chamada, grade e conteúdo."
+            ),
+        }
+
+    ocorrencia_ids = (
+        await db.execute(
+            select(AtividadeOcorrenciaDB.id).where(
+                AtividadeOcorrenciaDB.atividade_id == atividade.id,
+                AtividadeOcorrenciaDB.instituicao_id == instituicao_id,
+            )
+        )
+    ).scalars().all()
+
+    if ocorrencia_ids:
+        await db.execute(
+            delete(AtividadeSessaoConteudoDB).where(
+                AtividadeSessaoConteudoDB.ocorrencia_id.in_(list(ocorrencia_ids))
+            )
+        )
+        await db.execute(
+            delete(AtividadePresencaDB).where(
+                AtividadePresencaDB.ocorrencia_id.in_(list(ocorrencia_ids))
+            )
+        )
+        await db.execute(
+            delete(AtividadeOcorrenciaDB).where(
+                AtividadeOcorrenciaDB.id.in_(list(ocorrencia_ids))
+            )
+        )
+
+    await db.execute(
+        delete(AtividadeSisaVinculoDB).where(
+            AtividadeSisaVinculoDB.atividade_id == atividade.id,
+            AtividadeSisaVinculoDB.instituicao_id == instituicao_id,
+        )
+    )
+    await db.execute(
+        delete(AtividadeSessaoConteudoDB).where(
+            AtividadeSessaoConteudoDB.atividade_id == atividade.id,
+            AtividadeSessaoConteudoDB.instituicao_id == instituicao_id,
+        )
+    )
+    await db.delete(atividade)
+    await db.commit()
+    return {
+        "status": "excluida",
+        "id": atividade_id,
+        "mensagem": "Atividade excluída e removida das opções de escolha.",
+    }
+
+
 @router.post("/{atividade_id}/gerar-ocorrencias", response_model=AtividadeOcorrenciasListaResponse)
 async def gerar_ocorrencias_atividade(
     atividade_id: str,
@@ -964,10 +1065,35 @@ async def listar_ocorrencias_atividade(
                 AtividadeOcorrenciaDB.instituicao_id == instituicao_id,
                 AtividadeOcorrenciaDB.mes_referencia == mes_referencia,
             )
-            .order_by(AtividadeOcorrenciaDB.data_sessao.asc())
+            .order_by(
+                AtividadeOcorrenciaDB.data_sessao.asc(),
+                AtividadeOcorrenciaDB.numero_sessao_mes.asc(),
+            )
         )
     ).scalars().all()
-    items = [await _montar_ocorrencia_response(db, item) for item in ocorrencias]
+
+    conteudo_map: dict[str, str | None] = {}
+    if ocorrencias:
+        conteudos = (
+            await db.execute(
+                select(
+                    AtividadeSessaoConteudoDB.ocorrencia_id,
+                    AtividadeSessaoConteudoDB.acoes_realizadas,
+                ).where(
+                    AtividadeSessaoConteudoDB.ocorrencia_id.in_([item.id for item in ocorrencias])
+                )
+            )
+        ).all()
+        conteudo_map = {ocorrencia_id: texto for ocorrencia_id, texto in conteudos}
+
+    items = [
+        await _montar_ocorrencia_response(
+            db,
+            item,
+            acoes_realizadas=conteudo_map.get(item.id),
+        )
+        for item in ocorrencias
+    ]
     return AtividadeOcorrenciasListaResponse(
         items=items,
         total=len(items),

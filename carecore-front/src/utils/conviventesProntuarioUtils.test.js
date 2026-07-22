@@ -7,6 +7,7 @@ import {
   criarEstadoInicialConvivente,
   dataLocalISO,
   montarFormEvolucaoPia,
+  montarFormEdicaoPia,
   montarPayloadProntuario,
   ordenarRegistrosPiaPrincipais,
   validarCampoProntuario,
@@ -129,5 +130,18 @@ describe('conviventesProntuarioUtils', () => {
       titulo: 'Evolução',
       status: 'Concluído',
     });
+
+    const edicao = montarFormEdicaoPia({
+      id: 'pia-2',
+      titulo: 'PIA principal',
+      descricao: 'Texto\n\n\ncom espaços',
+      status: 'Em acompanhamento',
+      destino_siat_iii: true,
+    });
+    assert.equal(edicao.id, 'pia-2');
+    assert.equal(edicao.titulo, 'PIA principal');
+    assert.equal(edicao.descricao, 'Texto\n\n\ncom espaços');
+    assert.equal(edicao.destino_siat_iii, true);
+    assert.equal(edicao.registro_pai_id, '');
   });
 });

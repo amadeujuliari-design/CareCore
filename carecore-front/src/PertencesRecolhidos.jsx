@@ -4,6 +4,7 @@ import { AppShell, MainShell, PageHeader, PremiumButton, ReportActionButton, Scr
 import api from './services/api';
 import {
   baixarPertencesRecolhidosAdministrativo,
+  baixarPertencesRecolhidosAdministrativoLote,
   listarPertencesRecolhidos,
   listarPertencesRecolhidosCompleto,
   registrarPertencesRecolhidos,
@@ -100,6 +101,9 @@ export default function PertencesRecolhidos() {
   const [scannerRetiradaAberto, setScannerRetiradaAberto] = useState(false);
   const [baixaAdmin, setBaixaAdmin] = useState(null);
   const [erroBaixaAdmin, setErroBaixaAdmin] = useState('');
+  const [selecionados, setSelecionados] = useState([]);
+  const [baixaAdminLote, setBaixaAdminLote] = useState(null);
+  const [erroBaixaAdminLote, setErroBaixaAdminLote] = useState('');
 
   const [form, setForm] = useState({
     quarto_id: '',
@@ -107,6 +111,23 @@ export default function PertencesRecolhidos() {
     observacao: '',
   });
 
+  const registrosComSaldo = useMemo(
+    () => registros.filter((item) => Number(item.quantidade_disponivel || 0) > 0),
+    [registros],
+  );
+
+  const selecionadosComSaldo = useMemo(
+    () => registrosComSaldo.filter((item) => selecionados.includes(item.id)),
+    [registrosComSaldo, selecionados],
+  );
+
+  const totalItensSelecionados = useMemo(
+    () => selecionadosComSaldo.reduce(
+      (total, item) => total + Number(item.quantidade_disponivel || 0),
+      0,
+    ),
+    [selecionadosComSaldo],
+  );
   const conviventesPorId = useMemo(
     () => new Map((conviventes || []).map(item => [item.id, item])),
     [conviventes],
@@ -206,6 +227,7 @@ export default function PertencesRecolhidos() {
       if (!append) {
         setQuartos(ordenarQuartosComLeitos(quartosResponse?.data || []));
         setConviventes(conviventesResponse?.data || []);
+        setSelecionados([]);
       }
     } catch (error) {
       console.error(error);
@@ -345,7 +367,7 @@ export default function PertencesRecolhidos() {
   ]);
 
   useLeitorUsbGlobal({
-    ativo: !scannerRetiradaAberto && !baixaAdmin,
+    ativo: !scannerRetiradaAberto && !baixaAdmin && !baixaAdminLote,
     onCodigoLido: processarLeituraGlobal,
   });
 
@@ -574,6 +596,74 @@ export default function PertencesRecolhidos() {
     } catch (error) {
       console.error(error);
       setErroBaixaAdmin(error.response?.data?.detail || 'Erro ao registrar baixa administrativa.');
+    } finally {
+      setSalvando(false);
+    }
+  };
+
+  const toggleSelecao = (registroId) => {
+    setSelecionados((prev) => (
+      prev.includes(registroId)
+        ? prev.filter((id) => id !== registroId)
+        : [...prev, registroId]
+    ));
+  };
+
+  const toggleSelecionarTodosComSaldo = () => {
+    const idsComSaldo = registrosComSaldo.map((item) => item.id);
+    const todosMarcados = idsComSaldo.length > 0
+      && idsComSaldo.every((id) => selecionados.includes(id));
+    setSelecionados(todosMarcados ? [] : idsComSaldo);
+  };
+
+  const abrirBaixaAdministrativaLote = () => {
+    if (!podeBaixaAdministrativa) {
+      setErro('Baixa administrativa de pertences é restrita a Gestores, Técnicos e Manutenção.');
+      return;
+    }
+    if (selecionadosComSaldo.length === 0) {
+      setErro('Selecione ao menos uma recolha com saldo disponível.');
+      return;
+    }
+    setErro('');
+    setErroBaixaAdminLote('');
+    setBaixaAdminLote({
+      justificativa: '',
+      destino: '',
+    });
+  };
+
+  const confirmarBaixaAdministrativaLote = async () => {
+    if (!baixaAdminLote) return;
+
+    const justificativa = (baixaAdminLote.justificativa || '').trim();
+    const destino = (baixaAdminLote.destino || '').trim();
+    if (!justificativa || !destino) {
+      setErroBaixaAdminLote('Baixa administrativa em lote exige justificativa e destino.');
+      return;
+    }
+
+    try {
+      setErroBaixaAdminLote('');
+      setSalvando(true);
+      const resultado = await baixarPertencesRecolhidosAdministrativoLote({
+        registro_ids: selecionadosComSaldo.map((item) => item.id),
+        justificativa,
+        destino,
+      });
+
+      setBaixaAdminLote(null);
+      setSelecionados([]);
+      setSucesso(
+        `Baixa administrativa em lote: ${resultado.processados} recolha(s) e `
+        + `${resultado.itens_baixados} item(ns) baixados com a mesma justificativa.`,
+      );
+      await carregarDados();
+    } catch (error) {
+      console.error(error);
+      setErroBaixaAdminLote(
+        error.response?.data?.detail || 'Erro ao registrar baixa administrativa em lote.',
+      );
     } finally {
       setSalvando(false);
     }
@@ -823,12 +913,42 @@ export default function PertencesRecolhidos() {
               ) : (
                 <>
                   <div className="space-y-3 p-3 md:hidden">
+                    {podeBaixaAdministrativa && registrosComSaldo.length > 0 && (
+                      <div className="flex items-center justify-between rounded-xl border border-amber-100 bg-amber-50 px-3 py-2">
+                        <label className="flex items-center gap-2 text-xs font-black text-amber-800">
+                          <input
+                            type="checkbox"
+                            checked={
+                              registrosComSaldo.length > 0
+                              && registrosComSaldo.every((item) => selecionados.includes(item.id))
+                            }
+                            onChange={toggleSelecionarTodosComSaldo}
+                            className="h-4 w-4 rounded border-amber-300 text-amber-600"
+                          />
+                          Selecionar com saldo
+                        </label>
+                        <span className="text-[10px] font-bold text-amber-700">
+                          {selecionadosComSaldo.length} marcado(s)
+                        </span>
+                      </div>
+                    )}
                     {registros.map(registro => (
                       <div key={registro.id} className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
                         <div className="flex items-start justify-between gap-3">
-                          <div>
-                            <p className="font-black text-gray-900">{registro.quarto_nome}</p>
-                            <p className="text-xs font-semibold text-gray-500">ID {registro.quarto_id.slice(0, 8)}</p>
+                          <div className="flex items-start gap-2">
+                            {podeBaixaAdministrativa && Number(registro.quantidade_disponivel || 0) > 0 && (
+                              <input
+                                type="checkbox"
+                                checked={selecionados.includes(registro.id)}
+                                onChange={() => toggleSelecao(registro.id)}
+                                className="mt-1 h-4 w-4 rounded border-gray-300 text-amber-600"
+                                aria-label={`Selecionar recolha ${registro.quarto_nome}`}
+                              />
+                            )}
+                            <div>
+                              <p className="font-black text-gray-900">{registro.quarto_nome}</p>
+                              <p className="text-xs font-semibold text-gray-500">ID {registro.quarto_id.slice(0, 8)}</p>
+                            </div>
                           </div>
                           <span className={`shrink-0 rounded-full border px-3 py-1 text-[10px] font-black ${statusClasse(registro.status)}`}>
                             {registro.status}
@@ -894,6 +1014,21 @@ export default function PertencesRecolhidos() {
                     <table className="w-full min-w-[1000px] text-sm">
                     <thead className="bg-gray-50 text-xs font-black uppercase text-gray-500">
                       <tr>
+                        {podeBaixaAdministrativa && (
+                          <th className="px-4 py-3 text-left">
+                            <input
+                              type="checkbox"
+                              checked={
+                                registrosComSaldo.length > 0
+                                && registrosComSaldo.every((item) => selecionados.includes(item.id))
+                              }
+                              onChange={toggleSelecionarTodosComSaldo}
+                              className="h-4 w-4 rounded border-gray-300 text-amber-600"
+                              title="Selecionar todas as recolhas com saldo"
+                              aria-label="Selecionar todas as recolhas com saldo"
+                            />
+                          </th>
+                        )}
                         <th className="px-4 py-3 text-left">Quarto</th>
                         <th className="px-4 py-3 text-left">Recolha</th>
                         <th className="px-4 py-3 text-left">Quantidade</th>
@@ -905,6 +1040,21 @@ export default function PertencesRecolhidos() {
                     <tbody>
                       {registros.map(registro => (
                         <tr key={registro.id} className="border-t border-gray-100">
+                          {podeBaixaAdministrativa && (
+                            <td className="px-4 py-3">
+                              {Number(registro.quantidade_disponivel || 0) > 0 ? (
+                                <input
+                                  type="checkbox"
+                                  checked={selecionados.includes(registro.id)}
+                                  onChange={() => toggleSelecao(registro.id)}
+                                  className="h-4 w-4 rounded border-gray-300 text-amber-600"
+                                  aria-label={`Selecionar recolha ${registro.quarto_nome}`}
+                                />
+                              ) : (
+                                <span className="text-xs text-gray-300">—</span>
+                              )}
+                            </td>
+                          )}
                           <td className="px-4 py-3">
                             <p className="font-black text-gray-900">{registro.quarto_nome}</p>
                             <p className="text-xs font-semibold text-gray-500">ID {registro.quarto_id.slice(0, 8)}</p>
@@ -1190,6 +1340,110 @@ export default function PertencesRecolhidos() {
                 </button>
                 <button type="button" onClick={confirmarBaixaAdministrativa} disabled={salvando} className="rounded-lg bg-amber-600 px-4 py-2 text-sm font-bold text-white disabled:opacity-50">
                   Confirmar baixa
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {podeBaixaAdministrativa && selecionadosComSaldo.length > 0 && !baixaAdmin && !baixaAdminLote && (
+        <div className="fixed bottom-4 left-3 right-3 z-40 flex animate-fadeIn flex-col items-stretch gap-3 rounded-3xl bg-gray-900 px-4 py-4 text-white shadow-2xl sm:bottom-8 sm:left-1/2 sm:right-auto sm:-translate-x-1/2 sm:flex-row sm:items-center sm:gap-6 sm:rounded-full sm:px-6">
+          <span className="rounded-full bg-gray-800 px-3 py-1 text-sm font-bold text-amber-300">
+            {selecionadosComSaldo.length} recolha(s) · {totalItensSelecionados} item(ns)
+          </span>
+          <button
+            type="button"
+            onClick={abrirBaixaAdministrativaLote}
+            className="rounded-full bg-amber-500 px-5 py-2 text-sm font-bold text-white shadow-lg transition-colors hover:bg-amber-400"
+          >
+            Baixa administrativa em lote
+          </button>
+          <button
+            type="button"
+            onClick={() => setSelecionados([])}
+            className="p-1 font-bold text-gray-400 hover:text-white"
+            title="Cancelar seleção"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
+      {baixaAdminLote && (
+        <div className="carecore-modal-overlay fixed inset-0 z-50 flex items-center justify-center bg-gray-900/60 p-4 backdrop-blur-sm">
+          <div className="carecore-modal-panel w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl">
+            <div className="bg-amber-700 p-5 text-white">
+              <h2 className="text-lg font-bold">Baixa administrativa em lote</h2>
+              <p className="text-sm text-amber-50">
+                {selecionadosComSaldo.length} recolha(s) · {totalItensSelecionados} item(ns) com saldo
+              </p>
+            </div>
+            <div className="space-y-4 p-6">
+              {erroBaixaAdminLote && (
+                <div className="rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-sm font-bold text-red-700">
+                  {erroBaixaAdminLote}
+                </div>
+              )}
+
+              <div className="rounded-xl border border-amber-100 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
+                A mesma justificativa e o mesmo destino serão aplicados a todas as recolhas selecionadas,
+                baixando o saldo integral de cada uma.
+              </div>
+
+              <div className="max-h-28 overflow-y-auto rounded-xl border border-gray-100 bg-gray-50 px-3 py-2 text-xs text-gray-600">
+                {selecionadosComSaldo.map((item) => (
+                  <p key={item.id} className="font-semibold">
+                    {item.quarto_nome} · {item.quantidade_disponivel} item(ns)
+                  </p>
+                ))}
+              </div>
+
+              <label className="block">
+                <span className="mb-1 block text-xs font-black uppercase text-gray-500">Destino</span>
+                <input
+                  value={baixaAdminLote.destino}
+                  onChange={(event) => {
+                    setErroBaixaAdminLote('');
+                    setBaixaAdminLote((prev) => ({ ...prev, destino: event.target.value }));
+                  }}
+                  className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm font-semibold"
+                  placeholder="Ex.: guarda, descarte, doação, achados e perdidos..."
+                />
+              </label>
+
+              <label className="block">
+                <span className="mb-1 block text-xs font-black uppercase text-gray-500">Justificativa</span>
+                <textarea
+                  rows={4}
+                  value={baixaAdminLote.justificativa}
+                  onChange={(event) => {
+                    setErroBaixaAdminLote('');
+                    setBaixaAdminLote((prev) => ({ ...prev, justificativa: event.target.value }));
+                  }}
+                  className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm"
+                  placeholder="Explique por que o lote está sendo baixado sem retirada por convivente."
+                />
+              </label>
+
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setErroBaixaAdminLote('');
+                    setBaixaAdminLote(null);
+                  }}
+                  className="rounded-lg bg-gray-100 px-4 py-2 text-sm font-bold text-gray-600"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={confirmarBaixaAdministrativaLote}
+                  disabled={salvando}
+                  className="rounded-lg bg-amber-700 px-4 py-2 text-sm font-bold text-white disabled:opacity-50"
+                >
+                  Confirmar lote
                 </button>
               </div>
             </div>

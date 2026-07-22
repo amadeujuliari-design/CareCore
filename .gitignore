@@ -84,6 +84,7 @@ minuta_contrato_carecore_aeb*
 !/scripts/sanitizar_data_inativacao_ativos.py
 !/scripts/dev_local.py
 !/scripts/dev_local.json
+!/scripts/capturar_dashboard_operacional_snapshots.py
 relatorios_importacao/
 preencher_organizacao.py
 RelatorioCidadaoVinculado.xls

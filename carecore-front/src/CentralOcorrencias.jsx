@@ -62,6 +62,12 @@ export default function CentralOcorrencias() {
   }
 
   const isGestor = ['Gestor', 'Gestao', 'Gestão', 'Gerente'].includes(perfilUsuario);
+  const isManutencao = (
+    usuarioTextoOriginal.is_manutencao === true
+    || perfilUsuario === 'Manutenção'
+    || perfilUsuario === 'Manutencao'
+  );
+  const podeEncerrarOcorrenciaComoGestor = isGestor || isManutencao;
   const podeVerTextoOriginal = usuarioPodeVerTextoOriginal(usuarioTextoOriginal);
 
   const [ocorrencias, setOcorrencias] = useState([]);
@@ -734,7 +740,7 @@ export default function CentralOcorrencias() {
     try {
       const paciente = listaConviventes.find(c => c.id === formNovo.convivente_id);
       if (!paciente || paciente.status !== 'Ativo') {
-        setErroNovoChamado('Convivente inativo. Ative o convivente antes de registrar ocorrências ou interações.');
+        setErroNovoChamado('Convivente inativo. Ative o convivente antes de registrar novas ocorrências.');
         return;
       }
 
@@ -1094,7 +1100,10 @@ export default function CentralOcorrencias() {
                   const isResolvido = oc.status_resolucao === 'Resolvido';
                   const isMeuCaso = oc.tecnico_responsavel_id === idUsuarioLogado;
                   
-                  const temPermissaoBaixa = !isResolvido && (isGestor || (perfilUsuario === 'Técnico' && isMeuCaso));
+                  const temPermissaoBaixa = !isResolvido && (
+                    podeEncerrarOcorrenciaComoGestor
+                    || (perfilUsuario === 'Técnico' && isMeuCaso)
+                  );
 
                   const paciente = listaConviventes.find(c => c.id === oc.convivente_id);
                   const nomePaciente = oc.convivente_nome || (paciente ? (paciente.nome_social || paciente.nome_completo) : 'Acolhido não encontrado');
@@ -1393,7 +1402,7 @@ export default function CentralOcorrencias() {
                   />
 
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                    {(isGestor || (perfilUsuario === 'Técnico' && chamadoSelecionado.tecnico_responsavel_id === idUsuarioLogado)) ? (
+                    {(podeEncerrarOcorrenciaComoGestor || (perfilUsuario === 'Técnico' && chamadoSelecionado.tecnico_responsavel_id === idUsuarioLogado)) ? (
                       <label className="flex items-center gap-2 cursor-pointer bg-red-50 px-3 py-2 rounded-lg border border-red-100 hover:bg-red-100 transition-colors">
                         <input 
                           type="checkbox" 

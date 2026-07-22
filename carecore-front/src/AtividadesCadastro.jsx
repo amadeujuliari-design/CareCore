@@ -6,6 +6,7 @@ import api from './services/api';
 import {
   atualizarAtividade,
   criarAtividade,
+  excluirAtividade,
   gerarOcorrenciasAtividade,
   listarAtividades,
   obterCatalogoSisaAtividades,
@@ -91,6 +92,7 @@ export default function AtividadesCadastro() {
   const [form, setForm] = useState(criarFormAtividadeInicial());
   const [mesGeracao, setMesGeracao] = useState(mesReferenciaAtual());
   const [gerandoId, setGerandoId] = useState(null);
+  const [excluindoId, setExcluindoId] = useState(null);
   const [catalogoSisa, setCatalogoSisa] = useState(catalogoSisaPadraoFrontend());
 
   const carregarCatalogoSisa = useCallback(async () => {
@@ -219,6 +221,33 @@ export default function AtividadesCadastro() {
     }
   };
 
+  const excluir = async (item) => {
+    if (somenteLeitura) return;
+    const confirmado = window.confirm(
+      `Excluir a atividade "${item.nome}"?\n\n`
+      + 'Se já houver presença registrada, ela será apenas inativada e sumirá das opções de escolha. '
+      + 'Sem presença, a exclusão é definitiva.',
+    );
+    if (!confirmado) return;
+
+    setExcluindoId(item.id);
+    setErro('');
+    setSucesso('');
+    try {
+      const resultado = await excluirAtividade(item.id);
+      setSucesso(resultado?.mensagem || 'Atividade removida das opções de escolha.');
+      if (editandoId === item.id) {
+        setModalAberto(false);
+        setEditandoId(null);
+      }
+      await carregar();
+    } catch (error) {
+      setErro(error.response?.data?.detail || 'Não foi possível excluir a atividade.');
+    } finally {
+      setExcluindoId(null);
+    }
+  };
+
   const exigeDiasSemana = ['semanal', 'bisemanal'].includes(form.tipo_frequencia);
   const exigeDatasMes = form.tipo_frequencia === 'dias_mes';
 
@@ -291,9 +320,17 @@ export default function AtividadesCadastro() {
                       <PremiumButton
                         type="button"
                         onClick={() => gerarOcorrencias(item.id)}
-                        disabled={gerandoId === item.id}
+                        disabled={gerandoId === item.id || excluindoId === item.id}
                       >
                         {gerandoId === item.id ? 'Gerando...' : 'Gerar sessões do mês'}
+                      </PremiumButton>
+                      <PremiumButton
+                        type="button"
+                        variant="secondary"
+                        onClick={() => excluir(item)}
+                        disabled={excluindoId === item.id || gerandoId === item.id}
+                      >
+                        {excluindoId === item.id ? 'Excluindo...' : 'Excluir'}
                       </PremiumButton>
                     </div>
                   )}

@@ -1,11 +1,10 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import Sidebar from './Sidebar';
 import { AppShell, MainShell, PageHeader, PremiumButton, ScrollArea } from './components/PremiumUI';
 import { useAuth } from './context/AuthContext';
 import {
   listarAtividades,
   listarOcorrenciasAtividade,
-  obterConteudoSessaoAtividade,
   salvarConteudoSessaoAtividade,
 } from './services/atividadesService';
 import { mesReferenciaAtual, usuarioSomenteLeituraAtividades } from './config/atividadesConfig';
@@ -16,16 +15,24 @@ function formatarData(valor) {
   return formatarDataBr(valor) || '-';
 }
 
+function resumoConteudo(texto) {
+  const limpo = String(texto || '').trim();
+  if (!limpo) return 'Sem conteúdo registrado.';
+  if (limpo.length <= 160) return limpo;
+  return `${limpo.slice(0, 160)}…`;
+}
+
 export default function AtividadesConteudo() {
   const { usuario } = useAuth();
   const somenteLeitura = usuarioSomenteLeituraAtividades(usuario);
   const [atividades, setAtividades] = useState([]);
   const [ocorrencias, setOcorrencias] = useState([]);
   const [atividadeId, setAtividadeId] = useState('');
-  const [ocorrenciaId, setOcorrenciaId] = useState('');
   const [mesReferencia, setMesReferencia] = useState(mesReferenciaAtual());
-  const [texto, setTexto] = useState('');
+  const [editandoId, setEditandoId] = useState('');
+  const [textoEdicao, setTextoEdicao] = useState('');
   const [loading, setLoading] = useState(true);
+  const [carregandoSessoes, setCarregandoSessoes] = useState(false);
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState('');
   const [sucesso, setSucesso] = useState('');
@@ -49,55 +56,65 @@ export default function AtividadesConteudo() {
   const carregarOcorrencias = useCallback(async () => {
     if (!atividadeId) {
       setOcorrencias([]);
-      setOcorrenciaId('');
+      setEditandoId('');
+      setTextoEdicao('');
       return;
     }
+    setCarregandoSessoes(true);
+    setErro('');
     try {
       const lista = await listarOcorrenciasAtividade(atividadeId, mesReferencia);
-      setOcorrencias(lista.items || []);
-      if (!lista.items?.some((item) => item.id === ocorrenciaId)) {
-        setOcorrenciaId(lista.items?.[0]?.id || '');
-      }
+      const items = [...(lista.items || [])].sort((a, b) => {
+        const dataCmp = String(a.data_sessao || '').localeCompare(String(b.data_sessao || ''));
+        if (dataCmp !== 0) return dataCmp;
+        return Number(a.numero_sessao_mes || 0) - Number(b.numero_sessao_mes || 0);
+      });
+      setOcorrencias(items);
+      setEditandoId((atual) => (items.some((item) => item.id === atual) ? atual : ''));
     } catch (error) {
       setErro(error.response?.data?.detail || 'Não foi possível carregar as sessões.');
+      setOcorrencias([]);
+    } finally {
+      setCarregandoSessoes(false);
     }
-  }, [atividadeId, mesReferencia, ocorrenciaId]);
+  }, [atividadeId, mesReferencia]);
 
   useEffect(() => {
     carregarOcorrencias();
   }, [carregarOcorrencias]);
 
-  const carregarConteudo = useCallback(async () => {
-    if (!ocorrenciaId) {
-      setTexto('');
-      return;
-    }
+  const abrirEdicao = (sessao) => {
     setErro('');
-    try {
-      const conteudo = await obterConteudoSessaoAtividade(ocorrenciaId);
-      setTexto(conteudo.acoes_realizadas || '');
-    } catch (error) {
-      if (error.response?.status === 404) {
-        setTexto('');
-        return;
-      }
-      setErro(error.response?.data?.detail || 'Não foi possível carregar o conteúdo da sessão.');
-    }
-  }, [ocorrenciaId]);
+    setSucesso('');
+    setEditandoId(sessao.id);
+    setTextoEdicao(sessao.acoes_realizadas || '');
+  };
 
-  useEffect(() => {
-    carregarConteudo();
-  }, [carregarConteudo]);
+  const cancelarEdicao = () => {
+    setEditandoId('');
+    setTextoEdicao('');
+  };
 
   const salvar = async (event) => {
     event.preventDefault();
-    if (somenteLeitura || !ocorrenciaId) return;
+    if (somenteLeitura || !editandoId) return;
     setSalvando(true);
     setErro('');
     setSucesso('');
     try {
-      await salvarConteudoSessaoAtividade(ocorrenciaId, texto);
+      const salvo = await salvarConteudoSessaoAtividade(editandoId, textoEdicao);
+      setOcorrencias((prev) => prev.map((item) => (
+        item.id === editandoId
+          ? {
+              ...item,
+              acoes_realizadas: salvo.acoes_realizadas || '',
+              tem_conteudo: Boolean((salvo.acoes_realizadas || '').trim()),
+            }
+          : item
+      )));
       setSucesso('Conteúdo da sessão salvo com sucesso.');
+      setEditandoId('');
+      setTextoEdicao('');
     } catch (error) {
       setErro(error.response?.data?.detail || 'Não foi possível salvar o conteúdo.');
     } finally {
@@ -105,7 +122,10 @@ export default function AtividadesConteudo() {
     }
   };
 
-  const ocorrenciaSelecionada = ocorrencias.find((item) => item.id === ocorrenciaId);
+  const atividadeSelecionada = useMemo(
+    () => atividades.find((item) => item.id === atividadeId),
+    [atividades, atividadeId],
+  );
 
   return (
     <AppShell>
@@ -113,13 +133,18 @@ export default function AtividadesConteudo() {
       <MainShell>
         <PageHeader
           titulo="Conteúdo das sessões"
-          subtitulo="Registre as ações realizadas em cada encontro, equivalente ao verso da planilha institucional."
+          subtitulo="Liste as sessões por data e registre/edite as ações realizadas em cada encontro."
         />
 
-        <div className="mb-4 grid gap-3 md:grid-cols-4">
+        <div className="mb-4 grid gap-3 md:grid-cols-2">
           <select
             value={atividadeId}
-            onChange={(event) => setAtividadeId(event.target.value)}
+            onChange={(event) => {
+              setAtividadeId(event.target.value);
+              setEditandoId('');
+              setTextoEdicao('');
+              setSucesso('');
+            }}
             className="rounded-xl border border-gray-200 px-3 py-2 text-sm"
           >
             <option value="">Selecione a atividade</option>
@@ -130,27 +155,20 @@ export default function AtividadesConteudo() {
           <input
             type="month"
             value={mesReferencia}
-            onChange={(event) => setMesReferencia(event.target.value)}
+            onChange={(event) => {
+              setMesReferencia(event.target.value);
+              setEditandoId('');
+              setTextoEdicao('');
+              setSucesso('');
+            }}
             className="rounded-xl border border-gray-200 px-3 py-2 text-sm"
           />
-          <select
-            value={ocorrenciaId}
-            onChange={(event) => setOcorrenciaId(event.target.value)}
-            className="rounded-xl border border-gray-200 px-3 py-2 text-sm md:col-span-2"
-            disabled={!atividadeId}
-          >
-            <option value="">Selecione a sessão</option>
-            {ocorrencias.map((item) => (
-              <option key={item.id} value={item.id}>
-                Sessão {item.numero_sessao_mes} · {formatarData(item.data_sessao)}
-              </option>
-            ))}
-          </select>
         </div>
 
-        {ocorrenciaSelecionada && (
+        {atividadeSelecionada && (
           <p className="mb-4 text-sm text-gray-600">
-            Sessão de <strong>{formatarData(ocorrenciaSelecionada.data_sessao)}</strong>
+            Sessões de <strong>{atividadeSelecionada.nome}</strong> em{' '}
+            <strong>{mesReferencia}</strong>, ordenadas por data.
           </p>
         )}
 
@@ -165,31 +183,72 @@ export default function AtividadesConteudo() {
           </div>
         )}
 
-        <ScrollArea className="rounded-2xl border border-gray-100 bg-white p-6 shadow-sm">
+        <ScrollArea className="rounded-2xl border border-gray-100 bg-white shadow-sm">
           {loading ? (
-            <p className="text-sm text-gray-500">Carregando...</p>
-          ) : !ocorrenciaId ? (
-            <p className="text-sm text-gray-500">Selecione uma sessão para registrar o conteúdo.</p>
+            <p className="p-6 text-sm text-gray-500">Carregando...</p>
+          ) : !atividadeId ? (
+            <p className="p-6 text-sm text-gray-500">Selecione uma atividade para listar as sessões.</p>
+          ) : carregandoSessoes ? (
+            <p className="p-6 text-sm text-gray-500">Carregando sessões...</p>
+          ) : ocorrencias.length === 0 ? (
+            <p className="p-6 text-sm text-gray-500">
+              Nenhuma sessão gerada para este mês. Gere as sessões no cadastro de atividades.
+            </p>
           ) : (
-            <form onSubmit={salvar} className="space-y-4">
-              <div>
-                <label className="text-xs font-bold uppercase tracking-wide text-gray-500">
-                  Ações realizadas
-                </label>
-                <textarea
-                  value={texto}
-                  onChange={(event) => setTexto(event.target.value)}
-                  disabled={somenteLeitura}
-                  className="mt-2 min-h-[220px] w-full rounded-xl border border-gray-200 px-3 py-2 text-sm"
-                  placeholder="Descreva o que foi desenvolvido nesta sessão..."
-                />
-              </div>
-              {!somenteLeitura && (
-                <PremiumButton type="submit" disabled={salvando}>
-                  {salvando ? 'Salvando...' : 'Salvar conteúdo'}
-                </PremiumButton>
-              )}
-            </form>
+            <div className="divide-y divide-gray-100">
+              {ocorrencias.map((sessao) => {
+                const editando = editandoId === sessao.id;
+                return (
+                  <div key={sessao.id} className="p-4 md:p-5">
+                    <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-base font-bold text-gray-900">
+                          Sessão {sessao.numero_sessao_mes} · {formatarData(sessao.data_sessao)}
+                          {sessao.horario_sessao ? ` · ${sessao.horario_sessao}` : ''}
+                        </p>
+                        <p className="mt-1 text-xs font-semibold uppercase tracking-wide text-gray-400">
+                          {sessao.status || 'aberta'}
+                          {sessao.tem_conteudo ? ' · conteúdo registrado' : ' · sem conteúdo'}
+                        </p>
+                        {!editando && (
+                          <p className="mt-2 whitespace-pre-wrap text-sm text-gray-600">
+                            {resumoConteudo(sessao.acoes_realizadas)}
+                          </p>
+                        )}
+                      </div>
+                      {!somenteLeitura && !editando && (
+                        <PremiumButton type="button" variant="secondary" onClick={() => abrirEdicao(sessao)}>
+                          Editar
+                        </PremiumButton>
+                      )}
+                    </div>
+
+                    {editando && (
+                      <form onSubmit={salvar} className="mt-4 space-y-3 rounded-2xl border border-violet-100 bg-violet-50/40 p-4">
+                        <label className="block text-xs font-bold uppercase tracking-wide text-gray-500">
+                          Ações realizadas
+                        </label>
+                        <textarea
+                          value={textoEdicao}
+                          onChange={(event) => setTextoEdicao(event.target.value)}
+                          className="min-h-[180px] w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm"
+                          placeholder="Descreva o que foi desenvolvido nesta sessão..."
+                          autoFocus
+                        />
+                        <div className="flex flex-wrap gap-2">
+                          <PremiumButton type="submit" disabled={salvando}>
+                            {salvando ? 'Salvando...' : 'Salvar conteúdo'}
+                          </PremiumButton>
+                          <PremiumButton type="button" variant="secondary" onClick={cancelarEdicao} disabled={salvando}>
+                            Cancelar
+                          </PremiumButton>
+                        </div>
+                      </form>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           )}
         </ScrollArea>
       </MainShell>

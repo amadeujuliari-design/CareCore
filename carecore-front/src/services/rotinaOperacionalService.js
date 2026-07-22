@@ -85,3 +85,11 @@ export async function baixarPertencesRecolhidosAdministrativo(registroId, payloa
   );
   return response.data;
 }
+
+export async function baixarPertencesRecolhidosAdministrativoLote(payload) {
+  const response = await api.post(
+    '/api/rotina/pertences-recolhidos/baixa-administrativa-lote',
+    payload,
+  );
+  return response.data;
+}

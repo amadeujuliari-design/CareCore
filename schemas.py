@@ -1035,6 +1035,10 @@ class RegistroPIACreate(RegistroPIABase):
     registro_pai_id: Optional[str] = None
 
 
+class RegistroPIAUpdate(RegistroPIABase):
+    """Atualização de PIA principal ou evolução (não altera vínculo pai)."""
+
+
 class RegistroPIAResponse(RegistroPIABase):
     id: str
     instituicao_id: str
@@ -1279,6 +1283,7 @@ class ConviventeBase(BaseModel):
     data_nova_vinculacao: Optional[date] = None
     prontuario_saude: Optional[str] = None
     preferencial: bool = False
+    observacao_operacional: Optional[str] = None
     leito_provisorio_desde: Optional[datetime] = None
     ausencia_justificada_desde: Optional[date] = None
     leito_id: Optional[str] = None
@@ -1844,6 +1849,30 @@ class PertenceRecolhidoBaixaAdministrativa(BaseModel):
         return valor
 
 
+class PertenceRecolhidoBaixaAdministrativaLote(BaseModel):
+    registro_ids: List[str]
+    justificativa: str
+    destino: str
+
+    @field_validator("registro_ids")
+    @classmethod
+    def validar_registro_ids(cls, valor: List[str]):
+        ids = [str(item or "").strip() for item in (valor or []) if str(item or "").strip()]
+        if not ids:
+            raise ValueError("Selecione ao menos uma recolha para baixa administrativa em lote.")
+        if len(ids) > 100:
+            raise ValueError("Limite de 100 recolhas por lote.")
+        # remove duplicados preservando ordem
+        vistos = set()
+        unicos = []
+        for item in ids:
+            if item in vistos:
+                continue
+            vistos.add(item)
+            unicos.append(item)
+        return unicos
+
+
 class PertenceRecolhidoBaixaResponse(BaseModel):
     id: str
     pertence_recolhido_id: str
@@ -1872,6 +1901,14 @@ class PertenceRecolhidoResponse(BaseModel):
     justificativa_encerramento: Optional[str] = None
     destino_encerramento: Optional[str] = None
     baixas: List[PertenceRecolhidoBaixaResponse] = []
+
+
+class PertenceRecolhidoBaixaAdministrativaLoteResponse(BaseModel):
+    processados: int
+    itens_baixados: int
+    justificativa: str
+    destino: str
+    registros: List[PertenceRecolhidoResponse] = []
 
 
 class LavanderiaResumoFila(BaseModel):
@@ -2876,6 +2913,7 @@ class AcompanhamentoPotResponse(BaseModel):
     status_evolucao: Optional[str] = None
     data_evolucao: Optional[date] = None
     situacao_atual: Optional[str] = None
+    status_convivente: Optional[str] = None
     data_insercao: Optional[date] = None
     data_desligamento: Optional[date] = None
     congelamento_ativo: bool = False
@@ -3119,6 +3157,8 @@ class AtividadeOcorrenciaResponse(BaseModel):
     status: str
     criado_em: datetime
     total_presentes: int = 0
+    acoes_realizadas: Optional[str] = None
+    tem_conteudo: bool = False
 
     model_config = ConfigDict(from_attributes=True)
 

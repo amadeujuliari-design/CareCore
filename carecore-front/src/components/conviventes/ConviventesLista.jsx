@@ -3,6 +3,27 @@ import { conviventeEhMeuCaso } from '../../hooks/useConviventesLista';
 import AuthenticatedImage from '../AuthenticatedImage';
 import { getFotoUrl } from '../../utils/rotinaDiariaUtils';
 
+function textoObservacaoOperacional(convivente) {
+  return String(convivente?.observacao_operacional || '').trim();
+}
+
+function IconeObservacaoOperacional({ convivente }) {
+  const observacao = textoObservacaoOperacional(convivente);
+  if (!observacao) return null;
+
+  return (
+    <span
+      className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-800 border border-amber-300 cursor-help"
+      title={observacao}
+      aria-label={`Observação: ${observacao}`}
+    >
+      <svg viewBox="0 0 20 20" fill="currentColor" className="h-3.5 w-3.5" aria-hidden="true">
+        <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-4a.75.75 0 01.75.75v4.5a.75.75 0 01-1.5 0v-4.5A.75.75 0 0110 6zm0 8a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
+      </svg>
+    </span>
+  );
+}
+
 function FotoConviventeMini({ convivente }) {
   const fotoUrl = getFotoUrl(convivente);
 
@@ -99,9 +120,10 @@ export default function ConviventesLista({
                     <div className="flex min-w-0 items-start gap-3">
                       <FotoConviventeMini convivente={c} />
                       <div className="min-w-0">
-                      <p className="text-xs font-black uppercase tracking-wide text-brand">
+                      <p className="text-xs font-black uppercase tracking-wide text-brand flex flex-wrap items-center gap-1.5">
                         #{c.numero_institucional || 'Novo'}
-                        {isMeuCaso && <span className="ml-2 rounded-full bg-brand px-2 py-0.5 text-[9px] text-white">Meu caso</span>}
+                        <IconeObservacaoOperacional convivente={c} />
+                        {isMeuCaso && <span className="rounded-full bg-brand px-2 py-0.5 text-[9px] text-white">Meu caso</span>}
                       </p>
                       <h3 className="mt-1 truncate text-base font-bold text-slate-900">
                         {c.nome_social || c.nome_completo}
@@ -162,7 +184,10 @@ export default function ConviventesLista({
                         <div className="flex items-center gap-3 min-w-0">
                           <FotoConviventeMini convivente={c} />
                           <div className="min-w-0">
-                            <p className="text-gray-900 font-medium truncate">{c.nome_social || c.nome_completo}</p>
+                            <p className="text-gray-900 font-medium truncate flex items-center gap-1.5">
+                              <span className="truncate">{c.nome_social || c.nome_completo}</span>
+                              <IconeObservacaoOperacional convivente={c} />
+                            </p>
                             {c.nome_social && <p className="text-xs text-gray-500 mt-0.5 truncate">Civil: {c.nome_completo}</p>}
                           </div>
                         </div>

@@ -6,12 +6,14 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from fastapi.exceptions import RequestValidationError
+import asyncio
 import contextlib
 import logging
 import os
 import re
 import time
 import uuid
+from datetime import datetime, timedelta
 from sqlalchemy import text
 
 from config_utils import env_bool, env_int
@@ -261,7 +263,46 @@ async def lifespan(app: FastAPI):
         await provisionar_usuario_manutencao(session)
         await session.commit()
 
-    yield
+    async def _job_snapshots_dashboard_operacional():
+        """Captura retrato 22:00 SP (um por dia/instituição); não sobrescreve."""
+        from dashboard_operacional_snapshot import (
+            HORA_CAPTURA,
+            capturar_snapshots_pendentes_todas_instituicoes,
+        )
+        from time_operacional import agora_operacional_naive
+
+        await asyncio.sleep(45)
+        while True:
+            try:
+                agora = agora_operacional_naive()
+                if agora.hour >= HORA_CAPTURA:
+                    async with AsyncSessionLocal() as session:
+                        resultado = await capturar_snapshots_pendentes_todas_instituicoes(session)
+                    logger.info("Snapshots dashboard operacional: %s", resultado)
+                    proximo = datetime.combine(
+                        agora.date() + timedelta(days=1),
+                        datetime.min.time().replace(hour=HORA_CAPTURA, minute=5),
+                    )
+                else:
+                    proximo = datetime.combine(
+                        agora.date(),
+                        datetime.min.time().replace(hour=HORA_CAPTURA, minute=5),
+                    )
+                segundos = max((proximo - agora).total_seconds(), 60.0)
+                await asyncio.sleep(min(segundos, 3600.0))
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception("Falha no job de snapshots do dashboard operacional")
+                await asyncio.sleep(300)
+
+    job_snapshots = asyncio.create_task(_job_snapshots_dashboard_operacional())
+    try:
+        yield
+    finally:
+        job_snapshots.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await job_snapshots
 
 
 app = FastAPI(

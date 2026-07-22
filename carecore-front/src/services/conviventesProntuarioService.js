@@ -136,8 +136,10 @@ export async function excluirDocumentoConvivente(documentoId) {
   return response.data;
 }
 
-export async function salvarRegistroPiaConvivente(conviventeId, payload) {
-  const response = await api.post(`/api/conviventes/${conviventeId}/pia`, payload);
+export async function salvarRegistroPiaConvivente(conviventeId, payload, registroId = null) {
+  const response = registroId
+    ? await api.put(`/api/conviventes/${conviventeId}/pia/${registroId}`, payload)
+    : await api.post(`/api/conviventes/${conviventeId}/pia`, payload);
   return response.data;
 }
 
