@@ -425,6 +425,92 @@ def _parse_payload(registro: DashboardOperacionalSnapshotDB) -> dict:
         return {}
 
 
+def aplicar_ajustes_manuais_no_retrato(
+    retrato: dict,
+    ajustes_por_tipo: dict[str, int] | None,
+) -> dict:
+    """
+    Soma complementos manuais (rotina_ajustes_diarios) aos totais do retrato.
+    O payload gravado às 22:00 permanece cru; a leitura aplica o ajuste.
+    """
+    ajustes = {
+        str(tipo): int(qtd or 0)
+        for tipo, qtd in (ajustes_por_tipo or {}).items()
+        if int(qtd or 0) != 0
+    }
+    base = {
+        "resumo": dict(retrato.get("resumo") or {}),
+        "interacoes_hoje": dict(retrato.get("interacoes_hoje") or {}),
+        "listas_totais": dict(retrato.get("listas_totais") or {}),
+        "alertas": list(retrato.get("alertas") or []),
+        "data_referencia": retrato.get("data_referencia"),
+        "atualizado_em": retrato.get("atualizado_em"),
+        "id": retrato.get("id"),
+        "capturado_em": retrato.get("capturado_em"),
+    }
+    # Preserva demais chaves (ex.: alertas já copiados).
+    for chave, valor in retrato.items():
+        if chave not in base:
+            base[chave] = valor
+
+    if not ajustes:
+        base["ajustes_manuais"] = {
+            "tem_ajuste": False,
+            "por_tipo": {},
+            "total_complemento": 0,
+        }
+        return base
+
+    resumo = dict(base["resumo"])
+    interacoes = dict(base["interacoes_hoje"])
+    mapa_resumo = {
+        "Entrada": "entradas_hoje",
+        "Saída": "saidas_hoje",
+        "Café da manhã": "cafes_hoje",
+        "Almoço": "almocos_hoje",
+        "Jantar": "jantares_hoje",
+        "Lanche noturno": "lanches_noturnos_hoje",
+    }
+
+    for tipo, qtd in ajustes.items():
+        interacoes[tipo] = int(interacoes.get(tipo) or 0) + qtd
+        chave_resumo = mapa_resumo.get(tipo)
+        if chave_resumo:
+            resumo[chave_resumo] = int(resumo.get(chave_resumo) or 0) + qtd
+
+    resumo["total_registros_hoje"] = sum(int(v or 0) for v in interacoes.values())
+    resumo["total_interacoes_hoje"] = total_interacoes_sem_fluxo(interacoes)
+
+    base["resumo"] = resumo
+    base["interacoes_hoje"] = dict(
+        sorted(interacoes.items(), key=lambda item: (-item[1], item[0]))
+    )
+    base["ajustes_manuais"] = {
+        "tem_ajuste": True,
+        "por_tipo": dict(sorted(ajustes.items(), key=lambda item: item[0].casefold())),
+        "total_complemento": sum(ajustes.values()),
+    }
+    return base
+
+
+def _item_publico_snapshot(
+    registro: DashboardOperacionalSnapshotDB,
+    *,
+    ajustes_por_tipo: dict[str, int] | None = None,
+) -> dict:
+    payload = _parse_payload(registro)
+    item = {
+        "id": registro.id,
+        "data_referencia": registro.data_referencia.isoformat(),
+        "capturado_em": registro.capturado_em.isoformat() if registro.capturado_em else None,
+        "resumo": payload.get("resumo") or {},
+        "interacoes_hoje": payload.get("interacoes_hoje") or {},
+        "listas_totais": payload.get("listas_totais") or {},
+        "alertas": payload.get("alertas") or [],
+    }
+    return aplicar_ajustes_manuais_no_retrato(item, ajustes_por_tipo)
+
+
 async def listar_snapshots(
     db: AsyncSession,
     *,
@@ -433,6 +519,8 @@ async def listar_snapshots(
     data_fim: date | None = None,
     limite: int = 60,
 ) -> list[dict]:
+    from rotina_ajustes_totais import obter_ajustes_agregados_periodo
+
     query = select(DashboardOperacionalSnapshotDB).where(
         DashboardOperacionalSnapshotDB.instituicao_id == instituicao_id,
     )
@@ -447,20 +535,25 @@ async def listar_snapshots(
         )
     ).scalars().all()
 
+    ajustes_por_dia: dict[str, dict[str, int]] = {}
+    if registros:
+        inicio_aj = data_inicio or min(r.data_referencia for r in registros)
+        fim_aj = data_fim or max(r.data_referencia for r in registros)
+        ajustes_por_dia = await obter_ajustes_agregados_periodo(
+            db,
+            instituicao_id,
+            inicio_aj,
+            fim_aj,
+        )
+
     items = []
     for registro in registros:
-        payload = _parse_payload(registro)
-        resumo = payload.get("resumo") or {}
+        chave = registro.data_referencia.isoformat()
         items.append(
-            {
-                "id": registro.id,
-                "data_referencia": registro.data_referencia.isoformat(),
-                "capturado_em": registro.capturado_em.isoformat() if registro.capturado_em else None,
-                "resumo": resumo,
-                "interacoes_hoje": payload.get("interacoes_hoje") or {},
-                "listas_totais": payload.get("listas_totais") or {},
-                "alertas": payload.get("alertas") or [],
-            }
+            _item_publico_snapshot(
+                registro,
+                ajustes_por_tipo=ajustes_por_dia.get(chave) or {},
+            )
         )
     return items
 
@@ -471,6 +564,8 @@ async def obter_snapshot_por_data(
     instituicao_id: str,
     data_referencia: date,
 ) -> dict | None:
+    from rotina_ajustes_totais import obter_ajustes_por_tipo_dia
+
     registro = (
         await db.execute(
             select(DashboardOperacionalSnapshotDB).where(
@@ -481,16 +576,14 @@ async def obter_snapshot_por_data(
     ).scalar_one_or_none()
     if not registro:
         return None
-    payload = _parse_payload(registro)
-    return {
-        "id": registro.id,
-        "data_referencia": registro.data_referencia.isoformat(),
-        "capturado_em": registro.capturado_em.isoformat() if registro.capturado_em else None,
-        "resumo": payload.get("resumo") or {},
-        "interacoes_hoje": payload.get("interacoes_hoje") or {},
-        "listas_totais": payload.get("listas_totais") or {},
-        "alertas": payload.get("alertas") or [],
+
+    ajustes = await obter_ajustes_por_tipo_dia(db, instituicao_id, data_referencia)
+    ajustes_por_tipo = {
+        tipo: int(reg.quantidade_ajuste or 0)
+        for tipo, reg in ajustes.items()
+        if int(getattr(reg, "quantidade_ajuste", 0) or 0) != 0
     }
+    return _item_publico_snapshot(registro, ajustes_por_tipo=ajustes_por_tipo)
 
 
 def montar_serie_grafico(items: list[dict], metrica: str) -> list[dict]:

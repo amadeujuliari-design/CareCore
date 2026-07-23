@@ -277,12 +277,6 @@ export default function DashboardOperacional() {
   const carregarRetrato = useCallback(async (dataRef) => {
     if (!dataRef) return;
     const dataNorm = String(dataRef).slice(0, 10);
-    const local = histItems.find((item) => item.data_referencia === dataNorm);
-    if (local) {
-      setHistErro('');
-      setRetrato(local);
-      return;
-    }
     try {
       setRetratoLoading(true);
       setHistErro('');
@@ -293,6 +287,12 @@ export default function DashboardOperacional() {
       setRetrato(response.data);
     } catch (error) {
       console.error(error);
+      const local = histItems.find((item) => item.data_referencia === dataNorm);
+      if (local) {
+        setRetrato(local);
+        setHistErro('');
+        return;
+      }
       setHistErro(
         error.response?.data?.detail ||
         'Retrato não encontrado para esta data.'
@@ -659,6 +659,11 @@ export default function DashboardOperacional() {
                           <span className="ml-2 opacity-80">
                             D {item.resumo?.dentro_projeto ?? '-'} · F {item.resumo?.fora_projeto ?? '-'}
                           </span>
+                          {item.ajustes_manuais?.tem_ajuste ? (
+                            <span className="ml-2 rounded-md bg-amber-100 px-1.5 py-0.5 text-[10px] text-amber-800">
+                              +ajuste
+                            </span>
+                          ) : null}
                         </button>
                       ))}
                     </div>
@@ -674,6 +679,16 @@ export default function DashboardOperacional() {
                           <p className="text-xs font-semibold text-teal-800/80">
                             Capturado em {formatarDataHora(retrato?.capturado_em)}
                           </p>
+                          {retrato?.ajustes_manuais?.tem_ajuste && (
+                            <p className="mt-1 text-xs font-bold text-amber-800">
+                              Inclui ajuste manual (+{retrato.ajustes_manuais.total_complemento || 0})
+                              {retrato.ajustes_manuais.por_tipo
+                                ? ` · ${Object.entries(retrato.ajustes_manuais.por_tipo)
+                                  .map(([tipo, qtd]) => `${tipo} +${qtd}`)
+                                  .join(', ')}`
+                                : ''}
+                            </p>
+                          )}
                         </div>
                         <button
                           type="button"

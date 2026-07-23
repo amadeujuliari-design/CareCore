@@ -132,6 +132,50 @@ def test_montar_series_grafico_multiplas():
     assert [p["valor"] for p in series["fora_projeto"]] == [5, 3]
 
 
+def test_aplicar_ajustes_manuais_soma_nos_totais():
+    from dashboard_operacional_snapshot import aplicar_ajustes_manuais_no_retrato
+
+    retrato = {
+        "data_referencia": "2026-07-18",
+        "resumo": {
+            "entradas_hoje": 18,
+            "saidas_hoje": 17,
+            "cafes_hoje": 94,
+            "almocos_hoje": 0,
+            "total_registros_hoje": 579,
+            "total_interacoes_hoje": 544,
+            "dentro_projeto": 175,
+        },
+        "interacoes_hoje": {
+            "Entrada": 18,
+            "Saída": 17,
+            "Café da manhã": 94,
+            "Banho": 44,
+        },
+    }
+    ajustes = {
+        "Entrada": 327,
+        "Saída": 327,
+        "Café da manhã": 68,
+        "Almoço": 177,
+        "Banho": 165,
+    }
+    enriquecido = aplicar_ajustes_manuais_no_retrato(retrato, ajustes)
+    assert enriquecido["ajustes_manuais"]["tem_ajuste"] is True
+    assert enriquecido["ajustes_manuais"]["total_complemento"] == 1064
+    assert enriquecido["resumo"]["entradas_hoje"] == 345
+    assert enriquecido["resumo"]["saidas_hoje"] == 344
+    assert enriquecido["resumo"]["cafes_hoje"] == 162
+    assert enriquecido["resumo"]["almocos_hoje"] == 177
+    assert enriquecido["interacoes_hoje"]["Almoço"] == 177
+    assert enriquecido["interacoes_hoje"]["Banho"] == 209
+    # Sem fluxo: cafe 162 + almoco 177 + banho 209 = 548
+    assert enriquecido["resumo"]["total_interacoes_hoje"] == 548
+    assert enriquecido["resumo"]["total_registros_hoje"] == 18 + 17 + 94 + 44 + 1064
+    # Estado operacional (dentro/fora) não muda com ajuste estatístico
+    assert enriquecido["resumo"]["dentro_projeto"] == 175
+
+
 def test_periodo_padrao_30_dias():
     inicio, fim = periodo_padrao_30_dias(hoje=date(2026, 7, 22))
     assert fim == date(2026, 7, 22)
