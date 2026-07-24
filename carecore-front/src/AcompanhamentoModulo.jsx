@@ -841,16 +841,27 @@ export default function AcompanhamentoModulo() {
                 )}
               </div>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="min-w-full text-sm">
+              <div className="overflow-x-auto overscroll-x-contain">
+                <table className="w-full min-w-[1180px] text-sm">
                   <thead className="bg-slate-50 text-left text-slate-600">
                     <tr>
                       {colunas.map(coluna => (
-                        <th key={coluna.chave} className="px-4 py-3 font-medium">{coluna.rotulo}</th>
+                        <th
+                          key={coluna.chave}
+                          className="whitespace-nowrap px-3 py-3 font-medium"
+                        >
+                          {coluna.rotulo}
+                        </th>
                       ))}
-                      {!somenteLeitura && <th className="px-4 py-3 font-medium">Ações</th>}
+                      {!somenteLeitura && (
+                        <th className="sticky right-0 z-20 whitespace-nowrap bg-slate-50 px-3 py-3 font-medium shadow-[-8px_0_12px_-8px_rgba(15,23,42,0.18)]">
+                          Ações
+                        </th>
+                      )}
                       {somenteLeitura && modulo.suportaEvolucoes && (
-                        <th className="px-4 py-3 font-medium">Detalhes</th>
+                        <th className="sticky right-0 z-20 whitespace-nowrap bg-slate-50 px-3 py-3 font-medium shadow-[-8px_0_12px_-8px_rgba(15,23,42,0.18)]">
+                          Detalhes
+                        </th>
                       )}
                     </tr>
                   </thead>
@@ -858,13 +869,15 @@ export default function AcompanhamentoModulo() {
                     {registros.map(registro => (
                       <tr key={registro.id} className="border-t border-slate-100">
                         {colunas.map(coluna => (
-                          <td key={coluna.chave} className="px-4 py-3 text-slate-700">
-                            {formatarCelula(registro[coluna.chave], coluna.tipo)}
+                          <td key={coluna.chave} className="px-3 py-3 text-slate-700">
+                            <span className="line-clamp-2 break-words">
+                              {formatarCelula(registro[coluna.chave], coluna.tipo)}
+                            </span>
                           </td>
                         ))}
                         {!somenteLeitura && (
-                          <td className="px-4 py-3">
-                            <div className="flex gap-2">
+                          <td className="sticky right-0 z-10 bg-white px-3 py-3 shadow-[-8px_0_12px_-8px_rgba(15,23,42,0.18)]">
+                            <div className="flex flex-col items-start gap-1 whitespace-nowrap sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-3 sm:gap-y-1">
                               {modulo.suportaEvolucoes && (
                                 <button
                                   type="button"
@@ -892,11 +905,11 @@ export default function AcompanhamentoModulo() {
                           </td>
                         )}
                         {somenteLeitura && modulo.suportaEvolucoes && (
-                          <td className="px-4 py-3">
+                          <td className="sticky right-0 z-10 bg-white px-3 py-3 shadow-[-8px_0_12px_-8px_rgba(15,23,42,0.18)]">
                             <button
                               type="button"
                               onClick={() => setEvolucoesModal(registro)}
-                              className="text-indigo-600 hover:underline"
+                              className="whitespace-nowrap text-indigo-600 hover:underline"
                             >
                               Ver evoluções
                             </button>
