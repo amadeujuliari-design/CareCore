@@ -32,6 +32,15 @@ export const STATUS_EVOLUCAO_POT = [
   'Encerrado',
 ];
 
+export const LOCAIS_POT = [
+  'POT I',
+  'POT II',
+  'POT Glicério',
+  'Reviravolta',
+  'Trabalho Formal',
+  'Trabalho Informal',
+];
+
 /** Status permitidos na busca de convivente por módulo (novo registro). */
 export const STATUS_CONVIVENTE_TODOS = [
   'Ativo',
@@ -178,14 +187,19 @@ export const MODULOS_ACOMPANHAMENTO = {
       { chave: 'convivente_nome', rotulo: 'Convivente' },
       { chave: 'prontuario', rotulo: 'Prontuário' },
       { chave: 'status_convivente', rotulo: 'Status' },
-      { chave: 'situacao_atual', rotulo: 'Situação' },
       { chave: 'data_insercao', rotulo: 'Inserção', tipo: 'data' },
+      { chave: 'atividade', rotulo: 'Atividade' },
+      { chave: 'local', rotulo: 'Local' },
+      { chave: 'tecnico_referencia', rotulo: 'Referência' },
+      { chave: 'indicacao', rotulo: 'Indicação' },
+      { chave: 'situacao_atual', rotulo: 'Situação' },
       { chave: 'data_desligamento', rotulo: 'Desligamento', tipo: 'data' },
-      { chave: 'congelamento_ativo', rotulo: 'Congelamento', tipo: 'simnao' },
-      { chave: 'registrado_por_nome', rotulo: 'Registrado por' },
     ],
     campos: [
       { nome: 'data_insercao', rotulo: 'Data de inserção', tipo: 'data' },
+      { nome: 'atividade', rotulo: 'Atividade', tipo: 'text' },
+      { nome: 'local', rotulo: 'Local', tipo: 'select', opcoes: LOCAIS_POT },
+      { nome: 'indicacao', rotulo: 'Indicação', tipo: 'text' },
       { nome: 'data_desligamento', rotulo: 'Data de desligamento', tipo: 'data' },
       { nome: 'congelamento_ativo', rotulo: 'Congelamento ativo', tipo: 'checkbox' },
       { nome: 'congelamento_inicio', rotulo: 'Início congelamento', tipo: 'data', visivelQuando: { campo: 'congelamento_ativo', valor: true } },
@@ -199,6 +213,23 @@ export const MODULOS_ACOMPANHAMENTO = {
         tipo: 'select',
         opcoes: STATUS_CONVIVENTE_TODOS,
         padrao: 'Ativo',
+      },
+      {
+        nome: 'local',
+        rotulo: 'Local',
+        tipo: 'select',
+        opcoes: LOCAIS_POT,
+      },
+      {
+        nome: 'tecnico_id',
+        rotulo: 'Técnico de referência',
+        tipo: 'tecnico',
+      },
+      {
+        nome: 'situacao_atual',
+        rotulo: 'Situação do POT',
+        tipo: 'select',
+        opcoes: STATUS_EVOLUCAO_POT,
       },
     ],
   },

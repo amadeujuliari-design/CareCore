@@ -99,8 +99,20 @@ const CONFIG_SECOES = [
       <>
         <p className="font-bold text-slate-800">
           Inserção: {formatarData(registro.data_insercao)}
+          {registro.local ? ` · ${registro.local}` : ''}
           {registro.congelamento_ativo ? ' · Congelamento ativo' : ''}
         </p>
+        {(registro.atividade || registro.indicacao || registro.tecnico_referencia) && (
+          <p className="mt-1 text-slate-600">
+            {registro.atividade ? `Atividade: ${registro.atividade}` : null}
+            {registro.tecnico_referencia
+              ? `${registro.atividade ? ' · ' : ''}Ref.: ${registro.tecnico_referencia}`
+              : null}
+            {registro.indicacao
+              ? `${registro.atividade || registro.tecnico_referencia ? ' · ' : ''}Indicação: ${registro.indicacao}`
+              : null}
+          </p>
+        )}
         {registro.observacoes && <p className="mt-2 whitespace-pre-wrap">{registro.observacoes}</p>}
         {(registro.evolucoes || []).length > 0 && (
           <ul className="mt-3 space-y-1 border-t border-slate-200 pt-2">

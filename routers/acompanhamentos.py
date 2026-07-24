@@ -55,6 +55,7 @@ from schemas import (
     AcompanhamentoPotUpdate,
     AcompanhamentoPotEvolucaoCreate,
     AcompanhamentoPotEvolucaoUpdate,
+    LOCAIS_POT,
     STATUS_EVOLUCAO_POT,
     AcompanhamentoSuspensaoProvisoriaCreate,
     AcompanhamentoSuspensaoProvisoriaResponse,
@@ -86,6 +87,9 @@ router = APIRouter(prefix="/api/acompanhamentos", tags=["Acompanhamentos Técnic
 
 REGISTROS_POR_PAGINA_PADRAO = 30
 REGISTROS_POR_PAGINA_PRONTUARIO_ACOMP = 10
+LIMITE_EXPORT_POT = 2000
+LIMITE_FILTRO_SITUACAO_POT = 5000
+FILTRO_TECNICO_SEM_VINCULADO = "__sem_tecnico__"
 
 SECOES_ACOMPANHAMENTO_CONVIVENTE = {
     "transferencias",
@@ -374,6 +378,163 @@ def _aplicar_busca_convivente(query, busca: str, convivente_ids: list[str] | Non
         condicoes.append(cast(ConviventeDB.numero_institucional, String).like(termo))
 
     return query.where(or_(*condicoes))
+
+
+def _query_pot_principais(instituicao_id: str):
+    return (
+        select(AcompanhamentoPotDB, ConviventeDB)
+        .join(ConviventeDB, ConviventeDB.id == AcompanhamentoPotDB.convivente_id)
+        .where(
+            AcompanhamentoPotDB.instituicao_id == instituicao_id,
+            AcompanhamentoPotDB.registro_pai_id.is_(None),
+        )
+        .order_by(AcompanhamentoPotDB.criado_em.desc())
+    )
+
+
+def _aplicar_filtros_pot(
+    query,
+    *,
+    busca: Optional[str] = None,
+    data_inicio: Optional[str] = None,
+    data_fim: Optional[str] = None,
+    status_convivente: Optional[str] = None,
+    local: Optional[str] = None,
+    tecnico_id: Optional[str] = None,
+):
+    if busca:
+        query = _aplicar_busca_convivente(query, busca)
+
+    status_filtro = (status_convivente or "").strip()
+    if status_filtro and status_filtro.lower() not in {"todos", "todas", "all"}:
+        query = query.where(ConviventeDB.status == status_filtro)
+
+    if data_inicio:
+        query = query.where(AcompanhamentoPotDB.data_insercao >= _parse_data_filtro(data_inicio))
+    if data_fim:
+        query = query.where(AcompanhamentoPotDB.data_insercao <= _parse_data_filtro(data_fim))
+
+    local_filtro = (local or "").strip()
+    if local_filtro and local_filtro.lower() not in {"todos", "todas", "all"}:
+        query = query.where(AcompanhamentoPotDB.local == local_filtro)
+
+    tecnico_filtro = (tecnico_id or "").strip()
+    if tecnico_filtro and tecnico_filtro.lower() not in {"todos", "todas", "all"}:
+        if tecnico_filtro == FILTRO_TECNICO_SEM_VINCULADO:
+            query = query.where(ConviventeDB.tecnico_id.is_(None))
+        else:
+            query = query.where(ConviventeDB.tecnico_id == tecnico_filtro)
+
+    return query
+
+
+async def _carregar_itens_pot_filtrados(
+    db: AsyncSession,
+    instituicao_id: str,
+    *,
+    busca: Optional[str] = None,
+    data_inicio: Optional[str] = None,
+    data_fim: Optional[str] = None,
+    status_convivente: Optional[str] = None,
+    local: Optional[str] = None,
+    tecnico_id: Optional[str] = None,
+    situacao_atual: Optional[str] = None,
+    offset: int = 0,
+    limite: int | None = None,
+    incluir_evolucoes: bool = False,
+    limite_interno: int = LIMITE_FILTRO_SITUACAO_POT,
+) -> tuple[list[dict], int]:
+    query = _aplicar_filtros_pot(
+        _query_pot_principais(instituicao_id),
+        busca=busca,
+        data_inicio=data_inicio,
+        data_fim=data_fim,
+        status_convivente=status_convivente,
+        local=local,
+        tecnico_id=tecnico_id,
+    )
+
+    situacao_filtro = (situacao_atual or "").strip()
+    # Situação atual depende da última evolução: materializa o conjunto filtrado antes de paginar.
+    precisa_materializar = bool(
+        situacao_filtro and situacao_filtro.lower() not in {"todos", "todas", "all"}
+    )
+
+    if precisa_materializar:
+        rows = (await db.execute(query.limit(limite_interno))).all()
+        total = 0  # recalculado após filtro de situação
+    else:
+        total = (
+            await db.execute(select(func.count()).select_from(query.subquery()))
+        ).scalar_one()
+        rows_query = query
+        if offset:
+            rows_query = rows_query.offset(offset)
+        if limite is not None:
+            rows_query = rows_query.limit(limite)
+        rows = (await db.execute(rows_query)).all()
+
+    principais = [registro for registro, _ in rows]
+    conv_map = {convivente.id: convivente for _, convivente in rows}
+    usuario_ids = {registro.registrado_por_id for registro in principais}
+    usuario_ids |= {
+        convivente.tecnico_id for convivente in conv_map.values() if convivente.tecnico_id
+    }
+
+    if incluir_evolucoes:
+        # Inclui autores das evoluções no mapa de nomes.
+        ids_principais = {registro.id for registro in principais}
+        if ids_principais:
+            evolucoes_db = (
+                await db.execute(
+                    select(AcompanhamentoPotDB).where(
+                        AcompanhamentoPotDB.instituicao_id == instituicao_id,
+                        AcompanhamentoPotDB.registro_pai_id.in_(ids_principais),
+                    )
+                )
+            ).scalars().all()
+            usuario_ids |= {item.registrado_por_id for item in evolucoes_db}
+
+    usuarios_map = await _mapear_usuarios(db, usuario_ids)
+
+    if incluir_evolucoes:
+        items = await _mapear_evolucoes_pot_principais(
+            db,
+            instituicao_id,
+            conv_map,
+            usuarios_map,
+            principais,
+        )
+    else:
+        situacao_map = await _mapear_situacao_atual_pot(
+            db,
+            instituicao_id,
+            {registro.id for registro in principais},
+        )
+        items = [
+            _map_pot(
+                registro,
+                conv_map,
+                usuarios_map,
+                situacao_atual=situacao_map.get(registro.id, "Em participação"),
+            ).model_dump()
+            for registro in principais
+        ]
+
+    if situacao_filtro and situacao_filtro.lower() not in {"todos", "todas", "all"}:
+        items = [
+            item
+            for item in items
+            if (item.get("situacao_atual") or "Em participação") == situacao_filtro
+        ]
+
+    total = len(items) if precisa_materializar else total
+    if precisa_materializar:
+        if limite is None:
+            return items, total
+        return items[offset: offset + limite], total
+
+    return items, total
 
 
 async def _listar_registros(
@@ -714,6 +875,10 @@ def _map_tb(registro, conv_map, usuarios_map):
     )
 
 
+def _texto_opcional(valor: str | None) -> str | None:
+    return (valor or "").strip() or None
+
+
 def _map_pot(
     registro,
     conv_map,
@@ -723,6 +888,7 @@ def _map_pot(
     evolucoes: list | None = None,
 ):
     convivente = conv_map.get(registro.convivente_id)
+    tecnico_id = getattr(convivente, "tecnico_id", None) if convivente else None
     return AcompanhamentoPotResponse(
         id=registro.id,
         convivente_id=registro.convivente_id,
@@ -733,11 +899,15 @@ def _map_pot(
         data_evolucao=registro.data_evolucao,
         situacao_atual=situacao_atual,
         status_convivente=getattr(convivente, "status", None) if convivente else None,
+        tecnico_referencia=usuarios_map.get(tecnico_id) if tecnico_id else None,
         data_insercao=registro.data_insercao,
         data_desligamento=registro.data_desligamento,
         congelamento_ativo=bool(registro.congelamento_ativo),
         congelamento_inicio=registro.congelamento_inicio,
         congelamento_fim=registro.congelamento_fim,
+        atividade=getattr(registro, "atividade", None),
+        local=getattr(registro, "local", None),
+        indicacao=getattr(registro, "indicacao", None),
         observacoes=registro.observacoes,
         registrado_por_id=registro.registrado_por_id,
         registrado_por_nome=usuarios_map.get(registro.registrado_por_id),
@@ -1574,59 +1744,38 @@ async def listar_pot(
         None,
         description="Filtra pelo status atual do convivente. Vazio ou 'Todos' lista todos.",
     ),
+    local: Optional[str] = Query(
+        None,
+        description="Filtra pelo local do POT. Vazio ou 'Todos' lista todos.",
+    ),
+    tecnico_id: Optional[str] = Query(
+        None,
+        description="Filtra pelo técnico de referência do convivente. Use __sem_tecnico__ para sem vínculo.",
+    ),
+    situacao_atual: Optional[str] = Query(
+        None,
+        description="Filtra pela situação atual do POT (última evolução).",
+    ),
     offset: int = Query(0, ge=0),
     limite: int = Query(REGISTROS_POR_PAGINA_PADRAO, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
     usuario: dict = Depends(exigir_acesso_acompanhamentos),
 ):
     instituicao_id = obter_instituicao_escopo(usuario)
-
-    query = (
-        select(AcompanhamentoPotDB, ConviventeDB)
-        .join(ConviventeDB, ConviventeDB.id == AcompanhamentoPotDB.convivente_id)
-        .where(
-            AcompanhamentoPotDB.instituicao_id == instituicao_id,
-            AcompanhamentoPotDB.registro_pai_id.is_(None),
-        )
-        .order_by(AcompanhamentoPotDB.criado_em.desc())
+    items, total = await _carregar_itens_pot_filtrados(
+        db,
+        instituicao_id,
+        busca=busca,
+        data_inicio=data_inicio,
+        data_fim=data_fim,
+        status_convivente=status_convivente,
+        local=local,
+        tecnico_id=tecnico_id,
+        situacao_atual=situacao_atual,
+        offset=offset,
+        limite=limite,
+        incluir_evolucoes=False,
     )
-
-    if busca:
-        query = _aplicar_busca_convivente(query, busca)
-
-    status_filtro = (status_convivente or "").strip()
-    if status_filtro and status_filtro.lower() not in {"todos", "todas", "all"}:
-        query = query.where(ConviventeDB.status == status_filtro)
-
-    if data_inicio:
-        query = query.where(AcompanhamentoPotDB.data_insercao >= _parse_data_filtro(data_inicio))
-    if data_fim:
-        query = query.where(AcompanhamentoPotDB.data_insercao <= _parse_data_filtro(data_fim))
-
-    total = (
-        await db.execute(select(func.count()).select_from(query.subquery()))
-    ).scalar_one()
-
-    rows = (
-        await db.execute(query.offset(offset).limit(limite))
-    ).all()
-
-    ids_principais = {registro.id for registro, _ in rows}
-    situacao_map = await _mapear_situacao_atual_pot(db, instituicao_id, ids_principais)
-
-    usuario_ids = {registro.registrado_por_id for registro, _ in rows}
-    usuarios_map = await _mapear_usuarios(db, usuario_ids)
-    conv_map = {convivente.id: convivente for _, convivente in rows}
-
-    items = [
-        _map_pot(
-            registro,
-            conv_map,
-            usuarios_map,
-            situacao_atual=situacao_map.get(registro.id, "Em participação"),
-        ).model_dump()
-        for registro, _ in rows
-    ]
 
     return AcompanhamentosListaResponse(
         items=items,
@@ -1642,7 +1791,60 @@ async def listar_pot(
 async def opcoes_pot(
     usuario: dict = Depends(exigir_acesso_acompanhamentos),
 ):
-    return {"status_evolucao": STATUS_EVOLUCAO_POT}
+    return {
+        "status_evolucao": STATUS_EVOLUCAO_POT,
+        "locais": LOCAIS_POT,
+    }
+
+
+@router.get("/pot/exportar")
+async def exportar_pot(
+    busca: Optional[str] = Query(None),
+    data_inicio: Optional[str] = Query(None),
+    data_fim: Optional[str] = Query(None),
+    status_convivente: Optional[str] = Query(None),
+    local: Optional[str] = Query(None),
+    tecnico_id: Optional[str] = Query(None),
+    situacao_atual: Optional[str] = Query(None),
+    incluir_evolucoes: bool = Query(True),
+    db: AsyncSession = Depends(get_db),
+    usuario: dict = Depends(exigir_acesso_acompanhamentos),
+):
+    """Exporta a lista POT com os mesmos filtros da tela (até LIMITE_EXPORT_POT)."""
+    instituicao_id = obter_instituicao_escopo(usuario)
+    items, total = await _carregar_itens_pot_filtrados(
+        db,
+        instituicao_id,
+        busca=busca,
+        data_inicio=data_inicio,
+        data_fim=data_fim,
+        status_convivente=status_convivente,
+        local=local,
+        tecnico_id=tecnico_id,
+        situacao_atual=situacao_atual,
+        offset=0,
+        limite=LIMITE_EXPORT_POT,
+        incluir_evolucoes=incluir_evolucoes,
+        limite_interno=LIMITE_EXPORT_POT,
+    )
+
+    return {
+        "items": items,
+        "total": total,
+        "limit": LIMITE_EXPORT_POT,
+        "truncado": total > LIMITE_EXPORT_POT,
+        "incluir_evolucoes": incluir_evolucoes,
+        "filtros": {
+            "busca": busca,
+            "data_inicio": data_inicio,
+            "data_fim": data_fim,
+            "status_convivente": status_convivente,
+            "local": local,
+            "tecnico_id": tecnico_id,
+            "situacao_atual": situacao_atual,
+        },
+        "gerado_em": agora_sao_paulo().isoformat(sep=" ", timespec="seconds"),
+    }
 
 
 @router.get("/pot/{registro_id}", response_model=AcompanhamentoPotResponse)
@@ -1668,9 +1870,11 @@ async def obter_pot(
         )
     ).scalars().all()
 
-    usuario_ids = {registro.registrado_por_id, *(item.registrado_por_id for item in evolucoes_db)}
-    usuarios_map = await _mapear_usuarios(db, usuario_ids)
     convivente = await _obter_convivente_instituicao(db, instituicao_id, registro.convivente_id)
+    usuario_ids = {registro.registrado_por_id, *(item.registrado_por_id for item in evolucoes_db)}
+    if convivente.tecnico_id:
+        usuario_ids.add(convivente.tecnico_id)
+    usuarios_map = await _mapear_usuarios(db, usuario_ids)
     conv_map = {convivente.id: convivente}
 
     situacao_atual = evolucoes_db[0].status_evolucao if evolucoes_db else "Em participação"
@@ -1695,7 +1899,7 @@ async def criar_pot(
     usuario: dict = Depends(exigir_edicao_acompanhamentos),
 ):
     instituicao_id = obter_instituicao_escopo(usuario)
-    await _obter_convivente_instituicao(
+    convivente = await _obter_convivente_instituicao(
         db,
         instituicao_id,
         payload.convivente_id,
@@ -1710,7 +1914,10 @@ async def criar_pot(
         congelamento_ativo=payload.congelamento_ativo,
         congelamento_inicio=payload.congelamento_inicio,
         congelamento_fim=payload.congelamento_fim,
-        observacoes=(payload.observacoes or "").strip() or None,
+        atividade=_texto_opcional(payload.atividade),
+        local=payload.local,
+        indicacao=_texto_opcional(payload.indicacao),
+        observacoes=_texto_opcional(payload.observacoes),
         registrado_por_id=_usuario_operacional_id(usuario),
         criado_em=agora,
         atualizado_em=agora,
@@ -1726,8 +1933,10 @@ async def criar_pot(
     await db.commit()
     await db.refresh(registro)
 
-    convivente = await _obter_convivente_instituicao(db, instituicao_id, registro.convivente_id)
-    usuarios_map = await _mapear_usuarios(db, {registro.registrado_por_id})
+    usuario_ids = {registro.registrado_por_id}
+    if convivente.tecnico_id:
+        usuario_ids.add(convivente.tecnico_id)
+    usuarios_map = await _mapear_usuarios(db, usuario_ids)
     return _map_pot(
         registro,
         {convivente.id: convivente},
@@ -1747,8 +1956,8 @@ async def atualizar_pot(
     registro = await _obter_pot_principal(db, instituicao_id, registro_id)
 
     for campo, valor in payload.model_dump(exclude_unset=True).items():
-        if campo == "observacoes":
-            valor = (valor or "").strip() or None
+        if campo in {"observacoes", "atividade", "indicacao"}:
+            valor = _texto_opcional(valor)
         setattr(registro, campo, valor)
     registro.atualizado_em = agora_sao_paulo()
 
@@ -1763,7 +1972,10 @@ async def atualizar_pot(
 
     situacao_map = await _mapear_situacao_atual_pot(db, instituicao_id, {registro.id})
     convivente = await _obter_convivente_instituicao(db, instituicao_id, registro.convivente_id)
-    usuarios_map = await _mapear_usuarios(db, {registro.registrado_por_id})
+    usuario_ids = {registro.registrado_por_id}
+    if convivente.tecnico_id:
+        usuario_ids.add(convivente.tecnico_id)
+    usuarios_map = await _mapear_usuarios(db, usuario_ids)
     return _map_pot(
         registro,
         {convivente.id: convivente},
@@ -2214,6 +2426,8 @@ async def listar_acompanhamentos_por_convivente(
             for evolucao in item.get("evolucoes") or []:
                 if evolucao.get("registrado_por_id"):
                     usuario_ids.add(evolucao["registrado_por_id"])
+        if convivente.tecnico_id:
+            usuario_ids.add(convivente.tecnico_id)
         usuarios_map = await _mapear_usuarios(db, usuario_ids)
         pagina = await _carregar_secao_acompanhamentos_convivente(
             db,
@@ -2255,6 +2469,8 @@ async def listar_acompanhamentos_por_convivente(
                 if evolucao.get("registrado_por_id"):
                     usuario_ids.add(evolucao["registrado_por_id"])
 
+    if convivente.tecnico_id:
+        usuario_ids.add(convivente.tecnico_id)
     usuarios_map = await _mapear_usuarios(db, usuario_ids)
 
     secoes_resposta = {}

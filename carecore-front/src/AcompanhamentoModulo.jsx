@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import Sidebar from './Sidebar';
-import { AppShell, MainShell, PageHeader, PremiumButton, ScrollArea } from './components/PremiumUI';
+import { AppShell, MainShell, PageHeader, PremiumButton, ReportActionButton, ScrollArea } from './components/PremiumUI';
 import { useAuth } from './context/AuthContext';
 import api from './services/api';
 import {
   atualizarAcompanhamento,
   criarAcompanhamento,
   excluirAcompanhamento,
+  exportarPot,
   listarAcompanhamentos,
 } from './services/acompanhamentosService';
 import { STATUS_FILTRO_POR_MODULO, obterModuloPorSlug } from './config/acompanhamentosConfig';
@@ -22,6 +23,16 @@ import DiscussaoEvolucoesModal from './components/acompanhamentos/DiscussaoEvolu
 import ModalAlertaOk from './components/ModalAlertaOk';
 import { filtrarOrdenarConviventesPorBusca } from './utils/conviventeBuscaUtils';
 import { REGISTROS_POR_PAGINA_PRONTUARIO } from './utils/prontuarioHistoricoFluxoUtils';
+import {
+  exportarPotXlsx,
+  imprimirPotLista,
+  montarFiltrosRotuloPot,
+} from './utils/potListaExportPrint';
+import {
+  FILTRO_TECNICO_SEM_VINCULADO,
+  rotuloFiltroTecnicoRelatorios,
+} from './utils/relatoriosUtils';
+import { obterLogoRelatorioDataUrl } from './utils/relatorioIdentidadePrint';
 
 const BUSCA_DEBOUNCE_MS = 350;
 
@@ -152,6 +163,9 @@ export default function AcompanhamentoModulo() {
   const [erro, setErro] = useState('');
   const [sucesso, setSucesso] = useState('');
   const [alertaOk, setAlertaOk] = useState({ aberto: false, titulo: 'Atenção', mensagem: '' });
+  const [preparandoRelatorio, setPreparandoRelatorio] = useState(false);
+  const [incluirEvolucoesRelatorio, setIncluirEvolucoesRelatorio] = useState(true);
+  const [tecnicos, setTecnicos] = useState([]);
 
   const [busca, setBusca] = useState('');
   const [buscaDebounced, setBuscaDebounced] = useState('');
@@ -216,6 +230,15 @@ export default function AcompanhamentoModulo() {
     }
   }, []);
 
+  const carregarTecnicos = useCallback(async () => {
+    try {
+      const response = await api.get('/api/tecnicos');
+      setTecnicos(response.data || []);
+    } catch {
+      setTecnicos([]);
+    }
+  }, []);
+
   async function carregarDados({ append = false, offset = 0 } = {}) {
     const endpoint = obterModuloPorSlug(slug)?.endpoint;
     if (!endpoint) return;
@@ -245,6 +268,86 @@ export default function AcompanhamentoModulo() {
       setCarregandoMais(false);
     }
   }
+
+  function montarParamsFiltrosPot() {
+    const params = { incluir_evolucoes: incluirEvolucoesRelatorio };
+    if (buscaDebounced.trim()) params.busca = buscaDebounced.trim();
+    if (dataInicio) params.data_inicio = dataInicio;
+    if (dataFim) params.data_fim = dataFim;
+    Object.entries(filtrosExtras).forEach(([chave, valor]) => {
+      if (valor) params[chave] = valor;
+    });
+    return params;
+  }
+
+  async function carregarExportacaoPot() {
+    const dados = await exportarPot(montarParamsFiltrosPot());
+    const filtros = montarFiltrosRotuloPot({
+      busca: buscaDebounced,
+      dataInicio,
+      dataFim,
+      filtrosExtras,
+      total: dados.total || 0,
+      incluirEvolucoes: incluirEvolucoesRelatorio,
+      tecnicoRotulo: filtrosExtras.tecnico_id
+        ? rotuloFiltroTecnicoRelatorios(filtrosExtras.tecnico_id, tecnicos)
+        : '',
+    });
+    return { dados, filtros };
+  }
+
+  const exportarListaPot = async () => {
+    if (slug !== 'pot') return;
+    try {
+      setPreparandoRelatorio(true);
+      setErro('');
+      const { dados, filtros } = await carregarExportacaoPot();
+      await exportarPotXlsx({
+        items: dados.items || [],
+        filtros,
+        truncado: Boolean(dados.truncado),
+        incluirEvolucoes: incluirEvolucoesRelatorio,
+      });
+      if (dados.truncado) {
+        setSucesso('Exportação gerada (lista truncada no limite). Refine os filtros se precisar de todos.');
+      } else {
+        setSucesso(`Exportação gerada com ${dados.total || 0} registro(s).`);
+      }
+    } catch (error) {
+      setErro(extrairMensagemErroApi(error, 'Não foi possível exportar a lista do POT.'));
+    } finally {
+      setPreparandoRelatorio(false);
+    }
+  };
+
+  const imprimirListaPot = async () => {
+    if (slug !== 'pot') return;
+    try {
+      setPreparandoRelatorio(true);
+      setErro('');
+      const [{ dados, filtros }, identidadeResp] = await Promise.all([
+        carregarExportacaoPot(),
+        api.get('/api/organizacao/identidade-relatorios').catch(() => ({ data: null })),
+      ]);
+      const identidadeRelatorio = identidadeResp?.data || null;
+      const logoRelatorioDataUrl = await obterLogoRelatorioDataUrl(identidadeRelatorio);
+      await imprimirPotLista({
+        items: dados.items || [],
+        filtros,
+        geradoEm: dados.gerado_em
+          ? new Date(dados.gerado_em).toLocaleString('pt-BR')
+          : new Date().toLocaleString('pt-BR'),
+        truncado: Boolean(dados.truncado),
+        incluirEvolucoes: incluirEvolucoesRelatorio,
+        identidadeRelatorio,
+        logoRelatorioDataUrl,
+      });
+    } catch (error) {
+      setErro(extrairMensagemErroApi(error, 'Não foi possível preparar a impressão do POT.'));
+    } finally {
+      setPreparandoRelatorio(false);
+    }
+  };
 
   useEffect(() => {
     carregandoMaisRef.current = carregandoMais;
@@ -289,6 +392,17 @@ export default function AcompanhamentoModulo() {
   useEffect(() => {
     carregarConviventes();
   }, [carregarConviventes]);
+
+  useEffect(() => {
+    const precisaTecnicos = (obterModuloPorSlug(slug)?.filtrosExtras || []).some(
+      (filtro) => filtro.tipo === 'tecnico',
+    );
+    if (precisaTecnicos) {
+      carregarTecnicos();
+    } else {
+      setTecnicos([]);
+    }
+  }, [slug, carregarTecnicos]);
 
   useEffect(() => {
     carregarDados();
@@ -502,11 +616,42 @@ export default function AcompanhamentoModulo() {
         <PageHeader
           title={modulo.titulo}
           subtitle={modulo.subtitulo}
-          actions={!somenteLeitura ? (
-            <PremiumButton onClick={abrirNovo}>
-              Novo registro
-            </PremiumButton>
-          ) : null}
+          actions={(
+            <div className="flex flex-wrap items-center gap-2">
+              {slug === 'pot' && (
+                <>
+                  <label className="mr-1 inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={incluirEvolucoesRelatorio}
+                      onChange={(event) => setIncluirEvolucoesRelatorio(event.target.checked)}
+                      className="h-4 w-4 rounded border-slate-300"
+                    />
+                    Incluir evoluções
+                  </label>
+                  <ReportActionButton
+                    action="export"
+                    onClick={exportarListaPot}
+                    disabled={preparandoRelatorio || loading}
+                  >
+                    {preparandoRelatorio ? 'Preparando...' : 'Exportar XLSX'}
+                  </ReportActionButton>
+                  <ReportActionButton
+                    action="print"
+                    onClick={imprimirListaPot}
+                    disabled={preparandoRelatorio || loading}
+                  >
+                    Imprimir
+                  </ReportActionButton>
+                </>
+              )}
+              {!somenteLeitura && (
+                <PremiumButton onClick={abrirNovo}>
+                  Novo registro
+                </PremiumButton>
+              )}
+            </div>
+          )}
         />
 
         {somenteLeitura && (
@@ -566,7 +711,22 @@ export default function AcompanhamentoModulo() {
             {(modulo.filtrosExtras || []).map(filtro => (
               <label key={filtro.nome} className="text-sm">
                 <span className="mb-1 block font-medium text-slate-600">{filtro.rotulo}</span>
-                {filtro.tipo === 'select' ? (
+                {filtro.tipo === 'tecnico' ? (
+                  <select
+                    value={filtrosExtras[filtro.nome] || ''}
+                    onChange={(event) => setFiltrosExtras(prev => ({
+                      ...prev,
+                      [filtro.nome]: event.target.value,
+                    }))}
+                    className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
+                  >
+                    <option value="">Todos</option>
+                    <option value={FILTRO_TECNICO_SEM_VINCULADO}>Sem Técnico Vinculado</option>
+                    {tecnicos.map(tecnico => (
+                      <option key={tecnico.id} value={tecnico.id}>{tecnico.nome}</option>
+                    ))}
+                  </select>
+                ) : filtro.tipo === 'select' ? (
                   <select
                     value={filtrosExtras[filtro.nome] || ''}
                     onChange={(event) => setFiltrosExtras(prev => ({
@@ -611,6 +771,11 @@ export default function AcompanhamentoModulo() {
             >
               Limpar
             </PremiumButton>
+            {slug === 'pot' && (
+              <span className="self-center text-xs text-slate-500">
+                Exportar/Imprimir usam os filtros aplicados. Use &quot;Incluir evoluções&quot; para com ou sem detalhes.
+              </span>
+            )}
           </div>
         </div>
 
@@ -871,6 +1036,24 @@ export default function AcompanhamentoModulo() {
                 {registroEdicao && (
                   <div className="rounded-xl bg-slate-50 px-3 py-2 text-sm text-slate-700">
                     Convivente: <strong>{registroEdicao.convivente_nome}</strong>
+                    {modulo?.slug === 'pot' && (
+                      <>
+                        <span className="mx-2 text-slate-300">·</span>
+                        Status: <strong>{registroEdicao.status_convivente || '—'}</strong>
+                        <span className="mx-2 text-slate-300">·</span>
+                        Referência: <strong>{registroEdicao.tecnico_referencia || 'não definido'}</strong>
+                      </>
+                    )}
+                  </div>
+                )}
+
+                {!registroEdicao && modulo?.slug === 'pot' && form.convivente_id && (
+                  <div className="rounded-xl bg-slate-50 px-3 py-2 text-sm text-slate-700">
+                    Referência:{' '}
+                    <strong>
+                      {conviventes.find(item => item.id === form.convivente_id)?.tecnico_nome || 'não definido'}
+                    </strong>
+                    {' '}(técnico do cadastro do convivente)
                   </div>
                 )}
 

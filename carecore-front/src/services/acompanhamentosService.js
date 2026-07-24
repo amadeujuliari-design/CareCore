@@ -58,3 +58,8 @@ export async function criarEvolucaoPot(registroId, payload) {
   const { data } = await api.post(`${BASE}/pot/${registroId}/evolucoes`, payload);
   return data;
 }
+
+export async function exportarPot(params = {}) {
+  const { data } = await api.get(`${BASE}/pot/exportar`, { params });
+  return data;
+}

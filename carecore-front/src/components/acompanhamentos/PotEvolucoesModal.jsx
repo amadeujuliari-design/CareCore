@@ -119,6 +119,15 @@ export default function PotEvolucoesModal({
                 {detalhe?.data_desligamento ? ` · Desligamento: ${formatarData(detalhe.data_desligamento)}` : ''}
                 {detalhe?.congelamento_ativo ? ' · Congelamento ativo' : ''}
               </p>
+              <p className="mt-1 text-slate-600">
+                {detalhe?.local ? `Local: ${detalhe.local}` : null}
+                {detalhe?.atividade ? `${detalhe?.local ? ' · ' : ''}Atividade: ${detalhe.atividade}` : null}
+                {!detalhe?.local && !detalhe?.atividade ? 'Local e atividade ainda não informados.' : null}
+              </p>
+              <p className="mt-1 text-slate-600">
+                Referência: {detalhe?.tecnico_referencia || 'não definido'}
+                {detalhe?.indicacao ? ` · Indicação: ${detalhe.indicacao}` : ''}
+              </p>
               {detalhe?.observacoes && (
                 <p className="mt-2 whitespace-pre-wrap text-slate-600">{detalhe.observacoes}</p>
               )}

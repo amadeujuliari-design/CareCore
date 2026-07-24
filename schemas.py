@@ -2843,6 +2843,30 @@ class AcompanhamentoTbResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+LOCAIS_POT = [
+    "POT I",
+    "POT II",
+    "POT Glicério",
+    "Reviravolta",
+    "Trabalho Formal",
+    "Trabalho Informal",
+]
+
+
+def _validar_local_pot(valor: Optional[str]) -> Optional[str]:
+    if valor is None:
+        return None
+    texto = str(valor).strip()
+    if not texto:
+        return None
+    if texto not in LOCAIS_POT:
+        raise ValueError(
+            "Local inválido. Use: POT I, POT II, POT Glicério, Reviravolta, "
+            "Trabalho Formal ou Trabalho Informal."
+        )
+    return texto
+
+
 class AcompanhamentoPotCreate(BaseModel):
     convivente_id: str
     data_insercao: Optional[date] = None
@@ -2850,7 +2874,15 @@ class AcompanhamentoPotCreate(BaseModel):
     congelamento_ativo: bool = False
     congelamento_inicio: Optional[date] = None
     congelamento_fim: Optional[date] = None
+    atividade: Optional[str] = None
+    local: Optional[str] = None
+    indicacao: Optional[str] = None
     observacoes: Optional[str] = None
+
+    @field_validator("local")
+    @classmethod
+    def validar_local_pot_create(cls, valor: Optional[str]):
+        return _validar_local_pot(valor)
 
 
 class AcompanhamentoPotUpdate(BaseModel):
@@ -2859,7 +2891,15 @@ class AcompanhamentoPotUpdate(BaseModel):
     congelamento_ativo: Optional[bool] = None
     congelamento_inicio: Optional[date] = None
     congelamento_fim: Optional[date] = None
+    atividade: Optional[str] = None
+    local: Optional[str] = None
+    indicacao: Optional[str] = None
     observacoes: Optional[str] = None
+
+    @field_validator("local")
+    @classmethod
+    def validar_local_pot_update(cls, valor: Optional[str]):
+        return _validar_local_pot(valor)
 
 
 STATUS_EVOLUCAO_POT = [
@@ -2914,11 +2954,15 @@ class AcompanhamentoPotResponse(BaseModel):
     data_evolucao: Optional[date] = None
     situacao_atual: Optional[str] = None
     status_convivente: Optional[str] = None
+    tecnico_referencia: Optional[str] = None
     data_insercao: Optional[date] = None
     data_desligamento: Optional[date] = None
     congelamento_ativo: bool = False
     congelamento_inicio: Optional[date] = None
     congelamento_fim: Optional[date] = None
+    atividade: Optional[str] = None
+    local: Optional[str] = None
+    indicacao: Optional[str] = None
     observacoes: Optional[str] = None
     registrado_por_id: str
     registrado_por_nome: Optional[str] = None
