@@ -173,7 +173,7 @@ export const MODULOS_ACOMPANHAMENTO = {
   pot: {
     slug: 'pot',
     titulo: 'Programa Operação Trabalho',
-    menuLabel: 'POT',
+    menuLabel: 'POT/Reviravolta/Serviços',
     subtitulo: 'Acompanhamento de participação no Programa Operação Trabalho. Registre evoluções: participação, congelamento, desligamento ou encerramento.',
     endpoint: 'pot',
     icone: ShieldPlus,
