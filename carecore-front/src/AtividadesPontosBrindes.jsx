@@ -1,6 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Sidebar from './Sidebar';
-import { AppShell, MainShell, PageHeader, PremiumButton, ScrollArea } from './components/PremiumUI';
+import {
+  AppShell,
+  MainShell,
+  PageHeader,
+  PremiumButton,
+  ReportActionButton,
+  ScrollArea,
+} from './components/PremiumUI';
 import LeitorCarteirinhaModal from './components/LeitorCarteirinhaModal';
 import { useAuth } from './context/AuthContext';
 import {
@@ -10,6 +17,12 @@ import {
 } from './services/atividadesService';
 import { PONTOS_POR_PRESENCA_ATIVIDADE, usuarioSomenteLeituraAtividades } from './config/atividadesConfig';
 import { encontrarConviventePorCodigo } from './utils/conviventeIdentificacaoUtils';
+import {
+  exportarRankingPontosBrindesXlsx,
+  imprimirRankingPontosBrindes,
+  resolverItensRelatorioPontosBrindes,
+} from './utils/atividadesPontosBrindesPrint';
+import { buscarIdentidadeRelatorios } from './utils/relatorioIdentidadePrint';
 
 function formatarDataHora(valor) {
   if (!valor) return '-';
@@ -30,9 +43,11 @@ export default function AtividadesPontosBrindes() {
   const [conviventeSelecionado, setConviventeSelecionado] = useState(null);
   const [loading, setLoading] = useState(true);
   const [salvando, setSalvando] = useState(false);
+  const [preparandoRelatorio, setPreparandoRelatorio] = useState(false);
   const [erro, setErro] = useState('');
   const [sucesso, setSucesso] = useState('');
   const [scannerAberto, setScannerAberto] = useState(false);
+  const [identidadeRelatorio, setIdentidadeRelatorio] = useState(null);
 
   const carregarDados = useCallback(async () => {
     setLoading(true);
@@ -58,6 +73,10 @@ export default function AtividadesPontosBrindes() {
     return () => clearTimeout(timer);
   }, [carregarDados, busca]);
 
+  useEffect(() => {
+    buscarIdentidadeRelatorios().then(setIdentidadeRelatorio);
+  }, []);
+
   const conviventesParaBusca = useMemo(
     () => ranking.map((item) => ({
       id: item.convivente_id,
@@ -68,6 +87,75 @@ export default function AtividadesPontosBrindes() {
     })),
     [ranking],
   );
+
+  const carregarItensRelatorio = useCallback(async () => {
+    if (conviventeSelecionado?.convivente_id) {
+      return resolverItensRelatorioPontosBrindes({
+        ranking,
+        selecionado: conviventeSelecionado,
+      });
+    }
+
+    const rankingCompleto = await obterRankingPontosAtividades({
+      somente_com_saldo: true,
+    });
+    return resolverItensRelatorioPontosBrindes({
+      ranking: rankingCompleto.items || [],
+      selecionado: null,
+    });
+  }, [conviventeSelecionado, ranking]);
+
+  const exportarRelatorio = async () => {
+    try {
+      setPreparandoRelatorio(true);
+      setErro('');
+      const { itens, rotuloEscopo } = await carregarItensRelatorio();
+      if (!itens.length) {
+        setErro(
+          conviventeSelecionado
+            ? 'Selecione um convivente válido para exportar.'
+            : 'Não há conviventes com saldo de pontos para exportar.',
+        );
+        return;
+      }
+      await exportarRankingPontosBrindesXlsx({ itens, rotuloEscopo });
+      setSucesso(`Exportação gerada (${itens.length} registro(s)).`);
+    } catch (error) {
+      setErro(error.response?.data?.detail || 'Não foi possível exportar o ranking de pontos.');
+    } finally {
+      setPreparandoRelatorio(false);
+    }
+  };
+
+  const imprimirRelatorio = async () => {
+    try {
+      setPreparandoRelatorio(true);
+      setErro('');
+      const { itens, rotuloEscopo } = await carregarItensRelatorio();
+      if (!itens.length) {
+        setErro(
+          conviventeSelecionado
+            ? 'Selecione um convivente válido para imprimir.'
+            : 'Não há conviventes com saldo de pontos para imprimir.',
+        );
+        return;
+      }
+      let identidade = identidadeRelatorio;
+      if (!identidade) {
+        identidade = await buscarIdentidadeRelatorios();
+        setIdentidadeRelatorio(identidade);
+      }
+      await imprimirRankingPontosBrindes({
+        itens,
+        rotuloEscopo,
+        identidadeRelatorio: identidade,
+      });
+    } catch (error) {
+      setErro(error.response?.data?.detail || 'Não foi possível preparar a impressão do ranking.');
+    } finally {
+      setPreparandoRelatorio(false);
+    }
+  };
 
   const abrirResgate = () => {
     if (somenteLeitura) return;
@@ -136,9 +224,33 @@ export default function AtividadesPontosBrindes() {
       <Sidebar />
       <MainShell>
         <PageHeader
-          titulo="Pontos e brindes"
-          subtitulo={`Cada presença em atividade vale ${PONTOS_POR_PRESENCA_ATIVIDADE} pontos cumulativos para troca por brindes.`}
+          title="Pontos e brindes"
+          subtitle={`Cada presença em atividade vale ${PONTOS_POR_PRESENCA_ATIVIDADE} pontos cumulativos para troca por brindes.`}
+          actions={(
+            <>
+              <ReportActionButton
+                action="export"
+                onClick={exportarRelatorio}
+                disabled={preparandoRelatorio || loading}
+              >
+                Exportar XLSX
+              </ReportActionButton>
+              <ReportActionButton
+                action="print"
+                onClick={imprimirRelatorio}
+                disabled={preparandoRelatorio || loading}
+              >
+                Imprimir
+              </ReportActionButton>
+            </>
+          )}
         />
+
+        <p className="mb-4 text-xs text-slate-500">
+          {conviventeSelecionado
+            ? `Relatório: convivente selecionado (${conviventeSelecionado.nome}).`
+            : 'Relatório: todos os conviventes com saldo de pontos.'}
+        </p>
 
         {erro && (
           <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
@@ -153,8 +265,8 @@ export default function AtividadesPontosBrindes() {
 
         <div className="mb-6 grid gap-4 lg:grid-cols-3">
           <div className="rounded-2xl border border-brand/20 bg-white p-4 shadow-sm lg:col-span-1">
-            <h2 className="text-sm font-bold text-brand mb-3">Resgate de brinde</h2>
-            <p className="text-xs text-gray-600 mb-4">
+            <h2 className="mb-3 text-sm font-bold text-brand">Resgate de brinde</h2>
+            <p className="mb-4 text-xs text-gray-600">
               Defina os pontos e leia a carteirinha do convivente para confirmar a compra.
               {conviventeSelecionado && (
                 <span className="mt-2 block font-semibold text-gray-800">
@@ -165,7 +277,7 @@ export default function AtividadesPontosBrindes() {
 
             <div className="space-y-3">
               <div>
-                <label className="block text-xs font-semibold text-gray-700 mb-1">Pontos a utilizar</label>
+                <label className="mb-1 block text-xs font-semibold text-gray-700">Pontos a utilizar</label>
                 <input
                   type="number"
                   min="1"
@@ -177,7 +289,7 @@ export default function AtividadesPontosBrindes() {
                 />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-gray-700 mb-1">Descrição do brinde (opcional)</label>
+                <label className="mb-1 block text-xs font-semibold text-gray-700">Descrição do brinde (opcional)</label>
                 <input
                   type="text"
                   value={descricaoBrinde}
@@ -246,8 +358,8 @@ export default function AtividadesPontosBrindes() {
                       return (
                         <tr
                           key={item.convivente_id}
-                          onClick={() => !somenteLeitura && setConviventeSelecionado(item)}
-                          className={`border-b border-gray-100 cursor-pointer hover:bg-brand/5 ${
+                          onClick={() => setConviventeSelecionado(item)}
+                          className={`cursor-pointer border-b border-gray-100 hover:bg-brand/5 ${
                             selecionado ? 'bg-brand/10' : ''
                           }`}
                         >
@@ -273,7 +385,7 @@ export default function AtividadesPontosBrindes() {
         </div>
 
         <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-          <h2 className="text-sm font-bold text-brand mb-3">Últimos resgates</h2>
+          <h2 className="mb-3 text-sm font-bold text-brand">Últimos resgates</h2>
           <ScrollArea className="max-h-72">
             <table className="min-w-full text-sm">
               <thead>
@@ -293,7 +405,7 @@ export default function AtividadesPontosBrindes() {
                 ) : (
                   resgates.map((item) => (
                     <tr key={item.id} className="border-b border-gray-100">
-                      <td className="py-2 pr-2 whitespace-nowrap">{formatarDataHora(item.registrado_em)}</td>
+                      <td className="whitespace-nowrap py-2 pr-2">{formatarDataHora(item.registrado_em)}</td>
                       <td className="py-2 pr-2">{item.convivente_nome}</td>
                       <td className="py-2 pr-2">{item.descricao_brinde || '—'}</td>
                       <td className="py-2 pr-2 text-center font-semibold text-amber-700">-{item.pontos_utilizados}</td>
