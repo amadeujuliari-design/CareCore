@@ -21,6 +21,7 @@ from convivente_datas_cadastro import (
     ajustar_data_inclusao_convivente,
     bloquear_alteracao_data_entrada_convivente,
     listar_datas_inativacao_historico,
+    listar_datas_inativacao_historico_lote,
     obter_data_primeira_interacao,
     primeira_interacao_operacional,
     preparar_datas_convivente_criacao,
@@ -5569,6 +5570,7 @@ from presenca_operacional import (
     MAX_DIAS_RELATORIO_PRESENCA,
     montar_status_presenca_por_dia,
     normalizar_filtro_situacao_presenca,
+    resolver_inicio_intervalo_inativo_reativacao,
     sem_interacao_rotina_24h,
     totais_status_presenca,
     FILTRO_SITUACAO_AUSENTES,
@@ -6831,6 +6833,15 @@ async def relatorio_presenca_periodo(
         data_inicio=inicio,
         data_fim=fim,
     )
+    ids_reativados = [
+        convivente.id
+        for convivente, _ in conviventes_resultado
+        if convivente.data_nova_vinculacao is not None
+    ]
+    inativacoes_historico_por_convivente = await listar_datas_inativacao_historico_lote(
+        db,
+        ids_reativados,
+    )
     linhas = []
 
     for convivente, tecnico_nome in conviventes_resultado:
@@ -6846,6 +6857,11 @@ async def relatorio_presenca_periodo(
             status_convivente=convivente.status,
             ausencia_justificada_desde=convivente.ausencia_justificada_desde,
             periodos_ausencia_justificada=periodos_aj_por_convivente.get(convivente.id, []),
+            data_nova_vinculacao=convivente.data_nova_vinculacao,
+            datas_inativacao_historico=inativacoes_historico_por_convivente.get(
+                convivente.id,
+                [],
+            ),
         )
         totais = totais_status_presenca(status_por_dia)
 
@@ -7544,6 +7560,15 @@ async def relatorio_sisa_diario(
         data_inicio=data_referencia,
         data_fim=data_referencia,
     )
+    ids_reativados = [
+        convivente.id
+        for convivente in conviventes
+        if convivente.data_nova_vinculacao is not None
+    ]
+    inativacoes_historico_por_convivente = await listar_datas_inativacao_historico_lote(
+        db,
+        ids_reativados,
+    )
 
     linhas = []
 
@@ -7600,6 +7625,12 @@ async def relatorio_sisa_diario(
                 convivente.data_entrada,
             ),
             ausencia_justificada=ausencia_justificada,
+            data_nova_vinculacao=convivente.data_nova_vinculacao,
+            data_inativacao=convivente.data_inativacao,
+            datas_inativacao_historico=inativacoes_historico_por_convivente.get(
+                convivente.id,
+                [],
+            ),
         )
         ausente_operacional = (
             convivente.status == "Ativo"
@@ -7840,6 +7871,15 @@ async def relatorio_sisa_mensal(
         data_inicio=inicio.date(),
         data_fim=fim.date(),
     )
+    ids_reativados = [
+        convivente.id
+        for convivente in conviventes
+        if convivente.data_nova_vinculacao is not None
+    ]
+    inativacoes_historico_por_convivente = await listar_datas_inativacao_historico_lote(
+        db,
+        ids_reativados,
+    )
 
     linhas = []
 
@@ -7853,6 +7893,12 @@ async def relatorio_sisa_mensal(
             data_primeira_vinculacao_convivente(
                 convivente.data_inclusao,
                 convivente.data_entrada,
+            ),
+            data_nova_vinculacao=convivente.data_nova_vinculacao,
+            inicio_intervalo_inativo=resolver_inicio_intervalo_inativo_reativacao(
+                convivente.data_nova_vinculacao,
+                convivente.data_inativacao,
+                inativacoes_historico_por_convivente.get(convivente.id, []),
             ),
         ))
         dias_justificados = expandir_dias_justificados(

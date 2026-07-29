@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
+from typing import Sequence
 
 from presenca_operacional import (
     STATUS_DIA_AUSENTE,
@@ -81,6 +82,8 @@ def status_carecore_no_dia(
     data_inativacao: date | None,
     status_convivente: str,
     ausencia_justificada_desde: date | None,
+    data_nova_vinculacao: date | None = None,
+    datas_inativacao_historico: Sequence[date] | None = None,
 ) -> str:
     mapa = montar_status_presenca_por_dia(
         movimentos_fluxo,
@@ -90,6 +93,8 @@ def status_carecore_no_dia(
         data_inativacao=data_inativacao,
         status_convivente=status_convivente,
         ausencia_justificada_desde=ausencia_justificada_desde,
+        data_nova_vinculacao=data_nova_vinculacao,
+        datas_inativacao_historico=datas_inativacao_historico,
     )
     return mapa[dia.isoformat()]
 

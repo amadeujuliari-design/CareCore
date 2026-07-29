@@ -358,6 +358,8 @@ def simular_presencas_carecore_apos_plano(
             data_inativacao=cadastro.get("data_inativacao"),
             status_convivente=cadastro.get("status", convivente.status),
             ausencia_justificada_desde=cadastro.get("ausencia_justificada_desde"),
+            data_nova_vinculacao=cadastro.get("data_nova_vinculacao"),
+            datas_inativacao_historico=cadastro.get("datas_inativacao_historico"),
         )
 
         for iso, status in status_map.items():

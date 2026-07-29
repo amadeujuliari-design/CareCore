@@ -433,3 +433,38 @@ async def listar_datas_inativacao_historico(
         datas.sort(reverse=True)
 
     return datas
+
+
+async def listar_datas_inativacao_historico_lote(
+    db: AsyncSession,
+    convivente_ids: list[str],
+) -> dict[str, list[date]]:
+    """Datas de inativação arquivadas por convivente (sem data residual do cadastro)."""
+    if not convivente_ids:
+        return {}
+
+    rows = (
+        await db.execute(
+            select(
+                HistoricoConviventeDB.convivente_id,
+                HistoricoConviventeDB.data_origem,
+            ).where(
+                HistoricoConviventeDB.convivente_id.in_(convivente_ids),
+                HistoricoConviventeDB.titulo == TITULO_HISTORICO_INATIVACAO,
+            )
+        )
+    ).all()
+
+    por_convivente: dict[str, list[date]] = {cid: [] for cid in convivente_ids}
+    vistos: dict[str, set[date]] = {cid: set() for cid in convivente_ids}
+    for convivente_id, data_origem in rows:
+        data = _extrair_data(data_origem)
+        if not data or data in vistos[convivente_id]:
+            continue
+        vistos[convivente_id].add(data)
+        por_convivente[convivente_id].append(data)
+
+    for cid in por_convivente:
+        por_convivente[cid].sort(reverse=True)
+
+    return por_convivente

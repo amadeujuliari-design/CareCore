@@ -139,6 +139,90 @@ def test_ativo_com_data_inativacao_residual_nao_corta_presenca():
     assert STATUS_DIA_NA not in status.values()
 
 
+def test_reativado_intervalo_inativo_e_na_ate_nova_vinculacao():
+    """Reativado: dias entre inativação e nova vinculação são NA, sem presença fantasma."""
+    status = montar_status_presenca_por_dia(
+        [],
+        date(2026, 7, 1),
+        date(2026, 7, 28),
+        data_entrada=date(2025, 6, 3),
+        data_inativacao=date(2025, 7, 10),
+        data_nova_vinculacao=date(2026, 7, 27),
+        status_convivente="Ativo",
+        ausencia_justificada_desde=None,
+    )
+    assert status["2026-07-01"] == STATUS_DIA_NA
+    assert status["2026-07-26"] == STATUS_DIA_NA
+    assert status["2026-07-27"] == STATUS_DIA_PRESENTE
+    assert status["2026-07-28"] == STATUS_DIA_PRESENTE
+
+
+def test_reativado_usa_historico_quando_cadastro_sem_inativacao():
+    status = montar_status_presenca_por_dia(
+        [],
+        date(2026, 7, 1),
+        date(2026, 7, 10),
+        data_entrada=date(2024, 1, 1),
+        data_inativacao=None,
+        data_nova_vinculacao=date(2026, 7, 6),
+        datas_inativacao_historico=[date(2026, 5, 1)],
+        status_convivente="Ativo",
+        ausencia_justificada_desde=None,
+    )
+    assert status["2026-07-01"] == STATUS_DIA_NA
+    assert status["2026-07-05"] == STATUS_DIA_NA
+    assert status["2026-07-06"] == STATUS_DIA_PRESENTE
+
+
+def test_reativado_sem_inativacao_conhecida_nao_assume_presenca_antes_da_nova():
+    """Sem data de inativação: não inventa presente pré-nova; exige fluxo real."""
+    status = montar_status_presenca_por_dia(
+        [],
+        date(2026, 7, 1),
+        date(2026, 7, 8),
+        data_entrada=date(2024, 1, 1),
+        data_nova_vinculacao=date(2026, 7, 6),
+        status_convivente="Ativo",
+        ausencia_justificada_desde=None,
+    )
+    assert status["2026-07-01"] == STATUS_DIA_AUSENTE
+    assert status["2026-07-05"] == STATUS_DIA_AUSENTE
+    assert status["2026-07-06"] == STATUS_DIA_PRESENTE
+
+
+def test_reativado_fluxo_antigo_nao_atravessa_nova_vinculacao():
+    """Entrada do vínculo anterior não mantém 'dentro' após a reativação."""
+    status = montar_status_presenca_por_dia(
+        [
+            {"tipo_registro": "Entrada", "data_registro": datetime(2025, 6, 10, 8, 0)},
+        ],
+        date(2026, 7, 20),
+        date(2026, 7, 28),
+        data_entrada=date(2025, 6, 3),
+        data_inativacao=date(2025, 7, 10),
+        data_nova_vinculacao=date(2026, 7, 27),
+        status_convivente="Ativo",
+        ausencia_justificada_desde=None,
+    )
+    assert status["2026-07-20"] == STATUS_DIA_NA
+    assert status["2026-07-26"] == STATUS_DIA_NA
+    assert status["2026-07-27"] == STATUS_DIA_PRESENTE
+
+
+def test_reativado_primeiro_vinculo_antes_da_inativacao_continua_valido():
+    status = montar_status_presenca_por_dia(
+        [],
+        date(2025, 6, 1),
+        date(2025, 6, 5),
+        data_entrada=date(2025, 6, 1),
+        data_inativacao=date(2025, 7, 10),
+        data_nova_vinculacao=date(2026, 7, 27),
+        status_convivente="Ativo",
+        ausencia_justificada_desde=None,
+    )
+    assert all(valor == STATUS_DIA_PRESENTE for valor in status.values())
+
+
 def test_inativado_sem_data_inativacao_nao_ganha_presenca():
     status = montar_status_presenca_por_dia(
         [],

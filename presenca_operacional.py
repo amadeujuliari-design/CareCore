@@ -6,7 +6,7 @@ from typing import Sequence
 
 TIPOS_FLUXO_ENTRADA_SAIDA = frozenset({"Entrada", "Saída"})
 STATUS_INATIVOS_OPERACIONAIS = frozenset({"Inativado", "Bloqueado", "Saída qualificada"})
-PRESENCA_REGRAS_BUILD = "inativos-sem-presenca-v2"
+PRESENCA_REGRAS_BUILD = "reativacao-sem-presenca-fantasma-v3"
 
 
 def _movimentos_fluxo_ordenados(movimentos: list[dict]) -> list[dict]:
@@ -25,12 +25,39 @@ def _ja_estava_no_projeto(dia: date, data_entrada: date | None) -> bool:
     return data_entrada is None or dia >= data_entrada
 
 
+def resolver_inicio_intervalo_inativo_reativacao(
+    data_nova_vinculacao: date | None,
+    data_inativacao: date | None = None,
+    datas_inativacao_historico: Sequence[date] | None = None,
+) -> date | None:
+    """
+    Última inativação estritamente anterior à nova vinculação atual.
+
+    Usada para marcar o intervalo [inativação, nova vinculação) como fora de
+    operação (NA) em conviventes reativados.
+    """
+    if data_nova_vinculacao is None:
+        return None
+
+    candidatas: list[date] = []
+    for valor in list(datas_inativacao_historico or []):
+        if valor is not None and valor < data_nova_vinculacao:
+            candidatas.append(valor)
+    if data_inativacao is not None and data_inativacao < data_nova_vinculacao:
+        candidatas.append(data_inativacao)
+
+    return max(candidatas) if candidatas else None
+
+
 def convivente_presente_no_dia(
     movimentos: list[dict],
     dia: date,
     *,
     data_entrada: date | None = None,
     ausencia_justificada: bool = False,
+    data_nova_vinculacao: date | None = None,
+    data_inativacao: date | None = None,
+    datas_inativacao_historico: Sequence[date] | None = None,
 ) -> bool:
     """
     Presente no dia (00:00:01–23:59:59): entrou, já estava dentro ou ausência justificada.
@@ -39,11 +66,22 @@ def convivente_presente_no_dia(
     if ausencia_justificada:
         return True
 
+    inicio_inativo = resolver_inicio_intervalo_inativo_reativacao(
+        data_nova_vinculacao,
+        data_inativacao,
+        datas_inativacao_historico,
+    )
+    if data_nova_vinculacao and dia < data_nova_vinculacao:
+        if inicio_inativo is not None and dia >= inicio_inativo:
+            return False
+
     return dia.isoformat() in calcular_dias_presenca_operacional(
         movimentos,
         dia,
         dia,
         data_entrada,
+        data_nova_vinculacao=data_nova_vinculacao,
+        inicio_intervalo_inativo=inicio_inativo,
     )
 
 
@@ -54,10 +92,17 @@ def calcular_dias_presenca_operacional(
     data_entrada: date | None = None,
     *,
     assumir_dentro_sem_fluxo: bool = True,
+    data_nova_vinculacao: date | None = None,
+    inicio_intervalo_inativo: date | None = None,
 ) -> list[str]:
     movimentos_ordenados = _movimentos_fluxo_ordenados(movimentos)
     dias_presentes: list[str] = []
     dia = data_inicio
+    inicio_nova = (
+        datetime.combine(data_nova_vinculacao, datetime.min.time())
+        if data_nova_vinculacao
+        else None
+    )
 
     while dia <= data_fim:
         if data_entrada and dia < data_entrada:
@@ -74,6 +119,13 @@ def calcular_dias_presenca_operacional(
         for movimento in movimentos_ordenados:
             data_movimento = movimento["data_registro"]
 
+            # Reativação: fluxo do vínculo anterior não atravessa a nova vinculação.
+            if inicio_nova is not None:
+                if dia >= data_nova_vinculacao and data_movimento < inicio_nova:
+                    continue
+                if dia < data_nova_vinculacao and data_movimento >= inicio_nova:
+                    continue
+
             if data_movimento < inicio_dia:
                 ultimo_antes_do_dia = movimento
                 ultimo_ate_fim_do_dia = movimento
@@ -89,7 +141,20 @@ def calcular_dias_presenca_operacional(
         if ultimo_antes_do_dia is not None:
             amanheceu_dentro = ultimo_antes_do_dia["tipo_registro"] == "Entrada"
         elif assumir_dentro_sem_fluxo:
-            amanheceu_dentro = _ja_estava_no_projeto(dia, data_entrada)
+            if data_nova_vinculacao and dia >= data_nova_vinculacao:
+                amanheceu_dentro = _ja_estava_no_projeto(dia, data_nova_vinculacao)
+            elif data_nova_vinculacao and dia < data_nova_vinculacao:
+                # Primeiro vínculo: só assume se o dia for anterior ao intervalo inativo.
+                # Sem data de inativação conhecida, não inventa presença pré-reativação.
+                if (
+                    inicio_intervalo_inativo is not None
+                    and dia < inicio_intervalo_inativo
+                ):
+                    amanheceu_dentro = _ja_estava_no_projeto(dia, data_entrada)
+                else:
+                    amanheceu_dentro = False
+            else:
+                amanheceu_dentro = _ja_estava_no_projeto(dia, data_entrada)
         else:
             amanheceu_dentro = False
 
@@ -199,18 +264,28 @@ def _dia_fora_operacao_convivente(
     *,
     status_convivente: str,
     data_inativacao: date | None,
+    data_nova_vinculacao: date | None = None,
+    inicio_intervalo_inativo: date | None = None,
 ) -> bool:
     """
-    Dia sem P/J/A no relatório: antes da admissão, após inativação ou
-    convivente com status inativo no período (sem operação assistencial).
+    Dia sem P/J/A no relatório: antes da admissão, após inativação,
+    intervalo inativo pré-reativação ou convivente inativo no período.
 
     Com status operacional (Ativo etc.), data_inativacao residual no cadastro
-    não corta o período — só status inativo usa esse campo como corte.
+    sozinha não corta o período — só status inativo usa esse campo como corte.
+    Com data_nova_vinculacao, o intervalo [inativação, nova) fica NA.
     """
     if status_convivente in STATUS_INATIVOS_OPERACIONAIS:
         if data_inativacao is None:
             return True
         return dia >= data_inativacao
+
+    if (
+        data_nova_vinculacao is not None
+        and inicio_intervalo_inativo is not None
+        and inicio_intervalo_inativo <= dia < data_nova_vinculacao
+    ):
+        return True
 
     return False
 
@@ -224,6 +299,8 @@ def classificar_presenca_dia(
     status_convivente: str,
     ausencia_justificada_desde: date | None,
     periodos_ausencia_justificada: Sequence[tuple[date, date]] | None = None,
+    data_nova_vinculacao: date | None = None,
+    inicio_intervalo_inativo: date | None = None,
 ) -> str:
     if data_entrada and dia < data_entrada:
         return STATUS_DIA_NA
@@ -231,6 +308,8 @@ def classificar_presenca_dia(
         dia,
         status_convivente=status_convivente,
         data_inativacao=data_inativacao,
+        data_nova_vinculacao=data_nova_vinculacao,
+        inicio_intervalo_inativo=inicio_intervalo_inativo,
     ):
         return STATUS_DIA_NA
     if dia.isoformat() in dias_presentes:
@@ -255,7 +334,14 @@ def montar_status_presenca_por_dia(
     status_convivente: str,
     ausencia_justificada_desde: date | None,
     periodos_ausencia_justificada: Sequence[tuple[date, date]] | None = None,
+    data_nova_vinculacao: date | None = None,
+    datas_inativacao_historico: Sequence[date] | None = None,
 ) -> dict[str, str]:
+    inicio_intervalo_inativo = resolver_inicio_intervalo_inativo_reativacao(
+        data_nova_vinculacao,
+        data_inativacao,
+        datas_inativacao_historico,
+    )
     assumir_dentro_sem_fluxo = status_convivente != "Ausência justificada"
     dias_presentes = set(
         calcular_dias_presenca_operacional(
@@ -264,6 +350,8 @@ def montar_status_presenca_por_dia(
             data_fim,
             data_entrada,
             assumir_dentro_sem_fluxo=assumir_dentro_sem_fluxo,
+            data_nova_vinculacao=data_nova_vinculacao,
+            inicio_intervalo_inativo=inicio_intervalo_inativo,
         )
     )
     return {
@@ -275,6 +363,8 @@ def montar_status_presenca_por_dia(
             status_convivente=status_convivente,
             ausencia_justificada_desde=ausencia_justificada_desde,
             periodos_ausencia_justificada=periodos_ausencia_justificada,
+            data_nova_vinculacao=data_nova_vinculacao,
+            inicio_intervalo_inativo=inicio_intervalo_inativo,
         )
         for dia in listar_dias_periodo(data_inicio, data_fim)
     }
