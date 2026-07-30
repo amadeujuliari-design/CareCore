@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from database import get_db
-from models import QuartoDB, LeitoDB, ConviventeDB
+from models import QuartoDB, LeitoDB, ConviventeDB, UsuarioDB
 from schemas import LeitoAlocacaoPayload, QuartoCreate, QuartoUpdate
 from ordenacao_natural import chave_ordenacao_natural
 from security import exigir_perfis, exigir_tecnico_ou_gestor, get_usuario_logado
@@ -114,7 +114,11 @@ async def listar_quartos(
                         ConviventeDB.cpf,
                         ConviventeDB.leito_id,
                         ConviventeDB.status,
-                    ).where(
+                        ConviventeDB.tecnico_id,
+                        UsuarioDB.nome.label("tecnico_nome"),
+                    )
+                    .outerjoin(UsuarioDB, UsuarioDB.id == ConviventeDB.tecnico_id)
+                    .where(
                         ConviventeDB.instituicao_id == instituicao_id,
                         ConviventeDB.leito_id.in_(leito_ids),
                         ConviventeDB.status.in_(STATUS_CONVIVENTE_OCUPA_LEITO),
@@ -133,7 +137,11 @@ async def listar_quartos(
                         ConviventeDB.cpf,
                         ConviventeDB.leito_reservado_id,
                         ConviventeDB.tb_remanejamento_situacao,
-                    ).where(
+                        ConviventeDB.tecnico_id,
+                        UsuarioDB.nome.label("tecnico_nome"),
+                    )
+                    .outerjoin(UsuarioDB, UsuarioDB.id == ConviventeDB.tecnico_id)
+                    .where(
                         ConviventeDB.instituicao_id == instituicao_id,
                         ConviventeDB.leito_reservado_id.in_(leito_ids),
                         ConviventeDB.reservar_leito_fixo.is_(True),
@@ -160,6 +168,8 @@ async def listar_quartos(
             convivente_status = None
             tipo_reserva = None
             tb_remanejamento_situacao = None
+            tecnico_id = None
+            tecnico_nome = None
             status_leito = l.status
 
             if convivente:
@@ -179,6 +189,8 @@ async def listar_quartos(
 
                 numero_institucional = convivente.numero_institucional
                 cpf = convivente.cpf
+                tecnico_id = convivente.tecnico_id
+                tecnico_nome = (convivente.tecnico_nome or "").strip() or None
                 status_leito = "Ocupado"
             elif reserva_tb:
                 convivente_id = reserva_tb.id
@@ -197,6 +209,8 @@ async def listar_quartos(
                 )
                 numero_institucional = reserva_tb.numero_institucional
                 cpf = reserva_tb.cpf
+                tecnico_id = reserva_tb.tecnico_id
+                tecnico_nome = (reserva_tb.tecnico_nome or "").strip() or None
                 status_leito = "Reservado"
             elif l.status == "Ocupado":
                 l.status = "Livre"
@@ -214,6 +228,8 @@ async def listar_quartos(
                 "convivente_nome_completo": convivente_nome_completo,
                 "numero_institucional": numero_institucional,
                 "cpf": cpf,
+                "tecnico_id": tecnico_id,
+                "tecnico_nome": tecnico_nome,
                 "tb_remanejamento_situacao": tb_remanejamento_situacao,
             })
 

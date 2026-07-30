@@ -322,7 +322,8 @@ useEffect(() => {
     if (!exibirTooltip) return;
 
     const larguraTooltip = 280;
-    const alturaTooltip = leito.tipo_reserva === 'tb_fixo' ? 190 : 150;
+    let alturaTooltip = leito.tipo_reserva === 'tb_fixo' ? 190 : 150;
+    if (leito.tecnico_nome) alturaTooltip += 22;
     const margem = 16;
 
     const x = Math.min(
@@ -778,6 +779,13 @@ useEffect(() => {
                   <span className="font-semibold text-slate-800">CPF:</span>{' '}
                   {tooltipLeito.leito.cpf || '--'}
                 </div>
+
+                {tooltipLeito.leito.tecnico_nome && (
+                  <div>
+                    <span className="font-semibold text-slate-800">Técnico de referência:</span>{' '}
+                    {tooltipLeito.leito.tecnico_nome}
+                  </div>
+                )}
 
                 {tooltipLeito.leito.convivente_status === 'Ausência justificada' && (
                   <div className="mt-1 rounded-lg bg-blue-50 px-2 py-1 font-semibold text-blue-700">
