@@ -5,11 +5,23 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import Sidebar from './Sidebar';
-import { AppShell, MainShell, PageHeader, PremiumButton, ScrollArea } from './components/PremiumUI';
+import {
+  AppShell,
+  MainShell,
+  PageHeader,
+  PremiumButton,
+  ReportActionButton,
+  ScrollArea,
+} from './components/PremiumUI';
 import { API_ROOT } from './config/apiBase';
 import { criarHeadersAutenticados } from './utils/requestIdUtils';
 import { decodificarPayloadJwt } from './utils/jwtUtils';
 import { perfilOcultaSomatoriaAlimentacao } from './utils/rotinaDiariaUtils';
+import { buscarIdentidadeRelatorios } from './utils/relatorioIdentidadePrint';
+import {
+  exportarRetratosDashboardOperacionalXlsx,
+  imprimirRetratosDashboardOperacional,
+} from './utils/dashboardOperacionalRetratosPrint';
 
 const METRICAS_LABEL = {
   dentro_projeto: 'Dentro do projeto',
@@ -85,6 +97,14 @@ function dataLocalISO(diasAtras = 0) {
   return `${y}-${m}-${day}`;
 }
 
+/** Janela inclusiva dos últimos 30 dias (hoje e 29 anteriores). */
+function periodoUltimos30Dias() {
+  return {
+    inicio: dataLocalISO(29),
+    fim: dataLocalISO(0),
+  };
+}
+
 function formatarDataCurta(iso) {
   if (!iso) return '-';
   const [y, m, d] = String(iso).slice(0, 10).split('-');
@@ -109,7 +129,7 @@ function GraficoMultiSerie({ series, metricasAtivas, onSelecionar }) {
   if (!datas.length) {
     return (
       <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50 px-4 py-10 text-center text-sm font-semibold text-gray-500">
-        Ainda não há retratos 22:00 neste período.
+        Ainda não há retratos 22:40 neste período.
       </div>
     );
   }
@@ -196,8 +216,8 @@ export default function DashboardOperacional() {
   const [erro, setErro] = useState('');
   const [abaLista, setAbaLista] = useState('presentes');
 
-  const [histDataInicio, setHistDataInicio] = useState(() => dataLocalISO(29));
-  const [histDataFim, setHistDataFim] = useState(() => dataLocalISO(0));
+  const [histDataInicio, setHistDataInicio] = useState(() => periodoUltimos30Dias().inicio);
+  const [histDataFim, setHistDataFim] = useState(() => periodoUltimos30Dias().fim);
   const [histSeries, setHistSeries] = useState({});
   const [histItems, setHistItems] = useState([]);
   const [histMetricas, setHistMetricas] = useState(Object.keys(METRICAS_LABEL));
@@ -206,8 +226,14 @@ export default function DashboardOperacional() {
   const [histErro, setHistErro] = useState('');
   const [retrato, setRetrato] = useState(null);
   const [retratoLoading, setRetratoLoading] = useState(false);
+  const [identidadeRelatorio, setIdentidadeRelatorio] = useState(null);
+  const [preparandoRelatorio, setPreparandoRelatorio] = useState(false);
 
   const headers = useMemo(() => criarHeadersAutenticados(token), [token]);
+
+  useEffect(() => {
+    buscarIdentidadeRelatorios().then(setIdentidadeRelatorio).catch(() => setIdentidadeRelatorio(null));
+  }, []);
 
   const carregarDashboard = useCallback(async (signal) => {
     try {
@@ -342,6 +368,42 @@ export default function DashboardOperacional() {
     return `há ${dias} dia${dias === 1 ? '' : 's'}`;
   };
 
+  const imprimirRelatorioRetratos = async () => {
+    if (!histItems.length || preparandoRelatorio) return;
+    try {
+      setPreparandoRelatorio(true);
+      const identidade = identidadeRelatorio || await buscarIdentidadeRelatorios();
+      await imprimirRetratosDashboardOperacional({
+        itens: histItems,
+        dataInicio: histDataInicio,
+        dataFim: histDataFim,
+        identidadeRelatorio: identidade,
+      });
+    } catch (error) {
+      console.error(error);
+      setHistErro('Não foi possível gerar a impressão dos retratos.');
+    } finally {
+      setPreparandoRelatorio(false);
+    }
+  };
+
+  const exportarRelatorioRetratos = async () => {
+    if (!histItems.length || preparandoRelatorio) return;
+    try {
+      setPreparandoRelatorio(true);
+      await exportarRetratosDashboardOperacionalXlsx({
+        itens: histItems,
+        dataInicio: histDataInicio,
+        dataFim: histDataFim,
+      });
+    } catch (error) {
+      console.error(error);
+      setHistErro('Não foi possível exportar o relatório dos retratos.');
+    } finally {
+      setPreparandoRelatorio(false);
+    }
+  };
+
   const resumo = dados?.resumo || {};
   const interacoesHoje = dados?.interacoes_hoje || {};
   const limiteListaOperacional = 80;
@@ -471,7 +533,7 @@ export default function DashboardOperacional() {
         <PageHeader
           eyebrow="Rotina"
           title="Dashboard Operacional"
-          subtitle="Estado ao vivo e retratos diários às 22:00 (São Paulo), com totais de dentro/fora do projeto e interações."
+          subtitle="Estado ao vivo e retratos diários às 22:40 (São Paulo), com totais de dentro/fora do projeto e interações."
           icon=">"
           actions={(
             <>
@@ -548,7 +610,7 @@ export default function DashboardOperacional() {
                   <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 mb-5">
                     <h2 className="font-black text-gray-800">Interações de hoje (por tipo)</h2>
                     <p className="text-xs text-gray-500 mt-1 mb-3">
-                      Totais do dia — também entram no retrato das 22:00.
+                      Totais do dia — também entram no retrato das 22:40.
                     </p>
                     <div className="flex flex-wrap gap-2">
                       {Object.entries(interacoesHoje).map(([tipo, qtd]) => (
@@ -567,33 +629,11 @@ export default function DashboardOperacional() {
                 )}
 
                 <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 mb-6">
-                  <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4 mb-4">
-                    <div>
-                      <h2 className="font-black text-gray-800">Histórico — retrato 22:00 (São Paulo)</h2>
-                      <p className="text-xs text-gray-500 mt-1">
-                        Um retrato por projeto/dia. Não sobrescreve. Inclui totais de dentro/fora e interações.
-                      </p>
-                    </div>
-                    <div className="flex flex-col sm:flex-row flex-wrap gap-2">
-                      <label className="text-[11px] font-black text-gray-500 uppercase">
-                        De
-                        <input
-                          type="date"
-                          value={histDataInicio}
-                          onChange={(e) => setHistDataInicio(e.target.value)}
-                          className="mt-1 block w-full rounded-xl border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700"
-                        />
-                      </label>
-                      <label className="text-[11px] font-black text-gray-500 uppercase">
-                        Até
-                        <input
-                          type="date"
-                          value={histDataFim}
-                          onChange={(e) => setHistDataFim(e.target.value)}
-                          className="mt-1 block w-full rounded-xl border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700"
-                        />
-                      </label>
-                    </div>
+                  <div className="mb-4">
+                    <h2 className="font-black text-gray-800">Histórico — retrato 22:40 (São Paulo)</h2>
+                    <p className="text-xs text-gray-500 mt-1">
+                      Um retrato por projeto/dia. Inclui totais de dentro/fora e interações (ajustes manuais somados na leitura).
+                    </p>
                   </div>
 
                   <div className="mb-4 flex flex-wrap gap-2">
@@ -641,6 +681,71 @@ export default function DashboardOperacional() {
                       onSelecionar={carregarRetrato}
                     />
                   )}
+
+                  <div className="mt-4 rounded-2xl border border-slate-100 bg-slate-50/80 p-3">
+                    <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+                      <div>
+                        <p className="text-[11px] font-black uppercase tracking-wide text-slate-500">
+                          Período do gráfico e do relatório
+                        </p>
+                        <p className="mt-0.5 text-[11px] font-semibold text-slate-400">
+                          Padrão: últimos 30 dias. Altere as datas para filtrar.
+                        </p>
+                        <div className="mt-2 flex flex-col sm:flex-row flex-wrap gap-2">
+                          <label className="text-[11px] font-black text-gray-500 uppercase">
+                            De
+                            <input
+                              type="date"
+                              value={histDataInicio}
+                              onChange={(e) => setHistDataInicio(e.target.value)}
+                              className="mt-1 block w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-gray-700"
+                            />
+                          </label>
+                          <label className="text-[11px] font-black text-gray-500 uppercase">
+                            Até
+                            <input
+                              type="date"
+                              value={histDataFim}
+                              onChange={(e) => setHistDataFim(e.target.value)}
+                              className="mt-1 block w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-gray-700"
+                            />
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const periodo = periodoUltimos30Dias();
+                              setHistDataInicio(periodo.inicio);
+                              setHistDataFim(periodo.fim);
+                            }}
+                            className="self-end rounded-xl border border-teal-200 bg-white px-3 py-2 text-[11px] font-black text-teal-700 hover:bg-teal-50"
+                          >
+                            Últimos 30 dias
+                          </button>
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <ReportActionButton
+                          action="print"
+                          onClick={imprimirRelatorioRetratos}
+                          disabled={preparandoRelatorio || histLoading || !histItems.length}
+                        >
+                          Imprimir retratos
+                        </ReportActionButton>
+                        <ReportActionButton
+                          action="export"
+                          onClick={exportarRelatorioRetratos}
+                          disabled={preparandoRelatorio || histLoading || !histItems.length}
+                        >
+                          Exportar XLSX
+                        </ReportActionButton>
+                      </div>
+                    </div>
+                    {!histItems.length && !histLoading ? (
+                      <p className="mt-2 text-[11px] font-semibold text-gray-400">
+                        Sem retratos no período para relatório.
+                      </p>
+                    ) : null}
+                  </div>
 
                   {histItems.length > 0 && (
                     <div className="mt-4 flex flex-wrap gap-2">

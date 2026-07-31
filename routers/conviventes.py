@@ -4022,7 +4022,7 @@ async def montar_dashboard_operacional_payload(
     agora = agora or agora_sao_paulo()
     hoje = agora.date()
     inicio_dia = datetime.combine(hoje, datetime.min.time())
-    # Corte temporal: ao vivo = agora; retrato 22h / backfill = 22:00 do dia.
+    # Corte temporal: ao vivo = agora; retrato 22:40 / backfill = 22:40 do dia.
     fim_corte = agora
     ontem = hoje - timedelta(days=1)
     inicio_ontem = datetime.combine(ontem, datetime.min.time())
@@ -4424,7 +4424,7 @@ async def listar_dashboard_operacional_snapshots(
     db: AsyncSession = Depends(get_db),
     usuario_atual: dict = Depends(get_usuario_logado),
 ):
-    """Lista retratos diários (22:00 SP) e séries para gráfico."""
+    """Lista retratos diários (22:40 SP) e séries para gráfico."""
     from dashboard_operacional_snapshot import (
         METRICAS_GRAFICO,
         coletar_metricas_disponiveis,
@@ -4505,7 +4505,7 @@ async def capturar_dashboard_operacional_snapshots(
     db: AsyncSession = Depends(get_db),
     usuario_atual: dict = Depends(get_usuario_logado),
 ):
-    """Executa a captura do dia (job 22:00). Manutenção/gestor; forcar=true ignora horário."""
+    """Executa a captura do dia (job 22:40). Manutenção/gestor; forcar=true ignora horário."""
     from dashboard_operacional_snapshot import capturar_snapshots_pendentes_todas_instituicoes
 
     if not (

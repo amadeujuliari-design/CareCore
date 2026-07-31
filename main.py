@@ -264,10 +264,11 @@ async def lifespan(app: FastAPI):
         await session.commit()
 
     async def _job_snapshots_dashboard_operacional():
-        """Captura retrato 22:00 SP (um por dia/instituição); não sobrescreve."""
+        """Captura retrato 22:40 SP (um por dia/instituição); não sobrescreve."""
         from dashboard_operacional_snapshot import (
-            HORA_CAPTURA,
             capturar_snapshots_pendentes_todas_instituicoes,
+            ja_passou_horario_captura,
+            momento_captura_do_dia,
         )
         from time_operacional import agora_operacional_naive
 
@@ -275,19 +276,16 @@ async def lifespan(app: FastAPI):
         while True:
             try:
                 agora = agora_operacional_naive()
-                if agora.hour >= HORA_CAPTURA:
+                if ja_passou_horario_captura(agora):
                     async with AsyncSessionLocal() as session:
                         resultado = await capturar_snapshots_pendentes_todas_instituicoes(session)
                     logger.info("Snapshots dashboard operacional: %s", resultado)
-                    proximo = datetime.combine(
-                        agora.date() + timedelta(days=1),
-                        datetime.min.time().replace(hour=HORA_CAPTURA, minute=5),
-                    )
+                    proximo = momento_captura_do_dia(agora.date() + timedelta(days=1)) + timedelta(minutes=5)
                 else:
-                    proximo = datetime.combine(
-                        agora.date(),
-                        datetime.min.time().replace(hour=HORA_CAPTURA, minute=5),
-                    )
+                    # Acorda poucos minutos após o horário da foto.
+                    proximo = momento_captura_do_dia(agora.date()) + timedelta(minutes=5)
+                    if agora >= proximo:
+                        proximo = momento_captura_do_dia(agora.date() + timedelta(days=1)) + timedelta(minutes=5)
                 segundos = max((proximo - agora).total_seconds(), 60.0)
                 await asyncio.sleep(min(segundos, 3600.0))
             except asyncio.CancelledError:

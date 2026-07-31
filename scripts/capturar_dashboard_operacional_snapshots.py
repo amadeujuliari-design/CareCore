@@ -1,8 +1,8 @@
 """
-Captura / backfill dos retratos do Dashboard Operacional (22:00 America/Sao_Paulo).
+Captura / backfill dos retratos do Dashboard Operacional (22:40 America/Sao_Paulo).
 
 Uso:
-  # Captura do dia (só grava se já passou das 22:00 e ainda não existe)
+  # Captura do dia (só grava se já passou das 22:40 e ainda não existe)
   python scripts/capturar_dashboard_operacional_snapshots.py
 
   # Força captura do instante atual (manutenção)
@@ -10,6 +10,9 @@ Uso:
 
   # Reconstrói dias passados (não sobrescreve existentes)
   python scripts/capturar_dashboard_operacional_snapshots.py --backfill --inicio 2026-06-26 --fim 2026-07-21
+
+  # Sanitiza passado: recalcula corte 22:40 e sobrescreve (ajustes manuais seguem na leitura)
+  python scripts/capturar_dashboard_operacional_snapshots.py --backfill --sobrescrever --inicio 2026-07-01 --fim 2026-07-30
 
   # Online: definir DATABASE_URL do Postgres de produção antes de rodar.
 """
@@ -51,6 +54,7 @@ def _database_url() -> str:
 
 async def main_async(args: argparse.Namespace) -> int:
     from dashboard_operacional_snapshot import (
+        HORARIO_CAPTURA_ROTULO,
         backfill_snapshots_periodo,
         capturar_snapshots_pendentes_todas_instituicoes,
     )
@@ -71,8 +75,10 @@ async def main_async(args: argparse.Namespace) -> int:
                 data_inicio=inicio,
                 data_fim=fim,
                 instituicao_id=args.instituicao_id,
+                sobrescrever=bool(args.sobrescrever),
             )
             print(resultado)
+            print(f"horario_captura={HORARIO_CAPTURA_ROTULO}")
         else:
             resultado = await capturar_snapshots_pendentes_todas_instituicoes(
                 db,
@@ -85,9 +91,20 @@ async def main_async(args: argparse.Namespace) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(description="Retratos diários do dashboard operacional (22h SP)")
-    p.add_argument("--forcar", action="store_true", help="Ignora o horário 22:00 (captura do dia atual)")
+    p = argparse.ArgumentParser(
+        description="Retratos diários do dashboard operacional (22:40 SP)"
+    )
+    p.add_argument(
+        "--forcar",
+        action="store_true",
+        help="Ignora o horário 22:40 (captura do dia atual)",
+    )
     p.add_argument("--backfill", action="store_true", help="Reconstrói período passado")
+    p.add_argument(
+        "--sobrescrever",
+        action="store_true",
+        help="Com --backfill: recalcula e sobrescreve retratos existentes (corte 22:40)",
+    )
     p.add_argument("--inicio", type=str, default=None, help="AAAA-MM-DD (backfill)")
     p.add_argument("--fim", type=str, default=None, help="AAAA-MM-DD (backfill); padrão=ontem")
     p.add_argument("--instituicao-id", type=str, default=None, help="Opcional: só um projeto")

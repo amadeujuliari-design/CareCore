@@ -1,10 +1,10 @@
-"""Snapshots diários do Dashboard Operacional (22:00 America/Sao_Paulo)."""
+"""Snapshots diários do Dashboard Operacional (22:40 America/Sao_Paulo)."""
 
 from __future__ import annotations
 
 import json
 import logging
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from typing import Any
 
 from sqlalchemy import select
@@ -16,8 +16,20 @@ from time_operacional import agora_operacional_naive
 logger = logging.getLogger("carecore.dashboard_operacional_snapshot")
 
 HORA_CAPTURA = 22
+MINUTO_CAPTURA = 40
+HORARIO_CAPTURA_ROTULO = f"{HORA_CAPTURA:02d}:{MINUTO_CAPTURA:02d}"
 TIPOS_FLUXO = frozenset({"Entrada", "Saída"})
 PREFIXO_INTERACAO = "interacao:"
+
+
+def momento_captura_do_dia(dia: date) -> datetime:
+    """Instante operacional da foto diária (22:40 SP naive)."""
+    return datetime.combine(dia, time(hour=HORA_CAPTURA, minute=MINUTO_CAPTURA))
+
+
+def ja_passou_horario_captura(agora: datetime | None = None) -> bool:
+    agora = agora or agora_operacional_naive()
+    return agora >= momento_captura_do_dia(agora.date())
 
 METRICAS_GRAFICO = (
     "dentro_projeto",
@@ -248,15 +260,16 @@ async def garantir_snapshot_apos_22h(
     instituicao_id: str,
     payload: dict | None = None,
 ) -> DashboardOperacionalSnapshotDB | None:
-    """Se já passou das 22:00 SP e não há retrato do dia, captura agora."""
+    """Se já passou das 22:40 SP e não há retrato do dia, captura agora."""
     agora = agora_operacional_naive()
-    if agora.hour < HORA_CAPTURA:
+    if not ja_passou_horario_captura(agora):
         return None
 
     data_ref = agora.date()
     if await snapshot_existe(db, instituicao_id=instituicao_id, data_referencia=data_ref):
         return None
 
+    momento_corte = momento_captura_do_dia(data_ref)
     if payload is None:
         from routers.conviventes import montar_dashboard_operacional_payload
 
@@ -264,14 +277,14 @@ async def garantir_snapshot_apos_22h(
             db,
             instituicao_id,
             limite_listas=20,
-            agora=agora,
+            agora=momento_corte if agora >= momento_corte else agora,
         )
 
     return await salvar_snapshot_se_ausente(
         db,
         instituicao_id=instituicao_id,
         payload=payload,
-        capturado_em=agora,
+        capturado_em=momento_corte,
     )
 
 
@@ -280,29 +293,27 @@ async def capturar_snapshots_pendentes_todas_instituicoes(
     *,
     forcar: bool = False,
 ) -> dict:
-    """Job das 22:00: grava um retrato por instituição se ainda não existir no dia."""
+    """Job das 22:40: grava um retrato por instituição se ainda não existir no dia."""
     agora = agora_operacional_naive()
-    if (not forcar) and agora.hour < HORA_CAPTURA:
+    if (not forcar) and not ja_passou_horario_captura(agora):
         return {
             "status": "fora_horario",
             "hora": agora.hour,
+            "minuto": agora.minute,
+            "horario_captura": HORARIO_CAPTURA_ROTULO,
             "capturados": 0,
             "ja_existiam": 0,
             "instituicoes": 0,
         }
 
-    capturado_em = agora
-    if agora.hour < HORA_CAPTURA:
-        # Forçar fora do horário: usa o instante atual (manutenção).
-        pass
+    if ja_passou_horario_captura(agora):
+        # Normaliza o carimbo e o corte operacional para 22:40 do dia.
+        capturado_em = momento_captura_do_dia(agora.date())
+        agora_payload = capturado_em
     else:
-        # Normaliza o carimbo para ~22:00 do dia operacional.
-        capturado_em = datetime.combine(
-            agora.date(),
-            datetime.min.time().replace(hour=HORA_CAPTURA, minute=0),
-        )
-        if agora < capturado_em:
-            capturado_em = agora
+        # Forçar fora do horário: usa o instante atual (manutenção).
+        capturado_em = agora
+        agora_payload = agora
 
     instituicoes = (
         await db.execute(select(InstituicaoDB.id))
@@ -320,13 +331,13 @@ async def capturar_snapshots_pendentes_todas_instituicoes(
             db,
             instituicao_id,
             limite_listas=20,
-            agora=capturado_em if capturado_em.hour >= HORA_CAPTURA else agora,
+            agora=agora_payload,
         )
         registro = await salvar_snapshot_se_ausente(
             db,
             instituicao_id=instituicao_id,
             payload=payload,
-            capturado_em=agora,
+            capturado_em=capturado_em,
         )
         if registro:
             capturados += 1
@@ -334,6 +345,8 @@ async def capturar_snapshots_pendentes_todas_instituicoes(
     return {
         "status": "ok",
         "hora": agora.hour,
+        "minuto": agora.minute,
+        "horario_captura": HORARIO_CAPTURA_ROTULO,
         "capturados": capturados,
         "ja_existiam": ja_existiam,
         "instituicoes": len(instituicoes),
@@ -342,16 +355,76 @@ async def capturar_snapshots_pendentes_todas_instituicoes(
     }
 
 
+async def _obter_registro_snapshot(
+    db: AsyncSession,
+    *,
+    instituicao_id: str,
+    data_referencia: date,
+) -> DashboardOperacionalSnapshotDB | None:
+    return (
+        await db.execute(
+            select(DashboardOperacionalSnapshotDB).where(
+                DashboardOperacionalSnapshotDB.instituicao_id == instituicao_id,
+                DashboardOperacionalSnapshotDB.data_referencia == data_referencia,
+            ).limit(1)
+        )
+    ).scalar_one_or_none()
+
+
+async def salvar_ou_sobrescrever_snapshot(
+    db: AsyncSession,
+    *,
+    instituicao_id: str,
+    payload: dict,
+    capturado_em: datetime,
+) -> tuple[DashboardOperacionalSnapshotDB, str]:
+    """
+    Grava retrato do dia. Se já existir, sobrescreve payload e capturado_em.
+
+    Ajustes manuais (rotina_ajustes_diarios) ficam fora do JSON e continuam
+    sendo somados na leitura.
+    """
+    data_ref = date.fromisoformat(str(payload.get("data_referencia") or capturado_em.date().isoformat()))
+    retrato = extrair_retrato_para_snapshot(payload)
+    payload_json = json.dumps(retrato, ensure_ascii=False, default=_json_default)
+
+    existente = await _obter_registro_snapshot(
+        db,
+        instituicao_id=instituicao_id,
+        data_referencia=data_ref,
+    )
+    if existente is None:
+        registro = DashboardOperacionalSnapshotDB(
+            instituicao_id=instituicao_id,
+            data_referencia=data_ref,
+            capturado_em=capturado_em,
+            payload_json=payload_json,
+        )
+        db.add(registro)
+        await db.commit()
+        await db.refresh(registro)
+        return registro, "criado"
+
+    existente.payload_json = payload_json
+    existente.capturado_em = capturado_em
+    await db.commit()
+    await db.refresh(existente)
+    return existente, "atualizado"
+
+
 async def backfill_snapshots_periodo(
     db: AsyncSession,
     *,
     data_inicio: date,
     data_fim: date,
     instituicao_id: str | None = None,
+    sobrescrever: bool = False,
 ) -> dict:
     """
-    Reconstrói retratos 22:00 SP para dias passados (não sobrescreve existentes).
-    Usa o estado operacional cortado às 22:00 de cada dia.
+    Reconstrói retratos 22:40 SP para dias passados.
+
+    Por padrão não sobrescreve existentes. Com sobrescrever=True, recalcula o
+    corte às 22:40 e substitui o payload (ajustes manuais permanecem na leitura).
     """
     from routers.conviventes import montar_dashboard_operacional_payload
 
@@ -364,9 +437,12 @@ async def backfill_snapshots_periodo(
         return {
             "status": "sem_dias",
             "criados": 0,
+            "atualizados": 0,
             "ja_existiam": 0,
             "dias": 0,
             "instituicoes": 0,
+            "horario_captura": HORARIO_CAPTURA_ROTULO,
+            "sobrescrever": sobrescrever,
         }
 
     if instituicao_id:
@@ -377,43 +453,58 @@ async def backfill_snapshots_periodo(
         ).scalars().all()
 
     criados = 0
+    atualizados = 0
     ja_existiam = 0
     dias = 0
     dia = data_inicio
     while dia <= fim_efetivo:
         dias += 1
-        momento_22h = datetime.combine(
-            dia,
-            datetime.min.time().replace(hour=HORA_CAPTURA, minute=0),
-        )
+        momento_corte = momento_captura_do_dia(dia)
         for inst_id in instituicoes:
-            if await snapshot_existe(db, instituicao_id=inst_id, data_referencia=dia):
+            if not sobrescrever and await snapshot_existe(
+                db, instituicao_id=inst_id, data_referencia=dia
+            ):
                 ja_existiam += 1
                 continue
             payload = await montar_dashboard_operacional_payload(
                 db,
                 inst_id,
                 limite_listas=20,
-                agora=momento_22h,
+                agora=momento_corte,
             )
-            registro = await salvar_snapshot_se_ausente(
-                db,
-                instituicao_id=inst_id,
-                payload=payload,
-                capturado_em=momento_22h,
-            )
-            if registro:
-                criados += 1
+            if sobrescrever:
+                _, acao = await salvar_ou_sobrescrever_snapshot(
+                    db,
+                    instituicao_id=inst_id,
+                    payload=payload,
+                    capturado_em=momento_corte,
+                )
+                if acao == "criado":
+                    criados += 1
+                else:
+                    atualizados += 1
+            else:
+                registro = await salvar_snapshot_se_ausente(
+                    db,
+                    instituicao_id=inst_id,
+                    payload=payload,
+                    capturado_em=momento_corte,
+                )
+                if registro:
+                    criados += 1
         dia += timedelta(days=1)
 
     return {
         "status": "ok",
         "criados": criados,
+        "atualizados": atualizados,
         "ja_existiam": ja_existiam,
         "dias": dias,
         "instituicoes": len(instituicoes),
         "data_inicio": data_inicio.isoformat(),
         "data_fim": fim_efetivo.isoformat(),
+        "horario_captura": HORARIO_CAPTURA_ROTULO,
+        "sobrescrever": sobrescrever,
         "reconstruido": True,
     }
 
@@ -431,7 +522,7 @@ def aplicar_ajustes_manuais_no_retrato(
 ) -> dict:
     """
     Soma complementos manuais (rotina_ajustes_diarios) aos totais do retrato.
-    O payload gravado às 22:00 permanece cru; a leitura aplica o ajuste.
+    O payload gravado às 22:40 permanece cru; a leitura aplica o ajuste.
     """
     ajustes = {
         str(tipo): int(qtd or 0)

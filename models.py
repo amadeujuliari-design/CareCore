@@ -1576,7 +1576,7 @@ class TextoRevisaoUsoMensalDB(Base):
 
 
 class DashboardOperacionalSnapshotDB(Base):
-    """Retrato diário do dashboard operacional (captura às 22:00 SP)."""
+    """Retrato diário do dashboard operacional (captura às 22:40 SP)."""
 
     __tablename__ = "dashboard_operacional_snapshots"
     __table_args__ = (

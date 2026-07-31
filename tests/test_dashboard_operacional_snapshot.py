@@ -1,16 +1,28 @@
 """Testes unitários do retrato diário do dashboard operacional."""
 
-from datetime import date
+from datetime import date, datetime
 
 from dashboard_operacional_snapshot import (
+    HORARIO_CAPTURA_ROTULO,
     coletar_metricas_disponiveis,
     extrair_retrato_para_snapshot,
+    ja_passou_horario_captura,
+    momento_captura_do_dia,
     montar_serie_grafico,
     montar_series_grafico,
     periodo_padrao_30_dias,
     total_interacoes_sem_fluxo,
     valor_metrica_item,
 )
+
+
+def test_horario_captura_e_2240():
+    assert HORARIO_CAPTURA_ROTULO == "22:40"
+    momento = momento_captura_do_dia(date(2026, 7, 30))
+    assert momento == datetime(2026, 7, 30, 22, 40)
+    assert not ja_passou_horario_captura(datetime(2026, 7, 30, 22, 39))
+    assert ja_passou_horario_captura(datetime(2026, 7, 30, 22, 40))
+    assert ja_passou_horario_captura(datetime(2026, 7, 30, 23, 0))
 
 
 def test_extrair_retrato_guarda_totais_sem_listas_nominais():
