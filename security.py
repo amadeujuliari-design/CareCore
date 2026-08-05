@@ -69,6 +69,7 @@ bearer_scheme = HTTPBearer(auto_error=True)
 
 PERFIL_GESTOR = "Gestor"
 PERFIL_GLOBAL = "Global"
+PERFIL_ADM_GLOBAL = "ADM Global"
 PERFIL_MANUTENCAO = "Manutenção"
 PERFIL_TECNICO = "Técnico"
 PERFIL_ORIENTADOR = "Orientador"
@@ -79,12 +80,18 @@ PERFIL_OFICINEIRO = "Oficineiro(a)"
 PERFIS_ACESSO_VALIDOS = {
     PERFIL_GESTOR,
     PERFIL_GLOBAL,
+    PERFIL_ADM_GLOBAL,
     PERFIL_MANUTENCAO,
     PERFIL_TECNICO,
     PERFIL_ORIENTADOR,
     PERFIL_ADMINISTRATIVO,
     PERFIL_CONSULTA,
     PERFIL_OFICINEIRO,
+}
+
+PERFIS_EXCLUIDOS_LISTA_PROJETO = {
+    PERFIL_MANUTENCAO,
+    PERFIL_ADM_GLOBAL,
 }
 
 PERFIS_LEGADOS_MAPEAMENTO = {
@@ -95,10 +102,20 @@ PERFIS_LEGADOS_MAPEAMENTO = {
     "Manutencao": PERFIL_MANUTENCAO,
     "Manutenção": PERFIL_MANUTENCAO,
     "Oficineiro": PERFIL_OFICINEIRO,
+    "Adm Global": PERFIL_ADM_GLOBAL,
+    "ADMGlobal": PERFIL_ADM_GLOBAL,
 }
 
 PREFIXOS_API_PERMITIDOS_OFICINEIRO = (
     "/api/atividades",
+    "/api/auth",
+    "/api/usuarios/me",
+    "/api/passkeys",
+    "/api/health",
+)
+
+PREFIXOS_API_PERMITIDOS_ADM_GLOBAL = (
+    "/api/nfp",
     "/api/auth",
     "/api/usuarios/me",
     "/api/passkeys",
@@ -158,6 +175,36 @@ def usuario_eh_manutencao(usuario: dict | UsuarioDB | None) -> bool:
     email = (getattr(usuario, "email", None) or "").strip().lower()
     perfil = normalizar_perfil_acesso(getattr(usuario, "perfil_acesso", None))
     return perfil == PERFIL_MANUTENCAO or email == email_usuario_manutencao()
+
+
+def usuario_eh_adm_global(usuario: dict | UsuarioDB | None) -> bool:
+    if not usuario:
+        return False
+    if usuario_eh_manutencao(usuario):
+        return False
+    if isinstance(usuario, dict):
+        perfil = normalizar_perfil_acesso(usuario.get("perfil_acesso"))
+    else:
+        perfil = normalizar_perfil_acesso(getattr(usuario, "perfil_acesso", None))
+    return perfil == PERFIL_ADM_GLOBAL
+
+
+def usuario_pode_acessar_nfp(usuario: dict | UsuarioDB | None) -> bool:
+    if not usuario:
+        return False
+    if usuario_eh_manutencao(usuario) or usuario_eh_adm_global(usuario):
+        return True
+    if isinstance(usuario, dict):
+        return bool(
+            usuario.get("is_global")
+            or usuario_tem_perfil(usuario, {PERFIL_GLOBAL})
+        )
+    perfil = normalizar_perfil_acesso(getattr(usuario, "perfil_acesso", None))
+    return perfil == PERFIL_GLOBAL or bool(getattr(usuario, "is_global", False))
+
+
+def perfil_excluido_lista_projeto(perfil: Optional[str]) -> bool:
+    return normalizar_perfil_acesso(perfil) in PERFIS_EXCLUIDOS_LISTA_PROJETO
 
 
 # =====================================================================
@@ -492,7 +539,7 @@ def usuario_pode_ver_texto_original(usuario: dict) -> bool:
 
 
 def usuario_eh_global_puro(usuario: dict) -> bool:
-    if usuario_eh_manutencao(usuario):
+    if usuario_eh_manutencao(usuario) or usuario_eh_adm_global(usuario):
         return False
 
     return bool(
@@ -530,6 +577,14 @@ def caminho_api_permitido_para_oficineiro(path: str, method: str = "GET") -> boo
     if method.upper() == "GET" and path == "/api/usuarios":
         return True
 
+    return False
+
+
+def caminho_api_permitido_para_adm_global(path: str, method: str = "GET") -> bool:
+    del method  # reservado para regras futuras por metodo
+    for prefixo in PREFIXOS_API_PERMITIDOS_ADM_GLOBAL:
+        if path == prefixo or path.startswith(prefixo + "/"):
+            return True
     return False
 
 

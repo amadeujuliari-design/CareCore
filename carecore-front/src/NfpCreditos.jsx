@@ -1,0 +1,593 @@
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { Building2, Receipt, UserRoundCog, Users } from 'lucide-react';
+
+import Sidebar from './Sidebar';
+import { AppShell, MainShell, PageHeader, PremiumButton, ScrollArea } from './components/PremiumUI';
+import NfpTermometroArrecadacao from './components/nfp/NfpTermometroArrecadacao';
+import {
+  nfpCalcularRateio,
+  nfpDashboard,
+  nfpExportarRateio,
+  nfpImportarCnpjs,
+  nfpImportarDoacoes,
+  nfpImportarDoadores,
+  nfpImportarSefaz,
+  nfpListarBatimentos,
+  nfpListarRateio,
+} from './services/nfpService';
+import { nfpRelatorioRateioConsolidado } from './services/relatorioNfpService';
+import { erroApiNfp, formatarCNPJ } from './utils/nfpCadastroUtils';
+import { formatarCPF } from './utils/usuariosUtils';
+
+const ABAS = [
+  { id: 'dashboard', label: 'Dashboard' },
+  { id: 'importacoes', label: 'Importações' },
+  { id: 'rateio', label: 'Rateio' },
+  { id: 'batimento', label: 'Batimento' },
+];
+
+function money(valor) {
+  const n = Number(valor || 0);
+  return n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+}
+
+function CampoArquivo({ label, onChange, accept = '.xlsx,.xls,.csv' }) {
+  return (
+    <label className="block text-sm text-slate-700">
+      <span className="mb-1 block font-semibold">{label}</span>
+      <input
+        type="file"
+        accept={accept}
+        onChange={(e) => onChange(e.target.files?.[0] || null)}
+        className="block w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
+      />
+    </label>
+  );
+}
+
+export default function NfpCreditos() {
+  const [aba, setAba] = useState('dashboard');
+  const [competencia, setCompetencia] = useState('');
+  const [agente, setAgente] = useState(''); // '' = Todos
+  const [resumo, setResumo] = useState(null);
+  const [rateio, setRateio] = useState([]);
+  const [batimentos, setBatimentos] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [trabalhando, setTrabalhando] = useState(false);
+  const [erro, setErro] = useState('');
+  const [sucesso, setSucesso] = useState('');
+  const [arquivoDoadores, setArquivoDoadores] = useState(null);
+  const [arquivoCnpjs, setArquivoCnpjs] = useState(null);
+  const [arquivoDoacoes, setArquivoDoacoes] = useState(null);
+  const [arquivoSefaz, setArquivoSefaz] = useState(null);
+  const [serieArrecadacao, setSerieArrecadacao] = useState([]);
+  const [rankingAgentes, setRankingAgentes] = useState([]);
+  const [totaisSerie, setTotaisSerie] = useState({});
+  const [agenteGrafico, setAgenteGrafico] = useState('');
+  const [mesesGrafico, setMesesGrafico] = useState(12);
+  const [loadingGrafico, setLoadingGrafico] = useState(false);
+
+  const agentes = useMemo(
+    () => resumo?.agentes_captacao?.length ? resumo.agentes_captacao : ['DIEGO'],
+    [resumo],
+  );
+  const visaoTodos = Boolean(resumo?.visao_todos) || !agente;
+  const agenteAtivo = visaoTodos ? '' : (resumo?.agente_captacao || agente);
+  const rotuloAgente = visaoTodos ? 'agentes' : agenteAtivo;
+  const percentualAgente = resumo?.percentual_agente ?? resumo?.percentual_captacao ?? 50;
+  const percentualAeb = Math.max(0, 100 - Number(percentualAgente || 0));
+
+  const carregarDashboard = useCallback(async (comp, agenteSel) => {
+    setLoading(true);
+    setErro('');
+    try {
+      const data = await nfpDashboard(comp || undefined, agenteSel === undefined ? undefined : agenteSel);
+      setResumo(data);
+      if (data?.competencia && !comp) setCompetencia(data.competencia);
+      if (data?.visao_todos) setAgente('');
+      else if (data?.agente_captacao) setAgente(data.agente_captacao);
+    } catch (error) {
+      setErro(erroApiNfp(error, 'Não foi possível carregar o dashboard NFP.'));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    carregarDashboard();
+  }, [carregarDashboard]);
+
+  const carregarListas = useCallback(async () => {
+    setErro('');
+    try {
+      if (aba === 'rateio' && competencia) {
+        setRateio(await nfpListarRateio(competencia, { limite: 300 }));
+      }
+      if (aba === 'batimento' && competencia) {
+        setBatimentos(await nfpListarBatimentos(competencia, { limite: 200 }));
+      }
+    } catch (error) {
+      setErro(erroApiNfp(error, 'Não foi possível carregar os dados NFP.'));
+    }
+  }, [aba, competencia]);
+
+  useEffect(() => {
+    if (aba === 'dashboard') return undefined;
+    carregarListas();
+    return undefined;
+  }, [aba, carregarListas]);
+
+  const competencias = useMemo(() => resumo?.competencias || [], [resumo]);
+
+  const carregarGrafico = useCallback(async () => {
+    if (!competencias.length) {
+      setSerieArrecadacao([]);
+      setRankingAgentes([]);
+      setTotaisSerie({});
+      return;
+    }
+
+    const ordenadas = [...competencias].sort();
+    const janela = ordenadas.slice(Math.max(0, ordenadas.length - Number(mesesGrafico || 12)));
+    const competenciaInicio = janela[0];
+    const competenciaFim = janela[janela.length - 1];
+    if (!competenciaInicio || !competenciaFim) return;
+
+    setLoadingGrafico(true);
+    try {
+      const dados = await nfpRelatorioRateioConsolidado({
+        competencia_inicio: competenciaInicio,
+        competencia_fim: competenciaFim,
+        agente: agenteGrafico || undefined,
+      });
+      setSerieArrecadacao(dados?.por_competencia || []);
+      setRankingAgentes(dados?.por_agente || []);
+      setTotaisSerie(dados?.totais || {});
+    } catch {
+      setSerieArrecadacao([]);
+      setRankingAgentes([]);
+      setTotaisSerie({});
+    } finally {
+      setLoadingGrafico(false);
+    }
+  }, [agenteGrafico, competencias, mesesGrafico]);
+
+  useEffect(() => {
+    if (aba !== 'dashboard') return undefined;
+    carregarGrafico();
+    return undefined;
+  }, [aba, carregarGrafico]);
+
+  async function comFeedback(acao, mensagemOk) {
+    setTrabalhando(true);
+    setErro('');
+    setSucesso('');
+    try {
+      const resultado = await acao();
+      setSucesso(mensagemOk);
+      await carregarDashboard(competencia || undefined, agente);
+      await carregarListas();
+      await carregarGrafico();
+      return resultado;
+    } catch (error) {
+      setErro(erroApiNfp(error, 'Falha na operação NFP.'));
+      return null;
+    } finally {
+      setTrabalhando(false);
+    }
+  }
+
+  return (
+    <AppShell>
+      <Sidebar />
+      <MainShell>
+        <PageHeader
+          eyebrow="NFP – Créditos"
+          title="Dashboard"
+          subtitle="Nota Fiscal Paulista: créditos SEFAZ, batimento e rateio."
+          icon={<Receipt className="h-5 w-5" />}
+          actions={(
+            <div className="flex flex-wrap items-center gap-2">
+              <select
+                value={agente}
+                onChange={(e) => {
+                  const novo = e.target.value;
+                  setAgente(novo);
+                  setAgenteGrafico(novo);
+                  carregarDashboard(competencia || undefined, novo);
+                }}
+                className="rounded-xl border border-slate-200 px-3 py-2 text-sm"
+                title="Agente de captação"
+              >
+                <option value="">Todos</option>
+                {agentes.map((a) => (
+                  <option key={a} value={a}>{a}</option>
+                ))}
+              </select>
+              <label className="flex items-center gap-2 text-sm text-slate-600">
+                <span className="hidden sm:inline font-semibold">Competência</span>
+                <input
+                  type="month"
+                  value={competencia}
+                  onChange={(e) => {
+                    const nova = e.target.value;
+                    setCompetencia(nova);
+                    if (nova) carregarDashboard(nova, agente);
+                  }}
+                  className="rounded-xl border border-slate-200 px-3 py-2 text-sm"
+                  title="Competência (mês/ano)"
+                />
+              </label>
+              <PremiumButton
+                type="button"
+                variant="secondary"
+                disabled={trabalhando}
+                onClick={() => carregarDashboard(competencia || undefined, agente)}
+              >
+                Atualizar
+              </PremiumButton>
+            </div>
+          )}
+        />
+
+        <ScrollArea>
+          {erro && (
+            <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+              {erro}
+            </div>
+          )}
+          {sucesso && (
+            <div className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+              {sucesso}
+            </div>
+          )}
+
+          <div className="mb-5 flex flex-wrap gap-2">
+            {ABAS.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => setAba(item.id)}
+                className={`rounded-full border px-4 py-2 text-sm font-semibold transition ${
+                  aba === item.id
+                    ? 'border-slate-800 bg-slate-800 text-white'
+                    : 'border-slate-200 bg-white text-slate-700 hover:border-slate-400'
+                }`}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+
+          {aba === 'dashboard' && (
+            <section className="space-y-4">
+              {loading ? (
+                <div className="py-10 text-center text-sm text-slate-500">Carregando...</div>
+              ) : (
+                <>
+                  <div className="grid gap-3 md:grid-cols-3">
+                    <Link
+                      to="/nfp/cadastro/agentes"
+                      className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-slate-400"
+                    >
+                      <UserRoundCog className="h-5 w-5 text-slate-600" />
+                      <div>
+                        <p className="text-sm font-bold text-slate-800">Agentes captadores</p>
+                        <p className="text-xs text-slate-500">Cadastro e percentual de rateio</p>
+                      </div>
+                    </Link>
+                    <Link
+                      to="/nfp/cadastro/doadores"
+                      className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-slate-400"
+                    >
+                      <Users className="h-5 w-5 text-slate-600" />
+                      <div>
+                        <p className="text-sm font-bold text-slate-800">Doadores</p>
+                        <p className="text-xs text-slate-500">Cadastro de doadores automáticos</p>
+                      </div>
+                    </Link>
+                    <Link
+                      to="/nfp/cadastro/cnpjs"
+                      className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-slate-400"
+                    >
+                      <Building2 className="h-5 w-5 text-slate-600" />
+                      <div>
+                        <p className="text-sm font-bold text-slate-800">CNPJs / Lojas</p>
+                        <p className="text-xs text-slate-500">Estabelecimentos e captador</p>
+                      </div>
+                    </Link>
+                    <Link
+                      to="/nfp/relatorios"
+                      className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-slate-400"
+                    >
+                      <Receipt className="h-5 w-5 text-slate-600" />
+                      <div>
+                        <p className="text-sm font-bold text-slate-800">Relatórios</p>
+                        <p className="text-xs text-slate-500">Consolidados e analíticos NFP</p>
+                      </div>
+                    </Link>
+                  </div>
+
+                  <NfpTermometroArrecadacao
+                    serie={serieArrecadacao}
+                    ranking={rankingAgentes}
+                    totais={totaisSerie}
+                    agenteFiltro={agenteGrafico}
+                    onChangeAgenteFiltro={setAgenteGrafico}
+                    agentes={agentes}
+                    meses={mesesGrafico}
+                    onChangeMeses={setMesesGrafico}
+                    loading={loadingGrafico}
+                  />
+
+                  <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                    {[
+                      ['Doadores diretos', resumo?.doadores],
+                      ['CNPJs', resumo?.cnpjs],
+                      ['CNPJs conferir', resumo?.cnpjs_conferir],
+                      ['Créditos SEFAZ', resumo?.sefaz_creditos],
+                      ['Doações auto', resumo?.doacoes_automaticas],
+                      ['Batimentos', resumo?.batimentos],
+                      ['Total créditos', money(resumo?.total_creditos)],
+                      ['Total AEB na competência', money(resumo?.aeb_total_competencia ?? resumo?.total_aeb)],
+                    ].map(([label, valor]) => (
+                      <article key={label} className="rounded-3xl border border-slate-100 bg-white p-5 shadow-sm">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</p>
+                        <p className="mt-2 text-2xl font-bold text-slate-900">{valor ?? '—'}</p>
+                      </article>
+                    ))}
+                  </div>
+
+                  <div className="rounded-3xl border border-teal-100 bg-teal-50/60 p-5 shadow-sm">
+                    <h3 className="text-sm font-bold text-teal-900">
+                      Valores para retirada — {visaoTodos ? 'Todos os agentes' : agenteAtivo} × AEB
+                    </h3>
+                    <p className="mt-1 text-xs text-teal-800">
+                      {visaoTodos ? (
+                        <>
+                          Visão consolidada de todos os agentes.
+                          Use <strong>Parte agentes</strong> e <strong>Parte AEB</strong> como base de retirada deste bloco.
+                          A Parte AEB já soma o rateio de cada agente + doador automático nas lojas deles.
+                        </>
+                      ) : (
+                        <>
+                          Use <strong>Parte {agenteAtivo}</strong> e <strong>Parte AEB</strong> como base de retirada deste bloco.
+                          A Parte AEB já soma o rateio ({percentualAeb}%) + doador automático nas lojas do agente.
+                        </>
+                      )}
+                    </p>
+                    <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                      {[
+                        [
+                          `Bruto lojas ${rotuloAgente}`,
+                          money(resumo?.bruto_lojas_agente ?? resumo?.bruto_lojas_diego),
+                          visaoTodos
+                            ? 'Créditos das lojas com rateio de agentes'
+                            : 'Créditos das lojas do agente (base do rateio)',
+                        ],
+                        [
+                          `Doador AEB em lojas ${rotuloAgente}`,
+                          money(resumo?.doador_aeb_loja_agente ?? resumo?.doador_aeb_loja_diego),
+                          '100% AEB — não entra na parte do(s) agente(s)',
+                        ],
+                        [
+                          `Parte ${rotuloAgente}`,
+                          money(resumo?.parte_agente ?? resumo?.parte_agente_50 ?? resumo?.parte_diego_50 ?? resumo?.total_diego),
+                          visaoTodos
+                            ? 'Retirada consolidada dos agentes (conforme % de cada um)'
+                            : `Retirada do agente (${percentualAgente}% do bruto)`,
+                        ],
+                        [
+                          'Parte AEB',
+                          money(resumo?.parte_aeb_consolidada_agente),
+                          visaoTodos
+                            ? 'Retirada AEB deste bloco (rateio AEB + doador nas lojas dos agentes)'
+                            : `Retirada AEB deste bloco (${percentualAeb}% do bruto + doador)`,
+                        ],
+                      ].map(([label, valor, ajuda]) => (
+                        <article key={label} className="rounded-2xl border border-teal-100 bg-white p-4 shadow-sm">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-teal-700">{label}</p>
+                          <p className="mt-2 text-2xl font-bold text-slate-900">{valor ?? '—'}</p>
+                          <p className="mt-2 text-xs text-slate-500">{ajuda}</p>
+                        </article>
+                      ))}
+                    </div>
+                    <p className="mt-3 text-xs text-teal-800">
+                      Direto AEB e doador automático geral (fora das lojas dos agentes) entram no card
+                      {' '}
+                      <strong>Total AEB na competência</strong>
+                      {' '}
+                      acima.
+                      {' '}
+                      CNPJs {visaoTodos ? 'no cadastro' : 'do agente'}: {resumo?.cnpjs_agente ?? '—'}
+                      {visaoTodos ? '' : ` de ${resumo?.cnpjs ?? '—'}`}.
+                    </p>
+                  </div>
+                </>
+              )}
+            </section>
+          )}
+
+          {aba === 'importacoes' && (
+            <section className="grid gap-4 lg:grid-cols-2">
+              <article className="rounded-3xl border border-slate-100 bg-white p-5 shadow-sm space-y-3">
+                <h3 className="font-bold text-slate-800">Importar doadores</h3>
+                <CampoArquivo label="Planilha" onChange={setArquivoDoadores} />
+                <PremiumButton
+                  type="button"
+                  disabled={trabalhando || !arquivoDoadores}
+                  onClick={() => comFeedback(
+                    () => nfpImportarDoadores(arquivoDoadores),
+                    'Doadores importados.',
+                  )}
+                >
+                  Importar
+                </PremiumButton>
+              </article>
+
+              <article className="rounded-3xl border border-slate-100 bg-white p-5 shadow-sm space-y-3">
+                <h3 className="font-bold text-slate-800">Importar CNPJs</h3>
+                <CampoArquivo label="Planilha" onChange={setArquivoCnpjs} />
+                <PremiumButton
+                  type="button"
+                  disabled={trabalhando || !arquivoCnpjs}
+                  onClick={() => comFeedback(
+                    () => nfpImportarCnpjs(arquivoCnpjs, agenteAtivo || 'DIEGO'),
+                    'CNPJs importados.',
+                  )}
+                >
+                  Importar
+                </PremiumButton>
+              </article>
+
+              <article className="rounded-3xl border border-slate-100 bg-white p-5 shadow-sm space-y-3">
+                <h3 className="font-bold text-slate-800">Importar doações SEFAZ</h3>
+                <label className="block text-sm text-slate-700">
+                  <span className="mb-1 block text-xs font-semibold text-slate-600">Competência</span>
+                  <input
+                    type="month"
+                    value={competencia}
+                    onChange={(e) => setCompetencia(e.target.value)}
+                    className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
+                  />
+                </label>
+                <CampoArquivo label="Planilha" onChange={setArquivoDoacoes} />
+                <PremiumButton
+                  type="button"
+                  disabled={trabalhando || !arquivoDoacoes || !competencia}
+                  onClick={() => comFeedback(
+                    () => nfpImportarDoacoes(arquivoDoacoes, competencia),
+                    'Doações importadas.',
+                  )}
+                >
+                  Importar
+                </PremiumButton>
+              </article>
+
+              <article className="rounded-3xl border border-slate-100 bg-white p-5 shadow-sm space-y-3">
+                <h3 className="font-bold text-slate-800">Importar créditos SEFAZ</h3>
+                <label className="block text-sm text-slate-700">
+                  <span className="mb-1 block text-xs font-semibold text-slate-600">Competência</span>
+                  <input
+                    type="month"
+                    value={competencia}
+                    onChange={(e) => setCompetencia(e.target.value)}
+                    className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
+                  />
+                </label>
+                <CampoArquivo label="Planilha" onChange={setArquivoSefaz} />
+                <PremiumButton
+                  type="button"
+                  disabled={trabalhando || !arquivoSefaz || !competencia}
+                  onClick={() => comFeedback(
+                    () => nfpImportarSefaz(arquivoSefaz, competencia),
+                    'Créditos SEFAZ importados.',
+                  )}
+                >
+                  Importar
+                </PremiumButton>
+              </article>
+            </section>
+          )}
+
+          {aba === 'rateio' && (
+            <section className="space-y-4">
+              <p className="text-sm text-slate-600">
+                O percentual de cada agente é definido no cadastro de agentes captadores.
+                Agente atual: <strong>{agenteAtivo}</strong> ({percentualAgente}%).
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <PremiumButton
+                  type="button"
+                  disabled={trabalhando || !competencia}
+                  onClick={() => comFeedback(
+                    () => nfpCalcularRateio(competencia),
+                    'Rateio calculado.',
+                  )}
+                >
+                  Calcular rateio
+                </PremiumButton>
+                <PremiumButton
+                  type="button"
+                  variant="secondary"
+                  disabled={trabalhando || !competencia}
+                  onClick={async () => {
+                    const blob = await comFeedback(
+                      () => nfpExportarRateio(competencia),
+                      'Exportação gerada.',
+                    );
+                    if (!blob) return;
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `nfp_rateio_${competencia}.xlsx`;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                  }}
+                >
+                  Exportar XLSX
+                </PremiumButton>
+              </div>
+              <div className="overflow-x-auto rounded-3xl border border-slate-100 bg-white p-5 shadow-sm">
+                <table className="min-w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-slate-500">
+                      <th className="px-2 py-2">CNPJ</th>
+                      <th className="px-2 py-2">Loja</th>
+                      <th className="px-2 py-2">Origem</th>
+                      <th className="px-2 py-2">Qtd</th>
+                      <th className="px-2 py-2">Retorno</th>
+                      <th className="px-2 py-2">Parte agente</th>
+                      <th className="px-2 py-2">AEB</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rateio.map((r) => (
+                      <tr key={r.id} className="border-t border-slate-100">
+                        <td className="px-2 py-2">{formatarCNPJ(r.cnpj)}</td>
+                        <td className="px-2 py-2">{r.loja}</td>
+                        <td className="px-2 py-2">{r.origem}</td>
+                        <td className="px-2 py-2">{r.qtd}</td>
+                        <td className="px-2 py-2">{money(r.retorno)}</td>
+                        <td className="px-2 py-2">{money(r.valor_diego ?? r.valor_agente)}</td>
+                        <td className="px-2 py-2">{money(r.valor_aeb)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          )}
+
+          {aba === 'batimento' && (
+            <section className="overflow-x-auto rounded-3xl border border-slate-100 bg-white p-5 shadow-sm">
+              <table className="min-w-full text-sm">
+                <thead>
+                  <tr className="text-left text-slate-500">
+                    <th className="px-2 py-2">CPF doador</th>
+                    <th className="px-2 py-2">CNPJ</th>
+                    <th className="px-2 py-2">Emitente</th>
+                    <th className="px-2 py-2">Nota</th>
+                    <th className="px-2 py-2">Créditos</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {batimentos.map((b) => (
+                    <tr key={b.id} className="border-t border-slate-100">
+                      <td className="px-2 py-2">{formatarCPF(b.cpf_doador_cadastrador)}</td>
+                      <td className="px-2 py-2">{formatarCNPJ(b.cnpj_estabelecimento)}</td>
+                      <td className="px-2 py-2">{b.emitente}</td>
+                      <td className="px-2 py-2">{b.numero_nota}</td>
+                      <td className="px-2 py-2">{money((b.creditos_centavos || 0) / 100)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </section>
+          )}
+        </ScrollArea>
+      </MainShell>
+    </AppShell>
+  );
+}

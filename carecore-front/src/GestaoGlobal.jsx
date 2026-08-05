@@ -6,19 +6,30 @@ import {
   FileBarChart,
   LayoutDashboard,
   Network,
+  Palette,
   RefreshCw,
   ShieldCheck,
 } from 'lucide-react';
 import Sidebar from './Sidebar';
 import { AppShell, MainShell, PageHeader, ScrollArea } from './components/PremiumUI';
-import api from './services/api';
+import { RelatoriosPersonalizacao } from './components/relatorios/RelatoriosPersonalizacao';
 import { useAuth } from './context/AuthContext';
+import { useRelatoriosIdentidade } from './hooks/useRelatoriosIdentidade';
+import api, { obterTokenLocal } from './services/api';
+import {
+  buscarIdentidadeRelatoriosOrganizacao,
+  enviarLogoIdentidadeRelatoriosOrganizacao,
+  removerLogoIdentidadeRelatoriosOrganizacao,
+  salvarIdentidadeRelatoriosOrganizacao,
+} from './services/relatoriosService';
+import { imprimirRelatorio } from './utils/imprimirRelatorio';
 
 const secoes = [
   { id: 'visao', label: 'Visão Geral', icon: LayoutDashboard },
   { id: 'comparativos', label: 'Comparativos', icon: BarChart3 },
   { id: 'saude', label: 'Saúde Operacional', icon: CheckCircle2 },
   { id: 'relatorios', label: 'Relatórios Consolidados', icon: FileBarChart },
+  { id: 'personalizacao', label: 'Personalização', icon: Palette },
   { id: 'projetos', label: 'Projetos', icon: Network },
 ];
 
@@ -432,7 +443,8 @@ function RelatoriosConsolidados({ resumo }) {
       <p className="text-[11px] font-semibold uppercase tracking-wide text-violet-600">Relatórios consolidados</p>
       <h2 className="mt-1 text-xl font-bold text-slate-900">Base executiva da organização</h2>
       <p className="mt-1 text-sm text-slate-500">
-        Esta seção organiza os números consolidados para acompanhamento gerencial. Exportações podem ser conectadas aqui depois.
+        Esta seção organiza os números consolidados para acompanhamento gerencial.
+        A identidade visual (logo e rodapé da sede) fica na aba Personalização e também vale para o NFP.
       </p>
 
       <div className="mt-5 grid min-w-0 gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -453,6 +465,94 @@ function RelatoriosConsolidados({ resumo }) {
           </article>
         ))}
       </div>
+    </section>
+  );
+}
+
+function PersonalizacaoOrganizacao({ token }) {
+  const {
+    aplicarIdentidadeRelatorio,
+    atualizarCampoIdentidade,
+    enviarLogoRelatorio,
+    errosIdentidade,
+    formIdentidade,
+    identidadeRelatorio,
+    mensagemIdentidade,
+    obterLogoRelatorioParaImpressao,
+    removerLogoRelatorio,
+    salvarIdentidadeRelatorio,
+    salvandoIdentidade,
+    validarCampoIdentidade,
+  } = useRelatoriosIdentidade(token, {
+    salvarIdentidade: salvarIdentidadeRelatoriosOrganizacao,
+    enviarLogo: enviarLogoIdentidadeRelatoriosOrganizacao,
+    removerLogo: removerLogoIdentidadeRelatoriosOrganizacao,
+  });
+
+  useEffect(() => {
+    let ativo = true;
+    buscarIdentidadeRelatoriosOrganizacao()
+      .then((dados) => {
+        if (ativo && dados) aplicarIdentidadeRelatorio(dados);
+      })
+      .catch(() => {});
+    return () => {
+      ativo = false;
+    };
+  }, []);
+
+  async function imprimirModeloIdentidadeRelatorio() {
+    const logoRelatorioDataUrl = await obterLogoRelatorioParaImpressao();
+    imprimirRelatorio({
+      titulo: 'Modelo de Relatório da Organização',
+      subtitulo: 'Pré-visualização da identidade visual da sede (NFP e relatórios gerenciais).',
+      metricas: [
+        { label: 'Exemplo', valor: '123', detalhe: 'Indicador demonstrativo' },
+        { label: 'Escopo', valor: 'Organização', detalhe: 'AEB Sede' },
+      ],
+      colunas: ['Campo', 'Valor'],
+      dados: [
+        { Campo: 'Nome exibido', Valor: formIdentidade.relatorio_nome_exibicao || '-' },
+        { Campo: 'Rodapé linha 1', Valor: formIdentidade.relatorio_rodape_linha1 || '-' },
+        { Campo: 'Rodapé linha 2', Valor: formIdentidade.relatorio_rodape_linha2 || '-' },
+      ],
+      identidade: {
+        ...identidadeRelatorio,
+        ...formIdentidade,
+        logo_src: logoRelatorioDataUrl,
+      },
+    });
+  }
+
+  return (
+    <section className="grid min-w-0 gap-5">
+      <article className="min-w-0 overflow-hidden rounded-3xl border border-slate-100 bg-white p-4 shadow-sm sm:p-5">
+        <p className="text-[11px] font-semibold uppercase tracking-wide text-violet-600">
+          Identidade da organização
+        </p>
+        <h2 className="mt-1 text-xl font-bold text-slate-900">Personalização de relatórios da sede</h2>
+        <p className="mt-1 text-sm text-slate-500">
+          Logo, nome e rodapé usados nos relatórios NFP e nos relatórios gerenciais da organização.
+          Não altera a personalização dos relatórios do projeto (SIAT e demais unidades).
+        </p>
+      </article>
+
+      <RelatoriosPersonalizacao
+        atualizarCampoIdentidade={atualizarCampoIdentidade}
+        descricaoDados="Esses dados aparecem no cabeçalho e rodapé dos relatórios NFP e gerenciais da organização."
+        enviarLogoRelatorio={enviarLogoRelatorio}
+        errosIdentidade={errosIdentidade}
+        formIdentidade={formIdentidade}
+        identidadeRelatorio={identidadeRelatorio}
+        imprimirModeloIdentidadeRelatorio={imprimirModeloIdentidadeRelatorio}
+        mensagemIdentidade={mensagemIdentidade}
+        removerLogoRelatorio={removerLogoRelatorio}
+        salvarIdentidadeRelatorio={salvarIdentidadeRelatorio}
+        salvandoIdentidade={salvandoIdentidade}
+        tituloDados="Dados da AEB Sede nos relatórios"
+        tituloLogo="Logotipo da organização"
+        validarCampoIdentidade={validarCampoIdentidade}
+      />
     </section>
   );
 }
@@ -507,6 +607,7 @@ function ProjetosGestao({ projetosComSaude, projetoAtualId, selecionandoProjetoI
 export default function GestaoGlobal() {
   const navigate = useNavigate();
   const { login } = useAuth();
+  const token = obterTokenLocal();
   const [secaoAtiva, setSecaoAtiva] = useState('visao');
   const [dataInicio, setDataInicio] = useState(inicioAnoISO());
   const [dataFim, setDataFim] = useState(hojeISO());
@@ -514,6 +615,7 @@ export default function GestaoGlobal() {
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState('');
   const [selecionandoProjetoId, setSelecionandoProjetoId] = useState('');
+  const personalizacaoAtiva = secaoAtiva === 'personalizacao';
 
   const carregarResumo = async () => {
     setLoading(true);
@@ -573,6 +675,10 @@ export default function GestaoGlobal() {
   };
 
   const renderSecao = () => {
+    if (personalizacaoAtiva) {
+      return <PersonalizacaoOrganizacao token={token} />;
+    }
+
     if (loading) {
       return (
         <div className="rounded-3xl border border-slate-100 bg-white p-8 text-sm font-semibold text-slate-500 shadow-sm">
@@ -635,13 +741,15 @@ export default function GestaoGlobal() {
           <div className="mx-auto grid w-full min-w-0 max-w-7xl gap-5 overflow-hidden">
             <MenuGestaoGlobal secaoAtiva={secaoAtiva} onChange={setSecaoAtiva} />
 
-            <FiltroPeriodo
-              dataInicio={dataInicio}
-              dataFim={dataFim}
-              onChangeInicio={setDataInicio}
-              onChangeFim={setDataFim}
-              onLimpar={limparPeriodo}
-            />
+            {!personalizacaoAtiva ? (
+              <FiltroPeriodo
+                dataInicio={dataInicio}
+                dataFim={dataFim}
+                onChangeInicio={setDataInicio}
+                onChangeFim={setDataFim}
+                onLimpar={limparPeriodo}
+              />
+            ) : null}
 
             {renderSecao()}
           </div>

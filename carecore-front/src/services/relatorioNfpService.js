@@ -1,0 +1,16 @@
+import api from './api';
+
+export async function nfpRelatorioRateioConsolidado(params = {}) {
+  const { data } = await api.get('/api/nfp/relatorios/rateio-consolidado', { params });
+  return data;
+}
+
+export async function nfpRelatorioRateioDetalhado(params = {}) {
+  const { data } = await api.get('/api/nfp/relatorios/rateio-detalhado', { params });
+  return data;
+}
+
+export async function nfpOrigensRateio(params = {}) {
+  const { data } = await api.get('/api/nfp/relatorios/origens-rateio', { params });
+  return data;
+}

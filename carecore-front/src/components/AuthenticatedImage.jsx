@@ -19,6 +19,7 @@ export default function AuthenticatedImage({
   const containerRef = useRef(null);
   const [visivel, setVisivel] = useState(!lazy);
   const [blobUrl, setBlobUrl] = useState(null);
+  const [falhou, setFalhou] = useState(false);
 
   useEffect(() => {
     if (!lazy) return undefined;
@@ -50,16 +51,19 @@ export default function AuthenticatedImage({
 
     if (!autorizada) {
       setBlobUrl(null);
+      setFalhou(false);
       return undefined;
     }
 
     const emCache = obterFotoCache(autorizada);
     if (emCache) {
       setBlobUrl(emCache);
+      setFalhou(false);
       return undefined;
     }
 
     setBlobUrl(null);
+    setFalhou(false);
 
     async function carregar() {
       const precisaBearer = autorizada.includes('/api/arquivos/');
@@ -80,6 +84,7 @@ export default function AuthenticatedImage({
         });
 
         if (!resposta.ok || cancelado) {
+          if (!cancelado) setFalhou(true);
           return;
         }
 
@@ -89,6 +94,7 @@ export default function AuthenticatedImage({
 
         if (!cancelado) {
           setBlobUrl(objetoUrl);
+          setFalhou(false);
         }
       } catch (error) {
         if (error?.name === 'AbortError' || cancelado) {
@@ -97,6 +103,7 @@ export default function AuthenticatedImage({
 
         if (!cancelado) {
           setBlobUrl(null);
+          setFalhou(true);
         }
       }
     }
@@ -114,7 +121,19 @@ export default function AuthenticatedImage({
   }
 
   if (!blobUrl) {
-    return lazy ? <span ref={containerRef} className={className} aria-hidden="true" /> : null;
+    if (lazy) {
+      return <span ref={containerRef} className={className} aria-hidden="true" />;
+    }
+
+    return (
+      <span
+        ref={containerRef}
+        className={`inline-flex items-center justify-center text-center text-xs font-semibold text-slate-400 ${className}`}
+        aria-hidden="true"
+      >
+        {falhou ? 'Não foi possível carregar a imagem.' : 'Carregando imagem…'}
+      </span>
+    );
   }
 
   return (

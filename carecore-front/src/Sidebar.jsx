@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import {
   Bell,
   BedDouble,
+  Building2,
   CalendarClock,
   CalendarRange,
   ChartNoAxesColumnIncreasing,
@@ -16,6 +17,7 @@ import {
   MessageSquareWarning,
   PackageOpen,
   PanelsTopLeft,
+  Receipt,
   Users,
   UserRoundCog,
   WashingMachine,
@@ -30,7 +32,7 @@ import { carecoreVersaoRotulo } from './config/versao';
 import { MENU_ACOMPANHAMENTOS, MENU_CONVIVENTES } from './config/acompanhamentosConfig';
 import { acompanhamentoAtivo, moduloAtivo } from './config/configOperacionalDefaults';
 import { useConfigOperacional } from './hooks/useConfigOperacional';
-import { usuarioEhOficineiro, normalizarPerfilRbac } from './utils/rbacUtils';
+import { usuarioEhAdmGlobal, usuarioEhOficineiro, normalizarPerfilRbac } from './utils/rbacUtils';
 import { decodificarPayloadJwt } from './utils/jwtUtils';
 import {
   DIREITOS_RESERVADOS_TITULO,
@@ -167,6 +169,10 @@ export default function Sidebar() {
   }[perfilUsuario] || normalizarPerfilRbac(perfilUsuario);
 
   const ehOficineiro = usuarioEhOficineiro({
+    perfil_acesso: perfilNormalizado,
+    is_manutencao: isManutencao,
+  });
+  const ehAdmGlobal = usuarioEhAdmGlobal({
     perfil_acesso: perfilNormalizado,
     is_manutencao: isManutencao,
   });
@@ -404,6 +410,63 @@ export default function Sidebar() {
           perfis: ['Gestor', 'Global']
         },
         {
+          path: '/nfp',
+          icon: Receipt,
+          label: 'NFP – Créditos',
+          perfis: ['Global', 'ADM Global', 'Manutenção'],
+          children: [
+            {
+              path: '/nfp',
+              icon: Receipt,
+              label: 'Dashboard',
+            },
+            {
+              path: '/nfp/cadastro',
+              icon: ClipboardList,
+              label: 'Cadastro',
+              children: [
+                {
+                  path: '/nfp/cadastro/agentes',
+                  icon: UserRoundCog,
+                  label: 'Agentes captadores',
+                },
+                {
+                  path: '/nfp/cadastro/doadores',
+                  icon: Users,
+                  label: 'Doadores',
+                },
+                {
+                  path: '/nfp/cadastro/cnpjs',
+                  icon: Building2,
+                  label: 'CNPJs / Lojas',
+                },
+              ],
+            },
+            {
+              path: '/nfp/relatorios',
+              icon: FileBarChart,
+              label: 'Relatórios',
+              children: [
+                {
+                  path: '/nfp/relatorios',
+                  icon: FileBarChart,
+                  label: 'Central de relatórios',
+                },
+                {
+                  path: '/nfp/relatorios/rateio-consolidado',
+                  icon: FileBarChart,
+                  label: 'Rateio consolidado',
+                },
+                {
+                  path: '/nfp/relatorios/rateio-detalhado',
+                  icon: FileBarChart,
+                  label: 'Rateio detalhado',
+                },
+              ],
+            },
+          ],
+        },
+        {
           path: '/suporte',
           icon: LifeBuoy,
           label: 'Suporte'
@@ -540,6 +603,9 @@ export default function Sidebar() {
   const usuarioPodeVerItem = (item) => {
     if (ehOficineiro) {
       return Boolean(item.path?.startsWith('/atividades'));
+    }
+    if (ehAdmGlobal) {
+      return Boolean(item.path === '/nfp' || item.path?.startsWith('/nfp/'));
     }
 
     const perfilPermitido = isManutencao

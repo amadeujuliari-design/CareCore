@@ -54,10 +54,12 @@ htmlcov/
 # Snapshots locais contendo cópias antigas do projeto
 SNAPSHOT_COMPLETO_PROJETO.txt
 codigo_completo.txt
+CARECORE_CODIGO_PARA_ANALISE_VIDEO.txt
 documentos_teste/
 
 # Desenvolvimento congelado (nao versionar; retomada futura local)
 _congelado/
+Portal AEB NFP/
 
 CHAT_*.txt
 CHECKPOINT_CHAT_*.txt

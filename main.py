@@ -25,8 +25,10 @@ from observability import configurar_observabilidade_carecore
 from presenca_operacional import PRESENCA_REGRAS_BUILD
 from revisao_texto import gemini_configurado
 from security import (
+    caminho_api_permitido_para_adm_global,
     caminho_api_permitido_para_oficineiro,
     extrair_payload_autorizacao_bearer,
+    usuario_eh_adm_global,
     usuario_eh_oficineiro,
 )
 
@@ -48,6 +50,7 @@ from routers import acompanhamentos
 from routers import atividades
 from routers import atividades_sisa
 from routers import texto
+from routers import nfp
 
 
 configurar_logging_carecore()
@@ -166,6 +169,13 @@ async def lifespan(app: FastAPI):
                 "ALTER TABLE instituicoes ADD COLUMN relatorio_site VARCHAR",
                 "ALTER TABLE instituicoes ADD COLUMN historico_legado_ativo BOOLEAN DEFAULT 0",
                 "ALTER TABLE instituicoes ADD COLUMN config_operacional_json TEXT",
+                "ALTER TABLE organizacoes ADD COLUMN relatorio_logo_url VARCHAR",
+                "ALTER TABLE organizacoes ADD COLUMN relatorio_nome_exibicao VARCHAR",
+                "ALTER TABLE organizacoes ADD COLUMN relatorio_rodape_linha1 VARCHAR",
+                "ALTER TABLE organizacoes ADD COLUMN relatorio_rodape_linha2 VARCHAR",
+                "ALTER TABLE organizacoes ADD COLUMN relatorio_telefone VARCHAR",
+                "ALTER TABLE organizacoes ADD COLUMN relatorio_email VARCHAR",
+                "ALTER TABLE organizacoes ADD COLUMN relatorio_site VARCHAR",
                 "ALTER TABLE usuarios ADD COLUMN organizacao_id VARCHAR",
                 "ALTER TABLE usuarios ADD COLUMN is_global BOOLEAN DEFAULT 0",
                 "ALTER TABLE usuarios ADD COLUMN token_version INTEGER DEFAULT 0 NOT NULL",
@@ -335,6 +345,27 @@ async def rbac_oficineiro_middleware(request: Request, call_next):
         status_code=403,
         content={
             "detail": "Perfil Oficineiro(a) tem acesso apenas ao módulo de Atividades.",
+        },
+    )
+
+
+@app.middleware("http")
+async def rbac_adm_global_middleware(request: Request, call_next):
+    path = request.url.path
+    if not path.startswith("/api/"):
+        return await call_next(request)
+
+    payload = extrair_payload_autorizacao_bearer(request.headers.get("authorization"))
+    if not payload or not usuario_eh_adm_global(payload):
+        return await call_next(request)
+
+    if caminho_api_permitido_para_adm_global(path, request.method):
+        return await call_next(request)
+
+    return JSONResponse(
+        status_code=403,
+        content={
+            "detail": "Perfil ADM Global tem acesso apenas ao módulo NFP – Créditos.",
         },
     )
 
@@ -530,4 +561,5 @@ app.include_router(acompanhamentos.router)
 app.include_router(atividades_sisa.router)
 app.include_router(atividades.router)
 app.include_router(texto.router)
+app.include_router(nfp.router)
 

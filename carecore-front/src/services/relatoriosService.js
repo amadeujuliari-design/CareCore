@@ -142,3 +142,27 @@ export async function removerLogoIdentidadeRelatorios() {
   const response = await api.delete('/api/organizacao/identidade-relatorios/logo');
   return response.data;
 }
+
+export async function buscarIdentidadeRelatoriosOrganizacao() {
+  const response = await api.get('/api/organizacao/identidade-relatorios-org');
+  return response.data;
+}
+
+export async function salvarIdentidadeRelatoriosOrganizacao(payload) {
+  const response = await api.put('/api/organizacao/identidade-relatorios-org', payload);
+  return response.data;
+}
+
+export async function enviarLogoIdentidadeRelatoriosOrganizacao(formData) {
+  const response = await api.post(
+    '/api/organizacao/identidade-relatorios-org/logo',
+    formData,
+    { headers: { 'Content-Type': 'multipart/form-data' } },
+  );
+  return response.data;
+}
+
+export async function removerLogoIdentidadeRelatoriosOrganizacao() {
+  const response = await api.delete('/api/organizacao/identidade-relatorios-org/logo');
+  return response.data;
+}

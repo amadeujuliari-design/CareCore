@@ -22,6 +22,24 @@ export async function buscarIdentidadeRelatorios() {
   }
 }
 
+export async function buscarIdentidadeRelatoriosOrganizacao() {
+  const token = obterTokenLocal();
+
+  if (!token) return null;
+
+  try {
+    const response = await fetch(`${API_ROOT}/organizacao/identidade-relatorios-org`, {
+      headers: criarHeadersAutenticados(token),
+    });
+
+    if (!response.ok) return null;
+
+    return await response.json();
+  } catch {
+    return null;
+  }
+}
+
 export async function urlImagemParaDataUrl(url) {
   if (!url) return '';
 

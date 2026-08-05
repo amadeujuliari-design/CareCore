@@ -4,7 +4,7 @@ import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import AusenciaJustificadaAlerta from '../components/AusenciaJustificadaAlerta';
 import AlertaPresencaOperacional from '../components/AlertaPresencaOperacional';
 import ProtectedRoute from './ProtectedRoute';
-import { PERFIS_MODULO_ATIVIDADES } from '../utils/rbacUtils';
+import { PERFIS_MODULO_ATIVIDADES, PERFIS_MODULO_NFP } from '../utils/rbacUtils';
 import { deveExibirManutencaoProgramada } from '../config/manutencao';
 
 const Login = lazy(() => import('../Login'));
@@ -43,6 +43,13 @@ const AtividadesConteudo = lazy(() => import('../AtividadesConteudo'));
 const AtividadesRelatorios = lazy(() => import('../AtividadesRelatorios'));
 const AtividadesConferenciaSisa = lazy(() => import('../AtividadesConferenciaSisa'));
 const AtividadesPontosBrindes = lazy(() => import('../AtividadesPontosBrindes'));
+const NfpCreditos = lazy(() => import('../NfpCreditos'));
+const NfpAgentes = lazy(() => import('../NfpAgentes'));
+const NfpDoadores = lazy(() => import('../NfpDoadores'));
+const NfpCnpjs = lazy(() => import('../NfpCnpjs'));
+const NfpRelatorios = lazy(() => import('../NfpRelatorios'));
+const RelatorioNfpRateioConsolidado = lazy(() => import('../RelatorioNfpRateioConsolidado'));
+const RelatorioNfpRateioDetalhado = lazy(() => import('../RelatorioNfpRateioDetalhado'));
 
 function RotasAplicacao() {
   return (
@@ -305,6 +312,69 @@ function RotasAplicacao() {
           element={
             <ProtectedRoute perfis={['Gestor', 'Global']}>
               <Usuarios />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/nfp"
+          element={
+            <ProtectedRoute perfis={PERFIS_MODULO_NFP}>
+              <NfpCreditos />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/nfp/cadastro/agentes"
+          element={
+            <ProtectedRoute perfis={PERFIS_MODULO_NFP}>
+              <NfpAgentes />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/nfp/cadastro/doadores"
+          element={
+            <ProtectedRoute perfis={PERFIS_MODULO_NFP}>
+              <NfpDoadores />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/nfp/cadastro/cnpjs"
+          element={
+            <ProtectedRoute perfis={PERFIS_MODULO_NFP}>
+              <NfpCnpjs />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/nfp/relatorios"
+          element={
+            <ProtectedRoute perfis={PERFIS_MODULO_NFP}>
+              <NfpRelatorios />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/nfp/relatorios/rateio-consolidado"
+          element={
+            <ProtectedRoute perfis={PERFIS_MODULO_NFP}>
+              <RelatorioNfpRateioConsolidado />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/nfp/relatorios/rateio-detalhado"
+          element={
+            <ProtectedRoute perfis={PERFIS_MODULO_NFP}>
+              <RelatorioNfpRateioDetalhado />
             </ProtectedRoute>
           }
         />

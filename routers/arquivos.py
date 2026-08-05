@@ -11,8 +11,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import get_db
-from models import ConviventeDB, DocumentoConviventeDB, InstituicaoDB
-from security import get_usuario_logado, usuario_eh_gestor
+from models import ConviventeDB, DocumentoConviventeDB, InstituicaoDB, OrganizacaoDB
+from security import get_usuario_logado, usuario_eh_gestor, usuario_eh_manutencao
 from storage_uploads import (
     StorageErro,
     baixar_supabase_storage,
@@ -100,6 +100,26 @@ async def arquivo_pertence_a_instituicao(
     return resultado_foto.scalar_one_or_none() is not None
 
 
+async def arquivo_pertence_a_organizacao(
+    relative_path: str,
+    organizacao_id: str | None,
+    db: AsyncSession,
+) -> bool:
+    if not organizacao_id:
+        return False
+
+    caminhos = candidatos_caminho_upload(relative_path)
+    resultado = await db.execute(
+        select(OrganizacaoDB.id)
+        .where(
+            OrganizacaoDB.id == organizacao_id,
+            OrganizacaoDB.relatorio_logo_url.in_(caminhos),
+        )
+        .limit(1)
+    )
+    return resultado.scalar_one_or_none() is not None
+
+
 @router.get("/arquivos/{relative_path:path}")
 async def servir_arquivo_upload(
     relative_path: str,
@@ -154,6 +174,22 @@ async def servir_arquivo_upload(
             )
 
             autorizado = resultado_foto.scalar_one_or_none() is not None
+
+            if not autorizado:
+                autorizado = await arquivo_pertence_a_organizacao(
+                    caminho_normalizado,
+                    usuario_atual.get("organizacao_id"),
+                    db,
+                )
+
+            # Manutenção pode visualizar logo da organização mesmo sem vínculo direto.
+            if not autorizado and usuario_eh_manutencao(usuario_atual):
+                resultado_logo_org = await db.execute(
+                    select(OrganizacaoDB.id)
+                    .where(OrganizacaoDB.relatorio_logo_url.in_(caminhos))
+                    .limit(1)
+                )
+                autorizado = resultado_logo_org.scalar_one_or_none() is not None
     else:
         autorizado = True
 

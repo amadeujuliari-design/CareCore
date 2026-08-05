@@ -26,8 +26,10 @@ from schemas import (
     UsuarioAtivarInativar,
 )
 from security import (
+    PERFIL_ADM_GLOBAL,
     get_usuario_logado,
     gerar_hash_senha,
+    usuario_eh_adm_global,
     usuario_eh_gestor,
     usuario_eh_manutencao,
     usuario_eh_oficineiro,
@@ -48,6 +50,7 @@ router = APIRouter(
 PERFIS_ACESSO_VALIDOS = {
     "Gestor",
     "Global",
+    "ADM Global",
     "Manutenção",
     "Técnico",
     "Orientador",
@@ -63,6 +66,8 @@ PERFIS_LEGADOS_MAPEAMENTO = {
     "Manutencao": "Manutenção",
     "Manutenção": "Manutenção",
     "Oficineiro": "Oficineiro(a)",
+    "Adm Global": "ADM Global",
+    "ADMGlobal": "ADM Global",
 }
 
 
@@ -94,6 +99,23 @@ def exigir_nao_manutencao(usuario: UsuarioDB) -> None:
         )
 
 
+def exigir_nao_adm_global_na_lista_projeto(usuario: UsuarioDB) -> None:
+    if usuario_eh_adm_global(usuario):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Usuário ADM Global é gerenciado na aba Usuários da organização.",
+        )
+
+
+def exigir_gestao_adm_global_org(usuario_atual: dict) -> None:
+    if usuario_eh_manutencao(usuario_atual) or usuario_atual.get("is_global"):
+        return
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Apenas Global ou Manutenção podem gerenciar usuários ADM Global.",
+    )
+
+
 def normalizar_perfil_acesso(perfil: Optional[str]) -> str:
     if perfil is None:
         return "Consulta"
@@ -113,7 +135,7 @@ def normalizar_perfil_acesso(perfil: Optional[str]) -> str:
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=(
                 "Perfil de acesso inválido. "
-                "Use: Gestor, Global, Manutenção, Técnico, Orientador, Administrativo, Consulta ou Oficineiro(a)."
+                "Use: Gestor, Global, ADM Global, Manutenção, Técnico, Orientador, Administrativo, Consulta ou Oficineiro(a)."
             ),
         )
 
@@ -365,6 +387,7 @@ async def listar_usuarios(
     filtros = [
         UsuarioDB.instituicao_id == instituicao_id,
         UsuarioDB.perfil_acesso != "Manutenção",
+        UsuarioDB.perfil_acesso != PERFIL_ADM_GLOBAL,
     ]
 
     if ativo is not None:
@@ -401,6 +424,187 @@ async def listar_usuarios(
 
 
 # =====================================================================
+# USUÁRIOS DA ORGANIZAÇÃO — ADM Global
+# =====================================================================
+
+@router.get("/organizacao/adm-global", response_model=list[UsuarioResumoResponse])
+async def listar_adm_global_organizacao(
+    busca: Optional[str] = Query(default=None),
+    ativo: Optional[bool] = Query(default=None),
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    exigir_gestao_adm_global_org(usuario_atual)
+    organizacao_id = usuario_atual.get("organizacao_id")
+    if not organizacao_id:
+        raise HTTPException(status_code=400, detail="Usuário sem organização vinculada.")
+
+    filtros = [
+        UsuarioDB.organizacao_id == organizacao_id,
+        UsuarioDB.perfil_acesso == PERFIL_ADM_GLOBAL,
+    ]
+    if ativo is not None:
+        filtros.append(UsuarioDB.ativo == ativo)
+    if busca:
+        termo = f"%{busca.strip()}%"
+        filtros.append(
+            or_(
+                UsuarioDB.nome.ilike(termo),
+                UsuarioDB.email.ilike(termo),
+            )
+        )
+
+    resultado = await db.execute(
+        select(UsuarioDB)
+        .where(*filtros)
+        .order_by(UsuarioDB.nome.asc())
+    )
+    return [usuario_para_resumo(usuario) for usuario in resultado.scalars().all()]
+
+
+@router.post(
+    "/organizacao/adm-global",
+    response_model=UsuarioResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def criar_adm_global_organizacao(
+    payload: UsuarioCreate,
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    exigir_gestao_adm_global_org(usuario_atual)
+    organizacao_id = usuario_atual.get("organizacao_id")
+    if not organizacao_id:
+        raise HTTPException(status_code=400, detail="Usuário sem organização vinculada.")
+
+    await verificar_email_unico(db, payload.email)
+    await verificar_cpf_unico(db, payload.cpf)
+
+    novo_usuario = UsuarioDB(
+        instituicao_id=obter_instituicao_escopo(usuario_atual),
+        organizacao_id=organizacao_id,
+        nome=payload.nome,
+        email=payload.email.lower().strip(),
+        cpf=payload.cpf,
+        telefone=payload.telefone,
+        avatar_url=payload.avatar_url,
+        senha_hash=gerar_hash_senha(payload.senha),
+        perfil_acesso=PERFIL_ADM_GLOBAL,
+        is_master=False,
+        is_global=False,
+        ativo=True,
+        cargo=payload.cargo or "ADM Global NFP",
+        setor=payload.setor or "NFP – Créditos",
+        criado_em=agora_utc(),
+        criado_por_id=obter_usuario_id(usuario_atual),
+    )
+    db.add(novo_usuario)
+    try:
+        await db.commit()
+        await db.refresh(novo_usuario)
+        registrar_evento_auditoria(
+            "usuario_adm_global_criado",
+            usuario_atual=usuario_atual,
+            usuario_alvo_id=novo_usuario.id,
+            perfil_acesso=novo_usuario.perfil_acesso,
+        )
+    except Exception as erro:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Não foi possível criar o usuário ADM Global.",
+        ) from erro
+
+    return usuario_para_response(novo_usuario)
+
+
+@router.put("/organizacao/adm-global/{usuario_id}", response_model=UsuarioResponse)
+async def editar_adm_global_organizacao(
+    usuario_id: str,
+    payload: UsuarioUpdate,
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    exigir_gestao_adm_global_org(usuario_atual)
+    organizacao_id = usuario_atual.get("organizacao_id")
+    resultado = await db.execute(
+        select(UsuarioDB).where(
+            UsuarioDB.id == usuario_id,
+            UsuarioDB.organizacao_id == organizacao_id,
+            UsuarioDB.perfil_acesso == PERFIL_ADM_GLOBAL,
+        )
+    )
+    usuario = resultado.scalar_one_or_none()
+    if not usuario:
+        raise HTTPException(status_code=404, detail="Usuário ADM Global não encontrado.")
+
+    dados = payload.model_dump(exclude_unset=True)
+    dados.pop("perfil_acesso", None)
+    dados.pop("is_global", None)
+
+    if "email" in dados and dados["email"]:
+        await verificar_email_unico(db, dados["email"], usuario_id_ignorar=usuario.id)
+        dados["email"] = dados["email"].lower().strip()
+    if "cpf" in dados:
+        await verificar_cpf_unico(db, dados.get("cpf"), usuario_id_ignorar=usuario.id)
+
+    aplicar_dados_usuario(usuario, dados, permitir_ativo=True, permitir_global=False)
+    usuario.atualizado_em = agora_utc()
+    usuario.atualizado_por_id = obter_usuario_id(usuario_atual)
+
+    try:
+        await db.commit()
+        await db.refresh(usuario)
+    except Exception as erro:
+        await db.rollback()
+        raise HTTPException(
+            status_code=400,
+            detail="Não foi possível atualizar o usuário ADM Global.",
+        ) from erro
+
+    return usuario_para_response(usuario)
+
+
+@router.patch("/organizacao/adm-global/{usuario_id}/status", response_model=UsuarioResponse)
+async def status_adm_global_organizacao(
+    usuario_id: str,
+    payload: UsuarioAtivarInativar,
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    exigir_gestao_adm_global_org(usuario_atual)
+    organizacao_id = usuario_atual.get("organizacao_id")
+    resultado = await db.execute(
+        select(UsuarioDB).where(
+            UsuarioDB.id == usuario_id,
+            UsuarioDB.organizacao_id == organizacao_id,
+            UsuarioDB.perfil_acesso == PERFIL_ADM_GLOBAL,
+        )
+    )
+    usuario = resultado.scalar_one_or_none()
+    if not usuario:
+        raise HTTPException(status_code=404, detail="Usuário ADM Global não encontrado.")
+
+    usuario.ativo = payload.ativo
+    if payload.ativo:
+        usuario.inativado_em = None
+        usuario.data_desligamento = None
+        usuario.motivo_desligamento = None
+        usuario.inativado_por_id = None
+    else:
+        usuario.inativado_em = agora_utc()
+        usuario.inativado_por_id = obter_usuario_id(usuario_atual)
+        usuario.data_desligamento = payload.data_desligamento
+        usuario.motivo_desligamento = payload.motivo_desligamento
+        incrementar_token_version(usuario)
+
+    usuario.atualizado_em = agora_utc()
+    await db.commit()
+    await db.refresh(usuario)
+    return usuario_para_response(usuario)
+
+
+# =====================================================================
 # DETALHAR
 # =====================================================================
 
@@ -416,6 +620,7 @@ async def obter_usuario(
         instituicao_id=obter_instituicao_escopo(usuario_atual),
     )
     exigir_nao_manutencao(usuario)
+    exigir_nao_adm_global_na_lista_projeto(usuario)
 
     return usuario_para_response(usuario)
 
@@ -436,6 +641,11 @@ async def criar_usuario(
     usuario_atual: dict = Depends(exigir_gestor_ou_global),
 ):
     perfil_normalizado = normalizar_perfil_acesso(payload.perfil_acesso)
+    if perfil_normalizado == PERFIL_ADM_GLOBAL:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Crie usuários ADM Global na aba Usuários da organização.",
+        )
     solicita_acesso_global = bool(payload.is_global) or perfil_normalizado == "Global"
 
     validar_alteracao_global(
@@ -528,8 +738,14 @@ async def editar_usuario(
         instituicao_id=obter_instituicao_escopo(usuario_atual),
     )
     exigir_nao_manutencao(usuario)
+    exigir_nao_adm_global_na_lista_projeto(usuario)
 
     dados = payload.model_dump(exclude_unset=True)
+    if normalizar_perfil_acesso(dados.get("perfil_acesso") or usuario.perfil_acesso) == PERFIL_ADM_GLOBAL:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Usuários ADM Global são gerenciados na aba Usuários da organização.",
+        )
     validar_alteracao_global(usuario_atual, dados.get("is_global"))
 
     if "email" in dados and dados["email"]:
@@ -615,6 +831,7 @@ async def alterar_status_usuario(
         instituicao_id=obter_instituicao_escopo(usuario_atual),
     )
     exigir_nao_manutencao(usuario)
+    exigir_nao_adm_global_na_lista_projeto(usuario)
 
     usuario_logado_id = obter_usuario_id(usuario_atual)
 

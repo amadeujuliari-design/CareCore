@@ -10,7 +10,9 @@ import {
 import {
   normalizarPerfilRbac,
   rotaEhModuloAtividades,
+  rotaEhModuloNfp,
   rotaInicialPosLogin,
+  usuarioEhAdmGlobal,
   usuarioEhOficineiro,
 } from '../utils/rbacUtils';
 
@@ -81,6 +83,10 @@ export default function ProtectedRoute({
     return <Navigate to="/atividades/chamada" replace />;
   }
 
+  if (usuarioEhAdmGlobal(usuario) && !rotaEhModuloNfp(pathname)) {
+    return <Navigate to="/nfp" replace />;
+  }
+
   if (
     perfis.length > 0 &&
     usuario.is_manutencao !== true &&
@@ -112,7 +118,7 @@ export default function ProtectedRoute({
   return (
     <div className="carecore-premium-frame">
       {children}
-      {!usuarioEhOficineiro(usuario) && <ChatFlutuante />}
+      {!usuarioEhOficineiro(usuario) && !usuarioEhAdmGlobal(usuario) && <ChatFlutuante />}
     </div>
   );
 }

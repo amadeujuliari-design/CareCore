@@ -63,6 +63,24 @@ export function formatarCPF(valor) {
     .replace(/\.(\d{3})(\d)/, '.$1-$2');
 }
 
+export function formatarCNPJ(valor) {
+  const v = somenteNumeros(valor).slice(0, 14);
+
+  return v
+    .replace(/^(\d{2})(\d)/, '$1.$2')
+    .replace(/^(\d{2})\.(\d{3})(\d)/, '$1.$2.$3')
+    .replace(/\.(\d{3})(\d)/, '.$1/$2')
+    .replace(/(\d{4})(\d)/, '$1-$2');
+}
+
+export function pareceDocumentoCnpj(valor) {
+  const texto = String(valor || '').trim();
+  if (!texto) return false;
+  if (/[A-Za-z]/.test(texto)) return false;
+  const digitos = somenteNumeros(texto);
+  return digitos.length > 0 && digitos.length <= 14;
+}
+
 export function formatarTelefone(valor) {
   let v = somenteNumeros(valor).slice(0, 11);
 

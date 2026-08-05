@@ -397,6 +397,8 @@ async def obter_resumo_gestao_global(
             select(func.count()).select_from(UsuarioDB).where(
                 UsuarioDB.instituicao_id == projeto_id,
                 UsuarioDB.ativo == True,  # noqa: E712
+                UsuarioDB.perfil_acesso != "Manutenção",
+                UsuarioDB.perfil_acesso != "ADM Global",
             ),
         )
         quartos_ativos = await contar(
@@ -680,6 +682,22 @@ def montar_identidade_relatorio(projeto: InstituicaoDB) -> IdentidadeRelatorioRe
     )
 
 
+def montar_identidade_relatorio_organizacao(organizacao: OrganizacaoDB) -> IdentidadeRelatorioResponse:
+    logo_url = organizacao.relatorio_logo_url
+    if _logo_relatorio_local_indisponivel(logo_url):
+        logo_url = None
+
+    return IdentidadeRelatorioResponse(
+        relatorio_logo_url=logo_url,
+        relatorio_nome_exibicao=organizacao.relatorio_nome_exibicao or organizacao.nome,
+        relatorio_rodape_linha1=organizacao.relatorio_rodape_linha1,
+        relatorio_rodape_linha2=organizacao.relatorio_rodape_linha2,
+        relatorio_telefone=organizacao.relatorio_telefone or organizacao.telefone,
+        relatorio_email=organizacao.relatorio_email or organizacao.email,
+        relatorio_site=organizacao.relatorio_site,
+    )
+
+
 async def obter_projeto_da_sessao(
     db: AsyncSession,
     usuario_atual: dict,
@@ -830,6 +848,118 @@ async def remover_logo_identidade_relatorios(
     await db.refresh(projeto)
     _remover_logo_relatorio_armazenado(caminho_anterior)
     return montar_identidade_relatorio(projeto)
+
+
+@router.get("/identidade-relatorios-org", response_model=IdentidadeRelatorioResponse)
+async def obter_identidade_relatorios_organizacao(
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    organizacao = await obter_organizacao_para_cadastro(db, usuario_atual)
+    return montar_identidade_relatorio_organizacao(organizacao)
+
+
+@router.put("/identidade-relatorios-org", response_model=IdentidadeRelatorioResponse)
+async def atualizar_identidade_relatorios_organizacao(
+    payload: IdentidadeRelatorioUpdate,
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    exigir_manutencao_ou_global(usuario_atual)
+    organizacao = await obter_organizacao_para_cadastro(db, usuario_atual)
+
+    for campo, valor in payload.model_dump().items():
+        setattr(organizacao, campo, valor.strip() if isinstance(valor, str) else valor)
+
+    await db.commit()
+    await db.refresh(organizacao)
+    return montar_identidade_relatorio_organizacao(organizacao)
+
+
+@router.post("/identidade-relatorios-org/logo", response_model=IdentidadeRelatorioResponse)
+async def enviar_logo_identidade_relatorios_organizacao(
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    exigir_manutencao_ou_global(usuario_atual)
+    organizacao = await obter_organizacao_para_cadastro(db, usuario_atual)
+
+    if not eh_arquivo_imagem(file.filename or "", file.content_type):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Envie uma imagem em PNG, JPG ou WEBP.",
+        )
+
+    conteudo = await file.read()
+    if len(conteudo) > _TAMANHO_MAXIMO_LOGO_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="Logo muito grande. O limite é 2 MB.",
+        )
+
+    try:
+        conteudo, extensao_final = padronizar_upload_imagem(
+            conteudo,
+            tipo_documento="Logo de Relatório",
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Não foi possível processar a imagem enviada.",
+        ) from exc
+
+    nome_arquivo = f"logo_{uuid.uuid4().hex}{extensao_final}"
+    caminho_anterior = organizacao.relatorio_logo_url
+    pasta_org = f"org_{organizacao.id}"
+
+    if storage_supabase_configurado():
+        try:
+            organizacao.relatorio_logo_url = upload_supabase_storage(
+                f"relatorios/{pasta_org}/{nome_arquivo}",
+                conteudo,
+                content_type=_content_type_logo(extensao_final),
+            )
+        except StorageErro as exc:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Não foi possível salvar o logotipo no storage persistente.",
+            ) from exc
+    else:
+        if not _upload_local_relatorios_permitido():
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=(
+                    "Storage persistente não configurado para logotipos. "
+                    "Configure CARECORE_SUPABASE_URL e CARECORE_SUPABASE_SERVICE_ROLE_KEY no backend."
+                ),
+            )
+
+        pasta_destino = _UPLOADS_RELATORIOS / pasta_org
+        pasta_destino.mkdir(parents=True, exist_ok=True)
+        caminho = pasta_destino / nome_arquivo
+        caminho.write_bytes(conteudo)
+        organizacao.relatorio_logo_url = f"/uploads/relatorios/{pasta_org}/{nome_arquivo}"
+
+    await db.commit()
+    await db.refresh(organizacao)
+    _remover_logo_relatorio_armazenado(caminho_anterior)
+    return montar_identidade_relatorio_organizacao(organizacao)
+
+
+@router.delete("/identidade-relatorios-org/logo", response_model=IdentidadeRelatorioResponse)
+async def remover_logo_identidade_relatorios_organizacao(
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    exigir_manutencao_ou_global(usuario_atual)
+    organizacao = await obter_organizacao_para_cadastro(db, usuario_atual)
+    caminho_anterior = organizacao.relatorio_logo_url
+    organizacao.relatorio_logo_url = None
+    await db.commit()
+    await db.refresh(organizacao)
+    _remover_logo_relatorio_armazenado(caminho_anterior)
+    return montar_identidade_relatorio_organizacao(organizacao)
 
 
 @router.post("/projetos", response_model=InstituicaoResponse, status_code=status.HTTP_201_CREATED)

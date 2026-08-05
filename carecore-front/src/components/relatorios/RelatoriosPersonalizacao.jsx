@@ -3,6 +3,7 @@ import { PremiumButton } from '../PremiumUI';
 
 export function RelatoriosPersonalizacao({
   atualizarCampoIdentidade,
+  descricaoDados = 'Esses dados aparecem no cabeçalho e rodapé dos relatórios impressos ou salvos em PDF.',
   enviarLogoRelatorio,
   errosIdentidade,
   formIdentidade,
@@ -12,12 +13,14 @@ export function RelatoriosPersonalizacao({
   removerLogoRelatorio,
   salvarIdentidadeRelatorio,
   salvandoIdentidade,
+  tituloDados = 'Dados exibidos nos relatórios',
+  tituloLogo = 'Logotipo do relatório',
   validarCampoIdentidade,
 }) {
   return (
     <section className="grid grid-cols-1 gap-5 lg:grid-cols-[360px_1fr]">
       <article className="rounded-3xl border border-gray-100 bg-white p-5 shadow-sm">
-        <h2 className="text-base font-black text-gray-900">Logotipo do relatório</h2>
+        <h2 className="text-base font-black text-gray-900">{tituloLogo}</h2>
         <p className="mt-1 text-xs font-semibold text-gray-500">
           Use preferencialmente PNG com fundo transparente ou uma imagem horizontal em boa resolução.
         </p>
@@ -63,10 +66,8 @@ export function RelatoriosPersonalizacao({
 
       <form onSubmit={salvarIdentidadeRelatorio} className="rounded-3xl border border-gray-100 bg-white p-5 shadow-sm">
         <div className="mb-5">
-          <h2 className="text-base font-black text-gray-900">Dados exibidos nos relatórios</h2>
-          <p className="mt-1 text-xs font-semibold text-gray-500">
-            Esses dados aparecem no cabeçalho e rodapé dos relatórios impressos ou salvos em PDF.
-          </p>
+          <h2 className="text-base font-black text-gray-900">{tituloDados}</h2>
+          <p className="mt-1 text-xs font-semibold text-gray-500">{descricaoDados}</p>
         </div>
 
         {mensagemIdentidade && (
@@ -82,7 +83,7 @@ export function RelatoriosPersonalizacao({
               type="text"
               value={formIdentidade.relatorio_nome_exibicao}
               onChange={(event) => atualizarCampoIdentidade('relatorio_nome_exibicao', event.target.value)}
-              placeholder="Ex: CARE CORE Abrigo"
+              placeholder="Ex: AEB – Associação Evangélica Beneficente"
               className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand"
             />
           </label>
@@ -104,7 +105,8 @@ export function RelatoriosPersonalizacao({
               type="text"
               value={formIdentidade.relatorio_rodape_linha2}
               onChange={(event) => atualizarCampoIdentidade('relatorio_rodape_linha2', event.target.value)}
-              placeholder="Ex: CNPJ 00.000.000/0001-00"
+              placeholder="Ex: 00.000.000/0001-00"
+              inputMode="numeric"
               className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand"
             />
           </label>
@@ -116,6 +118,9 @@ export function RelatoriosPersonalizacao({
               value={formIdentidade.relatorio_telefone}
               onChange={(event) => atualizarCampoIdentidade('relatorio_telefone', event.target.value)}
               onBlur={() => validarCampoIdentidade('relatorio_telefone', formIdentidade.relatorio_telefone)}
+              placeholder="(11) 2619-5400"
+              inputMode="tel"
+              maxLength={15}
               className={`w-full rounded-xl border px-3 py-2 text-sm outline-none focus:ring-2 ${
                 errosIdentidade.relatorio_telefone
                   ? 'border-red-400 bg-red-50 focus:ring-red-100'

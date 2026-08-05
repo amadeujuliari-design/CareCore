@@ -28,6 +28,14 @@ class OrganizacaoDB(Base):
     uf = Column(String, nullable=True)
     is_active = Column(Boolean, default=True)
     criado_em = Column(DateTime, default=datetime.datetime.utcnow)
+    # Identidade visual/documental dos relatórios da organização (sede)
+    relatorio_logo_url = Column(String, nullable=True)
+    relatorio_nome_exibicao = Column(String, nullable=True)
+    relatorio_rodape_linha1 = Column(String, nullable=True)
+    relatorio_rodape_linha2 = Column(String, nullable=True)
+    relatorio_telefone = Column(String, nullable=True)
+    relatorio_email = Column(String, nullable=True)
+    relatorio_site = Column(String, nullable=True)
 
 class InstituicaoDB(Base):
     __tablename__ = "instituicoes"
@@ -1594,4 +1602,205 @@ class DashboardOperacionalSnapshotDB(Base):
     data_referencia = Column(Date, nullable=False)
     capturado_em = Column(DateTime, nullable=False, default=agora_operacional_naive)
     payload_json = Column(Text, nullable=False)
+
+
+# =====================================================================
+# NFP – CRÉDITOS (Nota Fiscal Paulista / organização)
+# =====================================================================
+
+class NfpAgenteCaptadorDB(Base):
+    __tablename__ = "nfp_agentes_captadores"
+    __table_args__ = (
+        UniqueConstraint("organizacao_id", "codigo", name="uq_nfp_agentes_org_codigo"),
+        UniqueConstraint("organizacao_id", "numero_cadastro", name="uq_nfp_agentes_org_numero"),
+        Index("ix_nfp_agentes_organizacao", "organizacao_id"),
+        Index("ix_nfp_agentes_ativo", "organizacao_id", "ativo"),
+    )
+
+    id = Column(String, primary_key=True, default=get_uuid)
+    organizacao_id = Column(String, ForeignKey("organizacoes.id"), nullable=False)
+    numero_cadastro = Column(Integer, nullable=False)
+    codigo = Column(String, nullable=False)
+    tipo = Column(String, nullable=False, default="PJ")  # PF | PJ
+    nome = Column(String, nullable=False)
+    nome_fantasia = Column(String, nullable=True)
+    cpf = Column(String, nullable=True)
+    cnpj = Column(String, nullable=True)
+    email = Column(String, nullable=True)
+    telefone = Column(String, nullable=True)
+    cep = Column(String, nullable=True)
+    logradouro = Column(String, nullable=True)
+    numero = Column(String, nullable=True)
+    complemento = Column(String, nullable=True)
+    bairro = Column(String, nullable=True)
+    cidade = Column(String, nullable=True)
+    uf = Column(String, nullable=True)
+    percentual_agente = Column(Integer, nullable=False, default=0)
+    ativo = Column(Boolean, default=True, nullable=False)
+    observacoes = Column(Text, nullable=True)
+    criado_em = Column(DateTime, default=agora_operacional_naive)
+    atualizado_em = Column(DateTime, default=agora_operacional_naive, onupdate=agora_operacional_naive)
+
+
+class NfpDoadorDB(Base):
+    __tablename__ = "nfp_doadores"
+    __table_args__ = (
+        UniqueConstraint("organizacao_id", "cpf", name="uq_nfp_doadores_org_cpf"),
+        UniqueConstraint("organizacao_id", "numero_cadastro", name="uq_nfp_doadores_org_numero"),
+        Index("ix_nfp_doadores_organizacao", "organizacao_id"),
+    )
+
+    id = Column(String, primary_key=True, default=get_uuid)
+    organizacao_id = Column(String, ForeignKey("organizacoes.id"), nullable=False)
+    numero_cadastro = Column(Integer, nullable=False)
+    nome = Column(String, nullable=False)
+    email = Column(String, nullable=True)
+    telefone = Column(String, nullable=True)
+    cpf = Column(String, nullable=False)
+    data_nascimento = Column(String, nullable=True)
+    unidade_captador = Column(String, nullable=True)
+    origem_cadastro = Column(String, nullable=True)  # MANUAL | PLANILHA | DOACAO_AUTOMATICA
+    cep = Column(String, nullable=True)
+    logradouro = Column(String, nullable=True)
+    numero = Column(String, nullable=True)
+    complemento = Column(String, nullable=True)
+    bairro = Column(String, nullable=True)
+    cidade = Column(String, nullable=True)
+    uf = Column(String, nullable=True)
+    ativo = Column(Boolean, default=True, nullable=False)
+    observacoes = Column(Text, nullable=True)
+    criado_em = Column(DateTime, default=agora_operacional_naive)
+    atualizado_em = Column(DateTime, default=agora_operacional_naive, onupdate=agora_operacional_naive)
+
+
+class NfpCnpjLojaDB(Base):
+    __tablename__ = "nfp_cnpjs_lojas"
+    __table_args__ = (
+        UniqueConstraint("organizacao_id", "cnpj", name="uq_nfp_cnpjs_org_cnpj"),
+        UniqueConstraint("organizacao_id", "numero_cadastro", name="uq_nfp_cnpjs_org_numero"),
+        Index("ix_nfp_cnpjs_organizacao", "organizacao_id"),
+        Index("ix_nfp_cnpjs_captador", "organizacao_id", "captador"),
+    )
+
+    id = Column(String, primary_key=True, default=get_uuid)
+    organizacao_id = Column(String, ForeignKey("organizacoes.id"), nullable=False)
+    numero_cadastro = Column(Integer, nullable=False)
+    cnpj = Column(String, nullable=False)
+    loja = Column(String, nullable=True)
+    razao_social = Column(String, nullable=True)
+    inscricao_estadual = Column(String, nullable=True)
+    captador = Column(String, nullable=True)
+    email = Column(String, nullable=True)
+    telefone = Column(String, nullable=True)
+    cep = Column(String, nullable=True)
+    logradouro = Column(String, nullable=True)
+    numero = Column(String, nullable=True)
+    complemento = Column(String, nullable=True)
+    bairro = Column(String, nullable=True)
+    cidade = Column(String, nullable=True)
+    uf = Column(String, nullable=True)
+    cnpj_conferir = Column(Boolean, default=False, nullable=False)
+    ativo = Column(Boolean, default=True, nullable=False)
+    observacoes = Column(Text, nullable=True)
+    criado_em = Column(DateTime, default=agora_operacional_naive)
+    atualizado_em = Column(DateTime, default=agora_operacional_naive, onupdate=agora_operacional_naive)
+
+
+class NfpDoacaoAutomaticaDB(Base):
+    __tablename__ = "nfp_doacoes_automaticas"
+    __table_args__ = (
+        Index("ix_nfp_doacoes_org_comp", "organizacao_id", "competencia"),
+        Index("ix_nfp_doacoes_chave", "organizacao_id", "competencia", "chave"),
+    )
+
+    id = Column(String, primary_key=True, default=get_uuid)
+    organizacao_id = Column(String, ForeignKey("organizacoes.id"), nullable=False)
+    numero_nota = Column(String, nullable=True)
+    valor_nota = Column(Float, nullable=True)
+    valor_nota_centavos = Column(Integer, default=0)
+    data_nota = Column(String, nullable=True)
+    cnpj_entidade_social = Column(String, nullable=True)
+    cpf_doador_cadastrador = Column(String, nullable=True)
+    data_pedido = Column(String, nullable=True)
+    status_pedido = Column(String, nullable=True)
+    tipo_doacao = Column(String, nullable=True)
+    cnpj_estabelecimento = Column(String, nullable=True)
+    chave = Column(String, nullable=True)
+    competencia = Column(String, nullable=False)
+
+
+class NfpSefazCreditoDB(Base):
+    __tablename__ = "nfp_sefaz_creditos"
+    __table_args__ = (
+        Index("ix_nfp_sefaz_org_comp", "organizacao_id", "competencia"),
+        Index("ix_nfp_sefaz_cnpj", "organizacao_id", "cnpj_emitente"),
+        Index("ix_nfp_sefaz_chave", "organizacao_id", "competencia", "chave"),
+    )
+
+    id = Column(String, primary_key=True, default=get_uuid)
+    organizacao_id = Column(String, ForeignKey("organizacoes.id"), nullable=False)
+    cnpj_emitente = Column(String, nullable=True)
+    emitente = Column(String, nullable=True)
+    numero_nota = Column(String, nullable=True)
+    data_emissao = Column(String, nullable=True)
+    valor_nf = Column(Float, nullable=True)
+    valor_nf_centavos = Column(Integer, default=0)
+    data_registro = Column(String, nullable=True)
+    creditos = Column(Float, nullable=True)
+    creditos_centavos = Column(Integer, default=0)
+    situacao_credito = Column(String, nullable=True)
+    chave = Column(String, nullable=True)
+    competencia = Column(String, nullable=False)
+
+
+class NfpRateioDB(Base):
+    __tablename__ = "nfp_rateio"
+    __table_args__ = (
+        Index("ix_nfp_rateio_org_comp", "organizacao_id", "competencia"),
+        Index("ix_nfp_rateio_origem", "organizacao_id", "origem"),
+    )
+
+    id = Column(String, primary_key=True, default=get_uuid)
+    organizacao_id = Column(String, ForeignKey("organizacoes.id"), nullable=False)
+    cnpj = Column(String, nullable=True)
+    loja = Column(String, nullable=True)
+    captador = Column(String, nullable=True)
+    origem = Column(String, nullable=True)
+    retorno = Column(Float, nullable=True)
+    retorno_centavos = Column(Integer, default=0)
+    qtd = Column(Integer, default=0)
+    aeb = Column(Float, nullable=True)
+    aeb_centavos = Column(Integer, default=0)
+    credito_liquido = Column(Float, nullable=True)
+    credito_liquido_centavos = Column(Integer, default=0)
+    valor_diego = Column(Float, nullable=True)
+    valor_diego_centavos = Column(Integer, default=0)
+    valor_aeb = Column(Float, nullable=True)
+    valor_aeb_centavos = Column(Integer, default=0)
+    final = Column(Float, nullable=True)
+    final_centavos = Column(Integer, default=0)
+    competencia = Column(String, nullable=False)
+
+
+class NfpBatimentoDB(Base):
+    __tablename__ = "nfp_batimento_doador"
+    __table_args__ = (
+        Index("ix_nfp_batimento_org_comp", "organizacao_id", "competencia"),
+    )
+
+    id = Column(String, primary_key=True, default=get_uuid)
+    organizacao_id = Column(String, ForeignKey("organizacoes.id"), nullable=False)
+    competencia = Column(String, nullable=False)
+    id_doacao = Column(String, nullable=True)
+    id_sefaz = Column(String, nullable=True)
+    cpf_doador_cadastrador = Column(String, nullable=True)
+    cnpj_estabelecimento = Column(String, nullable=True)
+    emitente = Column(String, nullable=True)
+    numero_nota = Column(String, nullable=True)
+    data_emissao = Column(String, nullable=True)
+    data_nota = Column(String, nullable=True)
+    ocorrencia = Column(Integer, default=1)
+    valor_nota_centavos = Column(Integer, default=0)
+    valor_nf_centavos = Column(Integer, default=0)
+    creditos_centavos = Column(Integer, default=0)
 

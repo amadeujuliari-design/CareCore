@@ -8,7 +8,7 @@ import {
 import { urlArquivoBackend } from '../utils/arquivosApi';
 import { limparFotoCache } from '../utils/fotoCache';
 import { criarHeadersAutenticados } from '../utils/requestIdUtils';
-import { emailValido, formatarTelefone, telefoneValido } from '../utils/usuariosUtils';
+import { emailValido, formatarCNPJ, formatarTelefone, pareceDocumentoCnpj, telefoneValido } from '../utils/usuariosUtils';
 
 const FORM_IDENTIDADE_RELATORIO_INICIAL = {
   relatorio_nome_exibicao: '',
@@ -19,18 +19,34 @@ const FORM_IDENTIDADE_RELATORIO_INICIAL = {
   relatorio_site: '',
 };
 
+function formatarRodapeLinha2(valor) {
+  const texto = String(valor || '');
+  if (pareceDocumentoCnpj(texto)) {
+    return formatarCNPJ(texto);
+  }
+  return texto;
+}
+
 function montarFormIdentidadeRelatorio(identidade = {}) {
   return {
     relatorio_nome_exibicao: identidade.relatorio_nome_exibicao || '',
     relatorio_rodape_linha1: identidade.relatorio_rodape_linha1 || '',
-    relatorio_rodape_linha2: identidade.relatorio_rodape_linha2 || '',
-    relatorio_telefone: identidade.relatorio_telefone || '',
+    relatorio_rodape_linha2: formatarRodapeLinha2(identidade.relatorio_rodape_linha2 || ''),
+    relatorio_telefone: identidade.relatorio_telefone
+      ? formatarTelefone(identidade.relatorio_telefone)
+      : '',
     relatorio_email: identidade.relatorio_email || '',
     relatorio_site: identidade.relatorio_site || '',
   };
 }
 
-export function useRelatoriosIdentidade(token) {
+export function useRelatoriosIdentidade(token, opcoes = {}) {
+  const {
+    salvarIdentidade = salvarIdentidadeRelatorios,
+    enviarLogo = enviarLogoIdentidadeRelatorios,
+    removerLogo = removerLogoIdentidadeRelatorios,
+  } = opcoes;
+
   const [identidadeRelatorio, setIdentidadeRelatorio] = useState(null);
   const [formIdentidade, setFormIdentidade] = useState(FORM_IDENTIDADE_RELATORIO_INICIAL);
   const [errosIdentidade, setErrosIdentidade] = useState({});
@@ -47,9 +63,17 @@ export function useRelatoriosIdentidade(token) {
   function atualizarCampoIdentidade(campo, valor) {
     setMensagemIdentidade('');
     setErrosIdentidade((atual) => ({ ...atual, [campo]: '' }));
+
+    let valorFinal = valor;
+    if (campo === 'relatorio_telefone') {
+      valorFinal = formatarTelefone(valor);
+    } else if (campo === 'relatorio_rodape_linha2') {
+      valorFinal = formatarRodapeLinha2(valor);
+    }
+
     setFormIdentidade((atual) => ({
       ...atual,
-      [campo]: campo === 'relatorio_telefone' ? formatarTelefone(valor) : valor,
+      [campo]: valorFinal,
     }));
   }
 
@@ -86,7 +110,7 @@ export function useRelatoriosIdentidade(token) {
     setSalvandoIdentidade(true);
     setMensagemIdentidade('');
     try {
-      const identidadeAtualizada = await salvarIdentidadeRelatorios(formIdentidade);
+      const identidadeAtualizada = await salvarIdentidade(formIdentidade);
       setIdentidadeRelatorio(identidadeAtualizada);
       setMensagemIdentidade('Identidade dos relatórios salva com sucesso.');
     } catch (error) {
@@ -107,7 +131,7 @@ export function useRelatoriosIdentidade(token) {
     setSalvandoIdentidade(true);
     setMensagemIdentidade('');
     try {
-      const identidadeAtualizada = await enviarLogoIdentidadeRelatorios(formData);
+      const identidadeAtualizada = await enviarLogo(formData);
       limparFotoCache();
       setIdentidadeRelatorio(identidadeAtualizada);
       setMensagemIdentidade('Logotipo atualizado com sucesso.');
@@ -124,7 +148,7 @@ export function useRelatoriosIdentidade(token) {
     setSalvandoIdentidade(true);
     setMensagemIdentidade('');
     try {
-      const identidadeAtualizada = await removerLogoIdentidadeRelatorios();
+      const identidadeAtualizada = await removerLogo();
       limparFotoCache();
       setIdentidadeRelatorio(identidadeAtualizada);
       setMensagemIdentidade('Logotipo removido.');

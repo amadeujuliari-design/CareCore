@@ -50,6 +50,13 @@ import {
   usuarioEhGestor,
 } from './utils/usuariosUtils';
 import { decodificarPayloadJwt } from './utils/jwtUtils';
+import { usuarioPodeGerenciarAdmGlobalOrg } from './utils/rbacUtils';
+import {
+  criarAdmGlobalOrganizacao,
+  editarAdmGlobalOrganizacao,
+  listarAdmGlobalOrganizacao,
+  statusAdmGlobalOrganizacao,
+} from './services/nfpService';
 
 function usuarioLogadoEhGlobal() {
   try {
@@ -159,6 +166,7 @@ export default function Usuarios() {
 
   const [tela, setTela] = useState('lista');
   const [editandoId, setEditandoId] = useState(null);
+  const [escopoLista, setEscopoLista] = useState('projeto');
 
   const [busca, setBusca] = useState('');
   const [filtroPerfil, setFiltroPerfil] = useState('');
@@ -181,6 +189,22 @@ export default function Usuarios() {
 
   const podeGerenciarGlobais = useMemo(() => usuarioLogadoEhGlobal(), []);
   const podeGerenciar = useMemo(() => usuarioEhGestor() || podeGerenciarGlobais, [podeGerenciarGlobais]);
+  const podeGerenciarAdmGlobal = useMemo(() => {
+    try {
+      const token = localStorage.getItem('@CareCore:token') || localStorage.getItem('token');
+      const payload = decodificarPayloadJwt(token) || {};
+      const usuarioRaw = localStorage.getItem('@CareCore:user') || localStorage.getItem('usuario');
+      const usuario = usuarioRaw ? JSON.parse(usuarioRaw) : {};
+      return usuarioPodeGerenciarAdmGlobalOrg({
+        ...usuario,
+        perfil_acesso: usuario.perfil_acesso || payload.perfil_acesso,
+        is_global: usuario.is_global === true || payload.is_global === true,
+        is_manutencao: usuario.is_manutencao === true || payload.is_manutencao === true,
+      });
+    } catch {
+      return false;
+    }
+  }, []);
   const perfisDisponiveis = useMemo(
     () => PERFIS.filter((perfil) => podeGerenciarGlobais || perfil !== 'Global'),
     [podeGerenciarGlobais]
@@ -218,8 +242,16 @@ export default function Usuarios() {
       const params = {};
 
       if (busca.trim()) params.busca = busca.trim();
-      if (filtroPerfil) params.perfil_acesso = filtroPerfil;
       if (filtroAtivo !== '') params.ativo = filtroAtivo === 'true';
+
+      if (escopoLista === 'organizacao') {
+        const lista = await listarAdmGlobalOrganizacao(params);
+        setUsuarios(Array.isArray(lista) ? lista : []);
+        setPaginaUsuarios(1);
+        return;
+      }
+
+      if (filtroPerfil) params.perfil_acesso = filtroPerfil;
 
       const response = await api.get('/api/usuarios', { params });
 
@@ -241,7 +273,7 @@ export default function Usuarios() {
     }, atrasoBusca);
 
     return () => window.clearTimeout(timer);
-  }, [busca, filtroPerfil, filtroAtivo]);
+  }, [busca, filtroPerfil, filtroAtivo, escopoLista]);
 
   const limparAlertas = () => {
     setErro('');
@@ -295,7 +327,13 @@ export default function Usuarios() {
   const abrirNovo = () => {
     limparAlertas();
     setErrosCampo({});
-    setForm(FORM_INICIAL);
+    setForm({
+      ...FORM_INICIAL,
+      perfil_acesso: escopoLista === 'organizacao' ? 'ADM Global' : 'Consulta',
+      is_global: false,
+      cargo: escopoLista === 'organizacao' ? 'ADM Global NFP' : '',
+      setor: escopoLista === 'organizacao' ? 'NFP – Créditos' : '',
+    });
     setEditandoId(null);
     setTela('form');
   };
@@ -597,8 +635,13 @@ export default function Usuarios() {
   const salvarUsuario = async (e) => {
     e.preventDefault();
 
-    if (!podeGerenciar) {
-      setErro('Apenas Gestor pode criar ou editar usuários.');
+    const podeSalvarAgora = escopoLista === 'organizacao' ? podeGerenciarAdmGlobal : podeGerenciar;
+    if (!podeSalvarAgora) {
+      setErro(
+        escopoLista === 'organizacao'
+          ? 'Apenas Global ou Manutenção podem gerenciar ADM Global.'
+          : 'Apenas Gestor pode criar ou editar usuários.',
+      );
       return;
     }
 
@@ -615,7 +658,17 @@ export default function Usuarios() {
 
       const payload = montarPayload();
 
-      if (editandoId) {
+      if (escopoLista === 'organizacao') {
+        payload.perfil_acesso = 'ADM Global';
+        payload.is_global = false;
+        if (editandoId) {
+          await editarAdmGlobalOrganizacao(editandoId, payload);
+          setSucesso('Usuário ADM Global atualizado com sucesso.');
+        } else {
+          await criarAdmGlobalOrganizacao(payload);
+          setSucesso('Usuário ADM Global criado com sucesso.');
+        }
+      } else if (editandoId) {
         await api.put(`/api/usuarios/${editandoId}`, payload);
         setSucesso('Usuário atualizado com sucesso.');
       } else {
@@ -704,7 +757,8 @@ export default function Usuarios() {
   };
 
   const alterarStatus = async (usuario, dadosDesligamento = {}) => {
-    if (!podeGerenciar) return;
+    const podeAlterar = escopoLista === 'organizacao' ? podeGerenciarAdmGlobal : podeGerenciar;
+    if (!podeAlterar) return;
 
     const novoStatus = !usuario.ativo;
     const texto = novoStatus ? 'ativar' : 'inativar';
@@ -727,9 +781,13 @@ export default function Usuarios() {
     try {
       limparAlertas();
 
-      await api.patch(`/api/usuarios/${usuario.id}/status`, {
-        ...payload,
-      });
+      if (escopoLista === 'organizacao') {
+        await statusAdmGlobalOrganizacao(usuario.id, payload);
+      } else {
+        await api.patch(`/api/usuarios/${usuario.id}/status`, {
+          ...payload,
+        });
+      }
 
       setSucesso(
         novoStatus
@@ -809,12 +867,14 @@ export default function Usuarios() {
           icon="○"
           actions={(
             <>
-            {tela === 'lista' && podeGerenciar && (
+            {tela === 'lista' && (
+              (escopoLista === 'organizacao' ? podeGerenciarAdmGlobal : podeGerenciar)
+            ) && (
               <PremiumButton
                 type="button"
                 onClick={abrirNovo}
               >
-                + Novo usuário
+                {escopoLista === 'organizacao' ? '+ Novo ADM Global' : '+ Novo usuário'}
               </PremiumButton>
             )}
 
@@ -845,9 +905,49 @@ export default function Usuarios() {
           </div>
         )}
 
-        {!podeGerenciar && (
+        {podeGerenciarAdmGlobal && tela === 'lista' && (
+          <div className="mb-4 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setEscopoLista('projeto');
+                setPaginaUsuarios(1);
+              }}
+              className={`rounded-full border px-4 py-2 text-sm font-semibold ${
+                escopoLista === 'projeto'
+                  ? 'border-slate-800 bg-slate-800 text-white'
+                  : 'border-slate-200 bg-white text-slate-700'
+              }`}
+            >
+              Usuários do projeto
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setEscopoLista('organizacao');
+                setFiltroPerfil('');
+                setPaginaUsuarios(1);
+              }}
+              className={`rounded-full border px-4 py-2 text-sm font-semibold ${
+                escopoLista === 'organizacao'
+                  ? 'border-slate-800 bg-slate-800 text-white'
+                  : 'border-slate-200 bg-white text-slate-700'
+              }`}
+            >
+              Usuários da organização
+            </button>
+          </div>
+        )}
+
+        {!podeGerenciar && escopoLista === 'projeto' && (
           <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
             Seu perfil permite consulta, mas criação e edição de usuários são restritas ao Gestor.
+          </div>
+        )}
+
+        {escopoLista === 'organizacao' && (
+          <div className="mb-4 rounded-xl border border-teal-100 bg-teal-50 px-4 py-3 text-sm text-teal-800">
+            ADM Global acessa apenas o módulo NFP – Créditos e não entra na lista/faturamento do projeto.
           </div>
         )}
 
@@ -870,10 +970,13 @@ export default function Usuarios() {
                   setFiltroPerfil(e.target.value);
                   setPaginaUsuarios(1);
                 }}
-                className="rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400"
+                disabled={escopoLista === 'organizacao'}
+                className="rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400 disabled:bg-slate-50"
               >
-                <option value="">Todos os perfis</option>
-                {PERFIS.map((perfil) => (
+                <option value="">
+                  {escopoLista === 'organizacao' ? 'ADM Global' : 'Todos os perfis'}
+                </option>
+                {escopoLista !== 'organizacao' && PERFIS.map((perfil) => (
                   <option key={perfil} value={perfil}>
                     {perfil}
                   </option>
@@ -1170,16 +1273,21 @@ export default function Usuarios() {
                       Perfil de acesso
                     </label>
                     <select
-                      value={form.perfil_acesso}
+                      value={escopoLista === 'organizacao' ? 'ADM Global' : form.perfil_acesso}
                       onChange={(e) => atualizarCampo('perfil_acesso', e.target.value)}
-                      className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400"
+                      disabled={escopoLista === 'organizacao'}
+                      className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400 disabled:bg-slate-50"
                       required
                     >
-                      {perfisDisponiveis.map((perfil) => (
-                        <option key={perfil} value={perfil}>
-                          {perfil}
-                        </option>
-                      ))}
+                      {escopoLista === 'organizacao' ? (
+                        <option value="ADM Global">ADM Global</option>
+                      ) : (
+                        perfisDisponiveis.map((perfil) => (
+                          <option key={perfil} value={perfil}>
+                            {perfil}
+                          </option>
+                        ))
+                      )}
                     </select>
                   </div>
 

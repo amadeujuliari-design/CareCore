@@ -671,6 +671,7 @@ async def calcular_resumo_cobranca_organizacao(
                 ).where(
                     UsuarioDB.instituicao_id == projeto.id,
                     UsuarioDB.perfil_acesso != "Manutenção",
+                    UsuarioDB.perfil_acesso != "ADM Global",
                 )
             )
         ).all()
