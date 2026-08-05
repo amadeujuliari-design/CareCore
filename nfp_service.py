@@ -1,14 +1,16 @@
 """Servicos do modulo NFP – Creditos."""
 from __future__ import annotations
 
+import asyncio
 import csv
 import io
 import sys
+import uuid
 from collections import defaultdict
 from typing import Any, BinaryIO, Iterable, Optional, Sequence, Union
 
 from openpyxl import Workbook, load_workbook
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, insert, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models import (
@@ -51,6 +53,24 @@ from time_operacional import agora_operacional_naive
 
 # Exportacoes do site podem trazer campos longos; o padrao do csv (128 KB) estoura.
 csv.field_size_limit(min(sys.maxsize, 2**31 - 1))
+
+# Insert em lotes evita milhares de INSERT individuais e cede o event loop entre lotes
+# (1 worker no Fly: importacao NFP nao pode monopolizar a API / SIAT).
+BATCH_INSERT_NFP = 1500
+
+
+def _novo_id() -> str:
+    return str(uuid.uuid4())
+
+
+async def _bulk_insert_rows(db: AsyncSession, model, rows: list[dict]) -> None:
+    """Insere dicionarios via Core insert em lotes, cedendo o event loop entre lotes."""
+    if not rows:
+        return
+    for i in range(0, len(rows), BATCH_INSERT_NFP):
+        lote = rows[i : i + BATCH_INSERT_NFP]
+        await db.execute(insert(model), lote)
+        await asyncio.sleep(0)
 
 
 CAMPOS_ENDERECO = (
@@ -363,6 +383,217 @@ def _adicionar_ocorrencias(linhas: list[dict], grupo_keys: list[str]) -> list[di
         nova["ocorrencia"] = contadores[chave]
         out.append(nova)
     return out
+
+
+def _montar_registros_batimento(
+    doacoes: Sequence[dict[str, Any]],
+    sefaz: Sequence[dict[str, Any]],
+    organizacao_id: str,
+    competencia: str,
+) -> list[dict[str, Any]]:
+    """Monta linhas de batimento (CPU-bound). Roda em thread para nao travar o event loop."""
+    mapa_sefaz: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
+    for s in sefaz:
+        chave = (limpar_documento(s.get("cnpj_emitente")), limpar_nota(s.get("numero_nota")))
+        mapa_sefaz[chave].append(s)
+
+    rows: list[dict[str, Any]] = []
+    for d in doacoes:
+        chave = (
+            limpar_documento(d.get("cnpj_estabelecimento")),
+            limpar_nota(d.get("numero_nota")),
+        )
+        matches = mapa_sefaz.get(chave) or []
+        for idx, s in enumerate(matches, start=1):
+            rows.append(
+                {
+                    "id": _novo_id(),
+                    "organizacao_id": organizacao_id,
+                    "competencia": competencia,
+                    "id_doacao": d.get("id"),
+                    "id_sefaz": s.get("id"),
+                    "cpf_doador_cadastrador": d.get("cpf_doador_cadastrador"),
+                    "cnpj_estabelecimento": d.get("cnpj_estabelecimento"),
+                    "emitente": s.get("emitente"),
+                    "numero_nota": d.get("numero_nota"),
+                    "data_emissao": s.get("data_emissao"),
+                    "data_nota": d.get("data_nota"),
+                    "ocorrencia": idx,
+                    "valor_nota_centavos": int(d.get("valor_nota_centavos") or 0),
+                    "valor_nf_centavos": int(s.get("valor_nf_centavos") or 0),
+                    "creditos_centavos": int(s.get("creditos_centavos") or 0),
+                }
+            )
+    return rows
+
+
+def _preparar_linhas_doacoes(
+    headers: list[str],
+    dados: list[dict[str, Any]],
+    organizacao_id: str,
+    competencia: Optional[str],
+) -> tuple[list[dict[str, Any]], str, int, int]:
+    """Parse CPU-bound de Pedidos (doacao automatica)."""
+    col_numero = achar_coluna(headers, ["número da nota", "numero da nota", "no.", "nota"])
+    col_valor = achar_coluna(headers, ["valor da nota", "valor nota"])
+    col_data = achar_coluna(headers, ["data da nota", "data nota"])
+    col_entidade = achar_coluna(headers, ["cnpj entidade social"])
+    col_cpf = achar_coluna(headers, ["cpf doador/cadastrador", "cpf doador", "cpf cadastrador"])
+    col_pedido = achar_coluna(headers, ["data do pedido"])
+    col_status = achar_coluna(headers, ["status do pedido", "status"])
+    col_tipo = achar_coluna(headers, ["tipo da doação", "tipo da doacao", "tipo"])
+    col_estab = achar_coluna(headers, ["cnpj estabelecimento", "cnpj do estabelecimento"])
+    if not col_numero or not col_estab:
+        raise ValueError("Planilha de doacao automatica sem colunas obrigatorias.")
+
+    linhas_brutas = 0
+    ignorados_tipo = 0
+    linhas: list[dict[str, Any]] = []
+    datas_ref: list[str] = []
+    for row in dados:
+        linhas_brutas += 1
+        tipo = _cel(row.get(col_tipo)) if col_tipo else ""
+        if not tipo_eh_doacao_automatica(tipo):
+            ignorados_tipo += 1
+            continue
+        numero = limpar_nota(row.get(col_numero))
+        cnpj_estab = limpar_documento(row.get(col_estab))
+        if not numero and not cnpj_estab:
+            continue
+        data_nota = _cel(row.get(col_data)) if col_data else ""
+        if " " in data_nota:
+            data_nota = data_nota.split(" ")[0]
+        if data_nota:
+            datas_ref.append(data_nota)
+        base = chave_base(cnpj_estab, numero, data_nota)
+        linhas.append(
+            {
+                "numero_nota": numero,
+                "valor_nota_cent": valor_para_centavos(row.get(col_valor)) if col_valor else 0,
+                "data_nota": data_nota,
+                "cnpj_entidade_social": limpar_documento(row.get(col_entidade)) if col_entidade else "",
+                "cpf_doador": limpar_documento(row.get(col_cpf)) if col_cpf else "",
+                "data_pedido": _cel(row.get(col_pedido)) if col_pedido else "",
+                "status_pedido": _cel(row.get(col_status)) if col_status else "",
+                "tipo_doacao": tipo,
+                "cnpj_estabelecimento": cnpj_estab,
+                "chave_base": base,
+            }
+        )
+
+    if competencia and competencia_valida(competencia):
+        competencia_final = competencia
+    else:
+        competencia_final = competencia_referencia_das_datas(datas_ref)
+
+    for linha in linhas:
+        linha["competencia"] = competencia_final
+
+    linhas = _adicionar_ocorrencias(linhas, ["competencia", "chave_base"])
+    registros: list[dict[str, Any]] = []
+    for linha in linhas:
+        cent = int(linha["valor_nota_cent"] or 0)
+        registros.append(
+            {
+                "id": _novo_id(),
+                "organizacao_id": organizacao_id,
+                "numero_nota": linha["numero_nota"],
+                "valor_nota": centavos_para_float(cent),
+                "valor_nota_centavos": cent,
+                "data_nota": linha["data_nota"],
+                "cnpj_entidade_social": linha["cnpj_entidade_social"],
+                "cpf_doador_cadastrador": linha["cpf_doador"],
+                "data_pedido": linha["data_pedido"],
+                "status_pedido": linha["status_pedido"],
+                "tipo_doacao": linha["tipo_doacao"],
+                "cnpj_estabelecimento": linha["cnpj_estabelecimento"],
+                "chave": chave_com_ocorrencia(linha["chave_base"], linha["ocorrencia"]),
+                "competencia": competencia_final,
+            }
+        )
+    return registros, competencia_final, linhas_brutas, ignorados_tipo
+
+
+def _preparar_linhas_sefaz(
+    headers: list[str],
+    dados: list[dict[str, Any]],
+    organizacao_id: str,
+    competencia: Optional[str],
+) -> tuple[list[dict[str, Any]], list[tuple[str, str]], str]:
+    """Parse CPU-bound de Creditos SEFAZ (ConsultaNFP)."""
+    col_cnpj = achar_coluna(headers, ["cnpj emit.", "cnpj emitente", "cnpj do emitente", "cnpj estabelecimento", "cnpj"])
+    col_emitente = achar_coluna(headers, ["emitente", "nome emitente", "estabelecimento", "loja"])
+    col_numero = achar_coluna(headers, ["número da nota", "numero da nota", "número nf", "numero nf", "nota", "no."])
+    col_emissao = achar_coluna(headers, ["data emissão", "data emissao", "data da emissão", "data da emissao", "data"])
+    col_valor = achar_coluna(headers, ["valor nf", "valor da nf", "valor nota", "valor da nota", "valor total"])
+    col_registro = achar_coluna(headers, ["data registro", "data do registro", "registro"])
+    col_creditos = achar_coluna(headers, ["créditos", "creditos", "valor do crédito", "valor do credito", "crédito", "credito"])
+    col_situacao = achar_coluna(headers, ["situação do crédito", "situacao do credito", "situação", "situacao", "status"])
+    if not col_cnpj or not col_numero:
+        raise ValueError("Planilha SEFAZ sem colunas obrigatorias (CNPJ emitente e numero da nota).")
+
+    linhas: list[dict[str, Any]] = []
+    pares_nome: list[tuple[str, str]] = []
+    datas_ref: list[str] = []
+    for row in dados:
+        cnpj = limpar_documento(row.get(col_cnpj))
+        numero = limpar_nota(row.get(col_numero))
+        if not cnpj and not numero:
+            continue
+        emitente = _cel(row.get(col_emitente)) if col_emitente else ""
+        data_emissao = _cel(row.get(col_emissao)) if col_emissao else ""
+        if " " in data_emissao:
+            data_emissao = data_emissao.split(" ")[0]
+        if data_emissao:
+            datas_ref.append(data_emissao)
+        pares_nome.append((cnpj, emitente))
+        base = chave_base(cnpj, numero, data_emissao)
+        linhas.append(
+            {
+                "cnpj_emitente": cnpj,
+                "emitente": emitente,
+                "numero_nota": numero,
+                "data_emissao": data_emissao,
+                "valor_nf_cent": valor_para_centavos(row.get(col_valor)) if col_valor else 0,
+                "data_registro": _cel(row.get(col_registro)) if col_registro else "",
+                "creditos_cent": valor_para_centavos(row.get(col_creditos)) if col_creditos else 0,
+                "situacao_credito": _cel(row.get(col_situacao)) if col_situacao else "",
+                "chave_base": base,
+            }
+        )
+
+    if competencia and competencia_valida(competencia):
+        competencia_final = competencia
+    else:
+        competencia_final = competencia_referencia_das_datas(datas_ref)
+
+    for linha in linhas:
+        linha["competencia"] = competencia_final
+
+    linhas = _adicionar_ocorrencias(linhas, ["competencia", "chave_base"])
+    registros: list[dict[str, Any]] = []
+    for linha in linhas:
+        vcent = int(linha["valor_nf_cent"] or 0)
+        ccent = int(linha["creditos_cent"] or 0)
+        registros.append(
+            {
+                "id": _novo_id(),
+                "organizacao_id": organizacao_id,
+                "cnpj_emitente": linha["cnpj_emitente"],
+                "emitente": linha["emitente"],
+                "numero_nota": linha["numero_nota"],
+                "data_emissao": linha["data_emissao"],
+                "valor_nf": centavos_para_float(vcent),
+                "valor_nf_centavos": vcent,
+                "data_registro": linha["data_registro"],
+                "creditos": centavos_para_float(ccent),
+                "creditos_centavos": ccent,
+                "situacao_credito": linha["situacao_credito"],
+                "chave": chave_com_ocorrencia(linha["chave_base"], linha["ocorrencia"]),
+                "competencia": competencia_final,
+            }
+        )
+    return registros, pares_nome, competencia_final
 
 
 async def enriquecer_nomes_cnpjs_genericos(
@@ -825,63 +1056,14 @@ async def importar_doacoes_sefaz(
     arquivo: BinaryIO,
     competencia: Optional[str] = None,
 ) -> dict:
-    headers, dados = _ler_planilha(arquivo)
-    col_numero = achar_coluna(headers, ["número da nota", "numero da nota", "no.", "nota"])
-    col_valor = achar_coluna(headers, ["valor da nota", "valor nota"])
-    col_data = achar_coluna(headers, ["data da nota", "data nota"])
-    col_entidade = achar_coluna(headers, ["cnpj entidade social"])
-    col_cpf = achar_coluna(headers, ["cpf doador/cadastrador", "cpf doador", "cpf cadastrador"])
-    col_pedido = achar_coluna(headers, ["data do pedido"])
-    col_status = achar_coluna(headers, ["status do pedido", "status"])
-    col_tipo = achar_coluna(headers, ["tipo da doação", "tipo da doacao", "tipo"])
-    col_estab = achar_coluna(headers, ["cnpj estabelecimento", "cnpj do estabelecimento"])
-    if not col_numero or not col_estab:
-        raise ValueError("Planilha de doacao automatica sem colunas obrigatorias.")
+    raw = _bytes_arquivo(arquivo)
 
-    linhas_brutas = 0
-    ignorados_tipo = 0
-    linhas = []
-    datas_ref = []
-    for row in dados:
-        linhas_brutas += 1
-        tipo = _cel(row.get(col_tipo)) if col_tipo else ""
-        if not tipo_eh_doacao_automatica(tipo):
-            ignorados_tipo += 1
-            continue
-        numero = limpar_nota(row.get(col_numero))
-        cnpj_estab = limpar_documento(row.get(col_estab))
-        if not numero and not cnpj_estab:
-            continue
-        data_nota = _cel(row.get(col_data)) if col_data else ""
-        if " " in data_nota:
-            data_nota = data_nota.split(" ")[0]
-        if data_nota:
-            datas_ref.append(data_nota)
-        base = chave_base(cnpj_estab, numero, data_nota)
-        linhas.append(
-            {
-                "numero_nota": numero,
-                "valor_nota_cent": valor_para_centavos(row.get(col_valor)) if col_valor else 0,
-                "data_nota": data_nota,
-                "cnpj_entidade_social": limpar_documento(row.get(col_entidade)) if col_entidade else "",
-                "cpf_doador": limpar_documento(row.get(col_cpf)) if col_cpf else "",
-                "data_pedido": _cel(row.get(col_pedido)) if col_pedido else "",
-                "status_pedido": _cel(row.get(col_status)) if col_status else "",
-                "tipo_doacao": tipo,
-                "cnpj_estabelecimento": cnpj_estab,
-                "chave_base": base,
-            }
-        )
+    def _parse() -> tuple[list[dict[str, Any]], str, int, int]:
+        headers, dados = _ler_planilha(raw)
+        return _preparar_linhas_doacoes(headers, dados, organizacao_id, competencia)
 
-    if competencia and competencia_valida(competencia):
-        competencia_final = competencia
-    else:
-        competencia_final = competencia_referencia_das_datas(datas_ref)
+    registros, competencia_final, linhas_brutas, ignorados_tipo = await asyncio.to_thread(_parse)
 
-    for linha in linhas:
-        linha["competencia"] = competencia_final
-
-    linhas = _adicionar_ocorrencias(linhas, ["competencia", "chave_base"])
     await db.execute(
         delete(NfpDoacaoAutomaticaDB).where(
             NfpDoacaoAutomaticaDB.organizacao_id == organizacao_id,
@@ -894,30 +1076,12 @@ async def importar_doacoes_sefaz(
             NfpBatimentoDB.competencia == competencia_final,
         )
     )
-    for linha in linhas:
-        cent = int(linha["valor_nota_cent"] or 0)
-        db.add(
-            NfpDoacaoAutomaticaDB(
-                organizacao_id=organizacao_id,
-                numero_nota=linha["numero_nota"],
-                valor_nota=centavos_para_float(cent),
-                valor_nota_centavos=cent,
-                data_nota=linha["data_nota"],
-                cnpj_entidade_social=linha["cnpj_entidade_social"],
-                cpf_doador_cadastrador=linha["cpf_doador"],
-                data_pedido=linha["data_pedido"],
-                status_pedido=linha["status_pedido"],
-                tipo_doacao=linha["tipo_doacao"],
-                cnpj_estabelecimento=linha["cnpj_estabelecimento"],
-                chave=chave_com_ocorrencia(linha["chave_base"], linha["ocorrencia"]),
-                competencia=competencia_final,
-            )
-        )
+    await _bulk_insert_rows(db, NfpDoacaoAutomaticaDB, registros)
     await db.commit()
     batidos = await gerar_batimento(db, organizacao_id, competencia_final)
     sync = await sincronizar_doadores_de_doacoes(db, organizacao_id, competencia=competencia_final)
     return {
-        "inseridos": len(linhas),
+        "inseridos": len(registros),
         "linhas_arquivo": linhas_brutas,
         "ignorados_tipo": ignorados_tipo,
         "competencia": competencia_final,
@@ -941,57 +1105,14 @@ async def importar_sefaz_creditos(
     if not lista:
         raise ValueError("Nenhum arquivo de creditos informado.")
 
-    headers, dados = _ler_varios_arquivos(lista)
-    col_cnpj = achar_coluna(headers, ["cnpj emit.", "cnpj emitente", "cnpj do emitente", "cnpj estabelecimento", "cnpj"])
-    col_emitente = achar_coluna(headers, ["emitente", "nome emitente", "estabelecimento", "loja"])
-    col_numero = achar_coluna(headers, ["número da nota", "numero da nota", "número nf", "numero nf", "nota", "no."])
-    col_emissao = achar_coluna(headers, ["data emissão", "data emissao", "data da emissão", "data da emissao", "data"])
-    col_valor = achar_coluna(headers, ["valor nf", "valor da nf", "valor nota", "valor da nota", "valor total"])
-    col_registro = achar_coluna(headers, ["data registro", "data do registro", "registro"])
-    col_creditos = achar_coluna(headers, ["créditos", "creditos", "valor do crédito", "valor do credito", "crédito", "credito"])
-    col_situacao = achar_coluna(headers, ["situação do crédito", "situacao do credito", "situação", "situacao", "status"])
-    if not col_cnpj or not col_numero:
-        raise ValueError("Planilha SEFAZ sem colunas obrigatorias (CNPJ emitente e numero da nota).")
+    payloads = [_bytes_arquivo(arq) for arq in lista]
 
-    linhas = []
-    pares_nome = []
-    datas_ref = []
-    for row in dados:
-        cnpj = limpar_documento(row.get(col_cnpj))
-        numero = limpar_nota(row.get(col_numero))
-        if not cnpj and not numero:
-            continue
-        emitente = _cel(row.get(col_emitente)) if col_emitente else ""
-        data_emissao = _cel(row.get(col_emissao)) if col_emissao else ""
-        if " " in data_emissao:
-            data_emissao = data_emissao.split(" ")[0]
-        if data_emissao:
-            datas_ref.append(data_emissao)
-        pares_nome.append((cnpj, emitente))
-        base = chave_base(cnpj, numero, data_emissao)
-        linhas.append(
-            {
-                "cnpj_emitente": cnpj,
-                "emitente": emitente,
-                "numero_nota": numero,
-                "data_emissao": data_emissao,
-                "valor_nf_cent": valor_para_centavos(row.get(col_valor)) if col_valor else 0,
-                "data_registro": _cel(row.get(col_registro)) if col_registro else "",
-                "creditos_cent": valor_para_centavos(row.get(col_creditos)) if col_creditos else 0,
-                "situacao_credito": _cel(row.get(col_situacao)) if col_situacao else "",
-                "chave_base": base,
-            }
-        )
+    def _parse() -> tuple[list[dict[str, Any]], list[tuple[str, str]], str]:
+        headers, dados = _ler_varios_arquivos(payloads)
+        return _preparar_linhas_sefaz(headers, dados, organizacao_id, competencia)
 
-    if competencia and competencia_valida(competencia):
-        competencia_final = competencia
-    else:
-        competencia_final = competencia_referencia_das_datas(datas_ref)
+    registros, pares_nome, competencia_final = await asyncio.to_thread(_parse)
 
-    for linha in linhas:
-        linha["competencia"] = competencia_final
-
-    linhas = _adicionar_ocorrencias(linhas, ["competencia", "chave_base"])
     await db.execute(
         delete(NfpSefazCreditoDB).where(
             NfpSefazCreditoDB.organizacao_id == organizacao_id,
@@ -1004,32 +1125,13 @@ async def importar_sefaz_creditos(
             NfpBatimentoDB.competencia == competencia_final,
         )
     )
-    for linha in linhas:
-        vcent = int(linha["valor_nf_cent"] or 0)
-        ccent = int(linha["creditos_cent"] or 0)
-        db.add(
-            NfpSefazCreditoDB(
-                organizacao_id=organizacao_id,
-                cnpj_emitente=linha["cnpj_emitente"],
-                emitente=linha["emitente"],
-                numero_nota=linha["numero_nota"],
-                data_emissao=linha["data_emissao"],
-                valor_nf=centavos_para_float(vcent),
-                valor_nf_centavos=vcent,
-                data_registro=linha["data_registro"],
-                creditos=centavos_para_float(ccent),
-                creditos_centavos=ccent,
-                situacao_credito=linha["situacao_credito"],
-                chave=chave_com_ocorrencia(linha["chave_base"], linha["ocorrencia"]),
-                competencia=competencia_final,
-            )
-        )
+    await _bulk_insert_rows(db, NfpSefazCreditoDB, registros)
     nomes_ok = await enriquecer_nomes_cnpjs_genericos(db, organizacao_id, pares_nome)
     await db.commit()
     batidos = await gerar_batimento(db, organizacao_id, competencia_final)
     sync = await sincronizar_doadores_de_doacoes(db, organizacao_id, competencia=competencia_final)
     return {
-        "inseridos": len(linhas),
+        "inseridos": len(registros),
         "arquivos": len(lista),
         "competencia": competencia_final,
         "nomes_enriquecidos": nomes_ok,
@@ -1047,51 +1149,47 @@ async def gerar_batimento(db: AsyncSession, organizacao_id: str, competencia: st
     )
     doacoes = (
         await db.execute(
-            select(NfpDoacaoAutomaticaDB).where(
+            select(
+                NfpDoacaoAutomaticaDB.id,
+                NfpDoacaoAutomaticaDB.cpf_doador_cadastrador,
+                NfpDoacaoAutomaticaDB.cnpj_estabelecimento,
+                NfpDoacaoAutomaticaDB.numero_nota,
+                NfpDoacaoAutomaticaDB.data_nota,
+                NfpDoacaoAutomaticaDB.valor_nota_centavos,
+            ).where(
                 NfpDoacaoAutomaticaDB.organizacao_id == organizacao_id,
                 NfpDoacaoAutomaticaDB.competencia == competencia,
             )
         )
-    ).scalars().all()
+    ).mappings().all()
     sefaz = (
         await db.execute(
-            select(NfpSefazCreditoDB).where(
+            select(
+                NfpSefazCreditoDB.id,
+                NfpSefazCreditoDB.cnpj_emitente,
+                NfpSefazCreditoDB.emitente,
+                NfpSefazCreditoDB.numero_nota,
+                NfpSefazCreditoDB.data_emissao,
+                NfpSefazCreditoDB.valor_nf_centavos,
+                NfpSefazCreditoDB.creditos_centavos,
+            ).where(
                 NfpSefazCreditoDB.organizacao_id == organizacao_id,
                 NfpSefazCreditoDB.competencia == competencia,
             )
         )
-    ).scalars().all()
+    ).mappings().all()
 
-    mapa_sefaz: dict[tuple[str, str], list[NfpSefazCreditoDB]] = defaultdict(list)
-    for s in sefaz:
-        mapa_sefaz[(limpar_documento(s.cnpj_emitente), limpar_nota(s.numero_nota))].append(s)
-
-    total = 0
-    for d in doacoes:
-        chave = (limpar_documento(d.cnpj_estabelecimento), limpar_nota(d.numero_nota))
-        matches = mapa_sefaz.get(chave) or []
-        for idx, s in enumerate(matches, start=1):
-            db.add(
-                NfpBatimentoDB(
-                    organizacao_id=organizacao_id,
-                    competencia=competencia,
-                    id_doacao=d.id,
-                    id_sefaz=s.id,
-                    cpf_doador_cadastrador=d.cpf_doador_cadastrador,
-                    cnpj_estabelecimento=d.cnpj_estabelecimento,
-                    emitente=s.emitente,
-                    numero_nota=d.numero_nota,
-                    data_emissao=s.data_emissao,
-                    data_nota=d.data_nota,
-                    ocorrencia=idx,
-                    valor_nota_centavos=int(d.valor_nota_centavos or 0),
-                    valor_nf_centavos=int(s.valor_nf_centavos or 0),
-                    creditos_centavos=int(s.creditos_centavos or 0),
-                )
-            )
-            total += 1
+    # Matching de dezenas/centenas de milhares de linhas nao pode ficar no event loop.
+    rows = await asyncio.to_thread(
+        _montar_registros_batimento,
+        doacoes,
+        sefaz,
+        organizacao_id,
+        competencia,
+    )
+    await _bulk_insert_rows(db, NfpBatimentoDB, rows)
     await db.commit()
-    return total
+    return len(rows)
 
 
 async def listar_agentes_captacao(db: AsyncSession, organizacao_id: str) -> list[str]:
