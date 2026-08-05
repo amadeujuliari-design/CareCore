@@ -410,6 +410,16 @@ export default function Sidebar() {
           perfis: ['Gestor', 'Global']
         },
         {
+          path: '/suporte',
+          icon: LifeBuoy,
+          label: 'Suporte'
+        },
+      ]
+    },
+    {
+      title: 'Gestão Global',
+      items: [
+        {
           path: '/nfp',
           icon: Receipt,
           label: 'NFP – Créditos',
@@ -466,16 +476,6 @@ export default function Sidebar() {
             },
           ],
         },
-        {
-          path: '/suporte',
-          icon: LifeBuoy,
-          label: 'Suporte'
-        },
-      ]
-    },
-    {
-      title: 'Gestão Global',
-      items: [
         {
           path: '/gestao-global',
           icon: ChartNoAxesColumnIncreasing,
