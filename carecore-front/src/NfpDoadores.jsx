@@ -4,7 +4,7 @@ import { Users } from 'lucide-react';
 import Sidebar from './Sidebar';
 import NfpEnderecoFields from './components/nfp/NfpEnderecoFields';
 import { BadgeStatus, CampoSelect, CampoTexto } from './components/UsuariosCampos';
-import { AppShell, MainShell, PageHeader, PremiumButton, ScrollArea } from './components/PremiumUI';
+import { AppShell, MainShell, PageHeader, PremiumButton, ReportActionButton, ScrollArea } from './components/PremiumUI';
 import {
   nfpAtualizarDoador,
   nfpCriarDoador,
@@ -13,6 +13,10 @@ import {
   nfpObterDoador,
   nfpSincronizarDoadores,
 } from './services/nfpService';
+import {
+  exportarCadastroNfpDoadores,
+  imprimirCadastroNfpDoadores,
+} from './utils/nfpCadastroExportPrint';
 import {
   cepValido,
   cpfValido,
@@ -114,6 +118,31 @@ export default function NfpDoadores() {
   useEffect(() => {
     carregarDoadores();
   }, [carregarDoadores]);
+
+  const filtrosExportacao = useMemo(() => ({
+    Busca: busca.trim() || '—',
+    Registros: String(doadores.length),
+  }), [busca, doadores.length]);
+
+  const exportarLista = async () => {
+    limparAlertas();
+    try {
+      const ok = await exportarCadastroNfpDoadores({ doadores, filtros: filtrosExportacao });
+      if (!ok) setErro('Não há doadores para exportar com os filtros atuais.');
+    } catch (error) {
+      setErro(erroApiNfp(error, 'Falha ao exportar doadores.'));
+    }
+  };
+
+  const imprimirLista = async () => {
+    limparAlertas();
+    try {
+      const ok = await imprimirCadastroNfpDoadores({ doadores, filtros: filtrosExportacao });
+      if (!ok) setErro('Não há doadores para imprimir com os filtros atuais.');
+    } catch (error) {
+      setErro(erroApiNfp(error, 'Falha ao imprimir doadores.'));
+    }
+  };
 
   const atualizarEndereco = (campo, valor) => {
     setForm((atual) => ({ ...atual, [campo]: valor }));
@@ -232,9 +261,26 @@ export default function NfpDoadores() {
           title="Doadores"
           subtitle="Doadores diretos AEB (doação automática): sincronizados das planilhas e editáveis aqui."
           icon={<Users className="h-5 w-5" />}
+          backTo="/nfp"
+          backLabel="Voltar ao dashboard"
           actions={(
             tela === 'lista' ? (
               <div className="flex flex-wrap gap-2">
+                <ReportActionButton
+                  type="button"
+                  action="export"
+                  disabled={loading || !doadores.length}
+                  onClick={exportarLista}
+                >
+                  Exportar XLSX
+                </ReportActionButton>
+                <ReportActionButton
+                  type="button"
+                  disabled={loading || !doadores.length}
+                  onClick={imprimirLista}
+                >
+                  Imprimir
+                </ReportActionButton>
                 <PremiumButton
                   type="button"
                   variant="secondary"

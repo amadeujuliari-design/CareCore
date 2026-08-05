@@ -96,10 +96,11 @@ export async function nfpGarantirAgentesPadrao() {
   return data;
 }
 
-export async function nfpImportarCnpjs(arquivo, captadorPadrao = 'DIEGO') {
+export async function nfpImportarCnpjs(arquivo, captadorPadrao = 'DIEGO', competencia) {
   const form = new FormData();
   form.append('arquivo', arquivo);
   form.append('captador_padrao', captadorPadrao);
+  if (competencia) form.append('competencia', competencia);
   const { data } = await api.post('/api/nfp/cnpjs/importar', form);
   return data;
 }
@@ -107,15 +108,16 @@ export async function nfpImportarCnpjs(arquivo, captadorPadrao = 'DIEGO') {
 export async function nfpImportarDoacoes(arquivo, competencia) {
   const form = new FormData();
   form.append('arquivo', arquivo);
-  form.append('competencia', competencia);
+  if (competencia) form.append('competencia', competencia);
   const { data } = await api.post('/api/nfp/importar/doacoes-sefaz', form);
   return data;
 }
 
-export async function nfpImportarSefaz(arquivo, competencia) {
+export async function nfpImportarSefaz(arquivos, competencia) {
   const form = new FormData();
-  form.append('arquivo', arquivo);
-  form.append('competencia', competencia);
+  const lista = Array.isArray(arquivos) ? arquivos : [arquivos];
+  lista.filter(Boolean).forEach((arquivo) => form.append('arquivos', arquivo));
+  if (competencia) form.append('competencia', competencia);
   const { data } = await api.post('/api/nfp/importar/sefaz-creditos', form);
   return data;
 }

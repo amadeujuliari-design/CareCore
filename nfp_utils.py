@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import re
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
-from typing import Optional
+from typing import Iterable, Optional
 
 NOME_GENERICO_CONFERIR = "ESTABELECIMENTO DIEGO (Conferir CNPJ)"
 NOMES_GENERICOS = {
@@ -137,6 +137,91 @@ def competencia_valida(valor: Optional[str]) -> bool:
     if not valor:
         return False
     return bool(re.match(r"^\d{4}-\d{2}$", str(valor).strip()))
+
+
+# Competencia operacional = mes dos registros no site + 4 meses
+# (ex.: notas 11/2025 -> competencia 2026-03).
+OFFSET_MESES_COMPETENCIA_NFP = 4
+TIPO_DOACAO_AUTOMATICA = "DOACAO_AUTOMATICA"
+
+
+def parse_data_planilha(valor) -> Optional[tuple[int, int, int]]:
+    """Extrai (ano, mes, dia) de datas BR/ISO comuns nas exportacoes SEFAZ."""
+    if valor is None:
+        return None
+    if hasattr(valor, "year") and hasattr(valor, "month"):
+        try:
+            return int(valor.year), int(valor.month), int(getattr(valor, "day", 1) or 1)
+        except Exception:
+            return None
+    raw = str(valor).strip()
+    if not raw or raw.lower() == "nan":
+        return None
+    raw = raw.split(" ")[0].replace(".", "/")
+    try:
+        if "/" in raw:
+            p = raw.split("/")
+            if len(p[0]) == 4:
+                y, m, d = int(p[0]), int(p[1]), int(p[2]) if len(p) > 2 else 1
+            else:
+                d, m, y = int(p[0]), int(p[1]), int(p[2])
+                if y < 100:
+                    y += 2000
+            return y, m, d
+        if "-" in raw:
+            p = raw.split("-")
+            y, m = int(p[0]), int(p[1])
+            d = int(p[2]) if len(p) > 2 else 1
+            return y, m, d
+    except Exception:
+        return None
+    return None
+
+
+def competencia_de_data_registro(valor, offset_meses: int = OFFSET_MESES_COMPETENCIA_NFP) -> Optional[str]:
+    """Converte data do registro na competencia operacional (+offset meses)."""
+    parsed = parse_data_planilha(valor)
+    if not parsed:
+        return None
+    y, m, _d = parsed
+    if m < 1 or m > 12 or y < 1990:
+        return None
+    idx = (y * 12 + (m - 1)) + int(offset_meses)
+    y2, m2 = divmod(idx, 12)
+    return f"{y2:04d}-{m2 + 1:02d}"
+
+
+def competencia_referencia_das_datas(
+    datas: Iterable,
+    offset_meses: int = OFFSET_MESES_COMPETENCIA_NFP,
+) -> str:
+    """Determina a competencia majoritaria a partir das datas dos registros."""
+    from collections import Counter
+
+    contagem: Counter[str] = Counter()
+    for valor in datas:
+        comp = competencia_de_data_registro(valor, offset_meses=offset_meses)
+        if comp:
+            contagem[comp] += 1
+    if not contagem:
+        raise ValueError(
+            "Nao foi possivel detectar a competencia. "
+            "Verifique as datas da planilha (mes dos registros + 4 meses)."
+        )
+    return contagem.most_common(1)[0][0]
+
+
+def tipo_eh_doacao_automatica(valor: Optional[str]) -> bool:
+    texto = str(valor or "").strip().lower()
+    for a, b in (
+        ("á", "a"), ("à", "a"), ("ã", "a"), ("â", "a"),
+        ("é", "e"), ("ê", "e"), ("í", "i"),
+        ("ó", "o"), ("ô", "o"), ("õ", "o"), ("ú", "u"), ("ç", "c"),
+    ):
+        texto = texto.replace(a, b)
+    texto = re.sub(r"\s+", "_", texto)
+    compacto = texto.replace("_", "")
+    return compacto == "doacaoautomatica"
 
 
 def valor_para_centavos(valor) -> int:

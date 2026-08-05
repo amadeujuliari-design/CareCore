@@ -16,6 +16,8 @@ export default function NfpRelatorios() {
           title="Central de relatórios"
           subtitle="Consolidados e analíticos do módulo NFP, com identidade visual CareCore+ e exportação XLSX."
           icon={<FileBarChart className="h-5 w-5" />}
+          backTo="/nfp"
+          backLabel="Voltar ao dashboard"
         />
         <ScrollArea>
           <DireitosReservadosAviso className="mb-4" />

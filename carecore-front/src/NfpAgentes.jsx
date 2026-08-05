@@ -4,7 +4,7 @@ import { UserRoundCog } from 'lucide-react';
 import Sidebar from './Sidebar';
 import NfpEnderecoFields from './components/nfp/NfpEnderecoFields';
 import { BadgeStatus, CampoSelect, CampoTexto } from './components/UsuariosCampos';
-import { AppShell, MainShell, PageHeader, PremiumButton, ScrollArea } from './components/PremiumUI';
+import { AppShell, MainShell, PageHeader, PremiumButton, ReportActionButton, ScrollArea } from './components/PremiumUI';
 import {
   nfpAtualizarAgente,
   nfpCriarAgente,
@@ -12,6 +12,10 @@ import {
   nfpListarAgentes,
   nfpObterAgente,
 } from './services/nfpService';
+import {
+  exportarCadastroNfpAgentes,
+  imprimirCadastroNfpAgentes,
+} from './utils/nfpCadastroExportPrint';
 import {
   cepValido,
   cpfValido,
@@ -108,6 +112,32 @@ export default function NfpAgentes() {
   useEffect(() => {
     carregarAgentes();
   }, [carregarAgentes]);
+
+  const filtrosExportacao = useMemo(() => ({
+    Busca: busca.trim() || '—',
+    Status: filtroAtivo === 'true' ? 'Ativos' : filtroAtivo === 'false' ? 'Inativos' : 'Todos',
+    Registros: String(agentes.length),
+  }), [busca, filtroAtivo, agentes.length]);
+
+  const exportarLista = async () => {
+    limparAlertas();
+    try {
+      const ok = await exportarCadastroNfpAgentes({ agentes, filtros: filtrosExportacao });
+      if (!ok) setErro('Não há agentes para exportar com os filtros atuais.');
+    } catch (error) {
+      setErro(erroApiNfp(error, 'Falha ao exportar agentes.'));
+    }
+  };
+
+  const imprimirLista = async () => {
+    limparAlertas();
+    try {
+      const ok = await imprimirCadastroNfpAgentes({ agentes, filtros: filtrosExportacao });
+      if (!ok) setErro('Não há agentes para imprimir com os filtros atuais.');
+    } catch (error) {
+      setErro(erroApiNfp(error, 'Falha ao imprimir agentes.'));
+    }
+  };
 
   const atualizarEndereco = (campo, valor) => {
     setForm((atual) => ({ ...atual, [campo]: valor }));
@@ -261,10 +291,27 @@ export default function NfpAgentes() {
           title="Agentes captadores"
           subtitle="Cadastro de agentes de captação, percentual de rateio e endereço."
           icon={<UserRoundCog className="h-5 w-5" />}
+          backTo="/nfp"
+          backLabel="Voltar ao dashboard"
           actions={(
             <div className="flex flex-wrap gap-2">
               {tela === 'lista' ? (
                 <>
+                  <ReportActionButton
+                    type="button"
+                    action="export"
+                    disabled={loading || !agentes.length}
+                    onClick={exportarLista}
+                  >
+                    Exportar XLSX
+                  </ReportActionButton>
+                  <ReportActionButton
+                    type="button"
+                    disabled={loading || !agentes.length}
+                    onClick={imprimirLista}
+                  >
+                    Imprimir
+                  </ReportActionButton>
                   <PremiumButton type="button" variant="secondary" disabled={salvando} onClick={carregarPadrao}>
                     Carregar agentes padrão
                   </PremiumButton>

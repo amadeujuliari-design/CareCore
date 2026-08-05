@@ -4,7 +4,8 @@
 // =====================================================================
 
 import { forwardRef } from 'react';
-import { Download, Printer } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { ArrowLeft, Download, Printer } from 'lucide-react';
 import ProjetoAtualBadge from './ProjetoAtualBadge';
 
 export function PremiumPage({ title, subtitle, actions, children }) {
@@ -153,11 +154,21 @@ export function MainShell({ children }) {
   );
 }
 
-export function PageHeader({ eyebrow, title, subtitle, icon, actions }) {
+export function PageHeader({ eyebrow, title, subtitle, icon, actions, backTo, backLabel = 'Voltar' }) {
   return (
     <header className="carecore-page-header-fixed px-5 py-3">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div className="min-w-0">
+          {backTo && (
+            <Link
+              to={backTo}
+              className="mb-1 inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500 transition hover:text-slate-800"
+            >
+              <ArrowLeft className="h-3.5 w-3.5" />
+              {backLabel}
+            </Link>
+          )}
+
           {eyebrow && (
             <p className="text-xs font-bold uppercase tracking-wide text-slate-500">
               {eyebrow}

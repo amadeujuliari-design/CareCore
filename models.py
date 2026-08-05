@@ -1804,3 +1804,25 @@ class NfpBatimentoDB(Base):
     valor_nf_centavos = Column(Integer, default=0)
     creditos_centavos = Column(Integer, default=0)
 
+
+class NfpCnpjCaptacaoCompetenciaDB(Base):
+    """Vinculo historico CNPJ x captador por competencia (rateio do mes)."""
+    __tablename__ = "nfp_cnpjs_captacao_competencia"
+    __table_args__ = (
+        UniqueConstraint(
+            "organizacao_id", "competencia", "cnpj",
+            name="uq_nfp_cnpj_captacao_org_comp_cnpj",
+        ),
+        Index("ix_nfp_cnpj_captacao_org_comp", "organizacao_id", "competencia"),
+        Index("ix_nfp_cnpj_captacao_org_cnpj", "organizacao_id", "cnpj"),
+    )
+
+    id = Column(String, primary_key=True, default=get_uuid)
+    organizacao_id = Column(String, ForeignKey("organizacoes.id"), nullable=False)
+    competencia = Column(String, nullable=False)
+    cnpj = Column(String, nullable=False)
+    captador = Column(String, nullable=False, default="DIEGO")
+    loja = Column(String, nullable=True)
+    criado_em = Column(DateTime, default=agora_operacional_naive)
+    atualizado_em = Column(DateTime, default=agora_operacional_naive, onupdate=agora_operacional_naive)
+

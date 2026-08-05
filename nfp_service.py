@@ -1,9 +1,11 @@
 """Servicos do modulo NFP – Creditos."""
 from __future__ import annotations
 
+import csv
 import io
+import sys
 from collections import defaultdict
-from typing import Any, BinaryIO, Iterable, Optional
+from typing import Any, BinaryIO, Iterable, Optional, Sequence, Union
 
 from openpyxl import Workbook, load_workbook
 from sqlalchemy import delete, func, select
@@ -12,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from models import (
     NfpAgenteCaptadorDB,
     NfpBatimentoDB,
+    NfpCnpjCaptacaoCompetenciaDB,
     NfpCnpjLojaDB,
     NfpDoacaoAutomaticaDB,
     NfpDoadorDB,
@@ -19,12 +22,15 @@ from models import (
     NfpSefazCreditoDB,
 )
 from nfp_utils import (
+    AGENTES_CAPTACAO_PADRAO,
     CAPTADORES_PADRAO,
+    NOME_GENERICO_CONFERIR,
     achar_coluna,
     centavos_para_float,
     chave_base,
     chave_com_ocorrencia,
     cnpj_valido,
+    competencia_referencia_das_datas,
     competencia_valida,
     cpf_valido,
     limpar_documento,
@@ -37,11 +43,14 @@ from nfp_utils import (
     origem_rateio_agente,
     percentual_agente_padrao,
     rateio_centavos,
-    AGENTES_CAPTACAO_PADRAO,
-    NOME_GENERICO_CONFERIR,
+    tipo_eh_doacao_automatica,
     valor_para_centavos,
 )
 from time_operacional import agora_operacional_naive
+
+
+# Exportacoes do site podem trazer campos longos; o padrao do csv (128 KB) estoura.
+csv.field_size_limit(min(sys.maxsize, 2**31 - 1))
 
 
 CAMPOS_ENDERECO = (
@@ -237,29 +246,111 @@ def _cel(v) -> str:
     return str(v).strip()
 
 
-def _ler_planilha(arquivo: BinaryIO | bytes) -> tuple[list[str], list[dict[str, Any]]]:
+def _bytes_arquivo(arquivo: BinaryIO | bytes) -> bytes:
     if hasattr(arquivo, "read"):
         raw = arquivo.read()
+        if hasattr(arquivo, "seek"):
+            try:
+                arquivo.seek(0)
+            except Exception:
+                pass
+        return raw if isinstance(raw, (bytes, bytearray)) else bytes(raw or b"")
+    return arquivo if isinstance(arquivo, (bytes, bytearray)) else bytes(arquivo or b"")
+
+
+def _decodificar_csv(raw: bytes) -> str:
+    """Decodifica CSV do site SEFAZ (UTF-16 com BOM, UTF-8 ou Latin-1/cp1252)."""
+    if raw[:2] in (b"\xff\xfe", b"\xfe\xff"):
+        tentativas = ("utf-16",)
+    elif raw[:4000].count(b"\x00") > len(raw[:4000]) // 4:
+        # Muitos bytes nulos = UTF-16 sem BOM.
+        tentativas = ("utf-16-le", "utf-16-be")
     else:
-        raw = arquivo
-    wb = load_workbook(io.BytesIO(raw), read_only=True, data_only=True)
-    ws = wb[wb.sheetnames[0]]
-    rows_iter = ws.iter_rows(values_only=True)
-    header_row = next(rows_iter, None)
-    if not header_row:
-        wb.close()
+        tentativas = ("utf-8-sig", "utf-8", "cp1252", "latin-1")
+
+    for enc in tentativas:
+        try:
+            return raw.decode(enc)
+        except Exception:
+            continue
+    return raw.decode("latin-1", errors="replace")
+
+
+def _ler_planilha_csv(raw: bytes) -> tuple[list[str], list[dict[str, Any]]]:
+    text = _decodificar_csv(raw)
+    if not text:
+        raise ValueError("Nao foi possivel ler o CSV (encoding).")
+
+    # Remove BOM residual
+    if text.startswith("\ufeff"):
+        text = text.lstrip("\ufeff")
+
+    first = next((ln for ln in text.splitlines() if ln.strip()), "")
+    if not first:
         return [], []
-    headers = [_cel(h) or f"col_{i}" for i, h in enumerate(header_row)]
-    dados = []
-    for row in rows_iter:
-        if not row or not any(_cel(c) for c in row):
+    if first.count("\t") >= first.count(";") and first.count("\t") >= first.count(","):
+        delim = "\t"
+    elif first.count(";") >= first.count(","):
+        delim = ";"
+    else:
+        delim = ","
+
+    reader = csv.DictReader(io.StringIO(text), delimiter=delim)
+    headers = [(_cel(h) or f"col_{i}") for i, h in enumerate(reader.fieldnames or [])]
+    # DictReader keys are original fieldnames
+    dados: list[dict[str, Any]] = []
+    for row in reader:
+        if not row or not any(_cel(v) for v in row.values()):
             continue
         item = {}
-        for i, h in enumerate(headers):
-            item[h] = row[i] if i < len(row) else None
+        for h in reader.fieldnames or []:
+            chave = _cel(h) or h
+            item[chave] = row.get(h)
         dados.append(item)
-    wb.close()
+    # normalize headers list to match item keys
+    if dados:
+        headers = list(dados[0].keys())
     return headers, dados
+
+
+def _ler_planilha(arquivo: BinaryIO | bytes) -> tuple[list[str], list[dict[str, Any]]]:
+    raw = _bytes_arquivo(arquivo)
+    if not raw:
+        return [], []
+    # XLSX/OLE signature
+    if raw[:2] == b"PK" or raw[:8] == b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1":
+        wb = load_workbook(io.BytesIO(raw), read_only=True, data_only=True)
+        ws = wb[wb.sheetnames[0]]
+        rows_iter = ws.iter_rows(values_only=True)
+        header_row = next(rows_iter, None)
+        if not header_row:
+            wb.close()
+            return [], []
+        headers = [_cel(h) or f"col_{i}" for i, h in enumerate(header_row)]
+        dados = []
+        for row in rows_iter:
+            if not row or not any(_cel(c) for c in row):
+                continue
+            item = {}
+            for i, h in enumerate(headers):
+                item[h] = row[i] if i < len(row) else None
+            dados.append(item)
+        wb.close()
+        return headers, dados
+    return _ler_planilha_csv(raw)
+
+
+def _ler_varios_arquivos(arquivos: Sequence[BinaryIO | bytes]) -> tuple[list[str], list[dict[str, Any]]]:
+    headers_ref: list[str] = []
+    dados: list[dict[str, Any]] = []
+    for arq in arquivos:
+        headers, parte = _ler_planilha(arq)
+        if not parte:
+            continue
+        if not headers_ref:
+            headers_ref = headers
+        dados.extend(parte)
+    return headers_ref, dados
 
 
 def _adicionar_ocorrencias(linhas: list[dict], grupo_keys: list[str]) -> list[dict]:
@@ -513,7 +604,16 @@ async def importar_cnpjs(
     organizacao_id: str,
     arquivo: BinaryIO,
     captador_padrao: str = "DIEGO",
+    competencia: Optional[str] = None,
 ) -> dict:
+    """Importa CNPJs do agente.
+
+    Cadastro mestre: so acrescenta CNPJs novos (nao apaga historico de cadastro).
+
+    Com competencia: a planilha vira o conjunto vigente do captador naquele mes
+    (substitui os vinculos anteriores da mesma competencia). Esse conjunto vale
+    nos fechamentos seguintes ate uma nova importacao do agente.
+    """
     headers, dados = _ler_planilha(arquivo)
     col_cnpj = achar_coluna(headers, ["cnpj"])
     col_loja = achar_coluna(headers, ["nome da loja", "loja", "estabelecimento", "emitente"])
@@ -521,62 +621,210 @@ async def importar_cnpjs(
     if not col_cnpj:
         raise ValueError("Nao encontrei a coluna obrigatoria: CNPJ.")
 
+    if competencia and not competencia_valida(competencia):
+        raise ValueError("Competencia invalida. Use YYYY-MM.")
+
     inseridos = 0
     ignorados = 0
     conferir = 0
+    vinculos = 0
+    vinculos_substituidos = 0
+    saidas = 0
+    entradas = 0
+    competencia_anterior: Optional[str] = None
+    linhas_arquivo = 0
     proximo = await proximo_numero_cadastro_cnpj(db, organizacao_id)
+    captador_padrao_n = normalizar_agente_captacao(captador_padrao) or "DIEGO"
+
+    # Normaliza linhas da planilha (um CNPJ pode repetir: fica a ultima ocorrencia).
+    planilha: dict[str, dict[str, str]] = {}
     for row in dados:
         cnpj = limpar_documento(row.get(col_cnpj))
         if not cnpj:
             continue
+        linhas_arquivo += 1
         loja_raw = _cel(row.get(col_loja)) if col_loja else ""
-        captador = (_cel(row.get(col_captador)) if col_captador else captador_padrao).upper()
+        captador = normalizar_agente_captacao(
+            _cel(row.get(col_captador)) if col_captador else captador_padrao_n
+        ) or captador_padrao_n
         loja = nome_loja_para_cadastro(cnpj, loja_raw)
+        planilha[cnpj] = {"loja": loja, "captador": captador, "loja_raw": loja_raw}
+
+    for cnpj, info in planilha.items():
+        loja = info["loja"]
+        captador = info["captador"]
         precisa_conferir = loja == NOME_GENERICO_CONFERIR or not cnpj_valido(cnpj)
 
-        existe = await db.execute(
-            select(NfpCnpjLojaDB).where(
-                NfpCnpjLojaDB.organizacao_id == organizacao_id,
-                NfpCnpjLojaDB.cnpj == cnpj,
+        atual = (
+            await db.execute(
+                select(NfpCnpjLojaDB).where(
+                    NfpCnpjLojaDB.organizacao_id == organizacao_id,
+                    NfpCnpjLojaDB.cnpj == cnpj,
+                )
             )
-        )
-        atual = existe.scalar_one_or_none()
+        ).scalar_one_or_none()
         if atual:
             if nome_eh_generico(atual.loja) and not nome_eh_generico(loja) and loja != NOME_GENERICO_CONFERIR:
                 atual.loja = loja
                 atual.cnpj_conferir = False
+            # Cadastro mestre nao remove quem saiu da planilha — o rateio usa o historico.
             ignorados += 1
-            continue
+        else:
+            db.add(
+                NfpCnpjLojaDB(
+                    organizacao_id=organizacao_id,
+                    numero_cadastro=proximo,
+                    cnpj=cnpj,
+                    loja=loja,
+                    captador=captador,
+                    cnpj_conferir=precisa_conferir,
+                    ativo=True,
+                    criado_em=agora_operacional_naive(),
+                    atualizado_em=agora_operacional_naive(),
+                )
+            )
+            proximo += 1
+            inseridos += 1
+            if precisa_conferir:
+                conferir += 1
 
-        db.add(
-            NfpCnpjLojaDB(
-                organizacao_id=organizacao_id,
-                numero_cadastro=proximo,
-                cnpj=cnpj,
-                loja=loja,
-                captador=captador or "DIEGO",
-                cnpj_conferir=precisa_conferir,
-                ativo=True,
-                criado_em=agora_operacional_naive(),
-                atualizado_em=agora_operacional_naive(),
+    if competencia:
+        captadores_planilha = {info["captador"] for info in planilha.values()} or {captador_padrao_n}
+        anterior_comp, anterior_cnpjs = await _lista_captacao_anterior(
+            db, organizacao_id, competencia, captadores_planilha
+        )
+        competencia_anterior = anterior_comp
+        saidas = len(anterior_cnpjs - set(planilha))
+        entradas = len(set(planilha) - anterior_cnpjs)
+
+        # Substitui o conjunto do(s) captador(es) nesta competencia.
+        result = await db.execute(
+            delete(NfpCnpjCaptacaoCompetenciaDB).where(
+                NfpCnpjCaptacaoCompetenciaDB.organizacao_id == organizacao_id,
+                NfpCnpjCaptacaoCompetenciaDB.competencia == competencia,
+                NfpCnpjCaptacaoCompetenciaDB.captador.in_(sorted(captadores_planilha)),
             )
         )
-        proximo += 1
-        inseridos += 1
-        if precisa_conferir:
-            conferir += 1
+        vinculos_substituidos = int(result.rowcount or 0)
+
+        agora = agora_operacional_naive()
+        for cnpj, info in planilha.items():
+            db.add(
+                NfpCnpjCaptacaoCompetenciaDB(
+                    organizacao_id=organizacao_id,
+                    competencia=competencia,
+                    cnpj=cnpj,
+                    captador=info["captador"],
+                    loja=info["loja"],
+                    criado_em=agora,
+                    atualizado_em=agora,
+                )
+            )
+            vinculos += 1
+
     await db.commit()
-    return {"inseridos": inseridos, "ignorados": ignorados, "cnpj_conferir": conferir}
+    return {
+        "inseridos": inseridos,
+        "ignorados": ignorados,
+        "cnpj_conferir": conferir,
+        "competencia": competencia,
+        "linhas_arquivo": linhas_arquivo,
+        "vinculos_competencia": vinculos,
+        "competencia_anterior": competencia_anterior,
+        "saidas": saidas,
+        "entradas": entradas,
+        "vinculos_substituidos": vinculos_substituidos,
+    }
+
+
+async def _lista_captacao_anterior(
+    db: AsyncSession,
+    organizacao_id: str,
+    competencia: str,
+    captadores: Iterable[str],
+) -> tuple[Optional[str], set[str]]:
+    """Ultima lista do(s) captador(es) antes da competencia informada."""
+    alvo = sorted({c for c in captadores if c})
+    if not alvo:
+        return None, set()
+
+    rows = (
+        await db.execute(
+            select(
+                NfpCnpjCaptacaoCompetenciaDB.competencia,
+                NfpCnpjCaptacaoCompetenciaDB.cnpj,
+            ).where(
+                NfpCnpjCaptacaoCompetenciaDB.organizacao_id == organizacao_id,
+                NfpCnpjCaptacaoCompetenciaDB.competencia < competencia,
+                NfpCnpjCaptacaoCompetenciaDB.captador.in_(alvo),
+            )
+        )
+    ).all()
+    if not rows:
+        return None, set()
+
+    ultima = max(r[0] for r in rows)
+    return ultima, {limpar_documento(r[1]) for r in rows if r[0] == ultima and limpar_documento(r[1])}
+
+
+async def mapa_cnpjs_captacao_vigente(
+    db: AsyncSession,
+    organizacao_id: str,
+    competencia: str,
+) -> dict[str, dict[str, str]]:
+    """Retorna CNPJ -> {captador, loja} pela ultima planilha vigente de cada captador.
+
+    Vigencia: maior competencia <= competencia do fechamento com vinculos daquele captador.
+    """
+    if not competencia_valida(competencia):
+        return {}
+
+    rows = (
+        await db.execute(
+            select(NfpCnpjCaptacaoCompetenciaDB).where(
+                NfpCnpjCaptacaoCompetenciaDB.organizacao_id == organizacao_id,
+                NfpCnpjCaptacaoCompetenciaDB.competencia <= competencia,
+            )
+        )
+    ).scalars().all()
+    if not rows:
+        return {}
+
+    # Ultima competencia com importacao por captador.
+    ultima_por_captador: dict[str, str] = {}
+    for v in rows:
+        captador = normalizar_agente_captacao(v.captador)
+        comp = (v.competencia or "").strip()
+        if not captador or not competencia_valida(comp):
+            continue
+        atual = ultima_por_captador.get(captador)
+        if not atual or comp > atual:
+            ultima_por_captador[captador] = comp
+
+    mapa: dict[str, dict[str, str]] = {}
+    for v in rows:
+        captador = normalizar_agente_captacao(v.captador)
+        if not captador:
+            continue
+        if v.competencia != ultima_por_captador.get(captador):
+            continue
+        cnpj = limpar_documento(v.cnpj)
+        if not cnpj:
+            continue
+        mapa[cnpj] = {
+            "captador": captador,
+            "loja": v.loja or "",
+            "competencia_vigencia": v.competencia,
+        }
+    return mapa
 
 
 async def importar_doacoes_sefaz(
     db: AsyncSession,
     organizacao_id: str,
     arquivo: BinaryIO,
-    competencia: str,
+    competencia: Optional[str] = None,
 ) -> dict:
-    if not competencia_valida(competencia):
-        raise ValueError("Competencia invalida. Use YYYY-MM.")
     headers, dados = _ler_planilha(arquivo)
     col_numero = achar_coluna(headers, ["número da nota", "numero da nota", "no.", "nota"])
     col_valor = achar_coluna(headers, ["valor da nota", "valor nota"])
@@ -590,8 +838,16 @@ async def importar_doacoes_sefaz(
     if not col_numero or not col_estab:
         raise ValueError("Planilha de doacao automatica sem colunas obrigatorias.")
 
+    linhas_brutas = 0
+    ignorados_tipo = 0
     linhas = []
+    datas_ref = []
     for row in dados:
+        linhas_brutas += 1
+        tipo = _cel(row.get(col_tipo)) if col_tipo else ""
+        if not tipo_eh_doacao_automatica(tipo):
+            ignorados_tipo += 1
+            continue
         numero = limpar_nota(row.get(col_numero))
         cnpj_estab = limpar_documento(row.get(col_estab))
         if not numero and not cnpj_estab:
@@ -599,6 +855,8 @@ async def importar_doacoes_sefaz(
         data_nota = _cel(row.get(col_data)) if col_data else ""
         if " " in data_nota:
             data_nota = data_nota.split(" ")[0]
+        if data_nota:
+            datas_ref.append(data_nota)
         base = chave_base(cnpj_estab, numero, data_nota)
         linhas.append(
             {
@@ -609,24 +867,31 @@ async def importar_doacoes_sefaz(
                 "cpf_doador": limpar_documento(row.get(col_cpf)) if col_cpf else "",
                 "data_pedido": _cel(row.get(col_pedido)) if col_pedido else "",
                 "status_pedido": _cel(row.get(col_status)) if col_status else "",
-                "tipo_doacao": _cel(row.get(col_tipo)) if col_tipo else "",
+                "tipo_doacao": tipo,
                 "cnpj_estabelecimento": cnpj_estab,
                 "chave_base": base,
-                "competencia": competencia,
             }
         )
+
+    if competencia and competencia_valida(competencia):
+        competencia_final = competencia
+    else:
+        competencia_final = competencia_referencia_das_datas(datas_ref)
+
+    for linha in linhas:
+        linha["competencia"] = competencia_final
 
     linhas = _adicionar_ocorrencias(linhas, ["competencia", "chave_base"])
     await db.execute(
         delete(NfpDoacaoAutomaticaDB).where(
             NfpDoacaoAutomaticaDB.organizacao_id == organizacao_id,
-            NfpDoacaoAutomaticaDB.competencia == competencia,
+            NfpDoacaoAutomaticaDB.competencia == competencia_final,
         )
     )
     await db.execute(
         delete(NfpBatimentoDB).where(
             NfpBatimentoDB.organizacao_id == organizacao_id,
-            NfpBatimentoDB.competencia == competencia,
+            NfpBatimentoDB.competencia == competencia_final,
         )
     )
     for linha in linhas:
@@ -645,14 +910,17 @@ async def importar_doacoes_sefaz(
                 tipo_doacao=linha["tipo_doacao"],
                 cnpj_estabelecimento=linha["cnpj_estabelecimento"],
                 chave=chave_com_ocorrencia(linha["chave_base"], linha["ocorrencia"]),
-                competencia=competencia,
+                competencia=competencia_final,
             )
         )
     await db.commit()
-    batidos = await gerar_batimento(db, organizacao_id, competencia)
-    sync = await sincronizar_doadores_de_doacoes(db, organizacao_id, competencia=competencia)
+    batidos = await gerar_batimento(db, organizacao_id, competencia_final)
+    sync = await sincronizar_doadores_de_doacoes(db, organizacao_id, competencia=competencia_final)
     return {
         "inseridos": len(linhas),
+        "linhas_arquivo": linhas_brutas,
+        "ignorados_tipo": ignorados_tipo,
+        "competencia": competencia_final,
         "batimentos": batidos,
         "doadores_sincronizados": sync,
     }
@@ -661,12 +929,19 @@ async def importar_doacoes_sefaz(
 async def importar_sefaz_creditos(
     db: AsyncSession,
     organizacao_id: str,
-    arquivo: BinaryIO,
-    competencia: str,
+    arquivo: Union[BinaryIO, Sequence[BinaryIO | bytes], None] = None,
+    competencia: Optional[str] = None,
+    arquivos: Optional[Sequence[BinaryIO | bytes]] = None,
 ) -> dict:
-    if not competencia_valida(competencia):
-        raise ValueError("Competencia invalida. Use YYYY-MM.")
-    headers, dados = _ler_planilha(arquivo)
+    lista: list[BinaryIO | bytes] = []
+    if arquivos:
+        lista.extend(list(arquivos))
+    if arquivo is not None and not isinstance(arquivo, (list, tuple)):
+        lista.append(arquivo)
+    if not lista:
+        raise ValueError("Nenhum arquivo de creditos informado.")
+
+    headers, dados = _ler_varios_arquivos(lista)
     col_cnpj = achar_coluna(headers, ["cnpj emit.", "cnpj emitente", "cnpj do emitente", "cnpj estabelecimento", "cnpj"])
     col_emitente = achar_coluna(headers, ["emitente", "nome emitente", "estabelecimento", "loja"])
     col_numero = achar_coluna(headers, ["número da nota", "numero da nota", "número nf", "numero nf", "nota", "no."])
@@ -680,6 +955,7 @@ async def importar_sefaz_creditos(
 
     linhas = []
     pares_nome = []
+    datas_ref = []
     for row in dados:
         cnpj = limpar_documento(row.get(col_cnpj))
         numero = limpar_nota(row.get(col_numero))
@@ -689,6 +965,8 @@ async def importar_sefaz_creditos(
         data_emissao = _cel(row.get(col_emissao)) if col_emissao else ""
         if " " in data_emissao:
             data_emissao = data_emissao.split(" ")[0]
+        if data_emissao:
+            datas_ref.append(data_emissao)
         pares_nome.append((cnpj, emitente))
         base = chave_base(cnpj, numero, data_emissao)
         linhas.append(
@@ -702,21 +980,28 @@ async def importar_sefaz_creditos(
                 "creditos_cent": valor_para_centavos(row.get(col_creditos)) if col_creditos else 0,
                 "situacao_credito": _cel(row.get(col_situacao)) if col_situacao else "",
                 "chave_base": base,
-                "competencia": competencia,
             }
         )
+
+    if competencia and competencia_valida(competencia):
+        competencia_final = competencia
+    else:
+        competencia_final = competencia_referencia_das_datas(datas_ref)
+
+    for linha in linhas:
+        linha["competencia"] = competencia_final
 
     linhas = _adicionar_ocorrencias(linhas, ["competencia", "chave_base"])
     await db.execute(
         delete(NfpSefazCreditoDB).where(
             NfpSefazCreditoDB.organizacao_id == organizacao_id,
-            NfpSefazCreditoDB.competencia == competencia,
+            NfpSefazCreditoDB.competencia == competencia_final,
         )
     )
     await db.execute(
         delete(NfpBatimentoDB).where(
             NfpBatimentoDB.organizacao_id == organizacao_id,
-            NfpBatimentoDB.competencia == competencia,
+            NfpBatimentoDB.competencia == competencia_final,
         )
     )
     for linha in linhas:
@@ -736,15 +1021,17 @@ async def importar_sefaz_creditos(
                 creditos_centavos=ccent,
                 situacao_credito=linha["situacao_credito"],
                 chave=chave_com_ocorrencia(linha["chave_base"], linha["ocorrencia"]),
-                competencia=competencia,
+                competencia=competencia_final,
             )
         )
     nomes_ok = await enriquecer_nomes_cnpjs_genericos(db, organizacao_id, pares_nome)
     await db.commit()
-    batidos = await gerar_batimento(db, organizacao_id, competencia)
-    sync = await sincronizar_doadores_de_doacoes(db, organizacao_id, competencia=competencia)
+    batidos = await gerar_batimento(db, organizacao_id, competencia_final)
+    sync = await sincronizar_doadores_de_doacoes(db, organizacao_id, competencia=competencia_final)
     return {
         "inseridos": len(linhas),
+        "arquivos": len(lista),
+        "competencia": competencia_final,
         "nomes_enriquecidos": nomes_ok,
         "batimentos": batidos,
         "doadores_sincronizados": sync,
@@ -870,16 +1157,33 @@ async def calcular_rateio(db: AsyncSession, organizacao_id: str, competencia: st
         )
     ).scalars().all()
     mapa_cnpjs = {}
-    cnpjs_agente: dict[str, str] = {}
     for item in cnpjs:
         c = limpar_documento(item.cnpj)
         if not c:
             continue
         captador = normalizar_agente_captacao(item.captador)
         mapa_cnpjs[c] = {"loja": item.loja or "", "captador": captador}
-        # Qualquer captador preenchido no CNPJ e tratado como agente de captacao.
-        if captador:
+
+    # Lista vigente por captador: ultima planilha com competencia <= fechamento.
+    cnpjs_agente: dict[str, str] = {}
+    vigentes = await mapa_cnpjs_captacao_vigente(db, organizacao_id, competencia)
+    if vigentes:
+        for c, info in vigentes.items():
+            captador = normalizar_agente_captacao(info.get("captador"))
+            if not c or not captador:
+                continue
             cnpjs_agente[c] = captador
+            base = mapa_cnpjs.get(c, {"loja": "", "captador": captador})
+            if info.get("loja") and not nome_eh_generico(info.get("loja")):
+                base["loja"] = info["loja"]
+            base["captador"] = captador
+            mapa_cnpjs[c] = base
+    else:
+        # Compatibilidade: bases antigas sem historico por competencia.
+        for c, info in mapa_cnpjs.items():
+            captador = normalizar_agente_captacao(info.get("captador"))
+            if captador:
+                cnpjs_agente[c] = captador
 
     doacoes = (
         await db.execute(

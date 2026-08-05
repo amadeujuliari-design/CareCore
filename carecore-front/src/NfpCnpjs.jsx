@@ -4,7 +4,7 @@ import { Building2 } from 'lucide-react';
 import Sidebar from './Sidebar';
 import NfpEnderecoFields from './components/nfp/NfpEnderecoFields';
 import { BadgeStatus, CampoSelect, CampoTexto } from './components/UsuariosCampos';
-import { AppShell, MainShell, PageHeader, PremiumButton, ScrollArea } from './components/PremiumUI';
+import { AppShell, MainShell, PageHeader, PremiumButton, ReportActionButton, ScrollArea } from './components/PremiumUI';
 import {
   nfpAtualizarCnpj,
   nfpCriarCnpj,
@@ -12,6 +12,10 @@ import {
   nfpListarCnpjs,
   nfpObterCnpj,
 } from './services/nfpService';
+import {
+  exportarCadastroNfpCnpjs,
+  imprimirCadastroNfpCnpjs,
+} from './utils/nfpCadastroExportPrint';
 import {
   cepValido,
   emailValido,
@@ -129,6 +133,33 @@ export default function NfpCnpjs() {
   useEffect(() => {
     carregarCnpjs();
   }, [carregarCnpjs]);
+
+  const filtrosExportacao = useMemo(() => ({
+    Busca: busca.trim() || '—',
+    Captador: filtroCaptador || 'Todos',
+    Conferir: somenteConferir ? 'Somente conferir' : 'Todos',
+    Registros: String(cnpjs.length),
+  }), [busca, filtroCaptador, somenteConferir, cnpjs.length]);
+
+  const exportarLista = async () => {
+    limparAlertas();
+    try {
+      const ok = await exportarCadastroNfpCnpjs({ cnpjs, filtros: filtrosExportacao });
+      if (!ok) setErro('Não há CNPJs para exportar com os filtros atuais.');
+    } catch (error) {
+      setErro(erroApiNfp(error, 'Falha ao exportar CNPJs.'));
+    }
+  };
+
+  const imprimirLista = async () => {
+    limparAlertas();
+    try {
+      const ok = await imprimirCadastroNfpCnpjs({ cnpjs, filtros: filtrosExportacao });
+      if (!ok) setErro('Não há CNPJs para imprimir com os filtros atuais.');
+    } catch (error) {
+      setErro(erroApiNfp(error, 'Falha ao imprimir CNPJs.'));
+    }
+  };
 
   const atualizarEndereco = (campo, valor) => {
     setForm((atual) => ({ ...atual, [campo]: valor }));
@@ -254,11 +285,30 @@ export default function NfpCnpjs() {
           title="CNPJs / Lojas"
           subtitle="Cadastro de estabelecimentos, captador e conferência de nomes genéricos."
           icon={<Building2 className="h-5 w-5" />}
+          backTo="/nfp"
+          backLabel="Voltar ao dashboard"
           actions={(
             tela === 'lista' ? (
-              <PremiumButton type="button" onClick={abrirNovo}>
-                Novo CNPJ
-              </PremiumButton>
+              <div className="flex flex-wrap gap-2">
+                <ReportActionButton
+                  type="button"
+                  action="export"
+                  disabled={loading || !cnpjs.length}
+                  onClick={exportarLista}
+                >
+                  Exportar XLSX
+                </ReportActionButton>
+                <ReportActionButton
+                  type="button"
+                  disabled={loading || !cnpjs.length}
+                  onClick={imprimirLista}
+                >
+                  Imprimir
+                </ReportActionButton>
+                <PremiumButton type="button" onClick={abrirNovo}>
+                  Novo CNPJ
+                </PremiumButton>
+              </div>
             ) : (
               <PremiumButton type="button" variant="secondary" onClick={voltarLista}>
                 Voltar

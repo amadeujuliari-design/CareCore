@@ -131,6 +131,8 @@ export default function RelatorioNfpRateioDetalhado() {
           title="Rateio detalhado"
           subtitle="Linhas por CNPJ, loja e origem, com identidade visual e exportação XLSX."
           icon={<FileBarChart className="h-5 w-5" />}
+          backTo="/nfp/relatorios"
+          backLabel="Voltar aos relatórios"
           actions={(
             <div className="flex flex-wrap gap-2">
               <ReportActionButton type="button" disabled={!linhas.length} onClick={exportarXlsx}>

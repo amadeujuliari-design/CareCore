@@ -605,13 +605,18 @@ async def atualizar_cnpj(
 async def post_importar_cnpjs(
     arquivo: UploadFile = File(...),
     captador_padrao: str = Form("DIEGO"),
+    competencia: Optional[str] = Form(None),
     db: AsyncSession = Depends(get_db),
     usuario_atual: dict = Depends(get_usuario_logado),
 ):
     _exigir_nfp(usuario_atual)
     try:
         return await importar_cnpjs(
-            db, _organizacao_id(usuario_atual), arquivo.file, captador_padrao=captador_padrao
+            db,
+            _organizacao_id(usuario_atual),
+            arquivo.file,
+            captador_padrao=captador_padrao,
+            competencia=(competencia or "").strip() or None,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -619,15 +624,18 @@ async def post_importar_cnpjs(
 
 @router.post("/importar/doacoes-sefaz")
 async def post_importar_doacoes(
-    competencia: str = Form(...),
     arquivo: UploadFile = File(...),
+    competencia: Optional[str] = Form(None),
     db: AsyncSession = Depends(get_db),
     usuario_atual: dict = Depends(get_usuario_logado),
 ):
     _exigir_nfp(usuario_atual)
     try:
         return await importar_doacoes_sefaz(
-            db, _organizacao_id(usuario_atual), arquivo.file, competencia
+            db,
+            _organizacao_id(usuario_atual),
+            arquivo.file,
+            competencia=(competencia or "").strip() or None,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -635,15 +643,21 @@ async def post_importar_doacoes(
 
 @router.post("/importar/sefaz-creditos")
 async def post_importar_sefaz(
-    competencia: str = Form(...),
-    arquivo: UploadFile = File(...),
+    arquivos: list[UploadFile] = File(...),
+    competencia: Optional[str] = Form(None),
     db: AsyncSession = Depends(get_db),
     usuario_atual: dict = Depends(get_usuario_logado),
 ):
     _exigir_nfp(usuario_atual)
     try:
+        payloads = []
+        for arq in arquivos:
+            payloads.append(await arq.read())
         return await importar_sefaz_creditos(
-            db, _organizacao_id(usuario_atual), arquivo.file, competencia
+            db,
+            _organizacao_id(usuario_atual),
+            arquivos=payloads,
+            competencia=(competencia or "").strip() or None,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

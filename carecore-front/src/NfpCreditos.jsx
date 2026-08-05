@@ -32,16 +32,21 @@ function money(valor) {
   return n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
 
-function CampoArquivo({ label, onChange, accept = '.xlsx,.xls,.csv' }) {
+function CampoArquivo({ label, onChange, accept = '.xlsx,.xls,.csv', multiple = false, hint }) {
   return (
     <label className="block text-sm text-slate-700">
       <span className="mb-1 block font-semibold">{label}</span>
       <input
         type="file"
         accept={accept}
-        onChange={(e) => onChange(e.target.files?.[0] || null)}
+        multiple={multiple}
+        onChange={(e) => {
+          const files = Array.from(e.target.files || []);
+          onChange(multiple ? files : (files[0] || null));
+        }}
         className="block w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
       />
+      {hint ? <span className="mt-1 block text-xs text-slate-500">{hint}</span> : null}
     </label>
   );
 }
@@ -60,7 +65,7 @@ export default function NfpCreditos() {
   const [arquivoDoadores, setArquivoDoadores] = useState(null);
   const [arquivoCnpjs, setArquivoCnpjs] = useState(null);
   const [arquivoDoacoes, setArquivoDoacoes] = useState(null);
-  const [arquivoSefaz, setArquivoSefaz] = useState(null);
+  const [arquivosSefaz, setArquivosSefaz] = useState([]);
   const [serieArrecadacao, setSerieArrecadacao] = useState([]);
   const [rankingAgentes, setRankingAgentes] = useState([]);
   const [totaisSerie, setTotaisSerie] = useState({});
@@ -165,8 +170,10 @@ export default function NfpCreditos() {
     setSucesso('');
     try {
       const resultado = await acao();
-      setSucesso(mensagemOk);
-      await carregarDashboard(competencia || undefined, agente);
+      const texto = typeof mensagemOk === 'function' ? mensagemOk(resultado) : mensagemOk;
+      setSucesso(() => texto);
+      const compAtual = resultado?.competencia || competencia || undefined;
+      await carregarDashboard(compAtual, agente);
       await carregarListas();
       await carregarGrafico();
       return resultado;
@@ -427,14 +434,24 @@ export default function NfpCreditos() {
               </article>
 
               <article className="rounded-3xl border border-slate-100 bg-white p-5 shadow-sm space-y-3">
-                <h3 className="font-bold text-slate-800">Importar CNPJs</h3>
-                <CampoArquivo label="Planilha" onChange={setArquivoCnpjs} />
+                <h3 className="font-bold text-slate-800">Importar CNPJs (Diego / mês)</h3>
+                <p className="text-xs text-slate-500">
+                  A planilha define o conjunto do captador na competência do cabeçalho
+                  (substitui a lista anterior daquele mês). Esse conjunto vale nos fechamentos
+                  seguintes até uma nova importação.
+                  {competencia ? ` Mês atual: ${competencia}.` : ' Defina a competência no cabeçalho ou importe créditos/doações antes.'}
+                </p>
+                <CampoArquivo label="Planilha CNPJ + LOJA" onChange={setArquivoCnpjs} />
                 <PremiumButton
                   type="button"
-                  disabled={trabalhando || !arquivoCnpjs}
+                  disabled={trabalhando || !arquivoCnpjs || !competencia}
                   onClick={() => comFeedback(
-                    () => nfpImportarCnpjs(arquivoCnpjs, agenteAtivo || 'DIEGO'),
-                    'CNPJs importados.',
+                    () => nfpImportarCnpjs(arquivoCnpjs, agenteAtivo || 'DIEGO', competencia),
+                    (r) => {
+                      const base = `CNPJs: lista de ${r?.competencia || competencia} com ${r?.vinculos_competencia || 0} CNPJs (${r?.inseridos || 0} novos no cadastro).`;
+                      if (!r?.competencia_anterior) return `${base} Primeira lista deste captador.`;
+                      return `${base} Comparado a ${r.competencia_anterior}: ${r?.saidas || 0} saíram, ${r?.entradas || 0} entraram.`;
+                    },
                   )}
                 >
                   Importar
@@ -442,23 +459,21 @@ export default function NfpCreditos() {
               </article>
 
               <article className="rounded-3xl border border-slate-100 bg-white p-5 shadow-sm space-y-3">
-                <h3 className="font-bold text-slate-800">Importar doações SEFAZ</h3>
-                <label className="block text-sm text-slate-700">
-                  <span className="mb-1 block text-xs font-semibold text-slate-600">Competência</span>
-                  <input
-                    type="month"
-                    value={competencia}
-                    onChange={(e) => setCompetencia(e.target.value)}
-                    className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
-                  />
-                </label>
-                <CampoArquivo label="Planilha" onChange={setArquivoDoacoes} />
+                <h3 className="font-bold text-slate-800">Importar doações (Pedidos)</h3>
+                <p className="text-xs text-slate-500">
+                  Arquivo do site (CSV/XLSX). Só entra Tipo = DOACAO_AUTOMATICA. Competência = mês das notas + 4.
+                </p>
+                <CampoArquivo label="Planilha Pedidos" onChange={setArquivoDoacoes} />
                 <PremiumButton
                   type="button"
-                  disabled={trabalhando || !arquivoDoacoes || !competencia}
+                  disabled={trabalhando || !arquivoDoacoes}
                   onClick={() => comFeedback(
-                    () => nfpImportarDoacoes(arquivoDoacoes, competencia),
-                    'Doações importadas.',
+                    async () => {
+                      const r = await nfpImportarDoacoes(arquivoDoacoes);
+                      if (r?.competencia) setCompetencia(r.competencia);
+                      return r;
+                    },
+                    (r) => `Doações: ${r?.inseridos || 0} (ignorados tipo: ${r?.ignorados_tipo || 0}). Competência ${r?.competencia || '—'}.`,
                   )}
                 >
                   Importar
@@ -467,22 +482,25 @@ export default function NfpCreditos() {
 
               <article className="rounded-3xl border border-slate-100 bg-white p-5 shadow-sm space-y-3">
                 <h3 className="font-bold text-slate-800">Importar créditos SEFAZ</h3>
-                <label className="block text-sm text-slate-700">
-                  <span className="mb-1 block text-xs font-semibold text-slate-600">Competência</span>
-                  <input
-                    type="month"
-                    value={competencia}
-                    onChange={(e) => setCompetencia(e.target.value)}
-                    className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
-                  />
-                </label>
-                <CampoArquivo label="Planilha" onChange={setArquivoSefaz} />
+                <p className="text-xs text-slate-500">
+                  Selecione todos os arquivos fracionados do mês (ConsultaNFP). Competência = emissão + 4 meses.
+                </p>
+                <CampoArquivo
+                  label="Arquivos ConsultaNFP (vários)"
+                  multiple
+                  onChange={setArquivosSefaz}
+                  hint={arquivosSefaz?.length ? `${arquivosSefaz.length} arquivo(s) selecionado(s)` : 'Pode selecionar vários de uma vez'}
+                />
                 <PremiumButton
                   type="button"
-                  disabled={trabalhando || !arquivoSefaz || !competencia}
+                  disabled={trabalhando || !arquivosSefaz?.length}
                   onClick={() => comFeedback(
-                    () => nfpImportarSefaz(arquivoSefaz, competencia),
-                    'Créditos SEFAZ importados.',
+                    async () => {
+                      const r = await nfpImportarSefaz(arquivosSefaz);
+                      if (r?.competencia) setCompetencia(r.competencia);
+                      return r;
+                    },
+                    (r) => `Créditos: ${r?.inseridos || 0} de ${r?.arquivos || 0} arquivo(s). Competência ${r?.competencia || '—'}.`,
                   )}
                 >
                   Importar

@@ -100,6 +100,8 @@ export default function RelatorioNfpRateioConsolidado() {
           title="Rateio consolidado"
           subtitle="Totais por competência e ranking por agente, com identidade visual e exportação XLSX."
           icon={<FileBarChart className="h-5 w-5" />}
+          backTo="/nfp/relatorios"
+          backLabel="Voltar aos relatórios"
           actions={(
             <div className="flex flex-wrap gap-2">
               <ReportActionButton type="button" disabled={!linhas.length} onClick={exportarXlsx}>
