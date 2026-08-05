@@ -7,15 +7,27 @@ __pycache__/
 *.py[cod]
 *.db
 *.db-journal
+*.db-shm
+*.db-wal
 *.sqlite3
 uploads/
 backups/
+venv/
+.venv/
+Portal AEB NFP/
+apresentacao/
+carecore-front/
+carecore-site/
 node_modules/
 carecore-front/node_modules/
 carecore-front/dist/
 carecore-site/node_modules/
 carecore-site/dist/
 carecore-site/.astro/
+*_log.txt
+setup_zenbook.bat
+snapshot_backup*.txt
+reconciliacao_online_aplicar_log.txt
 SNAPSHOT_COMPLETO_PROJETO.txt
 codigo_completo.txt
 documentos_teste/
