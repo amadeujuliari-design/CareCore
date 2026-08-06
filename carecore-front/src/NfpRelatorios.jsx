@@ -37,7 +37,7 @@ export default function NfpRelatorios() {
             ))}
           </div>
           <p className="mt-6 text-xs text-slate-500">
-            Próximos relatórios (batimento, doações, cadastros e exceções) entram nesta central no mesmo padrão.
+            Próximos relatórios (doadores diretos, doações, cadastros e exceções) entram nesta central no mesmo padrão.
           </p>
         </ScrollArea>
       </MainShell>

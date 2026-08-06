@@ -24,12 +24,66 @@ const ABAS = [
   { id: 'dashboard', label: 'Dashboard' },
   { id: 'importacoes', label: 'Importações' },
   { id: 'rateio', label: 'Rateio' },
-  { id: 'batimento', label: 'Batimento' },
+  { id: 'batimento', label: 'Lançamentos de Doadores Diretos' },
 ];
 
 function money(valor) {
   const n = Number(valor || 0);
   return n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+}
+
+function montarResumoImportacao(tipo, r) {
+  if (!r) return null;
+  if (tipo === 'sefaz') {
+    return {
+      titulo: 'Resumo da importação — Créditos SEFAZ',
+      linhas: [
+        ['Competência', r.competencia || '—'],
+        ['Arquivos processados', String(r.arquivos ?? 0)],
+        ['Linhas nos arquivos', String(r.linhas_arquivo ?? 0)],
+        ['Créditos importados', String(r.inseridos ?? 0)],
+        ['Excluídos (status Bloqueado)', String(r.ignorados_bloqueados ?? 0)],
+        ['Cruzamentos (doadores diretos)', String(r.cruzamentos ?? r.batimentos ?? 0)],
+        ['Doadores sincronizados', String(r.doadores_sincronizados?.criados ?? 0)],
+      ],
+    };
+  }
+  if (tipo === 'doacoes') {
+    return {
+      titulo: 'Resumo da importação — Pedidos (doações)',
+      linhas: [
+        ['Competência', r.competencia || '—'],
+        ['Linhas no arquivo', String(r.linhas_arquivo ?? 0)],
+        ['Doações importadas', String(r.inseridos ?? 0)],
+        ['Ignorados (tipo ≠ DOACAO_AUTOMATICA)', String(r.ignorados_tipo ?? 0)],
+        ['Cruzamentos (doadores diretos)', String(r.cruzamentos ?? r.batimentos ?? 0)],
+        ['Doadores sincronizados', String(r.doadores_sincronizados?.criados ?? 0)],
+      ],
+    };
+  }
+  if (tipo === 'cnpjs') {
+    return {
+      titulo: 'Resumo da importação — CNPJs',
+      linhas: [
+        ['Competência', r.competencia || '—'],
+        ['CNPJs na lista', String(r.vinculos_competencia ?? 0)],
+        ['Novos no cadastro', String(r.inseridos ?? 0)],
+        ['Comparado a', r.competencia_anterior || 'primeira lista'],
+        ['Saíram', String(r.saidas ?? 0)],
+        ['Entraram', String(r.entradas ?? 0)],
+      ],
+    };
+  }
+  if (tipo === 'doadores') {
+    return {
+      titulo: 'Resumo da importação — Doadores',
+      linhas: [
+        ['Inseridos', String(r.inseridos ?? 0)],
+        ['Ignorados', String(r.ignorados ?? 0)],
+      ],
+    };
+  }
+  return null;
 }
 
 function CampoArquivo({ label, onChange, accept = '.xlsx,.xls,.csv', multiple = false, hint }) {
@@ -72,6 +126,7 @@ export default function NfpCreditos() {
   const [agenteGrafico, setAgenteGrafico] = useState('');
   const [mesesGrafico, setMesesGrafico] = useState(12);
   const [loadingGrafico, setLoadingGrafico] = useState(false);
+  const [resumoImportacao, setResumoImportacao] = useState(null);
 
   const agentes = useMemo(
     () => resumo?.agentes_captacao?.length ? resumo.agentes_captacao : ['DIEGO'],
@@ -164,7 +219,7 @@ export default function NfpCreditos() {
     return undefined;
   }, [aba, carregarGrafico]);
 
-  async function comFeedback(acao, mensagemOk) {
+  async function comFeedback(acao, mensagemOk, { resumoTipo } = {}) {
     setTrabalhando(true);
     setErro('');
     setSucesso('');
@@ -172,6 +227,10 @@ export default function NfpCreditos() {
       const resultado = await acao();
       const texto = typeof mensagemOk === 'function' ? mensagemOk(resultado) : mensagemOk;
       setSucesso(() => texto);
+      if (resumoTipo) {
+        const resumoModal = montarResumoImportacao(resumoTipo, resultado);
+        if (resumoModal) setResumoImportacao(resumoModal);
+      }
       const compAtual = resultado?.competencia || competencia || undefined;
       await carregarDashboard(compAtual, agente);
       await carregarListas();
@@ -192,7 +251,7 @@ export default function NfpCreditos() {
         <PageHeader
           eyebrow="NFP – Créditos"
           title="Dashboard"
-          subtitle="Nota Fiscal Paulista: créditos SEFAZ, batimento e rateio."
+          subtitle="Nota Fiscal Paulista: créditos SEFAZ, doadores diretos e rateio."
           icon={<Receipt className="h-5 w-5" />}
           actions={(
             <div className="flex flex-wrap items-center gap-2">
@@ -335,7 +394,7 @@ export default function NfpCreditos() {
                       ['CNPJs conferir', resumo?.cnpjs_conferir],
                       ['Créditos SEFAZ', resumo?.sefaz_creditos],
                       ['Doações auto', resumo?.doacoes_automaticas],
-                      ['Batimentos', resumo?.batimentos],
+                      ['Lançamentos doadores diretos', resumo?.batimentos],
                       ['Total créditos', money(resumo?.total_creditos)],
                       ['Total AEB na competência', money(resumo?.aeb_total_competencia ?? resumo?.total_aeb)],
                     ].map(([label, valor]) => (
@@ -427,6 +486,7 @@ export default function NfpCreditos() {
                   onClick={() => comFeedback(
                     () => nfpImportarDoadores(arquivoDoadores),
                     'Doadores importados.',
+                    { resumoTipo: 'doadores' },
                   )}
                 >
                   Importar
@@ -452,6 +512,7 @@ export default function NfpCreditos() {
                       if (!r?.competencia_anterior) return `${base} Primeira lista deste captador.`;
                       return `${base} Comparado a ${r.competencia_anterior}: ${r?.saidas || 0} saíram, ${r?.entradas || 0} entraram.`;
                     },
+                    { resumoTipo: 'cnpjs' },
                   )}
                 >
                   Importar
@@ -474,6 +535,7 @@ export default function NfpCreditos() {
                       return r;
                     },
                     (r) => `Doações: ${r?.inseridos || 0} (ignorados tipo: ${r?.ignorados_tipo || 0}). Competência ${r?.competencia || '—'}.`,
+                    { resumoTipo: 'doacoes' },
                   )}
                 >
                   Importar
@@ -484,6 +546,7 @@ export default function NfpCreditos() {
                 <h3 className="font-bold text-slate-800">Importar créditos SEFAZ</h3>
                 <p className="text-xs text-slate-500">
                   Selecione todos os arquivos fracionados do mês (ConsultaNFP). Competência = emissão + 4 meses.
+                  Registros com status Bloqueado são excluídos automaticamente.
                 </p>
                 <CampoArquivo
                   label="Arquivos ConsultaNFP (vários)"
@@ -500,7 +563,8 @@ export default function NfpCreditos() {
                       if (r?.competencia) setCompetencia(r.competencia);
                       return r;
                     },
-                    (r) => `Créditos: ${r?.inseridos || 0} de ${r?.arquivos || 0} arquivo(s). Competência ${r?.competencia || '—'}.`,
+                    (r) => `Créditos: ${r?.inseridos || 0} importados; ${r?.ignorados_bloqueados || 0} bloqueados excluídos. Competência ${r?.competencia || '—'}.`,
+                    { resumoTipo: 'sefaz' },
                   )}
                 >
                   Importar
@@ -579,33 +643,73 @@ export default function NfpCreditos() {
           )}
 
           {aba === 'batimento' && (
-            <section className="overflow-x-auto rounded-3xl border border-slate-100 bg-white p-5 shadow-sm">
-              <table className="min-w-full text-sm">
-                <thead>
-                  <tr className="text-left text-slate-500">
-                    <th className="px-2 py-2">CPF doador</th>
-                    <th className="px-2 py-2">CNPJ</th>
-                    <th className="px-2 py-2">Emitente</th>
-                    <th className="px-2 py-2">Nota</th>
-                    <th className="px-2 py-2">Créditos</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {batimentos.map((b) => (
-                    <tr key={b.id} className="border-t border-slate-100">
-                      <td className="px-2 py-2">{formatarCPF(b.cpf_doador_cadastrador)}</td>
-                      <td className="px-2 py-2">{formatarCNPJ(b.cnpj_estabelecimento)}</td>
-                      <td className="px-2 py-2">{b.emitente}</td>
-                      <td className="px-2 py-2">{b.numero_nota}</td>
-                      <td className="px-2 py-2">{money((b.creditos_centavos || 0) / 100)}</td>
+            <section className="space-y-4">
+              <div className="rounded-3xl border border-slate-100 bg-white p-5 shadow-sm">
+                <h3 className="text-lg font-bold text-slate-900">Lançamentos de Doadores Diretos</h3>
+                <p className="mt-2 text-sm leading-relaxed text-slate-600">
+                  Esta lista exibe os lançamentos de doadores diretos da competência que foram
+                  encontrados no cruzamento com os créditos importados do mês.
+                </p>
+              </div>
+              <div className="overflow-x-auto rounded-3xl border border-slate-100 bg-white p-5 shadow-sm">
+                <table className="min-w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-slate-500">
+                      <th className="px-2 py-2">CPF doador</th>
+                      <th className="px-2 py-2">CNPJ</th>
+                      <th className="px-2 py-2">Emitente</th>
+                      <th className="px-2 py-2">Nota</th>
+                      <th className="px-2 py-2">Créditos</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {batimentos.map((b) => (
+                      <tr key={b.id} className="border-t border-slate-100">
+                        <td className="px-2 py-2">{formatarCPF(b.cpf_doador_cadastrador)}</td>
+                        <td className="px-2 py-2">{formatarCNPJ(b.cnpj_estabelecimento)}</td>
+                        <td className="px-2 py-2">{b.emitente}</td>
+                        <td className="px-2 py-2">{b.numero_nota}</td>
+                        <td className="px-2 py-2">{money((b.creditos_centavos || 0) / 100)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </section>
           )}
         </ScrollArea>
       </MainShell>
+
+      {resumoImportacao ? (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-[1px]"
+          role="alertdialog"
+          aria-modal="true"
+          aria-labelledby="nfp-resumo-import-titulo"
+        >
+          <div className="w-full max-w-lg rounded-2xl border border-teal-100 bg-white p-5 shadow-2xl">
+            <h3 id="nfp-resumo-import-titulo" className="text-lg font-semibold text-slate-900">
+              {resumoImportacao.titulo}
+            </h3>
+            <dl className="mt-4 space-y-2">
+              {resumoImportacao.linhas.map(([label, valor]) => (
+                <div
+                  key={label}
+                  className="flex items-start justify-between gap-4 border-b border-slate-100 pb-2 text-sm last:border-0"
+                >
+                  <dt className="text-slate-600">{label}</dt>
+                  <dd className="font-semibold text-slate-900">{valor}</dd>
+                </div>
+              ))}
+            </dl>
+            <div className="mt-5 flex justify-end">
+              <PremiumButton type="button" onClick={() => setResumoImportacao(null)}>
+                OK
+              </PremiumButton>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </AppShell>
   );
 }

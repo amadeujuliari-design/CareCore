@@ -45,6 +45,7 @@ from nfp_utils import (
     origem_rateio_agente,
     percentual_agente_padrao,
     rateio_centavos,
+    situacao_credito_bloqueada,
     tipo_eh_doacao_automatica,
     valor_para_centavos,
 )
@@ -519,8 +520,8 @@ def _preparar_linhas_sefaz(
     dados: list[dict[str, Any]],
     organizacao_id: str,
     competencia: Optional[str],
-) -> tuple[list[dict[str, Any]], list[tuple[str, str]], str]:
-    """Parse CPU-bound de Creditos SEFAZ (ConsultaNFP)."""
+) -> tuple[list[dict[str, Any]], list[tuple[str, str]], str, int, int]:
+    """Parse CPU-bound de Creditos SEFAZ (ConsultaNFP). Exclui situacao Bloqueado."""
     col_cnpj = achar_coluna(headers, ["cnpj emit.", "cnpj emitente", "cnpj do emitente", "cnpj estabelecimento", "cnpj"])
     col_emitente = achar_coluna(headers, ["emitente", "nome emitente", "estabelecimento", "loja"])
     col_numero = achar_coluna(headers, ["número da nota", "numero da nota", "número nf", "numero nf", "nota", "no."])
@@ -535,10 +536,17 @@ def _preparar_linhas_sefaz(
     linhas: list[dict[str, Any]] = []
     pares_nome: list[tuple[str, str]] = []
     datas_ref: list[str] = []
+    linhas_arquivo = 0
+    ignorados_bloqueados = 0
     for row in dados:
         cnpj = limpar_documento(row.get(col_cnpj))
         numero = limpar_nota(row.get(col_numero))
         if not cnpj and not numero:
+            continue
+        linhas_arquivo += 1
+        situacao = _cel(row.get(col_situacao)) if col_situacao else ""
+        if situacao_credito_bloqueada(situacao):
+            ignorados_bloqueados += 1
             continue
         emitente = _cel(row.get(col_emitente)) if col_emitente else ""
         data_emissao = _cel(row.get(col_emissao)) if col_emissao else ""
@@ -557,7 +565,7 @@ def _preparar_linhas_sefaz(
                 "valor_nf_cent": valor_para_centavos(row.get(col_valor)) if col_valor else 0,
                 "data_registro": _cel(row.get(col_registro)) if col_registro else "",
                 "creditos_cent": valor_para_centavos(row.get(col_creditos)) if col_creditos else 0,
-                "situacao_credito": _cel(row.get(col_situacao)) if col_situacao else "",
+                "situacao_credito": situacao,
                 "chave_base": base,
             }
         )
@@ -593,7 +601,7 @@ def _preparar_linhas_sefaz(
                 "competencia": competencia_final,
             }
         )
-    return registros, pares_nome, competencia_final
+    return registros, pares_nome, competencia_final, ignorados_bloqueados, linhas_arquivo
 
 
 async def enriquecer_nomes_cnpjs_genericos(
@@ -1086,6 +1094,7 @@ async def importar_doacoes_sefaz(
         "ignorados_tipo": ignorados_tipo,
         "competencia": competencia_final,
         "batimentos": batidos,
+        "cruzamentos": batidos,
         "doadores_sincronizados": sync,
     }
 
@@ -1107,11 +1116,17 @@ async def importar_sefaz_creditos(
 
     payloads = [_bytes_arquivo(arq) for arq in lista]
 
-    def _parse() -> tuple[list[dict[str, Any]], list[tuple[str, str]], str]:
+    def _parse() -> tuple[list[dict[str, Any]], list[tuple[str, str]], str, int, int]:
         headers, dados = _ler_varios_arquivos(payloads)
         return _preparar_linhas_sefaz(headers, dados, organizacao_id, competencia)
 
-    registros, pares_nome, competencia_final = await asyncio.to_thread(_parse)
+    (
+        registros,
+        pares_nome,
+        competencia_final,
+        ignorados_bloqueados,
+        linhas_arquivo,
+    ) = await asyncio.to_thread(_parse)
 
     await db.execute(
         delete(NfpSefazCreditoDB).where(
@@ -1133,9 +1148,12 @@ async def importar_sefaz_creditos(
     return {
         "inseridos": len(registros),
         "arquivos": len(lista),
+        "linhas_arquivo": linhas_arquivo,
+        "ignorados_bloqueados": ignorados_bloqueados,
         "competencia": competencia_final,
         "nomes_enriquecidos": nomes_ok,
         "batimentos": batidos,
+        "cruzamentos": batidos,
         "doadores_sincronizados": sync,
     }
 

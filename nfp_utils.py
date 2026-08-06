@@ -211,7 +211,7 @@ def competencia_referencia_das_datas(
     return contagem.most_common(1)[0][0]
 
 
-def tipo_eh_doacao_automatica(valor: Optional[str]) -> bool:
+def _normalizar_rotulo_sefaz(valor: Optional[str]) -> str:
     texto = str(valor or "").strip().lower()
     for a, b in (
         ("á", "a"), ("à", "a"), ("ã", "a"), ("â", "a"),
@@ -220,8 +220,16 @@ def tipo_eh_doacao_automatica(valor: Optional[str]) -> bool:
     ):
         texto = texto.replace(a, b)
     texto = re.sub(r"\s+", "_", texto)
-    compacto = texto.replace("_", "")
-    return compacto == "doacaoautomatica"
+    return texto.replace("_", "")
+
+
+def tipo_eh_doacao_automatica(valor: Optional[str]) -> bool:
+    return _normalizar_rotulo_sefaz(valor) == "doacaoautomatica"
+
+
+def situacao_credito_bloqueada(valor: Optional[str]) -> bool:
+    """Creditos com situacao Bloqueado nao entram na conta/rateio."""
+    return "bloqueado" in _normalizar_rotulo_sefaz(valor)
 
 
 def valor_para_centavos(valor) -> int:

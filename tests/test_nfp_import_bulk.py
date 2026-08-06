@@ -1,5 +1,67 @@
-"""Testes de performance/correção do matching de batimento NFP."""
-from nfp_service import _montar_registros_batimento
+"""Testes de importacao NFP: bulk, bloqueados e batimento."""
+from nfp_service import _montar_registros_batimento, _preparar_linhas_sefaz
+from nfp_utils import situacao_credito_bloqueada
+
+
+def test_situacao_credito_bloqueada():
+    assert situacao_credito_bloqueada("Bloqueado") is True
+    assert situacao_credito_bloqueada("bloqueado") is True
+    assert situacao_credito_bloqueada("Liberado") is False
+    assert situacao_credito_bloqueada("Calculado") is False
+    assert situacao_credito_bloqueada("") is False
+
+
+def test_preparar_linhas_sefaz_exclui_bloqueados():
+    headers = [
+        "CNPJ emit.",
+        "Emitente",
+        "No.",
+        "Data Emissão",
+        "Valor NF",
+        "Data Registro",
+        "Créditos",
+        "Situação do Crédito",
+    ]
+    dados = [
+        {
+            "CNPJ emit.": "11.222.333/0001-81",
+            "Emitente": "Loja A",
+            "No.": "100",
+            "Data Emissão": "15/01/2026",
+            "Valor NF": "10,00",
+            "Data Registro": "15/01/2026",
+            "Créditos": "1,00",
+            "Situação do Crédito": "Liberado",
+        },
+        {
+            "CNPJ emit.": "11.222.333/0001-81",
+            "Emitente": "Loja A",
+            "No.": "101",
+            "Data Emissão": "15/01/2026",
+            "Valor NF": "20,00",
+            "Data Registro": "15/01/2026",
+            "Créditos": "2,00",
+            "Situação do Crédito": "Bloqueado",
+        },
+        {
+            "CNPJ emit.": "11.222.333/0001-81",
+            "Emitente": "Loja B",
+            "No.": "102",
+            "Data Emissão": "16/01/2026",
+            "Valor NF": "30,00",
+            "Data Registro": "16/01/2026",
+            "Créditos": "3,00",
+            "Situação do Crédito": "Liberado",
+        },
+    ]
+    registros, _pares, competencia, ignorados, linhas_arquivo = _preparar_linhas_sefaz(
+        headers, dados, "org-1", None
+    )
+    assert competencia == "2026-05"
+    assert linhas_arquivo == 3
+    assert ignorados == 1
+    assert len(registros) == 2
+    assert all(r["situacao_credito"] != "Bloqueado" for r in registros)
 
 
 def test_montar_batimento_produto_cartesiano_por_chave():
