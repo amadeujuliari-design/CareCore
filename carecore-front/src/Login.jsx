@@ -22,10 +22,17 @@ import CampoSenha from './components/CampoSenha';
 
 function devePularRevealMarca() {
   try {
-    return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      return true;
+    }
+    // Playwright/CI: nao bloquear smoke de login com a intro da marca.
+    if (typeof navigator !== 'undefined' && navigator.webdriver) {
+      return true;
+    }
   } catch {
     return false;
   }
+  return false;
 }
 
 export default function Login() {

@@ -14,6 +14,11 @@ test('carrega login e trata falha de autenticacao sem backend real', async ({ pa
 
   await page.goto('/');
 
+  const pularIntro = page.getByRole('button', { name: 'Pular introdução' });
+  if (await pularIntro.isVisible().catch(() => false)) {
+    await pularIntro.click();
+  }
+
   await expect(page.getByRole('heading', { name: /Entrar no CARECORE\+/i })).toBeVisible();
   await expect(page.getByPlaceholder('usuario@instituicao.org')).toBeVisible();
   await expect(page.getByPlaceholder('Digite sua senha')).toBeVisible();
