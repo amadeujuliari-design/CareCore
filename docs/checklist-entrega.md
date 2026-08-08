@@ -16,6 +16,7 @@ Se inverter a ordem, a API entra em crash loop (health falha, máquina reinicia)
 
 - [ ] **Commit local** — somente arquivos da tarefa (sem `.env`, backups, caches)
 - [ ] **Push GitHub** — branch remota atualizada (`git status` limpo ou intencional)
+- [ ] **CI Quality verde** — acompanhar workflow; se vermelho, corrigir e reenviar **sem esperar o usuario**
 - [ ] **Migration** (se mudou `models.py` / schema) — `alembic upgrade head` no **Postgres de produção** + `alembic current` na head esperada — **antes** do deploy Fly
 - [ ] **Deploy Fly** — `fly deploy -a carecoreplus-api` (se mudou backend)
 - [ ] **Health** — `curl https://carecoreplus-api.fly.dev/api/health` → `status: ok`
@@ -62,4 +63,6 @@ O workflow `.github/workflows/quality.yml` roda em push/PR para `main`/`master`:
 - `alembic upgrade head` + `alembic check`
 - lint, testes e build do frontend
 
-Falha no CI = corrigir antes de considerar a entrega fechada.
+**Apos o push:** acompanhar o run ate success. Falha = o agente corrige, revalida local, commit + push de novo e reacompanha — **nao esperar o usuario descobrir o vermelho**. Entrega so fecha com CI verde (ou bloqueio externo narrado).
+
+Ver tambem a regra `.cursor/rules/carecore-git-entrega.mdc` (secao CI apos o push).

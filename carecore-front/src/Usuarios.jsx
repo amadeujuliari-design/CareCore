@@ -29,6 +29,7 @@ import {
   FORM_INICIAL,
   GENEROS,
   NACIONALIDADES,
+  NFP_CAPTADORES_VINCULO,
   PERFIS,
   UFS,
 } from './utils/usuariosConstantes';
@@ -55,8 +56,10 @@ import {
   criarAdmGlobalOrganizacao,
   editarAdmGlobalOrganizacao,
   listarAdmGlobalOrganizacao,
+  listarVinculosNfpOrganizacao,
   statusAdmGlobalOrganizacao,
 } from './services/nfpService';
+import { useAuth } from './context/AuthContext';
 
 function usuarioLogadoEhGlobal() {
   try {
@@ -157,6 +160,8 @@ function ListaRegrasSenha({ regras }) {
 export default function Usuarios() {
   const navigate = useNavigate();
   const deviceInfo = useDeviceInfo();
+  const { usuario: usuarioAuth } = useAuth();
+  const nomeProjetoSessao = usuarioAuth?.projeto_nome || '';
 
   const [usuarios, setUsuarios] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -167,6 +172,8 @@ export default function Usuarios() {
   const [tela, setTela] = useState('lista');
   const [editandoId, setEditandoId] = useState(null);
   const [escopoLista, setEscopoLista] = useState('projeto');
+  const [vinculosNfp, setVinculosNfp] = useState(NFP_CAPTADORES_VINCULO);
+  const [nomeProjetoAtual, setNomeProjetoAtual] = useState(nomeProjetoSessao);
 
   const [busca, setBusca] = useState('');
   const [filtroPerfil, setFiltroPerfil] = useState('');
@@ -227,6 +234,37 @@ export default function Usuarios() {
       navigate('/');
     }
   }, []);
+
+  useEffect(() => {
+    let ativo = true;
+    api.get('/api/organizacao/projeto-atual')
+      .then((response) => {
+        if (ativo) {
+          setNomeProjetoAtual(response.data?.nome_fantasia || nomeProjetoSessao);
+        }
+      })
+      .catch(() => {
+        if (ativo) setNomeProjetoAtual(nomeProjetoSessao);
+      });
+    return () => {
+      ativo = false;
+    };
+  }, [nomeProjetoSessao]);
+
+  useEffect(() => {
+    if (!podeGerenciarAdmGlobal && !podeGerenciar) return undefined;
+    let ativo = true;
+    listarVinculosNfpOrganizacao()
+      .then((itens) => {
+        if (ativo && Array.isArray(itens) && itens.length) {
+          setVinculosNfp(itens);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      ativo = false;
+    };
+  }, [podeGerenciarAdmGlobal, podeGerenciar]);
 
   useEffect(() => {
     return () => {
@@ -327,12 +365,14 @@ export default function Usuarios() {
   const abrirNovo = () => {
     limparAlertas();
     setErrosCampo({});
+    const perfilInicial = escopoLista === 'organizacao' ? 'ADM Global' : 'Consulta';
     setForm({
       ...FORM_INICIAL,
-      perfil_acesso: escopoLista === 'organizacao' ? 'ADM Global' : 'Consulta',
+      perfil_acesso: perfilInicial,
       is_global: false,
       cargo: escopoLista === 'organizacao' ? 'ADM Global NFP' : '',
       setor: escopoLista === 'organizacao' ? 'NFP – Créditos' : '',
+      nfp_captador_vinculo: '',
     });
     setEditandoId(null);
     setTela('form');
@@ -344,8 +384,20 @@ export default function Usuarios() {
       setErrosCampo({});
       setLoading(true);
 
-      const response = await api.get(`/api/usuarios/${usuarioId}`);
-      const usuario = response.data;
+      let usuario;
+      if (escopoLista === 'organizacao') {
+        const daLista = usuarios.find((u) => u.id === usuarioId);
+        if (daLista) {
+          usuario = daLista;
+        } else {
+          const lista = await listarAdmGlobalOrganizacao({ limite: 300 });
+          usuario = (Array.isArray(lista) ? lista : []).find((u) => u.id === usuarioId);
+        }
+        if (!usuario) throw new Error('Usuário ADM NFP não encontrado.');
+      } else {
+        const response = await api.get(`/api/usuarios/${usuarioId}`);
+        usuario = response.data;
+      }
 
       setForm({
         ...FORM_INICIAL,
@@ -374,6 +426,7 @@ export default function Usuarios() {
         uf: usuario.uf || '',
         cargo: usuario.cargo || '',
         setor: usuario.setor || '',
+        nfp_captador_vinculo: usuario.nfp_captador_vinculo || '',
         conselho_profissional: usuario.conselho_profissional || '',
         numero_conselho: usuario.numero_conselho || '',
         carga_horaria: usuario.carga_horaria ?? '',
@@ -586,6 +639,13 @@ export default function Usuarios() {
 
     if (!camposValidos) return 'Corrija os campos destacados antes de salvar.';
     if (!form.perfil_acesso) return 'Selecione o perfil de acesso.';
+    if (
+      escopoLista === 'organizacao'
+      && form.perfil_acesso === 'ADM Produção'
+      && !(form.nfp_captador_vinculo || '').trim()
+    ) {
+      return 'Selecione o vínculo NFP (projeto ou Sede) para o ADM Produção.';
+    }
 
     if (form.uf && !UFS.includes(form.uf)) {
       return 'UF inválida. Selecione uma UF válida.';
@@ -639,7 +699,7 @@ export default function Usuarios() {
     if (!podeSalvarAgora) {
       setErro(
         escopoLista === 'organizacao'
-          ? 'Apenas Global ou Manutenção podem gerenciar ADM Global / ADM Produção.'
+          ? 'Apenas ADM Global, Global ou Manutenção podem gerenciar ADM Global / ADM Produção.'
           : 'Apenas Gestor pode criar ou editar usuários.',
       );
       return;
@@ -662,6 +722,11 @@ export default function Usuarios() {
         const perfilOrg = form.perfil_acesso === 'ADM Produção' ? 'ADM Produção' : 'ADM Global';
         payload.perfil_acesso = perfilOrg;
         payload.is_global = false;
+        if (perfilOrg === 'ADM Produção') {
+          payload.nfp_captador_vinculo = (form.nfp_captador_vinculo || '').trim();
+        } else {
+          payload.nfp_captador_vinculo = null;
+        }
         if (editandoId) {
           await editarAdmGlobalOrganizacao(editandoId, payload);
           setSucesso(`Usuário ${perfilOrg} atualizado com sucesso.`);
@@ -948,7 +1013,13 @@ export default function Usuarios() {
 
         {escopoLista === 'organizacao' && (
           <div className="mb-4 rounded-xl border border-teal-100 bg-teal-50 px-4 py-3 text-sm text-teal-800">
-            ADM Global acessa o módulo NFP completo (inclui envio à Fazenda). ADM Produção acessa apenas a Leitura de Cupons. Nenhum dos dois entra na lista/faturamento do projeto.
+            ADM Global fica só nesta aba (não entra na lista/faturamento do projeto). ADM Produção precisa de vínculo com projeto/Sede: o vínculo é o mesmo projeto CareCore — o gestor desse projeto vê e administra o usuário na lista do projeto, e ele conta no faturamento desse projeto.
+          </div>
+        )}
+
+        {escopoLista === 'projeto' && (
+          <div className="mb-4 rounded-xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+            ADM Produção deste projeto ({nomeProjetoAtual || 'projeto atual'}) aparece aqui para o gestor administrar. ADM Global continua apenas na aba Usuários da organização.
           </div>
         )}
 
@@ -1297,6 +1368,36 @@ export default function Usuarios() {
                       )}
                     </select>
                   </div>
+
+                  {escopoLista === 'organizacao' && form.perfil_acesso === 'ADM Produção' && (
+                    <div>
+                      <label className="mb-1 block text-xs font-semibold text-slate-600">
+                        Vínculo NFP (projeto ou Sede)
+                      </label>
+                      <select
+                        value={form.nfp_captador_vinculo || ''}
+                        onChange={(e) => atualizarCampo('nfp_captador_vinculo', e.target.value)}
+                        className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400"
+                        required
+                      >
+                        <option value="">Selecione…</option>
+                        {vinculosNfp.map((cap) => (
+                          <option key={cap} value={cap}>{cap}</option>
+                        ))}
+                      </select>
+                      <p className="mt-1 text-[11px] text-slate-500">
+                        Equivale ao projeto CareCore (ou Sede). Leituras de cupons e a lista do gestor desse projeto usam este vínculo.
+                      </p>
+                    </div>
+                  )}
+
+                  {escopoLista === 'projeto' && form.perfil_acesso === 'ADM Produção' && (
+                    <div className="rounded-xl border border-teal-100 bg-teal-50 px-3 py-2 text-sm text-teal-900 md:col-span-2">
+                      Vínculo NFP fixo deste projeto:{' '}
+                      <strong>{nomeProjetoAtual || form.nfp_captador_vinculo || 'projeto atual'}</strong>
+                      . Cupons lidos por este usuário vão automaticamente para este vínculo.
+                    </div>
+                  )}
 
                   {!editandoId && (
                     <div>

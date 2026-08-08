@@ -227,6 +227,11 @@ export async function listarAdmGlobalOrganizacao(params = {}) {
   return data;
 }
 
+export async function listarVinculosNfpOrganizacao() {
+  const { data } = await api.get('/api/usuarios/organizacao/vinculos-nfp');
+  return data?.itens || [];
+}
+
 export async function criarAdmGlobalOrganizacao(payload) {
   const { data } = await api.post('/api/usuarios/organizacao/adm-global', payload);
   return data;

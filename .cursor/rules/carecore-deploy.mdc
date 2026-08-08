@@ -69,12 +69,13 @@ Separar explicitamente:
 | --- | --- |
 | Commit local | sim/nao |
 | Push GitHub | sim/nao |
+| CI Quality verde | sim/nao/nao aplicavel |
 | Migration aplicada (se schema) | sim/nao/nao aplicavel |
 | `fly deploy` | sim/nao |
 | `/api/health` ok | sim/nao |
 | Vercel / versao sidebar | sim/nao/nao aplicavel |
 
-Nunca declarar entrega completa com backend se health falhar ou migration pendente.
+Nunca declarar entrega completa com backend se health falhar ou migration pendente. Nunca declarar entrega completa apos push se o CI Quality estiver vermelho ou ainda em andamento (corrigir ate verde; ver `carecore-git-entrega.mdc`).
 
 ## Recuperacao (deploy feito sem migration)
 

@@ -576,6 +576,7 @@ class UsuarioBase(BaseModel):
 
     cargo: Optional[str] = None
     setor: Optional[str] = None
+    nfp_captador_vinculo: Optional[str] = None
     conselho_profissional: Optional[str] = None
     numero_conselho: Optional[str] = None
     carga_horaria: Optional[int] = None
@@ -694,6 +695,7 @@ class UsuarioUpdate(BaseModel):
 
     cargo: Optional[str] = None
     setor: Optional[str] = None
+    nfp_captador_vinculo: Optional[str] = None
     conselho_profissional: Optional[str] = None
     numero_conselho: Optional[str] = None
     carga_horaria: Optional[int] = None
@@ -842,6 +844,7 @@ class UsuarioResumoResponse(BaseModel):
     avatar_url: Optional[str] = None
     cargo: Optional[str] = None
     setor: Optional[str] = None
+    nfp_captador_vinculo: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 

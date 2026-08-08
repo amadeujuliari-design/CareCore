@@ -18,6 +18,7 @@ from database import get_db
 from audit_log import registrar_evento_auditoria
 from manutencao_usuario import nome_manutencao_configurado
 from models import OrganizacaoDB, UsuarioDB, InstituicaoDB
+from nfp_vinculo_projeto import garantir_agente_para_projeto
 from schemas import (
     LoginPayload,
     OnboardingPayload,
@@ -508,6 +509,11 @@ async def onboarding(
 
     db.add(instituicao)
     await db.flush()
+    await garantir_agente_para_projeto(
+        db,
+        organizacao_payload.id,
+        instituicao.nome_fantasia,
+    )
 
     perfil_usuario_inicial = "Gestor" if payload.projeto_unico else "Global"
 

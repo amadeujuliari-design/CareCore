@@ -183,6 +183,8 @@ export function usuarioSomenteLeituraAtividades(usuario) {
 
 export function usuarioPodeGerenciarAdmGlobalOrg(usuario) {
   if (!usuario) return false;
+  const perfil = normalizarPerfilRbac(usuario.perfil_acesso);
   return usuarioEhManutencao(usuario) || usuario.is_global === true
-    || normalizarPerfilRbac(usuario.perfil_acesso) === 'Global';
+    || perfil === 'Global'
+    || perfil === 'ADM Global';
 }

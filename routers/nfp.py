@@ -279,6 +279,7 @@ async def nfp_acesso(
         "pode_gestao_nfp": usuario_pode_gestao_nfp_completa(usuario_atual),
         "pode_ver_envio_sefaz": usuario_pode_ver_envio_sefaz(usuario_atual),
         "pode_operar_envio_sefaz": usuario_pode_operar_envio_sefaz(usuario_atual),
+        "nfp_captador_vinculo": usuario_atual.get("nfp_captador_vinculo"),
         "captadores_padrao": CAPTADORES_PADRAO,
         "agentes_captacao": agentes,
         "agentes_captacao_padrao": list(AGENTES_CAPTACAO_PADRAO),
@@ -968,9 +969,17 @@ async def registrar_leitura_cupom(
     org = _organizacao_id(usuario_atual)
     await garantir_agentes_padrao(db, org)
 
-    captador = normalizar_agente_captacao(payload.get("captador"))
-    if not captador:
-        raise HTTPException(status_code=400, detail="Selecione o captador / unidade (ex.: SEDE AEB).")
+    if usuario_eh_adm_producao(usuario_atual):
+        captador = (usuario_atual.get("nfp_captador_vinculo") or "").strip()
+        if not normalizar_agente_captacao(captador):
+            raise HTTPException(
+                status_code=400,
+                detail="Seu usuário ADM Produção ainda não tem vínculo com projeto/Sede. Peça ao ADM Global, Global ou Manutenção para configurar.",
+            )
+    else:
+        captador = normalizar_agente_captacao(payload.get("captador"))
+        if not captador:
+            raise HTTPException(status_code=400, detail="Selecione o captador / unidade (ex.: SEDE AEB).")
 
     bruto = (payload.get("codigo_ou_qr") or payload.get("qr") or payload.get("chave") or "").strip()
     if not bruto:
@@ -1018,10 +1027,10 @@ async def atualizar_status_cupom(
         raise HTTPException(status_code=404, detail="Cupom nao encontrado.")
 
     novo = (payload.get("status") or "").strip().lower()
-    if novo not in {"pendente", "enviado", "erro", "checando", "rejeitado_cpf"}:
+    if novo not in {"pendente", "enviado", "erro", "checando", "rejeitado_cpf", "reservado"}:
         raise HTTPException(
             status_code=400,
-            detail="Status deve ser pendente, enviado, erro, checando ou rejeitado_cpf.",
+            detail="Status deve ser pendente, reservado, enviado, erro, checando ou rejeitado_cpf.",
         )
 
     row.status = novo
@@ -1051,6 +1060,7 @@ async def envio_sefaz_status(
     ).all()
     contagens = {str(status or ""): int(qtd or 0) for status, qtd in contagens_rows}
     pendentes_total = contagens.get("pendente", 0)
+    reservados_total = contagens.get("reservado", 0)
     enviados_total = contagens.get("enviado", 0)
     erros_total = contagens.get("erro", 0)
     cupons_total = sum(contagens.values())
@@ -1069,9 +1079,11 @@ async def envio_sefaz_status(
         "planilha_padrao": str(PLANILHA_PADRAO),
         "planilha_existe": PLANILHA_PADRAO.is_file(),
         "pendentes_total": pendentes_total,
+        "reservados_total": reservados_total,
         "enviados_total": enviados_total,
         "erros_total": erros_total,
         "cupons_total": cupons_total,
+        "tamanho_lote": 100,
         "contagens_por_status": contagens,
         "pendentes": [_serializar_cupom_lido(r) for r in pendentes],
         "job": snapshot_job(),
@@ -1109,24 +1121,21 @@ async def envio_sefaz_enviar_fila(
         raise HTTPException(status_code=400, detail="limite deve ser >= 1 ou vazio.")
 
     chaves = []
-    if fonte == "pendentes":
-        rows = (
-            await db.execute(
-                select(NfpCupomLidoDB).where(
-                    NfpCupomLidoDB.organizacao_id == org,
-                    NfpCupomLidoDB.status == "pendente",
-                ).order_by(NfpCupomLidoDB.lido_em.asc())
-            )
-        ).scalars().all()
-        chaves = [r.chave for r in rows]
+    if fonte == "planilha":
+        # Mantem leitura opcional de chaves no payload se o front enviar.
+        for c in payload.get("chaves") or []:
+            dig = "".join(ch for ch in str(c) if ch.isdigit())
+            if len(dig) == 44:
+                chaves.append(dig)
 
     try:
         return await asyncio.to_thread(
             iniciar_envio_fila,
             organizacao_id=org,
             fonte=fonte,
-            chaves=chaves,
+            chaves=chaves or None,
             limite=limite_n,
+            usuario_id=str(usuario_atual.get("id") or "") or None,
         )
     except RuntimeError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc

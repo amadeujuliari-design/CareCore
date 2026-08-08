@@ -183,7 +183,7 @@ export default function NfpEnvioSefaz() {
             <p className="text-sm text-slate-500">Carregando...</p>
           ) : (
             <>
-              <section className="mb-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
+              <section className="mb-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
                 <CardStatus
                   label="Robô nesta API"
                   value={roboOk ? 'Disponível (local)' : 'Indisponível (online/servidor)'}
@@ -198,6 +198,11 @@ export default function NfpEnvioSefaz() {
                   label="Pendentes"
                   value={String(status?.pendentes_total ?? 0)}
                   ok={(status?.pendentes_total || 0) === 0}
+                />
+                <CardStatus
+                  label="Reservados (em máquina)"
+                  value={String(status?.reservados_total ?? 0)}
+                  ok={(status?.reservados_total || 0) === 0}
                 />
                 <CardStatus
                   label="Executados (enviados)"
@@ -238,8 +243,8 @@ export default function NfpEnvioSefaz() {
                 <h3 className="text-sm font-bold text-slate-800">2. Rodar rotina / enviar fila</h3>
                 <p className="mt-1 text-sm text-slate-600">
                   Ao iniciar, o robô vai sozinho em Entidades → Doação → CNPJ AEB.
-                  Se o site voltar à home no meio, ele identifica, reposiciona e retoma.
-                  Limite em branco = todas as pendentes.
+                  Reserva sempre em <strong>lotes de 100</strong> (ou o que sobrar), liberando o restante para outras máquinas.
+                  Limite informado = teto da sessão; em branco = continuo até acabar ou Parar.
                 </p>
                 <div className="mt-4 grid gap-3 md:grid-cols-3">
                   <label className="text-sm font-semibold text-slate-700">
@@ -255,7 +260,7 @@ export default function NfpEnvioSefaz() {
                     </select>
                   </label>
                   <label className="text-sm font-semibold text-slate-700 md:col-span-2">
-                    Limite de envios (opcional)
+                    Limite da sessão (opcional)
                     <input
                       type="number"
                       min="1"
@@ -263,12 +268,12 @@ export default function NfpEnvioSefaz() {
                       disabled={!podeOperar || job.status === 'running'}
                       onChange={(e) => setLimite(e.target.value)}
                       className="mt-1 block w-full rounded-xl border border-slate-200 px-3 py-2 text-sm disabled:bg-slate-50"
-                      placeholder="vazio = todas · ex.: 10, 100, 1000"
+                      placeholder="vazio = continuo · ex.: 200, 500, 1000"
                     />
                   </label>
                 </div>
                 <div className="mt-2 flex flex-wrap gap-2">
-                  {[10, 100, 1000].map((n) => (
+                  {[100, 200, 300, 500, 1000].map((n) => (
                     <button
                       key={n}
                       type="button"
@@ -285,7 +290,7 @@ export default function NfpEnvioSefaz() {
                     onClick={() => setLimite('')}
                     className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-50"
                   >
-                    Todas
+                    Continuo
                   </button>
                 </div>
                 <div className="mt-4 flex flex-wrap gap-2">

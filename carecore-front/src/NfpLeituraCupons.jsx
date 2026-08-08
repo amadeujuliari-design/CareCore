@@ -7,6 +7,7 @@ import { CampoSelect } from './components/UsuariosCampos';
 import { AppShell, MainShell, PageHeader, ScrollArea } from './components/PremiumUI';
 import { useLeitorUsbGlobal } from './hooks/useLeitorUsbGlobal';
 import {
+  nfpAcesso,
   nfpGarantirAgentesPadrao,
   nfpListarAgentes,
   nfpListarCupons,
@@ -20,7 +21,7 @@ import {
   registrarCupomNfpTratado,
 } from './utils/leituraCodigoUtils';
 import { decodificarPayloadJwt } from './utils/jwtUtils';
-import { usuarioSomenteLeituraNfp } from './utils/rbacUtils';
+import { usuarioEhAdmProducao, usuarioSomenteLeituraNfp } from './utils/rbacUtils';
 
 function chaveCurta(chave) {
   if (!chave || chave.length < 44) return chave || '—';
@@ -30,6 +31,7 @@ function chaveCurta(chave) {
 function rotuloStatusCupom(status) {
   const s = String(status || '').toLowerCase();
   if (s === 'checando') return 'Checando SEFAZ';
+  if (s === 'reservado') return 'Reservado';
   if (s === 'pendente') return 'Pendente (fila)';
   if (s === 'rejeitado_cpf') return 'Rejeitado CPF';
   if (s === 'enviado') return 'Enviado';
@@ -40,6 +42,7 @@ function rotuloStatusCupom(status) {
 function classeBadgeStatus(status) {
   const s = String(status || '').toLowerCase();
   if (s === 'checando') return 'bg-amber-100 text-amber-800';
+  if (s === 'reservado') return 'bg-violet-100 text-violet-800';
   if (s === 'pendente') return 'bg-sky-100 text-sky-800';
   if (s === 'rejeitado_cpf') return 'bg-rose-100 text-rose-800';
   if (s === 'enviado') return 'bg-emerald-100 text-emerald-800';
@@ -59,16 +62,20 @@ function mensagemFlashLeitura(cupom, checagem) {
 }
 
 export default function NfpLeituraCupons() {
-  const somenteLeitura = useMemo(() => {
+  const sessao = useMemo(() => {
     try {
       const token = localStorage.getItem('@CareCore:token');
-      return usuarioSomenteLeituraNfp(token ? decodificarPayloadJwt(token) : null);
+      return token ? decodificarPayloadJwt(token) : null;
     } catch {
-      return false;
+      return null;
     }
   }, []);
+  const somenteLeitura = useMemo(() => usuarioSomenteLeituraNfp(sessao), [sessao]);
+  const ehAdmProducao = useMemo(() => usuarioEhAdmProducao(sessao), [sessao]);
   const [captador, setCaptador] = useState('SEDE AEB');
   const [opcoesCaptador, setOpcoesCaptador] = useState([]);
+  const [vinculoFixo, setVinculoFixo] = useState('');
+  const [forcarVinculo, setForcarVinculo] = useState(ehAdmProducao);
   const [itens, setItens] = useState([]);
   const [loadingLista, setLoadingLista] = useState(true);
   const [processando, setProcessando] = useState(false);
@@ -109,25 +116,37 @@ export default function NfpLeituraCupons() {
     let cancelado = false;
     (async () => {
       try {
-        if (!somenteLeitura) {
-          await nfpGarantirAgentesPadrao();
+        const acesso = await nfpAcesso();
+        const vinculo = (acesso?.nfp_captador_vinculo || '').trim();
+        const admProd = Boolean(acesso?.somente_leitura_cupons) || ehAdmProducao;
+        if (!cancelado) setForcarVinculo(admProd);
+        if (!cancelado && vinculo) {
+          setVinculoFixo(vinculo);
+          setCaptador(vinculo);
         }
-        const agentes = await nfpListarAgentes({ limite: 300, ativo: true });
-        const lista = Array.isArray(agentes) ? agentes : [];
-        if (!cancelado) {
-          const ops = opcoesAgentesCaptacao(lista);
-          setOpcoesCaptador(ops);
-          if (ops.some((o) => o.value === 'SEDE AEB')) {
-            setCaptador('SEDE AEB');
-          } else if (ops[0]?.value) {
-            setCaptador(ops[0].value);
+        if (!somenteLeitura && !admProd) {
+          await nfpGarantirAgentesPadrao();
+          const agentes = await nfpListarAgentes({ limite: 300, ativo: true });
+          const lista = Array.isArray(agentes) ? agentes : [];
+          if (!cancelado) {
+            const ops = opcoesAgentesCaptacao(lista);
+            setOpcoesCaptador(ops);
+            if (!vinculo) {
+              if (ops.some((o) => o.value === 'SEDE AEB')) {
+                setCaptador('SEDE AEB');
+              } else if (ops[0]?.value) {
+                setCaptador(ops[0].value);
+              }
+            }
           }
+        } else if (!cancelado && admProd && !vinculo) {
+          setErro('Seu usuário ainda não tem vínculo com projeto/Sede. Peça ao ADM Global, Global ou Manutenção para configurar.');
         }
       } catch (error) {
         if (!cancelado) {
           const status = error?.response?.status;
           if (!(somenteLeitura && status === 403)) {
-            setErro(erroApiNfp(error, 'Não foi possível carregar captadores.'));
+            setErro(erroApiNfp(error, 'Não foi possível carregar o acesso NFP.'));
           }
         }
       }
@@ -136,7 +155,7 @@ export default function NfpLeituraCupons() {
     return () => {
       cancelado = true;
     };
-  }, [carregarLista, somenteLeitura]);
+  }, [carregarLista, somenteLeitura, ehAdmProducao]);
 
   const temChecando = useMemo(
     () => itens.some((i) => String(i.status || '').toLowerCase() === 'checando'),
@@ -164,7 +183,11 @@ export default function NfpLeituraCupons() {
 
     const destino = (captadorRef.current || '').trim();
     if (!destino) {
-      setErro('Selecione o captador / unidade antes de ler.');
+      setErro(
+        forcarVinculo
+          ? 'Seu usuário não tem vínculo NFP configurado.'
+          : 'Selecione o captador / unidade antes de ler.',
+      );
       return;
     }
 
@@ -208,7 +231,7 @@ export default function NfpLeituraCupons() {
       emVooRef.current.delete(chaveLocal);
       setProcessando(emVooRef.current.size > 0);
     }
-  }, [somenteLeitura]);
+  }, [somenteLeitura, forcarVinculo]);
 
   useEffect(() => {
     processarLeituraRef.current = processarLeitura;
@@ -381,13 +404,27 @@ export default function NfpLeituraCupons() {
             <div className="grid gap-3 lg:grid-cols-[minmax(0,280px)_1fr] lg:items-start">
               {!somenteLeitura && (
               <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                <CampoSelect
-                  label="Captador / unidade"
-                  value={captador}
-                  onChange={setCaptador}
-                  options={opcoesCaptador}
-                  placeholder="Selecione…"
-                />
+                {forcarVinculo ? (
+                  <div className="rounded-xl border border-sky-100 bg-sky-50 px-3 py-2">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-sky-700">
+                      Vínculo do usuário
+                    </p>
+                    <p className="mt-1 text-sm font-bold text-sky-950">
+                      {vinculoFixo || captador || '— sem vínculo —'}
+                    </p>
+                    <p className="mt-1 text-[11px] text-sky-800">
+                      As leituras deste login vão sempre para este projeto/Sede.
+                    </p>
+                  </div>
+                ) : (
+                  <CampoSelect
+                    label="Captador / unidade"
+                    value={captador}
+                    onChange={setCaptador}
+                    options={opcoesCaptador}
+                    placeholder="Selecione…"
+                  />
+                )}
                 <label className="mt-3 flex items-center gap-2 text-sm text-slate-700">
                   <input
                     type="checkbox"

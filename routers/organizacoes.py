@@ -47,6 +47,7 @@ from security import (
     usuario_eh_manutencao,
 )
 from imagem_upload import eh_arquivo_imagem, padronizar_upload_imagem
+from nfp_vinculo_projeto import garantir_agente_para_projeto
 from storage_uploads import (
     StorageErro,
     extrair_bucket_caminho_storage,
@@ -399,7 +400,6 @@ async def obter_resumo_gestao_global(
                 UsuarioDB.ativo == True,  # noqa: E712
                 UsuarioDB.perfil_acesso != "Manutenção",
                 UsuarioDB.perfil_acesso != "ADM Global",
-                UsuarioDB.perfil_acesso != "ADM Produção",
             ),
         )
         quartos_ativos = await contar(
@@ -997,6 +997,12 @@ async def criar_projeto_organizacao(
     )
 
     db.add(projeto)
+    await db.flush()
+    await garantir_agente_para_projeto(
+        db,
+        organizacao_id,
+        projeto.nome_fantasia,
+    )
     await db.commit()
     await db.refresh(projeto)
 

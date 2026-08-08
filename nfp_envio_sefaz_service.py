@@ -275,6 +275,10 @@ def _aplicar_resultados_no_banco(db_factory, organizacao_id: str, itens: list[di
                 row.atualizado_em = agora_operacional_naive()
                 if status_cc == "enviado":
                     row.enviado_em = agora_operacional_naive()
+                # Libera metadados de reserva apos o resultado do item.
+                row.lote_id = None
+                row.reservado_em = None
+                row.reservado_por = None
                 atualizados += 1
             await db.commit()
         return atualizados
@@ -290,131 +294,6 @@ def _aplicar_resultados_no_banco(db_factory, organizacao_id: str, itens: list[di
             loop.close()
 
 
-def _worker_enviar(
-    *,
-    organizacao_id: str,
-    fonte: str,
-    caminho_json: Optional[Path],
-    caminho_planilha: Optional[Path],
-    limite: Optional[int],
-    cdp: str,
-) -> None:
-    global _job_proc
-    try:
-        if not ENVIAR_FILA.is_file():
-            raise RuntimeError(f"Script nao encontrado: {ENVIAR_FILA}")
-        cmd = [
-            _python_exe(),
-            str(ENVIAR_FILA),
-            "--cdp",
-            cdp,
-            "--auto",
-        ]
-        if fonte == "planilha":
-            planilha = caminho_planilha or PLANILHA_PADRAO
-            if not Path(planilha).is_file():
-                raise RuntimeError(f"Planilha nao encontrada: {planilha}")
-            cmd.extend(["--planilha", str(planilha)])
-        else:
-            if not caminho_json or not Path(caminho_json).is_file():
-                raise RuntimeError("Arquivo JSON da fila pendente nao encontrado.")
-            cmd.extend(["--json", str(caminho_json)])
-
-        env = os.environ.copy()
-        env["PYTHONIOENCODING"] = "utf-8"
-        _limpar_stop_flag()
-        proc = subprocess.Popen(
-            cmd,
-            cwd=str(ROOT_DIR),
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            env=env,
-        )
-        with _job_lock:
-            _job_proc = proc
-            _job["pid"] = proc.pid
-
-        try:
-            stdout, stderr = proc.communicate(timeout=60 * 60)
-        except subprocess.TimeoutExpired:
-            proc.kill()
-            stdout, stderr = proc.communicate()
-            raise RuntimeError("Timeout de 1h no envio da fila.")
-
-        saida = (stdout or "") + ("\n" + stderr if stderr else "")
-        cancelado = False
-        with _job_lock:
-            cancelado = bool(_job.get("cancel_solicitado"))
-
-        # Ultimo log gerado em _capturas
-        capturas = ROBO_DIR / "_capturas"
-        logs = sorted(capturas.glob("fila_resultado_*.json"), key=lambda p: p.stat().st_mtime) if capturas.is_dir() else []
-        log_path = str(logs[-1]) if logs else None
-        itens = []
-        resumo = {}
-        if log_path:
-            try:
-                payload = json.loads(Path(log_path).read_text(encoding="utf-8"))
-                itens = payload.get("itens") or []
-                resumo = payload.get("resumo") or {}
-            except Exception:
-                pass
-
-        if limite and itens:
-            itens = itens[: int(limite)]
-
-        atualizados = 0
-        try:
-            atualizados = _aplicar_resultados_no_banco(None, organizacao_id, itens)
-        except Exception as exc:
-            saida += f"\n[aviso] falha ao sincronizar status no CareCore: {exc}"
-
-        status_final = "cancelado" if cancelado or resumo.get("parado_pelo_usuario") else (
-            "ok" if proc.returncode == 0 else "erro"
-        )
-        if cancelado and proc.returncode not in (0, None) and not itens:
-            # Kill brusco sem log — ainda assim marca cancelado
-            status_final = "cancelado"
-
-        _set_job(
-            status=status_final,
-            terminado_em=_agora_iso(),
-            mensagem=(
-                (
-                    "Fila interrompida pelo usuario. "
-                    if status_final == "cancelado"
-                    else f"Fila finalizada (exit={proc.returncode}). "
-                )
-                + f"Cupons atualizados no CareCore: {atualizados}."
-            ),
-            resumo={
-                **resumo,
-                "cupons_atualizados": atualizados,
-                "returncode": proc.returncode,
-                "cancelado": status_final == "cancelado",
-            },
-            itens=itens,
-            log_path=log_path,
-            stdout_tail=saida[-4000:],
-            pid=None,
-            cancel_solicitado=False,
-        )
-    except Exception as exc:
-        _set_job(
-            status="erro",
-            terminado_em=_agora_iso(),
-            mensagem=str(exc),
-            pid=None,
-            cancel_solicitado=False,
-        )
-    finally:
-        with _job_lock:
-            _job_proc = None
-        _limpar_stop_flag()
-
 
 def iniciar_envio_fila(
     *,
@@ -423,7 +302,14 @@ def iniciar_envio_fila(
     chaves: Optional[list[str]] = None,
     limite: Optional[int] = None,
     cdp: str = CDP_PADRAO,
+    usuario_id: Optional[str] = None,
 ) -> dict[str, Any]:
+    """Inicia sessao de envio.
+
+    Pendentes CareCore: reserva em fatias de 100.
+    - limite informado = teto da sessao (ex.: 500 → ate 5 lotes de 100)
+    - limite vazio = continuo (novo lote de 100 apos o anterior)
+    """
     if not robo_disponivel_neste_ambiente():
         raise RuntimeError(
             "Robo NFP so pode rodar na API local desta estacao (nao no servidor online)."
@@ -442,51 +328,14 @@ def iniciar_envio_fila(
     if fonte_n not in {"pendentes", "planilha"}:
         raise ValueError("fonte deve ser 'pendentes' ou 'planilha'.")
 
-    caminho_json = None
-    caminho_planilha = None
-    qtd_fila = 0
-    if fonte_n == "pendentes":
-        lista = []
-        for c in chaves or []:
-            dig = "".join(ch for ch in str(c) if ch.isdigit())
-            if len(dig) == 44:
-                lista.append({"chave": dig})
-        if limite:
-            lista = lista[: int(limite)]
-        if not lista:
-            raise RuntimeError("Nenhuma chave pendente para enviar.")
-        qtd_fila = len(lista)
-        out_dir = ROBO_DIR / "_capturas"
-        out_dir.mkdir(parents=True, exist_ok=True)
-        stamp = datetime.now(FUSO).strftime("%Y%m%d_%H%M%S")
-        caminho_json = out_dir / f"fila_pendentes_{stamp}.json"
-        caminho_json.write_text(json.dumps(lista, ensure_ascii=False, indent=2), encoding="utf-8")
-        fonte_exec = "pendentes"
-    else:
-        planilha = PLANILHA_PADRAO
-        if not planilha.is_file():
-            raise RuntimeError(f"Planilha nao encontrada: {planilha}")
-        if limite:
-            sys.path.insert(0, str(ROBO_DIR))
-            from ler_planilha_chaves import ler_chaves_xlsx  # noqa: WPS433
-
-            regs = ler_chaves_xlsx(planilha)[: int(limite)]
-            if not regs:
-                raise RuntimeError("Planilha sem chaves validas.")
-            qtd_fila = len(regs)
-            out_dir = ROBO_DIR / "_capturas"
-            out_dir.mkdir(parents=True, exist_ok=True)
-            stamp = datetime.now(FUSO).strftime("%Y%m%d_%H%M%S")
-            caminho_json = out_dir / f"fila_planilha_limite_{stamp}.json"
-            caminho_json.write_text(
-                json.dumps([{"chave": r["chave"]} for r in regs], ensure_ascii=False, indent=2),
-                encoding="utf-8",
-            )
-            fonte_exec = "pendentes"
-        else:
-            caminho_planilha = planilha
-            fonte_exec = "planilha"
-            qtd_fila = 0
+    continuo = fonte_n == "pendentes" and limite is None
+    mensagem_ini = (
+        "Envio continuo em lotes de 100 (em branco = ate acabar ou Parar)..."
+        if continuo
+        else f"Envio em andamento (sessao ate {limite} chave(s), lotes de 100)..."
+        if fonte_n == "pendentes"
+        else f"Envio em andamento ({limite or 'todas'} chave(s) da planilha)..."
+    )
 
     _limpar_stop_flag()
     _set_job(
@@ -494,8 +343,15 @@ def iniciar_envio_fila(
         iniciado_em=_agora_iso(),
         terminado_em=None,
         fonte=fonte_n,
-        mensagem=f"Envio em andamento ({qtd_fila or 'todas'} chave(s))...",
-        resumo={"fila_tamanho": qtd_fila, "limite": limite},
+        mensagem=mensagem_ini,
+        resumo={
+            "fila_tamanho": 0,
+            "limite": limite,
+            "continuo": continuo,
+            "tamanho_lote": 100,
+            "lotes_processados": 0,
+            "enviados_sessao": 0,
+        },
         itens=[],
         log_path=None,
         stdout_tail="",
@@ -504,14 +360,15 @@ def iniciar_envio_fila(
     )
 
     th = threading.Thread(
-        target=_worker_enviar,
+        target=_worker_sessao_envio,
         kwargs={
             "organizacao_id": organizacao_id,
-            "fonte": fonte_exec,
-            "caminho_json": caminho_json,
-            "caminho_planilha": caminho_planilha,
-            "limite": None,
+            "fonte": fonte_n,
+            "chaves_planilha": chaves,
+            "limite_sessao": limite,
+            "continuo": continuo,
             "cdp": cdp,
+            "usuario_id": usuario_id,
         },
         daemon=True,
     )
@@ -522,5 +379,337 @@ def iniciar_envio_fila(
         "job": snapshot_job(),
         "planilha_padrao": str(PLANILHA_PADRAO),
         "planilha_existe": PLANILHA_PADRAO.is_file(),
-        "fila_tamanho": qtd_fila,
+        "fila_tamanho": 0,
+        "tamanho_lote": 100,
+        "continuo": continuo,
     }
+
+
+def _worker_sessao_envio(
+    *,
+    organizacao_id: str,
+    fonte: str,
+    chaves_planilha: Optional[list[str]],
+    limite_sessao: Optional[int],
+    continuo: bool,
+    cdp: str,
+    usuario_id: Optional[str],
+) -> None:
+    from nfp_cupom_reserva_service import (
+        TAMANHO_LOTE_PADRAO,
+        liberar_lote_sync,
+        liberar_reservas_expiradas_sync,
+        reservar_lote_cupons_sync,
+    )
+
+    lotes_ok = 0
+    enviados_sessao = 0
+    restante = int(limite_sessao) if limite_sessao is not None else None
+    ultimo_lote_id: Optional[str] = None
+    todos_itens: list[dict] = []
+
+    try:
+        if fonte == "planilha":
+            lista = []
+            for c in chaves_planilha or []:
+                dig = "".join(ch for ch in str(c) if ch.isdigit())
+                if len(dig) == 44:
+                    lista.append({"chave": dig})
+            if limite_sessao:
+                lista = lista[: int(limite_sessao)]
+            if not lista:
+                # Fallback: planilha inteira via script
+                if not PLANILHA_PADRAO.is_file():
+                    raise RuntimeError(f"Planilha nao encontrada: {PLANILHA_PADRAO}")
+                _rodar_um_lote_robo(
+                    organizacao_id=organizacao_id,
+                    caminho_json=None,
+                    caminho_planilha=PLANILHA_PADRAO,
+                    cdp=cdp,
+                    acumular_itens=todos_itens,
+                )
+            else:
+                while lista:
+                    with _job_lock:
+                        if _job.get("cancel_solicitado"):
+                            break
+                    pedaco = lista[:TAMANHO_LOTE_PADRAO]
+                    lista = lista[TAMANHO_LOTE_PADRAO:]
+                    out_dir = ROBO_DIR / "_capturas"
+                    out_dir.mkdir(parents=True, exist_ok=True)
+                    stamp = datetime.now(FUSO).strftime("%Y%m%d_%H%M%S")
+                    caminho_json = out_dir / f"fila_planilha_lote_{stamp}.json"
+                    caminho_json.write_text(
+                        json.dumps(pedaco, ensure_ascii=False, indent=2),
+                        encoding="utf-8",
+                    )
+                    _set_job(
+                        mensagem=f"Enviando lote planilha ({len(pedaco)} chave(s))...",
+                        resumo={
+                            **(_job.get("resumo") or {}),
+                            "fila_tamanho": len(pedaco),
+                            "lotes_processados": lotes_ok,
+                            "enviados_sessao": enviados_sessao,
+                        },
+                    )
+                    qtd = _rodar_um_lote_robo(
+                        organizacao_id=organizacao_id,
+                        caminho_json=caminho_json,
+                        caminho_planilha=None,
+                        cdp=cdp,
+                        acumular_itens=todos_itens,
+                    )
+                    lotes_ok += 1
+                    enviados_sessao += qtd
+            status_final = "cancelado" if _job.get("cancel_solicitado") else "ok"
+            _set_job(
+                status=status_final if status_final != "ok" else "ok",
+                terminado_em=_agora_iso(),
+                mensagem=(
+                    "Parado pelo usuario."
+                    if status_final == "cancelado"
+                    else f"Envio concluido. Lotes={lotes_ok}."
+                ),
+                itens=todos_itens[-200:],
+                resumo={
+                    "lotes_processados": lotes_ok,
+                    "enviados_sessao": enviados_sessao,
+                    "limite": limite_sessao,
+                    "continuo": False,
+                    "tamanho_lote": TAMANHO_LOTE_PADRAO,
+                },
+                pid=None,
+                cancel_solicitado=False,
+            )
+            return
+
+        # Fonte pendentes CareCore — reserva em fatias de 100
+        while True:
+            with _job_lock:
+                if _job.get("cancel_solicitado"):
+                    break
+            if restante is not None and restante <= 0:
+                break
+
+            liberar_reservas_expiradas_sync(organizacao_id)
+            tamanho = TAMANHO_LOTE_PADRAO
+            if restante is not None:
+                tamanho = min(tamanho, restante)
+
+            reserva = reservar_lote_cupons_sync(
+                organizacao_id=organizacao_id,
+                usuario_id=usuario_id,
+                tamanho=tamanho,
+            )
+            chaves = reserva.get("chaves") or []
+            lote_id = reserva.get("lote_id")
+            ultimo_lote_id = lote_id
+            if not chaves:
+                break
+
+            out_dir = ROBO_DIR / "_capturas"
+            out_dir.mkdir(parents=True, exist_ok=True)
+            stamp = datetime.now(FUSO).strftime("%Y%m%d_%H%M%S")
+            caminho_json = out_dir / f"fila_lote_{stamp}.json"
+            caminho_json.write_text(
+                json.dumps([{"chave": c} for c in chaves], ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+            _set_job(
+                mensagem=(
+                    f"Lote {lotes_ok + 1}: enviando {len(chaves)} cupom(ns)"
+                    + (" (continuo)..." if continuo else "...")
+                ),
+                resumo={
+                    "fila_tamanho": len(chaves),
+                    "limite": limite_sessao,
+                    "continuo": continuo,
+                    "tamanho_lote": TAMANHO_LOTE_PADRAO,
+                    "lotes_processados": lotes_ok,
+                    "enviados_sessao": enviados_sessao,
+                    "lote_id": lote_id,
+                },
+            )
+            qtd = _rodar_um_lote_robo(
+                organizacao_id=organizacao_id,
+                caminho_json=caminho_json,
+                caminho_planilha=None,
+                cdp=cdp,
+                acumular_itens=todos_itens,
+            )
+            # Libera o que ainda ficou reservado neste lote (ex.: parada no meio).
+            if lote_id:
+                liberar_lote_sync(organizacao_id=organizacao_id, lote_id=lote_id)
+            lotes_ok += 1
+            enviados_sessao += qtd
+            if restante is not None:
+                restante -= len(chaves)
+
+            with _job_lock:
+                if _job.get("cancel_solicitado"):
+                    break
+            if not continuo and restante is not None and restante <= 0:
+                break
+            if not continuo and limite_sessao is not None and restante is not None and restante <= 0:
+                break
+            # Continuo: loop pega o proximo milheiro em fatias de 100 ate acabar.
+
+        cancelado = bool(_job.get("cancel_solicitado"))
+        _set_job(
+            status="cancelado" if cancelado else "ok",
+            terminado_em=_agora_iso(),
+            mensagem=(
+                f"Parado. Lotes={lotes_ok}, processados≈{enviados_sessao}."
+                if cancelado
+                else f"Envio concluido. Lotes={lotes_ok}, processados≈{enviados_sessao}."
+            ),
+            itens=todos_itens[-200:],
+            resumo={
+                "lotes_processados": lotes_ok,
+                "enviados_sessao": enviados_sessao,
+                "limite": limite_sessao,
+                "continuo": continuo,
+                "tamanho_lote": TAMANHO_LOTE_PADRAO,
+            },
+            pid=None,
+            cancel_solicitado=False,
+        )
+    except Exception as exc:
+        if ultimo_lote_id:
+            try:
+                liberar_lote_sync(organizacao_id=organizacao_id, lote_id=ultimo_lote_id)
+            except Exception:
+                pass
+        _set_job(
+            status="erro",
+            terminado_em=_agora_iso(),
+            mensagem=str(exc),
+            pid=None,
+            cancel_solicitado=False,
+        )
+    finally:
+        with _job_lock:
+            _job_proc = None
+        _limpar_stop_flag()
+
+
+def _rodar_um_lote_robo(
+    *,
+    organizacao_id: str,
+    caminho_json: Optional[Path],
+    caminho_planilha: Optional[Path],
+    cdp: str,
+    acumular_itens: list[dict],
+) -> int:
+    """Executa um lote do robo e sincroniza status. Retorna qtd sincronizada."""
+    global _job_proc
+    if not ENVIAR_FILA.is_file():
+        raise RuntimeError(f"Script nao encontrado: {ENVIAR_FILA}")
+    cmd = [
+        _python_exe(),
+        str(ENVIAR_FILA),
+        "--cdp",
+        cdp,
+        "--auto",
+    ]
+    if caminho_planilha:
+        cmd.extend(["--planilha", str(caminho_planilha)])
+    else:
+        if not caminho_json or not Path(caminho_json).is_file():
+            raise RuntimeError("Arquivo JSON da fila pendente nao encontrado.")
+        cmd.extend(["--json", str(caminho_json)])
+
+    env = os.environ.copy()
+    env["PYTHONIOENCODING"] = "utf-8"
+    proc = subprocess.Popen(
+        cmd,
+        cwd=str(ROOT_DIR),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        env=env,
+    )
+    with _job_lock:
+        _job_proc = proc
+        _job["pid"] = proc.pid
+
+    try:
+        stdout, stderr = proc.communicate(timeout=60 * 60)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        stdout, stderr = proc.communicate()
+        raise RuntimeError("Timeout de 1h no envio da fila.")
+
+    saida = (stdout or "") + ("\n" + stderr if stderr else "")
+    capturas = ROBO_DIR / "_capturas"
+    logs = sorted(capturas.glob("fila_resultado_*.json"), key=lambda p: p.stat().st_mtime) if capturas.is_dir() else []
+    log_path = str(logs[-1]) if logs else None
+    itens = []
+    if log_path:
+        try:
+            payload = json.loads(Path(log_path).read_text(encoding="utf-8"))
+            itens = payload.get("itens") or []
+        except Exception:
+            pass
+
+    atualizados = 0
+    try:
+        atualizados = _aplicar_resultados_no_banco(None, organizacao_id, itens)
+    except Exception as exc:
+        saida += f"\n[aviso] falha ao sincronizar status no CareCore: {exc}"
+
+    acumular_itens.extend(itens)
+    with _job_lock:
+        _job["stdout_tail"] = (saida or "")[-4000:]
+        _job["log_path"] = log_path
+        _job_proc = None
+        _job["pid"] = None
+    return atualizados
+
+
+def _worker_enviar(
+    *,
+    organizacao_id: str,
+    fonte: str,
+    caminho_json: Optional[Path],
+    caminho_planilha: Optional[Path],
+    limite: Optional[int],
+    cdp: str,
+) -> None:
+    """Compat: um unico lote (legado). Preferir _worker_sessao_envio."""
+    global _job_proc
+    try:
+        itens: list[dict] = []
+        _rodar_um_lote_robo(
+            organizacao_id=organizacao_id,
+            caminho_json=caminho_json,
+            caminho_planilha=caminho_planilha if fonte == "planilha" else None,
+            cdp=cdp,
+            acumular_itens=itens,
+        )
+        if limite and itens:
+            itens = itens[: int(limite)]
+        cancelado = bool(_job.get("cancel_solicitado"))
+        _set_job(
+            status="cancelado" if cancelado else "ok",
+            terminado_em=_agora_iso(),
+            mensagem="Parado pelo usuario." if cancelado else "Envio concluido.",
+            itens=itens[-200:],
+            pid=None,
+            cancel_solicitado=False,
+        )
+    except Exception as exc:
+        _set_job(
+            status="erro",
+            terminado_em=_agora_iso(),
+            mensagem=str(exc),
+            pid=None,
+            cancel_solicitado=False,
+        )
+    finally:
+        with _job_lock:
+            _job_proc = None
+        _limpar_stop_flag()
+

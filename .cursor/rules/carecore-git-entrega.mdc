@@ -26,13 +26,29 @@ Antes de qualquer `git push` — sempre que o pedido for **commitar e subir**, *
 - **Nao fazer push com lint/build/teste falhando.** Corrigir primeiro (ex.: import nao usado, variavel morta, import ESM sem `.js` em `utils/` usado por `node --test`), revalidar e so entao commitar/subir.
 - Narrar o resultado (lint ok, test ok, build ok) junto com as etapas de entrega.
 
+## CI no GitHub apos o push (obrigatorio)
+
+Depois do `git push` em entrega (**commitar e subir** / **subir** / **publicar**), o agente **nao encerra** a entrega so com push ok:
+
+1. Acompanhar o workflow **Quality** (`.github/workflows/quality.yml`) no commit/SHA enviado — preferir `gh run list` / `gh run watch` / `gh run view --log-failed`, ou API do GitHub se `gh` nao estiver disponivel.
+2. Esperar conclusao dos jobs (backend + frontend). **So considerar a etapa de CI ok quando estiver verde (success).**
+3. Se ficar **vermelho**:
+   - Diagnosticar a falha (log do job).
+   - Corrigir no codigo **sem esperar o usuario verificar**.
+   - Rodar de novo a checagem local pertinente.
+   - Commitar a correcao (mensagem clara, ex. "fix: CI Quality …") e dar push.
+   - Reacompanhar o CI ate ficar verde (ou ate bloquear por causa externa: secret, cota, outage — ai avisar o usuario).
+4. Narrar na entrega: CI Quality verde (ou em correcao / bloqueio).
+
+**Nao marcar entrega como fechada / "subido" com CI vermelho ou ainda rodando**, salvo bloqueio externo explicito.
+
 ## "Commitar e subir" / entrega em producao
 
 Quando o usuario pedir **commitar e subir**, **subir**, **publicar** ou equivalente:
 
 1. Seguir **integralmente** a regra `carecore-deploy.mdc` (ordem migration → deploy, leitura do checklist).
 2. Rodar a **checagem obrigatoria antes do push** (secao acima): lint/build do front e testes do back conforme o diff.
-3. Interpretar como: commit, push e, se a entrega incluir backend online, **migration (se schema) antes de** `fly deploy`, health e validacao basica.
-4. Se a alteracao exigir Vercel/Fly/secrets/migration, narrar cada etapa concluida e a pendente — nunca marcar como "subido" sem health ok.
+3. Interpretar como: commit, push, **aguardar CI verde** (corrigir se vermelho), e, se a entrega incluir backend online, **migration (se schema) antes de** `fly deploy`, health e validacao basica.
+4. Se a alteracao exigir Vercel/Fly/secrets/migration, narrar cada etapa concluida e a pendente — nunca marcar como "subido" sem health ok **e** CI verde (quando houver push).
 
 Se o diff incluir `models.py` ou `alembic/versions/`, tratar como **entrega com schema** e aplicar a ordem obrigatoria de migration antes do Fly.

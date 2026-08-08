@@ -91,10 +91,10 @@ PERFIS_ACESSO_VALIDOS = {
     PERFIL_OFICINEIRO,
 }
 
+# ADM Produção aparece na lista do projeto quando instituicao_id/vinculo casam.
 PERFIS_EXCLUIDOS_LISTA_PROJETO = {
     PERFIL_MANUTENCAO,
     PERFIL_ADM_GLOBAL,
-    PERFIL_ADM_PRODUCAO,
 }
 
 PERFIS_ADM_NFP_ORG = {
@@ -562,6 +562,7 @@ async def get_usuario_logado(
         "is_manutencao": usuario_eh_manutencao(usuario),
         "ativo": bool(getattr(usuario, "ativo", True)),
         "token_version": int(getattr(usuario, "token_version", 0) or 0),
+        "nfp_captador_vinculo": getattr(usuario, "nfp_captador_vinculo", None),
     }
 
 

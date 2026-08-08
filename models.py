@@ -173,6 +173,9 @@ class UsuarioDB(Base):
 
     setor = Column(String, nullable=True)
 
+    # ADM Produção NFP: captador/unidade fixo (ex.: SEDE AEB, CEI LIBERDADE)
+    nfp_captador_vinculo = Column(String, nullable=True)
+
     conselho_profissional = Column(String, nullable=True)
 
     numero_conselho = Column(String, nullable=True)
@@ -1841,15 +1844,19 @@ class NfpCupomLidoDB(Base):
     chave = Column(String, nullable=False)
     captador = Column(String, nullable=False)
     status = Column(String, nullable=False, default="pendente")
-    # checando | pendente | enviado | erro | rejeitado_cpf
+    # checando | pendente | reservado | enviado | erro | rejeitado_cpf
     # checando = lido, aguardando consulta SEFAZ (nao entra no robo)
-    # pendente = elegivel para envio SEFAZ
+    # pendente = elegivel para reserva/envio SEFAZ
+    # reservado = lote alocado a uma maquina/sessao do robo
     consumidor_identificado = Column(Boolean, nullable=True)
     cnpj_emitente = Column(String, nullable=True)
     data_emissao_ref = Column(String, nullable=True)
     qr_bruto = Column(Text, nullable=True)
     url_consulta = Column(String, nullable=True)
     mensagem = Column(Text, nullable=True)
+    lote_id = Column(String, nullable=True, index=True)
+    reservado_em = Column(DateTime, nullable=True)
+    reservado_por = Column(String, ForeignKey("usuarios.id"), nullable=True)
     lido_por_usuario_id = Column(String, ForeignKey("usuarios.id"), nullable=True)
     lido_em = Column(DateTime, default=agora_operacional_naive)
     enviado_em = Column(DateTime, nullable=True)

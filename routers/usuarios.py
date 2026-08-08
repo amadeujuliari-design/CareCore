@@ -14,7 +14,15 @@ from sqlalchemy.future import select
 
 from audit_log import registrar_evento_auditoria
 from database import get_db
-from models import ConviventeDB, UsuarioDB
+from models import ConviventeDB, InstituicaoDB, UsuarioDB
+from nfp_utils import CAPTADORES_PADRAO, normalizar_agente_captacao
+from nfp_vinculo_projeto import (
+    buscar_projeto_por_captador,
+    garantir_agente_para_projeto,
+    rotulo_captador_de_projeto,
+    vinculo_eh_sede,
+    vinculo_pertence_ao_projeto,
+)
 from tenant_scope import obter_instituicao_escopo
 from schemas import (
     UsuarioCreate,
@@ -31,6 +39,7 @@ from security import (
     PERFIS_ADM_NFP_ORG,
     get_usuario_logado,
     gerar_hash_senha,
+    usuario_eh_adm_global,
     usuario_eh_adm_nfp_org,
     usuario_eh_gestor,
     usuario_eh_manutencao,
@@ -106,19 +115,22 @@ def exigir_nao_manutencao(usuario: UsuarioDB) -> None:
 
 
 def exigir_nao_adm_global_na_lista_projeto(usuario: UsuarioDB) -> None:
-    if usuario_eh_adm_nfp_org(usuario):
+    """ADM Global fica só na aba org. ADM Produção do próprio projeto pode ser gerido pelo gestor."""
+    if usuario_eh_adm_global(usuario):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Usuários ADM Global / ADM Produção são gerenciados na aba Usuários da organização.",
+            detail="Usuários ADM Global são gerenciados na aba Usuários da organização.",
         )
 
 
 def exigir_gestao_adm_global_org(usuario_atual: dict) -> None:
     if usuario_eh_manutencao(usuario_atual) or usuario_atual.get("is_global"):
         return
+    if usuario_eh_adm_global(usuario_atual):
+        return
     raise HTTPException(
         status_code=status.HTTP_403_FORBIDDEN,
-        detail="Apenas Global ou Manutenção podem gerenciar usuários ADM Global / ADM Produção.",
+        detail="Apenas ADM Global, Global ou Manutenção podem gerenciar usuários ADM Global / ADM Produção.",
     )
 
 
@@ -130,6 +142,119 @@ def perfil_adm_nfp_org_valido(perfil: Optional[str]) -> str:
             detail="Perfil deve ser ADM Global ou ADM Produção.",
         )
     return perfil_n
+
+
+def normalizar_vinculo_nfp_captador(
+    valor: Optional[str],
+    *,
+    obrigatorio: bool = False,
+    rotulos_extra: Optional[list[str]] = None,
+) -> Optional[str]:
+    captador = normalizar_agente_captacao(valor)
+    if not captador:
+        if obrigatorio:
+            raise HTTPException(
+                status_code=400,
+                detail="ADM Produção precisa do vínculo com projeto/Sede (captador NFP).",
+            )
+        return None
+
+    candidatos: list[str] = list(CAPTADORES_PADRAO)
+    for extra in rotulos_extra or []:
+        rotulo = (extra or "").strip()
+        if rotulo:
+            candidatos.append(rotulo)
+
+    for item in candidatos:
+        if normalizar_agente_captacao(item) == captador:
+            # Preferir rotulo canonico da lista padrao quando houver.
+            for padrao in CAPTADORES_PADRAO:
+                if normalizar_agente_captacao(padrao) == captador:
+                    return padrao
+            return rotulo_captador_de_projeto(item) or item
+
+    # Aceita nome livre de projeto novo (sera mapeado para agente NFP).
+    rotulo = rotulo_captador_de_projeto(valor) or (valor or "").strip()
+    if rotulo:
+        return rotulo
+
+    raise HTTPException(
+        status_code=400,
+        detail="Vínculo NFP inválido. Selecione um projeto/Sede válido.",
+    )
+
+
+async def rotulos_vinculo_da_organizacao(
+    db: AsyncSession,
+    organizacao_id: Optional[str],
+) -> list[str]:
+    if not organizacao_id:
+        return list(CAPTADORES_PADRAO)
+    rows = (
+        await db.execute(
+            select(InstituicaoDB.nome_fantasia).where(
+                InstituicaoDB.organizacao_id == organizacao_id
+            )
+        )
+    ).scalars().all()
+    extras = [rotulo_captador_de_projeto(n) or (n or "").strip() for n in rows if n]
+    # SEDE sempre disponivel mesmo sem projeto "SEDE".
+    unidos = ["SEDE AEB", *CAPTADORES_PADRAO, *extras]
+    vistos: set[str] = set()
+    saida: list[str] = []
+    for item in unidos:
+        chave = normalizar_agente_captacao(item)
+        if not chave or chave in vistos:
+            continue
+        vistos.add(chave)
+        saida.append(item)
+    return saida
+
+
+async def aplicar_vinculo_e_instituicao_adm_producao(
+    db: AsyncSession,
+    *,
+    organizacao_id: str,
+    captador: str,
+    instituicao_fallback_id: Optional[str] = None,
+) -> tuple[str, str]:
+    """Retorna (rotulo_vinculo, instituicao_id) alinhados ao projeto CareCore."""
+    rotulos = await rotulos_vinculo_da_organizacao(db, organizacao_id)
+    vinculo = normalizar_vinculo_nfp_captador(
+        captador,
+        obrigatorio=True,
+        rotulos_extra=rotulos,
+    )
+    assert vinculo is not None
+    await garantir_agente_para_projeto(db, organizacao_id, vinculo)
+    projeto = await buscar_projeto_por_captador(db, organizacao_id, vinculo)
+    if projeto:
+        return vinculo, projeto.id
+    if vinculo_eh_sede(vinculo):
+        # Sede sem instituicao dedicada: permanece no fallback do criador.
+        if not instituicao_fallback_id:
+            raise HTTPException(
+                status_code=400,
+                detail="Não foi possível vincular ADM Produção da Sede: usuário sem projeto de referência.",
+            )
+        return vinculo, instituicao_fallback_id
+    if not instituicao_fallback_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Não foi encontrado projeto CareCore correspondente ao vínculo NFP informado.",
+        )
+    return vinculo, instituicao_fallback_id
+
+
+async def carregar_projeto_atual(
+    db: AsyncSession,
+    instituicao_id: Optional[str],
+) -> Optional[InstituicaoDB]:
+    if not instituicao_id:
+        return None
+    return (
+        await db.execute(select(InstituicaoDB).where(InstituicaoDB.id == instituicao_id))
+    ).scalar_one_or_none()
 
 
 def normalizar_perfil_acesso(perfil: Optional[str]) -> str:
@@ -255,6 +380,8 @@ def aplicar_dados_usuario(
         "uf",
         "cargo",
         "setor",
+        "nfp_captador_vinculo",
+        "instituicao_id",
         "conselho_profissional",
         "numero_conselho",
         "carga_horaria",
@@ -400,10 +527,13 @@ async def listar_usuarios(
     usuario_atual: dict = Depends(exigir_gestor_global_ou_oficineiro_listagem),
 ):
     instituicao_id = obter_instituicao_escopo(usuario_atual)
+    organizacao_id = usuario_atual.get("organizacao_id")
+    projeto = await carregar_projeto_atual(db, instituicao_id)
     filtros = [
         UsuarioDB.instituicao_id == instituicao_id,
         UsuarioDB.perfil_acesso != "Manutenção",
         UsuarioDB.perfil_acesso != PERFIL_ADM_GLOBAL,
+        UsuarioDB.perfil_acesso != PERFIL_ADM_PRODUCAO,
     ]
 
     if ativo is not None:
@@ -433,9 +563,64 @@ async def listar_usuarios(
         .offset(offset)
         .limit(limite)
     )
+    usuarios = list(resultado.scalars().all())
 
-    usuarios = resultado.scalars().all()
+    # ADM Produção do projeto: por vinculo NFP (= projeto), na mesma organização.
+    nome_projeto = getattr(projeto, "nome_fantasia", None) if projeto else None
+    incluir_adm_producao = (
+        nome_projeto
+        and organizacao_id
+        and (
+            not perfil_acesso
+            or normalizar_perfil_acesso(perfil_acesso) == PERFIL_ADM_PRODUCAO
+        )
+    )
+    if incluir_adm_producao:
+        filtros_adm = [
+            UsuarioDB.organizacao_id == organizacao_id,
+            UsuarioDB.perfil_acesso == PERFIL_ADM_PRODUCAO,
+        ]
+        if ativo is not None:
+            filtros_adm.append(UsuarioDB.ativo == ativo)
+        if busca:
+            termo = f"%{busca.strip()}%"
+            filtros_adm.append(
+                or_(
+                    UsuarioDB.nome.ilike(termo),
+                    UsuarioDB.email.ilike(termo),
+                    UsuarioDB.cpf.ilike(termo),
+                    UsuarioDB.cargo.ilike(termo),
+                    UsuarioDB.setor.ilike(termo),
+                )
+            )
+        adm_rows = (
+            await db.execute(
+                select(UsuarioDB)
+                .where(*filtros_adm)
+                .order_by(UsuarioDB.nome.asc())
+            )
+        ).scalars().all()
+        ids_ja = {u.id for u in usuarios}
+        alinhou_instituicao = False
+        for adm in adm_rows:
+            if adm.id in ids_ja:
+                continue
+            if not vinculo_pertence_ao_projeto(
+                getattr(adm, "nfp_captador_vinculo", None),
+                nome_projeto,
+            ):
+                continue
+            if adm.instituicao_id != instituicao_id:
+                adm.instituicao_id = instituicao_id
+                alinhou_instituicao = True
+            usuarios.append(adm)
+        if alinhou_instituicao:
+            try:
+                await db.commit()
+            except Exception:
+                await db.rollback()
 
+    usuarios.sort(key=lambda u: (u.nome or "").lower())
     return [usuario_para_resumo(usuario) for usuario in usuarios]
 
 
@@ -483,6 +668,24 @@ async def listar_adm_global_organizacao(
     return [usuario_para_resumo(usuario) for usuario in resultado.scalars().all()]
 
 
+@router.get("/organizacao/vinculos-nfp")
+async def listar_vinculos_nfp_organizacao(
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    """Lista rotulos de vinculo NFP (projetos da org + Sede + padrao)."""
+    if not (
+        usuario_eh_manutencao(usuario_atual)
+        or usuario_atual.get("is_global")
+        or usuario_eh_adm_global(usuario_atual)
+        or usuario_eh_gestor(usuario_atual)
+    ):
+        raise HTTPException(status_code=403, detail="Sem permissão para listar vínculos NFP.")
+    organizacao_id = usuario_atual.get("organizacao_id")
+    itens = await rotulos_vinculo_da_organizacao(db, organizacao_id)
+    return {"itens": itens}
+
+
 @router.post(
     "/organizacao/adm-global",
     response_model=UsuarioResponse,
@@ -503,9 +706,19 @@ async def criar_adm_global_organizacao(
 
     perfil = perfil_adm_nfp_org_valido(payload.perfil_acesso or PERFIL_ADM_GLOBAL)
     cargo_padrao = "ADM Global NFP" if perfil == PERFIL_ADM_GLOBAL else "ADM Produção NFP"
+    instituicao_fallback = obter_instituicao_escopo(usuario_atual)
+    vinculo = None
+    instituicao_id = instituicao_fallback
+    if perfil == PERFIL_ADM_PRODUCAO:
+        vinculo, instituicao_id = await aplicar_vinculo_e_instituicao_adm_producao(
+            db,
+            organizacao_id=organizacao_id,
+            captador=getattr(payload, "nfp_captador_vinculo", None) or "",
+            instituicao_fallback_id=instituicao_fallback,
+        )
 
     novo_usuario = UsuarioDB(
-        instituicao_id=obter_instituicao_escopo(usuario_atual),
+        instituicao_id=instituicao_id,
         organizacao_id=organizacao_id,
         nome=payload.nome,
         email=payload.email.lower().strip(),
@@ -519,6 +732,7 @@ async def criar_adm_global_organizacao(
         ativo=True,
         cargo=payload.cargo or cargo_padrao,
         setor=payload.setor or "NFP – Créditos",
+        nfp_captador_vinculo=vinculo,
         criado_em=agora_utc(),
         criado_por_id=obter_usuario_id(usuario_atual),
     )
@@ -568,6 +782,24 @@ async def editar_adm_global_organizacao(
     else:
         dados.pop("perfil_acesso", None)
     dados.pop("is_global", None)
+
+    perfil_final = dados.get("perfil_acesso") or usuario.perfil_acesso
+    instituicao_fallback = usuario.instituicao_id or obter_instituicao_escopo(usuario_atual)
+    if perfil_final == PERFIL_ADM_PRODUCAO:
+        vinculo_in = dados.get(
+            "nfp_captador_vinculo",
+            getattr(usuario, "nfp_captador_vinculo", None),
+        )
+        vinculo, instituicao_id = await aplicar_vinculo_e_instituicao_adm_producao(
+            db,
+            organizacao_id=organizacao_id,
+            captador=vinculo_in or "",
+            instituicao_fallback_id=instituicao_fallback,
+        )
+        dados["nfp_captador_vinculo"] = vinculo
+        dados["instituicao_id"] = instituicao_id
+    else:
+        dados["nfp_captador_vinculo"] = None
 
     if "email" in dados and dados["email"]:
         await verificar_email_unico(db, dados["email"], usuario_id_ignorar=usuario.id)
@@ -683,10 +915,36 @@ async def criar_usuario(
     await verificar_cpf_unico(db, payload.cpf)
 
     usuario_criador_id = obter_usuario_id(usuario_atual)
+    instituicao_id = obter_instituicao_escopo(usuario_atual)
+    organizacao_id = usuario_atual.get("organizacao_id")
+    vinculo = None
+    cargo = payload.cargo
+    setor = payload.setor
+
+    if perfil_normalizado == PERFIL_ADM_PRODUCAO:
+        projeto = await carregar_projeto_atual(db, instituicao_id)
+        if not projeto:
+            raise HTTPException(
+                status_code=400,
+                detail="Projeto atual não encontrado para vincular o ADM Produção.",
+            )
+        vinculo, instituicao_id = await aplicar_vinculo_e_instituicao_adm_producao(
+            db,
+            organizacao_id=organizacao_id,
+            captador=rotulo_captador_de_projeto(projeto.nome_fantasia) or projeto.nome_fantasia,
+            instituicao_fallback_id=instituicao_id,
+        )
+        if not vinculo_pertence_ao_projeto(vinculo, projeto.nome_fantasia):
+            raise HTTPException(
+                status_code=400,
+                detail="No projeto, ADM Produção só pode ser criado com vínculo deste projeto.",
+            )
+        cargo = cargo or "ADM Produção NFP"
+        setor = setor or "NFP – Créditos"
 
     novo_usuario = UsuarioDB(
-        instituicao_id=obter_instituicao_escopo(usuario_atual),
-        organizacao_id=usuario_atual.get("organizacao_id"),
+        instituicao_id=instituicao_id,
+        organizacao_id=organizacao_id,
         nome=payload.nome,
         email=payload.email.lower().strip(),
         cpf=payload.cpf,
@@ -711,8 +969,9 @@ async def criar_usuario(
         bairro=payload.bairro,
         cidade=payload.cidade,
         uf=payload.uf,
-        cargo=payload.cargo,
-        setor=payload.setor,
+        cargo=cargo,
+        setor=setor,
+        nfp_captador_vinculo=vinculo,
         conselho_profissional=payload.conselho_profissional,
         numero_conselho=payload.numero_conselho,
         carga_horaria=payload.carga_horaria,
@@ -768,12 +1027,40 @@ async def editar_usuario(
     exigir_nao_adm_global_na_lista_projeto(usuario)
 
     dados = payload.model_dump(exclude_unset=True)
-    if normalizar_perfil_acesso(dados.get("perfil_acesso") or usuario.perfil_acesso) == PERFIL_ADM_GLOBAL:
+    perfil_final = normalizar_perfil_acesso(
+        dados.get("perfil_acesso") or usuario.perfil_acesso
+    )
+    if perfil_final == PERFIL_ADM_GLOBAL:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Usuários ADM Global são gerenciados na aba Usuários da organização.",
         )
     validar_alteracao_global(usuario_atual, dados.get("is_global"))
+
+    instituicao_id = obter_instituicao_escopo(usuario_atual)
+    organizacao_id = usuario_atual.get("organizacao_id")
+    projeto = await carregar_projeto_atual(db, instituicao_id)
+
+    if perfil_final == PERFIL_ADM_PRODUCAO:
+        if not projeto:
+            raise HTTPException(status_code=400, detail="Projeto atual não encontrado.")
+        vinculo, instituicao_resolvida = await aplicar_vinculo_e_instituicao_adm_producao(
+            db,
+            organizacao_id=organizacao_id,
+            captador=rotulo_captador_de_projeto(projeto.nome_fantasia) or projeto.nome_fantasia,
+            instituicao_fallback_id=instituicao_id,
+        )
+        if not vinculo_pertence_ao_projeto(vinculo, projeto.nome_fantasia):
+            raise HTTPException(
+                status_code=400,
+                detail="No projeto, ADM Produção só pode ficar vinculado a este projeto.",
+            )
+        dados["nfp_captador_vinculo"] = vinculo
+        dados["instituicao_id"] = instituicao_resolvida
+        dados.setdefault("cargo", getattr(usuario, "cargo", None) or "ADM Produção NFP")
+        dados.setdefault("setor", getattr(usuario, "setor", None) or "NFP – Créditos")
+    else:
+        dados["nfp_captador_vinculo"] = None
 
     if "email" in dados and dados["email"]:
         await verificar_email_unico(
