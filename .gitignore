@@ -22,6 +22,9 @@ build/
 *.db-journal
 *.sqlite3
 backups/
+backups_locais/
+CARECORE_CODIGO_PARA_ANALISE_VIDEO.txt
+Logo_CARECORE*
 
 # Uploads gerados em runtime (não versionar conteúdo sensível)
 uploads/

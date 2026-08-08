@@ -12,6 +12,9 @@ __pycache__/
 *.sqlite3
 uploads/
 backups/
+backups_locais/
+CARECORE_CODIGO_PARA_ANALISE_VIDEO.txt
+Logo_CARECORE*
 venv/
 .venv/
 Portal AEB NFP/
