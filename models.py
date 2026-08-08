@@ -1837,6 +1837,7 @@ class NfpCupomLidoDB(Base):
         UniqueConstraint("organizacao_id", "chave", name="uq_nfp_cupom_lido_org_chave"),
         Index("ix_nfp_cupom_lido_org_status", "organizacao_id", "status"),
         Index("ix_nfp_cupom_lido_org_lido_em", "organizacao_id", "lido_em"),
+        Index("ix_nfp_cupom_lido_org_lote", "organizacao_id", "lote_id"),
     )
 
     id = Column(String, primary_key=True, default=get_uuid)
@@ -1854,7 +1855,7 @@ class NfpCupomLidoDB(Base):
     qr_bruto = Column(Text, nullable=True)
     url_consulta = Column(String, nullable=True)
     mensagem = Column(Text, nullable=True)
-    lote_id = Column(String, nullable=True, index=True)
+    lote_id = Column(String, nullable=True)
     reservado_em = Column(DateTime, nullable=True)
     reservado_por = Column(String, ForeignKey("usuarios.id"), nullable=True)
     lido_por_usuario_id = Column(String, ForeignKey("usuarios.id"), nullable=True)
