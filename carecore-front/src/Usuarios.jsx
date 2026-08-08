@@ -639,7 +639,7 @@ export default function Usuarios() {
     if (!podeSalvarAgora) {
       setErro(
         escopoLista === 'organizacao'
-          ? 'Apenas Global ou Manutenção podem gerenciar ADM Global.'
+          ? 'Apenas Global ou Manutenção podem gerenciar ADM Global / ADM Produção.'
           : 'Apenas Gestor pode criar ou editar usuários.',
       );
       return;
@@ -659,14 +659,15 @@ export default function Usuarios() {
       const payload = montarPayload();
 
       if (escopoLista === 'organizacao') {
-        payload.perfil_acesso = 'ADM Global';
+        const perfilOrg = form.perfil_acesso === 'ADM Produção' ? 'ADM Produção' : 'ADM Global';
+        payload.perfil_acesso = perfilOrg;
         payload.is_global = false;
         if (editandoId) {
           await editarAdmGlobalOrganizacao(editandoId, payload);
-          setSucesso('Usuário ADM Global atualizado com sucesso.');
+          setSucesso(`Usuário ${perfilOrg} atualizado com sucesso.`);
         } else {
           await criarAdmGlobalOrganizacao(payload);
-          setSucesso('Usuário ADM Global criado com sucesso.');
+          setSucesso(`Usuário ${perfilOrg} criado com sucesso.`);
         }
       } else if (editandoId) {
         await api.put(`/api/usuarios/${editandoId}`, payload);
@@ -874,7 +875,7 @@ export default function Usuarios() {
                 type="button"
                 onClick={abrirNovo}
               >
-                {escopoLista === 'organizacao' ? '+ Novo ADM Global' : '+ Novo usuário'}
+                {escopoLista === 'organizacao' ? '+ Novo ADM NFP' : '+ Novo usuário'}
               </PremiumButton>
             )}
 
@@ -947,7 +948,7 @@ export default function Usuarios() {
 
         {escopoLista === 'organizacao' && (
           <div className="mb-4 rounded-xl border border-teal-100 bg-teal-50 px-4 py-3 text-sm text-teal-800">
-            ADM Global acessa apenas o módulo NFP – Créditos e não entra na lista/faturamento do projeto.
+            ADM Global acessa o módulo NFP completo (inclui envio à Fazenda). ADM Produção acessa apenas a Leitura de Cupons. Nenhum dos dois entra na lista/faturamento do projeto.
           </div>
         )}
 
@@ -974,7 +975,7 @@ export default function Usuarios() {
                 className="rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400 disabled:bg-slate-50"
               >
                 <option value="">
-                  {escopoLista === 'organizacao' ? 'ADM Global' : 'Todos os perfis'}
+                  {escopoLista === 'organizacao' ? 'ADM Global / ADM Produção' : 'Todos os perfis'}
                 </option>
                 {escopoLista !== 'organizacao' && PERFIS.map((perfil) => (
                   <option key={perfil} value={perfil}>
@@ -1273,14 +1274,20 @@ export default function Usuarios() {
                       Perfil de acesso
                     </label>
                     <select
-                      value={escopoLista === 'organizacao' ? 'ADM Global' : form.perfil_acesso}
+                      value={
+                        escopoLista === 'organizacao'
+                          ? (form.perfil_acesso === 'ADM Produção' ? 'ADM Produção' : 'ADM Global')
+                          : form.perfil_acesso
+                      }
                       onChange={(e) => atualizarCampo('perfil_acesso', e.target.value)}
-                      disabled={escopoLista === 'organizacao'}
-                      className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400 disabled:bg-slate-50"
+                      className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400"
                       required
                     >
                       {escopoLista === 'organizacao' ? (
-                        <option value="ADM Global">ADM Global</option>
+                        <>
+                          <option value="ADM Global">ADM Global</option>
+                          <option value="ADM Produção">ADM Produção</option>
+                        </>
                       ) : (
                         perfisDisponiveis.map((perfil) => (
                           <option key={perfil} value={perfil}>

@@ -51,10 +51,28 @@ function redirecionarLoginSeNecessario() {
   }
 }
 
+/** Rotas públicas de autenticação: nunca reenviar Bearer antigo (ex.: ADM Global). */
+function rotaAuthPublica(url = '') {
+  const path = String(url).split('?')[0];
+  return (
+    path === '/api/login'
+    || path === '/api/onboarding'
+    || path.startsWith('/api/passkeys/login/')
+  );
+}
+
 api.interceptors.request.use(
   (config) => {
     const token = obterTokenLocal();
     config.headers = aplicarRequestIdCareCore(config.headers || {});
+    const urlReq = config.url || '';
+
+    if (rotaAuthPublica(urlReq)) {
+      if (config.headers?.Authorization) {
+        delete config.headers.Authorization;
+      }
+      return config;
+    }
 
     if (token && sessaoExpiradaPorInatividade()) {
       limparSessaoLocal();

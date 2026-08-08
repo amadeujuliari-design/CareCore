@@ -1,11 +1,12 @@
 """API do modulo NFP – Creditos."""
 from __future__ import annotations
 
+import asyncio
 from typing import Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import Response
-from sqlalchemy import cast, or_, select, String
+from sqlalchemy import cast, func, or_, select, String
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import get_db
@@ -13,8 +14,18 @@ from models import (
     NfpAgenteCaptadorDB,
     NfpBatimentoDB,
     NfpCnpjLojaDB,
+    NfpCupomLidoDB,
     NfpDoadorDB,
     NfpRateioDB,
+)
+from nfp_cupom_leitura_service import agendar_checagem_sefaz, registrar_leitura_rapida
+from nfp_metas_service import (
+    consolidado_metas,
+    exportar_metas_xlsx,
+    listar_competencias_metas,
+    obter_metas,
+    salvar_metas,
+    sugerir_do_rateio,
 )
 from nfp_service import (
     _bool_payload,
@@ -54,9 +65,24 @@ from nfp_utils import (
     NOME_GENERICO_CONFERIR,
 )
 from security import (
+    bloquear_usuario_global_puro,
     get_usuario_logado,
     usuario_eh_adm_global,
+    usuario_eh_adm_producao,
     usuario_pode_acessar_nfp,
+    usuario_pode_gestao_nfp_completa,
+    usuario_pode_leitura_cupons_nfp,
+    usuario_pode_operar_envio_sefaz,
+    usuario_pode_ver_envio_sefaz,
+)
+from nfp_envio_sefaz_service import (
+    PLANILHA_PADRAO,
+    abrir_chrome_fazenda,
+    iniciar_envio_fila,
+    parar_envio_fila,
+    robo_disponivel_neste_ambiente,
+    snapshot_job,
+    status_cdp,
 )
 from time_operacional import agora_operacional_naive
 
@@ -66,6 +92,46 @@ router = APIRouter(prefix="/api/nfp", tags=["NFP – Créditos"])
 def _exigir_nfp(usuario_atual: dict) -> None:
     if not usuario_pode_acessar_nfp(usuario_atual):
         raise HTTPException(status_code=403, detail="Acesso restrito ao modulo NFP – Creditos.")
+
+
+def _exigir_nfp_gestao(usuario_atual: dict) -> None:
+    if not usuario_pode_gestao_nfp_completa(usuario_atual):
+        raise HTTPException(
+            status_code=403,
+            detail="Acesso restrito a gestao NFP (Global / ADM Global / Manutencao).",
+        )
+
+
+def _exigir_nfp_escrita_gestao(usuario_atual: dict) -> None:
+    """Cadastros, importacoes e rateio — consulta Global ok; edicao nao."""
+    _exigir_nfp_gestao(usuario_atual)
+    bloquear_usuario_global_puro(usuario_atual)
+
+
+def _exigir_nfp_leitura_cupons(usuario_atual: dict) -> None:
+    if not usuario_pode_leitura_cupons_nfp(usuario_atual):
+        raise HTTPException(status_code=403, detail="Acesso restrito a Leitura de Cupons.")
+
+
+def _exigir_nfp_escrita_cupons(usuario_atual: dict) -> None:
+    _exigir_nfp_leitura_cupons(usuario_atual)
+    bloquear_usuario_global_puro(usuario_atual)
+
+
+def _exigir_envio_sefaz_ver(usuario_atual: dict) -> None:
+    if not usuario_pode_ver_envio_sefaz(usuario_atual):
+        raise HTTPException(
+            status_code=403,
+            detail="Acesso restrito a Envio SEFAZ (Global / ADM Global / Manutencao).",
+        )
+
+
+def _exigir_envio_sefaz_operar(usuario_atual: dict) -> None:
+    if not usuario_pode_operar_envio_sefaz(usuario_atual):
+        raise HTTPException(
+            status_code=403,
+            detail="Somente ADM Global ou Manutencao podem operar o Envio SEFAZ.",
+        )
 
 
 def _organizacao_id(usuario_atual: dict) -> str:
@@ -208,7 +274,11 @@ async def nfp_acesso(
     agentes = await listar_agentes_captacao(db, org)
     return {
         "pode_acessar": usuario_pode_acessar_nfp(usuario_atual),
-        "somente_nfp": usuario_eh_adm_global(usuario_atual),
+        "somente_nfp": usuario_eh_adm_global(usuario_atual) or usuario_eh_adm_producao(usuario_atual),
+        "somente_leitura_cupons": usuario_eh_adm_producao(usuario_atual),
+        "pode_gestao_nfp": usuario_pode_gestao_nfp_completa(usuario_atual),
+        "pode_ver_envio_sefaz": usuario_pode_ver_envio_sefaz(usuario_atual),
+        "pode_operar_envio_sefaz": usuario_pode_operar_envio_sefaz(usuario_atual),
         "captadores_padrao": CAPTADORES_PADRAO,
         "agentes_captacao": agentes,
         "agentes_captacao_padrao": list(AGENTES_CAPTACAO_PADRAO),
@@ -223,7 +293,7 @@ async def nfp_dashboard(
     db: AsyncSession = Depends(get_db),
     usuario_atual: dict = Depends(get_usuario_logado),
 ):
-    _exigir_nfp(usuario_atual)
+    _exigir_nfp_gestao(usuario_atual)
     return await resumo_dashboard(
         db,
         _organizacao_id(usuario_atual),
@@ -268,6 +338,7 @@ async def post_garantir_agentes_padrao(
     usuario_atual: dict = Depends(get_usuario_logado),
 ):
     _exigir_nfp(usuario_atual)
+    bloquear_usuario_global_puro(usuario_atual)
     return await garantir_agentes_padrao(db, _organizacao_id(usuario_atual))
 
 
@@ -277,7 +348,7 @@ async def obter_agente(
     db: AsyncSession = Depends(get_db),
     usuario_atual: dict = Depends(get_usuario_logado),
 ):
-    _exigir_nfp(usuario_atual)
+    _exigir_nfp_gestao(usuario_atual)
     row = await _obter_agente_org(db, _organizacao_id(usuario_atual), agente_id)
     return serializar_agente(row)
 
@@ -288,7 +359,7 @@ async def criar_agente(
     db: AsyncSession = Depends(get_db),
     usuario_atual: dict = Depends(get_usuario_logado),
 ):
-    _exigir_nfp(usuario_atual)
+    _exigir_nfp_escrita_gestao(usuario_atual)
     org = _organizacao_id(usuario_atual)
     codigo = normalizar_agente_captacao(payload.get("codigo"))
     if not codigo:
@@ -329,7 +400,7 @@ async def atualizar_agente(
     db: AsyncSession = Depends(get_db),
     usuario_atual: dict = Depends(get_usuario_logado),
 ):
-    _exigir_nfp(usuario_atual)
+    _exigir_nfp_escrita_gestao(usuario_atual)
     org = _organizacao_id(usuario_atual)
     row = await _obter_agente_org(db, org, agente_id)
     novo_codigo = normalizar_agente_captacao(payload.get("codigo") or row.codigo)
@@ -359,7 +430,7 @@ async def listar_doadores(
     db: AsyncSession = Depends(get_db),
     usuario_atual: dict = Depends(get_usuario_logado),
 ):
-    _exigir_nfp(usuario_atual)
+    _exigir_nfp_gestao(usuario_atual)
     org = _organizacao_id(usuario_atual)
     q = (
         select(NfpDoadorDB)
@@ -388,7 +459,7 @@ async def post_sincronizar_doadores(
     usuario_atual: dict = Depends(get_usuario_logado),
 ):
     """Sincroniza cadastro de doadores a partir dos CPFs das doacoes automaticas."""
-    _exigir_nfp(usuario_atual)
+    _exigir_nfp_escrita_gestao(usuario_atual)
     return await sincronizar_doadores_de_doacoes(
         db,
         _organizacao_id(usuario_atual),
@@ -402,7 +473,7 @@ async def post_importar_doadores(
     db: AsyncSession = Depends(get_db),
     usuario_atual: dict = Depends(get_usuario_logado),
 ):
-    _exigir_nfp(usuario_atual)
+    _exigir_nfp_escrita_gestao(usuario_atual)
     try:
         return await importar_doadores(db, _organizacao_id(usuario_atual), arquivo.file)
     except ValueError as exc:
@@ -415,7 +486,7 @@ async def obter_doador(
     db: AsyncSession = Depends(get_db),
     usuario_atual: dict = Depends(get_usuario_logado),
 ):
-    _exigir_nfp(usuario_atual)
+    _exigir_nfp_gestao(usuario_atual)
     row = await _obter_doador_org(db, _organizacao_id(usuario_atual), doador_id)
     return serializar_doador(row)
 
@@ -426,7 +497,7 @@ async def criar_doador(
     db: AsyncSession = Depends(get_db),
     usuario_atual: dict = Depends(get_usuario_logado),
 ):
-    _exigir_nfp(usuario_atual)
+    _exigir_nfp_escrita_gestao(usuario_atual)
     org = _organizacao_id(usuario_atual)
     cpf = limpar_documento(payload.get("cpf"))
     if cpf:
@@ -464,7 +535,7 @@ async def atualizar_doador(
     db: AsyncSession = Depends(get_db),
     usuario_atual: dict = Depends(get_usuario_logado),
 ):
-    _exigir_nfp(usuario_atual)
+    _exigir_nfp_escrita_gestao(usuario_atual)
     org = _organizacao_id(usuario_atual)
     row = await _obter_doador_org(db, org, doador_id)
     novo_cpf = limpar_documento(payload.get("cpf") or row.cpf)
@@ -496,7 +567,7 @@ async def listar_cnpjs(
     db: AsyncSession = Depends(get_db),
     usuario_atual: dict = Depends(get_usuario_logado),
 ):
-    _exigir_nfp(usuario_atual)
+    _exigir_nfp_gestao(usuario_atual)
     org = _organizacao_id(usuario_atual)
     q = (
         select(NfpCnpjLojaDB)
@@ -528,7 +599,7 @@ async def obter_cnpj(
     db: AsyncSession = Depends(get_db),
     usuario_atual: dict = Depends(get_usuario_logado),
 ):
-    _exigir_nfp(usuario_atual)
+    _exigir_nfp_gestao(usuario_atual)
     row = await _obter_cnpj_org(db, _organizacao_id(usuario_atual), cnpj_id)
     return serializar_cnpj(row)
 
@@ -539,7 +610,7 @@ async def criar_cnpj(
     db: AsyncSession = Depends(get_db),
     usuario_atual: dict = Depends(get_usuario_logado),
 ):
-    _exigir_nfp(usuario_atual)
+    _exigir_nfp_escrita_gestao(usuario_atual)
     org = _organizacao_id(usuario_atual)
     cnpj = limpar_documento(payload.get("cnpj"))
     if cnpj:
@@ -579,7 +650,7 @@ async def atualizar_cnpj(
     db: AsyncSession = Depends(get_db),
     usuario_atual: dict = Depends(get_usuario_logado),
 ):
-    _exigir_nfp(usuario_atual)
+    _exigir_nfp_escrita_gestao(usuario_atual)
     org = _organizacao_id(usuario_atual)
     row = await _obter_cnpj_org(db, org, cnpj_id)
     novo_cnpj = limpar_documento(payload.get("cnpj") or row.cnpj)
@@ -609,7 +680,7 @@ async def post_importar_cnpjs(
     db: AsyncSession = Depends(get_db),
     usuario_atual: dict = Depends(get_usuario_logado),
 ):
-    _exigir_nfp(usuario_atual)
+    _exigir_nfp_escrita_gestao(usuario_atual)
     try:
         return await importar_cnpjs(
             db,
@@ -629,7 +700,7 @@ async def post_importar_doacoes(
     db: AsyncSession = Depends(get_db),
     usuario_atual: dict = Depends(get_usuario_logado),
 ):
-    _exigir_nfp(usuario_atual)
+    _exigir_nfp_escrita_gestao(usuario_atual)
     try:
         return await importar_doacoes_sefaz(
             db,
@@ -648,7 +719,7 @@ async def post_importar_sefaz(
     db: AsyncSession = Depends(get_db),
     usuario_atual: dict = Depends(get_usuario_logado),
 ):
-    _exigir_nfp(usuario_atual)
+    _exigir_nfp_escrita_gestao(usuario_atual)
     try:
         payloads = []
         for arq in arquivos:
@@ -669,7 +740,7 @@ async def post_calcular_rateio(
     db: AsyncSession = Depends(get_db),
     usuario_atual: dict = Depends(get_usuario_logado),
 ):
-    _exigir_nfp(usuario_atual)
+    _exigir_nfp_escrita_gestao(usuario_atual)
     try:
         return await calcular_rateio(db, _organizacao_id(usuario_atual), competencia)
     except ValueError as exc:
@@ -684,7 +755,7 @@ async def listar_rateio(
     db: AsyncSession = Depends(get_db),
     usuario_atual: dict = Depends(get_usuario_logado),
 ):
-    _exigir_nfp(usuario_atual)
+    _exigir_nfp_gestao(usuario_atual)
     org = _organizacao_id(usuario_atual)
     rows = (
         await db.execute(
@@ -722,7 +793,7 @@ async def exportar_rateio(
     db: AsyncSession = Depends(get_db),
     usuario_atual: dict = Depends(get_usuario_logado),
 ):
-    _exigir_nfp(usuario_atual)
+    _exigir_nfp_gestao(usuario_atual)
     org = _organizacao_id(usuario_atual)
     rows = (
         await db.execute(
@@ -748,7 +819,7 @@ async def listar_batimentos(
     db: AsyncSession = Depends(get_db),
     usuario_atual: dict = Depends(get_usuario_logado),
 ):
-    _exigir_nfp(usuario_atual)
+    _exigir_nfp_gestao(usuario_atual)
     org = _organizacao_id(usuario_atual)
     rows = (
         await db.execute(
@@ -783,7 +854,7 @@ async def get_relatorio_rateio_consolidado(
     db: AsyncSession = Depends(get_db),
     usuario_atual: dict = Depends(get_usuario_logado),
 ):
-    _exigir_nfp(usuario_atual)
+    _exigir_nfp_gestao(usuario_atual)
     return await relatorio_rateio_consolidado(
         db,
         _organizacao_id(usuario_atual),
@@ -800,7 +871,7 @@ async def get_origens_rateio(
     db: AsyncSession = Depends(get_db),
     usuario_atual: dict = Depends(get_usuario_logado),
 ):
-    _exigir_nfp(usuario_atual)
+    _exigir_nfp_gestao(usuario_atual)
     try:
         return await listar_origens_rateio(
             db,
@@ -822,7 +893,7 @@ async def get_relatorio_rateio_detalhado(
     db: AsyncSession = Depends(get_db),
     usuario_atual: dict = Depends(get_usuario_logado),
 ):
-    _exigir_nfp(usuario_atual)
+    _exigir_nfp_gestao(usuario_atual)
     try:
         return await relatorio_rateio_detalhado(
             db,
@@ -835,3 +906,339 @@ async def get_relatorio_rateio_detalhado(
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+def _serializar_cupom_lido(row: NfpCupomLidoDB) -> dict:
+    return {
+        "id": row.id,
+        "chave": row.chave,
+        "captador": row.captador,
+        "status": row.status,
+        "consumidor_identificado": row.consumidor_identificado,
+        "cnpj_emitente": row.cnpj_emitente,
+        "data_emissao_ref": row.data_emissao_ref,
+        "mensagem": row.mensagem,
+        "url_consulta": row.url_consulta,
+        "lido_em": row.lido_em.isoformat(sep=" ", timespec="seconds") if row.lido_em else None,
+        "enviado_em": row.enviado_em.isoformat(sep=" ", timespec="seconds") if row.enviado_em else None,
+    }
+
+
+@router.get("/cupons")
+async def listar_cupons_lidos(
+    status: Optional[str] = Query(None),
+    captador: Optional[str] = Query(None),
+    limite: int = Query(200, ge=1, le=1000),
+    offset: int = Query(0, ge=0),
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    _exigir_nfp_leitura_cupons(usuario_atual)
+    org = _organizacao_id(usuario_atual)
+    # Reagenda checagens orfas (ex.: API reiniciou no meio da validacao SEFAZ).
+    checando_ids = (
+        await db.execute(
+            select(NfpCupomLidoDB.id).where(
+                NfpCupomLidoDB.organizacao_id == org,
+                NfpCupomLidoDB.status == "checando",
+            ).limit(100)
+        )
+    ).scalars().all()
+    for cupom_id in checando_ids:
+        agendar_checagem_sefaz(cupom_id)
+
+    q = select(NfpCupomLidoDB).where(NfpCupomLidoDB.organizacao_id == org)
+    if status:
+        q = q.where(NfpCupomLidoDB.status == status.strip().lower())
+    if captador:
+        q = q.where(NfpCupomLidoDB.captador == normalizar_agente_captacao(captador))
+    q = q.order_by(NfpCupomLidoDB.lido_em.desc()).offset(offset).limit(limite)
+    rows = (await db.execute(q)).scalars().all()
+    return {"itens": [_serializar_cupom_lido(r) for r in rows], "total": len(rows)}
+
+
+@router.post("/cupons/leitura")
+async def registrar_leitura_cupom(
+    payload: dict,
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    """Leitura continua: grava na hora e valida SEFAZ em background."""
+    _exigir_nfp_escrita_cupons(usuario_atual)
+    org = _organizacao_id(usuario_atual)
+    await garantir_agentes_padrao(db, org)
+
+    captador = normalizar_agente_captacao(payload.get("captador"))
+    if not captador:
+        raise HTTPException(status_code=400, detail="Selecione o captador / unidade (ex.: SEDE AEB).")
+
+    bruto = (payload.get("codigo_ou_qr") or payload.get("qr") or payload.get("chave") or "").strip()
+    if not bruto:
+        raise HTTPException(status_code=400, detail="Leitura vazia.")
+
+    try:
+        resultado = await registrar_leitura_rapida(
+            db,
+            organizacao_id=org,
+            captador=captador,
+            bruto=bruto,
+            usuario_id=str(usuario_atual.get("id") or "") or None,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except LookupError as exc:
+        existente = exc.args[0]
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "mensagem": "Cupom ja lido anteriormente.",
+                "cupom": _serializar_cupom_lido(existente),
+            },
+        ) from exc
+
+    row = resultado["cupom"]
+    return {
+        "ok": True,
+        "checagem": resultado.get("checagem"),
+        "cupom": _serializar_cupom_lido(row),
+    }
+
+
+@router.patch("/cupons/{cupom_id}/status")
+async def atualizar_status_cupom(
+    cupom_id: str,
+    payload: dict,
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    _exigir_nfp_escrita_gestao(usuario_atual)
+    org = _organizacao_id(usuario_atual)
+    row = await db.get(NfpCupomLidoDB, cupom_id)
+    if not row or row.organizacao_id != org:
+        raise HTTPException(status_code=404, detail="Cupom nao encontrado.")
+
+    novo = (payload.get("status") or "").strip().lower()
+    if novo not in {"pendente", "enviado", "erro", "checando", "rejeitado_cpf"}:
+        raise HTTPException(
+            status_code=400,
+            detail="Status deve ser pendente, enviado, erro, checando ou rejeitado_cpf.",
+        )
+
+    row.status = novo
+    row.mensagem = _texto_opcional(payload.get("mensagem")) or row.mensagem
+    row.atualizado_em = agora_operacional_naive()
+    if novo == "enviado":
+        row.enviado_em = agora_operacional_naive()
+    await db.commit()
+    await db.refresh(row)
+    return _serializar_cupom_lido(row)
+
+
+@router.get("/envio-sefaz/status")
+async def envio_sefaz_status(
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    _exigir_envio_sefaz_ver(usuario_atual)
+    org = _organizacao_id(usuario_atual)
+
+    contagens_rows = (
+        await db.execute(
+            select(NfpCupomLidoDB.status, func.count())
+            .where(NfpCupomLidoDB.organizacao_id == org)
+            .group_by(NfpCupomLidoDB.status)
+        )
+    ).all()
+    contagens = {str(status or ""): int(qtd or 0) for status, qtd in contagens_rows}
+    pendentes_total = contagens.get("pendente", 0)
+    enviados_total = contagens.get("enviado", 0)
+    erros_total = contagens.get("erro", 0)
+    cupons_total = sum(contagens.values())
+
+    pendentes = (
+        await db.execute(
+            select(NfpCupomLidoDB).where(
+                NfpCupomLidoDB.organizacao_id == org,
+                NfpCupomLidoDB.status == "pendente",
+            ).order_by(NfpCupomLidoDB.lido_em.asc()).limit(50)
+        )
+    ).scalars().all()
+    return {
+        "robo_local_habilitado": robo_disponivel_neste_ambiente(),
+        "cdp": status_cdp(),
+        "planilha_padrao": str(PLANILHA_PADRAO),
+        "planilha_existe": PLANILHA_PADRAO.is_file(),
+        "pendentes_total": pendentes_total,
+        "enviados_total": enviados_total,
+        "erros_total": erros_total,
+        "cupons_total": cupons_total,
+        "contagens_por_status": contagens,
+        "pendentes": [_serializar_cupom_lido(r) for r in pendentes],
+        "job": snapshot_job(),
+        "pode_operar": usuario_pode_operar_envio_sefaz(usuario_atual),
+        "url_nfp": "https://www.nfp.fazenda.sp.gov.br/",
+    }
+
+
+@router.post("/envio-sefaz/abrir-chrome")
+async def envio_sefaz_abrir_chrome(
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    _exigir_envio_sefaz_operar(usuario_atual)
+    try:
+        return await asyncio.to_thread(abrir_chrome_fazenda)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/envio-sefaz/enviar-fila")
+async def envio_sefaz_enviar_fila(
+    payload: dict,
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    _exigir_envio_sefaz_operar(usuario_atual)
+    org = _organizacao_id(usuario_atual)
+    fonte = (payload.get("fonte") or "pendentes").strip().lower()
+    limite = payload.get("limite")
+    try:
+        limite_n = int(limite) if limite not in (None, "") else None
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail="limite invalido.") from exc
+    if limite_n is not None and limite_n < 1:
+        raise HTTPException(status_code=400, detail="limite deve ser >= 1 ou vazio.")
+
+    chaves = []
+    if fonte == "pendentes":
+        rows = (
+            await db.execute(
+                select(NfpCupomLidoDB).where(
+                    NfpCupomLidoDB.organizacao_id == org,
+                    NfpCupomLidoDB.status == "pendente",
+                ).order_by(NfpCupomLidoDB.lido_em.asc())
+            )
+        ).scalars().all()
+        chaves = [r.chave for r in rows]
+
+    try:
+        return await asyncio.to_thread(
+            iniciar_envio_fila,
+            organizacao_id=org,
+            fonte=fonte,
+            chaves=chaves,
+            limite=limite_n,
+        )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/envio-sefaz/parar")
+async def envio_sefaz_parar(
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    _exigir_envio_sefaz_operar(usuario_atual)
+    resultado = await asyncio.to_thread(parar_envio_fila)
+    if not resultado.get("ok"):
+        raise HTTPException(status_code=409, detail=resultado.get("mensagem") or "Nada a parar.")
+    return resultado
+
+
+@router.get("/metas/competencias")
+async def get_metas_competencias(
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    _exigir_nfp_gestao(usuario_atual)
+    return await listar_competencias_metas(db, _organizacao_id(usuario_atual))
+
+
+@router.get("/metas/consolidado")
+async def get_metas_consolidado(
+    competencias: Optional[str] = Query(None, description="Lista AAAA-MM separada por virgula"),
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    _exigir_nfp_gestao(usuario_atual)
+    lista = None
+    if competencias:
+        lista = [c.strip() for c in competencias.split(",") if c.strip()]
+    return await consolidado_metas(db, _organizacao_id(usuario_atual), lista)
+
+
+@router.get("/metas/{competencia}")
+async def get_metas(
+    competencia: str,
+    sincronizar_doadas: bool = True,
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    _exigir_nfp_gestao(usuario_atual)
+    try:
+        return await obter_metas(
+            db,
+            _organizacao_id(usuario_atual),
+            competencia,
+            sincronizar_doadas=sincronizar_doadas,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.put("/metas/{competencia}")
+async def put_metas(
+    competencia: str,
+    payload: dict,
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    _exigir_nfp_escrita_gestao(usuario_atual)
+    try:
+        return await salvar_metas(db, _organizacao_id(usuario_atual), competencia, payload or {})
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/metas/{competencia}/sugerir-rateio")
+async def post_metas_sugerir_rateio(
+    competencia: str,
+    sobrescrever: bool = False,
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    _exigir_nfp_escrita_gestao(usuario_atual)
+    try:
+        return await sugerir_do_rateio(
+            db,
+            _organizacao_id(usuario_atual),
+            competencia,
+            sobrescrever=sobrescrever,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/metas/{competencia}/exportar")
+async def get_metas_exportar(
+    competencia: str,
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    _exigir_nfp_gestao(usuario_atual)
+    try:
+        dados = await obter_metas(
+            db,
+            _organizacao_id(usuario_atual),
+            competencia,
+            sincronizar_doadas=False,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    conteudo = exportar_metas_xlsx(dados)
+    nome = f"nfp-metas-{competencia}.xlsx"
+    return Response(
+        content=conteudo,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{nome}"'},
+    )

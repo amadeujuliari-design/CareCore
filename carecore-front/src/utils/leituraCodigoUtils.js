@@ -6,6 +6,28 @@ export function normalizarCodigoLeitura(codigo) {
 }
 
 /**
+ * Extrai chave NFe/NFC-e de 44 digitos de URL SEFAZ ou digitacao.
+ * Espelha a logica leve de nfp_cupom_utils.extrair_chave_de_leitura.
+ */
+export function extrairChaveNfpDeLeitura(bruto) {
+  const texto = String(bruto || '').trim();
+  if (!texto) return '';
+
+  const paramP = texto.match(/[?&]p=([^&]+)/i);
+  if (paramP?.[1]) {
+    const parte = decodeURIComponent(paramP[1]).split('|')[0] || '';
+    const digitosP = parte.replace(/\D/g, '');
+    if (digitosP.length === 44) return digitosP;
+  }
+
+  const soDigitos = texto.replace(/\D/g, '');
+  if (soDigitos.length === 44) return soDigitos;
+
+  const match44 = soDigitos.match(/\d{44}/);
+  return match44 ? match44[0] : '';
+}
+
+/**
  * Retorna true quando a leitura deve ser ignorada (mesmo código em menos de 7s).
  * Códigos diferentes passam na sequência, mesmo dentro da janela.
  */
@@ -47,4 +69,25 @@ export function deveIgnorarLeituraConviventeRepetida(ultimaConviventeRef, conviv
 
   ultimaConviventeRef.current = { conviventeId: id, horario: agora };
   return false;
+}
+
+/**
+ * Sessao de camera/USB NFP: apos sucesso ou 409, ignora o mesmo cupom
+ * (URL ou digitos) enquanto a webcam continuar apontando para o papel.
+ * Espelha o silencio da rotina de conviventes apos leitura ja tratada.
+ */
+export function deveIgnorarCupomNfpJaTratado(chavesTratadasRef, codigoBruto) {
+  const chave = extrairChaveNfpDeLeitura(codigoBruto);
+  if (!chave) return false;
+  const set = chavesTratadasRef.current;
+  return Boolean(set && typeof set.has === 'function' && set.has(chave));
+}
+
+export function registrarCupomNfpTratado(chavesTratadasRef, chaveOuCodigo) {
+  const chave = extrairChaveNfpDeLeitura(chaveOuCodigo) || String(chaveOuCodigo || '').replace(/\D/g, '');
+  if (!chave || chave.length !== 44) return;
+  if (!chavesTratadasRef.current || typeof chavesTratadasRef.current.add !== 'function') {
+    chavesTratadasRef.current = new Set();
+  }
+  chavesTratadasRef.current.add(chave);
 }

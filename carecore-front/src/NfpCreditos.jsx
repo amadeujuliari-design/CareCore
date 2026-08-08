@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { Building2, Receipt, UserRoundCog, Users } from 'lucide-react';
 
 import Sidebar from './Sidebar';
+import BannerSomenteLeituraGlobal from './components/BannerSomenteLeituraGlobal';
 import { AppShell, MainShell, PageHeader, PremiumButton, ScrollArea } from './components/PremiumUI';
 import NfpTermometroArrecadacao from './components/nfp/NfpTermometroArrecadacao';
 import {
@@ -19,6 +20,8 @@ import {
 import { nfpRelatorioRateioConsolidado } from './services/relatorioNfpService';
 import { erroApiNfp, formatarCNPJ } from './utils/nfpCadastroUtils';
 import { formatarCPF } from './utils/usuariosUtils';
+import { decodificarPayloadJwt } from './utils/jwtUtils';
+import { usuarioSomenteLeituraNfp } from './utils/rbacUtils';
 
 const ABAS = [
   { id: 'dashboard', label: 'Dashboard' },
@@ -106,6 +109,14 @@ function CampoArquivo({ label, onChange, accept = '.xlsx,.xls,.csv', multiple = 
 }
 
 export default function NfpCreditos() {
+  const somenteLeitura = useMemo(() => {
+    try {
+      const token = localStorage.getItem('@CareCore:token');
+      return usuarioSomenteLeituraNfp(token ? decodificarPayloadJwt(token) : null);
+    } catch {
+      return false;
+    }
+  }, []);
   const [aba, setAba] = useState('dashboard');
   const [competencia, setCompetencia] = useState('');
   const [agente, setAgente] = useState(''); // '' = Todos
@@ -127,6 +138,11 @@ export default function NfpCreditos() {
   const [mesesGrafico, setMesesGrafico] = useState(12);
   const [loadingGrafico, setLoadingGrafico] = useState(false);
   const [resumoImportacao, setResumoImportacao] = useState(null);
+
+  const abasVisiveis = useMemo(
+    () => (somenteLeitura ? ABAS.filter((item) => item.id !== 'importacoes') : ABAS),
+    [somenteLeitura],
+  );
 
   const agentes = useMemo(
     () => resumo?.agentes_captacao?.length ? resumo.agentes_captacao : ['DIEGO'],
@@ -157,6 +173,12 @@ export default function NfpCreditos() {
   useEffect(() => {
     carregarDashboard();
   }, [carregarDashboard]);
+
+  useEffect(() => {
+    if (somenteLeitura && aba === 'importacoes') {
+      setAba('dashboard');
+    }
+  }, [somenteLeitura, aba]);
 
   const carregarListas = useCallback(async () => {
     setErro('');
@@ -297,6 +319,10 @@ export default function NfpCreditos() {
           )}
         />
 
+        {somenteLeitura && (
+          <BannerSomenteLeituraGlobal modulo="o dashboard e os créditos NFP" />
+        )}
+
         <ScrollArea>
           {erro && (
             <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
@@ -310,7 +336,7 @@ export default function NfpCreditos() {
           )}
 
           <div className="mb-5 flex flex-wrap gap-2">
-            {ABAS.map((item) => (
+            {abasVisiveis.map((item) => (
               <button
                 key={item.id}
                 type="button"
@@ -475,7 +501,7 @@ export default function NfpCreditos() {
             </section>
           )}
 
-          {aba === 'importacoes' && (
+          {aba === 'importacoes' && !somenteLeitura && (
             <section className="grid gap-4 lg:grid-cols-2">
               <article className="rounded-3xl border border-slate-100 bg-white p-5 shadow-sm space-y-3">
                 <h3 className="font-bold text-slate-800">Importar doadores</h3>
@@ -580,16 +606,18 @@ export default function NfpCreditos() {
                 Agente atual: <strong>{agenteAtivo}</strong> ({percentualAgente}%).
               </p>
               <div className="flex flex-wrap gap-2">
-                <PremiumButton
-                  type="button"
-                  disabled={trabalhando || !competencia}
-                  onClick={() => comFeedback(
-                    () => nfpCalcularRateio(competencia),
-                    'Rateio calculado.',
-                  )}
-                >
-                  Calcular rateio
-                </PremiumButton>
+                {!somenteLeitura && (
+                  <PremiumButton
+                    type="button"
+                    disabled={trabalhando || !competencia}
+                    onClick={() => comFeedback(
+                      () => nfpCalcularRateio(competencia),
+                      'Rateio calculado.',
+                    )}
+                  >
+                    Calcular rateio
+                  </PremiumButton>
+                )}
                 <PremiumButton
                   type="button"
                   variant="secondary"

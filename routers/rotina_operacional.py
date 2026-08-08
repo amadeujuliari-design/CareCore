@@ -36,6 +36,7 @@ from schemas import (
 )
 from security import (
     PERFIL_TECNICO,
+    bloquear_usuario_global_puro,
     get_usuario_logado,
     usuario_eh_gestor,
     usuario_eh_manutencao,
@@ -460,6 +461,7 @@ async def registrar_lavanderia(
     db: AsyncSession = Depends(get_db),
     usuario_atual: dict = Depends(get_usuario_logado),
 ):
+    bloquear_usuario_global_puro(usuario_atual)
     instituicao_id = obter_instituicao_escopo(usuario_atual)
     convivente = await _obter_convivente_ativo(db, instituicao_id, payload.convivente_id)
     agora = agora_sao_paulo()
@@ -490,6 +492,7 @@ async def retirar_lavanderia(
     db: AsyncSession = Depends(get_db),
     usuario_atual: dict = Depends(get_usuario_logado),
 ):
+    bloquear_usuario_global_puro(usuario_atual)
     instituicao_id = obter_instituicao_escopo(usuario_atual)
     linha = (
         await db.execute(
@@ -573,6 +576,7 @@ async def cancelar_lavanderia(
     db: AsyncSession = Depends(get_db),
     usuario_atual: dict = Depends(get_usuario_logado),
 ):
+    bloquear_usuario_global_puro(usuario_atual)
     instituicao_id = obter_instituicao_escopo(usuario_atual)
     linha = (
         await db.execute(
@@ -733,6 +737,7 @@ async def registrar_pertences_recolhidos(
     db: AsyncSession = Depends(get_db),
     usuario_atual: dict = Depends(get_usuario_logado),
 ):
+    bloquear_usuario_global_puro(usuario_atual)
     instituicao_id = obter_instituicao_escopo(usuario_atual)
     quarto = await _obter_quarto(db, instituicao_id, payload.quarto_id)
 
@@ -765,6 +770,7 @@ async def retirar_pertences_recolhidos(
     db: AsyncSession = Depends(get_db),
     usuario_atual: dict = Depends(get_usuario_logado),
 ):
+    bloquear_usuario_global_puro(usuario_atual)
     instituicao_id = obter_instituicao_escopo(usuario_atual)
     linha = (
         await db.execute(
@@ -842,6 +848,7 @@ async def baixa_administrativa_pertences_recolhidos(
     db: AsyncSession = Depends(get_db),
     usuario_atual: dict = Depends(get_usuario_logado),
 ):
+    bloquear_usuario_global_puro(usuario_atual)
     if not usuario_pode_baixa_administrativa_pertences(usuario_atual):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -902,6 +909,7 @@ async def baixa_administrativa_pertences_recolhidos_lote(
     db: AsyncSession = Depends(get_db),
     usuario_atual: dict = Depends(get_usuario_logado),
 ):
+    bloquear_usuario_global_puro(usuario_atual)
     if not usuario_pode_baixa_administrativa_pertences(usuario_atual):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,

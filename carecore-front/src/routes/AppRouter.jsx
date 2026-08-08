@@ -4,7 +4,7 @@ import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import AusenciaJustificadaAlerta from '../components/AusenciaJustificadaAlerta';
 import AlertaPresencaOperacional from '../components/AlertaPresencaOperacional';
 import ProtectedRoute from './ProtectedRoute';
-import { PERFIS_MODULO_ATIVIDADES, PERFIS_MODULO_NFP } from '../utils/rbacUtils';
+import { PERFIS_MODULO_ATIVIDADES, PERFIS_NFP_ENVIO_SEFAZ, PERFIS_NFP_GESTAO, PERFIS_NFP_LEITURA_CUPONS } from '../utils/rbacUtils';
 import { deveExibirManutencaoProgramada } from '../config/manutencao';
 
 const Login = lazy(() => import('../Login'));
@@ -47,6 +47,9 @@ const NfpCreditos = lazy(() => import('../NfpCreditos'));
 const NfpAgentes = lazy(() => import('../NfpAgentes'));
 const NfpDoadores = lazy(() => import('../NfpDoadores'));
 const NfpCnpjs = lazy(() => import('../NfpCnpjs'));
+const NfpLeituraCupons = lazy(() => import('../NfpLeituraCupons'));
+const NfpEnvioSefaz = lazy(() => import('../NfpEnvioSefaz'));
+const NfpMetas = lazy(() => import('../NfpMetas'));
 const NfpRelatorios = lazy(() => import('../NfpRelatorios'));
 const RelatorioNfpRateioConsolidado = lazy(() => import('../RelatorioNfpRateioConsolidado'));
 const RelatorioNfpRateioDetalhado = lazy(() => import('../RelatorioNfpRateioDetalhado'));
@@ -319,7 +322,7 @@ function RotasAplicacao() {
         <Route
           path="/nfp"
           element={
-            <ProtectedRoute perfis={PERFIS_MODULO_NFP}>
+            <ProtectedRoute perfis={PERFIS_NFP_GESTAO}>
               <NfpCreditos />
             </ProtectedRoute>
           }
@@ -328,7 +331,7 @@ function RotasAplicacao() {
         <Route
           path="/nfp/cadastro/agentes"
           element={
-            <ProtectedRoute perfis={PERFIS_MODULO_NFP}>
+            <ProtectedRoute perfis={PERFIS_NFP_GESTAO}>
               <NfpAgentes />
             </ProtectedRoute>
           }
@@ -337,7 +340,7 @@ function RotasAplicacao() {
         <Route
           path="/nfp/cadastro/doadores"
           element={
-            <ProtectedRoute perfis={PERFIS_MODULO_NFP}>
+            <ProtectedRoute perfis={PERFIS_NFP_GESTAO}>
               <NfpDoadores />
             </ProtectedRoute>
           }
@@ -346,8 +349,35 @@ function RotasAplicacao() {
         <Route
           path="/nfp/cadastro/cnpjs"
           element={
-            <ProtectedRoute perfis={PERFIS_MODULO_NFP}>
+            <ProtectedRoute perfis={PERFIS_NFP_GESTAO}>
               <NfpCnpjs />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/nfp/leitura-cupons"
+          element={
+            <ProtectedRoute perfis={PERFIS_NFP_LEITURA_CUPONS}>
+              <NfpLeituraCupons />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/nfp/envio-sefaz"
+          element={
+            <ProtectedRoute perfis={PERFIS_NFP_ENVIO_SEFAZ}>
+              <NfpEnvioSefaz />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/nfp/metas"
+          element={
+            <ProtectedRoute perfis={PERFIS_NFP_GESTAO}>
+              <NfpMetas />
             </ProtectedRoute>
           }
         />
@@ -355,7 +385,7 @@ function RotasAplicacao() {
         <Route
           path="/nfp/relatorios"
           element={
-            <ProtectedRoute perfis={PERFIS_MODULO_NFP}>
+            <ProtectedRoute perfis={PERFIS_NFP_GESTAO}>
               <NfpRelatorios />
             </ProtectedRoute>
           }
@@ -364,7 +394,7 @@ function RotasAplicacao() {
         <Route
           path="/nfp/relatorios/rateio-consolidado"
           element={
-            <ProtectedRoute perfis={PERFIS_MODULO_NFP}>
+            <ProtectedRoute perfis={PERFIS_NFP_GESTAO}>
               <RelatorioNfpRateioConsolidado />
             </ProtectedRoute>
           }
@@ -373,7 +403,7 @@ function RotasAplicacao() {
         <Route
           path="/nfp/relatorios/rateio-detalhado"
           element={
-            <ProtectedRoute perfis={PERFIS_MODULO_NFP}>
+            <ProtectedRoute perfis={PERFIS_NFP_GESTAO}>
               <RelatorioNfpRateioDetalhado />
             </ProtectedRoute>
           }

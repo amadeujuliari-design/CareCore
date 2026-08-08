@@ -1826,3 +1826,99 @@ class NfpCnpjCaptacaoCompetenciaDB(Base):
     criado_em = Column(DateTime, default=agora_operacional_naive)
     atualizado_em = Column(DateTime, default=agora_operacional_naive, onupdate=agora_operacional_naive)
 
+
+class NfpCupomLidoDB(Base):
+    """Fila de cupons lidos (QR) para doacao manual na NFP."""
+    __tablename__ = "nfp_cupons_lidos"
+    __table_args__ = (
+        UniqueConstraint("organizacao_id", "chave", name="uq_nfp_cupom_lido_org_chave"),
+        Index("ix_nfp_cupom_lido_org_status", "organizacao_id", "status"),
+        Index("ix_nfp_cupom_lido_org_lido_em", "organizacao_id", "lido_em"),
+    )
+
+    id = Column(String, primary_key=True, default=get_uuid)
+    organizacao_id = Column(String, ForeignKey("organizacoes.id"), nullable=False)
+    chave = Column(String, nullable=False)
+    captador = Column(String, nullable=False)
+    status = Column(String, nullable=False, default="pendente")
+    # checando | pendente | enviado | erro | rejeitado_cpf
+    # checando = lido, aguardando consulta SEFAZ (nao entra no robo)
+    # pendente = elegivel para envio SEFAZ
+    consumidor_identificado = Column(Boolean, nullable=True)
+    cnpj_emitente = Column(String, nullable=True)
+    data_emissao_ref = Column(String, nullable=True)
+    qr_bruto = Column(Text, nullable=True)
+    url_consulta = Column(String, nullable=True)
+    mensagem = Column(Text, nullable=True)
+    lido_por_usuario_id = Column(String, ForeignKey("usuarios.id"), nullable=True)
+    lido_em = Column(DateTime, default=agora_operacional_naive)
+    enviado_em = Column(DateTime, nullable=True)
+    criado_em = Column(DateTime, default=agora_operacional_naive)
+    atualizado_em = Column(DateTime, default=agora_operacional_naive, onupdate=agora_operacional_naive)
+
+
+class NfpMetasCompetenciaDB(Base):
+    """Cabecalho mensal Metas NFP (mapa planilha JULHO 2026)."""
+    __tablename__ = "nfp_metas_competencias"
+    __table_args__ = (
+        UniqueConstraint("organizacao_id", "competencia", name="uq_nfp_metas_org_competencia"),
+        Index("ix_nfp_metas_org_competencia", "organizacao_id", "competencia"),
+    )
+
+    id = Column(String, primary_key=True, default=get_uuid)
+    organizacao_id = Column(String, ForeignKey("organizacoes.id"), nullable=False)
+    # Competencia de pagamento (ex.: 2026-07). ref_credito = mes da liberacao SEFAZ.
+    competencia = Column(String, nullable=False)
+    ref_credito = Column(String, nullable=True)
+    titulo = Column(String, nullable=True)
+
+    pct_fundo = Column(Float, nullable=False, default=0.30)
+    pct_soulcial = Column(Float, nullable=False, default=0.20)
+    pct_fundo_soulcial = Column(Float, nullable=False, default=0.10)
+    pct_premiacao = Column(Float, nullable=False, default=0.10)
+    pct_diego = Column(Float, nullable=False, default=0.50)
+
+    # Manuais (Digitado no TXT) / sugeridos do rateio NFP
+    f35_digitado = Column(Float, nullable=False, default=0.0)
+    f36_doado = Column(Float, nullable=False, default=0.0)
+    soulcial_base = Column(Float, nullable=False, default=0.0)
+    total_captador = Column(Float, nullable=False, default=0.0)
+    digitadas_diego = Column(Integer, nullable=False, default=0)
+
+    data_liberacao_credito = Column(String, nullable=True)
+    observacoes = Column(Text, nullable=True)
+    status = Column(String, nullable=False, default="rascunho")
+    criado_em = Column(DateTime, default=agora_operacional_naive)
+    atualizado_em = Column(DateTime, default=agora_operacional_naive, onupdate=agora_operacional_naive)
+
+
+class NfpMetasLinhaDB(Base):
+    """Linha por projeto na competencia de Metas NFP."""
+    __tablename__ = "nfp_metas_linhas"
+    __table_args__ = (
+        UniqueConstraint("competencia_id", "codigo_projeto", name="uq_nfp_metas_linha_comp_proj"),
+        Index("ix_nfp_metas_linha_comp", "competencia_id"),
+    )
+
+    id = Column(String, primary_key=True, default=get_uuid)
+    competencia_id = Column(String, ForeignKey("nfp_metas_competencias.id"), nullable=False)
+    codigo_projeto = Column(String, nullable=False)
+    ordem = Column(Integer, nullable=False, default=0)
+
+    # Manuais
+    digitadas = Column(Integer, nullable=False, default=0)
+    doadas = Column(Integer, nullable=False, default=0)
+    soulcial = Column(Float, nullable=False, default=0.0)
+    soulcial_campanhas = Column(Float, nullable=False, default=0.0)
+
+    # Calculados (persistidos para export/consulta)
+    pct_digitadas = Column(Float, nullable=False, default=0.0)
+    pct_doadas = Column(Float, nullable=False, default=0.0)
+    valor_digitado = Column(Float, nullable=False, default=0.0)
+    valor_aplicativo = Column(Float, nullable=False, default=0.0)
+    valor_total = Column(Float, nullable=False, default=0.0)
+    diego = Column(Float, nullable=False, default=0.0)
+    total = Column(Float, nullable=False, default=0.0)
+
+    atualizado_em = Column(DateTime, default=agora_operacional_naive, onupdate=agora_operacional_naive)
+

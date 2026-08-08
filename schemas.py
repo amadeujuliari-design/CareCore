@@ -288,6 +288,7 @@ PERFIS_ACESSO_VALIDOS = {
     "Gestor",
     "Global",
     "ADM Global",
+    "ADM Produção",
     "Manutenção",
     "Técnico",
     "Orientador",
@@ -305,6 +306,9 @@ MAPEAMENTO_PERFIS_LEGADOS = {
     "Oficineiro": "Oficineiro(a)",
     "Adm Global": "ADM Global",
     "ADMGlobal": "ADM Global",
+    "Adm Producao": "ADM Produção",
+    "Adm Produção": "ADM Produção",
+    "ADMProducao": "ADM Produção",
 }
 
 
@@ -538,7 +542,7 @@ def normalizar_perfil_acesso(valor: Optional[str]) -> str:
     if perfil not in PERFIS_ACESSO_VALIDOS:
         raise ValueError(
             "Perfil de acesso inválido. "
-            "Use: Gestor, Global, ADM Global, Manutenção, Técnico, Orientador, Administrativo, Consulta ou Oficineiro(a)."
+            "Use: Gestor, Global, ADM Global, ADM Produção, Manutenção, Técnico, Orientador, Administrativo, Consulta ou Oficineiro(a)."
         )
 
     return perfil

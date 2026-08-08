@@ -2,7 +2,12 @@ const PERFIS_GESTAO = ['Gestor', 'Gestao', 'Gestão', 'Gerente'];
 const PERFIS_TECNICOS = ['Técnico', 'Tecnico'];
 export const PERFIL_OFICINEIRO = 'Oficineiro(a)';
 export const PERFIL_ADM_GLOBAL = 'ADM Global';
-export const PERFIS_MODULO_NFP = ['Global', 'ADM Global', 'Manutenção'];
+export const PERFIL_ADM_PRODUCAO = 'ADM Produção';
+export const PERFIS_MODULO_NFP = ['Global', 'ADM Global', 'ADM Produção', 'Manutenção'];
+export const PERFIS_NFP_GESTAO = ['Global', 'ADM Global', 'Manutenção'];
+export const PERFIS_NFP_LEITURA_CUPONS = ['Global', 'ADM Global', 'ADM Produção', 'Manutenção'];
+export const PERFIS_NFP_ENVIO_SEFAZ = ['Global', 'ADM Global', 'Manutenção'];
+export const PERFIS_NFP_OPERAR_ENVIO_SEFAZ = ['ADM Global', 'Manutenção'];
 
 export const PERFIS_MODULO_ATIVIDADES = [
   'Gestor',
@@ -22,6 +27,9 @@ export function normalizarPerfilRbac(perfil) {
     Oficineiro: PERFIL_OFICINEIRO,
     'Adm Global': PERFIL_ADM_GLOBAL,
     ADMGlobal: PERFIL_ADM_GLOBAL,
+    'Adm Producao': PERFIL_ADM_PRODUCAO,
+    'Adm Produção': PERFIL_ADM_PRODUCAO,
+    ADMProducao: PERFIL_ADM_PRODUCAO,
   };
   return mapa[perfil] || perfil || '';
 }
@@ -68,14 +76,53 @@ export function usuarioEhAdmGlobal(usuario) {
   return normalizarPerfilRbac(usuario.perfil_acesso) === PERFIL_ADM_GLOBAL;
 }
 
+export function usuarioEhAdmProducao(usuario) {
+  if (!usuario || usuarioEhManutencao(usuario)) return false;
+  return normalizarPerfilRbac(usuario.perfil_acesso) === PERFIL_ADM_PRODUCAO;
+}
+
+export function usuarioEhAdmNfpOrg(usuario) {
+  return usuarioEhAdmGlobal(usuario) || usuarioEhAdmProducao(usuario);
+}
+
 export function usuarioPodeAcessarNfp(usuario) {
+  if (!usuario) return false;
+  if (usuarioEhManutencao(usuario) || usuarioEhAdmNfpOrg(usuario)) return true;
+  if (usuario.is_global === true) return true;
+  return normalizarPerfilRbac(usuario.perfil_acesso) === 'Global';
+}
+
+export function usuarioPodeGestaoNfp(usuario) {
   if (!usuario) return false;
   if (usuarioEhManutencao(usuario) || usuarioEhAdmGlobal(usuario)) return true;
   if (usuario.is_global === true) return true;
   return normalizarPerfilRbac(usuario.perfil_acesso) === 'Global';
 }
 
+/** Tela Envio SEFAZ (consulta): Global, ADM Global, Manutenção. */
+export function usuarioPodeVerEnvioSefaz(usuario) {
+  return usuarioPodeGestaoNfp(usuario);
+}
+
+/** Operar robô (abrir Chrome / enviar fila): só ADM Global e Manutenção. */
+export function usuarioPodeOperarEnvioSefaz(usuario) {
+  if (!usuario) return false;
+  return usuarioEhManutencao(usuario) || usuarioEhAdmGlobal(usuario);
+}
+
+/** Global consulta NFP; edição/importação/rateio só ADM Global, Manutenção (e não Global puro). */
+export function usuarioSomenteLeituraNfp(usuario) {
+  return usuarioEhGlobalPuro(usuario);
+}
+
+export function usuarioPodeEditarNfp(usuario) {
+  return usuarioPodeGestaoNfp(usuario) && !usuarioEhGlobalPuro(usuario);
+}
+
 export function rotaInicialPosLogin(usuario) {
+  if (usuarioEhAdmProducao(usuario)) {
+    return '/nfp/leitura-cupons';
+  }
   if (usuarioEhAdmGlobal(usuario)) {
     return '/nfp';
   }
@@ -93,12 +140,16 @@ export function rotaEhModuloNfp(pathname) {
   return pathname === '/nfp' || pathname.startsWith('/nfp/');
 }
 
+export function rotaEhLeituraCuponsNfp(pathname) {
+  return pathname === '/nfp/leitura-cupons' || pathname.startsWith('/nfp/leitura-cupons/');
+}
+
 /**
  * Global puro = visão ampla, sem operar no projeto (diferente de Manutenção/Gestor).
  */
 export function usuarioEhGlobalPuro(usuario) {
   if (!usuario) return false;
-  if (usuarioEhManutencao(usuario) || usuarioEhAdmGlobal(usuario)) return false;
+  if (usuarioEhManutencao(usuario) || usuarioEhAdmNfpOrg(usuario)) return false;
   if (usuarioEhGestor(usuario)) return false;
   if (usuario.is_global === true) return true;
   return normalizarPerfilRbac(usuario.perfil_acesso) === 'Global';
@@ -106,7 +157,7 @@ export function usuarioEhGlobalPuro(usuario) {
 
 /** Pode editar/salvar dados operacionais do projeto. */
 export function usuarioPodeOperarProjeto(usuario) {
-  return !usuarioEhGlobalPuro(usuario) && !usuarioEhAdmGlobal(usuario);
+  return !usuarioEhGlobalPuro(usuario) && !usuarioEhAdmNfpOrg(usuario);
 }
 
 /** Alias usado nas telas operacionais (conviventes, rotina). */

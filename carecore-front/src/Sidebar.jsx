@@ -17,7 +17,10 @@ import {
   MessageSquareWarning,
   PackageOpen,
   PanelsTopLeft,
+  QrCode,
   Receipt,
+  Send,
+  Target,
   Users,
   UserRoundCog,
   WashingMachine,
@@ -32,7 +35,7 @@ import { carecoreVersaoRotulo } from './config/versao';
 import { MENU_ACOMPANHAMENTOS, MENU_CONVIVENTES } from './config/acompanhamentosConfig';
 import { acompanhamentoAtivo, moduloAtivo } from './config/configOperacionalDefaults';
 import { useConfigOperacional } from './hooks/useConfigOperacional';
-import { usuarioEhAdmGlobal, usuarioEhOficineiro, normalizarPerfilRbac } from './utils/rbacUtils';
+import { usuarioEhAdmGlobal, usuarioEhAdmProducao, usuarioEhOficineiro, normalizarPerfilRbac } from './utils/rbacUtils';
 import { decodificarPayloadJwt } from './utils/jwtUtils';
 import {
   DIREITOS_RESERVADOS_TITULO,
@@ -173,6 +176,10 @@ export default function Sidebar() {
     is_manutencao: isManutencao,
   });
   const ehAdmGlobal = usuarioEhAdmGlobal({
+    perfil_acesso: perfilNormalizado,
+    is_manutencao: isManutencao,
+  });
+  const ehAdmProducao = usuarioEhAdmProducao({
     perfil_acesso: perfilNormalizado,
     is_manutencao: isManutencao,
   });
@@ -423,7 +430,7 @@ export default function Sidebar() {
           path: '/nfp',
           icon: Receipt,
           label: 'NFP – Créditos',
-          perfis: ['Global', 'ADM Global', 'Manutenção'],
+          perfis: ['Global', 'ADM Global', 'ADM Produção', 'Manutenção'],
           children: [
             {
               path: '/nfp',
@@ -453,6 +460,22 @@ export default function Sidebar() {
               ],
             },
             {
+              path: '/nfp/leitura-cupons',
+              icon: QrCode,
+              label: 'Leitura de Cupons',
+            },
+            {
+              path: '/nfp/envio-sefaz',
+              icon: Send,
+              label: 'Envio SEFAZ',
+              perfis: ['Global', 'ADM Global', 'Manutenção'],
+            },
+            {
+              path: '/nfp/metas',
+              icon: Target,
+              label: 'Metas / Rateio mensal',
+            },
+            {
               path: '/nfp/relatorios',
               icon: FileBarChart,
               label: 'Relatórios',
@@ -471,6 +494,11 @@ export default function Sidebar() {
                   path: '/nfp/relatorios/rateio-detalhado',
                   icon: FileBarChart,
                   label: 'Rateio detalhado',
+                },
+                {
+                  path: '/nfp/metas',
+                  icon: Target,
+                  label: 'Metas / Rateio mensal',
                 },
               ],
             },
@@ -603,6 +631,9 @@ export default function Sidebar() {
   const usuarioPodeVerItem = (item) => {
     if (ehOficineiro) {
       return Boolean(item.path?.startsWith('/atividades'));
+    }
+    if (ehAdmProducao) {
+      return item.path === '/nfp' || item.path === '/nfp/leitura-cupons';
     }
     if (ehAdmGlobal) {
       return Boolean(item.path === '/nfp' || item.path?.startsWith('/nfp/'));

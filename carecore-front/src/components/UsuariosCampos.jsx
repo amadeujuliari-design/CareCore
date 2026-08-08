@@ -17,6 +17,7 @@ export function BadgePerfil({ perfil }) {
     Gestor: 'border-indigo-200 bg-indigo-50 text-indigo-700',
     Global: 'border-violet-200 bg-violet-50 text-violet-700',
     'ADM Global': 'border-teal-200 bg-teal-50 text-teal-700',
+    'ADM Produção': 'border-cyan-200 bg-cyan-50 text-cyan-800',
     Técnico: 'border-blue-200 bg-blue-50 text-blue-700',
     Orientador: 'border-amber-200 bg-amber-50 text-amber-700',
     Administrativo: 'border-slate-200 bg-slate-50 text-slate-700',

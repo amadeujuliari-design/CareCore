@@ -143,5 +143,14 @@ export function enderecoDoRegistro(registro = {}) {
 export function erroApiNfp(error, fallback) {
   const detail = error?.response?.data?.detail;
   if (typeof detail === 'string') return detail;
+  if (detail && typeof detail === 'object' && detail.mensagem) return detail.mensagem;
+  if (Array.isArray(detail) && detail[0]?.msg) return detail[0].msg;
+  const status = error?.response?.status;
+  if (status === 403) {
+    return 'Sem permissão para esta ação. Usuários Globais apenas consultam e imprimem relatórios.';
+  }
+  if (status === 500) {
+    return fallback || 'Erro interno no servidor. Tente novamente ou contate o suporte.';
+  }
   return fallback;
 }

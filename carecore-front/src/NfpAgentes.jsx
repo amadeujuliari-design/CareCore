@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { UserRoundCog } from 'lucide-react';
 
 import Sidebar from './Sidebar';
+import BannerSomenteLeituraGlobal from './components/BannerSomenteLeituraGlobal';
 import NfpEnderecoFields from './components/nfp/NfpEnderecoFields';
 import { BadgeStatus, CampoSelect, CampoTexto } from './components/UsuariosCampos';
 import { AppShell, MainShell, PageHeader, PremiumButton, ReportActionButton, ScrollArea } from './components/PremiumUI';
@@ -38,6 +39,8 @@ import {
   parsePercentual,
   percentualValido,
 } from './utils/nfpCadastroUtils';
+import { decodificarPayloadJwt } from './utils/jwtUtils';
+import { usuarioSomenteLeituraNfp } from './utils/rbacUtils';
 
 const FORM_INICIAL = {
   codigo: '',
@@ -75,6 +78,14 @@ function montarFormAgente(registro = {}) {
 }
 
 export default function NfpAgentes() {
+  const somenteLeitura = useMemo(() => {
+    try {
+      const token = localStorage.getItem('@CareCore:token');
+      return usuarioSomenteLeituraNfp(token ? decodificarPayloadJwt(token) : null);
+    } catch {
+      return false;
+    }
+  }, []);
   const [agentes, setAgentes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [salvando, setSalvando] = useState(false);
@@ -202,6 +213,7 @@ export default function NfpAgentes() {
   };
 
   const abrirNovo = () => {
+    if (somenteLeitura) return;
     limparAlertas();
     setEditandoId(null);
     setForm(FORM_INICIAL);
@@ -232,6 +244,7 @@ export default function NfpAgentes() {
   };
 
   const salvar = async () => {
+    if (somenteLeitura) return;
     if (!validarForm()) {
       setErro('Corrija os campos destacados antes de salvar.');
       return;
@@ -261,6 +274,7 @@ export default function NfpAgentes() {
   };
 
   const carregarPadrao = async () => {
+    if (somenteLeitura) return;
     const confirmar = window.confirm('Carregar agentes padrão do sistema?');
     if (!confirmar) return;
 
@@ -278,7 +292,9 @@ export default function NfpAgentes() {
     }
   };
 
-  const tituloForm = editandoId ? 'Editar agente' : 'Novo agente';
+  const tituloForm = somenteLeitura
+    ? 'Consultar agente'
+    : (editandoId ? 'Editar agente' : 'Novo agente');
 
   const agentesFiltrados = useMemo(() => agentes, [agentes]);
 
@@ -312,12 +328,16 @@ export default function NfpAgentes() {
                   >
                     Imprimir
                   </ReportActionButton>
-                  <PremiumButton type="button" variant="secondary" disabled={salvando} onClick={carregarPadrao}>
-                    Carregar agentes padrão
-                  </PremiumButton>
-                  <PremiumButton type="button" onClick={abrirNovo}>
-                    Novo agente
-                  </PremiumButton>
+                  {!somenteLeitura && (
+                    <>
+                      <PremiumButton type="button" variant="secondary" disabled={salvando} onClick={carregarPadrao}>
+                        Carregar agentes padrão
+                      </PremiumButton>
+                      <PremiumButton type="button" onClick={abrirNovo}>
+                        Novo agente
+                      </PremiumButton>
+                    </>
+                  )}
                 </>
               ) : (
                 <PremiumButton type="button" variant="secondary" onClick={voltarLista}>
@@ -327,6 +347,10 @@ export default function NfpAgentes() {
             </div>
           )}
         />
+
+        {somenteLeitura && (
+          <BannerSomenteLeituraGlobal modulo="o cadastro de agentes NFP" />
+        )}
 
         <ScrollArea>
           {erro && (
@@ -401,7 +425,7 @@ export default function NfpAgentes() {
                                 onClick={() => abrirEdicao(agente)}
                                 className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
                               >
-                                Editar
+                                {somenteLeitura ? 'Consultar' : 'Editar'}
                               </button>
                             </td>
                           </tr>
@@ -425,6 +449,7 @@ export default function NfpAgentes() {
             <section className="rounded-3xl border border-slate-100 bg-white p-5 shadow-sm">
               <h3 className="mb-4 text-sm font-bold text-slate-800">{tituloForm}</h3>
 
+              <fieldset disabled={somenteLeitura} className="min-w-0 border-0 p-0">
               <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
                 <div>
                   <label className="mb-1 block text-xs font-semibold text-slate-600">
@@ -543,13 +568,16 @@ export default function NfpAgentes() {
                   className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400"
                 />
               </div>
+              </fieldset>
 
               <div className="mt-5 flex flex-wrap gap-2">
-                <PremiumButton type="button" disabled={salvando} onClick={salvar}>
-                  {salvando ? 'Salvando...' : 'Salvar agente'}
-                </PremiumButton>
+                {!somenteLeitura && (
+                  <PremiumButton type="button" disabled={salvando} onClick={salvar}>
+                    {salvando ? 'Salvando...' : 'Salvar agente'}
+                  </PremiumButton>
+                )}
                 <PremiumButton type="button" variant="secondary" onClick={voltarLista}>
-                  Cancelar
+                  {somenteLeitura ? 'Voltar' : 'Cancelar'}
                 </PremiumButton>
               </div>
             </section>

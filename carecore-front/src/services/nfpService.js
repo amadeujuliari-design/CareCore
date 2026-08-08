@@ -151,6 +151,77 @@ export async function nfpListarBatimentos(competencia, params = {}) {
   return data;
 }
 
+export async function nfpListarCupons(params = {}) {
+  const { data } = await api.get('/api/nfp/cupons', { params });
+  return data;
+}
+
+export async function nfpRegistrarLeituraCupom(payload) {
+  const { data } = await api.post('/api/nfp/cupons/leitura', payload);
+  return data;
+}
+
+export async function nfpAtualizarStatusCupom(id, payload) {
+  const { data } = await api.patch(`/api/nfp/cupons/${id}/status`, payload);
+  return data;
+}
+
+export async function nfpEnvioSefazStatus() {
+  const { data } = await api.get('/api/nfp/envio-sefaz/status');
+  return data;
+}
+
+export async function nfpEnvioSefazAbrirChrome() {
+  const { data } = await api.post('/api/nfp/envio-sefaz/abrir-chrome');
+  return data;
+}
+
+export async function nfpEnvioSefazEnviarFila(payload = {}) {
+  const { data } = await api.post('/api/nfp/envio-sefaz/enviar-fila', payload);
+  return data;
+}
+
+export async function nfpEnvioSefazParar() {
+  const { data } = await api.post('/api/nfp/envio-sefaz/parar');
+  return data;
+}
+
+export async function nfpObterMetas(competencia, params = {}) {
+  const { data } = await api.get(`/api/nfp/metas/${competencia}`, { params });
+  return data;
+}
+
+export async function nfpSalvarMetas(competencia, payload) {
+  const { data } = await api.put(`/api/nfp/metas/${competencia}`, payload);
+  return data;
+}
+
+export async function nfpSugerirMetasRateio(competencia, sobrescrever = false) {
+  const { data } = await api.post(`/api/nfp/metas/${competencia}/sugerir-rateio`, null, {
+    params: { sobrescrever },
+  });
+  return data;
+}
+
+export async function nfpListarMetasCompetencias() {
+  const { data } = await api.get('/api/nfp/metas/competencias');
+  return data;
+}
+
+export async function nfpMetasConsolidado(competencias) {
+  const params = {};
+  if (competencias?.length) params.competencias = competencias.join(',');
+  const { data } = await api.get('/api/nfp/metas/consolidado', { params });
+  return data;
+}
+
+export async function nfpExportarMetas(competencia) {
+  const { data } = await api.get(`/api/nfp/metas/${competencia}/exportar`, {
+    responseType: 'blob',
+  });
+  return data;
+}
+
 export async function listarAdmGlobalOrganizacao(params = {}) {
   const { data } = await api.get('/api/usuarios/organizacao/adm-global', { params });
   return data;

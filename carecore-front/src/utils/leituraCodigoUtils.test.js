@@ -3,8 +3,11 @@ import { describe, it } from 'node:test';
 
 import {
   JANELA_IGNORAR_LEITURA_REPETIDA_MS,
+  deveIgnorarCupomNfpJaTratado,
   deveIgnorarLeituraCodigoRepetida,
   deveIgnorarLeituraConviventeRepetida,
+  extrairChaveNfpDeLeitura,
+  registrarCupomNfpTratado,
 } from './leituraCodigoUtils.js';
 
 describe('leituraCodigoUtils', () => {
@@ -39,5 +42,29 @@ describe('leituraCodigoUtils', () => {
     assert.equal(deveIgnorarLeituraConviventeRepetida(ref, 'conv-a'), false);
     assert.equal(deveIgnorarLeituraConviventeRepetida(ref, 'conv-a'), true);
     assert.equal(deveIgnorarLeituraConviventeRepetida(ref, 'conv-b'), false);
+  });
+
+  it('extrai chave 44 de URL SEFAZ e de digitos', () => {
+    const chave = '35260847508411169495651090002701871160307536';
+    assert.equal(
+      extrairChaveNfpDeLeitura(`https://www.nfce.fazenda.sp.gov.br/NFCeConsultaPublica/Paginas/ConsultaQRCode.aspx?p=${chave}|2|1|1`),
+      chave,
+    );
+    assert.equal(extrairChaveNfpDeLeitura(` ${chave} `), chave);
+  });
+
+  it('ignora cupom NFP ja tratado na sessao (sucesso ou 409)', () => {
+    const ref = { current: new Set() };
+    const chave = '35260847508411169495651090002701871160307536';
+    const url = `https://exemplo/?p=${chave}|2|1`;
+
+    assert.equal(deveIgnorarCupomNfpJaTratado(ref, url), false);
+    registrarCupomNfpTratado(ref, chave);
+    assert.equal(deveIgnorarCupomNfpJaTratado(ref, url), true);
+    assert.equal(deveIgnorarCupomNfpJaTratado(ref, chave), true);
+    assert.equal(
+      deveIgnorarCupomNfpJaTratado(ref, '35260847508411169495651090002701871160307537'),
+      false,
+    );
   });
 });

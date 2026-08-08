@@ -26,9 +26,11 @@ from presenca_operacional import PRESENCA_REGRAS_BUILD
 from revisao_texto import gemini_configurado
 from security import (
     caminho_api_permitido_para_adm_global,
+    caminho_api_permitido_para_adm_producao,
     caminho_api_permitido_para_oficineiro,
     extrair_payload_autorizacao_bearer,
     usuario_eh_adm_global,
+    usuario_eh_adm_producao,
     usuario_eh_oficineiro,
 )
 
@@ -366,6 +368,27 @@ async def rbac_adm_global_middleware(request: Request, call_next):
         status_code=403,
         content={
             "detail": "Perfil ADM Global tem acesso apenas ao módulo NFP – Créditos.",
+        },
+    )
+
+
+@app.middleware("http")
+async def rbac_adm_producao_middleware(request: Request, call_next):
+    path = request.url.path
+    if not path.startswith("/api/"):
+        return await call_next(request)
+
+    payload = extrair_payload_autorizacao_bearer(request.headers.get("authorization"))
+    if not payload or not usuario_eh_adm_producao(payload):
+        return await call_next(request)
+
+    if caminho_api_permitido_para_adm_producao(path, request.method):
+        return await call_next(request)
+
+    return JSONResponse(
+        status_code=403,
+        content={
+            "detail": "Perfil ADM Produção tem acesso apenas à Leitura de Cupons (NFP).",
         },
     )
 

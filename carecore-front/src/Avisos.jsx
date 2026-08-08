@@ -6,6 +6,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Sidebar from "./Sidebar";
+import BannerSomenteLeituraGlobal from "./components/BannerSomenteLeituraGlobal";
 import { AppShell, MainShell, PageHeader, PremiumButton, ReportActionButton, ScrollArea } from "./components/PremiumUI";
 import { exportarRelatorioXlsx } from "./utils/exportarRelatorioXlsx";
 import { imprimirRelatorio } from "./utils/imprimirRelatorio";
@@ -36,6 +37,7 @@ import { compararDatasIso, formatarDataBr, hojeIsoLocal } from "./utils/dataBras
 import { RevisarTextoPainel } from "./components/RevisarTextoPainel";
 import { TextoOriginalBloco } from "./components/TextoOriginalBloco";
 import { lerUsuarioTextoOriginal, usuarioPodeVerTextoOriginal } from "./utils/textoOriginalUtils";
+import { usuarioEhGlobalPuro } from "./utils/rbacUtils";
 
 const CLASSIFICACOES = ["Informativo", "Atenção", "Urgente", "Comunicado", "Rotina", "Gestão"];
 
@@ -270,6 +272,14 @@ function ModalAvisoCompleto({ aviso, onFechar, onMarcarLido, usuarioTextoOrigina
 export default function Avisos() {
   const navigate = useNavigate();
   const usuario = useMemo(() => lerUsuarioLogado(), []);
+  const somenteLeitura = useMemo(() => {
+    try {
+      const token = localStorage.getItem("@CareCore:token");
+      return usuarioEhGlobalPuro(token ? decodificarPayloadJwt(token) : null);
+    } catch {
+      return false;
+    }
+  }, []);
   const usuarioTextoOriginal = useMemo(
     () => lerUsuarioTextoOriginal(usuario.token),
     [usuario.token],
@@ -475,6 +485,7 @@ export default function Avisos() {
 
   async function handleSubmit(event) {
     event.preventDefault();
+    if (somenteLeitura) return;
 
     setErro("");
     setSucesso("");
@@ -869,7 +880,21 @@ export default function Avisos() {
         />
 
         <ScrollArea>
-          <section className="grid grid-cols-1 gap-4 xl:grid-cols-[0.95fr_1.25fr]">
+          {somenteLeitura && (
+            <BannerSomenteLeituraGlobal modulo="a comunicação interna / avisos" />
+          )}
+          {somenteLeitura && erro && (
+            <div className="mb-4 rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-sm font-bold text-red-700">
+              {erro}
+            </div>
+          )}
+          {somenteLeitura && sucesso && (
+            <div className="mb-4 rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-700">
+              {sucesso}
+            </div>
+          )}
+          <section className={`grid grid-cols-1 gap-4 ${somenteLeitura ? "" : "xl:grid-cols-[0.95fr_1.25fr]"}`}>
+            {!somenteLeitura && (
             <form onSubmit={handleSubmit} className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
               <div className="mb-5">
                 <h2 className="text-xl font-black text-slate-900">Novo aviso</h2>
@@ -1083,6 +1108,7 @@ export default function Avisos() {
                 </button>
               </div>
             </form>
+            )}
 
             <div className="space-y-4">
               <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">

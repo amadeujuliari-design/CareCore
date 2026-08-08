@@ -9,10 +9,12 @@ import {
 } from '../config/manutencao';
 import {
   normalizarPerfilRbac,
+  rotaEhLeituraCuponsNfp,
   rotaEhModuloAtividades,
   rotaEhModuloNfp,
   rotaInicialPosLogin,
   usuarioEhAdmGlobal,
+  usuarioEhAdmProducao,
   usuarioEhOficineiro,
 } from '../utils/rbacUtils';
 
@@ -83,6 +85,10 @@ export default function ProtectedRoute({
     return <Navigate to="/atividades/chamada" replace />;
   }
 
+  if (usuarioEhAdmProducao(usuario) && !rotaEhLeituraCuponsNfp(pathname)) {
+    return <Navigate to="/nfp/leitura-cupons" replace />;
+  }
+
   if (usuarioEhAdmGlobal(usuario) && !rotaEhModuloNfp(pathname)) {
     return <Navigate to="/nfp" replace />;
   }
@@ -118,7 +124,7 @@ export default function ProtectedRoute({
   return (
     <div className="carecore-premium-frame">
       {children}
-      {!usuarioEhOficineiro(usuario) && !usuarioEhAdmGlobal(usuario) && <ChatFlutuante />}
+      {!usuarioEhOficineiro(usuario) && !usuarioEhAdmGlobal(usuario) && !usuarioEhAdmProducao(usuario) && <ChatFlutuante />}
     </div>
   );
 }

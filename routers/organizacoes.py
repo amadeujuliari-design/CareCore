@@ -399,6 +399,7 @@ async def obter_resumo_gestao_global(
                 UsuarioDB.ativo == True,  # noqa: E712
                 UsuarioDB.perfil_acesso != "Manutenção",
                 UsuarioDB.perfil_acesso != "ADM Global",
+                UsuarioDB.perfil_acesso != "ADM Produção",
             ),
         )
         quartos_ativos = await contar(

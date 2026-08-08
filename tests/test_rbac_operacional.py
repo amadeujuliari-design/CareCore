@@ -62,6 +62,7 @@ def test_global_puro_eh_bloqueado_em_operacoes_de_projeto():
         bloquear_usuario_global_puro(usuario)
 
     assert getattr(erro.value, "status_code", None) == 403
+    assert "relatórios gerenciais" in str(getattr(erro.value, "detail", "")).lower()
 
 
 def test_global_gestor_nao_eh_global_puro():

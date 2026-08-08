@@ -27,9 +27,11 @@ from schemas import (
 )
 from security import (
     PERFIL_ADM_GLOBAL,
+    PERFIL_ADM_PRODUCAO,
+    PERFIS_ADM_NFP_ORG,
     get_usuario_logado,
     gerar_hash_senha,
-    usuario_eh_adm_global,
+    usuario_eh_adm_nfp_org,
     usuario_eh_gestor,
     usuario_eh_manutencao,
     usuario_eh_oficineiro,
@@ -51,6 +53,7 @@ PERFIS_ACESSO_VALIDOS = {
     "Gestor",
     "Global",
     "ADM Global",
+    "ADM Produção",
     "Manutenção",
     "Técnico",
     "Orientador",
@@ -68,6 +71,9 @@ PERFIS_LEGADOS_MAPEAMENTO = {
     "Oficineiro": "Oficineiro(a)",
     "Adm Global": "ADM Global",
     "ADMGlobal": "ADM Global",
+    "Adm Producao": "ADM Produção",
+    "Adm Produção": "ADM Produção",
+    "ADMProducao": "ADM Produção",
 }
 
 
@@ -100,10 +106,10 @@ def exigir_nao_manutencao(usuario: UsuarioDB) -> None:
 
 
 def exigir_nao_adm_global_na_lista_projeto(usuario: UsuarioDB) -> None:
-    if usuario_eh_adm_global(usuario):
+    if usuario_eh_adm_nfp_org(usuario):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Usuário ADM Global é gerenciado na aba Usuários da organização.",
+            detail="Usuários ADM Global / ADM Produção são gerenciados na aba Usuários da organização.",
         )
 
 
@@ -112,8 +118,18 @@ def exigir_gestao_adm_global_org(usuario_atual: dict) -> None:
         return
     raise HTTPException(
         status_code=status.HTTP_403_FORBIDDEN,
-        detail="Apenas Global ou Manutenção podem gerenciar usuários ADM Global.",
+        detail="Apenas Global ou Manutenção podem gerenciar usuários ADM Global / ADM Produção.",
     )
+
+
+def perfil_adm_nfp_org_valido(perfil: Optional[str]) -> str:
+    perfil_n = normalizar_perfil_acesso(perfil or PERFIL_ADM_GLOBAL)
+    if perfil_n not in PERFIS_ADM_NFP_ORG:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Perfil deve ser ADM Global ou ADM Produção.",
+        )
+    return perfil_n
 
 
 def normalizar_perfil_acesso(perfil: Optional[str]) -> str:
@@ -135,7 +151,7 @@ def normalizar_perfil_acesso(perfil: Optional[str]) -> str:
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=(
                 "Perfil de acesso inválido. "
-                "Use: Gestor, Global, ADM Global, Manutenção, Técnico, Orientador, Administrativo, Consulta ou Oficineiro(a)."
+                "Use: Gestor, Global, ADM Global, ADM Produção, Manutenção, Técnico, Orientador, Administrativo, Consulta ou Oficineiro(a)."
             ),
         )
 
@@ -424,13 +440,14 @@ async def listar_usuarios(
 
 
 # =====================================================================
-# USUÁRIOS DA ORGANIZAÇÃO — ADM Global
+# USUÁRIOS DA ORGANIZAÇÃO — ADM Global / ADM Produção
 # =====================================================================
 
 @router.get("/organizacao/adm-global", response_model=list[UsuarioResumoResponse])
 async def listar_adm_global_organizacao(
     busca: Optional[str] = Query(default=None),
     ativo: Optional[bool] = Query(default=None),
+    perfil: Optional[str] = Query(default=None),
     db: AsyncSession = Depends(get_db),
     usuario_atual: dict = Depends(get_usuario_logado),
 ):
@@ -439,9 +456,13 @@ async def listar_adm_global_organizacao(
     if not organizacao_id:
         raise HTTPException(status_code=400, detail="Usuário sem organização vinculada.")
 
+    perfis = list(PERFIS_ADM_NFP_ORG)
+    if perfil:
+        perfis = [perfil_adm_nfp_org_valido(perfil)]
+
     filtros = [
         UsuarioDB.organizacao_id == organizacao_id,
-        UsuarioDB.perfil_acesso == PERFIL_ADM_GLOBAL,
+        UsuarioDB.perfil_acesso.in_(perfis),
     ]
     if ativo is not None:
         filtros.append(UsuarioDB.ativo == ativo)
@@ -457,7 +478,7 @@ async def listar_adm_global_organizacao(
     resultado = await db.execute(
         select(UsuarioDB)
         .where(*filtros)
-        .order_by(UsuarioDB.nome.asc())
+        .order_by(UsuarioDB.perfil_acesso.asc(), UsuarioDB.nome.asc())
     )
     return [usuario_para_resumo(usuario) for usuario in resultado.scalars().all()]
 
@@ -480,6 +501,9 @@ async def criar_adm_global_organizacao(
     await verificar_email_unico(db, payload.email)
     await verificar_cpf_unico(db, payload.cpf)
 
+    perfil = perfil_adm_nfp_org_valido(payload.perfil_acesso or PERFIL_ADM_GLOBAL)
+    cargo_padrao = "ADM Global NFP" if perfil == PERFIL_ADM_GLOBAL else "ADM Produção NFP"
+
     novo_usuario = UsuarioDB(
         instituicao_id=obter_instituicao_escopo(usuario_atual),
         organizacao_id=organizacao_id,
@@ -489,11 +513,11 @@ async def criar_adm_global_organizacao(
         telefone=payload.telefone,
         avatar_url=payload.avatar_url,
         senha_hash=gerar_hash_senha(payload.senha),
-        perfil_acesso=PERFIL_ADM_GLOBAL,
+        perfil_acesso=perfil,
         is_master=False,
         is_global=False,
         ativo=True,
-        cargo=payload.cargo or "ADM Global NFP",
+        cargo=payload.cargo or cargo_padrao,
         setor=payload.setor or "NFP – Créditos",
         criado_em=agora_utc(),
         criado_por_id=obter_usuario_id(usuario_atual),
@@ -503,7 +527,7 @@ async def criar_adm_global_organizacao(
         await db.commit()
         await db.refresh(novo_usuario)
         registrar_evento_auditoria(
-            "usuario_adm_global_criado",
+            "usuario_adm_nfp_org_criado",
             usuario_atual=usuario_atual,
             usuario_alvo_id=novo_usuario.id,
             perfil_acesso=novo_usuario.perfil_acesso,
@@ -512,7 +536,7 @@ async def criar_adm_global_organizacao(
         await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Não foi possível criar o usuário ADM Global.",
+            detail="Não foi possível criar o usuário ADM NFP.",
         ) from erro
 
     return usuario_para_response(novo_usuario)
@@ -531,15 +555,18 @@ async def editar_adm_global_organizacao(
         select(UsuarioDB).where(
             UsuarioDB.id == usuario_id,
             UsuarioDB.organizacao_id == organizacao_id,
-            UsuarioDB.perfil_acesso == PERFIL_ADM_GLOBAL,
+            UsuarioDB.perfil_acesso.in_(list(PERFIS_ADM_NFP_ORG)),
         )
     )
     usuario = resultado.scalar_one_or_none()
     if not usuario:
-        raise HTTPException(status_code=404, detail="Usuário ADM Global não encontrado.")
+        raise HTTPException(status_code=404, detail="Usuário ADM NFP não encontrado.")
 
     dados = payload.model_dump(exclude_unset=True)
-    dados.pop("perfil_acesso", None)
+    if "perfil_acesso" in dados and dados["perfil_acesso"]:
+        dados["perfil_acesso"] = perfil_adm_nfp_org_valido(dados["perfil_acesso"])
+    else:
+        dados.pop("perfil_acesso", None)
     dados.pop("is_global", None)
 
     if "email" in dados and dados["email"]:
@@ -559,7 +586,7 @@ async def editar_adm_global_organizacao(
         await db.rollback()
         raise HTTPException(
             status_code=400,
-            detail="Não foi possível atualizar o usuário ADM Global.",
+            detail="Não foi possível atualizar o usuário ADM NFP.",
         ) from erro
 
     return usuario_para_response(usuario)
@@ -578,12 +605,12 @@ async def status_adm_global_organizacao(
         select(UsuarioDB).where(
             UsuarioDB.id == usuario_id,
             UsuarioDB.organizacao_id == organizacao_id,
-            UsuarioDB.perfil_acesso == PERFIL_ADM_GLOBAL,
+            UsuarioDB.perfil_acesso.in_(list(PERFIS_ADM_NFP_ORG)),
         )
     )
     usuario = resultado.scalar_one_or_none()
     if not usuario:
-        raise HTTPException(status_code=404, detail="Usuário ADM Global não encontrado.")
+        raise HTTPException(status_code=404, detail="Usuário ADM NFP não encontrado.")
 
     usuario.ativo = payload.ativo
     if payload.ativo:

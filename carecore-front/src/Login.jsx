@@ -199,6 +199,13 @@ export default function Login() {
     try {
       setLoading(true);
 
+      // Evita Bearer de sessão anterior interferir no login (middleware RBAC).
+      localStorage.removeItem('token');
+      localStorage.removeItem('usuario');
+      localStorage.removeItem('@CareCore:token');
+      localStorage.removeItem('@CareCore:user');
+      localStorage.removeItem('@CareCore:lastActivityAt');
+
       const response = await api.post(
         '/api/login',
         {

@@ -70,6 +70,7 @@ bearer_scheme = HTTPBearer(auto_error=True)
 PERFIL_GESTOR = "Gestor"
 PERFIL_GLOBAL = "Global"
 PERFIL_ADM_GLOBAL = "ADM Global"
+PERFIL_ADM_PRODUCAO = "ADM Produção"
 PERFIL_MANUTENCAO = "Manutenção"
 PERFIL_TECNICO = "Técnico"
 PERFIL_ORIENTADOR = "Orientador"
@@ -81,6 +82,7 @@ PERFIS_ACESSO_VALIDOS = {
     PERFIL_GESTOR,
     PERFIL_GLOBAL,
     PERFIL_ADM_GLOBAL,
+    PERFIL_ADM_PRODUCAO,
     PERFIL_MANUTENCAO,
     PERFIL_TECNICO,
     PERFIL_ORIENTADOR,
@@ -92,6 +94,12 @@ PERFIS_ACESSO_VALIDOS = {
 PERFIS_EXCLUIDOS_LISTA_PROJETO = {
     PERFIL_MANUTENCAO,
     PERFIL_ADM_GLOBAL,
+    PERFIL_ADM_PRODUCAO,
+}
+
+PERFIS_ADM_NFP_ORG = {
+    PERFIL_ADM_GLOBAL,
+    PERFIL_ADM_PRODUCAO,
 }
 
 PERFIS_LEGADOS_MAPEAMENTO = {
@@ -104,11 +112,17 @@ PERFIS_LEGADOS_MAPEAMENTO = {
     "Oficineiro": PERFIL_OFICINEIRO,
     "Adm Global": PERFIL_ADM_GLOBAL,
     "ADMGlobal": PERFIL_ADM_GLOBAL,
+    "Adm Producao": PERFIL_ADM_PRODUCAO,
+    "Adm Produção": PERFIL_ADM_PRODUCAO,
+    "ADMProducao": PERFIL_ADM_PRODUCAO,
+    "ADM Produção": PERFIL_ADM_PRODUCAO,
 }
 
 PREFIXOS_API_PERMITIDOS_OFICINEIRO = (
     "/api/atividades",
     "/api/auth",
+    "/api/login",
+    "/api/onboarding",
     "/api/usuarios/me",
     "/api/passkeys",
     "/api/health",
@@ -117,6 +131,18 @@ PREFIXOS_API_PERMITIDOS_OFICINEIRO = (
 PREFIXOS_API_PERMITIDOS_ADM_GLOBAL = (
     "/api/nfp",
     "/api/auth",
+    "/api/login",
+    "/api/onboarding",
+    "/api/usuarios/me",
+    "/api/passkeys",
+    "/api/health",
+)
+
+# ADM Produção: só leitura de cupons (+ auxiliares minimos).
+PREFIXOS_API_BASE_ADM_PRODUCAO = (
+    "/api/auth",
+    "/api/login",
+    "/api/onboarding",
     "/api/usuarios/me",
     "/api/passkeys",
     "/api/health",
@@ -189,7 +215,38 @@ def usuario_eh_adm_global(usuario: dict | UsuarioDB | None) -> bool:
     return perfil == PERFIL_ADM_GLOBAL
 
 
+def usuario_eh_adm_producao(usuario: dict | UsuarioDB | None) -> bool:
+    if not usuario:
+        return False
+    if usuario_eh_manutencao(usuario):
+        return False
+    if isinstance(usuario, dict):
+        perfil = normalizar_perfil_acesso(usuario.get("perfil_acesso"))
+    else:
+        perfil = normalizar_perfil_acesso(getattr(usuario, "perfil_acesso", None))
+    return perfil == PERFIL_ADM_PRODUCAO
+
+
+def usuario_eh_adm_nfp_org(usuario: dict | UsuarioDB | None) -> bool:
+    return usuario_eh_adm_global(usuario) or usuario_eh_adm_producao(usuario)
+
+
 def usuario_pode_acessar_nfp(usuario: dict | UsuarioDB | None) -> bool:
+    if not usuario:
+        return False
+    if usuario_eh_manutencao(usuario) or usuario_eh_adm_nfp_org(usuario):
+        return True
+    if isinstance(usuario, dict):
+        return bool(
+            usuario.get("is_global")
+            or usuario_tem_perfil(usuario, {PERFIL_GLOBAL})
+        )
+    perfil = normalizar_perfil_acesso(getattr(usuario, "perfil_acesso", None))
+    return perfil == PERFIL_GLOBAL or bool(getattr(usuario, "is_global", False))
+
+
+def usuario_pode_gestao_nfp_completa(usuario: dict | UsuarioDB | None) -> bool:
+    """Dashboard, cadastros, relatorios e envio NFP — nao inclui ADM Producao."""
     if not usuario:
         return False
     if usuario_eh_manutencao(usuario) or usuario_eh_adm_global(usuario):
@@ -201,6 +258,22 @@ def usuario_pode_acessar_nfp(usuario: dict | UsuarioDB | None) -> bool:
         )
     perfil = normalizar_perfil_acesso(getattr(usuario, "perfil_acesso", None))
     return perfil == PERFIL_GLOBAL or bool(getattr(usuario, "is_global", False))
+
+
+def usuario_pode_ver_envio_sefaz(usuario: dict | UsuarioDB | None) -> bool:
+    """Tela Envio SEFAZ: Global (consulta), ADM Global e Manutencao."""
+    return usuario_pode_gestao_nfp_completa(usuario)
+
+
+def usuario_pode_operar_envio_sefaz(usuario: dict | UsuarioDB | None) -> bool:
+    """Abrir Chrome / rodar fila: so ADM Global e Manutencao (Global so ve)."""
+    if not usuario:
+        return False
+    return usuario_eh_manutencao(usuario) or usuario_eh_adm_global(usuario)
+
+
+def usuario_pode_leitura_cupons_nfp(usuario: dict | UsuarioDB | None) -> bool:
+    return usuario_pode_acessar_nfp(usuario)
 
 
 def perfil_excluido_lista_projeto(perfil: Optional[str]) -> bool:
@@ -539,7 +612,7 @@ def usuario_pode_ver_texto_original(usuario: dict) -> bool:
 
 
 def usuario_eh_global_puro(usuario: dict) -> bool:
-    if usuario_eh_manutencao(usuario) or usuario_eh_adm_global(usuario):
+    if usuario_eh_manutencao(usuario) or usuario_eh_adm_nfp_org(usuario):
         return False
 
     return bool(
@@ -555,11 +628,17 @@ def usuario_eh_suporte_manutencao(usuario: dict) -> bool:
     return usuario_eh_manutencao(usuario)
 
 
+MSG_GLOBAL_SOMENTE_CONSULTA = (
+    "Usuários Globais apenas consultam e imprimem relatórios gerenciais. "
+    "Não é permitido editar dados nem realizar ações operacionais."
+)
+
+
 def bloquear_usuario_global_puro(usuario: dict) -> None:
     if usuario_eh_global_puro(usuario):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Usuários globais não podem operar módulos do projeto.",
+            detail=MSG_GLOBAL_SOMENTE_CONSULTA,
         )
 
 
@@ -585,6 +664,27 @@ def caminho_api_permitido_para_adm_global(path: str, method: str = "GET") -> boo
     for prefixo in PREFIXOS_API_PERMITIDOS_ADM_GLOBAL:
         if path == prefixo or path.startswith(prefixo + "/"):
             return True
+    return False
+
+
+def caminho_api_permitido_para_adm_producao(path: str, method: str = "GET") -> bool:
+    metodo = (method or "GET").upper()
+    for prefixo in PREFIXOS_API_BASE_ADM_PRODUCAO:
+        if path == prefixo or path.startswith(prefixo + "/"):
+            return True
+
+    if path == "/api/nfp/me/acesso" and metodo == "GET":
+        return True
+    if path.startswith("/api/nfp/cupons"):
+        if metodo == "GET":
+            return True
+        if path.rstrip("/").endswith("/leitura") and metodo == "POST":
+            return True
+        return False
+    if path == "/api/nfp/agentes" and metodo == "GET":
+        return True
+    if path == "/api/nfp/agentes/garantir-padrao" and metodo == "POST":
+        return True
     return False
 
 

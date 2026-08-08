@@ -19,7 +19,7 @@ from schemas import (
     AvisosResumoResponse,
     AvisoUpdate,
 )
-from security import get_usuario_logado
+from security import bloquear_usuario_global_puro, get_usuario_logado
 from time_operacional import agora_operacional_naive, parse_data_filtro_operacional
 from revisao_texto import sanitizar_aviso_para_usuario
 
@@ -207,6 +207,7 @@ async def criar_aviso(
     db: AsyncSession = Depends(get_db),
     usuario_atual: dict = Depends(get_usuario_logado),
 ):
+    bloquear_usuario_global_puro(usuario_atual)
     usuario_id = _usuario_id(usuario_atual)
     instituicao_id = _instituicao_id(usuario_atual)
 
@@ -650,6 +651,7 @@ async def atualizar_aviso(
     db: AsyncSession = Depends(get_db),
     usuario_atual: dict = Depends(get_usuario_logado),
 ):
+    bloquear_usuario_global_puro(usuario_atual)
     usuario_id = _usuario_id(usuario_atual)
     instituicao_id = _instituicao_id(usuario_atual)
 
@@ -735,6 +737,7 @@ async def cancelar_aviso(
     db: AsyncSession = Depends(get_db),
     usuario_atual: dict = Depends(get_usuario_logado),
 ):
+    bloquear_usuario_global_puro(usuario_atual)
     usuario_id = _usuario_id(usuario_atual)
     instituicao_id = _instituicao_id(usuario_atual)
 

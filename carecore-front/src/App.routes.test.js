@@ -32,6 +32,9 @@ const ROTAS_CRITICAS = [
   '/nfp/cadastro/agentes',
   '/nfp/cadastro/doadores',
   '/nfp/cadastro/cnpjs',
+  '/nfp/leitura-cupons',
+  '/nfp/envio-sefaz',
+  '/nfp/metas',
   '/nfp/relatorios',
   '/nfp/relatorios/rateio-consolidado',
   '/nfp/relatorios/rateio-detalhado',
@@ -65,6 +68,9 @@ describe('App routes contract', () => {
       '../NfpAgentes',
       '../NfpDoadores',
       '../NfpCnpjs',
+      '../NfpLeituraCupons',
+      '../NfpEnvioSefaz',
+      '../NfpMetas',
       '../NfpRelatorios',
       '../RelatorioNfpRateioConsolidado',
       '../RelatorioNfpRateioDetalhado',
@@ -78,7 +84,6 @@ describe('App routes contract', () => {
       '../Cobrancas',
       '../CobrancasAdmin',
     ];
-
     for (const importPath of lazyImports) {
       assert.match(
         appRouterSource,

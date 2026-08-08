@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Users } from 'lucide-react';
 
 import Sidebar from './Sidebar';
+import BannerSomenteLeituraGlobal from './components/BannerSomenteLeituraGlobal';
 import NfpEnderecoFields from './components/nfp/NfpEnderecoFields';
 import { BadgeStatus, CampoSelect, CampoTexto } from './components/UsuariosCampos';
 import { AppShell, MainShell, PageHeader, PremiumButton, ReportActionButton, ScrollArea } from './components/PremiumUI';
@@ -36,6 +37,8 @@ import {
   montarEnderecoPayload,
   opcoesAgentesCaptacao,
 } from './utils/nfpCadastroUtils';
+import { decodificarPayloadJwt } from './utils/jwtUtils';
+import { usuarioSomenteLeituraNfp } from './utils/rbacUtils';
 
 const FORM_INICIAL = {
   nome: '',
@@ -65,6 +68,14 @@ function montarFormDoador(registro = {}) {
 }
 
 export default function NfpDoadores() {
+  const somenteLeitura = useMemo(() => {
+    try {
+      const token = localStorage.getItem('@CareCore:token');
+      return usuarioSomenteLeituraNfp(token ? decodificarPayloadJwt(token) : null);
+    } catch {
+      return false;
+    }
+  }, []);
   const [doadores, setDoadores] = useState([]);
   const [agentes, setAgentes] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -191,6 +202,7 @@ export default function NfpDoadores() {
   });
 
   const abrirNovo = () => {
+    if (somenteLeitura) return;
     limparAlertas();
     setEditandoId(null);
     setForm({
@@ -224,6 +236,7 @@ export default function NfpDoadores() {
   };
 
   const salvar = async () => {
+    if (somenteLeitura) return;
     if (!validarForm()) {
       setErro('Corrija os campos destacados antes de salvar.');
       return;
@@ -281,31 +294,35 @@ export default function NfpDoadores() {
                 >
                   Imprimir
                 </ReportActionButton>
-                <PremiumButton
-                  type="button"
-                  variant="secondary"
-                  disabled={salvando}
-                  onClick={async () => {
-                    setSalvando(true);
-                    limparAlertas();
-                    try {
-                      const sync = await nfpSincronizarDoadores();
-                      setSucesso(
-                        `Sincronização: ${sync.criados || 0} novos, ${sync.ja_existiam || 0} já cadastrados (total ${sync.total_cadastro || 0}).`,
-                      );
-                      await carregarDoadores();
-                    } catch (error) {
-                      setErro(erroApiNfp(error, 'Falha ao sincronizar doadores.'));
-                    } finally {
-                      setSalvando(false);
-                    }
-                  }}
-                >
-                  Sincronizar das doações
-                </PremiumButton>
-                <PremiumButton type="button" onClick={abrirNovo}>
-                  Novo doador
-                </PremiumButton>
+                {!somenteLeitura && (
+                  <>
+                    <PremiumButton
+                      type="button"
+                      variant="secondary"
+                      disabled={salvando}
+                      onClick={async () => {
+                        setSalvando(true);
+                        limparAlertas();
+                        try {
+                          const sync = await nfpSincronizarDoadores();
+                          setSucesso(
+                            `Sincronização: ${sync.criados || 0} novos, ${sync.ja_existiam || 0} já cadastrados (total ${sync.total_cadastro || 0}).`,
+                          );
+                          await carregarDoadores();
+                        } catch (error) {
+                          setErro(erroApiNfp(error, 'Falha ao sincronizar doadores.'));
+                        } finally {
+                          setSalvando(false);
+                        }
+                      }}
+                    >
+                      Sincronizar das doações
+                    </PremiumButton>
+                    <PremiumButton type="button" onClick={abrirNovo}>
+                      Novo doador
+                    </PremiumButton>
+                  </>
+                )}
               </div>
             ) : (
               <PremiumButton type="button" variant="secondary" onClick={voltarLista}>
@@ -314,6 +331,10 @@ export default function NfpDoadores() {
             )
           )}
         />
+
+        {somenteLeitura && (
+          <BannerSomenteLeituraGlobal modulo="o cadastro de doadores NFP" />
+        )}
 
         <ScrollArea>
           {erro && (
@@ -384,7 +405,7 @@ export default function NfpDoadores() {
                               onClick={() => abrirEdicao(doador)}
                               className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
                             >
-                              Editar
+                              {somenteLeitura ? 'Consultar' : 'Editar'}
                             </button>
                           </td>
                         </tr>
@@ -406,9 +427,12 @@ export default function NfpDoadores() {
           {tela === 'form' && (
             <section className="rounded-3xl border border-slate-100 bg-white p-5 shadow-sm">
               <h3 className="mb-4 text-sm font-bold text-slate-800">
-                {editandoId ? 'Editar doador' : 'Novo doador'}
+                {somenteLeitura
+                  ? 'Consultar doador'
+                  : (editandoId ? 'Editar doador' : 'Novo doador')}
               </h3>
 
+              <fieldset disabled={somenteLeitura} className="min-w-0 border-0 p-0">
               <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
                 <div>
                   <label className="mb-1 block text-xs font-semibold text-slate-600">
@@ -460,12 +484,15 @@ export default function NfpDoadores() {
                   erro={errosCampo.telefone}
                 />
                 <CampoSelect
-                  label="Unidade captador"
+                  label="Unidade / projeto (Metas NFP)"
                   value={form.unidade_captador}
                   onChange={(valor) => atualizarCampo('unidade_captador', valor)}
                   options={opcoesCaptador}
-                  placeholder="Selecione o agente"
+                  placeholder="Selecione o projeto (ex.: SEDE, CEDESP)"
                 />
+                <p className="md:col-span-2 -mt-1 text-[11px] text-slate-500">
+                  Esse vínculo alimenta a coluna “Doadas” na tela Metas / Rateio mensal.
+                </p>
                 <div>
                   <label className="mb-1 block text-xs font-semibold text-slate-600">Ativo</label>
                   <label className="flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm">
@@ -497,13 +524,16 @@ export default function NfpDoadores() {
                   className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400"
                 />
               </div>
+              </fieldset>
 
               <div className="mt-5 flex flex-wrap gap-2">
-                <PremiumButton type="button" disabled={salvando} onClick={salvar}>
-                  {salvando ? 'Salvando...' : 'Salvar doador'}
-                </PremiumButton>
+                {!somenteLeitura && (
+                  <PremiumButton type="button" disabled={salvando} onClick={salvar}>
+                    {salvando ? 'Salvando...' : 'Salvar doador'}
+                  </PremiumButton>
+                )}
                 <PremiumButton type="button" variant="secondary" onClick={voltarLista}>
-                  Cancelar
+                  {somenteLeitura ? 'Voltar' : 'Cancelar'}
                 </PremiumButton>
               </div>
             </section>

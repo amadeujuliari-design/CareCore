@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Building2 } from 'lucide-react';
 
 import Sidebar from './Sidebar';
+import BannerSomenteLeituraGlobal from './components/BannerSomenteLeituraGlobal';
 import NfpEnderecoFields from './components/nfp/NfpEnderecoFields';
 import { BadgeStatus, CampoSelect, CampoTexto } from './components/UsuariosCampos';
 import { AppShell, MainShell, PageHeader, PremiumButton, ReportActionButton, ScrollArea } from './components/PremiumUI';
@@ -34,6 +35,8 @@ import {
   montarEnderecoPayload,
   opcoesAgentesCaptacao,
 } from './utils/nfpCadastroUtils';
+import { decodificarPayloadJwt } from './utils/jwtUtils';
+import { usuarioSomenteLeituraNfp } from './utils/rbacUtils';
 
 const NOMES_GENERICOS = ['loja', 'estabelecimento', 'sem nome', 'nao informado', 'não informado'];
 
@@ -75,6 +78,14 @@ function montarFormCnpj(registro = {}) {
 }
 
 export default function NfpCnpjs() {
+  const somenteLeitura = useMemo(() => {
+    try {
+      const token = localStorage.getItem('@CareCore:token');
+      return usuarioSomenteLeituraNfp(token ? decodificarPayloadJwt(token) : null);
+    } catch {
+      return false;
+    }
+  }, []);
   const [cnpjs, setCnpjs] = useState([]);
   const [agentes, setAgentes] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -215,6 +226,7 @@ export default function NfpCnpjs() {
   });
 
   const abrirNovo = () => {
+    if (somenteLeitura) return;
     limparAlertas();
     setEditandoId(null);
     setForm({
@@ -248,6 +260,7 @@ export default function NfpCnpjs() {
   };
 
   const salvar = async () => {
+    if (somenteLeitura) return;
     if (!validarForm()) {
       setErro('Corrija os campos destacados antes de salvar.');
       return;
@@ -305,9 +318,11 @@ export default function NfpCnpjs() {
                 >
                   Imprimir
                 </ReportActionButton>
-                <PremiumButton type="button" onClick={abrirNovo}>
-                  Novo CNPJ
-                </PremiumButton>
+                {!somenteLeitura && (
+                  <PremiumButton type="button" onClick={abrirNovo}>
+                    Novo CNPJ
+                  </PremiumButton>
+                )}
               </div>
             ) : (
               <PremiumButton type="button" variant="secondary" onClick={voltarLista}>
@@ -316,6 +331,10 @@ export default function NfpCnpjs() {
             )
           )}
         />
+
+        {somenteLeitura && (
+          <BannerSomenteLeituraGlobal modulo="o cadastro de CNPJs NFP" />
+        )}
 
         <ScrollArea>
           {erro && (
@@ -402,7 +421,7 @@ export default function NfpCnpjs() {
                               onClick={() => abrirEdicao(item)}
                               className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
                             >
-                              Editar
+                              {somenteLeitura ? 'Consultar' : 'Editar'}
                             </button>
                           </td>
                         </tr>
@@ -424,9 +443,12 @@ export default function NfpCnpjs() {
           {tela === 'form' && (
             <section className="rounded-3xl border border-slate-100 bg-white p-5 shadow-sm">
               <h3 className="mb-4 text-sm font-bold text-slate-800">
-                {editandoId ? 'Editar CNPJ / loja' : 'Novo CNPJ / loja'}
+                {somenteLeitura
+                  ? 'Consultar CNPJ / loja'
+                  : (editandoId ? 'Editar CNPJ / loja' : 'Novo CNPJ / loja')}
               </h3>
 
+              <fieldset disabled={somenteLeitura} className="min-w-0 border-0 p-0">
               <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
                 <div>
                   <label className="mb-1 block text-xs font-semibold text-slate-600">
@@ -533,13 +555,16 @@ export default function NfpCnpjs() {
                   className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400"
                 />
               </div>
+              </fieldset>
 
               <div className="mt-5 flex flex-wrap gap-2">
-                <PremiumButton type="button" disabled={salvando} onClick={salvar}>
-                  {salvando ? 'Salvando...' : 'Salvar CNPJ'}
-                </PremiumButton>
+                {!somenteLeitura && (
+                  <PremiumButton type="button" disabled={salvando} onClick={salvar}>
+                    {salvando ? 'Salvando...' : 'Salvar CNPJ'}
+                  </PremiumButton>
+                )}
                 <PremiumButton type="button" variant="secondary" onClick={voltarLista}>
-                  Cancelar
+                  {somenteLeitura ? 'Voltar' : 'Cancelar'}
                 </PremiumButton>
               </div>
             </section>
