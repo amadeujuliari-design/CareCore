@@ -275,11 +275,15 @@ HTML = r"""<!DOCTYPE html>
   <script>
     const $ = (id) => document.getElementById(id);
     let state = null;
+    let msgStickyUntil = 0;
 
-    function showMsg(text, kind) {
+    function showMsg(text, kind, stickyMs) {
       const el = $('msg');
       el.className = 'msg show ' + (kind || 'info');
       el.textContent = text || '';
+      if (stickyMs && stickyMs > 0) {
+        msgStickyUntil = Date.now() + stickyMs;
+      }
     }
 
     function card(label, value, ok) {
@@ -292,7 +296,6 @@ HTML = r"""<!DOCTYPE html>
       const fila = state.fila || {};
       const job = state.job || {};
       const cfg = state.config || {};
-      const logado = !!(cfg.logado || cfg.config_ok);
       const badge = $('badgeLogin');
       badge.textContent = cfg.logado ? 'conectado' : (cfg.config_ok ? 'credencial salva' : 'não conectado');
       badge.className = 'badge ' + (cfg.logado ? 'on' : 'off');
@@ -312,12 +315,12 @@ HTML = r"""<!DOCTYPE html>
       $('btnContinuo').disabled = running || !cfg.config_ok;
       $('btnParar').disabled = !running;
       $('foot').textContent = (cfg.api_base_url || '') + (cfg.email && !cfg.email.startsWith('seu.usuario') ? (' · ' + cfg.email) : '');
+      // Nao apagar mensagem operacional (ex.: Abrir Fazenda) no refresh automatico.
+      if (Date.now() < msgStickyUntil) return;
       if (!cfg.config_ok) {
         showMsg('Faça login acima com e-mail e senha do CareCore para ver a fila e enviar.', 'info');
       } else if (state.erro_api) {
         showMsg(state.erro_api, 'err');
-      } else if (cfg.logado) {
-        showMsg('Conectado ao CareCore online.', 'ok');
       }
     }
 
@@ -349,19 +352,19 @@ HTML = r"""<!DOCTYPE html>
           }),
         });
         $('senha').value = '';
-        showMsg(data.mensagem || 'Login ok.', 'ok');
+        showMsg(data.mensagem || 'Login ok.', 'ok', 15000);
         await refresh();
-      } catch (e) { showMsg(String(e.message || e), 'err'); }
+      } catch (e) { showMsg(String(e.message || e), 'err', 20000); }
     };
     $('btnChrome').onclick = async () => {
       try {
         $('btnChrome').disabled = true;
-        showMsg('Abrindo portal da Fazenda...', 'info');
+        showMsg('Abrindo portal da Fazenda...', 'info', 20000);
         const data = await api('/api/abrir-chrome', { method: 'POST', body: '{}' });
-        showMsg(data.mensagem || 'Chrome aberto.', 'ok');
+        showMsg(data.mensagem || 'Chrome aberto.', 'ok', 30000);
         await refresh();
       } catch (e) {
-        showMsg(String(e.message || e), 'err');
+        showMsg(String(e.message || e), 'err', 20000);
       } finally {
         $('btnChrome').disabled = false;
       }
