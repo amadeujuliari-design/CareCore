@@ -14,9 +14,9 @@ $meta = Join-Path $outDir 'agente-nfp-robo.json'
 New-Item -ItemType Directory -Force -Path $outDir | Out-Null
 New-Item -ItemType Directory -Force -Path $staging | Out-Null
 
-$excludeDirs = @('_capturas', '__pycache__', '.git')
+$excludeDirs = @('_capturas', '__pycache__', '.git', '_build_exe')
 Get-ChildItem -LiteralPath $src -Force | ForEach-Object {
-  if ($_.Name -in @('config.json', '.token', 'empacotar_download.bat', 'empacotar_download.ps1')) { return }
+  if ($_.Name -in @('config.json', '.token', 'empacotar_download.bat', 'empacotar_download.ps1', 'build_exe.bat', 'build_exe.ps1', 'instalador_exe.py')) { return }
   if ($_.PSIsContainer -and $_.Name -in $excludeDirs) { return }
   Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $staging $_.Name) -Recurse -Force
 }
