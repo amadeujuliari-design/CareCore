@@ -25,6 +25,8 @@ import {
   rotuloStatusCupomRelatorio,
 } from './utils/relatorioNfpUtils';
 
+const PAGE_SIZE = 50;
+
 function dataLocalISO(d = new Date()) {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, '0');
@@ -37,6 +39,36 @@ function inicioMesAtual() {
   return dataLocalISO(new Date(agora.getFullYear(), agora.getMonth(), 1));
 }
 
+function BarraPaginacao({ pagina, totalPaginas, total, limite, onMudar, disabled }) {
+  if (!total) return null;
+  return (
+    <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-sm text-slate-600">
+      <span>
+        {total.toLocaleString('pt-BR')} registro(s) · página {pagina} de {totalPaginas}
+        {' '}({limite}/página)
+      </span>
+      <div className="flex gap-2">
+        <button
+          type="button"
+          disabled={disabled || pagina <= 1}
+          onClick={() => onMudar(pagina - 1)}
+          className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 font-semibold disabled:opacity-40"
+        >
+          Anterior
+        </button>
+        <button
+          type="button"
+          disabled={disabled || pagina >= totalPaginas}
+          onClick={() => onMudar(pagina + 1)}
+          className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 font-semibold disabled:opacity-40"
+        >
+          Próxima
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function RelatorioNfpCupons() {
   const [dataInicio, setDataInicio] = useState(inicioMesAtual);
   const [dataFim, setDataFim] = useState(() => dataLocalISO());
@@ -47,7 +79,9 @@ export default function RelatorioNfpCupons() {
   const [captadores, setCaptadores] = useState([]);
   const [aba, setAba] = useState('captador');
   const [relatorio, setRelatorio] = useState(null);
+  const [paginaDetalhe, setPaginaDetalhe] = useState(1);
   const [loading, setLoading] = useState(false);
+  const [loadingPagina, setLoadingPagina] = useState(false);
   const [erro, setErro] = useState('');
   const [identidadeRelatorio, setIdentidadeRelatorio] = useState(null);
 
@@ -61,6 +95,15 @@ export default function RelatorioNfpCupons() {
       .catch(() => setCaptadores([]));
   }, []);
 
+  const paramsBase = useMemo(() => ({
+    data_inicio: dataInicio || undefined,
+    data_fim: dataFim || undefined,
+    captador: captador || undefined,
+    status: statusSel.length ? statusSel.join(',') : undefined,
+    busca: busca.trim() || undefined,
+    eixo_data: eixoData || 'lido_em',
+  }), [busca, captador, dataFim, dataInicio, eixoData, statusSel]);
+
   const toggleStatus = (value) => {
     setStatusSel((prev) => (
       prev.includes(value) ? prev.filter((s) => s !== value) : [...prev, value]
@@ -70,14 +113,13 @@ export default function RelatorioNfpCupons() {
   const carregar = useCallback(async () => {
     setLoading(true);
     setErro('');
+    setPaginaDetalhe(1);
     try {
       const dados = await nfpRelatorioCupons({
-        data_inicio: dataInicio || undefined,
-        data_fim: dataFim || undefined,
-        captador: captador || undefined,
-        status: statusSel.length ? statusSel.join(',') : undefined,
-        busca: busca.trim() || undefined,
-        eixo_data: eixoData || 'lido_em',
+        ...paramsBase,
+        limite: PAGE_SIZE,
+        offset: 0,
+        incluir_agregados: true,
       });
       setRelatorio(dados);
       if (Array.isArray(dados?.captadores) && dados.captadores.length) {
@@ -92,11 +134,41 @@ export default function RelatorioNfpCupons() {
     } finally {
       setLoading(false);
     }
-  }, [busca, captador, dataFim, dataInicio, eixoData, statusSel]);
+  }, [paramsBase]);
+
+  const carregarPaginaDetalhe = useCallback(async (novaPagina) => {
+    if (!relatorio) return;
+    setLoadingPagina(true);
+    setErro('');
+    try {
+      const offset = (novaPagina - 1) * PAGE_SIZE;
+      const dados = await nfpRelatorioCupons({
+        ...paramsBase,
+        limite: PAGE_SIZE,
+        offset,
+        incluir_agregados: false,
+      });
+      setRelatorio((prev) => ({
+        ...(prev || {}),
+        linhas: dados.linhas || [],
+        paginacao: dados.paginacao,
+        filtros: { ...(prev?.filtros || {}), ...(dados.filtros || {}) },
+        linhas_truncadas: dados.linhas_truncadas,
+      }));
+      setPaginaDetalhe(novaPagina);
+    } catch (error) {
+      setErro(error?.response?.data?.detail || 'Não foi possível carregar a página.');
+    } finally {
+      setLoadingPagina(false);
+    }
+  }, [paramsBase, relatorio]);
 
   const totais = relatorio?.totais || {};
   const linhasCaptador = relatorio?.por_captador || [];
   const linhasDetalhe = relatorio?.linhas || [];
+  const pag = relatorio?.paginacao || {};
+  const totalDetalhe = pag.total ?? totais.lidos ?? 0;
+  const totalPaginas = pag.total_paginas || Math.max(1, Math.ceil(totalDetalhe / PAGE_SIZE));
   const temLinhas = aba === 'detalhe' ? linhasDetalhe.length > 0 : linhasCaptador.length > 0;
 
   const cards = useMemo(() => ([
@@ -110,29 +182,50 @@ export default function RelatorioNfpCupons() {
   ]), [totais]);
 
   const exportarXlsx = async () => {
-    if (!temLinhas) return;
-    const dados = aba === 'detalhe'
-      ? montarExportacaoCuponsDetalhe(relatorio)
-      : montarExportacaoCuponsPorCaptador(relatorio);
-    await exportarRelatorioXlsx({
-      nomeArquivo: `nfp_cupons_${dataInicio || 'inicio'}_${dataFim || 'fim'}`,
-      titulo: 'NFP – Cupons lidos / fila / enviados',
-      filtros: {
-        Período: `${dataInicio || '—'} a ${dataFim || '—'}`,
-        'Eixo data': eixoData === 'enviado_em' ? 'Enviado em' : 'Lido em',
-        Captador: captador || 'Todos',
-        Status: statusSel.length
-          ? statusSel.map(rotuloStatusCupomRelatorio).join(', ')
-          : 'Todos',
-        Busca: busca.trim() || '—',
-        Visão: aba === 'detalhe' ? 'Detalhe' : 'Por captador',
-        Lidos: totais.lidos ?? 0,
-        Pendentes: totais.pendentes ?? 0,
-        Enviados: totais.enviados ?? 0,
-      },
-      colunas: aba === 'detalhe' ? COLUNAS_CUPONS_DETALHE : COLUNAS_CUPONS_POR_CAPTADOR,
-      dados,
-    });
+    if (aba === 'captador') {
+      if (!linhasCaptador.length) return;
+      await exportarRelatorioXlsx({
+        nomeArquivo: `nfp_cupons_por_captador_${dataInicio || 'inicio'}_${dataFim || 'fim'}`,
+        titulo: 'NFP – Cupons por captador',
+        filtros: {
+          Período: `${dataInicio || '—'} a ${dataFim || '—'}`,
+          Captador: captador || 'Todos',
+          Status: statusSel.length ? statusSel.map(rotuloStatusCupomRelatorio).join(', ') : 'Todos',
+          Lidos: totais.lidos ?? 0,
+        },
+        colunas: COLUNAS_CUPONS_POR_CAPTADOR,
+        dados: montarExportacaoCuponsPorCaptador(relatorio),
+      });
+      return;
+    }
+    // Detalhe: no maximo 2000 linhas (nao carrega 100k no browser).
+    setLoading(true);
+    try {
+      const dados = await nfpRelatorioCupons({
+        ...paramsBase,
+        limite: 2000,
+        offset: 0,
+        incluir_agregados: false,
+        exportacao: true,
+      });
+      const payload = { ...relatorio, linhas: dados.linhas || [] };
+      await exportarRelatorioXlsx({
+        nomeArquivo: `nfp_cupons_detalhe_${dataInicio || 'inicio'}_${dataFim || 'fim'}`,
+        titulo: 'NFP – Cupons (detalhe, até 2.000)',
+        filtros: {
+          Período: `${dataInicio || '—'} a ${dataFim || '—'}`,
+          Captador: captador || 'Todos',
+          Status: statusSel.length ? statusSel.map(rotuloStatusCupomRelatorio).join(', ') : 'Todos',
+          Observação: `Exportados ${dados.linhas?.length || 0} de ${(dados.paginacao?.total || 0).toLocaleString('pt-BR')}. Use filtros para reduzir.`,
+        },
+        colunas: COLUNAS_CUPONS_DETALHE,
+        dados: montarExportacaoCuponsDetalhe(payload),
+      });
+    } catch (error) {
+      setErro(error?.response?.data?.detail || 'Falha ao exportar detalhe.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -142,13 +235,13 @@ export default function RelatorioNfpCupons() {
         <PageHeader
           eyebrow="NFP – Relatórios"
           title="Cupons lidos / fila / enviados"
-          subtitle="Acompanhe leituras, fila do robô e envios por período e captador/unidade."
+          subtitle="Totais no banco; detalhe paginado (50/página) para manter a tela fluida com alto volume."
           icon={<FileBarChart className="h-5 w-5" />}
           backTo="/nfp/relatorios"
           backLabel="Voltar aos relatórios"
           actions={(
             <div className="flex flex-wrap gap-2">
-              <ReportActionButton type="button" disabled={!temLinhas} onClick={exportarXlsx}>
+              <ReportActionButton type="button" disabled={!temLinhas || loading} onClick={exportarXlsx}>
                 Exportar XLSX
               </ReportActionButton>
               <ReportActionButton
@@ -157,7 +250,7 @@ export default function RelatorioNfpCupons() {
                 onClick={() => imprimirRelatorioNfpCupons({
                   relatorio,
                   identidadeRelatorio,
-                  aba,
+                  aba: aba === 'detalhe' ? 'detalhe' : 'captador',
                 })}
               >
                 Imprimir
@@ -257,7 +350,7 @@ export default function RelatorioNfpCupons() {
               />
             </label>
             <p className="mt-3 text-xs text-slate-500">
-              Datas no calendário de São Paulo. Sem status selecionado = todos. Captador é a unidade da leitura (ex.: SEDE AEB), não o agente de rateio.
+              Datas no calendário de São Paulo. Consolidado por captador é leve; detalhe vem página a página (50). Export XLSX do detalhe limita a 2.000 linhas.
             </p>
           </section>
 
@@ -267,16 +360,10 @@ export default function RelatorioNfpCupons() {
                 {cards.map(([label, valor]) => (
                   <article key={label} className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
                     <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</p>
-                    <p className="mt-2 text-xl font-bold text-slate-900">{valor}</p>
+                    <p className="mt-2 text-xl font-bold text-slate-900">{Number(valor).toLocaleString('pt-BR')}</p>
                   </article>
                 ))}
               </div>
-
-              {relatorio.linhas_truncadas && (
-                <p className="mb-3 text-xs text-amber-700">
-                  Detalhe limitado às {linhasDetalhe.length} linhas mais recentes do filtro. Use exportação por captador para o consolidado completo.
-                </p>
-              )}
 
               <div className="mb-3 flex flex-wrap gap-2">
                 <button
@@ -336,38 +423,56 @@ export default function RelatorioNfpCupons() {
                     </tbody>
                   </table>
                 ) : (
-                  <table className="min-w-full text-left text-sm">
-                    <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
-                      <tr>
-                        {COLUNAS_CUPONS_DETALHE.map((col) => (
-                          <th key={col} className="px-4 py-3 font-semibold">{col}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {linhasDetalhe.map((item) => (
-                        <tr key={item.id || item.chave} className="border-t border-slate-100">
-                          <td className="px-4 py-3 font-mono text-xs">{item.chave}</td>
-                          <td className="px-4 py-3">{item.captador || '—'}</td>
-                          <td className="px-4 py-3">{rotuloStatusCupomRelatorio(item.status)}</td>
-                          <td className="px-4 py-3 font-mono text-xs">{item.cnpj_emitente || '—'}</td>
-                          <td className="px-4 py-3">{item.data_emissao_ref || '—'}</td>
-                          <td className="px-4 py-3 whitespace-nowrap">{item.lido_em || '—'}</td>
-                          <td className="px-4 py-3 whitespace-nowrap">{item.enviado_em || '—'}</td>
-                          <td className="max-w-xs truncate px-4 py-3 text-slate-600" title={item.mensagem || ''}>
-                            {item.mensagem || '—'}
-                          </td>
-                        </tr>
-                      ))}
-                      {!linhasDetalhe.length && (
+                  <>
+                    <table className="min-w-full text-left text-sm">
+                      <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
                         <tr>
-                          <td colSpan={8} className="px-4 py-8 text-center text-slate-500">
-                            Nenhum cupom no filtro.
-                          </td>
+                          {COLUNAS_CUPONS_DETALHE.map((col) => (
+                            <th key={col} className="px-4 py-3 font-semibold">{col}</th>
+                          ))}
                         </tr>
-                      )}
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody>
+                        {loadingPagina ? (
+                          <tr>
+                            <td colSpan={8} className="px-4 py-8 text-center text-slate-500">
+                              Carregando página…
+                            </td>
+                          </tr>
+                        ) : linhasDetalhe.map((item) => (
+                          <tr key={item.id || item.chave} className="border-t border-slate-100">
+                            <td className="px-4 py-3 font-mono text-xs">{item.chave}</td>
+                            <td className="px-4 py-3">{item.captador || '—'}</td>
+                            <td className="px-4 py-3">{rotuloStatusCupomRelatorio(item.status)}</td>
+                            <td className="px-4 py-3 font-mono text-xs">{item.cnpj_emitente || '—'}</td>
+                            <td className="px-4 py-3">{item.data_emissao_ref || '—'}</td>
+                            <td className="px-4 py-3 whitespace-nowrap">{item.lido_em || '—'}</td>
+                            <td className="px-4 py-3 whitespace-nowrap">{item.enviado_em || '—'}</td>
+                            <td className="max-w-xs truncate px-4 py-3 text-slate-600" title={item.mensagem || ''}>
+                              {item.mensagem || '—'}
+                            </td>
+                          </tr>
+                        ))}
+                        {!loadingPagina && !linhasDetalhe.length && (
+                          <tr>
+                            <td colSpan={8} className="px-4 py-8 text-center text-slate-500">
+                              Nenhum cupom no filtro.
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                    <div className="border-t border-slate-100 px-4 py-3">
+                      <BarraPaginacao
+                        pagina={paginaDetalhe}
+                        totalPaginas={totalPaginas}
+                        total={totalDetalhe}
+                        limite={PAGE_SIZE}
+                        disabled={loadingPagina}
+                        onMudar={carregarPaginaDetalhe}
+                      />
+                    </div>
+                  </>
                 )}
               </div>
             </>

@@ -67,12 +67,16 @@ def test_relatorio_cupons_totais_e_filtros():
                     ORG,
                     data_inicio=agora.date().isoformat(),
                     data_fim=agora.date().isoformat(),
+                    limite=50,
+                    offset=0,
                 )
                 assert out["totais"]["lidos"] == 3
                 assert out["totais"]["pendentes"] == 1
                 assert out["totais"]["enviados"] == 1
                 assert out["totais"]["erros"] == 1
                 assert len(out["por_captador"]) == 2
+                assert out["paginacao"]["total"] == 3
+                assert out["paginacao"]["limite"] == 50
 
                 so_sede = await relatorio_cupons(
                     db,
@@ -82,6 +86,17 @@ def test_relatorio_cupons_totais_e_filtros():
                 )
                 assert so_sede["totais"]["lidos"] == 2
                 assert so_sede["totais"]["erros"] == 0
+
+                page2 = await relatorio_cupons(
+                    db,
+                    ORG,
+                    limite=1,
+                    offset=1,
+                    incluir_agregados=False,
+                )
+                assert page2["totais"] is None
+                assert page2["paginacao"]["total"] == 3
+                assert len(page2["linhas"]) == 1
         finally:
             await engine.dispose()
 

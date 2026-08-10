@@ -1862,6 +1862,8 @@ class NfpCupomLidoDB(Base):
         Index("ix_nfp_cupom_lido_org_status", "organizacao_id", "status"),
         Index("ix_nfp_cupom_lido_org_lido_em", "organizacao_id", "lido_em"),
         Index("ix_nfp_cupom_lido_org_lote", "organizacao_id", "lote_id"),
+        Index("ix_nfp_cupom_lido_org_captador_lido_em", "organizacao_id", "captador", "lido_em"),
+        Index("ix_nfp_cupom_lido_org_enviado_em", "organizacao_id", "enviado_em"),
     )
 
     id = Column(String, primary_key=True, default=get_uuid)

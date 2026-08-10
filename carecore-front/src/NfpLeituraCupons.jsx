@@ -61,6 +61,8 @@ function mensagemFlashLeitura(cupom, checagem) {
   return `Cupom lido · ${curta}`;
 }
 
+const PAGE_SIZE = 50;
+
 export default function NfpLeituraCupons() {
   const sessao = useMemo(() => {
     try {
@@ -77,6 +79,9 @@ export default function NfpLeituraCupons() {
   const [vinculoFixo, setVinculoFixo] = useState('');
   const [forcarVinculo, setForcarVinculo] = useState(ehAdmProducao);
   const [itens, setItens] = useState([]);
+  const [totalLista, setTotalLista] = useState(0);
+  const [pagina, setPagina] = useState(1);
+  const [filtroStatus, setFiltroStatus] = useState('');
   const [loadingLista, setLoadingLista] = useState(true);
   const [processando, setProcessando] = useState(false);
   const [cameraAtiva, setCameraAtiva] = useState(!somenteLeitura);
@@ -87,6 +92,8 @@ export default function NfpLeituraCupons() {
   const [chaveManual, setChaveManual] = useState('');
   const emVooRef = useRef(new Set());
   const captadorRef = useRef(captador);
+  const paginaRef = useRef(1);
+  const filtroStatusRef = useRef('');
   const cameraRootRef = useRef(null);
   const leitorRef = useRef(null);
   const processarLeituraRef = useRef(null);
@@ -97,12 +104,30 @@ export default function NfpLeituraCupons() {
   useEffect(() => {
     captadorRef.current = captador;
   }, [captador]);
+  useEffect(() => {
+    paginaRef.current = pagina;
+  }, [pagina]);
+  useEffect(() => {
+    filtroStatusRef.current = filtroStatus;
+  }, [filtroStatus]);
 
-  const carregarLista = useCallback(async ({ silencioso = false } = {}) => {
+  const carregarLista = useCallback(async ({
+    silencioso = false,
+    paginaAlvo = null,
+    statusAlvo = null,
+  } = {}) => {
     if (!silencioso) setLoadingLista(true);
+    const paginaUsar = paginaAlvo ?? paginaRef.current;
+    const statusUsar = statusAlvo !== null ? statusAlvo : filtroStatusRef.current;
     try {
-      const data = await nfpListarCupons({ limite: 300 });
+      const data = await nfpListarCupons({
+        limite: PAGE_SIZE,
+        offset: (paginaUsar - 1) * PAGE_SIZE,
+        status: statusUsar || undefined,
+      });
       setItens(Array.isArray(data?.itens) ? data.itens : []);
+      setTotalLista(Number(data?.paginacao?.total ?? data?.total ?? 0));
+      if (paginaAlvo != null) setPagina(paginaAlvo);
     } catch (error) {
       if (!silencioso) {
         setErro(erroApiNfp(error, 'Não foi possível carregar a lista de cupons.'));
@@ -206,7 +231,9 @@ export default function NfpLeituraCupons() {
       if (cupom) {
         registrarCupomNfpTratado(chavesTratadasRef, cupom.chave || bruto);
         setAviso('');
-        setItens((prev) => [cupom, ...prev.filter((i) => i.id !== cupom.id)]);
+        setPagina(1);
+        setItens((prev) => [cupom, ...prev.filter((i) => i.id !== cupom.id)].slice(0, PAGE_SIZE));
+        setTotalLista((t) => t + 1);
         setUltimoIdLido(cupom.id);
         setSucessoFlash(mensagemFlashLeitura(cupom, data?.checagem));
         requestAnimationFrame(() => {
@@ -488,26 +515,60 @@ export default function NfpLeituraCupons() {
                 ref={listaTopoRef}
                 className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
               >
-                <div className="mb-2 flex items-center justify-between gap-3">
+                <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
                   <h2 className="text-base font-semibold text-slate-800">
-                    Lista ({itens.length})
+                    Lista ({totalLista.toLocaleString('pt-BR')})
                   </h2>
-                  <div className="flex gap-3">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <label className="text-xs text-slate-600">
+                      Status
+                      <select
+                        value={filtroStatus}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          setFiltroStatus(v);
+                          carregarLista({ paginaAlvo: 1, statusAlvo: v });
+                        }}
+                        className="ml-2 rounded-lg border border-slate-200 px-2 py-1 text-sm"
+                      >
+                        <option value="">Todos</option>
+                        <option value="checando">Checando</option>
+                        <option value="pendente">Pendente</option>
+                        <option value="reservado">Reservado</option>
+                        <option value="enviado">Enviado</option>
+                        <option value="erro">Erro</option>
+                        <option value="rejeitado_cpf">Rejeitado CPF</option>
+                      </select>
+                    </label>
                     <button
                       type="button"
                       className="text-sm text-slate-600 underline"
-                      onClick={() => {
-                        const pendentes = itens.filter((i) => i.status === 'pendente');
-                        const blob = new Blob(
-                          [JSON.stringify({ chaves: pendentes.map((p) => p.chave) }, null, 2)],
-                          { type: 'application/json' },
-                        );
-                        const url = URL.createObjectURL(blob);
-                        const a = document.createElement('a');
-                        a.href = url;
-                        a.download = 'nfp-cupons-pendentes.json';
-                        a.click();
-                        URL.revokeObjectURL(url);
+                      onClick={async () => {
+                        try {
+                          const data = await nfpListarCupons({
+                            status: 'pendente',
+                            limite: 200,
+                            offset: 0,
+                          });
+                          const pendentes = Array.isArray(data?.itens) ? data.itens : [];
+                          const blob = new Blob(
+                            [JSON.stringify({
+                              chaves: pendentes.map((p) => p.chave),
+                              total_api: data?.paginacao?.total ?? pendentes.length,
+                              exportados: pendentes.length,
+                              observacao: 'Máximo 200 nesta exportação rápida da tela.',
+                            }, null, 2)],
+                            { type: 'application/json' },
+                          );
+                          const url = URL.createObjectURL(blob);
+                          const a = document.createElement('a');
+                          a.href = url;
+                          a.download = 'nfp-cupons-pendentes.json';
+                          a.click();
+                          URL.revokeObjectURL(url);
+                        } catch (error) {
+                          setErro(erroApiNfp(error, 'Falha ao exportar pendentes.'));
+                        }
                       }}
                     >
                       Exportar pendentes
@@ -523,47 +584,78 @@ export default function NfpLeituraCupons() {
                 </div>
                 <p className="mb-3 text-xs text-slate-500">
                   <strong>checando</strong> = validando SEFAZ · <strong>pendente</strong> = na fila do robô ·{' '}
-                  <strong>rejeitado_cpf</strong> = fora da fila.
+                  <strong>rejeitado_cpf</strong> = fora da fila. Lista paginada ({PAGE_SIZE}/página) para não travar com alto volume.
                 </p>
                 {loadingLista ? (
                   <p className="text-sm text-slate-500">Carregando…</p>
                 ) : itens.length === 0 ? (
                   <p className="text-sm text-slate-500">Nenhuma leitura ainda.</p>
                 ) : (
-                  <ul className="max-h-[min(70vh,560px)] divide-y divide-slate-100 overflow-y-auto">
-                    {itens.map((item) => {
-                      const destaque = item.id === ultimoIdLido;
-                      return (
-                        <li
-                          key={item.id}
-                          className={`flex flex-wrap items-baseline justify-between gap-2 py-2.5 text-sm ${
-                            destaque
-                              ? 'rounded-xl bg-emerald-50 px-2 ring-2 ring-emerald-300'
-                              : ''
-                          }`}
-                        >
-                          <div>
-                            {destaque ? (
-                              <span className="mr-2 inline-flex items-center gap-1 rounded-full bg-emerald-600 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
-                                Novo
+                  <>
+                    <ul className="max-h-[min(70vh,560px)] divide-y divide-slate-100 overflow-y-auto">
+                      {itens.map((item) => {
+                        const destaque = item.id === ultimoIdLido;
+                        return (
+                          <li
+                            key={item.id}
+                            className={`flex flex-wrap items-baseline justify-between gap-2 py-2.5 text-sm ${
+                              destaque
+                                ? 'rounded-xl bg-emerald-50 px-2 ring-2 ring-emerald-300'
+                                : ''
+                            }`}
+                          >
+                            <div>
+                              {destaque ? (
+                                <span className="mr-2 inline-flex items-center gap-1 rounded-full bg-emerald-600 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
+                                  Novo
+                                </span>
+                              ) : null}
+                              <span className="font-mono text-slate-800">{item.chave}</span>
+                              <span className="ml-2 text-slate-500">{item.captador}</span>
+                            </div>
+                            <div className="text-slate-500">
+                              <span
+                                className={`mr-2 rounded-full px-2 py-0.5 text-xs font-semibold uppercase tracking-wide ${classeBadgeStatus(item.status)}`}
+                                title={item.mensagem || ''}
+                              >
+                                {rotuloStatusCupom(item.status)}
                               </span>
-                            ) : null}
-                            <span className="font-mono text-slate-800">{item.chave}</span>
-                            <span className="ml-2 text-slate-500">{item.captador}</span>
-                          </div>
-                          <div className="text-slate-500">
-                            <span
-                              className={`mr-2 rounded-full px-2 py-0.5 text-xs font-semibold uppercase tracking-wide ${classeBadgeStatus(item.status)}`}
-                              title={item.mensagem || ''}
+                              {item.lido_em || '—'}
+                            </div>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                    {(() => {
+                      const totalPaginas = Math.max(1, Math.ceil(totalLista / PAGE_SIZE));
+                      if (totalLista <= PAGE_SIZE) return null;
+                      return (
+                        <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-sm text-slate-600">
+                          <span>
+                            Página {pagina} de {totalPaginas}
+                          </span>
+                          <div className="flex gap-2">
+                            <button
+                              type="button"
+                              disabled={pagina <= 1 || loadingLista}
+                              onClick={() => carregarLista({ paginaAlvo: pagina - 1 })}
+                              className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 font-semibold disabled:opacity-40"
                             >
-                              {rotuloStatusCupom(item.status)}
-                            </span>
-                            {item.lido_em || '—'}
+                              Anterior
+                            </button>
+                            <button
+                              type="button"
+                              disabled={pagina >= totalPaginas || loadingLista}
+                              onClick={() => carregarLista({ paginaAlvo: pagina + 1 })}
+                              className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 font-semibold disabled:opacity-40"
+                            >
+                              Próxima
+                            </button>
                           </div>
-                        </li>
+                        </div>
                       );
-                    })}
-                  </ul>
+                    })()}
+                  </>
                 )}
               </div>
             </div>

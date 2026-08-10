@@ -1130,7 +1130,10 @@ async def get_relatorio_cupons(
     ),
     busca: Optional[str] = Query(None, description="Chave, CNPJ ou mensagem"),
     eixo_data: str = Query("lido_em", description="lido_em ou enviado_em"),
-    limite: int = Query(2000, ge=1, le=5000),
+    limite: int = Query(50, ge=1, le=2000),
+    offset: int = Query(0, ge=0),
+    incluir_agregados: bool = Query(True),
+    exportacao: bool = Query(False, description="Permite ate 2000 linhas no detalhe"),
     db: AsyncSession = Depends(get_db),
     usuario_atual: dict = Depends(get_usuario_logado),
 ):
@@ -1146,6 +1149,9 @@ async def get_relatorio_cupons(
             busca=busca,
             eixo_data=eixo_data,
             limite=limite,
+            offset=offset,
+            incluir_agregados=incluir_agregados,
+            exportacao=exportacao,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -1171,33 +1177,63 @@ def _serializar_cupom_lido(row: NfpCupomLidoDB) -> dict:
 async def listar_cupons_lidos(
     status: Optional[str] = Query(None),
     captador: Optional[str] = Query(None),
-    limite: int = Query(200, ge=1, le=1000),
+    busca: Optional[str] = Query(None),
+    limite: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
     usuario_atual: dict = Depends(get_usuario_logado),
 ):
     _exigir_nfp_leitura_cupons(usuario_atual)
     org = _organizacao_id(usuario_atual)
-    # Reagenda checagens orfas (ex.: API reiniciou no meio da validacao SEFAZ).
-    checando_ids = (
-        await db.execute(
-            select(NfpCupomLidoDB.id).where(
-                NfpCupomLidoDB.organizacao_id == org,
-                NfpCupomLidoDB.status == "checando",
-            ).limit(100)
-        )
-    ).scalars().all()
-    for cupom_id in checando_ids:
-        agendar_checagem_sefaz(cupom_id)
+    # So na 1a pagina: reagenda poucas checagens orfas (evita custo em volume alto).
+    if offset == 0:
+        checando_ids = (
+            await db.execute(
+                select(NfpCupomLidoDB.id).where(
+                    NfpCupomLidoDB.organizacao_id == org,
+                    NfpCupomLidoDB.status == "checando",
+                ).limit(20)
+            )
+        ).scalars().all()
+        for cupom_id in checando_ids:
+            agendar_checagem_sefaz(cupom_id)
 
-    q = select(NfpCupomLidoDB).where(NfpCupomLidoDB.organizacao_id == org)
+    filtros = [NfpCupomLidoDB.organizacao_id == org]
     if status:
-        q = q.where(NfpCupomLidoDB.status == status.strip().lower())
+        filtros.append(NfpCupomLidoDB.status == status.strip().lower())
     if captador:
-        q = q.where(NfpCupomLidoDB.captador == normalizar_agente_captacao(captador))
-    q = q.order_by(NfpCupomLidoDB.lido_em.desc()).offset(offset).limit(limite)
+        filtros.append(NfpCupomLidoDB.captador == normalizar_agente_captacao(captador))
+    if busca and str(busca).strip():
+        termo = f"%{str(busca).strip()}%"
+        filtros.append(
+            (NfpCupomLidoDB.chave.ilike(termo))
+            | (NfpCupomLidoDB.cnpj_emitente.ilike(termo))
+            | (NfpCupomLidoDB.mensagem.ilike(termo))
+        )
+
+    total = int(
+        (await db.execute(select(func.count()).select_from(NfpCupomLidoDB).where(*filtros))).scalar_one()
+        or 0
+    )
+    q = (
+        select(NfpCupomLidoDB)
+        .where(*filtros)
+        .order_by(NfpCupomLidoDB.lido_em.desc())
+        .offset(offset)
+        .limit(limite)
+    )
     rows = (await db.execute(q)).scalars().all()
-    return {"itens": [_serializar_cupom_lido(r) for r in rows], "total": len(rows)}
+    return {
+        "itens": [_serializar_cupom_lido(r) for r in rows],
+        "total": total,
+        "paginacao": {
+            "offset": offset,
+            "limite": limite,
+            "total": total,
+            "pagina": (offset // limite) + 1 if limite else 1,
+            "total_paginas": max(1, (total + limite - 1) // limite) if limite else 1,
+        },
+    }
 
 
 @router.post("/cupons/leitura")
