@@ -355,10 +355,16 @@ HTML = r"""<!DOCTYPE html>
     };
     $('btnChrome').onclick = async () => {
       try {
+        $('btnChrome').disabled = true;
+        showMsg('Abrindo portal da Fazenda...', 'info');
         const data = await api('/api/abrir-chrome', { method: 'POST', body: '{}' });
         showMsg(data.mensagem || 'Chrome aberto.', 'ok');
         await refresh();
-      } catch (e) { showMsg(String(e.message || e), 'err'); }
+      } catch (e) {
+        showMsg(String(e.message || e), 'err');
+      } finally {
+        $('btnChrome').disabled = false;
+      }
     };
     $('btnParar').onclick = async () => {
       try {
