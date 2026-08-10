@@ -81,6 +81,34 @@ def origem_eh_rateio_agente(origem: Optional[str]) -> bool:
     return True
 
 
+def decidir_origem_rateio_credito(
+    *,
+    captador_cnpj: Optional[str] = None,
+    eh_loja_agente: bool = False,
+    eh_doacao_automatica: bool = False,
+    captador_cpf: Optional[str] = None,
+) -> tuple[str, Optional[str]]:
+    """
+    Define origem e captador efetivo do credito SEFAZ.
+
+    CPF captado por agente tem prioridade: aplica rateio do agente
+    (nao zera como doador direto AEB), para qualquer agente com percentual.
+    """
+    cap_cpf = normalizar_agente_captacao(captador_cpf)
+    cap_cnpj = normalizar_agente_captacao(captador_cnpj)
+
+    if cap_cpf:
+        return origem_rateio_agente(cap_cpf), cap_cpf
+    if eh_loja_agente and eh_doacao_automatica:
+        agente = cap_cnpj or "AGENTE"
+        return origem_doador_auto_agente(agente), cap_cnpj or None
+    if eh_loja_agente and cap_cnpj:
+        return origem_rateio_agente(cap_cnpj), cap_cnpj
+    if eh_doacao_automatica:
+        return "DOADOR_AUTOMATICO_AEB", None
+    return "DIRETO_AEB", None
+
+
 # Compatibilidade com imports antigos.
 origem_eh_rateio_50_agente = origem_eh_rateio_agente
 

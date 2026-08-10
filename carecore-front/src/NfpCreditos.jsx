@@ -385,8 +385,8 @@ export default function NfpCreditos() {
                     >
                       <Building2 className="h-5 w-5 text-slate-600" />
                       <div>
-                        <p className="text-sm font-bold text-slate-800">CNPJs / Lojas</p>
-                        <p className="text-xs text-slate-500">Estabelecimentos e captador</p>
+                        <p className="text-sm font-bold text-slate-800">CNPJs / CPFs Captados por Agentes</p>
+                        <p className="text-xs text-slate-500">Estabelecimentos e CPFs por captador</p>
                       </div>
                     </Link>
                     <Link

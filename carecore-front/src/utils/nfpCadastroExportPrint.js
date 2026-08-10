@@ -157,7 +157,7 @@ export async function exportarCadastroNfpCnpjs({ cnpjs = [], filtros = {} } = {}
   if (!dados.length) return false;
   await exportarRelatorioXlsx({
     nomeArquivo: `nfp_cnpjs_${new Date().toISOString().slice(0, 10)}`,
-    titulo: 'NFP – Cadastro de CNPJs / Lojas',
+    titulo: 'NFP – CNPJs / CPFs Captados por Agentes',
     filtros,
     colunas: COLUNAS_CNPJS,
     dados,
@@ -169,7 +169,7 @@ export async function imprimirCadastroNfpCnpjs({ cnpjs = [], filtros = {} } = {}
   const dados = montarLinhasExportacaoCnpjs(cnpjs);
   if (!dados.length) return false;
   imprimirRelatorio({
-    titulo: 'NFP – CNPJs / Lojas',
+    titulo: 'NFP – CNPJs / CPFs Captados por Agentes',
     subtitulo: montarSubtitulo(filtros),
     metricas: [{ label: 'Registros', valor: dados.length }],
     colunas: COLUNAS_CNPJS,

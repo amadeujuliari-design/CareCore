@@ -14,6 +14,7 @@ from models import (
     NfpAgenteCaptadorDB,
     NfpBatimentoDB,
     NfpCnpjLojaDB,
+    NfpCpfCaptadoDB,
     NfpCupomLidoDB,
     NfpDoadorDB,
     NfpRateioDB,
@@ -35,6 +36,7 @@ from nfp_service import (
     calcular_rateio,
     exportar_rateio_xlsx,
     garantir_agentes_padrao,
+    garantir_doador_por_cpf,
     importar_cnpjs,
     importar_doacoes_sefaz,
     importar_doadores,
@@ -42,6 +44,7 @@ from nfp_service import (
     listar_agentes_captacao,
     proximo_numero_cadastro_agente,
     proximo_numero_cadastro_cnpj,
+    proximo_numero_cadastro_cpf_captado,
     proximo_numero_cadastro_doador,
     relatorio_rateio_consolidado,
     relatorio_rateio_detalhado,
@@ -49,6 +52,7 @@ from nfp_service import (
     resumo_dashboard,
     serializar_agente,
     serializar_cnpj,
+    serializar_cpf_captado,
     serializar_doador,
     sincronizar_doadores_de_doacoes,
     ORIGEM_DOADOR_MANUAL,
@@ -64,6 +68,7 @@ from nfp_utils import (
     percentual_agente_padrao,
     NOME_GENERICO_CONFERIR,
 )
+from time_operacional import agora_operacional_naive
 from security import (
     bloquear_usuario_global_puro,
     get_usuario_logado,
@@ -84,7 +89,6 @@ from nfp_envio_sefaz_service import (
     snapshot_job,
     status_cdp,
 )
-from time_operacional import agora_operacional_naive
 
 router = APIRouter(prefix="/api/nfp", tags=["NFP – Créditos"])
 
@@ -160,6 +164,44 @@ async def _obter_cnpj_org(db: AsyncSession, org: str, cnpj_id: str) -> NfpCnpjLo
     if not row or row.organizacao_id != org:
         raise HTTPException(status_code=404, detail="CNPJ/loja nao encontrado.")
     return row
+
+
+async def _obter_cpf_captado_org(db: AsyncSession, org: str, cpf_id: str) -> NfpCpfCaptadoDB:
+    row = await db.get(NfpCpfCaptadoDB, cpf_id)
+    if not row or row.organizacao_id != org:
+        raise HTTPException(status_code=404, detail="CPF captado nao encontrado.")
+    return row
+
+
+def _aplicar_cpf_captado_payload(row: NfpCpfCaptadoDB, payload: dict, *, criando: bool) -> None:
+    cpf = limpar_documento(payload.get("cpf") if "cpf" in payload or criando else row.cpf)
+    if not cpf:
+        raise HTTPException(status_code=400, detail="CPF obrigatorio.")
+    if not cpf_valido(cpf):
+        raise HTTPException(status_code=400, detail="CPF invalido.")
+    captador = normalizar_agente_captacao(
+        payload.get("captador") if "captador" in payload or criando else row.captador
+    )
+    if not captador:
+        raise HTTPException(status_code=400, detail="Captador obrigatorio.")
+    if captador == "AEB":
+        raise HTTPException(
+            status_code=400,
+            detail="Use um agente captador (nao AEB) para CPF captado.",
+        )
+    row.cpf = cpf
+    row.captador = captador
+    if "nome" in payload or criando:
+        row.nome = _texto_opcional(payload.get("nome"))
+    if "email" in payload or criando:
+        row.email = _texto_opcional(payload.get("email"))
+    if "telefone" in payload or criando:
+        row.telefone = _texto_opcional(payload.get("telefone"))
+    if "ativo" in payload or criando:
+        row.ativo = _bool_payload(payload.get("ativo"), True)
+    if "observacoes" in payload or criando:
+        row.observacoes = _texto_opcional(payload.get("observacoes"))
+    row.atualizado_em = agora_operacional_naive()
 
 
 def _aplicar_agente_payload(row: NfpAgenteCaptadorDB, payload: dict, *, criando: bool) -> None:
@@ -692,6 +734,166 @@ async def post_importar_cnpjs(
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/cpfs-captados")
+async def listar_cpfs_captados(
+    busca: Optional[str] = None,
+    captador: Optional[str] = None,
+    ativo: Optional[bool] = None,
+    limite: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    _exigir_nfp_gestao(usuario_atual)
+    org = _organizacao_id(usuario_atual)
+    q = (
+        select(NfpCpfCaptadoDB)
+        .where(NfpCpfCaptadoDB.organizacao_id == org)
+        .order_by(NfpCpfCaptadoDB.numero_cadastro, NfpCpfCaptadoDB.nome)
+    )
+    if busca:
+        termo_bruto = busca.strip()
+        termo = f"%{termo_bruto}%"
+        filtros = [
+            NfpCpfCaptadoDB.nome.ilike(termo),
+            NfpCpfCaptadoDB.cpf.ilike(termo),
+            cast(NfpCpfCaptadoDB.numero_cadastro, String).ilike(termo),
+        ]
+        digitos = limpar_documento(termo_bruto)
+        if digitos:
+            filtros.append(NfpCpfCaptadoDB.cpf.ilike(f"%{digitos}%"))
+        if termo_bruto.isdigit():
+            filtros.append(NfpCpfCaptadoDB.numero_cadastro == int(termo_bruto))
+        q = q.where(or_(*filtros))
+    if captador:
+        q = q.where(NfpCpfCaptadoDB.captador == captador.strip().upper())
+    if ativo is not None:
+        q = q.where(NfpCpfCaptadoDB.ativo.is_(ativo))
+    rows = (await db.execute(q.offset(offset).limit(limite))).scalars().all()
+    return [serializar_cpf_captado(r) for r in rows]
+
+
+@router.get("/cpfs-captados/{cpf_id}")
+async def obter_cpf_captado(
+    cpf_id: str,
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    _exigir_nfp_gestao(usuario_atual)
+    row = await _obter_cpf_captado_org(db, _organizacao_id(usuario_atual), cpf_id)
+    return serializar_cpf_captado(row)
+
+
+@router.post("/cpfs-captados")
+async def criar_cpf_captado(
+    payload: dict,
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    _exigir_nfp_escrita_gestao(usuario_atual)
+    org = _organizacao_id(usuario_atual)
+    cpf = limpar_documento(payload.get("cpf"))
+    if cpf:
+        existe = (
+            await db.execute(
+                select(NfpCpfCaptadoDB).where(
+                    NfpCpfCaptadoDB.organizacao_id == org,
+                    NfpCpfCaptadoDB.cpf == cpf,
+                )
+            )
+        ).scalar_one_or_none()
+        if existe:
+            raise HTTPException(status_code=400, detail="Ja existe CPF captado com este documento.")
+    numero = await proximo_numero_cadastro_cpf_captado(db, org)
+    row = NfpCpfCaptadoDB(
+        organizacao_id=org,
+        numero_cadastro=numero,
+        cpf=cpf or "00000000000",
+        captador="DIEGO",
+        ativo=True,
+        criado_em=agora_operacional_naive(),
+        atualizado_em=agora_operacional_naive(),
+    )
+    _aplicar_cpf_captado_payload(row, payload, criando=True)
+    db.add(row)
+    doador = (
+        await db.execute(
+            select(NfpDoadorDB).where(
+                NfpDoadorDB.organizacao_id == org,
+                NfpDoadorDB.cpf == row.cpf,
+            )
+        )
+    ).scalar_one_or_none()
+    if doador:
+        doador.unidade_captador = row.captador
+        if row.nome:
+            doador.nome = row.nome
+        doador.atualizado_em = agora_operacional_naive()
+    else:
+        await garantir_doador_por_cpf(
+            db,
+            org,
+            row.cpf,
+            nome=row.nome,
+            unidade_captador=row.captador,
+            origem_cadastro=ORIGEM_DOADOR_MANUAL,
+        )
+    await db.commit()
+    await db.refresh(row)
+    return serializar_cpf_captado(row)
+
+
+@router.put("/cpfs-captados/{cpf_id}")
+async def atualizar_cpf_captado(
+    cpf_id: str,
+    payload: dict,
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    _exigir_nfp_escrita_gestao(usuario_atual)
+    org = _organizacao_id(usuario_atual)
+    row = await _obter_cpf_captado_org(db, org, cpf_id)
+    novo_cpf = limpar_documento(payload.get("cpf") or row.cpf)
+    if novo_cpf != row.cpf:
+        existe = (
+            await db.execute(
+                select(NfpCpfCaptadoDB).where(
+                    NfpCpfCaptadoDB.organizacao_id == org,
+                    NfpCpfCaptadoDB.cpf == novo_cpf,
+                    NfpCpfCaptadoDB.id != row.id,
+                )
+            )
+        ).scalar_one_or_none()
+        if existe:
+            raise HTTPException(status_code=400, detail="Ja existe CPF captado com este documento.")
+    _aplicar_cpf_captado_payload(row, payload, criando=False)
+    doador = (
+        await db.execute(
+            select(NfpDoadorDB).where(
+                NfpDoadorDB.organizacao_id == org,
+                NfpDoadorDB.cpf == row.cpf,
+            )
+        )
+    ).scalar_one_or_none()
+    if doador:
+        doador.unidade_captador = row.captador
+        if row.nome:
+            doador.nome = row.nome
+        doador.atualizado_em = agora_operacional_naive()
+    else:
+        await garantir_doador_por_cpf(
+            db,
+            org,
+            row.cpf,
+            nome=row.nome,
+            unidade_captador=row.captador,
+            origem_cadastro=ORIGEM_DOADOR_MANUAL,
+        )
+    await db.commit()
+    await db.refresh(row)
+    return serializar_cpf_captado(row)
 
 
 @router.post("/importar/doacoes-sefaz")

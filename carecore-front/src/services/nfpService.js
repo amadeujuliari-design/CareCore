@@ -71,6 +71,26 @@ export async function nfpAtualizarCnpj(id, payload) {
   return data;
 }
 
+export async function nfpListarCpfsCaptados(params = {}) {
+  const { data } = await api.get('/api/nfp/cpfs-captados', { params });
+  return data;
+}
+
+export async function nfpCriarCpfCaptado(payload) {
+  const { data } = await api.post('/api/nfp/cpfs-captados', payload);
+  return data;
+}
+
+export async function nfpObterCpfCaptado(id) {
+  const { data } = await api.get(`/api/nfp/cpfs-captados/${id}`);
+  return data;
+}
+
+export async function nfpAtualizarCpfCaptado(id, payload) {
+  const { data } = await api.put(`/api/nfp/cpfs-captados/${id}`, payload);
+  return data;
+}
+
 export async function nfpListarAgentes(params = {}) {
   const { data } = await api.get('/api/nfp/agentes', { params });
   return data;

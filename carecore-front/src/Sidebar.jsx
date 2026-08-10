@@ -455,7 +455,7 @@ export default function Sidebar() {
                 {
                   path: '/nfp/cadastro/cnpjs',
                   icon: Building2,
-                  label: 'CNPJs / Lojas',
+                  label: 'CNPJs / CPFs Captados por Agentes',
                 },
               ],
             },

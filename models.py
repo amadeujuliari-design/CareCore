@@ -1709,6 +1709,30 @@ class NfpCnpjLojaDB(Base):
     atualizado_em = Column(DateTime, default=agora_operacional_naive, onupdate=agora_operacional_naive)
 
 
+class NfpCpfCaptadoDB(Base):
+    """CPFs captados por agentes (pessoas fisicas no rateio do agente)."""
+    __tablename__ = "nfp_cpfs_captados"
+    __table_args__ = (
+        UniqueConstraint("organizacao_id", "cpf", name="uq_nfp_cpfs_captados_org_cpf"),
+        UniqueConstraint("organizacao_id", "numero_cadastro", name="uq_nfp_cpfs_captados_org_numero"),
+        Index("ix_nfp_cpfs_captados_organizacao", "organizacao_id"),
+        Index("ix_nfp_cpfs_captados_captador", "organizacao_id", "captador"),
+    )
+
+    id = Column(String, primary_key=True, default=get_uuid)
+    organizacao_id = Column(String, ForeignKey("organizacoes.id"), nullable=False)
+    numero_cadastro = Column(Integer, nullable=False)
+    cpf = Column(String, nullable=False)
+    nome = Column(String, nullable=True)
+    captador = Column(String, nullable=False)
+    email = Column(String, nullable=True)
+    telefone = Column(String, nullable=True)
+    ativo = Column(Boolean, default=True, nullable=False)
+    observacoes = Column(Text, nullable=True)
+    criado_em = Column(DateTime, default=agora_operacional_naive)
+    atualizado_em = Column(DateTime, default=agora_operacional_naive, onupdate=agora_operacional_naive)
+
+
 class NfpDoacaoAutomaticaDB(Base):
     __tablename__ = "nfp_doacoes_automaticas"
     __table_args__ = (

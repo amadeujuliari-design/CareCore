@@ -18,6 +18,7 @@ from models import (
     NfpBatimentoDB,
     NfpCnpjCaptacaoCompetenciaDB,
     NfpCnpjLojaDB,
+    NfpCpfCaptadoDB,
     NfpDoacaoAutomaticaDB,
     NfpDoadorDB,
     NfpRateioDB,
@@ -35,6 +36,7 @@ from nfp_utils import (
     competencia_referencia_das_datas,
     competencia_valida,
     cpf_valido,
+    decidir_origem_rateio_credito,
     limpar_documento,
     limpar_nota,
     nome_eh_generico,
@@ -183,6 +185,22 @@ def serializar_cnpj(row: NfpCnpjLojaDB) -> dict:
         "cidade": getattr(row, "cidade", None),
         "uf": getattr(row, "uf", None),
         "cnpj_conferir": bool(row.cnpj_conferir),
+        "ativo": bool(getattr(row, "ativo", True)),
+        "observacoes": getattr(row, "observacoes", None),
+        "criado_em": row.criado_em.isoformat() if row.criado_em else None,
+        "atualizado_em": row.atualizado_em.isoformat() if getattr(row, "atualizado_em", None) else None,
+    }
+
+
+def serializar_cpf_captado(row: NfpCpfCaptadoDB) -> dict:
+    return {
+        "id": row.id,
+        "numero_cadastro": int(getattr(row, "numero_cadastro", 0) or 0),
+        "cpf": row.cpf,
+        "nome": row.nome,
+        "captador": row.captador,
+        "email": getattr(row, "email", None),
+        "telefone": getattr(row, "telefone", None),
         "ativo": bool(getattr(row, "ativo", True)),
         "observacoes": getattr(row, "observacoes", None),
         "criado_em": row.criado_em.isoformat() if row.criado_em else None,
@@ -664,6 +682,39 @@ async def proximo_numero_cadastro_cnpj(db: AsyncSession, organizacao_id: str) ->
     return int(atual or 0) + 1
 
 
+async def proximo_numero_cadastro_cpf_captado(db: AsyncSession, organizacao_id: str) -> int:
+    atual = (
+        await db.execute(
+            select(func.coalesce(func.max(NfpCpfCaptadoDB.numero_cadastro), 0)).where(
+                NfpCpfCaptadoDB.organizacao_id == organizacao_id
+            )
+        )
+    ).scalar_one()
+    return int(atual or 0) + 1
+
+
+async def mapa_cpfs_captados_agente(
+    db: AsyncSession,
+    organizacao_id: str,
+) -> dict[str, str]:
+    """CPF limpo -> captador (somente ativos)."""
+    rows = (
+        await db.execute(
+            select(NfpCpfCaptadoDB).where(
+                NfpCpfCaptadoDB.organizacao_id == organizacao_id,
+                NfpCpfCaptadoDB.ativo.is_(True),
+            )
+        )
+    ).scalars().all()
+    out: dict[str, str] = {}
+    for row in rows:
+        cpf = limpar_documento(row.cpf)
+        captador = normalizar_agente_captacao(row.captador)
+        if cpf and captador and captador != "AEB":
+            out[cpf] = captador
+    return out
+
+
 def nome_placeholder_doador(cpf: str) -> str:
     digitos = limpar_documento(cpf)
     if len(digitos) == 11:
@@ -752,19 +803,22 @@ async def sincronizar_doadores_de_doacoes(
     ).scalars().all()
     existentes = {limpar_documento(r.cpf): r for r in existentes_rows if limpar_documento(r.cpf)}
     contador_numero = [await proximo_numero_cadastro_doador(db, organizacao_id)]
+    mapa_cpf_agente = await mapa_cpfs_captados_agente(db, organizacao_id)
 
     criados = 0
     ja_existiam = 0
     invalidos = 0
+    alinhados = 0
     for cpf in cpfs:
         if not cpf_valido(cpf):
             invalidos += 1
             continue
+        unidade = mapa_cpf_agente.get(cpf) or UNIDADE_DOADOR_DIRETO_AEB
         _, criado = await garantir_doador_por_cpf(
             db,
             organizacao_id,
             cpf,
-            unidade_captador=UNIDADE_DOADOR_DIRETO_AEB,
+            unidade_captador=unidade,
             origem_cadastro=ORIGEM_DOADOR_DOACAO,
             existentes=existentes,
             contador_numero=contador_numero,
@@ -773,8 +827,16 @@ async def sincronizar_doadores_de_doacoes(
             criados += 1
         else:
             ja_existiam += 1
+            # Se o CPF ja existe como AEB mas agora esta captado por agente, alinha unidade.
+            row = existentes.get(cpf)
+            if row and unidade != UNIDADE_DOADOR_DIRETO_AEB:
+                atual = normalizar_agente_captacao(row.unidade_captador)
+                if atual in {"", "AEB"}:
+                    row.unidade_captador = unidade
+                    row.atualizado_em = agora_operacional_naive()
+                    alinhados += 1
 
-    if criados:
+    if criados or alinhados:
         await db.commit()
 
     return {
@@ -1313,6 +1375,14 @@ async def calcular_rateio(db: AsyncSession, organizacao_id: str, competencia: st
         (limpar_documento(d.cnpj_estabelecimento), limpar_nota(d.numero_nota))
         for d in doacoes
     }
+    cpf_por_chave_auto: dict[tuple[str, str], str] = {}
+    for d in doacoes:
+        chave = (limpar_documento(d.cnpj_estabelecimento), limpar_nota(d.numero_nota))
+        cpf = limpar_documento(d.cpf_doador_cadastrador)
+        if chave[0] and chave[1] and cpf and chave not in cpf_por_chave_auto:
+            cpf_por_chave_auto[chave] = cpf
+
+    mapa_cpf_agente = await mapa_cpfs_captados_agente(db, organizacao_id)
 
     sefaz = (
         await db.execute(
@@ -1337,19 +1407,20 @@ async def calcular_rateio(db: AsyncSession, organizacao_id: str, competencia: st
         cred = int(s.creditos_centavos or 0)
         info = mapa_cnpjs.get(cnpj, {})
         loja = info.get("loja") or s.emitente or ""
-        captador = normalizar_agente_captacao(info.get("captador"))
+        captador_loja = normalizar_agente_captacao(info.get("captador"))
         eh_agente = cnpj in cnpjs_agente
-        agente = cnpjs_agente.get(cnpj) or captador
+        agente = cnpjs_agente.get(cnpj) or captador_loja
         eh_auto = (cnpj, numero) in chaves_auto
-        if eh_agente and eh_auto:
-            origem = origem_doador_auto_agente(agente)
-        elif eh_agente:
-            origem = origem_rateio_agente(agente)
-        elif eh_auto:
-            origem = "DOADOR_AUTOMATICO_AEB"
-        else:
-            origem = "DIRETO_AEB"
-        chave = (cnpj, loja, captador or agente, origem)
+        cpf_doador = cpf_por_chave_auto.get((cnpj, numero))
+        captador_cpf = mapa_cpf_agente.get(cpf_doador) if cpf_doador else None
+        origem, captador_efetivo = decidir_origem_rateio_credito(
+            captador_cnpj=agente,
+            eh_loja_agente=eh_agente,
+            eh_doacao_automatica=eh_auto,
+            captador_cpf=captador_cpf,
+        )
+        captador = captador_efetivo or agente or captador_loja
+        chave = (cnpj, loja, captador or "", origem)
         if chave not in grupos:
             grupos[chave] = {"retorno_centavos": 0, "qtd": 0}
         grupos[chave]["retorno_centavos"] += cred
