@@ -492,6 +492,11 @@ export default function Sidebar() {
                   label: 'Central de relatórios',
                 },
                 {
+                  path: '/nfp/relatorios/cupons',
+                  icon: FileBarChart,
+                  label: 'Cupons lidos / enviados',
+                },
+                {
                   path: '/nfp/relatorios/rateio-consolidado',
                   icon: FileBarChart,
                   label: 'Rateio consolidado',

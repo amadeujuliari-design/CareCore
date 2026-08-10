@@ -1,5 +1,12 @@
 export const NFP_RELATORIOS_CATALOGO = [
   {
+    id: 'cupons-fila',
+    path: '/nfp/relatorios/cupons',
+    titulo: 'Cupons lidos / fila / enviados',
+    descricao: 'Período, captador/unidade, status e busca — totais e detalhe da fila operacional.',
+    tipo: 'Operacional',
+  },
+  {
     id: 'rateio-consolidado',
     path: '/nfp/relatorios/rateio-consolidado',
     titulo: 'Rateio consolidado',
@@ -108,5 +115,67 @@ export function montarExportacaoRateioDetalhado(relatorio) {
     'Parte AEB': formatarNumeroRelatorioNfp(item.valor_aeb),
     Final: formatarNumeroRelatorioNfp(item.final),
     Competência: item.competencia || '',
+  }));
+}
+
+export const STATUS_CUPONS_RELATORIO = [
+  { value: 'checando', label: 'Checando SEFAZ' },
+  { value: 'pendente', label: 'Pendente (fila)' },
+  { value: 'reservado', label: 'Reservado' },
+  { value: 'enviado', label: 'Enviado' },
+  { value: 'erro', label: 'Erro' },
+  { value: 'rejeitado_cpf', label: 'Rejeitado CPF' },
+];
+
+export function rotuloStatusCupomRelatorio(status) {
+  const item = STATUS_CUPONS_RELATORIO.find((s) => s.value === status);
+  return item?.label || status || '—';
+}
+
+export const COLUNAS_CUPONS_POR_CAPTADOR = [
+  'Captador',
+  'Lidos',
+  'Pendentes',
+  'Reservados',
+  'Enviados',
+  'Erros',
+  'Rejeitados CPF',
+  'Checando',
+];
+
+export const COLUNAS_CUPONS_DETALHE = [
+  'Chave',
+  'Captador',
+  'Status',
+  'CNPJ emitente',
+  'Emissão (ref.)',
+  'Lido em',
+  'Enviado em',
+  'Mensagem',
+];
+
+export function montarExportacaoCuponsPorCaptador(relatorio) {
+  return (relatorio?.por_captador || []).map((item) => ({
+    Captador: item.captador || '',
+    Lidos: item.lidos ?? 0,
+    Pendentes: item.pendentes ?? 0,
+    Reservados: item.reservados ?? 0,
+    Enviados: item.enviados ?? 0,
+    Erros: item.erros ?? 0,
+    'Rejeitados CPF': item.rejeitados_cpf ?? 0,
+    Checando: item.checando ?? 0,
+  }));
+}
+
+export function montarExportacaoCuponsDetalhe(relatorio) {
+  return (relatorio?.linhas || []).map((item) => ({
+    Chave: item.chave || '',
+    Captador: item.captador || '',
+    Status: rotuloStatusCupomRelatorio(item.status),
+    'CNPJ emitente': item.cnpj_emitente || '',
+    'Emissão (ref.)': item.data_emissao_ref || '',
+    'Lido em': item.lido_em || '',
+    'Enviado em': item.enviado_em || '',
+    Mensagem: item.mensagem || '',
   }));
 }

@@ -36,6 +36,7 @@ const ROTAS_CRITICAS = [
   '/nfp/envio-sefaz',
   '/nfp/metas',
   '/nfp/relatorios',
+  '/nfp/relatorios/cupons',
   '/nfp/relatorios/rateio-consolidado',
   '/nfp/relatorios/rateio-detalhado',
   '/organizacao',

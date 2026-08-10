@@ -20,6 +20,7 @@ from models import (
     NfpRateioDB,
 )
 from nfp_cupom_leitura_service import agendar_checagem_sefaz, registrar_leitura_rapida
+from nfp_cupom_relatorio_service import relatorio_cupons
 from nfp_metas_service import (
     consolidado_metas,
     exportar_metas_xlsx,
@@ -1112,6 +1113,38 @@ async def get_relatorio_rateio_detalhado(
             agente=agente,
             origem=origem,
             busca=busca,
+            limite=limite,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/relatorios/cupons")
+async def get_relatorio_cupons(
+    data_inicio: Optional[str] = Query(None, description="AAAA-MM-DD (fuso SP)"),
+    data_fim: Optional[str] = Query(None, description="AAAA-MM-DD (fuso SP)"),
+    captador: Optional[str] = Query(None, description="Unidade / captador da leitura"),
+    status: Optional[str] = Query(
+        None,
+        description="Um status ou CSV: pendente,enviado,reservado,erro,checando,rejeitado_cpf",
+    ),
+    busca: Optional[str] = Query(None, description="Chave, CNPJ ou mensagem"),
+    eixo_data: str = Query("lido_em", description="lido_em ou enviado_em"),
+    limite: int = Query(2000, ge=1, le=5000),
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    _exigir_nfp_gestao(usuario_atual)
+    try:
+        return await relatorio_cupons(
+            db,
+            _organizacao_id(usuario_atual),
+            data_inicio=data_inicio,
+            data_fim=data_fim,
+            captador=captador,
+            status=status,
+            busca=busca,
+            eixo_data=eixo_data,
             limite=limite,
         )
     except ValueError as exc:

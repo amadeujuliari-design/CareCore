@@ -14,3 +14,8 @@ export async function nfpOrigensRateio(params = {}) {
   const { data } = await api.get('/api/nfp/relatorios/origens-rateio', { params });
   return data;
 }
+
+export async function nfpRelatorioCupons(params = {}) {
+  const { data } = await api.get('/api/nfp/relatorios/cupons', { params });
+  return data;
+}

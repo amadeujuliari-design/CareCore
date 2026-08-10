@@ -53,6 +53,7 @@ const NfpMetas = lazy(() => import('../NfpMetas'));
 const NfpRelatorios = lazy(() => import('../NfpRelatorios'));
 const RelatorioNfpRateioConsolidado = lazy(() => import('../RelatorioNfpRateioConsolidado'));
 const RelatorioNfpRateioDetalhado = lazy(() => import('../RelatorioNfpRateioDetalhado'));
+const RelatorioNfpCupons = lazy(() => import('../RelatorioNfpCupons'));
 
 function RotasAplicacao() {
   return (
@@ -387,6 +388,15 @@ function RotasAplicacao() {
           element={
             <ProtectedRoute perfis={PERFIS_NFP_GESTAO}>
               <NfpRelatorios />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/nfp/relatorios/cupons"
+          element={
+            <ProtectedRoute perfis={PERFIS_NFP_GESTAO}>
+              <RelatorioNfpCupons />
             </ProtectedRoute>
           }
         />
