@@ -10,6 +10,7 @@ from models import Base, NfpCupomLidoDB, OrganizacaoDB
 from nfp_cupom_reserva_service import (
     STATUS_PENDENTE,
     STATUS_RESERVADO,
+    aplicar_resultados_envio,
     liberar_lote,
     reservar_lote_cupons,
 )
@@ -95,6 +96,47 @@ def test_liberar_lote_devolve_pendente():
                     )
                 ).scalars().all()
             assert len(pend) == 250
+        finally:
+            await engine.dispose()
+
+    asyncio.run(caso())
+
+
+def test_aplicar_resultados_envio_marca_enviado():
+    async def caso():
+        engine, factory = await _prep()
+        try:
+            async with factory() as db:
+                out = await reservar_lote_cupons(
+                    db, organizacao_id=ORG, usuario_id="u1", tamanho=3
+                )
+            chave = out["chaves"][0]
+            async with factory() as db:
+                n = await aplicar_resultados_envio(
+                    db,
+                    organizacao_id=ORG,
+                    itens=[
+                        {
+                            "chave": chave,
+                            "tipo": "sucesso",
+                            "mensagem": "Doacao registrada com sucesso.",
+                        }
+                    ],
+                )
+            assert n == 1
+            async with factory() as db:
+                row = (
+                    await db.execute(
+                        __import__("sqlalchemy")
+                        .select(NfpCupomLidoDB)
+                        .where(
+                            NfpCupomLidoDB.organizacao_id == ORG,
+                            NfpCupomLidoDB.chave == chave,
+                        )
+                    )
+                ).scalar_one()
+            assert row.status == "enviado"
+            assert row.lote_id is None
         finally:
             await engine.dispose()
 

@@ -1,0 +1,53 @@
+CareCore+ — Agente NFP SEFAZ (instalacao por maquina)
+=====================================================
+
+Cada PC da Sede que for enviar cupons instala ESTE pacote.
+Nenhuma maquina depende da outra: cada uma fala com o CareCore+ online
+(fila/reserva) e so o Chrome do robo roda localmente.
+
+Pre-requisitos
+--------------
+- Windows 10/11
+- Google Chrome instalado
+- Python 3.11+ no PATH (https://www.python.org/downloads/ — marque Add to PATH)
+- Usuario CareCore+ com permissao de Envio SEFAZ (ADM Global ou Manutencao)
+- Internet para https://carecoreplus-api.fly.dev
+
+Se o Windows bloquear o download
+--------------------------------
+O pacote nao e assinado digitalmente (sem custo de certificado por enquanto).
+Se aparecer "pode nao ser seguro" / Controle de Aplicativo Inteligente:
+  1. Clique OK
+  2. Botao direito no ZIP -> Propriedades -> marque Desbloquear -> Aplicar
+  3. Descompacte e continue
+Se pedir "Executar mesmo assim", pode seguir — e o agente oficial do CareCore.
+
+Instalacao (uma vez por PC)
+---------------------------
+1. Descompacte esta pasta (ex.: C:\CareCorePlus\agente-nfp-robo)
+2. Rode instalar.bat
+3. O painel abre sozinho no navegador (http://127.0.0.1:8765/)
+
+Fluxo diario (recomendado)
+--------------------------
+1. abrir_painel.bat  (deixe a janela preta aberta)
+2. LOGIN no painel com e-mail e senha do CareCore
+   -> isso ativa a sincronizacao da fila (pendentes/enviados) no banco online
+3. Abrir site Fazenda -> login/CAPTCHA ate Bem-vindo
+4. Enviar fila / Envio continuo
+5. Parar no proprio painel, se precisar
+
+Nao e preciso editar arquivo JSON.
+
+Importante
+----------
+- No CareCore ONLINE os botoes Abrir/Enviar ficam desabilitados de proposito
+  (servidor nao tem Chrome). Use este painel local.
+- Varias maquinas podem rodar ao mesmo tempo (reserva de lote).
+- A senha fica so neste PC (apos o login no painel).
+
+Atualizacao
+-----------
+Substitua os arquivos (exceto config.json) e rode instalar.bat se precisar.
+No CareCore online (NFP -> Envio SEFAZ) ha o botao de baixar o ZIP.
+Apos alterar o agente no repositorio: empacotar_download.bat

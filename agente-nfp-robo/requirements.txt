@@ -1,0 +1,2 @@
+# Dependencias do agente NFP (painel + robo)
+-r robo/requirements.txt

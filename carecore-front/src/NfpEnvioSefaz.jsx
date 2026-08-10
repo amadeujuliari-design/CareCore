@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Send } from 'lucide-react';
+import { Download, Send } from 'lucide-react';
 
 import Sidebar from './Sidebar';
 import BannerSomenteLeituraGlobal from './components/BannerSomenteLeituraGlobal';
 import { AppShell, MainShell, PageHeader, PremiumButton, ScrollArea } from './components/PremiumUI';
+import { CARECORE_VERSAO } from './config/versao';
 import {
   nfpEnvioSefazAbrirChrome,
   nfpEnvioSefazEnviarFila,
@@ -17,6 +18,11 @@ import {
   usuarioPodeVerEnvioSefaz,
   usuarioSomenteLeituraNfp,
 } from './utils/rbacUtils';
+
+const AGENTE_EXE_URL = '/downloads/CareCore-Agente-NFP.exe';
+const AGENTE_EXE_META_URL = '/downloads/CareCore-Agente-NFP.json';
+const AGENTE_ZIP_URL = '/downloads/agente-nfp-robo.zip';
+const AGENTE_META_URL = '/downloads/agente-nfp-robo.json';
 
 export default function NfpEnvioSefaz() {
   const usuario = useMemo(() => {
@@ -39,6 +45,9 @@ export default function NfpEnvioSefaz() {
   const [trabalhando, setTrabalhando] = useState(false);
   const [erro, setErro] = useState('');
   const [sucesso, setSucesso] = useState('');
+  const [agenteMeta, setAgenteMeta] = useState(null);
+  const [agenteExeMeta, setAgenteExeMeta] = useState(null);
+  const [exeDisponivel, setExeDisponivel] = useState(false);
 
   const carregar = useCallback(async () => {
     setLoading(true);
@@ -57,6 +66,33 @@ export default function NfpEnvioSefaz() {
   useEffect(() => {
     if (podeVer) carregar();
   }, [carregar, podeVer]);
+
+  useEffect(() => {
+    if (!podeVer) return undefined;
+    let cancelado = false;
+    (async () => {
+      try {
+        const [metaZip, metaExe, headExe] = await Promise.all([
+          fetch(AGENTE_META_URL, { cache: 'no-store' }).then((r) => (r.ok ? r.json() : null)).catch(() => null),
+          fetch(AGENTE_EXE_META_URL, { cache: 'no-store' }).then((r) => (r.ok ? r.json() : null)).catch(() => null),
+          fetch(AGENTE_EXE_URL, { method: 'HEAD', cache: 'no-store' }).then((r) => r.ok).catch(() => false),
+        ]);
+        if (cancelado) return;
+        if (metaZip) setAgenteMeta(metaZip);
+        if (metaExe) setAgenteExeMeta(metaExe);
+        setExeDisponivel(Boolean(headExe || metaExe));
+      } catch {
+        if (!cancelado) {
+          setAgenteMeta(null);
+          setAgenteExeMeta(null);
+          setExeDisponivel(false);
+        }
+      }
+    })();
+    return () => {
+      cancelado = true;
+    };
+  }, [podeVer]);
 
   useEffect(() => {
     if (!podeVer) return undefined;
@@ -154,7 +190,7 @@ export default function NfpEnvioSefaz() {
         <PageHeader
           eyebrow="NFP – Créditos"
           title="Envio SEFAZ"
-          subtitle="Abre o portal da Fazenda e envia a fila. Basta login na tela inicial — o robô abre Doação/AEB e retoma se o site voltar à home."
+          subtitle="No CareCore online, baixe o agente em cada PC da Sede. O Chrome e o login ficam locais; a fila/reserva vem da API."
           icon={<Send className="h-5 w-5" />}
           backTo="/nfp"
           backLabel="Voltar ao dashboard"
@@ -179,8 +215,98 @@ export default function NfpEnvioSefaz() {
             </div>
           )}
 
+          <section className="mb-4 rounded-3xl border border-sky-100 bg-sky-50/70 p-5 shadow-sm">
+            <h3 className="text-sm font-bold text-slate-800">
+              Instalação do agente (cada PC da Sede)
+            </h3>
+            <p className="mt-1 text-sm text-slate-600">
+              No ambiente online o Chrome não roda no servidor. Instale o agente em
+              {' '}
+              <strong>cada máquina</strong>
+              {' '}
+              que for enviar cupons — elas são independentes e compartilham a mesma fila do CareCore.
+            </p>
+            <ol className="mt-3 list-decimal space-y-1.5 pl-5 text-sm text-slate-700">
+              {((exeDisponivel ? agenteExeMeta?.instrucoes : null) || agenteMeta?.instrucoes || [
+                'Baixe CareCore-Agente-NFP.exe. Se o Windows avisar que pode não ser seguro: OK → Propriedades → Desbloquear, ou Executar mesmo assim.',
+                'Execute o .exe (precisa Python 3.11+ no PATH e Google Chrome).',
+                'Ao terminar, o painel abre sozinho. Faça login CareCore para sincronizar a fila online.',
+                'No painel: Abrir site Fazenda → login/CAPTCHA → Enviar fila.',
+                'Nas próximas vezes use o atalho na Área de Trabalho ou rode o .exe de novo.',
+              ]).map((passo) => (
+                <li key={passo}>{passo}</li>
+              ))}
+            </ol>
+            <p className="mt-3 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600">
+              Fluxo:
+              {' '}
+              <strong>Executar o .exe</strong>
+              {' '}
+              →
+              {' '}
+              <strong>Login CareCore no painel</strong>
+              {' '}
+              (sincroniza online) →
+              {' '}
+              <strong>Abrir site Fazenda</strong>
+              {' '}
+              →
+              {' '}
+              <strong>Enviar</strong>
+              .
+              O arquivo ainda não é assinado digitalmente — o alerta do Windows é esperado.
+            </p>
+            <div className="mt-4 flex flex-wrap items-center gap-3">
+              {exeDisponivel ? (
+                <a
+                  href={AGENTE_EXE_URL}
+                  download="CareCore-Agente-NFP.exe"
+                  className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800"
+                >
+                  <Download className="h-4 w-4" />
+                  Baixar agente NFP (.exe)
+                </a>
+              ) : null}
+              <a
+                href={AGENTE_ZIP_URL}
+                download="agente-nfp-robo.zip"
+                className={`inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold ${
+                  exeDisponivel
+                    ? 'border border-slate-300 bg-white text-slate-800 hover:bg-slate-50'
+                    : 'bg-slate-900 text-white hover:bg-slate-800'
+                }`}
+              >
+                <Download className="h-4 w-4" />
+                {exeDisponivel ? 'Baixar ZIP (alternativa)' : 'Baixar agente NFP (.zip)'}
+              </a>
+              <p className="text-[11px] text-slate-500">
+                App
+                {' '}
+                v
+                {(exeDisponivel ? agenteExeMeta?.versao_app : null) || agenteMeta?.versao_app || CARECORE_VERSAO}
+                {(exeDisponivel ? agenteExeMeta?.gerado_em : agenteMeta?.gerado_em)
+                  ? ` · pacote ${(exeDisponivel ? agenteExeMeta?.gerado_em : agenteMeta?.gerado_em)}`
+                  : ''}
+                {(exeDisponivel ? agenteExeMeta?.tamanho_bytes : agenteMeta?.tamanho_bytes)
+                  ? ` · ${(((exeDisponivel ? agenteExeMeta?.tamanho_bytes : agenteMeta?.tamanho_bytes) || 0) / 1024 / (exeDisponivel ? 1024 : 1)).toFixed(exeDisponivel ? 1 : 0)} ${exeDisponivel ? 'MB' : 'KB'}`
+                  : ''}
+              </p>
+            </div>
+            {!roboOk && (
+              <p className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                Esta sessão está no CareCore
+                {' '}
+                <strong>online</strong>
+                : os botões Abrir site / Rodar fila abaixo ficam desabilitados de propósito.
+                No PC da Sede baixe e execute o <strong>CareCore-Agente-NFP.exe</strong>
+                {' '}
+                (ou o ZIP) e use o painel local no navegador.
+              </p>
+            )}
+          </section>
+
           {loading && !status ? (
-            <p className="text-sm text-slate-500">Carregando...</p>
+            <p className="text-sm text-slate-500">Carregando status...</p>
           ) : (
             <>
               <section className="mb-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">

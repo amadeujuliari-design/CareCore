@@ -80,6 +80,13 @@ from security import (
     usuario_pode_operar_envio_sefaz,
     usuario_pode_ver_envio_sefaz,
 )
+from nfp_cupom_reserva_service import (
+    TAMANHO_LOTE_PADRAO,
+    aplicar_resultados_envio,
+    liberar_lote,
+    liberar_reservas_expiradas,
+    reservar_lote_cupons,
+)
 from nfp_envio_sefaz_service import (
     PLANILHA_PADRAO,
     abrir_chrome_fazenda,
@@ -1354,6 +1361,100 @@ async def envio_sefaz_parar(
     if not resultado.get("ok"):
         raise HTTPException(status_code=409, detail=resultado.get("mensagem") or "Nada a parar.")
     return resultado
+
+
+@router.get("/envio-sefaz/agente/fila")
+async def envio_sefaz_agente_fila(
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    """Contagens da fila online (sem CDP). Usado pelo agente local de cada Sede."""
+    _exigir_envio_sefaz_operar(usuario_atual)
+    org = _organizacao_id(usuario_atual)
+    contagens_rows = (
+        await db.execute(
+            select(NfpCupomLidoDB.status, func.count())
+            .where(NfpCupomLidoDB.organizacao_id == org)
+            .group_by(NfpCupomLidoDB.status)
+        )
+    ).all()
+    contagens = {str(status or ""): int(qtd or 0) for status, qtd in contagens_rows}
+    return {
+        "ok": True,
+        "pendentes_total": contagens.get("pendente", 0),
+        "reservados_total": contagens.get("reservado", 0),
+        "enviados_total": contagens.get("enviado", 0),
+        "erros_total": contagens.get("erro", 0),
+        "cupons_total": sum(contagens.values()),
+        "tamanho_lote": TAMANHO_LOTE_PADRAO,
+        "contagens_por_status": contagens,
+    }
+
+
+@router.post("/envio-sefaz/agente/reservar-lote")
+async def envio_sefaz_agente_reservar_lote(
+    payload: dict,
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    """Reserva fatia exclusiva de pendentes para esta maquina (API online)."""
+    _exigir_envio_sefaz_operar(usuario_atual)
+    org = _organizacao_id(usuario_atual)
+    try:
+        tamanho = int(payload.get("tamanho") or TAMANHO_LOTE_PADRAO)
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail="tamanho invalido.") from exc
+    if tamanho < 1:
+        raise HTTPException(status_code=400, detail="tamanho deve ser >= 1.")
+    reserva = await reservar_lote_cupons(
+        db,
+        organizacao_id=org,
+        usuario_id=str(usuario_atual.get("id") or "") or None,
+        tamanho=tamanho,
+    )
+    return {"ok": True, **reserva}
+
+
+@router.post("/envio-sefaz/agente/liberar-lote")
+async def envio_sefaz_agente_liberar_lote(
+    payload: dict,
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    _exigir_envio_sefaz_operar(usuario_atual)
+    org = _organizacao_id(usuario_atual)
+    lote_id = str(payload.get("lote_id") or "").strip()
+    if not lote_id:
+        raise HTTPException(status_code=400, detail="lote_id obrigatorio.")
+    n = await liberar_lote(db, organizacao_id=org, lote_id=lote_id)
+    return {"ok": True, "liberados": n, "lote_id": lote_id}
+
+
+@router.post("/envio-sefaz/agente/aplicar-resultados")
+async def envio_sefaz_agente_aplicar_resultados(
+    payload: dict,
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    """Sincroniza retorno do Chrome local com o CareCore online."""
+    _exigir_envio_sefaz_operar(usuario_atual)
+    org = _organizacao_id(usuario_atual)
+    itens = payload.get("itens") or []
+    if not isinstance(itens, list):
+        raise HTTPException(status_code=400, detail="itens deve ser uma lista.")
+    atualizados = await aplicar_resultados_envio(db, organizacao_id=org, itens=itens)
+    return {"ok": True, "atualizados": atualizados}
+
+
+@router.post("/envio-sefaz/agente/liberar-expirados")
+async def envio_sefaz_agente_liberar_expirados(
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    _exigir_envio_sefaz_operar(usuario_atual)
+    org = _organizacao_id(usuario_atual)
+    n = await liberar_reservas_expiradas(db, org)
+    return {"ok": True, "liberados": n}
 
 
 @router.get("/metas/competencias")

@@ -61,6 +61,8 @@ def test_caminho_api_adm_global():
     assert caminho_api_permitido_para_adm_global("/api/login") is True
     assert caminho_api_permitido_para_adm_global("/api/onboarding") is True
     assert caminho_api_permitido_para_adm_global("/api/usuarios/me") is True
+    assert caminho_api_permitido_para_adm_global("/api/usuarios/organizacao/adm-global") is True
+    assert caminho_api_permitido_para_adm_global("/api/usuarios/organizacao/vinculos-nfp") is True
     assert caminho_api_permitido_para_adm_global("/api/conviventes") is False
     assert PERFIL_ADM_GLOBAL == "ADM Global"
 

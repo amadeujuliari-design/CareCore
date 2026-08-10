@@ -1,0 +1,9 @@
+# Segredos e artefatos locais do agente (nao versionar)
+config.json
+.token
+robo/_capturas/
+robo/__pycache__/
+__pycache__/
+*.pyc
+_build_exe/
+*.spec

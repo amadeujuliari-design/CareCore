@@ -414,7 +414,7 @@ export default function Sidebar() {
           path: '/usuarios',
           icon: UserRoundCog,
           label: 'Usuários',
-          perfis: ['Gestor', 'Global']
+          perfis: ['Gestor', 'Global', 'ADM Global']
         },
         {
           path: '/suporte',
@@ -468,6 +468,12 @@ export default function Sidebar() {
               path: '/nfp/envio-sefaz',
               icon: Send,
               label: 'Envio SEFAZ',
+              perfis: ['Global', 'ADM Global', 'Manutenção'],
+            },
+            {
+              path: '/usuarios',
+              icon: UserRoundCog,
+              label: 'Usuários ADM (Sede/projetos)',
               perfis: ['Global', 'ADM Global', 'Manutenção'],
             },
             {
@@ -636,7 +642,11 @@ export default function Sidebar() {
       return item.path === '/nfp' || item.path === '/nfp/leitura-cupons';
     }
     if (ehAdmGlobal) {
-      return Boolean(item.path === '/nfp' || item.path?.startsWith('/nfp/'));
+      return Boolean(
+        item.path === '/nfp'
+        || item.path?.startsWith('/nfp/')
+        || item.path === '/usuarios'
+      );
     }
 
     const perfilPermitido = isManutencao

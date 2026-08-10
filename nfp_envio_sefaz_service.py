@@ -235,58 +235,18 @@ def _aplicar_resultados_no_banco(db_factory, organizacao_id: str, itens: list[di
     """Atualiza nfp_cupons_lidos conforme retorno do robo. Retorna qtd atualizada."""
     if not itens:
         return 0
-    # Import lazy para nao circular no import do modulo
     import asyncio
 
-    from sqlalchemy import select
-
     from database import AsyncSessionLocal
-    from models import NfpCupomLidoDB
-    from time_operacional import agora_operacional_naive
+    from nfp_cupom_reserva_service import aplicar_resultados_envio
 
     async def _run() -> int:
-        atualizados = 0
         async with AsyncSessionLocal() as db:
-            for item in itens:
-                chave = "".join(ch for ch in str(item.get("chave") or "") if ch.isdigit())
-                if len(chave) != 44:
-                    continue
-                status_cc = (item.get("status_carecore") or "").strip().lower()
-                tipo = (item.get("tipo") or "").strip().lower()
-                if status_cc not in {"enviado", "erro", "pendente"}:
-                    if tipo in {"sucesso", "ja_existe"}:
-                        status_cc = "enviado"
-                    elif tipo == "erro":
-                        status_cc = "erro"
-                    else:
-                        continue
-                row = (
-                    await db.execute(
-                        select(NfpCupomLidoDB).where(
-                            NfpCupomLidoDB.organizacao_id == organizacao_id,
-                            NfpCupomLidoDB.chave == chave,
-                        )
-                    )
-                ).scalar_one_or_none()
-                if not row:
-                    continue
-                row.status = status_cc
-                row.mensagem = (item.get("mensagem") or row.mensagem or "")[:2000] or row.mensagem
-                row.atualizado_em = agora_operacional_naive()
-                if status_cc == "enviado":
-                    row.enviado_em = agora_operacional_naive()
-                # Libera metadados de reserva apos o resultado do item.
-                row.lote_id = None
-                row.reservado_em = None
-                row.reservado_por = None
-                atualizados += 1
-            await db.commit()
-        return atualizados
+            return await aplicar_resultados_envio(db, organizacao_id=organizacao_id, itens=itens)
 
     try:
         return asyncio.run(_run())
     except RuntimeError:
-        # Ja existe loop — usa novo loop em thread (caller ja esta em thread)
         loop = asyncio.new_event_loop()
         try:
             return loop.run_until_complete(_run())

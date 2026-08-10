@@ -1,0 +1,8 @@
+{
+  "api_base_url": "https://carecoreplus-api.fly.dev",
+  "email": "seu.usuario@aeb.org.br",
+  "senha": "ALTERE_AQUI",
+  "nome_maquina": "SEDE-PC1",
+  "cdp": "http://127.0.0.1:9222",
+  "tamanho_lote": 100
+}

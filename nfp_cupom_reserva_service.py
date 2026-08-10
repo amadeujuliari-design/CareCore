@@ -166,3 +166,50 @@ def liberar_lote_sync(*, organizacao_id: str, lote_id: str) -> int:
             return await liberar_lote(db, organizacao_id=organizacao_id, lote_id=lote_id)
 
     return _run_async(_run())
+
+
+async def aplicar_resultados_envio(
+    db: AsyncSession,
+    *,
+    organizacao_id: str,
+    itens: list[dict[str, Any]],
+) -> int:
+    """Atualiza cupons pelo retorno do robo (chave + status_carecore/tipo)."""
+    if not itens:
+        return 0
+    atualizados = 0
+    agora = agora_operacional_naive()
+    for item in itens:
+        chave = "".join(ch for ch in str(item.get("chave") or "") if ch.isdigit())
+        if len(chave) != 44:
+            continue
+        status_cc = (item.get("status_carecore") or "").strip().lower()
+        tipo = (item.get("tipo") or "").strip().lower()
+        if status_cc not in {"enviado", "erro", "pendente"}:
+            if tipo in {"sucesso", "ja_existe"}:
+                status_cc = "enviado"
+            elif tipo == "erro":
+                status_cc = "erro"
+            else:
+                continue
+        row = (
+            await db.execute(
+                select(NfpCupomLidoDB).where(
+                    NfpCupomLidoDB.organizacao_id == organizacao_id,
+                    NfpCupomLidoDB.chave == chave,
+                )
+            )
+        ).scalar_one_or_none()
+        if not row:
+            continue
+        row.status = status_cc
+        row.mensagem = (item.get("mensagem") or row.mensagem or "")[:2000] or row.mensagem
+        row.atualizado_em = agora
+        if status_cc == "enviado":
+            row.enviado_em = agora
+        row.lote_id = None
+        row.reservado_em = None
+        row.reservado_por = None
+        atualizados += 1
+    await db.commit()
+    return atualizados

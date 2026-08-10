@@ -171,7 +171,6 @@ export default function Usuarios() {
 
   const [tela, setTela] = useState('lista');
   const [editandoId, setEditandoId] = useState(null);
-  const [escopoLista, setEscopoLista] = useState('projeto');
   const [vinculosNfp, setVinculosNfp] = useState(NFP_CAPTADORES_VINCULO);
   const [nomeProjetoAtual, setNomeProjetoAtual] = useState(nomeProjetoSessao);
 
@@ -212,6 +211,9 @@ export default function Usuarios() {
       return false;
     }
   }, []);
+  // ADM Global só opera a aba da organização (não a lista do projeto).
+  const soEscopoOrganizacao = podeGerenciarAdmGlobal && !podeGerenciar;
+  const [escopoLista, setEscopoLista] = useState('projeto');
   const perfisDisponiveis = useMemo(
     () => PERFIS.filter((perfil) => podeGerenciarGlobais || perfil !== 'Global'),
     [podeGerenciarGlobais]
@@ -234,6 +236,14 @@ export default function Usuarios() {
       navigate('/');
     }
   }, []);
+
+  useEffect(() => {
+    if (soEscopoOrganizacao && escopoLista !== 'organizacao') {
+      setEscopoLista('organizacao');
+      setFiltroPerfil('');
+      setPaginaUsuarios(1);
+    }
+  }, [soEscopoOrganizacao, escopoLista]);
 
   useEffect(() => {
     let ativo = true;
@@ -365,12 +375,12 @@ export default function Usuarios() {
   const abrirNovo = () => {
     limparAlertas();
     setErrosCampo({});
-    const perfilInicial = escopoLista === 'organizacao' ? 'ADM Global' : 'Consulta';
+    const perfilInicial = escopoLista === 'organizacao' ? 'ADM Produção' : 'Consulta';
     setForm({
       ...FORM_INICIAL,
       perfil_acesso: perfilInicial,
       is_global: false,
-      cargo: escopoLista === 'organizacao' ? 'ADM Global NFP' : '',
+      cargo: escopoLista === 'organizacao' ? 'ADM Produção NFP' : '',
       setor: escopoLista === 'organizacao' ? 'NFP – Créditos' : '',
       nfp_captador_vinculo: '',
     });
@@ -971,7 +981,7 @@ export default function Usuarios() {
           </div>
         )}
 
-        {podeGerenciarAdmGlobal && tela === 'lista' && (
+        {podeGerenciarAdmGlobal && tela === 'lista' && !soEscopoOrganizacao && (
           <div className="mb-4 flex flex-wrap gap-2">
             <button
               type="button"
@@ -1000,8 +1010,22 @@ export default function Usuarios() {
                   : 'border-slate-200 bg-white text-slate-700'
               }`}
             >
-              Usuários da organização
+              Usuários da organização (ADM Global / ADM Produção)
             </button>
+          </div>
+        )}
+
+        {soEscopoOrganizacao && tela === 'lista' && (
+          <div className="mb-4 rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
+            Você está na gestão de <strong>ADM Global</strong> e <strong>ADM Produção</strong> da organização.
+            No botão <strong>+ Novo ADM NFP</strong>, escolha o perfil e, para ADM Produção, o vínculo com a
+            {' '}
+            <strong>Sede</strong>
+            {' '}
+            ou com um
+            {' '}
+            <strong>projeto</strong>
+            .
           </div>
         )}
 
@@ -1370,23 +1394,25 @@ export default function Usuarios() {
                   </div>
 
                   {escopoLista === 'organizacao' && form.perfil_acesso === 'ADM Produção' && (
-                    <div>
-                      <label className="mb-1 block text-xs font-semibold text-slate-600">
-                        Vínculo NFP (projeto ou Sede)
+                    <div className="md:col-span-2 rounded-xl border border-teal-200 bg-teal-50/80 p-3">
+                      <label className="mb-1 block text-xs font-bold uppercase tracking-wide text-teal-800">
+                        Vínculo obrigatório: Sede ou projeto
                       </label>
                       <select
                         value={form.nfp_captador_vinculo || ''}
                         onChange={(e) => atualizarCampo('nfp_captador_vinculo', e.target.value)}
-                        className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400"
+                        className="w-full rounded-xl border border-teal-200 bg-white px-3 py-2 text-sm outline-none focus:border-teal-400"
                         required
                       >
-                        <option value="">Selecione…</option>
+                        <option value="">Selecione a Sede ou o projeto…</option>
                         {vinculosNfp.map((cap) => (
                           <option key={cap} value={cap}>{cap}</option>
                         ))}
                       </select>
-                      <p className="mt-1 text-[11px] text-slate-500">
-                        Equivale ao projeto CareCore (ou Sede). Leituras de cupons e a lista do gestor desse projeto usam este vínculo.
+                      <p className="mt-1.5 text-[11px] text-teal-900/80">
+                        O ADM Produção fica ligado a um único vínculo. O gestor desse projeto vê e administra
+                        o usuário na lista do projeto; leituras de cupons e faturamento seguem esse vínculo.
+                        ADM Global (perfil acima) não usa vínculo — atua na organização inteira.
                       </p>
                     </div>
                   )}

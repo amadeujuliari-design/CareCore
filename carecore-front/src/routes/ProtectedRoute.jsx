@@ -11,8 +11,8 @@ import {
   normalizarPerfilRbac,
   rotaEhLeituraCuponsNfp,
   rotaEhModuloAtividades,
-  rotaEhModuloNfp,
   rotaInicialPosLogin,
+  rotaPermitidaAdmGlobal,
   usuarioEhAdmGlobal,
   usuarioEhAdmProducao,
   usuarioEhOficineiro,
@@ -89,7 +89,7 @@ export default function ProtectedRoute({
     return <Navigate to="/nfp/leitura-cupons" replace />;
   }
 
-  if (usuarioEhAdmGlobal(usuario) && !rotaEhModuloNfp(pathname)) {
+  if (usuarioEhAdmGlobal(usuario) && !rotaPermitidaAdmGlobal(pathname)) {
     return <Navigate to="/nfp" replace />;
   }
 

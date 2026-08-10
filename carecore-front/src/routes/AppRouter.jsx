@@ -313,7 +313,7 @@ function RotasAplicacao() {
         <Route
           path="/usuarios"
           element={
-            <ProtectedRoute perfis={['Gestor', 'Global']}>
+            <ProtectedRoute perfis={['Gestor', 'Global', 'ADM Global']}>
               <Usuarios />
             </ProtectedRoute>
           }

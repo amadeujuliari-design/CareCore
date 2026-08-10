@@ -140,6 +140,14 @@ export function rotaEhModuloNfp(pathname) {
   return pathname === '/nfp' || pathname.startsWith('/nfp/');
 }
 
+/** Rotas extras liberadas para ADM Global além do módulo NFP. */
+export function rotaPermitidaAdmGlobal(pathname) {
+  if (rotaEhModuloNfp(pathname)) return true;
+  // Administração de ADM Global / ADM Produção (vínculo Sede ou projeto)
+  if (pathname === '/usuarios' || pathname.startsWith('/usuarios/')) return true;
+  return false;
+}
+
 export function rotaEhLeituraCuponsNfp(pathname) {
   return pathname === '/nfp/leitura-cupons' || pathname.startsWith('/nfp/leitura-cupons/');
 }

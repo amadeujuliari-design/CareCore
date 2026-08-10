@@ -134,6 +134,7 @@ PREFIXOS_API_PERMITIDOS_ADM_GLOBAL = (
     "/api/login",
     "/api/onboarding",
     "/api/usuarios/me",
+    "/api/usuarios/organizacao",
     "/api/passkeys",
     "/api/health",
 )
