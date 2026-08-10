@@ -188,7 +188,12 @@ def parada_solicitada() -> bool:
 
 def rodar_enviar_fila(*, cdp: str, caminho_json: Path) -> list[dict]:
     if not ENVIAR_FILA.is_file():
-        raise RuntimeError(f"Script nao encontrado: {ENVIAR_FILA}")
+        raise RuntimeError(
+            "Script do robô ausente: "
+            f"{ENVIAR_FILA}\n"
+            "Reinstale o CareCore-Agente-NFP.exe (versão nova) ou copie a pasta robo/ "
+            "para AppData\\Local\\CareCorePlus\\agente-nfp-robo\\robo\\"
+        )
     cmd = [
         sys.executable,
         str(ENVIAR_FILA),

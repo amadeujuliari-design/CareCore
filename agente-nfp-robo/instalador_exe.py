@@ -122,6 +122,12 @@ def _extrair_payload() -> None:
         if backup is not None:
             config_atual.write_bytes(backup)
             print("Mantive seu config.json anterior.")
+    enviar = INSTALL_DIR / "robo" / "enviar_fila.py"
+    if not enviar.is_file():
+        raise RuntimeError(
+            "Instalacao incompleta: falta robo/enviar_fila.py no pacote. "
+            "Baixe de novo o CareCore-Agente-NFP.exe do CareCore online."
+        )
     print(f"Pacote extraido em {INSTALL_DIR}")
 
 

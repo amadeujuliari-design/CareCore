@@ -29,8 +29,18 @@ foreach ($a in $arquivos) {
 $roboSrc = Join-Path $src 'robo'
 $roboDst = Join-Path $staging 'robo'
 New-Item -ItemType Directory -Force -Path $roboDst | Out-Null
-Copy-Item -LiteralPath (Join-Path $roboSrc '*.py') -Destination $roboDst -Force
-Copy-Item -LiteralPath (Join-Path $roboSrc 'requirements.txt') -Destination $roboDst -Force
+# Nao usar -LiteralPath com wildcard (nao expandia e o EXE saia sem enviar_fila.py).
+Get-ChildItem -LiteralPath $roboSrc -Filter '*.py' -File | ForEach-Object {
+  Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $roboDst $_.Name) -Force
+}
+$reqRobo = Join-Path $roboSrc 'requirements.txt'
+if (Test-Path -LiteralPath $reqRobo) {
+  Copy-Item -LiteralPath $reqRobo -Destination (Join-Path $roboDst 'requirements.txt') -Force
+}
+$pyRobo = @(Get-ChildItem -LiteralPath $roboDst -Filter '*.py' -File -ErrorAction SilentlyContinue)
+if ($pyRobo.Count -lt 1 -or -not (Test-Path -LiteralPath (Join-Path $roboDst 'enviar_fila.py'))) {
+  throw "Falha ao empacotar robo/: enviar_fila.py ausente em $roboDst"
+}
 Compress-Archive -Path (Join-Path $staging '*') -DestinationPath $payloadZip -Force
 
 # 2) ZIP publico (opcional / fallback)

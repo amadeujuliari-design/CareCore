@@ -44,10 +44,44 @@ def resolver_chrome() -> Optional[Path]:
     return None
 
 
-def _trazer_chrome_para_frente() -> bool:
-    """Traz a janela do Chrome do robô para o primeiro plano (Windows)."""
+def _pids_chrome_robo() -> set[int]:
+    """PIDs do Chrome com perfil CareCorePlus/chrome-nfp-robo (nao o Chrome pessoal)."""
     if sys.platform != "win32":
-        return False
+        return set()
+    try:
+        # CSV evita dependencias extras; filtra so o perfil do robo / porta 9222.
+        proc = subprocess.run(
+            [
+                "powershell",
+                "-NoProfile",
+                "-Command",
+                (
+                    "Get-CimInstance Win32_Process -Filter \"Name='chrome.exe'\" |"
+                    " Where-Object {"
+                    " $_.CommandLine -and"
+                    " ($_.CommandLine -match 'chrome-nfp-robo' -or"
+                    "  $_.CommandLine -match 'remote-debugging-port=9222')"
+                    " } |"
+                    " Select-Object -ExpandProperty ProcessId"
+                ),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=8,
+            encoding="utf-8",
+            errors="replace",
+        )
+        pids: set[int] = set()
+        for line in (proc.stdout or "").splitlines():
+            line = line.strip()
+            if line.isdigit():
+                pids.add(int(line))
+        return pids
+    except Exception:
+        return set()
+
+
+def _focar_hwnd(hwnd: int) -> bool:
     try:
         import ctypes
         from ctypes import wintypes
@@ -55,35 +89,6 @@ def _trazer_chrome_para_frente() -> bool:
         user32 = ctypes.windll.user32
         kernel32 = ctypes.windll.kernel32
         SW_RESTORE = 9
-        targets: list[tuple[int, int, str]] = []
-
-        @ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
-        def _enum(hwnd, _lparam):  # type: ignore[misc]
-            if not user32.IsWindowVisible(hwnd):
-                return True
-            buf = ctypes.create_unicode_buffer(512)
-            user32.GetWindowTextW(hwnd, buf, 512)
-            title = buf.value or ""
-            if "Google Chrome" not in title:
-                return True
-            low = title.lower()
-            if "nota fiscal" in low or "fazenda" in low or "nfp" in low:
-                score = 4
-            elif "nova guia" in low or "new tab" in low or title.strip() in {
-                "Google Chrome",
-                "about:blank - Google Chrome",
-            }:
-                score = 3
-            else:
-                score = 1
-            targets.append((score, int(hwnd), title))
-            return True
-
-        user32.EnumWindows(_enum, 0)
-        if not targets:
-            return False
-        targets.sort(key=lambda item: (-item[0], item[2]))
-        hwnd = targets[0][1]
         user32.ShowWindow(hwnd, SW_RESTORE)
         fg = user32.GetForegroundWindow()
         fg_tid = wintypes.DWORD()
@@ -98,6 +103,105 @@ def _trazer_chrome_para_frente() -> bool:
         return True
     except Exception:
         return False
+
+
+def _trazer_chrome_para_frente() -> bool:
+    """Traz a janela do Chrome do robô (perfil NFP) para o primeiro plano."""
+    if sys.platform != "win32":
+        return False
+
+    # 1) AppActivate pelo titulo do portal (evita janela pequena de outro Chrome).
+    for titulo in ("Nota Fiscal Paulista", "Nota Fiscal", "nfp.fazenda"):
+        try:
+            ps = (
+                "$w = New-Object -ComObject WScript.Shell; "
+                f"if ($w.AppActivate('{titulo}')) {{ exit 0 }} else {{ exit 1 }}"
+            )
+            r = subprocess.run(
+                ["powershell", "-NoProfile", "-Command", ps],
+                capture_output=True,
+                timeout=5,
+            )
+            if r.returncode == 0:
+                return True
+        except Exception:
+            pass
+
+    # 2) EnumWindows so em PIDs do Chrome do robô.
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        user32 = ctypes.windll.user32
+        pids = _pids_chrome_robo()
+        if not pids:
+            return False
+        targets: list[tuple[int, int, str]] = []
+
+        @ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+        def _enum(hwnd, _lparam):  # type: ignore[misc]
+            if not user32.IsWindowVisible(hwnd):
+                return True
+            pid = wintypes.DWORD()
+            user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+            if int(pid.value) not in pids:
+                return True
+            buf = ctypes.create_unicode_buffer(512)
+            user32.GetWindowTextW(hwnd, buf, 512)
+            title = buf.value or ""
+            if not title or "Google Chrome" not in title:
+                return True
+            low = title.lower()
+            if "nota fiscal" in low or "fazenda" in low or "nfp" in low:
+                score = 5
+            elif "nova guia" in low or "new tab" in low:
+                score = 2
+            else:
+                score = 1
+            targets.append((score, int(hwnd), title))
+            return True
+
+        user32.EnumWindows(_enum, 0)
+        if not targets:
+            return False
+        targets.sort(key=lambda item: (-item[0], item[2]))
+        return _focar_hwnd(targets[0][1])
+    except Exception:
+        return False
+
+
+def _focar_aba_cdp(cdp: str, tab: dict[str, Any]) -> bool:
+    """Ativa aba NFP e restaura a janela via CDP do browser (nao do Chrome pessoal)."""
+    ok = False
+    tab_id = str(tab.get("id") or "")
+    if tab_id:
+        try:
+            _ativar_aba(cdp, tab_id)
+            ok = True
+        except Exception:
+            pass
+    ws_page = str(tab.get("webSocketDebuggerUrl") or "")
+    if ws_page:
+        if _ws_cdp_cmds(ws_page, [{"id": 1, "method": "Page.bringToFront"}]):
+            ok = True
+    st = status_cdp(cdp)
+    ws_browser = str(st.get("webSocketDebuggerUrl") or "")
+    target_id = str(tab.get("id") or "")
+    if ws_browser and target_id:
+        cmds = [
+            {"id": 1, "method": "Target.activateTarget", "params": {"targetId": target_id}},
+            {
+                "id": 2,
+                "method": "Browser.getWindowForTarget",
+                "params": {"targetId": target_id},
+            },
+        ]
+        # setWindowBounds precisa do windowId; tentamos restore mesmo sem parse completo
+        _ws_cdp_cmds(ws_browser, cmds)
+        ok = True
+    if _trazer_chrome_para_frente():
+        ok = True
+    return ok
 
 
 def _cdp_put(url: str, timeout: float = 5.0) -> dict[str, Any]:
@@ -122,8 +226,8 @@ def _ativar_aba(cdp: str, tab_id: str) -> None:
         resp.read()
 
 
-def _navegar_via_ws(ws_url: str, url: str) -> bool:
-    """Navega com Page.navigate via WebSocket CDP (stdlib)."""
+def _ws_cdp_cmds(ws_url: str, cmds: list[dict[str, Any]]) -> bool:
+    """Envia comandos CDP via WebSocket (stdlib, sem dependencia extra)."""
     try:
         import base64
         import hashlib
@@ -179,14 +283,25 @@ def _navegar_via_ws(ws_url: str, url: str) -> bool:
                 masked = bytes(b ^ mask[i % 4] for i, b in enumerate(data))
                 sock.sendall(bytes(header) + masked)
 
-            _send({"id": 1, "method": "Page.bringToFront"})
-            _send({"id": 2, "method": "Page.navigate", "params": {"url": url}})
-            time.sleep(0.2)
+            for cmd in cmds:
+                _send(cmd)
+            time.sleep(0.15)
             return True
         finally:
             sock.close()
     except Exception:
         return False
+
+
+def _navegar_via_ws(ws_url: str, url: str) -> bool:
+    """Navega com Page.navigate via WebSocket CDP."""
+    return _ws_cdp_cmds(
+        ws_url,
+        [
+            {"id": 1, "method": "Page.bringToFront"},
+            {"id": 2, "method": "Page.navigate", "params": {"url": url}},
+        ],
+    )
 
 
 def _abrir_aba_nfp_via_cdp(cdp: str = CDP_PADRAO) -> dict[str, Any]:
@@ -201,11 +316,13 @@ def _abrir_aba_nfp_via_cdp(cdp: str = CDP_PADRAO) -> dict[str, Any]:
                 alvo = tab
                 break
         if alvo and alvo.get("id"):
-            _ativar_aba(cdp, str(alvo["id"]))
-            ws = str(alvo.get("webSocketDebuggerUrl") or "")
-            if ws:
-                _navegar_via_ws(ws, URL_NFP)
-            focado = _trazer_chrome_para_frente()
+            # Nao forca reload se ja esta no portal (preserva login).
+            u_atual = str(alvo.get("url") or "").lower()
+            if "nfp.fazenda.sp.gov.br" not in u_atual:
+                ws = str(alvo.get("webSocketDebuggerUrl") or "")
+                if ws:
+                    _navegar_via_ws(ws, URL_NFP)
+            focado = _focar_aba_cdp(cdp, alvo)
             return {
                 "ok": True,
                 "modo": "ativar_aba",
@@ -222,14 +339,10 @@ def _abrir_aba_nfp_via_cdp(cdp: str = CDP_PADRAO) -> dict[str, Any]:
         data = _cdp_put(f"{base}/json/new?{encoded}")
         tab_id = data.get("id")
         if tab_id:
-            try:
-                _ativar_aba(cdp, str(tab_id))
-            except Exception:
-                pass
             ws = str(data.get("webSocketDebuggerUrl") or "")
             if ws:
                 _navegar_via_ws(ws, URL_NFP)
-            focado = _trazer_chrome_para_frente()
+            focado = _focar_aba_cdp(cdp, data)
             return {
                 "ok": True,
                 "modo": "nova_aba",
@@ -244,11 +357,10 @@ def _abrir_aba_nfp_via_cdp(cdp: str = CDP_PADRAO) -> dict[str, Any]:
         pages = _listar_paginas(cdp)
         if pages and pages[0].get("id"):
             alvo = pages[0]
-            _ativar_aba(cdp, str(alvo["id"]))
             ws = str(alvo.get("webSocketDebuggerUrl") or "")
             if ws:
                 _navegar_via_ws(ws, URL_NFP)
-            focado = _trazer_chrome_para_frente()
+            focado = _focar_aba_cdp(cdp, alvo)
             return {
                 "ok": True,
                 "modo": "ativar_primeira",
