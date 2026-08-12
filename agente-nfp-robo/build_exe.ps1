@@ -17,8 +17,8 @@ New-Item -ItemType Directory -Force -Path $buildDir | Out-Null
 $staging = Join-Path $buildDir 'payload'
 New-Item -ItemType Directory -Force -Path $staging | Out-Null
 $arquivos = @(
-  'agente_nfp.py','painel.py','carecore_api.py','chrome_local.py',
-  'requirements.txt','config.exemplo.json','LEIA-ME.txt',
+  'agente_nfp.py','painel.py','carecore_api.py','chrome_local.py','contador_hud.py',
+  'requirements.txt','config.exemplo.json','LEIA-ME.txt','AGENTE_VERSAO.txt',
   'abrir_painel.bat','abrir_chrome.bat','instalar.bat',
   'iniciar_envio_continuo.bat','iniciar_envio_lote.bat','parar_envio.bat','status.bat'
 )

@@ -252,6 +252,14 @@ def processar_sessao(
         )
 
     limpar_parar()
+    try:
+        sys.path.insert(0, str(ROBO_DIR))
+        from contador_estado import abrir_hud, resetar as resetar_contador
+
+        resetar_contador(mensagem="Sessão de envio iniciada.")
+        abrir_hud()
+    except Exception:
+        pass
     restante = int(limite) if limite is not None else None
     lotes = 0
     processados = 0

@@ -34,6 +34,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from ler_planilha_chaves import ler_chaves_json, ler_chaves_xlsx  # noqa: E402
+from contador_estado import marcar_fim, registrar_item  # noqa: E402
 from navegar_doacao_aeb import (  # noqa: E402
     bloqueio_doacao_terceiros_sefaz,
     garantir_tela_doacao_aeb,
@@ -335,6 +336,15 @@ async def rodar(args: argparse.Namespace) -> int:
                     "trecho": cls.trecho,
                 }
             )
+            try:
+                registrar_item(
+                    tipo=cls.tipo,
+                    status_carecore=cls.status_carecore,
+                    mensagem=cls.mensagem,
+                    chave=chave,
+                )
+            except Exception:
+                pass
 
             if cls.tipo == "sessao_caiu":
                 motivo_interrupcao = "sessao_caiu"
@@ -410,6 +420,10 @@ async def rodar(args: argparse.Namespace) -> int:
             + (" (parado)" if parado_pelo_usuario else "")
         )
         print(f"Log: {out_json}")
+    try:
+        marcar_fim(mensagem=f"Fim do lote — motivo={motivo_interrupcao or 'ok'}")
+    except Exception:
+        pass
     try:
         STOP_FLAG.unlink(missing_ok=True)
     except OSError:

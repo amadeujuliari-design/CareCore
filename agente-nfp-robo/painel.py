@@ -20,6 +20,7 @@ from typing import Any, Optional
 
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "robo"))
 
 from agente_nfp import (  # noqa: E402
     autenticar,
@@ -264,9 +265,10 @@ HTML = r"""<!DOCTYPE html>
       <div class="row">
         <button class="primary" id="btnEnviar" type="button">Rodar rotina / enviar fila</button>
         <button class="secondary" id="btnContinuo" type="button">Envio contínuo (noite)</button>
+        <button class="secondary" id="btnContador" type="button">Abrir contador</button>
         <button class="secondary" id="btnParar" type="button">Parar</button>
       </div>
-      <p class="sub">Continuo: esgota a fila, espera novas leituras e só para se a sessão SEFAZ cair ou você clicar em Parar.</p>
+      <p class="sub">Continuo: esgota a fila e espera novas leituras. Contador: janela no topo — arraste sobre a Fazenda (abre sozinho ao enviar).</p>
       <div class="log" id="log"></div>
     </div>
 
@@ -377,6 +379,12 @@ HTML = r"""<!DOCTYPE html>
         await refresh();
       } catch (e) { showMsg(String(e.message || e), 'err'); }
     };
+    $('btnContador').onclick = async () => {
+      try {
+        const data = await api('/api/contador', { method: 'POST', body: '{}' });
+        showMsg(data.mensagem || 'Contador aberto.', 'ok', 8000);
+      } catch (e) { showMsg(String(e.message || e), 'err'); }
+    };
 
     async function enviar(continuo) {
       const raw = $('limite').value.trim();
@@ -467,6 +475,28 @@ class PainelHandler(BaseHTTPRequestHandler):
                 marcar_parar()
                 _set_job(mensagem="Parada solicitada pelo painel.")
                 self._send_json(200, {"ok": True, "mensagem": "Parada solicitada."})
+                return
+            if path == "/api/contador":
+                from contador_estado import abrir_hud
+
+                pid = abrir_hud()
+                if not pid:
+                    self._send_json(
+                        500,
+                        {
+                            "ok": False,
+                            "erro": "contador_hud.py nao encontrado na pasta do agente.",
+                        },
+                    )
+                    return
+                self._send_json(
+                    200,
+                    {
+                        "ok": True,
+                        "mensagem": "Contador aberto (janela no topo). Arraste sobre o site da Fazenda.",
+                        "pid": pid,
+                    },
+                )
                 return
             if path == "/api/enviar":
                 with _job_lock:
