@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
 """
-Robo NFP — envia fila de chaves (preencher + Registrar Doacao).
+Robo NFP — envia fila de chaves (preencher + Salvar Nota).
 
-Fluxo oficial do operador:
+Fluxo oficial do operador (representante ONG — NAO doacao de consumidor):
   1) Chrome com depuracao (porta 9222)
   2) Login/CAPTCHA ate a tela inicial (principal / Bem-vindo)
-  3) Rodar a fila — o robo sozinho vai a DoacaoNotas, seleciona AEB
-     e, se o site voltar para o inicio, recupera e retoma
+  3) Entidades → Cadastramento de Cupons → Prosseguir → AEB → Nova Nota
+     → chave → Salvar Nota; se voltar ao inicio, recupera o mesmo caminho
 
 Trata tambem:
   - popup "Deseja doar todos os documentos...?" → clica Nao
   - "Este pedido já existe no sistema..." → ja resolvido (enviado)
-  - "Doação registrada com sucesso..." → sucesso (enviado)
-  - bloqueio SEFAZ (notas de terceiros) → para sem martelar menu/Ok
+  - sucesso / prazo / erros da SEFAZ
+  - se cair no fluxo consumidor (bloqueio terceiros) → para sem martelar
 
 Uso:
   python scripts/nfp_robo/enviar_fila.py --cdp http://127.0.0.1:9222
@@ -45,6 +45,7 @@ from preencher_sem_enviar import (  # noqa: E402
     aguardar_classificacao_retorno,
     classificar_retorno_pagina,
     clicar_registrar,
+    coletar_texto_retorno,
     conectar_navegador,
     escolher_pagina,
     fechar_modal_mensagem,
@@ -98,14 +99,17 @@ async def fechar_popup_doacao_automatica(page) -> None:
             continue
 
 
-async def processar_retorno(page) -> object:
-    """Aguarda pos-envio, classifica mensagem e so depois fecha modais."""
+async def processar_retorno(page, *, texto_antes: str = "") -> object:
+    """Aguarda pos-envio, classifica mensagem (modal OU banner inline) e fecha modais se houver."""
     await page.wait_for_timeout(200)
-    # Classifica COM o modal aberto. Fechar "Nao" antes apagava o sucesso
-    # e sobrava so o texto antigo "já existe" no DOM.
-    cls = await aguardar_classificacao_retorno(page, timeout_ms=5000, intervalo_ms=200)
+    # Cadastro entidade: sucesso aparece em texto azul no topo, sem modal.
+    cls = await aguardar_classificacao_retorno(
+        page, timeout_ms=8000, intervalo_ms=250, texto_antes=texto_antes
+    )
     if cls.tipo == "inconclusivo":
-        cls = await aguardar_classificacao_retorno(page, timeout_ms=7000, intervalo_ms=300)
+        cls = await aguardar_classificacao_retorno(
+            page, timeout_ms=7000, intervalo_ms=300, texto_antes=texto_antes
+        )
 
     # Bloqueio de conta: nao clicar Ok (e nao retomar Nova Doacao depois).
     if cls.tipo == "bloqueio_sefaz" or await bloqueio_doacao_terceiros_sefaz(page):
@@ -123,10 +127,10 @@ async def processar_retorno(page) -> object:
         print("Bloqueio SEFAZ detectado — mantendo modal; encerrar sessao.")
         return cls
 
+    # Sucesso/erro inline: nao ha Ok para clicar — so fecha se existir modal.
     await fechar_popup_doacao_automatica(page)
     await fechar_modal_mensagem(page)
     if cls.status_carecore == "rejeitado_prazo":
-        # Segunda tentativa rapida: modal de prazo às vezes reaparece.
         await page.wait_for_timeout(150)
         await fechar_modal_mensagem(page)
     return cls
@@ -150,7 +154,7 @@ async def _posicionar_tela(page, *, rotulo: str) -> str:
         return "bloqueio_sefaz"
     if await sessao_nfp_caiu(page):
         return "sessao_caiu"
-    print(f"Falha ao posicionar DoacaoNotas/AEB ({rotulo}).")
+    print(f"Falha ao posicionar Cadastro de Notas/AEB ({rotulo}).")
     return "falha"
 
 
@@ -181,7 +185,10 @@ async def rodar(args: argparse.Namespace) -> int:
             return 1
 
     print(f"Enviando {len(fila)} chave(s). Pausa entre envios: {args.pausa}s")
-    print("Rotina inicial: a partir da tela Bem-vindo o robo abre DoacaoNotas + AEB.")
+    print(
+        "Rotina inicial: Entidades → Cadastramento de Cupons → Prosseguir → AEB → Nova Nota."
+    )
+    print("Envio com Salvar Nota (representante ONG). Nao usa Doacao de Cupons sem CPF.")
     print("Se o site voltar ao inicio no meio da fila, o robo recupera e retoma.")
     print("Ctrl+C ou botao Parar no CareCore para interromper.\n")
     if not args.auto:
@@ -206,15 +213,17 @@ async def rodar(args: argparse.Namespace) -> int:
         if page is None:
             return 1
 
-        print("Rotina inicial: posicionando DoacaoNotas + entidade AEB (pode partir da home)...")
+        print(
+            "Rotina inicial: posicionando Cadastro de Notas (representante) + AEB..."
+        )
         estado0 = await _posicionar_tela(page, rotulo="inicio")
         if estado0 == "sessao_caiu":
             print("ERRO: sessao NFP caiu (login). Autentique manualmente e rode de novo.")
             return 1
         if estado0 == "bloqueio_sefaz":
             print(
-                "ERRO: SEFAZ bloqueou doacao nesta conta (indicios de notas de terceiros). "
-                "Nao vou insistir em menu/Nova Doacao."
+                "ERRO: SEFAZ mostrou bloqueio de doacao de *consumidor*. "
+                "Feche o modal, va em Entidades → Cadastramento de Cupons e rode de novo."
             )
             return 1
         if estado0 == "parada_usuario":
@@ -222,11 +231,11 @@ async def rodar(args: argparse.Namespace) -> int:
             return 0
         if estado0 != "ok":
             print(
-                "ERRO: nao consegui posicionar a tela de doacao com AEB. "
-                "Confirme que esta logado na NFP (tela Bem-vindo) e tente de novo."
+                "ERRO: nao consegui posicionar Cadastro de Notas com AEB. "
+                "Confirme login na NFP (Bem-vindo) e tente de novo."
             )
             return 1
-        print("Rotina inicial ok — iniciando envios.")
+        print("Rotina inicial ok — iniciando envios (Salvar Nota).")
 
         ok_count = 0
         ja_existe_count = 0
@@ -258,7 +267,7 @@ async def rodar(args: argparse.Namespace) -> int:
             if estado != "ok":
                 motivo_interrupcao = "falha_tela"
                 print(
-                    "Falha ao recuperar tela DoacaoNotas/AEB — interrompendo. "
+                    "Falha ao recuperar Cadastro de Notas/AEB — interrompendo. "
                     f"Retome com --inicio {i - 1 + int(args.inicio)}"
                 )
                 break
@@ -278,9 +287,16 @@ async def rodar(args: argparse.Namespace) -> int:
                     print("Falha ao preencher — interrompendo.")
                     motivo_interrupcao = "falha_preencher"
                     return 1
+
+            # Snapshot antes do Salvar: sucesso fica inline e nao some sozinho.
+            try:
+                texto_antes = await coletar_texto_retorno(page)
+            except Exception:
+                texto_antes = ""
+
             if not await clicar_registrar(page):
-                print("Registrar falhou — tentando recuperar tela e repetir uma vez...")
-                estado_r = await _posicionar_tela(page, rotulo="retry registrar")
+                print("Salvar Nota falhou — tentando recuperar tela e repetir uma vez...")
+                estado_r = await _posicionar_tela(page, rotulo="retry salvar")
                 if estado_r == "bloqueio_sefaz":
                     motivo_interrupcao = "bloqueio_sefaz"
                     print("Bloqueio SEFAZ no retry — parando.")
@@ -290,16 +306,20 @@ async def rodar(args: argparse.Namespace) -> int:
                         print("Falha ao preencher apos recuperacao — interrompendo.")
                         motivo_interrupcao = "falha_preencher"
                         return 1
+                    try:
+                        texto_antes = await coletar_texto_retorno(page)
+                    except Exception:
+                        texto_antes = ""
                     if not await clicar_registrar(page):
-                        print("Falha ao clicar Registrar — interrompendo.")
+                        print("Falha ao clicar Salvar Nota — interrompendo.")
                         motivo_interrupcao = "falha_registrar"
                         return 1
                 else:
-                    print("Falha ao clicar Registrar — interrompendo.")
+                    print("Falha ao clicar Salvar Nota — interrompendo.")
                     motivo_interrupcao = "falha_registrar"
                     return 1
 
-            cls = await processar_retorno(page)
+            cls = await processar_retorno(page, texto_antes=texto_antes)
             print(
                 f"Resultado: {cls.tipo} | CareCore->{cls.status_carecore} | {cls.mensagem}"
             )

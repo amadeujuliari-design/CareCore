@@ -155,16 +155,16 @@ async def garantir_nao_enviar(page) -> None:
 
 
 async def clicar_registrar(page) -> bool:
-    """Clica em Registrar Doacao / Salvar Nota. Usar so em teste explicito."""
+    """Clica em Salvar Nota (cadastro representante ONG).
+
+    Nao clica em Registrar Doacao (fluxo consumidor — causa bloqueio SEFAZ).
+    """
     candidatos = [
-        page.locator('input[type="submit"][value*="Registrar Doação" i]'),
-        page.locator('input[value*="Registrar Doação" i]'),
-        page.get_by_role("button", name=re.compile(r"registrar\s*doa[cç][aã]o", re.I)),
+        page.locator('input[value*="Salvar Nota" i]'),
+        page.locator('input[type="submit"][value*="Salvar Nota" i]'),
+        page.locator('input[type="button"][value*="Salvar Nota" i]'),
         page.get_by_role("button", name=re.compile(r"salvar\s*nota", re.I)),
-        page.locator('input[type="submit"][value*="Registrar" i]'),
-        page.locator('input[type="button"][value*="Registrar" i]'),
         page.locator('input[type="submit"][value*="Salvar" i]'),
-        page.locator('a', has_text=re.compile(r"registrar\s*doa", re.I)),
     ]
     for loc in candidatos:
         try:
@@ -174,7 +174,7 @@ async def clicar_registrar(page) -> bool:
             if await alvo.is_visible(timeout=800):
                 await alvo.scroll_into_view_if_needed()
                 await alvo.click(timeout=5000)
-                print("Cliquei no botao de envio. Aguarde o retorno do site...")
+                print("Cliquei em Salvar Nota. Aguarde o retorno do site...")
                 try:
                     await page.wait_for_load_state("domcontentloaded", timeout=15000)
                 except Exception:
@@ -183,7 +183,7 @@ async def clicar_registrar(page) -> bool:
                 return True
         except Exception:
             continue
-    print("ERRO: nao achei botao Registrar Doacao / Salvar Nota.")
+    print("ERRO: nao achei botao Salvar Nota (tela de cadastro da entidade).")
     return False
 
 
@@ -196,7 +196,7 @@ async def resumir_retorno(page) -> str:
 
 
 async def _texto_modais_visiveis(page) -> str:
-    """Prioriza texto de modais/dialogs (sucesso e erro ficam aqui na NFP)."""
+    """Prioriza texto de modais/dialogs e banners inline (cadastro entidade)."""
     try:
         partes = await page.evaluate(
             """() => {
@@ -208,22 +208,40 @@ async def _texto_modais_visiveis(page) -> str:
                 '[id*="pnlMensagem"]',
                 '[id*="pnlErro"]',
                 '[id*="Modal"]',
+                '[id*="Mensagem"]',
+                '[id*="lblMsg"]',
+                '[id*="lblMensagem"]',
+                '[id*="litMensagem"]',
                 '[class*="mensagem" i]',
                 '[class*="aviso" i]',
               ];
               const out = [];
               const seen = new Set();
+              const push = (t) => {
+                const compact = (t || "").replace(/\\s+/g, " ").trim();
+                if (!compact || compact.length < 8 || seen.has(compact)) return;
+                if (/^(Erro|Aviso|Mensagem)?\\s*close?\\s*Ok$/i.test(compact)) return;
+                seen.add(compact);
+                out.push(compact);
+              };
               for (const s of sels) {
                 for (const el of document.querySelectorAll(s)) {
                   const style = window.getComputedStyle(el);
                   if (style && (style.display === "none" || style.visibility === "hidden")) continue;
-                  const t = (el.innerText || el.textContent || "").trim();
-                  if (!t || t.length < 8 || seen.has(t)) continue;
-                  const compact = t.replace(/\\s+/g, " ");
-                  if (/^(Erro|Aviso|Mensagem)?\\s*close?\\s*Ok$/i.test(compact)) continue;
-                  seen.add(t);
-                  out.push(compact);
+                  push(el.innerText || el.textContent || "");
                 }
+              }
+              // Banners inline do CadastroNotaEntidade (sem modal)
+              const body = document.body ? (document.body.innerText || "") : "";
+              const patterns = [
+                /Doa[cç][aã]o registrada com sucesso[^\\n]{0,100}/i,
+                /Este pedido j[aá] existe no sistema[^\\n]{0,120}/i,
+                /A Data da Nota excedeu o prazo m[aá]ximo para cadastro[^\\n]{0,40}/i,
+                /excedeu o prazo m[aá]ximo para cadastro[^\\n]{0,40}/i,
+              ];
+              for (const re of patterns) {
+                const m = body.match(re);
+                if (m) push(m[0]);
               }
               return out;
             }"""
@@ -262,14 +280,40 @@ async def classificar_retorno_pagina(page) -> "ClassificacaoRetorno":
     return classificar_texto_retorno(texto, url=url)
 
 
+def _extrair_horarios_sucesso(texto: str) -> list[str]:
+    """Horarios embutidos na msg inline: '... sucesso. ... 12/08/2026 04:36:39'."""
+    return re.findall(
+        r"doa[cç][aã]o\s+registrada\s+com\s+sucesso[^\d]{0,80}(\d{2}/\d{2}/\d{4}\s+\d{2}:\d{2}:\d{2})",
+        texto or "",
+        flags=re.I,
+    )
+
+
+def _banner_inline_compacto(texto: str) -> str:
+    """Trecho curto do banner de retorno do cadastro entidade."""
+    from retorno_nfp import classificar_texto_retorno
+
+    cls = classificar_texto_retorno(texto or "")
+    if cls.tipo == "inconclusivo":
+        return ""
+    return (cls.trecho or cls.mensagem or "").strip()[:180]
+
+
 async def aguardar_classificacao_retorno(
     page,
     *,
     timeout_ms: int = 12000,
     intervalo_ms: int = 350,
+    texto_antes: str = "",
 ) -> "ClassificacaoRetorno":
-    """Espera o modal/mensagem da NFP antes de classificar (evita falso inconclusivo)."""
-    from retorno_nfp import ClassificacaoRetorno
+    """Espera mensagem da NFP (modal OU banner inline no cadastro entidade).
+
+    texto_antes: snapshot antes do Salvar Nota — evita falso positivo com
+    banner antigo (sucesso / ja existe / prazo) que permanece no topo.
+    """
+    import time
+
+    from retorno_nfp import ClassificacaoRetorno, classificar_texto_retorno
 
     tentativas = max(1, int(timeout_ms / max(intervalo_ms, 50)))
     ultima = ClassificacaoRetorno(
@@ -277,11 +321,49 @@ async def aguardar_classificacao_retorno(
         mensagem="Retorno não reconhecido — revisar manualmente.",
         status_carecore="pendente",
     )
+    antes = texto_antes or ""
+    cls_antes = classificar_texto_retorno(antes) if antes else None
+    hs_antes = set(_extrair_horarios_sucesso(antes))
+    banner_antes = _banner_inline_compacto(antes) if antes else ""
+    t0 = time.monotonic()
+    # Postback do Salvar Nota: mesmo texto "já existe"/"prazo" em cupons
+    # consecutivos e valido apos esta janela (nao ha horario na mensagem).
+    aceitar_mesmo_banner_ms = 1600
+
     for _ in range(tentativas):
-        ultima = await classificar_retorno_pagina(page)
-        if ultima.tipo != "inconclusivo":
-            return ultima
-        await page.wait_for_timeout(intervalo_ms)
+        try:
+            texto_agora = await coletar_texto_retorno(page)
+        except Exception:
+            texto_agora = ""
+        ultima = classificar_texto_retorno(texto_agora, url=page.url)
+        if ultima.tipo == "inconclusivo":
+            await page.wait_for_timeout(intervalo_ms)
+            continue
+
+        elapsed_ms = (time.monotonic() - t0) * 1000
+
+        if ultima.tipo == "sucesso" and antes:
+            hs_agora = set(_extrair_horarios_sucesso(texto_agora))
+            novos = hs_agora - hs_antes
+            if not novos and cls_antes and cls_antes.tipo == "sucesso":
+                await page.wait_for_timeout(intervalo_ms)
+                continue
+
+        # ja_existe / prazo (e erro generico): se o banner era o mesmo antes do clique,
+        # espera o postback; se continuar igual, aceita (nova chave, mesma msg).
+        if (
+            ultima.tipo in {"ja_existe", "erro"}
+            and cls_antes
+            and cls_antes.tipo == ultima.tipo
+            and banner_antes
+        ):
+            banner_agora = _banner_inline_compacto(texto_agora)
+            if banner_agora and banner_agora == banner_antes and elapsed_ms < aceitar_mesmo_banner_ms:
+                await page.wait_for_timeout(intervalo_ms)
+                continue
+
+        return ultima
+
     return ultima
 
 

@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
-"""Classificacao das mensagens de retorno da tela DoacaoNotas (NFP/SEFAZ)."""
+"""Classificacao das mensagens de retorno do cadastro NFP (SEFAZ).
+
+No fluxo CadastroNotaEntidade (representante ONG) as msgs principais sao
+INLINE no topo do formulario (sem modal):
+  - sucesso: "Doação registrada com sucesso. Aguardando processamento..."
+  - ja existe: "Este pedido já existe no sistema. Favor inserir uma nova nota."
+  - prazo: "A Data da Nota excedeu o prazo máximo para cadastro."
+"""
 
 from __future__ import annotations
 
@@ -16,11 +23,12 @@ ResultadoTipo = Literal[
     "inconclusivo",
 ]
 
-# Capturado em 2026-08-07 na DoacaoNotas.aspx
+# CadastroNotaEntidade.aspx (inline) — 2026-08-12
 MSG_PEDIDO_JA_EXISTE = "Este pedido já existe no sistema. Favor inserir uma nova nota."
 MSG_SUCESSO = (
     "Doação registrada com sucesso. Aguardando processamento pelo sistema."
 )
+MSG_PRAZO = "A Data da Nota excedeu o prazo máximo para cadastro."
 
 RE_JA_EXISTE = re.compile(
     r"este\s+pedido\s+j[aá]\s+existe|"
@@ -35,13 +43,15 @@ RE_SUCESSO = re.compile(
     r"doa[cç][aã]o\s+registrada\s+com\s+sucesso|"
     r"aguardando\s+processamento\s+pelo\s+sistema|"
     r"doa[cç][aã]o\s+(?:registrad|realizad|efetuad|conclu[ií]d)|"
+    r"nota\s+(?:cadastrad|salv|registrad|inclu[ií]d)[oa]\s+com\s+sucesso|"
+    r"cadastr[oa]\s+(?:da\s+)?nota\s+(?:realizado|efetuado|conclu[ií]do)|"
     r"registrad[oa]\s+com\s+sucesso|"
     r"realizad[oa]\s+com\s+sucesso|"
     r"efetuad[oa]\s+com\s+sucesso|"
     r"inclu[ií]d[oa]\s+com\s+sucesso|"
     r"cadastrad[oa]\s+com\s+sucesso|"
     r"opera[cç][aã]o\s+realizada\s+com\s+sucesso|"
-    r"documento\s+(?:doado|inclu[ií]do|registrado)\s+com\s+sucesso|"
+    r"documento\s+(?:doado|inclu[ií]do|registrado|cadastrado)\s+com\s+sucesso|"
     r"nota\s+doada\s+com\s+sucesso|"
     r"pedido\s+registrado",
     re.I,
@@ -55,8 +65,9 @@ RE_ERRO = re.compile(
     re.I,
 )
 
-# Modal SEFAZ: "A Data da Nota excedeu o prazo máximo para cadastro"
+# Inline: "A Data da Nota excedeu o prazo máximo para cadastro."
 RE_PRAZO = re.compile(
+    r"a\s+data\s+da\s+nota\s+excedeu|"
     r"excedeu\s+o\s+prazo|"
     r"prazo\s+m[aá]ximo\s+para\s+cadastro|"
     r"fora\s+do\s+prazo|"

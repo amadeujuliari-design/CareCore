@@ -1,34 +1,48 @@
 #!/usr/bin/env python3
-"""Recupera a tela DoacaoNotas com entidade AEB selecionada.
+"""Posiciona a tela de cadastro de cupons como representante da entidade (AEB).
 
-Fluxo observado na NFP (2026-08-07):
+Fluxo oficial (prints 2026-08-12) — NÃO usar doação de consumidor:
   principal.aspx
-    → Entidades → Doação de Cupons sem CPF
-  DoacaoNotasListagem.aspx
-    → Nova Doação
-  DoacaoNotas.aspx (sem entidade)
-    → CNPJ 61.705.877/0001-72 → Pesquisar → marcar AEB
-  Modal instrutivo (chave 44 digitos)
-    → Sim / ESC
+    → Entidades → Cadastramento de Cupons
+  CadastroNotaEntidadeAviso.aspx
+    → Prosseguir  (Voltar = volta à doação de consumidor — evitar)
+  Listagem de Notas
+    → combo Entidade = ASSOCIACAO EVANGELICA BENEFICENTE
+    → Nova Nota
+  ListagemNotaEntidade.aspx (Cadastro de doação de documento fiscal)
+    → Chave-de-acesso → Salvar Nota
 """
 
 from __future__ import annotations
 
 import re
-from typing import Optional
 
 CNPJ_AEB_DIGITOS = "61705877000172"
 CNPJ_AEB_FMT = "61.705.877/0001-72"
-URL_DOACAO = (
-    "https://www.nfp.fazenda.sp.gov.br/EntidadesFilantropicas/DoacaoNotas.aspx"
+NOME_AEB_MARKERS = (
+    "ASSOCIACAO EVANGELICA BENEFICENTE",
+    "ASSOCIAÇÃO EVANGÉLICA BENEFICENTE",
+    "ASSOCIACAO EVANGÉLICA BENEFICENTE",
+    "ASSOCIAÇÃO EVANGELICA BENEFICENTE",
 )
-URL_LISTAGEM = (
-    "https://www.nfp.fazenda.sp.gov.br/EntidadesFilantropicas/DoacaoNotasListagem.aspx"
+
+URL_AVISO = (
+    "https://www.nfp.fazenda.sp.gov.br/EntidadesFilantropicas/CadastroNotaEntidadeAviso.aspx"
+)
+URL_CADASTRO = (
+    "https://www.nfp.fazenda.sp.gov.br/EntidadesFilantropicas/CadastroNotaEntidade.aspx"
+)
+URL_LISTAGEM_NOTA = (
+    "https://www.nfp.fazenda.sp.gov.br/EntidadesFilantropicas/ListagemNotaEntidade.aspx"
 )
 
 
 def _url_norm(url: str) -> str:
     return (url or "").lower()
+
+
+def _norm_txt(s: str) -> str:
+    return " ".join((s or "").upper().replace("Ã", "A").replace("Ç", "C").split())
 
 
 async def _texto_corpo(page) -> str:
@@ -39,7 +53,7 @@ async def _texto_corpo(page) -> str:
 
 
 async def bloqueio_doacao_terceiros_sefaz(page) -> bool:
-    """Modal que trava a doacao por indicios de notas de terceiros (conta)."""
+    """Modal que trava a doacao de *consumidor* por indicios de notas de terceiros."""
     texto = await _texto_corpo(page)
     if not texto:
         return False
@@ -61,8 +75,8 @@ async def fechar_modal_instrutivo(page) -> bool:
     """
     if await bloqueio_doacao_terceiros_sefaz(page):
         print(
-            "SEFAZ: funcionalidade bloqueada (indicios de doacoes que nao sao do consumidor). "
-            "Nao vou clicar Ok nem reabrir Nova Doacao."
+            "SEFAZ: bloqueio de doacao de consumidor. "
+            "Use Cadastramento de Cupons (representante ONG), nao Doacao sem CPF."
         )
         return False
 
@@ -78,13 +92,11 @@ async def fechar_modal_instrutivo(page) -> bool:
         except Exception:
             overlay = False
 
-        # Botoes oficiais da NFP (IDs estaveis)
         for sel in ("#btnSimAcaoUsuario", "#btnNaoAcaoUsuario", "#btnOkAcaoUsuario"):
             loc = page.locator(sel)
             try:
                 if await loc.count() == 0:
                     continue
-                # force: o overlay intercepta clique normal
                 await loc.first.click(force=True, timeout=1200)
                 await page.wait_for_timeout(400)
                 fechou = True
@@ -132,41 +144,86 @@ async def _tem_campo_chave(page) -> bool:
     return False
 
 
+def _texto_parece_aeb(texto: str) -> bool:
+    n = _norm_txt(texto)
+    if "EVANGELICA BENEFICENTE" in n or "EVANGELICA BENEFICENTE" in n.replace("É", "E"):
+        return True
+    if "ASSOCIACAO EVANGELICA" in n:
+        return True
+    # Combo às vezes mostra só AEB
+    if re.search(r"\bAEB\b", texto or "", re.I) and "CASA ABRIGO" not in n:
+        return True
+    return False
+
+
 async def _entidade_aeb_selecionada(page) -> bool:
-    """True se o CNPJ da AEB ja esta no campo entidade selecionada."""
+    """True se o combo/campo de entidade aponta para a AEB."""
+    # Combos <select> (listagem e cadastro representante)
+    try:
+        selects = page.locator("select")
+        n = await selects.count()
+        for i in range(min(n, 12)):
+            sel = selects.nth(i)
+            try:
+                if not await sel.is_visible(timeout=200):
+                    continue
+            except Exception:
+                continue
+            try:
+                # option selecionada
+                val = await sel.input_value()
+                opt = sel.locator("option:checked")
+                texto = ""
+                if await opt.count():
+                    texto = (await opt.first.inner_text()) or ""
+                if not texto and val:
+                    texto = val
+                if _texto_parece_aeb(texto):
+                    return True
+            except Exception:
+                continue
+    except Exception:
+        pass
+
+    # Fluxo antigo consumidor (CNPJ preenchido) — só como detecção
     try:
         valor = await page.locator("#txtCNPJEntidadeFilantropica").input_value()
+        digitos = re.sub(r"\D", "", valor or "")
+        if digitos == CNPJ_AEB_DIGITOS:
+            return True
     except Exception:
-        valor = ""
-    digitos = re.sub(r"\D", "", valor or "")
-    if digitos == CNPJ_AEB_DIGITOS:
-        return True
-    if valor and "selecione" in valor.lower():
-        return False
-    # Fallback: radio marcado na grade
-    try:
-        return bool(
-            await page.evaluate(
-                """(cnpj) => {
-                  for (const r of document.querySelectorAll('input[type=radio]')) {
-                    if (!r.checked) continue;
-                    const ctx = ((r.closest('tr') || r.parentElement || document.body).innerText || '').toUpperCase();
-                    if (ctx.includes('AEB') || ctx.includes(cnpj) || ctx.includes('61.705.877')) return true;
-                  }
-                  return false;
-                }""",
-                CNPJ_AEB_DIGITOS,
-            )
-        )
-    except Exception:
-        return False
+        pass
+
+    return False
 
 
 async def tela_pronta_para_enviar(page) -> bool:
+    """Formulario de cadastro representante com chave + AEB."""
     await fechar_modal_instrutivo(page)
+    url = _url_norm(page.url)
+    # Nunca considerar "pronto" a tela de doacao de consumidor
+    if "doacaonotas" in url:
+        return False
     if not await _tem_campo_chave(page):
         return False
+    # Precisa botao Salvar Nota (nao Registrar Doacao)
+    if not await _tem_botao_salvar_nota(page):
+        return False
     return await _entidade_aeb_selecionada(page)
+
+
+async def _tem_botao_salvar_nota(page) -> bool:
+    for loc in (
+        page.locator('input[value*="Salvar Nota" i]'),
+        page.get_by_role("button", name=re.compile(r"salvar\s*nota", re.I)),
+        page.locator('input[type="submit"][value*="Salvar Nota" i]'),
+    ):
+        try:
+            if await loc.count() and await loc.first.is_visible(timeout=300):
+                return True
+        except Exception:
+            continue
+    return False
 
 
 async def sessao_nfp_caiu(page) -> bool:
@@ -185,14 +242,23 @@ async def sessao_nfp_caiu(page) -> bool:
         texto = ""
     if "acesse sua conta gov.br" in texto or "entrar com gov.br" in texto:
         return True
-    if "efetuar login" in texto and "doacaonotas" not in url:
+    if "efetuar login" in texto and "entidad" not in url:
         return True
     return False
 
 
-async def _clicar_menu_doacao_sem_cpf(page) -> bool:
-    """principal.aspx → Entidades → Doação de Cupons sem CPF."""
-    # Hover / click Entidades
+async def _eh_fluxo_consumidor(page) -> bool:
+    url = _url_norm(page.url)
+    if "doacaonotas" in url:
+        return True
+    texto = await _texto_corpo(page)
+    if "registrar doação" in texto or "registrar doacao" in texto:
+        if "salvar nota" not in texto:
+            return True
+    return False
+
+
+async def _abrir_menu_entidades(page) -> None:
     for loc in (
         page.get_by_role("link", name=re.compile(r"^entidades$", re.I)),
         page.locator("a", has_text=re.compile(r"^entidades$", re.I)),
@@ -208,14 +274,20 @@ async def _clicar_menu_doacao_sem_cpf(page) -> bool:
                 await page.wait_for_timeout(400)
                 await alvo.click(timeout=2000)
                 await page.wait_for_timeout(500)
-                break
+                return
         except Exception:
             continue
 
+
+async def _clicar_menu_cadastramento_cupons(page) -> bool:
+    """principal → Entidades → Cadastramento de Cupons (representante ONG)."""
+    await _abrir_menu_entidades(page)
+
     for loc in (
-        page.get_by_role("link", name=re.compile(r"doa[cç][aã]o\s+de\s+cupons\s+sem\s+cpf", re.I)),
-        page.locator("a", has_text=re.compile(r"doa[cç][aã]o\s+de\s+cupons\s+sem\s+cpf", re.I)),
-        page.locator("td", has_text=re.compile(r"doa[cç][aã]o\s+de\s+cupons\s+sem\s+cpf", re.I)),
+        page.get_by_role("link", name=re.compile(r"cadastramento\s+de\s+cupons", re.I)),
+        page.locator("a", has_text=re.compile(r"cadastramento\s+de\s+cupons", re.I)),
+        page.locator("td", has_text=re.compile(r"cadastramento\s+de\s+cupons", re.I)),
+        page.locator("span", has_text=re.compile(r"cadastramento\s+de\s+cupons", re.I)),
     ):
         try:
             alvo = loc.first
@@ -224,29 +296,35 @@ async def _clicar_menu_doacao_sem_cpf(page) -> bool:
             if await alvo.is_visible(timeout=1500):
                 await alvo.click(timeout=3000)
                 await page.wait_for_timeout(1200)
-                print("Recuperacao: Entidades → Doação de Cupons sem CPF.")
+                print("Recuperacao: Entidades → Cadastramento de Cupons.")
                 return True
         except Exception:
             continue
 
-    # Fallback: ir direto na listagem
+    # Fallback URL do aviso (gate representante)
     try:
-        await page.goto(URL_LISTAGEM, wait_until="domcontentloaded", timeout=20000)
+        await page.goto(URL_AVISO, wait_until="domcontentloaded", timeout=20000)
         await page.wait_for_timeout(1000)
-        print("Recuperacao: abri DoacaoNotasListagem via URL.")
+        print("Recuperacao: abri CadastroNotaEntidadeAviso via URL.")
         return True
     except Exception as exc:
-        print(f"Recuperacao: falha ao abrir listagem ({exc})")
+        print(f"Recuperacao: falha ao abrir cadastramento ({exc})")
         return False
 
 
-async def _clicar_nova_doacao(page) -> bool:
+async def _clicar_prosseguir_aviso(page) -> bool:
+    """Aviso: cadastrar em nome da entidade → Prosseguir (nunca Voltar)."""
+    texto = await _texto_corpo(page)
+    if "prosseguir" not in texto and "optando por cadastrar" not in texto:
+        # Sem aviso — talvez ja esteja na listagem
+        return False
+
     for loc in (
-        page.get_by_role("button", name=re.compile(r"nova\s*doa[cç][aã]o", re.I)),
-        page.locator('input[type="submit"][value*="Nova Doação" i]'),
-        page.locator('input[value*="Nova Doação" i]'),
-        page.locator('input[type="button"][value*="Nova Doação" i]'),
-        page.locator("a", has_text=re.compile(r"nova\s*doa[cç][aã]o", re.I)),
+        page.locator('input[value*="Prosseguir" i]'),
+        page.get_by_role("button", name=re.compile(r"^prosseguir$", re.I)),
+        page.locator("a", has_text=re.compile(r"^prosseguir$", re.I)),
+        page.locator('input[type="submit"][value*="Prosseguir" i]'),
+        page.locator('input[type="button"][value*="Prosseguir" i]'),
     ):
         try:
             alvo = loc.first
@@ -255,152 +333,124 @@ async def _clicar_nova_doacao(page) -> bool:
             if await alvo.is_visible(timeout=1000):
                 await alvo.click(timeout=3000)
                 await page.wait_for_timeout(1200)
-                print("Recuperacao: cliquei em Nova Doação.")
+                print("Recuperacao: cliquei em Prosseguir (representante ONG).")
                 return True
         except Exception:
             continue
-    try:
-        await page.goto(URL_DOACAO, wait_until="domcontentloaded", timeout=20000)
-        await page.wait_for_timeout(1000)
-        print("Recuperacao: abri DoacaoNotas via URL.")
-        return True
-    except Exception as exc:
-        print(f"Recuperacao: falha Nova Doação/URL ({exc})")
-        return False
-
-
-async def _pesquisar_e_selecionar_aeb(page) -> bool:
-    """Preenche #txtCNPJEntidade, clica #btnBuscar e marca AEB (#rdbSelecao)."""
-    await fechar_modal_instrutivo(page)
-
-    if await _entidade_aeb_selecionada(page):
-        print("Recuperacao: AEB ja estava selecionada.")
-        return True
-
-    # Por CNPJ (ID estavel)
-    try:
-        await page.locator("#rblModoPesquisa_0").check(force=True)
-    except Exception:
-        try:
-            await page.locator("#rblModoPesquisa_0").click(force=True)
-        except Exception as exc:
-            print(f"Recuperacao: aviso ao marcar Por CNPJ ({exc})")
-
-    campo = page.locator("#txtCNPJEntidade")
-    if await campo.count() == 0:
-        print("Recuperacao: campo #txtCNPJEntidade nao encontrado.")
-        return False
-
-    try:
-        await campo.click(force=True, timeout=3000)
-        # Limpa e digita SO digitos — a mascara SetAutomaticMaskCNPJ formata
-        await campo.evaluate("el => { el.value = ''; el.focus(); }")
-        for ch in CNPJ_AEB_DIGITOS:
-            await page.keyboard.type(ch, delay=20)
-        valor = await campo.input_value()
-        digitos = re.sub(r"\D", "", valor or "")
-        print(f"Recuperacao: CNPJ no campo = {valor!r}")
-        if digitos != CNPJ_AEB_DIGITOS:
-            # fallback sem mascara via JS + eventos
-            await campo.evaluate(
-                """(args) => {
-                  const el = document.querySelector(args.sel);
-                  if (!el) return;
-                  el.value = args.fmt;
-                  el.dispatchEvent(new Event('input', { bubbles: true }));
-                  el.dispatchEvent(new Event('change', { bubbles: true }));
-                  if (typeof SetAutomaticMaskCNPJ === 'function') {
-                    try { SetAutomaticMaskCNPJ(el, { keyCode: 0 }); } catch (e) {}
-                  }
-                }""",
-                {"sel": "#txtCNPJEntidade", "fmt": CNPJ_AEB_FMT},
-            )
-            valor = await campo.input_value()
-            digitos = re.sub(r"\D", "", valor or "")
-            print(f"Recuperacao: CNPJ apos fallback = {valor!r}")
-        if digitos != CNPJ_AEB_DIGITOS:
-            print("Recuperacao: CNPJ nao ficou correto no campo.")
-            return False
-    except Exception as exc:
-        print(f"Recuperacao: falha ao preencher CNPJ ({exc})")
-        return False
-
-    btn = page.locator("#btnBuscar")
-    if await btn.count() == 0:
-        print("Recuperacao: #btnBuscar nao encontrado.")
-        return False
-    try:
-        await btn.click(force=True, timeout=5000)
-        await page.wait_for_timeout(2000)
-        print("Recuperacao: cliquei em Pesquisar (#btnBuscar).")
-    except Exception as exc:
-        print(f"Recuperacao: falha ao clicar Pesquisar ({exc})")
-        return False
-
-    await fechar_modal_instrutivo(page)
-
-    # Radio da grade (id rdbSelecao na linha AEB)
-    marcado = False
-    try:
-        marcado = bool(
-            await page.evaluate(
-                """(cnpj) => {
-                  for (const row of document.querySelectorAll('tr')) {
-                    const t = (row.innerText || '').toUpperCase();
-                    if (!t.includes('AEB') && !t.includes(cnpj) && !t.includes('61.705.877')) continue;
-                    const radio = row.querySelector('input[type=radio]');
-                    if (!radio) continue;
-                    radio.click();
-                    radio.checked = true;
-                    radio.dispatchEvent(new Event('click', { bubbles: true }));
-                    radio.dispatchEvent(new Event('change', { bubbles: true }));
-                    return true;
-                  }
-                  const rdb = document.getElementById('rdbSelecao');
-                  if (rdb) { rdb.click(); return true; }
-                  return false;
-                }""",
-                CNPJ_AEB_DIGITOS,
-            )
-        )
-    except Exception as exc:
-        print(f"Recuperacao: falha ao marcar radio AEB ({exc})")
-        marcado = False
-
-    if not marcado:
-        # Playwright click no radio
-        try:
-            loc = page.locator("#rdbSelecao")
-            if await loc.count():
-                await loc.first.click(force=True)
-                marcado = True
-        except Exception:
-            pass
-
-    await page.wait_for_timeout(1000)
-    if await _entidade_aeb_selecionada(page):
-        print("Recuperacao: entidade AEB selecionada.")
-        return True
-
-    if marcado:
-        print("Recuperacao: radio clicado, aguardando confirmacao do CNPJ entidade...")
-        for _ in range(8):
-            await page.wait_for_timeout(400)
-            if await _entidade_aeb_selecionada(page):
-                print("Recuperacao: entidade AEB selecionada.")
-                return True
-
-    print("Recuperacao: AEB nao ficou selecionada apos pesquisa.")
+    print("Recuperacao: aviso presente mas Prosseguir nao encontrado.")
     return False
 
 
-async def garantir_tela_doacao_aeb(page, *, tentativas: int = 6) -> bool:
-    """Garante DoacaoNotas com AEB pronta para preencher chave."""
+async def _selecionar_aeb_no_combo(page) -> bool:
+    """Seleciona AEB no <select> Entidade da listagem/cadastro."""
+    if await _entidade_aeb_selecionada(page):
+        return True
+
+    try:
+        ok = await page.evaluate(
+            """(markers) => {
+              const upper = (s) => (s || '').toUpperCase()
+                .normalize('NFD').replace(/[\\u0300-\\u036f]/g, '');
+              const isAeb = (t) => {
+                const u = upper(t);
+                if (u.includes('EVANGELICA BENEFICENTE')) return true;
+                if (u.includes('ASSOCIACAO EVANGELICA')) return true;
+                for (const m of markers) {
+                  if (u.includes(upper(m))) return true;
+                }
+                return false;
+              };
+              for (const sel of document.querySelectorAll('select')) {
+                const opts = Array.from(sel.options || []);
+                if (opts.length < 2) continue;
+                const labelNearby = ((sel.closest('tr') || sel.parentElement || document.body)
+                  .innerText || '').toUpperCase();
+                const pareceEntidade = labelNearby.includes('ENTIDADE') || opts.some(o => isAeb(o.text));
+                if (!pareceEntidade) continue;
+                for (const opt of opts) {
+                  if (!isAeb(opt.text) && !isAeb(opt.value)) continue;
+                  sel.value = opt.value;
+                  opt.selected = true;
+                  sel.dispatchEvent(new Event('change', { bubbles: true }));
+                  sel.dispatchEvent(new Event('input', { bubbles: true }));
+                  return true;
+                }
+              }
+              return false;
+            }""",
+            list(NOME_AEB_MARKERS),
+        )
+    except Exception as exc:
+        print(f"Recuperacao: falha ao selecionar AEB no combo ({exc})")
+        ok = False
+
+    await page.wait_for_timeout(500)
+    if ok or await _entidade_aeb_selecionada(page):
+        print("Recuperacao: AEB selecionada no combo Entidade.")
+        # Checkbox "manter dado" ao lado, se existir
+        try:
+            await page.evaluate(
+                """() => {
+                  for (const cb of document.querySelectorAll('input[type=checkbox]')) {
+                    const ctx = ((cb.closest('tr') || cb.parentElement || {}).innerText || '').toUpperCase();
+                    if (ctx.includes('ENTIDADE') && !cb.checked) {
+                      cb.click();
+                      return;
+                    }
+                  }
+                }"""
+            )
+        except Exception:
+            pass
+        return True
+    return False
+
+
+async def _clicar_nova_nota(page) -> bool:
+    for loc in (
+        page.locator('input[value*="Nova Nota" i]'),
+        page.get_by_role("button", name=re.compile(r"nova\s*nota", re.I)),
+        page.locator('input[type="submit"][value*="Nova Nota" i]'),
+        page.locator('input[type="button"][value*="Nova Nota" i]'),
+        page.locator("a", has_text=re.compile(r"nova\s*nota", re.I)),
+    ):
+        try:
+            alvo = loc.first
+            if await alvo.count() == 0:
+                continue
+            if await alvo.is_visible(timeout=1000):
+                await alvo.click(timeout=3000)
+                await page.wait_for_timeout(1200)
+                print("Recuperacao: cliquei em Nova Nota.")
+                return True
+        except Exception:
+            continue
+    return False
+
+
+async def _tem_nova_nota(page) -> bool:
+    for loc in (
+        page.locator('input[value*="Nova Nota" i]'),
+        page.get_by_role("button", name=re.compile(r"nova\s*nota", re.I)),
+    ):
+        try:
+            if await loc.count() and await loc.first.is_visible(timeout=300):
+                return True
+        except Exception:
+            continue
+    return False
+
+
+async def garantir_tela_doacao_aeb(page, *, tentativas: int = 8) -> bool:
+    """Garante cadastro representante (chave + Salvar Nota) com AEB.
+
+    Mantem o nome da funcao por compatibilidade com enviar_fila.
+    """
     for n in range(1, tentativas + 1):
-        # Bloqueio de conta SEFAZ: nao clicar menu/Nova Doacao (piora o bloqueio).
         if await bloqueio_doacao_terceiros_sefaz(page):
             print(
-                "Recuperacao: abortada — SEFAZ bloqueou doacao (indicios de notas de terceiros)."
+                "Recuperacao: abortada — bloqueio de doacao de consumidor. "
+                "Feche o modal e use Cadastramento de Cupons (nao Doacao sem CPF)."
             )
             return False
 
@@ -410,37 +460,63 @@ async def garantir_tela_doacao_aeb(page, *, tentativas: int = 6) -> bool:
 
         if await tela_pronta_para_enviar(page):
             if n > 1:
-                print("Recuperacao: tela DoacaoNotas + AEB ok.")
+                print("Recuperacao: tela Cadastro Nota + AEB ok (Salvar Nota).")
             return True
 
         url = _url_norm(page.url)
         print(f"Recuperacao [{n}/{tentativas}]: url={page.url}")
 
-        # Login / SSO — nao tenta recuperar sozinho
         if "login" in url or "sso.acesso.gov" in url or "acesso.gov.br" in url:
             print("Recuperacao: sessao/login — e preciso autenticar manualmente.")
             return False
 
-        if "principal.aspx" in url or "bem-vindo ao sistema" in (await _texto_corpo(page)):
-            await _clicar_menu_doacao_sem_cpf(page)
+        # Sai do fluxo errado (consumidor)
+        if await _eh_fluxo_consumidor(page):
+            print(
+                "Recuperacao: estava no fluxo de consumidor (DoacaoNotas) — "
+                "redirecionando para Cadastramento de Cupons."
+            )
+            await _clicar_menu_cadastramento_cupons(page)
             continue
 
-        if "doacaonotaslistagem" in url or "listagem" in url:
-            await _clicar_nova_doacao(page)
+        # Aviso representante → Prosseguir
+        corpo = await _texto_corpo(page)
+        if (
+            "cadastronotaentidadeaviso" in url
+            or "optando por cadastrar notas" in corpo
+            or ("cadastrar notas em nome" in corpo and "prosseguir" in corpo)
+        ):
+            if await _clicar_prosseguir_aviso(page):
+                continue
+            # Se o botao sumiu, talvez ja avancou
+            if await _tem_nova_nota(page):
+                await _selecionar_aeb_no_combo(page)
+                await _clicar_nova_nota(page)
+                continue
+
+        # Listagem entidade: combo + Nova Nota
+        if await _tem_nova_nota(page) or "listagem" in url or "entidade - listagem" in corpo:
+            await _selecionar_aeb_no_combo(page)
+            if await _tem_campo_chave(page) and await _tem_botao_salvar_nota(page):
+                # Ja no form
+                if await _entidade_aeb_selecionada(page) or await _selecionar_aeb_no_combo(page):
+                    if await tela_pronta_para_enviar(page):
+                        return True
+            if await _clicar_nova_nota(page):
+                continue
+
+        # Formulario aberto sem AEB
+        if await _tem_campo_chave(page) and await _tem_botao_salvar_nota(page):
+            if await _selecionar_aeb_no_combo(page) and await tela_pronta_para_enviar(page):
+                return True
             continue
 
-        if "doacaonotas" in url:
-            # Formulario aberto mas sem AEB / com modal
-            if await _tem_campo_chave(page):
-                ok = await _pesquisar_e_selecionar_aeb(page)
-                if ok and await tela_pronta_para_enviar(page):
-                    return True
-            else:
-                await _clicar_nova_doacao(page)
+        # Home / bem-vindo / outras paginas NFP
+        if "principal.aspx" in url or "bem-vindo ao sistema" in corpo:
+            await _clicar_menu_cadastramento_cupons(page)
             continue
 
-        # Outra pagina NFP: tenta menu Entidades
-        await _clicar_menu_doacao_sem_cpf(page)
+        await _clicar_menu_cadastramento_cupons(page)
 
-    print("Recuperacao: esgotaram as tentativas.")
+    print("Recuperacao: esgotaram as tentativas (cadastro representante).")
     return await tela_pronta_para_enviar(page)
