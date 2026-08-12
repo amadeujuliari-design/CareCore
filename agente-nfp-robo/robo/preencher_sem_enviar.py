@@ -176,10 +176,11 @@ async def clicar_registrar(page) -> bool:
                 await alvo.click(timeout=5000)
                 print("Cliquei em Salvar Nota. Aguarde o retorno do site...")
                 try:
-                    await page.wait_for_load_state("domcontentloaded", timeout=15000)
+                    await page.wait_for_load_state("domcontentloaded", timeout=12000)
                 except Exception:
                     pass
-                await page.wait_for_timeout(2000)
+                # Banner inline costuma aparecer logo; classificacao espera o texto.
+                await page.wait_for_timeout(400)
                 return True
         except Exception:
             continue

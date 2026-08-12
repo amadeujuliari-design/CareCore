@@ -39,6 +39,7 @@ from navegar_doacao_aeb import (  # noqa: E402
     bloqueio_doacao_terceiros_sefaz,
     garantir_tela_doacao_aeb,
     sessao_nfp_caiu,
+    tela_pronta_para_enviar,
 )
 from preencher_sem_enviar import (  # noqa: E402
     CDP_PADRAO,
@@ -102,14 +103,14 @@ async def fechar_popup_doacao_automatica(page) -> None:
 
 async def processar_retorno(page, *, texto_antes: str = "") -> object:
     """Aguarda pos-envio, classifica mensagem (modal OU banner inline) e fecha modais se houver."""
-    await page.wait_for_timeout(200)
+    await page.wait_for_timeout(100)
     # Cadastro entidade: sucesso aparece em texto azul no topo, sem modal.
     cls = await aguardar_classificacao_retorno(
-        page, timeout_ms=8000, intervalo_ms=250, texto_antes=texto_antes
+        page, timeout_ms=6000, intervalo_ms=200, texto_antes=texto_antes
     )
     if cls.tipo == "inconclusivo":
         cls = await aguardar_classificacao_retorno(
-            page, timeout_ms=7000, intervalo_ms=300, texto_antes=texto_antes
+            page, timeout_ms=4000, intervalo_ms=250, texto_antes=texto_antes
         )
 
     # Bloqueio de conta: nao clicar Ok (e nao retomar Nova Doacao depois).
@@ -132,13 +133,13 @@ async def processar_retorno(page, *, texto_antes: str = "") -> object:
     await fechar_popup_doacao_automatica(page)
     await fechar_modal_mensagem(page)
     if cls.status_carecore == "rejeitado_prazo":
-        await page.wait_for_timeout(150)
+        await page.wait_for_timeout(100)
         await fechar_modal_mensagem(page)
     return cls
 
 
 async def _posicionar_tela(page, *, rotulo: str) -> str:
-    """Uma passagem de garantir_tela (como antes). Sem loop infinito.
+    """Garante Cadastro+AEB. Se ja estiver no formulario, nao refaz menu/Nova Nota.
 
     Retorna: 'ok' | 'sessao_caiu' | 'bloqueio_sefaz' | 'falha' | 'parada_usuario'
     """
@@ -148,9 +149,11 @@ async def _posicionar_tela(page, *, rotulo: str) -> str:
         return "sessao_caiu"
     if await bloqueio_doacao_terceiros_sefaz(page):
         return "bloqueio_sefaz"
+    # Caminho quente: apos Salvar Nota a SEFAZ costuma manter Cadastro + AEB.
+    if await tela_pronta_para_enviar(page, fechar_modais=False):
+        return "ok"
     if await garantir_tela_doacao_aeb(page):
         return "ok"
-    # garantir_tela pode ter abortado por bloqueio no meio
     if await bloqueio_doacao_terceiros_sefaz(page):
         return "bloqueio_sefaz"
     if await sessao_nfp_caiu(page):
@@ -190,6 +193,7 @@ async def rodar(args: argparse.Namespace) -> int:
         "Rotina inicial: Entidades → Cadastramento de Cupons → Prosseguir → AEB → Nova Nota."
     )
     print("Envio com Salvar Nota (representante ONG). Nao usa Doacao de Cupons sem CPF.")
+    print("Se ja estiver no cadastro com AEB, so preenche chave (sem refazer menu).")
     print("Se o site voltar ao inicio no meio da fila, o robo recupera e retoma.")
     print("Ctrl+C ou botao Parar no CareCore para interromper.\n")
     if not args.auto:
@@ -438,7 +442,12 @@ def main() -> int:
     parser.add_argument("--chave", default="")
     parser.add_argument("--inicio", type=int, default=0)
     parser.add_argument("--cdp", default=CDP_PADRAO)
-    parser.add_argument("--pausa", type=float, default=1.5, help="Segundos entre envios")
+    parser.add_argument(
+        "--pausa",
+        type=float,
+        default=0.75,
+        help="Segundos entre envios (padrao 0.75; a SEFAZ ja demora no Salvar)",
+    )
     parser.add_argument("--url", default="https://www.nfp.fazenda.sp.gov.br/")
     parser.add_argument("--channel", default="")
     parser.add_argument(

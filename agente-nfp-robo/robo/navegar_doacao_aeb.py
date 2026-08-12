@@ -197,9 +197,13 @@ async def _entidade_aeb_selecionada(page) -> bool:
     return False
 
 
-async def tela_pronta_para_enviar(page) -> bool:
-    """Formulario de cadastro representante com chave + AEB."""
-    await fechar_modal_instrutivo(page)
+async def tela_pronta_para_enviar(page, *, fechar_modais: bool = True) -> bool:
+    """Formulario de cadastro representante com chave + AEB.
+
+    fechar_modais=False: checagem rapida entre cupons (tela ja no cadastro).
+    """
+    if fechar_modais:
+        await fechar_modal_instrutivo(page)
     url = _url_norm(page.url)
     # Nunca considerar "pronto" a tela de doacao de consumidor
     if "doacaonotas" in url:
@@ -420,7 +424,7 @@ async def _clicar_nova_nota(page) -> bool:
                 continue
             if await alvo.is_visible(timeout=1000):
                 await alvo.click(timeout=3000)
-                await page.wait_for_timeout(1200)
+                await page.wait_for_timeout(700)
                 print("Recuperacao: cliquei em Nova Nota.")
                 return True
         except Exception:
@@ -454,11 +458,17 @@ async def garantir_tela_doacao_aeb(page, *, tentativas: int = 8) -> bool:
             )
             return False
 
+        # Caminho rapido: ja no Cadastro com AEB (apos Salvar Nota a pagina costuma ficar).
+        if await tela_pronta_para_enviar(page, fechar_modais=False):
+            if n > 1:
+                print("Recuperacao: tela Cadastro Nota + AEB ok (Salvar Nota).")
+            return True
+
         await fechar_modal_instrutivo(page)
         if await bloqueio_doacao_terceiros_sefaz(page):
             return False
 
-        if await tela_pronta_para_enviar(page):
+        if await tela_pronta_para_enviar(page, fechar_modais=False):
             if n > 1:
                 print("Recuperacao: tela Cadastro Nota + AEB ok (Salvar Nota).")
             return True
