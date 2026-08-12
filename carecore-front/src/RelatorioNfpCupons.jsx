@@ -178,6 +178,7 @@ export default function RelatorioNfpCupons() {
     ['Enviados', totais.enviados ?? 0],
     ['Erros', totais.erros ?? 0],
     ['Rejeitados CPF', totais.rejeitados_cpf ?? 0],
+    ['Rejeitados prazo', totais.rejeitados_prazo ?? 0],
     ['Checando', totais.checando ?? 0],
   ]), [totais]);
 
@@ -410,12 +411,13 @@ export default function RelatorioNfpCupons() {
                           <td className="px-4 py-3">{item.enviados ?? 0}</td>
                           <td className="px-4 py-3">{item.erros ?? 0}</td>
                           <td className="px-4 py-3">{item.rejeitados_cpf ?? 0}</td>
+                          <td className="px-4 py-3">{item.rejeitados_prazo ?? 0}</td>
                           <td className="px-4 py-3">{item.checando ?? 0}</td>
                         </tr>
                       ))}
                       {!linhasCaptador.length && (
                         <tr>
-                          <td colSpan={8} className="px-4 py-8 text-center text-slate-500">
+                          <td colSpan={9} className="px-4 py-8 text-center text-slate-500">
                             Nenhum cupom no filtro.
                           </td>
                         </tr>

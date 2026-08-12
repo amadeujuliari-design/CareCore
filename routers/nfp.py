@@ -1126,7 +1126,7 @@ async def get_relatorio_cupons(
     captador: Optional[str] = Query(None, description="Unidade / captador da leitura"),
     status: Optional[str] = Query(
         None,
-        description="Um status ou CSV: pendente,enviado,reservado,erro,checando,rejeitado_cpf",
+        description="Um status ou CSV: pendente,enviado,reservado,erro,checando,rejeitado_cpf,rejeitado_prazo",
     ),
     busca: Optional[str] = Query(None, description="Chave, CNPJ ou mensagem"),
     eixo_data: str = Query("lido_em", description="lido_em ou enviado_em"),
@@ -1305,10 +1305,21 @@ async def atualizar_status_cupom(
         raise HTTPException(status_code=404, detail="Cupom nao encontrado.")
 
     novo = (payload.get("status") or "").strip().lower()
-    if novo not in {"pendente", "enviado", "erro", "checando", "rejeitado_cpf", "reservado"}:
+    if novo not in {
+        "pendente",
+        "enviado",
+        "erro",
+        "checando",
+        "rejeitado_cpf",
+        "rejeitado_prazo",
+        "reservado",
+    }:
         raise HTTPException(
             status_code=400,
-            detail="Status deve ser pendente, reservado, enviado, erro, checando ou rejeitado_cpf.",
+            detail=(
+                "Status deve ser pendente, reservado, enviado, erro, checando, "
+                "rejeitado_cpf ou rejeitado_prazo."
+            ),
         )
 
     row.status = novo

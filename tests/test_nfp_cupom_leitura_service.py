@@ -12,6 +12,7 @@ from nfp_cupom_leitura_service import (
     STATUS_CHECANDO,
     STATUS_PENDENTE,
     STATUS_REJEITADO_CPF,
+    STATUS_REJEITADO_PRAZO,
     _aplicar_checagem_sefaz,
     registrar_leitura_rapida,
 )
@@ -183,6 +184,65 @@ def test_worker_checagem_rejeita_quando_sefaz_indica_cpf():
             async with factory() as s2:
                 row = await s2.get(NfpCupomLidoDB, cupom_id)
                 assert row.status == STATUS_REJEITADO_CPF
+        finally:
+            await engine.dispose()
+
+    asyncio.run(caso())
+
+
+def test_leitura_rapida_rejeita_prazo_imediatamente():
+    async def caso():
+        engine, factory = await _preparar()
+        try:
+            # AAMM 2401 → emissao 2024-01; limite leitura 2024-02-21
+            chave_antiga = "35240147508411169495651090002701871160307536"
+            async with factory() as session:
+                with patch("nfp_cupom_leitura_service.agendar_checagem_sefaz") as mock_agendar:
+                    with patch(
+                        "nfp_cupom_leitura_service.agora_operacional_naive"
+                    ) as mock_agora:
+                        from datetime import datetime
+
+                        mock_agora.return_value = datetime(2026, 8, 12, 12, 0, 0)
+                        out = await registrar_leitura_rapida(
+                            session,
+                            organizacao_id=ORG,
+                            captador="SEDE AEB",
+                            bruto=chave_antiga,
+                        )
+                assert out["checagem"] == "imediata_prazo"
+                assert out["cupom"].status == STATUS_REJEITADO_PRAZO
+                assert "prazo" in (out["cupom"].mensagem or "").lower()
+                mock_agendar.assert_not_called()
+        finally:
+            await engine.dispose()
+
+    asyncio.run(caso())
+
+
+def test_leitura_ainda_aceita_no_dia_da_folga():
+    async def caso():
+        engine, factory = await _preparar()
+        try:
+            # Emissao 2026-07 → SEFAZ 2026-08-20; leitura ate 2026-08-21
+            chave = "35260747508411169495651090002701871160307536"
+            async with factory() as session:
+                with patch("nfp_cupom_leitura_service.agendar_checagem_sefaz") as mock_agendar:
+                    with patch(
+                        "nfp_cupom_leitura_service.agora_operacional_naive"
+                    ) as mock_agora:
+                        from datetime import datetime
+
+                        mock_agora.return_value = datetime(2026, 8, 21, 23, 0, 0)
+                        out = await registrar_leitura_rapida(
+                            session,
+                            organizacao_id=ORG,
+                            captador="SEDE AEB",
+                            bruto=chave,
+                        )
+                assert out["checagem"] == "agendada"
+                assert out["cupom"].status == STATUS_CHECANDO
+                mock_agendar.assert_called_once()
         finally:
             await engine.dispose()
 

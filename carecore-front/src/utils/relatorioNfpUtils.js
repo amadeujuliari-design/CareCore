@@ -125,6 +125,7 @@ export const STATUS_CUPONS_RELATORIO = [
   { value: 'enviado', label: 'Enviado' },
   { value: 'erro', label: 'Erro' },
   { value: 'rejeitado_cpf', label: 'Rejeitado CPF' },
+  { value: 'rejeitado_prazo', label: 'Rejeitado prazo' },
 ];
 
 export function rotuloStatusCupomRelatorio(status) {
@@ -140,6 +141,7 @@ export const COLUNAS_CUPONS_POR_CAPTADOR = [
   'Enviados',
   'Erros',
   'Rejeitados CPF',
+  'Rejeitados prazo',
   'Checando',
 ];
 
@@ -163,6 +165,7 @@ export function montarExportacaoCuponsPorCaptador(relatorio) {
     Enviados: item.enviados ?? 0,
     Erros: item.erros ?? 0,
     'Rejeitados CPF': item.rejeitados_cpf ?? 0,
+    'Rejeitados prazo': item.rejeitados_prazo ?? 0,
     Checando: item.checando ?? 0,
   }));
 }

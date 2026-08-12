@@ -34,6 +34,7 @@ function rotuloStatusCupom(status) {
   if (s === 'reservado') return 'Reservado';
   if (s === 'pendente') return 'Pendente (fila)';
   if (s === 'rejeitado_cpf') return 'Rejeitado CPF';
+  if (s === 'rejeitado_prazo') return 'Rejeitado prazo';
   if (s === 'enviado') return 'Enviado';
   if (s === 'erro') return 'Erro';
   return status || '—';
@@ -45,6 +46,7 @@ function classeBadgeStatus(status) {
   if (s === 'reservado') return 'bg-violet-100 text-violet-800';
   if (s === 'pendente') return 'bg-sky-100 text-sky-800';
   if (s === 'rejeitado_cpf') return 'bg-rose-100 text-rose-800';
+  if (s === 'rejeitado_prazo') return 'bg-orange-100 text-orange-900';
   if (s === 'enviado') return 'bg-emerald-100 text-emerald-800';
   if (s === 'erro') return 'bg-orange-100 text-orange-900';
   return 'bg-slate-100 text-slate-600';
@@ -52,6 +54,9 @@ function classeBadgeStatus(status) {
 
 function mensagemFlashLeitura(cupom, checagem) {
   const curta = chaveCurta(cupom?.chave);
+  if (checagem === 'imediata_prazo' || cupom?.status === 'rejeitado_prazo') {
+    return `Fora do prazo NFP — fora da fila · ${curta}`;
+  }
   if (checagem === 'imediata_cpf' || cupom?.status === 'rejeitado_cpf') {
     return `Cupom com CPF — fora da fila · ${curta}`;
   }
@@ -538,6 +543,7 @@ export default function NfpLeituraCupons() {
                         <option value="enviado">Enviado</option>
                         <option value="erro">Erro</option>
                         <option value="rejeitado_cpf">Rejeitado CPF</option>
+                        <option value="rejeitado_prazo">Rejeitado prazo</option>
                       </select>
                     </label>
                     <button
@@ -584,7 +590,9 @@ export default function NfpLeituraCupons() {
                 </div>
                 <p className="mb-3 text-xs text-slate-500">
                   <strong>checando</strong> = validando SEFAZ · <strong>pendente</strong> = na fila do robô ·{' '}
-                  <strong>rejeitado_cpf</strong> = fora da fila. Lista paginada ({PAGE_SIZE}/página) para não travar com alto volume.
+                  <strong>rejeitado_cpf</strong> / <strong>rejeitado_prazo</strong> = fora da fila
+                  (prazo SEFAZ dia 20 do mês seguinte; leitura com folga de 1 dia).
+                  Lista paginada ({PAGE_SIZE}/página) para não travar com alto volume.
                 </p>
                 {loadingLista ? (
                   <p className="text-sm text-slate-500">Carregando…</p>

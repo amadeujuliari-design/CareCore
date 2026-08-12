@@ -1871,10 +1871,11 @@ class NfpCupomLidoDB(Base):
     chave = Column(String, nullable=False)
     captador = Column(String, nullable=False)
     status = Column(String, nullable=False, default="pendente")
-    # checando | pendente | reservado | enviado | erro | rejeitado_cpf
+    # checando | pendente | reservado | enviado | erro | rejeitado_cpf | rejeitado_prazo
     # checando = lido, aguardando consulta SEFAZ (nao entra no robo)
     # pendente = elegivel para reserva/envio SEFAZ
     # reservado = lote alocado a uma maquina/sessao do robo
+    # rejeitado_prazo = fora do prazo NFP (leitura com folga de 1 dia vs dia 20 SEFAZ)
     consumidor_identificado = Column(Boolean, nullable=True)
     cnpj_emitente = Column(String, nullable=True)
     data_emissao_ref = Column(String, nullable=True)

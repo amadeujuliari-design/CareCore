@@ -2,6 +2,9 @@
 
 from nfp_cupom_utils import (
     analisar_html_consumidor,
+    cupom_fora_prazo_leitura,
+    data_limite_cadastro_sefaz,
+    data_limite_leitura_carecore,
     extrair_chave_de_leitura,
     montar_url_consulta_sp,
     qr_indica_cpf_destinatario,
@@ -47,3 +50,18 @@ def test_qr_offline_com_cpf():
         "p=35260847508411169495651090002701871160307536|3|1|01|10.00|2|04817513357|ABC"
     )
     assert qr_indica_cpf_destinatario(bruto) is True
+
+
+def test_prazo_sefaz_e_folga_leitura():
+    from datetime import date
+
+    assert data_limite_cadastro_sefaz(2026, 7) == date(2026, 8, 20)
+    assert data_limite_leitura_carecore(2026, 7) == date(2026, 8, 21)
+    assert data_limite_cadastro_sefaz(2026, 12) == date(2027, 1, 20)
+    assert data_limite_leitura_carecore(2026, 12) == date(2027, 1, 21)
+
+    # Ate dia 21 inclusive ainda entra na leitura.
+    assert cupom_fora_prazo_leitura("2026-07", hoje=date(2026, 8, 21)) is False
+    assert cupom_fora_prazo_leitura("2026-07", hoje=date(2026, 8, 22)) is True
+    # Sem ref: nao rejeita por prazo.
+    assert cupom_fora_prazo_leitura(None, hoje=date(2026, 8, 22)) is False

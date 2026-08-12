@@ -7,7 +7,9 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
+from datetime import date, timedelta
 from html import unescape
+from typing import Optional
 
 RE_CHAVE = re.compile(r"(?<!\d)(\d{44})(?!\d)")
 RE_CONSUMIDOR_NAO_ID = re.compile(
@@ -190,3 +192,79 @@ def consultar_elegibilidade_cupom(bruto_ou_chave: str) -> ResultadoChaveCupom:
         resultado.data_emissao = f"20{aamm[0:2]}-{aamm[2:4]}"
 
     return resultado
+
+
+# Folga na leitura CareCore vs prazo estrito SEFAZ (dia 20 do mes subsequente).
+FOLGA_DIAS_PRAZO_LEITURA_NFP = 1
+
+
+def parse_ano_mes_emissao_ref(data_emissao_ref: Optional[str]) -> Optional[tuple[int, int]]:
+    """Aceita AAAA-MM (ref da chave NFP)."""
+    ref = (data_emissao_ref or "").strip()
+    if len(ref) < 7 or ref[4] != "-":
+        return None
+    try:
+        ano = int(ref[0:4])
+        mes = int(ref[5:7])
+    except ValueError:
+        return None
+    if ano < 2000 or mes < 1 or mes > 12:
+        return None
+    return ano, mes
+
+
+def data_limite_cadastro_sefaz(ano: int, mes: int) -> date:
+    """Ultimo dia em que a SEFAZ aceita cadastro: dia 20 do mes subsequente a emissao."""
+    if mes == 12:
+        return date(ano + 1, 1, 20)
+    return date(ano, mes + 1, 20)
+
+
+def data_limite_leitura_carecore(
+    ano: int,
+    mes: int,
+    *,
+    folga_dias: int = FOLGA_DIAS_PRAZO_LEITURA_NFP,
+) -> date:
+    """Limite operacional na leitura: prazo SEFAZ + folga (padrao 1 dia)."""
+    return data_limite_cadastro_sefaz(ano, mes) + timedelta(days=max(0, int(folga_dias)))
+
+
+def cupom_fora_prazo_leitura(
+    data_emissao_ref: Optional[str],
+    *,
+    hoje: Optional[date] = None,
+    folga_dias: int = FOLGA_DIAS_PRAZO_LEITURA_NFP,
+) -> bool:
+    """True se a ref AAAA-MM ja passou do limite de leitura (com folga)."""
+    ym = parse_ano_mes_emissao_ref(data_emissao_ref)
+    if not ym:
+        return False
+    ano, mes = ym
+    if hoje is None:
+        try:
+            from time_operacional import agora_operacional_naive
+
+            dia = agora_operacional_naive().date()
+        except Exception:
+            dia = date.today()
+    else:
+        dia = hoje
+    return dia > data_limite_leitura_carecore(ano, mes, folga_dias=folga_dias)
+
+
+def mensagem_rejeicao_prazo(data_emissao_ref: Optional[str]) -> str:
+    ym = parse_ano_mes_emissao_ref(data_emissao_ref)
+    if not ym:
+        return (
+            "Cupom fora do prazo de cadastro NFP (SEFAZ: ate o dia 20 do mes "
+            "subsequente; CareCore leitura com folga de 1 dia)."
+        )
+    ano, mes = ym
+    lim_sefaz = data_limite_cadastro_sefaz(ano, mes)
+    lim_leitura = data_limite_leitura_carecore(ano, mes)
+    return (
+        f"Fora do prazo NFP (emissao {ano:04d}-{mes:02d}). "
+        f"SEFAZ ate {lim_sefaz.isoformat()}; "
+        f"leitura CareCore ate {lim_leitura.isoformat()} (folga 1 dia)."
+    )

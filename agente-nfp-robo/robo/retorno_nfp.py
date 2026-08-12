@@ -44,8 +44,16 @@ RE_ERRO = re.compile(
     r"chave\s+(?:inv[aá]lid|incorret)|"
     r"documento\s+inv[aá]lid|"
     r"n[aã]o\s+foi\s+poss[ií]vel|"
-    r"fora\s+do\s+prazo|"
     r"cpf\s+inv[aá]lid",
+    re.I,
+)
+
+# Modal SEFAZ: "A Data da Nota excedeu o prazo máximo para cadastro"
+RE_PRAZO = re.compile(
+    r"excedeu\s+o\s+prazo|"
+    r"prazo\s+m[aá]ximo\s+para\s+cadastro|"
+    r"fora\s+do\s+prazo|"
+    r"data\s+da\s+nota\s+excedeu",
     re.I,
 )
 
@@ -55,7 +63,7 @@ class ClassificacaoRetorno:
     tipo: ResultadoTipo
     mensagem: str
     # Status sugerido para a fila CareCore (nfp_cupons_lidos.status)
-    status_carecore: str  # enviado | erro | pendente
+    status_carecore: str  # enviado | erro | pendente | rejeitado_prazo
     trecho: str = ""
 
 
@@ -97,6 +105,15 @@ def classificar_texto_retorno(texto: str, *, url: str = "") -> ClassificacaoReto
             mensagem=MSG_PEDIDO_JA_EXISTE,
             status_carecore="enviado",
             trecho=_extrair_trecho(compacto, RE_JA_EXISTE),
+        )
+
+    if RE_PRAZO.search(compacto):
+        trecho = _extrair_trecho(compacto, RE_PRAZO) or compacto[:240]
+        return ClassificacaoRetorno(
+            tipo="erro",
+            mensagem=trecho,
+            status_carecore="rejeitado_prazo",
+            trecho=trecho,
         )
 
     if RE_ERRO.search(compacto):

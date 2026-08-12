@@ -2,9 +2,10 @@
 
 Fluxo:
   1) Extrai chave localmente e grava rapido (status=checando).
-  2) Consulta SEFAZ em paralelo (fila com limite de concorrencia).
-  3) Atualiza para pendente (elegivel ao robo) ou rejeitado_cpf.
-  4) QR que ja indica CPF: rejeitado_cpf na hora, sem HTTP.
+  2) Fora do prazo NFP (com folga de 1 dia na leitura): rejeitado_prazo.
+  3) Consulta SEFAZ em paralelo (fila com limite de concorrencia).
+  4) Atualiza para pendente (elegivel ao robo) ou rejeitado_cpf.
+  5) QR que ja indica CPF: rejeitado_cpf na hora, sem HTTP.
 """
 
 from __future__ import annotations
@@ -20,7 +21,9 @@ from database import AsyncSessionLocal
 from models import NfpCupomLidoDB
 from nfp_cupom_utils import (
     consultar_elegibilidade_cupom,
+    cupom_fora_prazo_leitura,
     extrair_chave_de_leitura,
+    mensagem_rejeicao_prazo,
     montar_url_consulta_sp,
     qr_indica_cpf_destinatario,
 )
@@ -31,6 +34,7 @@ logger = logging.getLogger("carecore.nfp.cupom_leitura")
 STATUS_CHECANDO = "checando"
 STATUS_PENDENTE = "pendente"
 STATUS_REJEITADO_CPF = "rejeitado_cpf"
+STATUS_REJEITADO_PRAZO = "rejeitado_prazo"
 STATUS_ERRO = "erro"
 
 # Limite de consultas SEFAZ simultaneas (nao saturar a Fazenda / thread pool).
@@ -79,6 +83,35 @@ async def registrar_leitura_rapida(
 
     agora = agora_operacional_naive()
     meta = _meta_chave(chave, bruto_n)
+    hoje = agora.date()
+
+    # Prazo antes de CPF: cupom vencido nao entra na fila (folga 1 dia vs SEFAZ).
+    if cupom_fora_prazo_leitura(meta["data_emissao_ref"], hoje=hoje):
+        row = NfpCupomLidoDB(
+            organizacao_id=organizacao_id,
+            chave=chave,
+            captador=captador,
+            status=STATUS_REJEITADO_PRAZO,
+            consumidor_identificado=None,
+            cnpj_emitente=meta["cnpj_emitente"],
+            data_emissao_ref=meta["data_emissao_ref"],
+            qr_bruto=bruto_n[:4000] or None,
+            url_consulta=meta["url_consulta"],
+            mensagem=mensagem_rejeicao_prazo(meta["data_emissao_ref"]),
+            lido_por_usuario_id=usuario_id or None,
+            lido_em=agora,
+            criado_em=agora,
+            atualizado_em=agora,
+        )
+        db.add(row)
+        await db.commit()
+        await db.refresh(row)
+        return {
+            "ok": True,
+            "checagem": "imediata_prazo",
+            "cupom": row,
+        }
+
     cpf_no_qr = qr_indica_cpf_destinatario(bruto_n)
 
     if cpf_no_qr:
@@ -171,6 +204,13 @@ async def _aplicar_checagem_sefaz(cupom_id: str) -> None:
             row.cnpj_emitente = resultado.cnpj_emitente
         if resultado.data_emissao:
             row.data_emissao_ref = resultado.data_emissao
+
+        # Revalida prazo apos meta da SEFAZ/chave (folga 1 dia).
+        if cupom_fora_prazo_leitura(row.data_emissao_ref, hoje=agora.date()):
+            row.status = STATUS_REJEITADO_PRAZO
+            row.mensagem = mensagem_rejeicao_prazo(row.data_emissao_ref)
+            await db.commit()
+            return
 
         if resultado.consumidor_identificado is True:
             row.status = STATUS_REJEITADO_CPF

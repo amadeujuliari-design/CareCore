@@ -19,6 +19,7 @@ STATUS_VALIDOS = (
     "enviado",
     "erro",
     "rejeitado_cpf",
+    "rejeitado_prazo",
 )
 
 EIXOS_DATA = ("lido_em", "enviado_em")
@@ -149,6 +150,7 @@ async def relatorio_cupons(
             "enviados": int(contagem.get("enviado", 0)),
             "erros": int(contagem.get("erro", 0)),
             "rejeitados_cpf": int(contagem.get("rejeitado_cpf", 0)),
+            "rejeitados_prazo": int(contagem.get("rejeitado_prazo", 0)),
         }
 
         q_cap = (
@@ -167,6 +169,7 @@ async def relatorio_cupons(
                 "enviados": 0,
                 "erros": 0,
                 "rejeitados_cpf": 0,
+                "rejeitados_prazo": 0,
             }
         )
         for cap, st, qtd in rows_cap:
@@ -187,6 +190,8 @@ async def relatorio_cupons(
                 bucket["erros"] += n
             elif st == "rejeitado_cpf":
                 bucket["rejeitados_cpf"] += n
+            elif st == "rejeitado_prazo":
+                bucket["rejeitados_prazo"] += n
 
         por_captador = sorted(
             por_captador_map.values(),

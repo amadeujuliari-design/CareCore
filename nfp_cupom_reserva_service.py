@@ -185,7 +185,7 @@ async def aplicar_resultados_envio(
             continue
         status_cc = (item.get("status_carecore") or "").strip().lower()
         tipo = (item.get("tipo") or "").strip().lower()
-        if status_cc not in {"enviado", "erro", "pendente"}:
+        if status_cc not in {"enviado", "erro", "pendente", "rejeitado_prazo"}:
             if tipo in {"sucesso", "ja_existe"}:
                 status_cc = "enviado"
             elif tipo == "erro":

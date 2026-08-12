@@ -95,12 +95,19 @@ async def fechar_popup_doacao_automatica(page) -> None:
 
 async def processar_retorno(page) -> object:
     """Aguarda pos-envio, classifica mensagem e so depois fecha modais."""
-    await page.wait_for_timeout(500)
+    await page.wait_for_timeout(200)
     # Classifica COM o modal aberto. Fechar "Nao" antes apagava o sucesso
     # e sobrava so o texto antigo "já existe" no DOM.
-    cls = await aguardar_classificacao_retorno(page, timeout_ms=12000, intervalo_ms=350)
+    # Prazo e erros claros: timeout curto; demais: espera um pouco mais.
+    cls = await aguardar_classificacao_retorno(page, timeout_ms=5000, intervalo_ms=200)
+    if cls.tipo == "inconclusivo":
+        cls = await aguardar_classificacao_retorno(page, timeout_ms=7000, intervalo_ms=300)
     await fechar_popup_doacao_automatica(page)
     await fechar_modal_mensagem(page)
+    if cls.status_carecore == "rejeitado_prazo":
+        # Segunda tentativa rapida: modal de prazo às vezes reaparece.
+        await page.wait_for_timeout(150)
+        await fechar_modal_mensagem(page)
     return cls
 
 
