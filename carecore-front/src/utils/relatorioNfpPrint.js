@@ -93,6 +93,7 @@ export async function imprimirRelatorioNfpCupons({
   relatorio,
   identidadeRelatorio = null,
   aba = 'captador',
+  totalFiltro = null,
 }) {
   const dados = aba === 'detalhe'
     ? montarExportacaoCuponsDetalhe(relatorio)
@@ -106,6 +107,16 @@ export async function imprimirRelatorioNfpCupons({
     filtros.data_inicio || 'início',
     filtros.data_fim || 'fim',
   ].join(' a ');
+  const totalNoFiltro = Number(
+    totalFiltro ?? relatorio?.paginacao?.total ?? dados.length,
+  );
+  const avisoLinhas = aba === 'detalhe'
+    ? (
+      totalNoFiltro > dados.length
+        ? `Linhas impressas: ${dados.length.toLocaleString('pt-BR')} de ${totalNoFiltro.toLocaleString('pt-BR')} (teto 2.000)`
+        : `Linhas impressas: ${dados.length.toLocaleString('pt-BR')} (filtro completo)`
+    )
+    : null;
 
   imprimirRelatorio({
     titulo: 'NFP – Cupons lidos / fila / enviados',
@@ -117,6 +128,7 @@ export async function imprimirRelatorioNfpCupons({
         : 'Status: todos',
       filtros.busca ? `Busca: ${filtros.busca}` : null,
       aba === 'detalhe' ? 'Visão: detalhe' : 'Visão: por captador',
+      avisoLinhas,
     ].filter(Boolean).join(' · '),
     metricas: [
       { label: 'Lidos', valor: totais.lidos ?? 0 },

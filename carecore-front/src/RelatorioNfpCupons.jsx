@@ -229,6 +229,59 @@ export default function RelatorioNfpCupons() {
     }
   };
 
+  const imprimir = async () => {
+    if (!relatorio) return;
+    if (aba === 'captador') {
+      if (!linhasCaptador.length) return;
+      await imprimirRelatorioNfpCupons({
+        relatorio,
+        identidadeRelatorio,
+        aba: 'captador',
+      });
+      return;
+    }
+    // Detalhe: busca todos do filtro (mesmo teto do XLSX), nao so a pagina da tela.
+    setLoading(true);
+    setErro('');
+    try {
+      const dados = await nfpRelatorioCupons({
+        ...paramsBase,
+        limite: 2000,
+        offset: 0,
+        incluir_agregados: false,
+        exportacao: true,
+      });
+      const totalFiltro = Number(dados?.paginacao?.total ?? 0);
+      const linhas = dados?.linhas || [];
+      const payload = {
+        ...relatorio,
+        linhas,
+        paginacao: dados.paginacao || relatorio.paginacao,
+        filtros: { ...(relatorio.filtros || {}), ...(dados.filtros || {}) },
+      };
+      if (!linhas.length) {
+        setErro('Não há linhas no filtro atual para imprimir.');
+        return;
+      }
+      await imprimirRelatorioNfpCupons({
+        relatorio: payload,
+        identidadeRelatorio,
+        aba: 'detalhe',
+        totalFiltro,
+      });
+      if (totalFiltro > linhas.length) {
+        setErro(
+          `Impressão com as primeiras ${linhas.length.toLocaleString('pt-BR')} de `
+          + `${totalFiltro.toLocaleString('pt-BR')} do filtro (teto 2.000). Refine o período/status para caber tudo.`,
+        );
+      }
+    } catch (error) {
+      setErro(error?.response?.data?.detail || 'Falha ao preparar impressão do detalhe.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <AppShell>
       <Sidebar />
@@ -247,12 +300,8 @@ export default function RelatorioNfpCupons() {
               </ReportActionButton>
               <ReportActionButton
                 type="button"
-                disabled={!temLinhas}
-                onClick={() => imprimirRelatorioNfpCupons({
-                  relatorio,
-                  identidadeRelatorio,
-                  aba: aba === 'detalhe' ? 'detalhe' : 'captador',
-                })}
+                disabled={!temLinhas || loading}
+                onClick={imprimir}
               >
                 Imprimir
               </ReportActionButton>
@@ -351,7 +400,7 @@ export default function RelatorioNfpCupons() {
               />
             </label>
             <p className="mt-3 text-xs text-slate-500">
-              Datas no calendário de São Paulo. Consolidado por captador é leve; detalhe vem página a página (50). Export XLSX do detalhe limita a 2.000 linhas.
+              Datas no calendário de São Paulo. Consolidado por captador é leve; detalhe na tela vem página a página (50). Impressão e XLSX do detalhe buscam todos do filtro (até 2.000).
             </p>
           </section>
 
