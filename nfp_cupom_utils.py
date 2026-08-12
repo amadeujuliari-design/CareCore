@@ -12,6 +12,8 @@ from html import unescape
 from typing import Optional
 
 RE_CHAVE = re.compile(r"(?<!\d)(\d{44})(?!\d)")
+# Leitores USB às vezes engolem /, ? e //: https:www...qrcodep=CHAVE|...
+RE_P_CHAVE = re.compile(r"(?:[?&/]|^|[^=])p=(\d{44})", re.I)
 RE_CONSUMIDOR_NAO_ID = re.compile(
     r"consumidor\s*n[aã]o\s*identificado",
     re.I,
@@ -43,44 +45,67 @@ class ResultadoChaveCupom:
     data_emissao: str | None = None
 
 
+def _chave_de_param_p(parte: str) -> str | None:
+    bruto = urllib.parse.unquote(parte or "")
+    primeiro = bruto.split("|")[0]
+    digitos = re.sub(r"\D", "", primeiro)
+    if len(digitos) >= 44:
+        return digitos[:44]
+    return None
+
+
 def extrair_chave_de_leitura(bruto: str) -> str | None:
-    """Extrai chave de 44 digitos de QR (URL) ou digitacao."""
+    """Extrai chave de 44 digitos de QR (URL) ou digitacao.
+
+    Aceita URL SEFAZ normal e leitura de pistola que remove /, ? e //.
+    """
     texto = (bruto or "").strip()
     if not texto:
         return None
+
+    # Mais robusto: p= seguido imediatamente de 44 digitos (URL mangled ou ok).
+    m_direto = RE_P_CHAVE.search(texto)
+    if m_direto:
+        return m_direto.group(1)
 
     # URL com p=chave|...
     try:
         parsed = urllib.parse.urlparse(texto)
         qs = urllib.parse.parse_qs(parsed.query)
         if "p" in qs and qs["p"]:
-            primeiro = qs["p"][0].split("|")[0]
-            digitos = re.sub(r"\D", "", primeiro)
-            if len(digitos) == 44:
-                return digitos
+            achou = _chave_de_param_p(qs["p"][0])
+            if achou:
+                return achou
     except Exception:
         pass
 
-    # p= embutido sem parse completo
-    m_p = re.search(r"[?&]p=([^&\s]+)", texto, re.I)
+    # p= embutido (com ou sem ?/&) — ex.: ...qrcodep=CHAVE|2|1
+    m_p = re.search(r"p=([^&\s]+)", texto, re.I)
     if m_p:
-        parte = urllib.parse.unquote(m_p.group(1)).split("|")[0]
-        digitos = re.sub(r"\D", "", parte)
-        if len(digitos) == 44:
-            return digitos
+        achou = _chave_de_param_p(m_p.group(1))
+        if achou:
+            return achou
 
     digitos = re.sub(r"\D", "", texto)
     if len(digitos) == 44:
         return digitos
-
-    m = RE_CHAVE.search(digitos) or RE_CHAVE.search(texto)
-    return m.group(1) if m else None
+    # Sequencia longa (URL mangled sem separadores): chave NFe costuma comecar em pos 0 apos p=
+    m = RE_CHAVE.search(texto)
+    if m:
+        return m.group(1)
+    # Fallback: primeiros 44 digitos se parecer chave SP (UF 35) embutida
+    if len(digitos) > 44:
+        for i in range(0, len(digitos) - 43):
+            cand = digitos[i : i + 44]
+            if cand.startswith("35"):
+                return cand
+    return None
 
 
 def qr_indica_cpf_destinatario(bruto: str) -> bool:
     """NFC-e offline (v2/v3): parametros 6/7 do p= podem trazer tipo CPF + numero."""
     texto = (bruto or "").strip()
-    m_p = re.search(r"[?&]p=([^&\s]+)", texto, re.I)
+    m_p = re.search(r"p=([^&\s]+)", texto, re.I)
     raw = urllib.parse.unquote(m_p.group(1)) if m_p else texto
     partes = raw.split("|")
     if len(partes) < 7:
@@ -95,12 +120,27 @@ def qr_indica_cpf_destinatario(bruto: str) -> bool:
     return False
 
 
+def _url_http_valida(url: str) -> bool:
+    try:
+        parsed = urllib.parse.urlparse(url)
+        return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
+    except Exception:
+        return False
+
+
 def montar_url_consulta_sp(chave: str, qr_bruto: str = "") -> str:
+    """Monta URL de consulta publica. Ignora QR mangled da pistola (sem host)."""
     bruto = (qr_bruto or "").strip()
-    if "nfce.fazenda.sp.gov.br" in bruto.lower() and "p=" in bruto.lower():
-        if bruto.startswith("http"):
-            return bruto
-    return f"{URL_CONSULTA_SP}?p={chave}|3|1"
+    if (
+        "nfce.fazenda.sp.gov.br" in bruto.lower()
+        and "p=" in bruto.lower()
+        and bruto.lower().startswith("http")
+        and _url_http_valida(bruto)
+    ):
+        return bruto
+    # | precisa ser %7C em alguns ambientes urllib/Python.
+    param = urllib.parse.quote(f"{chave}|3|1", safe="")
+    return f"{URL_CONSULTA_SP}?p={param}"
 
 
 def _baixar_html_consulta(url: str, timeout: float = 12.0) -> str:

@@ -51,6 +51,13 @@ describe('leituraCodigoUtils', () => {
       chave,
     );
     assert.equal(extrairChaveNfpDeLeitura(` ${chave} `), chave);
+    // Pistola USB que remove /, ? e //
+    assert.equal(
+      extrairChaveNfpDeLeitura(
+        `https:www.nfce.fazenda.sp.gov.brqrcodep=${chave}|2|1|1|abc`,
+      ),
+      chave,
+    );
   });
 
   it('ignora cupom NFP ja tratado na sessao (sucesso ou 409)', () => {

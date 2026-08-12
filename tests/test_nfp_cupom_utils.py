@@ -40,7 +40,24 @@ def test_html_consumidor_com_cpf_mascarado():
 
 def test_montar_url_consulta():
     url = montar_url_consulta_sp("35260847508411169495651090002701871160307536")
-    assert "35260847508411169495651090002701871160307536|3|1" in url
+    assert "35260847508411169495651090002701871160307536" in url
+    assert "p=" in url
+    # QR mangled da pistola (sem // e ?) nao deve ser reutilizado.
+    mangled = (
+        "https:www.nfce.fazenda.sp.gov.brqrcodep="
+        "35260818897570000191650040000502359958440126|2|1|1|abc"
+    )
+    url2 = montar_url_consulta_sp("35260818897570000191650040000502359958440126", mangled)
+    assert url2.startswith("https://www.nfce.fazenda.sp.gov.br/")
+    assert "no host" not in url2
+
+
+def test_extrair_chave_url_pistola_mangled():
+    mangled = (
+        "https:www.nfce.fazenda.sp.gov.brqrcodep="
+        "35260818897570000191650040000502359958440126|2|1|1|1896b24f464ba19b9571c0d67ab60"
+    )
+    assert extrair_chave_de_leitura(mangled) == "35260818897570000191650040000502359958440126"
 
 
 def test_qr_offline_com_cpf():

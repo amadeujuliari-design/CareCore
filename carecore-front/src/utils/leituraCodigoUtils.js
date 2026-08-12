@@ -13,15 +13,23 @@ export function extrairChaveNfpDeLeitura(bruto) {
   const texto = String(bruto || '').trim();
   if (!texto) return '';
 
-  const paramP = texto.match(/[?&]p=([^&]+)/i);
+  // Pistola USB às vezes remove /, ? e //: ...qrcodep=CHAVE|2|1
+  const pDireto = texto.match(/(?:[?&/]|^|[^=])p=(\d{44})/i);
+  if (pDireto?.[1]) return pDireto[1];
+
+  const paramP = texto.match(/p=([^&\s]+)/i);
   if (paramP?.[1]) {
     const parte = decodeURIComponent(paramP[1]).split('|')[0] || '';
     const digitosP = parte.replace(/\D/g, '');
-    if (digitosP.length === 44) return digitosP;
+    if (digitosP.length >= 44) return digitosP.slice(0, 44);
   }
 
   const soDigitos = texto.replace(/\D/g, '');
   if (soDigitos.length === 44) return soDigitos;
+
+  // Preferir chave SP (35…) se houver dígitos extras concatenados
+  const matchSp = soDigitos.match(/35\d{42}/);
+  if (matchSp) return matchSp[0];
 
   const match44 = soDigitos.match(/\d{44}/);
   return match44 ? match44[0] : '';
