@@ -286,7 +286,19 @@ async def aguardar_classificacao_retorno(
 
 
 async def fechar_modal_mensagem(page) -> bool:
-    """Fecha modal Erro/Aviso/Mensagem clicando em Ok / close (sem ESC cego)."""
+    """Fecha modal Erro/Aviso/Mensagem clicando em Ok / close (sem ESC cego).
+
+    Nao fecha o bloqueio SEFAZ de indicios de notas de terceiros.
+    """
+    try:
+        from navegar_doacao_aeb import bloqueio_doacao_terceiros_sefaz
+
+        if await bloqueio_doacao_terceiros_sefaz(page):
+            print("Modal SEFAZ de bloqueio de conta — nao clicar Ok.")
+            return False
+    except Exception:
+        pass
+
     try:
         tem_modal = await page.evaluate(
             """() => {

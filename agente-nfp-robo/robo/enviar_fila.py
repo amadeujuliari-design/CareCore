@@ -12,6 +12,7 @@ Trata tambem:
   - popup "Deseja doar todos os documentos...?" → clica Nao
   - "Este pedido já existe no sistema..." → ja resolvido (enviado)
   - "Doação registrada com sucesso..." → sucesso (enviado)
+  - bloqueio SEFAZ (notas de terceiros) → para sem martelar menu/Ok
 
 Uso:
   python scripts/nfp_robo/enviar_fila.py --cdp http://127.0.0.1:9222
@@ -33,7 +34,11 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from ler_planilha_chaves import ler_chaves_json, ler_chaves_xlsx  # noqa: E402
-from navegar_doacao_aeb import garantir_tela_doacao_aeb, sessao_nfp_caiu  # noqa: E402
+from navegar_doacao_aeb import (  # noqa: E402
+    bloqueio_doacao_terceiros_sefaz,
+    garantir_tela_doacao_aeb,
+    sessao_nfp_caiu,
+)
 from preencher_sem_enviar import (  # noqa: E402
     CDP_PADRAO,
     PLANILHA_PADRAO,
@@ -52,60 +57,6 @@ STOP_FLAG = Path(__file__).resolve().parent / "_capturas" / "fila_parar.flag"
 
 def _parada_solicitada() -> bool:
     return STOP_FLAG.is_file()
-
-
-async def _aguardar_tela_ou_sessao(
-    page,
-    *,
-    rotulo: str,
-) -> str:
-    """Reave DoacaoNotas enquanto a sessao estiver viva.
-
-    Retorna: 'ok' | 'sessao_caiu' | 'parada_usuario'
-    """
-    ciclo = 0
-    while True:
-        if _parada_solicitada():
-            return "parada_usuario"
-        if await sessao_nfp_caiu(page):
-            return "sessao_caiu"
-        if await garantir_tela_doacao_aeb(page, tentativas=8):
-            if ciclo:
-                print(f"Recuperacao ok apos {ciclo} ciclo(s) ({rotulo}).")
-            return "ok"
-        ciclo += 1
-        # Backoff: 3s, 6s, 10s... ate 60s — rotina noturna insiste.
-        espera = min(60, 3 + ciclo * 3)
-        print(
-            f"Tela instavel ({rotulo}) ciclo {ciclo} — sessao ativa, "
-            f"nova tentativa em {espera}s..."
-        )
-        await page.wait_for_timeout(espera * 1000)
-
-
-async def _preencher_e_registrar_persistente(page, chave: str) -> str:
-    """Preenche + Registrar com retries enquanto sessao ativa.
-
-    Retorna: 'ok' | 'sessao_caiu' | 'parada_usuario'
-    """
-    tentativa = 0
-    while True:
-        if _parada_solicitada():
-            return "parada_usuario"
-        if await sessao_nfp_caiu(page):
-            return "sessao_caiu"
-        estado = await _aguardar_tela_ou_sessao(page, rotulo=f"chave {chave[:12]}…")
-        if estado != "ok":
-            return estado
-        if await preencher_chave(page, chave) and await clicar_registrar(page):
-            return "ok"
-        tentativa += 1
-        espera = min(45, 2 + tentativa * 2)
-        print(
-            f"Preencher/Registrar falhou (tentativa {tentativa}) — "
-            f"sessao ativa, retry em {espera}s..."
-        )
-        await page.wait_for_timeout(espera * 1000)
 
 
 async def fechar_popup_doacao_automatica(page) -> None:
@@ -152,10 +103,26 @@ async def processar_retorno(page) -> object:
     await page.wait_for_timeout(200)
     # Classifica COM o modal aberto. Fechar "Nao" antes apagava o sucesso
     # e sobrava so o texto antigo "já existe" no DOM.
-    # Prazo e erros claros: timeout curto; demais: espera um pouco mais.
     cls = await aguardar_classificacao_retorno(page, timeout_ms=5000, intervalo_ms=200)
     if cls.tipo == "inconclusivo":
         cls = await aguardar_classificacao_retorno(page, timeout_ms=7000, intervalo_ms=300)
+
+    # Bloqueio de conta: nao clicar Ok (e nao retomar Nova Doacao depois).
+    if cls.tipo == "bloqueio_sefaz" or await bloqueio_doacao_terceiros_sefaz(page):
+        if cls.tipo != "bloqueio_sefaz":
+            from retorno_nfp import ClassificacaoRetorno
+
+            cls = ClassificacaoRetorno(
+                tipo="bloqueio_sefaz",
+                mensagem=(
+                    "SEFAZ bloqueou a doacao (indicios de notas de terceiros). "
+                    "Parando sem fechar o modal."
+                ),
+                status_carecore="pendente",
+            )
+        print("Bloqueio SEFAZ detectado — mantendo modal; encerrar sessao.")
+        return cls
+
     await fechar_popup_doacao_automatica(page)
     await fechar_modal_mensagem(page)
     if cls.status_carecore == "rejeitado_prazo":
@@ -163,6 +130,28 @@ async def processar_retorno(page) -> object:
         await page.wait_for_timeout(150)
         await fechar_modal_mensagem(page)
     return cls
+
+
+async def _posicionar_tela(page, *, rotulo: str) -> str:
+    """Uma passagem de garantir_tela (como antes). Sem loop infinito.
+
+    Retorna: 'ok' | 'sessao_caiu' | 'bloqueio_sefaz' | 'falha' | 'parada_usuario'
+    """
+    if _parada_solicitada():
+        return "parada_usuario"
+    if await sessao_nfp_caiu(page):
+        return "sessao_caiu"
+    if await bloqueio_doacao_terceiros_sefaz(page):
+        return "bloqueio_sefaz"
+    if await garantir_tela_doacao_aeb(page):
+        return "ok"
+    # garantir_tela pode ter abortado por bloqueio no meio
+    if await bloqueio_doacao_terceiros_sefaz(page):
+        return "bloqueio_sefaz"
+    if await sessao_nfp_caiu(page):
+        return "sessao_caiu"
+    print(f"Falha ao posicionar DoacaoNotas/AEB ({rotulo}).")
+    return "falha"
 
 
 async def rodar(args: argparse.Namespace) -> int:
@@ -218,14 +207,26 @@ async def rodar(args: argparse.Namespace) -> int:
             return 1
 
         print("Rotina inicial: posicionando DoacaoNotas + entidade AEB (pode partir da home)...")
-        estado0 = await _aguardar_tela_ou_sessao(page, rotulo="inicio")
+        estado0 = await _posicionar_tela(page, rotulo="inicio")
         if estado0 == "sessao_caiu":
             print("ERRO: sessao NFP caiu (login). Autentique manualmente e rode de novo.")
+            return 1
+        if estado0 == "bloqueio_sefaz":
+            print(
+                "ERRO: SEFAZ bloqueou doacao nesta conta (indicios de notas de terceiros). "
+                "Nao vou insistir em menu/Nova Doacao."
+            )
             return 1
         if estado0 == "parada_usuario":
             print("Parada solicitada antes de iniciar.")
             return 0
-        print("Rotina inicial ok — iniciando envios (modo autonomo: insiste enquanto sessao ativa).")
+        if estado0 != "ok":
+            print(
+                "ERRO: nao consegui posicionar a tela de doacao com AEB. "
+                "Confirme que esta logado na NFP (tela Bem-vindo) e tente de novo."
+            )
+            return 1
+        print("Rotina inicial ok — iniciando envios.")
 
         ok_count = 0
         ja_existe_count = 0
@@ -241,36 +242,62 @@ async def rodar(args: argparse.Namespace) -> int:
             if usar_cdp and browser.contexts:
                 page = await escolher_pagina(browser.contexts[0])
 
-            chave = item["chave"]
-            print(f"\n[{i}/{len(fila)}] {chave}")
-
-            estado = await _preencher_e_registrar_persistente(page, chave)
+            estado = await _posicionar_tela(page, rotulo=f"item {i}")
             if estado == "parada_usuario":
                 parado_pelo_usuario = True
                 motivo_interrupcao = "parada_usuario"
-                resultados.append(
-                    {
-                        "chave": chave,
-                        "tipo": "inconclusivo",
-                        "status_carecore": "pendente",
-                        "mensagem": "Parada solicitada — mantido pendente.",
-                        "trecho": "",
-                    }
-                )
                 break
             if estado == "sessao_caiu":
                 motivo_interrupcao = "sessao_caiu"
-                print("Sessao caiu no meio da fila — encerrando (precisa login manual).")
-                resultados.append(
-                    {
-                        "chave": chave,
-                        "tipo": "sessao_caiu",
-                        "status_carecore": "pendente",
-                        "mensagem": "Sessão NFP caiu — mantido pendente.",
-                        "trecho": "",
-                    }
+                print("Sessao caiu — interrompendo (login manual).")
+                break
+            if estado == "bloqueio_sefaz":
+                motivo_interrupcao = "bloqueio_sefaz"
+                print("Bloqueio SEFAZ — interrompendo (nao retomar menu/Nova Doacao).")
+                break
+            if estado != "ok":
+                motivo_interrupcao = "falha_tela"
+                print(
+                    "Falha ao recuperar tela DoacaoNotas/AEB — interrompendo. "
+                    f"Retome com --inicio {i - 1 + int(args.inicio)}"
                 )
                 break
+
+            chave = item["chave"]
+            print(f"\n[{i}/{len(fila)}] {chave}")
+            if not await preencher_chave(page, chave):
+                print("Campo chave sumiu — tentando recuperar tela e repetir uma vez...")
+                estado_r = await _posicionar_tela(page, rotulo="retry preencher")
+                if estado_r == "bloqueio_sefaz":
+                    motivo_interrupcao = "bloqueio_sefaz"
+                    print("Bloqueio SEFAZ no retry — parando.")
+                    break
+                if estado_r == "ok" and await preencher_chave(page, chave):
+                    pass
+                else:
+                    print("Falha ao preencher — interrompendo.")
+                    motivo_interrupcao = "falha_preencher"
+                    return 1
+            if not await clicar_registrar(page):
+                print("Registrar falhou — tentando recuperar tela e repetir uma vez...")
+                estado_r = await _posicionar_tela(page, rotulo="retry registrar")
+                if estado_r == "bloqueio_sefaz":
+                    motivo_interrupcao = "bloqueio_sefaz"
+                    print("Bloqueio SEFAZ no retry — parando.")
+                    break
+                if estado_r == "ok":
+                    if not await preencher_chave(page, chave):
+                        print("Falha ao preencher apos recuperacao — interrompendo.")
+                        motivo_interrupcao = "falha_preencher"
+                        return 1
+                    if not await clicar_registrar(page):
+                        print("Falha ao clicar Registrar — interrompendo.")
+                        motivo_interrupcao = "falha_registrar"
+                        return 1
+                else:
+                    print("Falha ao clicar Registrar — interrompendo.")
+                    motivo_interrupcao = "falha_registrar"
+                    return 1
 
             cls = await processar_retorno(page)
             print(
@@ -297,6 +324,14 @@ async def rodar(args: argparse.Namespace) -> int:
                 )
                 break
 
+            if cls.tipo == "bloqueio_sefaz":
+                motivo_interrupcao = "bloqueio_sefaz"
+                print(
+                    "Bloqueio SEFAZ — encerrando fila. "
+                    "Nao vou clicar Ok nem reabrir Nova Doacao."
+                )
+                break
+
             if resultado_operacional_ok(cls):
                 ok_count += 1
                 if cls.tipo == "ja_existe":
@@ -309,6 +344,7 @@ async def rodar(args: argparse.Namespace) -> int:
                     print("Parando por --parar-em-erro.")
                     break
             else:
+                # inconclusivo: segue, mas nao conta como ok
                 print("  → inconclusivo; segue (revise o log depois).")
 
             if _parada_solicitada():

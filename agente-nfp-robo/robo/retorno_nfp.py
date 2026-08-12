@@ -7,7 +7,14 @@ import re
 from dataclasses import dataclass
 from typing import Literal
 
-ResultadoTipo = Literal["sucesso", "ja_existe", "erro", "sessao_caiu", "inconclusivo"]
+ResultadoTipo = Literal[
+    "sucesso",
+    "ja_existe",
+    "erro",
+    "sessao_caiu",
+    "bloqueio_sefaz",
+    "inconclusivo",
+]
 
 # Capturado em 2026-08-07 na DoacaoNotas.aspx
 MSG_PEDIDO_JA_EXISTE = "Este pedido já existe no sistema. Favor inserir uma nova nota."
@@ -57,6 +64,14 @@ RE_PRAZO = re.compile(
     re.I,
 )
 
+# Conta bloqueada: indicios de doacao de notas de terceiros (parar tudo)
+RE_BLOQUEIO_TERCEIROS = re.compile(
+    r"ind[ií]cios\s+de\s+que\s+o\s+consumidor|"
+    r"n[aã]o\s+eram\s+referentes\s+[aà]s\s+suas\s+pr[oó]prias|"
+    r"funcionalidade\s+indispon[ií]vel.{0,120}(?:ind[ií]cios|referentes)",
+    re.I | re.S,
+)
+
 
 @dataclass
 class ClassificacaoRetorno:
@@ -86,6 +101,19 @@ def classificar_texto_retorno(texto: str, *, url: str = "") -> ClassificacaoReto
             tipo="inconclusivo",
             mensagem="Retorno vazio — não foi possível classificar.",
             status_carecore="pendente",
+        )
+
+    # Bloqueio de conta: parar imediatamente (antes de sucesso/erro generico).
+    if RE_BLOQUEIO_TERCEIROS.search(compacto):
+        trecho = _extrair_trecho(compacto, RE_BLOQUEIO_TERCEIROS) or compacto[:280]
+        return ClassificacaoRetorno(
+            tipo="bloqueio_sefaz",
+            mensagem=(
+                "SEFAZ bloqueou a doacao (indicios de notas que nao sao do consumidor). "
+                "Nao retomar menu/Nova Doacao nesta sessao."
+            ),
+            status_carecore="pendente",
+            trecho=trecho,
         )
 
     # Sucesso ANTES de "já existe": o DOM da NFP costuma manter o modal Erro

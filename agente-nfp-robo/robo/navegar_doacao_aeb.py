@@ -31,10 +31,45 @@ def _url_norm(url: str) -> str:
     return (url or "").lower()
 
 
+async def _texto_corpo(page) -> str:
+    try:
+        return " ".join(((await page.inner_text("body")) or "").lower().split())
+    except Exception:
+        return ""
+
+
+async def bloqueio_doacao_terceiros_sefaz(page) -> bool:
+    """Modal que trava a doacao por indicios de notas de terceiros (conta)."""
+    texto = await _texto_corpo(page)
+    if not texto:
+        return False
+    if "indícios de que o consumidor" in texto or "indicios de que o consumidor" in texto:
+        return True
+    if "não eram referentes" in texto or "nao eram referentes" in texto:
+        return True
+    if "funcionalidade indispon" in texto and (
+        "indíc" in texto or "indic" in texto or "referentes" in texto
+    ):
+        return True
+    return False
+
+
 async def fechar_modal_instrutivo(page) -> bool:
-    """Fecha avisos/modais (overlay ui-widget) que bloqueiam o formulario."""
+    """Fecha avisos/modais (overlay ui-widget) que bloqueiam o formulario.
+
+    Nao fecha o bloqueio SEFAZ de 'indicios de doacoes de terceiros' — isso exige parar.
+    """
+    if await bloqueio_doacao_terceiros_sefaz(page):
+        print(
+            "SEFAZ: funcionalidade bloqueada (indicios de doacoes que nao sao do consumidor). "
+            "Nao vou clicar Ok nem reabrir Nova Doacao."
+        )
+        return False
+
     fechou = False
     for _ in range(5):
+        if await bloqueio_doacao_terceiros_sefaz(page):
+            return False
         overlay = False
         try:
             overlay = await page.evaluate(
@@ -362,7 +397,17 @@ async def _pesquisar_e_selecionar_aeb(page) -> bool:
 async def garantir_tela_doacao_aeb(page, *, tentativas: int = 6) -> bool:
     """Garante DoacaoNotas com AEB pronta para preencher chave."""
     for n in range(1, tentativas + 1):
+        # Bloqueio de conta SEFAZ: nao clicar menu/Nova Doacao (piora o bloqueio).
+        if await bloqueio_doacao_terceiros_sefaz(page):
+            print(
+                "Recuperacao: abortada — SEFAZ bloqueou doacao (indicios de notas de terceiros)."
+            )
+            return False
+
         await fechar_modal_instrutivo(page)
+        if await bloqueio_doacao_terceiros_sefaz(page):
+            return False
+
         if await tela_pronta_para_enviar(page):
             if n > 1:
                 print("Recuperacao: tela DoacaoNotas + AEB ok.")
@@ -376,9 +421,7 @@ async def garantir_tela_doacao_aeb(page, *, tentativas: int = 6) -> bool:
             print("Recuperacao: sessao/login — e preciso autenticar manualmente.")
             return False
 
-        if "principal.aspx" in url or "bem-vindo ao sistema" in (
-            " ".join(((await page.inner_text("body")) or "").lower().split())
-        ):
+        if "principal.aspx" in url or "bem-vindo ao sistema" in (await _texto_corpo(page)):
             await _clicar_menu_doacao_sem_cpf(page)
             continue
 

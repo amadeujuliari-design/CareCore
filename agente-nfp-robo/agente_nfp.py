@@ -308,6 +308,7 @@ def processar_sessao(
 
         itens: list[dict] = []
         sessao_caiu = False
+        bloqueio_sefaz = False
         try:
             itens = rodar_enviar_fila(cdp=cdp, caminho_json=caminho_json)
             if itens:
@@ -320,6 +321,8 @@ def processar_sessao(
                     )
                 if any((it.get("tipo") or "") == "sessao_caiu" for it in itens):
                     sessao_caiu = True
+                if any((it.get("tipo") or "") == "bloqueio_sefaz" for it in itens):
+                    bloqueio_sefaz = True
         finally:
             if lote_id:
                 try:
@@ -337,19 +340,27 @@ def processar_sessao(
             print(f"[{_agora()}] Sessao NFP caiu — encerrando (login manual necessario).")
             break
 
+        if bloqueio_sefaz:
+            print(
+                f"[{_agora()}] SEFAZ bloqueou doacao nesta conta "
+                "(indicios de notas de terceiros) — encerrando sem retomar menu/Nova Doacao."
+            )
+            break
+
         if parada_solicitada():
             print(f"[{_agora()}] Parado pelo operador.")
             break
         if restante is not None and restante <= 0:
             break
 
-        # Lote vazio/parcial por instabilidade de tela: espera e tenta o proximo lote.
+        # Lote vazio/parcial por instabilidade de tela: espera curta e tenta o proximo.
+        # Nao insistir agressivamente — se a tela falhou de verdade, o proximo lote
+        # tambem falha e o operador ve no log.
         if processados_lote == 0 and chaves:
             print(
-                f"[{_agora()}] Nenhum item neste lote — aguardando 30s e tentando de novo "
-                "(modo autonomo; so para se a sessao cair)."
+                f"[{_agora()}] Nenhum item neste lote — aguardando 15s e tentando de novo."
             )
-            for _ in range(6):
+            for _ in range(3):
                 if parada_solicitada():
                     break
                 time.sleep(5)
