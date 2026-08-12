@@ -128,6 +128,15 @@ def _extrair_payload() -> None:
             "Instalacao incompleta: falta robo/enviar_fila.py no pacote. "
             "Baixe de novo o CareCore-Agente-NFP.exe do CareCore online."
         )
+    # Guardrail: payload antigo ainda abria Doacao de Cupons sem CPF (bloqueio SEFAZ).
+    navegar = INSTALL_DIR / "robo" / "navegar_doacao_aeb.py"
+    if navegar.is_file():
+        txt = navegar.read_text(encoding="utf-8", errors="ignore")
+        if "Cadastramento de Cupons" not in txt:
+            raise RuntimeError(
+                "Pacote do agente desatualizado (falta fluxo Cadastramento de Cupons). "
+                "Baixe de novo o CareCore-Agente-NFP.exe no CareCore online (v1.4.61+)."
+            )
     print(f"Pacote extraido em {INSTALL_DIR}")
 
 
