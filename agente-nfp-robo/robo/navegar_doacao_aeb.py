@@ -134,6 +134,27 @@ async def tela_pronta_para_enviar(page) -> bool:
     return await _entidade_aeb_selecionada(page)
 
 
+async def sessao_nfp_caiu(page) -> bool:
+    """True somente quando o portal pede login de novo (nao recuperavel sozinho)."""
+    try:
+        url = _url_norm(page.url or "")
+    except Exception:
+        url = ""
+    if "sso.acesso.gov" in url or "acesso.gov.br" in url:
+        return True
+    if "login" in url and "nfce" not in url:
+        return True
+    try:
+        texto = " ".join(((await page.inner_text("body")) or "").lower().split())
+    except Exception:
+        texto = ""
+    if "acesse sua conta gov.br" in texto or "entrar com gov.br" in texto:
+        return True
+    if "efetuar login" in texto and "doacaonotas" not in url:
+        return True
+    return False
+
+
 async def _clicar_menu_doacao_sem_cpf(page) -> bool:
     """principal.aspx → Entidades → Doação de Cupons sem CPF."""
     # Hover / click Entidades

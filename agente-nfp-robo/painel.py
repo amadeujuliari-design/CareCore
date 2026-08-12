@@ -263,9 +263,10 @@ HTML = r"""<!DOCTYPE html>
       </div>
       <div class="row">
         <button class="primary" id="btnEnviar" type="button">Rodar rotina / enviar fila</button>
-        <button class="secondary" id="btnContinuo" type="button">Envio contínuo</button>
+        <button class="secondary" id="btnContinuo" type="button">Envio contínuo (noite)</button>
         <button class="secondary" id="btnParar" type="button">Parar</button>
       </div>
+      <p class="sub">Continuo: esgota a fila, espera novas leituras e só para se a sessão SEFAZ cair ou você clicar em Parar.</p>
       <div class="log" id="log"></div>
     </div>
 

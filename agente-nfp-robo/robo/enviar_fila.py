@@ -33,7 +33,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from ler_planilha_chaves import ler_chaves_json, ler_chaves_xlsx  # noqa: E402
-from navegar_doacao_aeb import garantir_tela_doacao_aeb  # noqa: E402
+from navegar_doacao_aeb import garantir_tela_doacao_aeb, sessao_nfp_caiu  # noqa: E402
 from preencher_sem_enviar import (  # noqa: E402
     CDP_PADRAO,
     PLANILHA_PADRAO,
@@ -52,6 +52,60 @@ STOP_FLAG = Path(__file__).resolve().parent / "_capturas" / "fila_parar.flag"
 
 def _parada_solicitada() -> bool:
     return STOP_FLAG.is_file()
+
+
+async def _aguardar_tela_ou_sessao(
+    page,
+    *,
+    rotulo: str,
+) -> str:
+    """Reave DoacaoNotas enquanto a sessao estiver viva.
+
+    Retorna: 'ok' | 'sessao_caiu' | 'parada_usuario'
+    """
+    ciclo = 0
+    while True:
+        if _parada_solicitada():
+            return "parada_usuario"
+        if await sessao_nfp_caiu(page):
+            return "sessao_caiu"
+        if await garantir_tela_doacao_aeb(page, tentativas=8):
+            if ciclo:
+                print(f"Recuperacao ok apos {ciclo} ciclo(s) ({rotulo}).")
+            return "ok"
+        ciclo += 1
+        # Backoff: 3s, 6s, 10s... ate 60s — rotina noturna insiste.
+        espera = min(60, 3 + ciclo * 3)
+        print(
+            f"Tela instavel ({rotulo}) ciclo {ciclo} — sessao ativa, "
+            f"nova tentativa em {espera}s..."
+        )
+        await page.wait_for_timeout(espera * 1000)
+
+
+async def _preencher_e_registrar_persistente(page, chave: str) -> str:
+    """Preenche + Registrar com retries enquanto sessao ativa.
+
+    Retorna: 'ok' | 'sessao_caiu' | 'parada_usuario'
+    """
+    tentativa = 0
+    while True:
+        if _parada_solicitada():
+            return "parada_usuario"
+        if await sessao_nfp_caiu(page):
+            return "sessao_caiu"
+        estado = await _aguardar_tela_ou_sessao(page, rotulo=f"chave {chave[:12]}…")
+        if estado != "ok":
+            return estado
+        if await preencher_chave(page, chave) and await clicar_registrar(page):
+            return "ok"
+        tentativa += 1
+        espera = min(45, 2 + tentativa * 2)
+        print(
+            f"Preencher/Registrar falhou (tentativa {tentativa}) — "
+            f"sessao ativa, retry em {espera}s..."
+        )
+        await page.wait_for_timeout(espera * 1000)
 
 
 async def fechar_popup_doacao_automatica(page) -> None:
@@ -157,19 +211,21 @@ async def rodar(args: argparse.Namespace) -> int:
         pass
 
     parado_pelo_usuario = False
+    motivo_interrupcao = ""
     async with async_playwright() as p:
         browser, page, usar_cdp = await conectar_navegador(p, args)
         if page is None:
             return 1
 
         print("Rotina inicial: posicionando DoacaoNotas + entidade AEB (pode partir da home)...")
-        if not await garantir_tela_doacao_aeb(page):
-            print(
-                "ERRO: nao consegui posicionar a tela de doacao com AEB. "
-                "Confirme que esta logado na NFP (tela Bem-vindo) e tente de novo."
-            )
+        estado0 = await _aguardar_tela_ou_sessao(page, rotulo="inicio")
+        if estado0 == "sessao_caiu":
+            print("ERRO: sessao NFP caiu (login). Autentique manualmente e rode de novo.")
             return 1
-        print("Rotina inicial ok — iniciando envios.")
+        if estado0 == "parada_usuario":
+            print("Parada solicitada antes de iniciar.")
+            return 0
+        print("Rotina inicial ok — iniciando envios (modo autonomo: insiste enquanto sessao ativa).")
 
         ok_count = 0
         ja_existe_count = 0
@@ -179,39 +235,42 @@ async def rodar(args: argparse.Namespace) -> int:
             if _parada_solicitada():
                 print("Parada solicitada pelo CareCore — encerrando apos o item atual.")
                 parado_pelo_usuario = True
+                motivo_interrupcao = "parada_usuario"
                 break
 
             if usar_cdp and browser.contexts:
                 page = await escolher_pagina(browser.contexts[0])
 
-            if not await garantir_tela_doacao_aeb(page):
-                print(
-                    "Falha ao recuperar tela DoacaoNotas/AEB — interrompendo. "
-                    f"Retome com --inicio {i - 1 + int(args.inicio)}"
-                )
-                break
-
             chave = item["chave"]
             print(f"\n[{i}/{len(fila)}] {chave}")
-            if not await preencher_chave(page, chave):
-                print("Campo chave sumiu — tentando recuperar tela e repetir uma vez...")
-                if await garantir_tela_doacao_aeb(page) and await preencher_chave(page, chave):
-                    pass
-                else:
-                    print("Falha ao preencher — interrompendo.")
-                    return 1
-            if not await clicar_registrar(page):
-                print("Registrar falhou — tentando recuperar tela e repetir uma vez...")
-                if await garantir_tela_doacao_aeb(page):
-                    if not await preencher_chave(page, chave):
-                        print("Falha ao preencher apos recuperacao — interrompendo.")
-                        return 1
-                    if not await clicar_registrar(page):
-                        print("Falha ao clicar Registrar — interrompendo.")
-                        return 1
-                else:
-                    print("Falha ao clicar Registrar — interrompendo.")
-                    return 1
+
+            estado = await _preencher_e_registrar_persistente(page, chave)
+            if estado == "parada_usuario":
+                parado_pelo_usuario = True
+                motivo_interrupcao = "parada_usuario"
+                resultados.append(
+                    {
+                        "chave": chave,
+                        "tipo": "inconclusivo",
+                        "status_carecore": "pendente",
+                        "mensagem": "Parada solicitada — mantido pendente.",
+                        "trecho": "",
+                    }
+                )
+                break
+            if estado == "sessao_caiu":
+                motivo_interrupcao = "sessao_caiu"
+                print("Sessao caiu no meio da fila — encerrando (precisa login manual).")
+                resultados.append(
+                    {
+                        "chave": chave,
+                        "tipo": "sessao_caiu",
+                        "status_carecore": "pendente",
+                        "mensagem": "Sessão NFP caiu — mantido pendente.",
+                        "trecho": "",
+                    }
+                )
+                break
 
             cls = await processar_retorno(page)
             print(
@@ -231,6 +290,7 @@ async def rodar(args: argparse.Namespace) -> int:
             )
 
             if cls.tipo == "sessao_caiu":
+                motivo_interrupcao = "sessao_caiu"
                 print(
                     "Sessao caiu. Refaca login e rode de novo com --inicio",
                     i - 1 + int(args.inicio),
@@ -245,19 +305,25 @@ async def rodar(args: argparse.Namespace) -> int:
             elif cls.tipo == "erro":
                 erro_count += 1
                 if args.parar_em_erro:
+                    motivo_interrupcao = "parar_em_erro"
                     print("Parando por --parar-em-erro.")
                     break
             else:
-                # inconclusivo: segue, mas nao conta como ok
                 print("  → inconclusivo; segue (revise o log depois).")
 
             if _parada_solicitada():
                 print("Parada solicitada pelo CareCore — encerrando.")
                 parado_pelo_usuario = True
+                motivo_interrupcao = "parada_usuario"
                 break
 
             if i < len(fila):
                 await page.wait_for_timeout(int(args.pausa * 1000))
+
+        if not motivo_interrupcao and len(resultados) >= len(fila):
+            motivo_interrupcao = "lote_completo"
+        elif not motivo_interrupcao:
+            motivo_interrupcao = "lote_parcial"
 
         stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         out_json = out_dir / f"fila_resultado_{stamp}.json"
@@ -267,10 +333,12 @@ async def rodar(args: argparse.Namespace) -> int:
                     "gerado_em": stamp,
                     "resumo": {
                         "total": len(resultados),
+                        "fila_total": len(fila),
                         "ok_operacional": ok_count,
                         "ja_existe": ja_existe_count,
                         "erro": erro_count,
                         "parado_pelo_usuario": parado_pelo_usuario,
+                        "motivo_interrupcao": motivo_interrupcao,
                     },
                     "itens": resultados,
                 },
@@ -281,7 +349,8 @@ async def rodar(args: argparse.Namespace) -> int:
         )
         print(
             f"\nConcluido: ok={ok_count} (ja_existe={ja_existe_count}) "
-            f"erro={erro_count} / processados={len(resultados)}"
+            f"erro={erro_count} / processados={len(resultados)}/{len(fila)}"
+            f" motivo={motivo_interrupcao}"
             + (" (parado)" if parado_pelo_usuario else "")
         )
         print(f"Log: {out_json}")

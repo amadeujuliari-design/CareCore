@@ -279,6 +279,19 @@ def processar_sessao(
         chaves = reserva.get("chaves") or []
         lote_id = reserva.get("lote_id")
         if not chaves:
+            if continuo and restante is None:
+                print(
+                    f"[{_agora()}] Fila vazia — aguardando 60s por novas leituras "
+                    "(modo continuo noturno). Parar no painel encerra."
+                )
+                for _ in range(12):
+                    if parada_solicitada():
+                        break
+                    time.sleep(5)
+                if parada_solicitada():
+                    print(f"[{_agora()}] Parado pelo operador.")
+                    break
+                continue
             print(f"[{_agora()}] Sem pendentes na fila online.")
             break
 
@@ -294,11 +307,19 @@ def processar_sessao(
         )
 
         itens: list[dict] = []
+        sessao_caiu = False
         try:
             itens = rodar_enviar_fila(cdp=cdp, caminho_json=caminho_json)
             if itens:
                 sync = api.aplicar_resultados(itens)
                 print(f"[{_agora()}] Sincronizados no CareCore: {sync.get('atualizados', 0)}")
+                if len(itens) < len(chaves):
+                    print(
+                        f"[{_agora()}] Lote parcial: {len(itens)}/{len(chaves)} processados. "
+                        "Restante volta a pendente; sessao continua se ainda estiver logada."
+                    )
+                if any((it.get("tipo") or "") == "sessao_caiu" for it in itens):
+                    sessao_caiu = True
         finally:
             if lote_id:
                 try:
@@ -307,18 +328,46 @@ def processar_sessao(
                     print(f"[{_agora()}] Aviso liberar lote: {exc}")
 
         lotes += 1
-        processados += len(chaves)
+        processados_lote = len(itens) if itens else 0
+        processados += processados_lote
         if restante is not None:
-            restante -= len(chaves)
+            restante -= processados_lote
+
+        if sessao_caiu:
+            print(f"[{_agora()}] Sessao NFP caiu — encerrando (login manual necessario).")
+            break
 
         if parada_solicitada():
             print(f"[{_agora()}] Parado pelo operador.")
             break
         if restante is not None and restante <= 0:
             break
+
+        # Lote vazio/parcial por instabilidade de tela: espera e tenta o proximo lote.
+        if processados_lote == 0 and chaves:
+            print(
+                f"[{_agora()}] Nenhum item neste lote — aguardando 30s e tentando de novo "
+                "(modo autonomo; so para se a sessao cair)."
+            )
+            for _ in range(6):
+                if parada_solicitada():
+                    break
+                time.sleep(5)
+            if parada_solicitada():
+                print(f"[{_agora()}] Parado pelo operador.")
+                break
+            if not continuo and limite is None:
+                break
+            continue
+
         # Sem --continuo e sem --limite: um unico lote.
         if not continuo and limite is None:
             break
+
+        # Continuo com fila vazia: espera novas leituras (rotina noturna).
+        if continuo and restante is None:
+            # proximo ciclo do while reserva de novo; se vazio, trata abaixo
+            pass
 
     print(f"[{_agora()}] Sessao fim. Lotes={lotes}, chaves≈{processados}.")
 
