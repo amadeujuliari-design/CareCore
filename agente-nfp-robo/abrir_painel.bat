@@ -2,17 +2,11 @@
 setlocal
 cd /d "%~dp0"
 title CareCore+ Agente NFP - Painel
-set "PY=%LOCALAPPDATA%\CareCorePlus\agente-nfp-robo\venv\Scripts\python.exe"
+call "%~dp0python_agente.cmd"
 if not exist "%PY%" (
-  echo Venv nao encontrado. Rodando instalacao rapida de dependencias...
-  where python >nul 2>&1
-  if errorlevel 1 (
-    echo ERRO: Python nao encontrado. Rode instalar.bat primeiro.
-    pause
-    exit /b 1
-  )
-  set "PY=python"
-  "%PY%" -m pip install -r "%~dp0requirements.txt"
+  echo Python do agente nao encontrado. Rode o CareCore-Agente-NFP.exe ou instalar.bat.
+  pause
+  exit /b 1
 )
 
 REM Garante tzdata no Windows (fuso America/Sao_Paulo)

@@ -1,15 +1,15 @@
 ﻿{
-    "arquivo":  "CareCore-Agente-NFP.exe",
-    "versao_app":  "1.4.64",
-    "gerado_em":  "2026-08-12 18:25:40",
-    "fuso":  "America/Sao_Paulo",
-    "tamanho_bytes":  7338153,
-    "assinado":  false,
-    "instrucoes":  [
-                       "Baixe CareCore-Agente-NFP.exe. Se o Windows avisar, OK e use Desbloquear (Propriedades) ou Executar mesmo assim.",
-                       "Execute o .exe (precisa Python 3.11+ no PATH e Google Chrome).",
-                       "Ao terminar a instalacao, o painel abre sozinho. Faca login CareCore para sincronizar a fila online.",
-                       "No painel: Abrir site Fazenda -\u003e CAPTCHA -\u003e Enviar fila.",
-                       "Nas proximas vezes use o atalho na Area de Trabalho ou rode o .exe de novo."
-                   ]
+  "arquivo": "CareCore-Agente-NFP.exe",
+  "versao_app": "1.4.69",
+  "gerado_em": "2026-08-13 16:05:10",
+  "fuso": "America/Sao_Paulo",
+  "tamanho_bytes": 24397735,
+  "assinado": false,
+  "instrucoes": [
+    "Baixe CareCore-Agente-NFP.exe. Se o Windows avisar, OK e use Desbloquear (Propriedades) ou Executar mesmo assim.",
+    "Execute o .exe. Nao precisa instalar Python - o pacote ja traz o Python do agente. E preciso ter Google Chrome.",
+    "Ao terminar a instalacao, o painel abre sozinho. Faca login CareCore para sincronizar a fila online.",
+    "No painel: Abrir site Fazenda -> CAPTCHA -> Enviar fila.",
+    "Nas proximas vezes use o atalho na Area de Trabalho ou rode o .exe de novo."
+  ]
 }

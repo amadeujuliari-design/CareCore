@@ -9,9 +9,10 @@ Pre-requisitos
 --------------
 - Windows 10/11
 - Google Chrome instalado
-- Python 3.11+ no PATH (https://www.python.org/downloads/ — marque Add to PATH)
 - Usuario CareCore+ com permissao de Envio SEFAZ (ADM Global ou Manutencao)
 - Internet para https://carecoreplus-api.fly.dev
+
+Nao e preciso instalar Python: o EXE/ZIP ja traz o Python do agente.
 
 Se o Windows bloquear o download
 --------------------------------

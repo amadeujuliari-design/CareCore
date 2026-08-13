@@ -229,7 +229,7 @@ export default function NfpEnvioSefaz() {
             <ol className="mt-3 list-decimal space-y-1.5 pl-5 text-sm text-slate-700">
               {((exeDisponivel ? agenteExeMeta?.instrucoes : null) || agenteMeta?.instrucoes || [
                 'Baixe CareCore-Agente-NFP.exe. Se o Windows avisar que pode não ser seguro: OK → Propriedades → Desbloquear, ou Executar mesmo assim.',
-                'Execute o .exe (precisa Python 3.11+ no PATH e Google Chrome).',
+                'Execute o .exe. Não precisa instalar Python — o pacote já traz o Python do agente. É preciso ter Google Chrome.',
                 'Ao terminar, o painel abre sozinho. Faça login CareCore para sincronizar a fila online.',
                 'No painel: Abrir site Fazenda → login/CAPTCHA → Enviar fila.',
                 'Nas próximas vezes use o atalho na Área de Trabalho ou rode o .exe de novo.',

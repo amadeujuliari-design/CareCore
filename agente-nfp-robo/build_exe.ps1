@@ -13,13 +13,19 @@ New-Item -ItemType Directory -Force -Path $outDir | Out-Null
 if (Test-Path -LiteralPath $buildDir) { Remove-Item -LiteralPath $buildDir -Recurse -Force }
 New-Item -ItemType Directory -Force -Path $buildDir | Out-Null
 
-# 1) Payload (arquivos do agente, sem secrets/caches)
+# 1) Python portatil + payload (arquivos do agente, sem secrets/caches)
+. (Join-Path $src 'preparar_python_runtime.ps1')
+$pythonRuntime = Get-CareCorePythonRuntime | Select-Object -Last 1
+if (-not $pythonRuntime -or -not (Test-Path -LiteralPath (Join-Path $pythonRuntime 'python.exe'))) {
+  throw "Python portatil invalido: $pythonRuntime"
+}
+
 $staging = Join-Path $buildDir 'payload'
 New-Item -ItemType Directory -Force -Path $staging | Out-Null
 $arquivos = @(
   'agente_nfp.py','painel.py','carecore_api.py','chrome_local.py','contador_hud.py',
   'requirements.txt','config.exemplo.json','LEIA-ME.txt','AGENTE_VERSAO.txt',
-  'abrir_painel.bat','abrir_chrome.bat','instalar.bat',
+  'abrir_painel.bat','abrir_chrome.bat','instalar.bat','python_agente.cmd',
   'iniciar_envio_continuo.bat','iniciar_envio_lote.bat','parar_envio.bat','status.bat'
 )
 foreach ($a in $arquivos) {
@@ -41,9 +47,14 @@ $pyRobo = @(Get-ChildItem -LiteralPath $roboDst -Filter '*.py' -File -ErrorActio
 if ($pyRobo.Count -lt 1 -or -not (Test-Path -LiteralPath (Join-Path $roboDst 'enviar_fila.py'))) {
   throw "Falha ao empacotar robo/: enviar_fila.py ausente em $roboDst"
 }
+Copy-Item -LiteralPath $pythonRuntime -Destination (Join-Path $staging 'python-runtime') -Recurse -Force
+if (-not (Test-Path -LiteralPath (Join-Path $staging 'python-runtime\python.exe'))) {
+  throw "Falha ao empacotar python-runtime/ em $staging"
+}
 Compress-Archive -Path (Join-Path $staging '*') -DestinationPath $payloadZip -Force
 
-# 2) ZIP publico (opcional / fallback)
+# 2) ZIP publico (opcional / fallback) com o mesmo Python portatil
+$env:CARECORE_PYTHON_RUNTIME = $pythonRuntime
 & (Join-Path $src 'empacotar_download.ps1')
 
 # 3) PyInstaller
@@ -92,7 +103,7 @@ $info = [ordered]@{
   assinado      = $false
   instrucoes    = @(
     'Baixe CareCore-Agente-NFP.exe. Se o Windows avisar, OK e use Desbloquear (Propriedades) ou Executar mesmo assim.',
-    'Execute o .exe (precisa Python 3.11+ no PATH e Google Chrome).',
+    'Execute o .exe. Nao precisa instalar Python - o pacote ja traz o Python do agente. E preciso ter Google Chrome.',
     'Ao terminar a instalacao, o painel abre sozinho. Faca login CareCore para sincronizar a fila online.',
     'No painel: Abrir site Fazenda -> CAPTCHA -> Enviar fila.',
     'Nas proximas vezes use o atalho na Area de Trabalho ou rode o .exe de novo.'

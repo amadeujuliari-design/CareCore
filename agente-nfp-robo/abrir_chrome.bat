@@ -1,8 +1,12 @@
 @echo off
 setlocal
 cd /d "%~dp0"
-set "PY=%LOCALAPPDATA%\CareCorePlus\agente-nfp-robo\venv\Scripts\python.exe"
-if not exist "%PY%" set "PY=python"
+call "%~dp0python_agente.cmd"
+if not exist "%PY%" (
+  echo Python do agente nao encontrado. Rode o CareCore-Agente-NFP.exe ou instalar.bat.
+  pause
+  exit /b 1
+)
 echo Abrindo Chrome do robo (portal NFP)...
 "%PY%" "%~dp0agente_nfp.py" abrir-chrome
 if errorlevel 1 (

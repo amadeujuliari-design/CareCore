@@ -11,30 +11,27 @@ echo ================================================
 echo.
 echo Pasta: %CD%
 echo.
-
-where python >nul 2>&1
-if errorlevel 1 (
-  echo ERRO: Python nao encontrado no PATH.
-  echo Instale Python 3.11+ em https://www.python.org/downloads/
-  echo Marque "Add python.exe to PATH" na instalacao.
-  goto FIM
-)
-
-python --version
+echo Este instalador NAO precisa de Python no PATH.
 echo.
 
-set "VENV=%LOCALAPPDATA%\CareCorePlus\agente-nfp-robo\venv"
-if not exist "%VENV%\Scripts\python.exe" (
-  echo Criando venv em %VENV% ...
-  python -m venv "%VENV%"
-  if errorlevel 1 (
-    echo ERRO ao criar venv.
-    goto FIM
+set "RUNTIME=%LOCALAPPDATA%\CareCorePlus\agente-nfp-python"
+if exist "%~dp0python-runtime\python.exe" (
+  if not exist "%RUNTIME%\python.exe" (
+    echo Preparando Python portatil do CareCore...
+    mkdir "%RUNTIME%" >nul 2>&1
+    xcopy /E /I /Y "%~dp0python-runtime" "%RUNTIME%" >nul
   )
 )
 
-set "PY=%VENV%\Scripts\python.exe"
+call "%~dp0python_agente.cmd"
+if errorlevel 1 (
+  echo ERRO: Python portatil nao encontrado neste pacote.
+  echo Baixe de novo o agente no CareCore online ^(EXE ou ZIP^).
+  goto FIM
+)
+
 echo Usando: %PY%
+"%PY%" --version
 echo.
 
 echo Instalando dependencias do robo...
@@ -44,6 +41,7 @@ if errorlevel 1 (
   echo ERRO no pip install.
   goto FIM
 )
+"%PY%" -m pip install tzdata
 
 echo.
 echo Instalando Chromium do Playwright (apoio)...

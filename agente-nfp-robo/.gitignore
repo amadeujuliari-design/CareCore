@@ -7,3 +7,4 @@ __pycache__/
 *.pyc
 _build_exe/
 *.spec
+python-runtime/

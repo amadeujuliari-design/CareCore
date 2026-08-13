@@ -1,14 +1,14 @@
 ﻿{
-    "arquivo":  "agente-nfp-robo.zip",
-    "versao_app":  "1.4.64",
-    "gerado_em":  "2026-08-12 18:25:26",
-    "fuso":  "America/Sao_Paulo",
-    "tamanho_bytes":  47467,
-    "instrucoes":  [
-                       "Baixe o ZIP. Se o Windows avisar que pode nao ser seguro: OK; botao direito no ZIP -\u003e Propriedades -\u003e Desbloquear -\u003e Aplicar. Se pedir Executar mesmo assim, pode seguir (agente oficial CareCore).",
-                       "Descompacte e rode instalar.bat (Python 3.11+ e Google Chrome).",
-                       "Ao terminar, o painel abre no navegador. Faca login com e-mail e senha do CareCore (ADM Global ou Manutencao) para sincronizar a fila online.",
-                       "No painel: Abrir site Fazenda -\u003e login/CAPTCHA ate Bem-vindo -\u003e Enviar fila.",
-                       "Deixe a janela preta do painel aberta enquanto envia; use Parar se precisar."
-                   ]
+  "arquivo": "agente-nfp-robo.zip",
+  "versao_app": "1.4.69",
+  "gerado_em": "2026-08-13 16:04:56",
+  "fuso": "America/Sao_Paulo",
+  "tamanho_bytes": 17326333,
+  "instrucoes": [
+    "Baixe o ZIP. Se o Windows avisar que pode nao ser seguro: OK; botao direito no ZIP -> Propriedades -> Desbloquear -> Aplicar. Se pedir Executar mesmo assim, pode seguir (agente oficial CareCore).",
+    "Descompacte e rode instalar.bat. Nao precisa instalar Python - o ZIP ja traz o Python do agente. E preciso ter Google Chrome.",
+    "Ao terminar, o painel abre no navegador. Faca login com e-mail e senha do CareCore (ADM Global ou Manutencao) para sincronizar a fila online.",
+    "No painel: Abrir site Fazenda -> login/CAPTCHA ate Bem-vindo -> Enviar fila.",
+    "Deixe a janela preta do painel aberta enquanto envia; use Parar se precisar."
+  ]
 }
