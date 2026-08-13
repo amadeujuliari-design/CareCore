@@ -137,6 +137,10 @@ export default function Conviventes() {
     carregarMaisRegistrosPia,
     piaTemMais,
     totalRegistrosPia,
+    handleExcluirEvolucaoPia,
+    alertaSubtituloPia,
+    fecharAlertaSubtituloPia,
+    excluindoPiaId,
   } = useProntuarioPia({ editandoId, setErro, setSucesso });
 
   const {
@@ -147,6 +151,7 @@ export default function Conviventes() {
     podeCriarHistoricoConvivente,
     podeEditarHistoricoConvivente,
     podeGerenciarPiaConvivente,
+    podeExcluirEvolucaoPia,
     podeEditarAcomodacao,
   } = usePermissoesProntuario({
     perfilUsuario,
@@ -963,6 +968,11 @@ export default function Conviventes() {
                       prepararEvolucaoPia={prepararEvolucaoPia}
                       prepararNovoPiaPrincipal={prepararNovoPiaPrincipal}
                       handleSalvarRegistroPia={handleSalvarRegistroPia}
+                      handleExcluirEvolucaoPia={handleExcluirEvolucaoPia}
+                      podeExcluirEvolucaoPia={podeExcluirEvolucaoPia}
+                      alertaSubtituloPia={alertaSubtituloPia}
+                      fecharAlertaSubtituloPia={fecharAlertaSubtituloPia}
+                      excluindoPiaId={excluindoPiaId}
                       carregarRegistrosPia={carregarRegistrosPia}
                       carregarMaisRegistrosPia={carregarMaisRegistrosPia}
                       piaTemMais={piaTemMais}

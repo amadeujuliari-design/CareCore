@@ -8,6 +8,7 @@ from routers.conviventes import (
     exigir_convivente_ativo_para_registro,
     usuario_pode_excluir_convivente_sem_vinculos,
     usuario_pode_alterar_status_convivente,
+    usuario_pode_excluir_evolucao_pia,
     usuario_pode_gerenciar_pia_convivente,
     usuario_pode_resolver_ocorrencia,
 )
@@ -152,6 +153,21 @@ def test_manutencao_pode_alterar_status_mesmo_com_tecnico_atrelado():
     convivente = SimpleNamespace(tecnico_id="tecnico-1")
 
     assert usuario_pode_alterar_status_convivente(usuario, convivente)
+
+
+def test_excluir_evolucao_pia_segue_tecnico_referencia():
+    gestor = {"sub": "gestor-1", "perfil_acesso": "Gestor", "is_master": False}
+    manutencao = {"sub": "manutencao-1", "perfil_acesso": "Manutenção", "is_manutencao": True}
+    tecnico = {"sub": "tecnico-1", "perfil_acesso": "Técnico", "is_master": False}
+    outro_tecnico = {"sub": "tecnico-2", "perfil_acesso": "Técnico", "is_master": False}
+    com_referencia = SimpleNamespace(tecnico_id="tecnico-1")
+    sem_referencia = SimpleNamespace(tecnico_id=None)
+
+    assert usuario_pode_excluir_evolucao_pia(gestor, com_referencia)
+    assert usuario_pode_excluir_evolucao_pia(manutencao, com_referencia)
+    assert usuario_pode_excluir_evolucao_pia(tecnico, com_referencia)
+    assert not usuario_pode_excluir_evolucao_pia(outro_tecnico, com_referencia)
+    assert usuario_pode_excluir_evolucao_pia(outro_tecnico, sem_referencia)
 
 
 def test_gestor_pode_resolver_ocorrencia_de_qualquer_tecnico():

@@ -1262,6 +1262,78 @@ async def atualizar_registro_pia(
     }
 
 
+async def _excluir_registro_pia_e_descendentes(
+    db: AsyncSession,
+    registro: RegistroPIADB,
+) -> None:
+    filhos = (
+        await db.execute(
+            select(RegistroPIADB).where(RegistroPIADB.registro_pai_id == registro.id)
+        )
+    ).scalars().all()
+    for filho in filhos:
+        await _excluir_registro_pia_e_descendentes(db, filho)
+    await db.delete(registro)
+
+
+@router.delete("/conviventes/{convivente_id}/pia/{registro_id}")
+async def excluir_registro_pia(
+    convivente_id: str,
+    registro_id: str,
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    bloquear_usuario_global_puro(usuario_atual)
+
+    if not usuario_pode_gerenciar_pia_convivente(usuario_atual):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Apenas Gestores, Técnicos ou Manutenção podem gerenciar o PIA.",
+        )
+
+    convivente = (
+        await db.execute(
+            select(ConviventeDB).where(
+                ConviventeDB.id == convivente_id,
+                ConviventeDB.instituicao_id == obter_instituicao_escopo(usuario_atual),
+            )
+        )
+    ).scalar_one_or_none()
+
+    if not convivente:
+        raise HTTPException(status_code=404, detail="Convivente não encontrado.")
+
+    if not usuario_pode_excluir_evolucao_pia(usuario_atual, convivente):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Apenas o técnico responsável, Gestor ou Manutenção podem excluir esta evolução. Sem técnico de referência, qualquer técnico pode excluir.",
+        )
+
+    instituicao_id = obter_instituicao_escopo(usuario_atual)
+    registro = (
+        await db.execute(
+            select(RegistroPIADB).where(
+                RegistroPIADB.id == registro_id,
+                RegistroPIADB.convivente_id == convivente_id,
+                RegistroPIADB.instituicao_id == instituicao_id,
+            )
+        )
+    ).scalar_one_or_none()
+
+    if not registro:
+        raise HTTPException(status_code=404, detail="Registro PIA não encontrado.")
+
+    if not registro.registro_pai_id:
+        raise HTTPException(
+            status_code=400,
+            detail="O PIA principal não pode ser excluído por esta ação. Exclua apenas evoluções.",
+        )
+
+    await _excluir_registro_pia_e_descendentes(db, registro)
+    await db.commit()
+    return {"status": "sucesso"}
+
+
 async def _obter_convivente_pia_escopo(
     convivente_id: str,
     usuario_atual: dict,
@@ -1852,6 +1924,10 @@ def usuario_pode_alterar_status_convivente(usuario_atual: dict, convivente: Conv
 
     tecnico_id = getattr(convivente, "tecnico_id", None)
     return not tecnico_id or str(tecnico_id) == str(usuario_atual.get("sub"))
+
+
+def usuario_pode_excluir_evolucao_pia(usuario_atual: dict, convivente: ConviventeDB) -> bool:
+    return usuario_pode_alterar_status_convivente(usuario_atual, convivente)
 
 
 def usuario_pode_excluir_convivente_sem_vinculos(usuario_atual: dict) -> bool:

@@ -10,6 +10,8 @@ import {
   montarFormEdicaoPia,
   montarPayloadProntuario,
   ordenarRegistrosPiaPrincipais,
+  piaPrincipalTemProjetoDeVida,
+  rotulosDestinosPia,
   validarCampoProntuario,
   validarProntuarioAntesSalvar,
 } from './conviventesProntuarioUtils.js';
@@ -143,5 +145,15 @@ describe('conviventesProntuarioUtils', () => {
     assert.equal(edicao.descricao, 'Texto\n\n\ncom espaços');
     assert.equal(edicao.destino_siat_iii, true);
     assert.equal(edicao.registro_pai_id, '');
+  });
+
+  it('monta destinos e detecta projeto de vida do PIA principal', () => {
+    assert.deepEqual(rotulosDestinosPia({
+      destino_siat_iii: true,
+      destino_moradia_autonoma: false,
+      destino_retorno_familiar: true,
+    }), ['SIAT III / Hotel Social / República', 'Retorno Familiar']);
+    assert.equal(piaPrincipalTemProjetoDeVida({ expectativas_servico: '  ' }), false);
+    assert.equal(piaPrincipalTemProjetoDeVida({ expectativas_vida_projetos: 'Organizar renda' }), true);
   });
 });

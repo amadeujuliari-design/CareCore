@@ -60,6 +60,9 @@ export function usePermissoesProntuario({
       podeGerenciarPiaConvivente: somenteLeitura
         ? false
         : (usuarioEhGestao || usuarioEhTecnico || usuarioEhManutencao),
+      podeExcluirEvolucaoPia: somenteLeitura
+        ? false
+        : (usuarioEhGestao || usuarioEhManutencao || tecnicoPodeMudarStatus),
       podeEditarAcomodacao: somenteLeitura ? false : rbacPodeEditarAcomodacao(usuarioRbac),
       usuarioPodeImprimirSensiveisConvivente: (convivente) => (
         !somenteLeitura && (

@@ -237,6 +237,26 @@ export function agruparEvolucoesPiaPorRegistro(registrosPia = []) {
     }, {});
 }
 
+export function rotulosDestinosPia(registro) {
+  const destinos = [];
+  if (registro?.destino_siat_iii) destinos.push('SIAT III / Hotel Social / República');
+  if (registro?.destino_moradia_autonoma) destinos.push('Moradia Autônoma');
+  if (registro?.destino_retorno_familiar) destinos.push('Retorno Familiar');
+  return destinos;
+}
+
+export function piaPrincipalTemProjetoDeVida(registro) {
+  return Boolean(
+    String(registro?.expectativas_servico || '').trim()
+    || String(registro?.expectativas_vida_projetos || '').trim()
+    || String(registro?.destino_explicacao || '').trim()
+    || String(registro?.dificuldades_planos || '').trim()
+    || registro?.destino_siat_iii
+    || registro?.destino_moradia_autonoma
+    || registro?.destino_retorno_familiar
+  );
+}
+
 export function formatarNumeroNIS(valor) {
   return String(valor || '').replace(/\D/g, '').slice(0, 11);
 }

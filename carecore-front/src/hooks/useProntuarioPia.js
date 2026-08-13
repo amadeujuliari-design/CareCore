@@ -11,6 +11,7 @@ import {
 import {
   listarRegistrosPiaConvivente,
   salvarRegistroPiaConvivente,
+  excluirRegistroPiaConvivente,
 } from '../services/conviventesProntuarioService';
 
 const MENSAGEM_NOVO_PIA = 'Este convivente já possui PIA registrado. Deseja abrir um novo PIA principal mesmo assim? Se cancelar, você continuará evoluindo o PIA existente.';
@@ -23,6 +24,8 @@ export function useProntuarioPia({ editandoId, setErro, setSucesso }) {
   const [salvandoPia, setSalvandoPia] = useState(false);
   const [piaCarregadoPara, setPiaCarregadoPara] = useState(null);
   const [formPia, setFormPia] = useState(() => montarFormPiaPrincipal());
+  const [alertaSubtituloPia, setAlertaSubtituloPia] = useState('');
+  const [excluindoPiaId, setExcluindoPiaId] = useState(null);
 
   const registrosPiaPrincipais = useMemo(
     () => ordenarRegistrosPiaPrincipais(registrosPia),
@@ -114,7 +117,9 @@ export function useProntuarioPia({ editandoId, setErro, setSucesso }) {
     }
 
     if (formularioPiaEvolucao && !formPia.subtitulo.trim()) {
-      setErro('Informe o subtítulo/tema da evolução do PIA.');
+      setAlertaSubtituloPia(
+        'Informe o subtítulo/tema da evolução para salvar. O texto que você já digitou foi mantido. Clique em OK, preencha o subtítulo e salve novamente.',
+      );
       return;
     }
 
@@ -188,6 +193,42 @@ export function useProntuarioPia({ editandoId, setErro, setSucesso }) {
     }
   };
 
+  const fecharAlertaSubtituloPia = () => {
+    setAlertaSubtituloPia('');
+  };
+
+  const handleExcluirEvolucaoPia = async (registro) => {
+    if (!editandoId || !registro?.id || !registro?.registro_pai_id) {
+      return;
+    }
+
+    const rotulo = registro.subtitulo || 'esta evolução';
+    const confirmar = window.confirm(
+      `Excluir a evolução "${rotulo}"? Esta ação não pode ser desfeita.`,
+    );
+    if (!confirmar) {
+      return;
+    }
+
+    try {
+      setExcluindoPiaId(registro.id);
+      await excluirRegistroPiaConvivente(editandoId, registro.id);
+      setRegistrosPia((prev) => prev.filter((item) => item.id !== registro.id && item.registro_pai_id !== registro.id));
+      if (formPia.id === registro.id) {
+        const registroPrincipal = registrosPiaPrincipais.find(
+          (item) => item.id === registro.registro_pai_id,
+        );
+        setFormPia(montarFormEvolucaoPia(registroPrincipal || registroPiaMaisRecente));
+      }
+      setSucesso('Evolução do PIA excluída com sucesso.');
+      setTimeout(() => setSucesso(''), 3000);
+    } catch (error) {
+      setErro(error.response?.data?.detail || 'Não foi possível excluir a evolução do PIA.');
+    } finally {
+      setExcluindoPiaId(null);
+    }
+  };
+
   return {
     evolucoesPorRegistroPia,
     formPia,
@@ -214,5 +255,9 @@ export function useProntuarioPia({ editandoId, setErro, setSucesso }) {
     totalRegistrosPia,
     resetarPia,
     handleSalvarRegistroPia,
+    handleExcluirEvolucaoPia,
+    alertaSubtituloPia,
+    fecharAlertaSubtituloPia,
+    excluindoPiaId,
   };
 }

@@ -143,6 +143,11 @@ export async function salvarRegistroPiaConvivente(conviventeId, payload, registr
   return response.data;
 }
 
+export async function excluirRegistroPiaConvivente(conviventeId, registroId) {
+  const response = await api.delete(`/api/conviventes/${conviventeId}/pia/${registroId}`);
+  return response.data;
+}
+
 export async function salvarHistoricoConvivente(conviventeId, payload, historicoId = null) {
   const response = historicoId
     ? await api.put(`/api/conviventes/${conviventeId}/historicos/${historicoId}`, payload)

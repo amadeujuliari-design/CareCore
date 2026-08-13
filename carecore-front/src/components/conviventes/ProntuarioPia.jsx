@@ -1,4 +1,8 @@
+import { useRef } from 'react';
+
 import { classeOrigemPia, rotuloOrigemPia } from '../../config/piaOrigemConfig';
+import ModalAlertaOk from '../ModalAlertaOk';
+import { piaPrincipalTemProjetoDeVida, rotulosDestinosPia } from '../../utils/conviventesProntuarioUtils';
 
 function BadgeOrigemPia({ origemModulo }) {
   const rotulo = rotuloOrigemPia(origemModulo);
@@ -10,7 +14,82 @@ function BadgeOrigemPia({ origemModulo }) {
   );
 }
 
-function EvolucaoPiaCard({ evolucao, evolucoesPorRegistroPia, profundidade = 0, onEditar }) {
+function BlocoProjetoDeVidaPia({ registro, compacto = false }) {
+  if (!piaPrincipalTemProjetoDeVida(registro)) return null;
+  const destinos = rotulosDestinosPia(registro);
+  const caixa = compacto
+    ? 'rounded-lg border border-violet-100 bg-violet-50/70 p-2'
+    : 'rounded-lg border border-violet-100 bg-violet-50 p-3';
+
+  return (
+    <div className={`${caixa} space-y-2 text-xs`}>
+      <p className="font-black uppercase text-violet-800">Projeto de vida</p>
+      {registro.expectativas_servico && (
+        <div>
+          <p className="font-bold text-violet-700">Expectativas em relação ao serviço</p>
+          <p className="whitespace-pre-wrap text-violet-950">{registro.expectativas_servico}</p>
+        </div>
+      )}
+      {registro.expectativas_vida_projetos && (
+        <div>
+          <p className="font-bold text-violet-700">Expectativas de vida / projetos</p>
+          <p className="whitespace-pre-wrap text-violet-950">{registro.expectativas_vida_projetos}</p>
+        </div>
+      )}
+      {destinos.length > 0 && (
+        <div>
+          <p className="font-bold text-violet-700">Destinos</p>
+          <p className="text-violet-950">{destinos.join(' · ')}</p>
+        </div>
+      )}
+      {registro.destino_explicacao && (
+        <div>
+          <p className="font-bold text-violet-700">Explicação dos destinos</p>
+          <p className="whitespace-pre-wrap text-violet-950">{registro.destino_explicacao}</p>
+        </div>
+      )}
+      {registro.dificuldades_planos && (
+        <div>
+          <p className="font-bold text-violet-700">Dificuldades para realizar planos</p>
+          <p className="whitespace-pre-wrap text-violet-950">{registro.dificuldades_planos}</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function textoOuNaoInformado(valor) {
+  const texto = String(valor || '').trim();
+  return texto || 'Não informado';
+}
+
+function ResumoPiaPrincipalFixo({ registro }) {
+  if (!registro) return null;
+
+  return (
+    <div className="rounded-xl border border-violet-200 bg-white p-3 space-y-2">
+      <p className="text-[10px] font-black uppercase text-violet-700">Em vigor no PIA principal</p>
+      <div className="rounded-lg border border-blue-100 bg-blue-50 p-2 text-xs">
+        <p className="font-black uppercase text-blue-700 mb-1">Objetivos</p>
+        <p className="whitespace-pre-wrap text-blue-900">{textoOuNaoInformado(registro.objetivos)}</p>
+      </div>
+      <div className="rounded-lg border border-emerald-100 bg-emerald-50 p-2 text-xs">
+        <p className="font-black uppercase text-emerald-700 mb-1">Encaminhamentos</p>
+        <p className="whitespace-pre-wrap text-emerald-900">{textoOuNaoInformado(registro.encaminhamentos)}</p>
+      </div>
+      {piaPrincipalTemProjetoDeVida(registro) ? (
+        <BlocoProjetoDeVidaPia registro={registro} compacto />
+      ) : (
+        <div className="rounded-lg border border-violet-100 bg-violet-50/70 p-2 text-xs">
+          <p className="font-black uppercase text-violet-800 mb-1">Projeto de vida</p>
+          <p className="text-violet-950">Não informado</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function EvolucaoPiaCard({ evolucao, evolucoesPorRegistroPia, profundidade = 0, onEditar, onExcluir, podeExcluir, excluindoId }) {
   const filhas = evolucoesPorRegistroPia[evolucao.id] || [];
 
   return (
@@ -52,13 +131,25 @@ function EvolucaoPiaCard({ evolucao, evolucoesPorRegistroPia, profundidade = 0, 
           </div>
         )}
 
-        {onEditar && (
-          <div className="mt-3 flex justify-end">
-            <button type="button" onClick={() => onEditar(evolucao)} className="text-[11px] font-black text-indigo-600 hover:underline">
-              Editar
-            </button>
+        {onEditar || (podeExcluir && onExcluir) ? (
+          <div className="mt-3 flex flex-wrap justify-end gap-3">
+            {onEditar && (
+              <button type="button" onClick={() => onEditar(evolucao)} className="text-[11px] font-black text-indigo-600 hover:underline">
+                Editar
+              </button>
+            )}
+            {podeExcluir && onExcluir && (
+              <button
+                type="button"
+                onClick={() => onExcluir(evolucao)}
+                disabled={excluindoId === evolucao.id}
+                className="text-[11px] font-black text-red-700 hover:underline disabled:opacity-50"
+              >
+                {excluindoId === evolucao.id ? 'Excluindo...' : 'Excluir'}
+              </button>
+            )}
           </div>
-        )}
+        ) : null}
       </div>
 
       {filhas.length > 0 && (
@@ -70,6 +161,9 @@ function EvolucaoPiaCard({ evolucao, evolucoesPorRegistroPia, profundidade = 0, 
               evolucoesPorRegistroPia={evolucoesPorRegistroPia}
               profundidade={profundidade + 1}
               onEditar={onEditar}
+              onExcluir={onExcluir}
+              podeExcluir={podeExcluir}
+              excluindoId={excluindoId}
             />
           ))}
         </div>
@@ -113,11 +207,30 @@ export default function ProntuarioPia({
   prepararEvolucaoPia,
   prepararNovoPiaPrincipal,
   handleSalvarRegistroPia,
+  handleExcluirEvolucaoPia,
+  podeExcluirEvolucaoPia,
+  alertaSubtituloPia,
+  fecharAlertaSubtituloPia,
+  excluindoPiaId,
   carregarRegistrosPia,
   carregarMaisRegistrosPia,
   piaTemMais,
   totalRegistrosPia,
 }) {
+  const subtituloRef = useRef(null);
+  const registroPiaPrincipalFoco = formPia.registro_pai_id
+    ? registrosPiaPrincipais.find((registro) => registro.id === formPia.registro_pai_id)
+    : null;
+  const mostrarResumoPrincipal = Boolean(formularioPiaEvolucao && registroPiaPrincipalFoco);
+
+  const fecharAlertaEFocarSubtitulo = () => {
+    fecharAlertaSubtituloPia?.();
+    window.requestAnimationFrame(() => {
+      subtituloRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      subtituloRef.current?.focus();
+    });
+  };
+
   if (!editandoId) {
     return (
       <div className="space-y-5">
@@ -209,6 +322,7 @@ export default function ProntuarioPia({
           {formularioPiaEvolucao && (
             <>
               <input
+                ref={subtituloRef}
                 type="text"
                 list="temas-evolucao-pia"
                 value={formPia.subtitulo}
@@ -296,6 +410,8 @@ export default function ProntuarioPia({
               Cancelar edição
             </button>
           )}
+
+          {mostrarResumoPrincipal && <ResumoPiaPrincipalFixo registro={registroPiaPrincipalFoco} />}
         </div>
 
         <div className="lg:col-span-2">
@@ -353,23 +469,6 @@ export default function ProntuarioPia({
 
                     <p className="mt-3 whitespace-pre-wrap rounded-lg bg-gray-50 p-3 text-sm text-gray-700 border border-gray-100">{registro.descricao}</p>
 
-                    {(registro.objetivos || registro.encaminhamentos) && (
-                      <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
-                        {registro.objetivos && (
-                          <div className="rounded-lg border border-blue-100 bg-blue-50 p-3">
-                            <p className="font-black uppercase text-blue-700 mb-1">Objetivos</p>
-                            <p className="whitespace-pre-wrap text-blue-900">{registro.objetivos}</p>
-                          </div>
-                        )}
-                        {registro.encaminhamentos && (
-                          <div className="rounded-lg border border-emerald-100 bg-emerald-50 p-3">
-                            <p className="font-black uppercase text-emerald-700 mb-1">Encaminhamentos</p>
-                            <p className="whitespace-pre-wrap text-emerald-900">{registro.encaminhamentos}</p>
-                          </div>
-                        )}
-                      </div>
-                    )}
-
                     <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                       <span className="rounded-full bg-gray-100 px-3 py-1 text-[10px] font-black uppercase text-gray-600 w-fit">{registro.status}</span>
                       <div className="flex flex-wrap gap-3">
@@ -390,6 +489,9 @@ export default function ProntuarioPia({
                             evolucao={evolucao}
                             evolucoesPorRegistroPia={evolucoesPorRegistroPia}
                             onEditar={prepararEdicaoPia}
+                            onExcluir={handleExcluirEvolucaoPia}
+                            podeExcluir={podeExcluirEvolucaoPia}
+                            excluindoId={excluindoPiaId}
                           />
                         ))}
                       </div>
@@ -413,6 +515,14 @@ export default function ProntuarioPia({
           )}
         </div>
       </div>
+
+      <ModalAlertaOk
+        aberto={Boolean(alertaSubtituloPia)}
+        titulo="Subtítulo obrigatório"
+        mensagem={alertaSubtituloPia}
+        onFechar={fecharAlertaEFocarSubtitulo}
+        rotuloBotao="OK, vou preencher"
+      />
     </div>
   );
 }

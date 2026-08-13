@@ -102,7 +102,12 @@ def backup_arquivo(origem: Path, pasta: Path) -> Path | None:
 def rodar_alembic(destino_sqlite: Path) -> None:
     env = os.environ.copy()
     env["DATABASE_URL"] = f"sqlite+aiosqlite:///{destino_sqlite.as_posix()}"
-    subprocess.run(["alembic", "upgrade", "head"], cwd=ROOT_DIR, env=env, check=True)
+    subprocess.run(
+        [sys.executable, "-m", "alembic", "upgrade", "head"],
+        cwd=ROOT_DIR,
+        env=env,
+        check=True,
+    )
 
 
 def adaptar_valor(valor):
