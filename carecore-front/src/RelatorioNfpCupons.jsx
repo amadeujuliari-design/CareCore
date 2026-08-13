@@ -23,6 +23,7 @@ import {
   montarExportacaoCuponsDetalhe,
   montarExportacaoCuponsPorCaptador,
   rotuloStatusCupomRelatorio,
+  formatarValorCentavosCupom,
 } from './utils/relatorioNfpUtils';
 
 const PAGE_SIZE = 50;
@@ -486,7 +487,7 @@ export default function RelatorioNfpCupons() {
                       <tbody>
                         {loadingPagina ? (
                           <tr>
-                            <td colSpan={8} className="px-4 py-8 text-center text-slate-500">
+                            <td colSpan={COLUNAS_CUPONS_DETALHE.length} className="px-4 py-8 text-center text-slate-500">
                               Carregando página…
                             </td>
                           </tr>
@@ -496,6 +497,11 @@ export default function RelatorioNfpCupons() {
                             <td className="px-4 py-3">{item.captador || '—'}</td>
                             <td className="px-4 py-3">{rotuloStatusCupomRelatorio(item.status)}</td>
                             <td className="px-4 py-3 font-mono text-xs">{item.cnpj_emitente || '—'}</td>
+                            <td className="px-4 py-3">{item.modelo || '—'}</td>
+                            <td className="px-4 py-3">{item.serie || '—'}</td>
+                            <td className="px-4 py-3">{item.numero_nf || '—'}</td>
+                            <td className="px-4 py-3 whitespace-nowrap">{formatarValorCentavosCupom(item.valor_centavos) || '—'}</td>
+                            <td className="px-4 py-3 whitespace-nowrap">{item.data_emissao || '—'}</td>
                             <td className="px-4 py-3">{item.data_emissao_ref || '—'}</td>
                             <td className="px-4 py-3 whitespace-nowrap">{item.lido_em || '—'}</td>
                             <td className="px-4 py-3 whitespace-nowrap">{item.enviado_em || '—'}</td>
@@ -506,7 +512,7 @@ export default function RelatorioNfpCupons() {
                         ))}
                         {!loadingPagina && !linhasDetalhe.length && (
                           <tr>
-                            <td colSpan={8} className="px-4 py-8 text-center text-slate-500">
+                            <td colSpan={COLUNAS_CUPONS_DETALHE.length} className="px-4 py-8 text-center text-slate-500">
                               Nenhum cupom no filtro.
                             </td>
                           </tr>

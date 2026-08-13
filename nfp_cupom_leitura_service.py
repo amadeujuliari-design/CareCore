@@ -2,7 +2,7 @@
 
 Fluxo:
   1) Extrai chave localmente e grava rapido (status=checando).
-  2) Fora do prazo NFP (com folga de 1 dia na leitura): rejeitado_prazo.
+  2) Fora do prazo NFP (janela de 2 meses ate dia 20, com folga de 1 dia): rejeitado_prazo.
   3) Consulta SEFAZ em paralelo (fila com limite de concorrencia).
   4) Atualiza para pendente (elegivel ao robo) ou rejeitado_cpf.
   5) QR que ja indica CPF: rejeitado_cpf na hora, sem HTTP.
@@ -24,7 +24,7 @@ from nfp_cupom_utils import (
     cupom_fora_prazo_leitura,
     extrair_chave_de_leitura,
     mensagem_rejeicao_prazo,
-    montar_url_consulta_sp,
+    parsear_leitura_cupom,
     qr_indica_cpf_destinatario,
 )
 from time_operacional import agora_operacional_naive
@@ -42,18 +42,33 @@ _SEFAZ_SEM = asyncio.Semaphore(4)
 _tarefas_agendadas: set[asyncio.Task] = set()
 
 
-def _meta_chave(chave: str, qr_bruto: str = "") -> dict[str, Optional[str]]:
-    url = montar_url_consulta_sp(chave, qr_bruto)
-    cnpj = chave[6:20] if len(chave) >= 20 else None
-    data_ref = None
-    aamm = chave[2:6] if len(chave) >= 6 else ""
-    if len(aamm) == 4 and aamm.isdigit():
-        data_ref = f"20{aamm[0:2]}-{aamm[2:4]}"
-    return {
-        "url_consulta": url,
-        "cnpj_emitente": cnpj,
-        "data_emissao_ref": data_ref,
-    }
+CAMPOS_META_LEITURA = (
+    "cnpj_emitente",
+    "data_emissao_ref",
+    "data_emissao",
+    "uf_ibge",
+    "modelo",
+    "serie",
+    "numero_nf",
+    "tipo_emissao",
+    "valor_centavos",
+    "qr_versao",
+    "tp_ambiente",
+    "tp_id_dest",
+    "url_consulta",
+)
+
+
+def _meta_leitura(chave: str, qr_bruto: str = "") -> dict[str, object]:
+    return parsear_leitura_cupom(qr_bruto or chave, chave)
+
+
+def _aplicar_meta(row: NfpCupomLidoDB, meta: dict[str, object]) -> None:
+    for campo in CAMPOS_META_LEITURA:
+        valor = meta.get(campo)
+        if valor is None or valor == "":
+            continue
+        setattr(row, campo, valor)
 
 
 async def registrar_leitura_rapida(
@@ -82,26 +97,31 @@ async def registrar_leitura_rapida(
         raise LookupError(existente)
 
     agora = agora_operacional_naive()
-    meta = _meta_chave(chave, bruto_n)
+    meta = _meta_leitura(chave, bruto_n)
     hoje = agora.date()
+    data_ref = str(meta["data_emissao_ref"]) if meta.get("data_emissao_ref") else None
 
-    # Prazo antes de CPF: cupom vencido nao entra na fila (folga 1 dia vs SEFAZ).
-    if cupom_fora_prazo_leitura(meta["data_emissao_ref"], hoje=hoje):
+    def _base_row(**kwargs):
         row = NfpCupomLidoDB(
             organizacao_id=organizacao_id,
             chave=chave,
             captador=captador,
-            status=STATUS_REJEITADO_PRAZO,
-            consumidor_identificado=None,
-            cnpj_emitente=meta["cnpj_emitente"],
-            data_emissao_ref=meta["data_emissao_ref"],
             qr_bruto=bruto_n[:4000] or None,
-            url_consulta=meta["url_consulta"],
-            mensagem=mensagem_rejeicao_prazo(meta["data_emissao_ref"]),
             lido_por_usuario_id=usuario_id or None,
             lido_em=agora,
             criado_em=agora,
             atualizado_em=agora,
+            **kwargs,
+        )
+        _aplicar_meta(row, meta)
+        return row
+
+    # Prazo antes de CPF: cupom vencido nao entra na fila (folga 1 dia vs SEFAZ).
+    if cupom_fora_prazo_leitura(data_ref, hoje=hoje):
+        row = _base_row(
+            status=STATUS_REJEITADO_PRAZO,
+            consumidor_identificado=None,
+            mensagem=mensagem_rejeicao_prazo(data_ref),
         )
         db.add(row)
         await db.commit()
@@ -115,21 +135,10 @@ async def registrar_leitura_rapida(
     cpf_no_qr = qr_indica_cpf_destinatario(bruto_n)
 
     if cpf_no_qr:
-        row = NfpCupomLidoDB(
-            organizacao_id=organizacao_id,
-            chave=chave,
-            captador=captador,
+        row = _base_row(
             status=STATUS_REJEITADO_CPF,
             consumidor_identificado=True,
-            cnpj_emitente=meta["cnpj_emitente"],
-            data_emissao_ref=meta["data_emissao_ref"],
-            qr_bruto=bruto_n[:4000] or None,
-            url_consulta=meta["url_consulta"],
             mensagem="QR indica destinatario com CPF — nao elegivel para doacao manual.",
-            lido_por_usuario_id=usuario_id or None,
-            lido_em=agora,
-            criado_em=agora,
-            atualizado_em=agora,
         )
         db.add(row)
         await db.commit()
@@ -140,21 +149,10 @@ async def registrar_leitura_rapida(
             "cupom": row,
         }
 
-    row = NfpCupomLidoDB(
-        organizacao_id=organizacao_id,
-        chave=chave,
-        captador=captador,
+    row = _base_row(
         status=STATUS_CHECANDO,
         consumidor_identificado=None,
-        cnpj_emitente=meta["cnpj_emitente"],
-        data_emissao_ref=meta["data_emissao_ref"],
-        qr_bruto=bruto_n[:4000] or None,
-        url_consulta=meta["url_consulta"],
         mensagem="Leitura registrada. Validando consumidor na SEFAZ…",
-        lido_por_usuario_id=usuario_id or None,
-        lido_em=agora,
-        criado_em=agora,
-        atualizado_em=agora,
     )
     db.add(row)
     await db.commit()
@@ -198,12 +196,27 @@ async def _aplicar_checagem_sefaz(cupom_id: str) -> None:
         resultado = await asyncio.to_thread(consultar_elegibilidade_cupom, bruto or row.chave)
         agora = agora_operacional_naive()
         row.atualizado_em = agora
-        if resultado.url_consulta:
-            row.url_consulta = resultado.url_consulta
-        if resultado.cnpj_emitente:
-            row.cnpj_emitente = resultado.cnpj_emitente
-        if resultado.data_emissao:
-            row.data_emissao_ref = resultado.data_emissao
+        _aplicar_meta(
+            row,
+            {
+                "url_consulta": resultado.url_consulta,
+                "cnpj_emitente": resultado.cnpj_emitente,
+                "data_emissao_ref": resultado.data_emissao_ref,
+                "data_emissao": resultado.data_emissao,
+                "uf_ibge": resultado.uf_ibge,
+                "modelo": resultado.modelo,
+                "serie": resultado.serie,
+                "numero_nf": resultado.numero_nf,
+                "tipo_emissao": resultado.tipo_emissao,
+                "valor_centavos": resultado.valor_centavos,
+                "qr_versao": resultado.qr_versao,
+                "tp_ambiente": resultado.tp_ambiente,
+                "tp_id_dest": resultado.tp_id_dest,
+            },
+        )
+        # data_emissao AAAA-MM-DD nao substitui a ref AAAA-MM usada no prazo.
+        if resultado.data_emissao and len(resultado.data_emissao) >= 7 and not row.data_emissao_ref:
+            row.data_emissao_ref = resultado.data_emissao[:7]
 
         # Revalida prazo apos meta da SEFAZ/chave (folga 1 dia).
         if cupom_fora_prazo_leitura(row.data_emissao_ref, hoje=agora.date()):

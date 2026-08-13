@@ -28,6 +28,23 @@ function chaveCurta(chave) {
   return `${chave.slice(0, 8)}…${chave.slice(-8)}`;
 }
 
+function formatarValorLeitura(centavos) {
+  if (centavos == null || centavos === '') return '';
+  const n = Number(centavos);
+  if (!Number.isFinite(n)) return '';
+  return (n / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+}
+
+function detalheLeituraCupom(item) {
+  const partes = [];
+  if (item.numero_nf) partes.push(`NF ${String(item.numero_nf).replace(/^0+/, '') || item.numero_nf}`);
+  const valor = formatarValorLeitura(item.valor_centavos);
+  if (valor) partes.push(valor);
+  if (item.data_emissao || item.data_emissao_ref) partes.push(item.data_emissao || item.data_emissao_ref);
+  if (item.cnpj_emitente) partes.push(item.cnpj_emitente);
+  return partes.join(' · ');
+}
+
 function rotuloStatusCupom(status) {
   const s = String(status || '').toLowerCase();
   if (s === 'checando') return 'Checando SEFAZ';
@@ -591,7 +608,7 @@ export default function NfpLeituraCupons() {
                 <p className="mb-3 text-xs text-slate-500">
                   <strong>checando</strong> = validando SEFAZ · <strong>pendente</strong> = na fila do robô ·{' '}
                   <strong>rejeitado_cpf</strong> / <strong>rejeitado_prazo</strong> = fora da fila
-                  (prazo SEFAZ dia 20 do mês seguinte; leitura com folga de 1 dia).
+                  (prazo SEFAZ: mês retrasado e passado até o dia 20 vigente; leitura com folga de 1 dia).
                   Lista paginada ({PAGE_SIZE}/página) para não travar com alto volume.
                 </p>
                 {loadingLista ? (
@@ -620,6 +637,9 @@ export default function NfpLeituraCupons() {
                               ) : null}
                               <span className="font-mono text-slate-800">{item.chave}</span>
                               <span className="ml-2 text-slate-500">{item.captador}</span>
+                              {detalheLeituraCupom(item) ? (
+                                <div className="mt-0.5 text-xs text-slate-500">{detalheLeituraCupom(item)}</div>
+                              ) : null}
                             </div>
                             <div className="text-slate-500">
                               <span

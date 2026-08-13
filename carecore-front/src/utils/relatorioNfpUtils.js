@@ -150,6 +150,11 @@ export const COLUNAS_CUPONS_DETALHE = [
   'Captador',
   'Status',
   'CNPJ emitente',
+  'Modelo',
+  'Série',
+  'Número',
+  'Valor',
+  'Emissão',
   'Emissão (ref.)',
   'Lido em',
   'Enviado em',
@@ -176,9 +181,21 @@ export function montarExportacaoCuponsDetalhe(relatorio) {
     Captador: item.captador || '',
     Status: rotuloStatusCupomRelatorio(item.status),
     'CNPJ emitente': item.cnpj_emitente || '',
+    Modelo: item.modelo || '',
+    Série: item.serie || '',
+    Número: item.numero_nf || '',
+    Valor: formatarValorCentavosCupom(item.valor_centavos),
+    Emissão: item.data_emissao || '',
     'Emissão (ref.)': item.data_emissao_ref || '',
     'Lido em': item.lido_em || '',
     'Enviado em': item.enviado_em || '',
     Mensagem: item.mensagem || '',
   }));
+}
+
+export function formatarValorCentavosCupom(centavos) {
+  if (centavos == null || centavos === '') return '';
+  const n = Number(centavos);
+  if (!Number.isFinite(n)) return '';
+  return (n / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }

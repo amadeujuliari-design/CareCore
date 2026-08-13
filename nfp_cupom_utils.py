@@ -42,7 +42,16 @@ class ResultadoChaveCupom:
     mensagem: str = ""
     cnpj_emitente: str | None = None
     valor_centavos: int | None = None
-    data_emissao: str | None = None
+    data_emissao: str | None = None  # AAAA-MM-DD quando o dia for conhecido
+    data_emissao_ref: str | None = None  # AAAA-MM da chave
+    uf_ibge: str | None = None
+    modelo: str | None = None
+    serie: str | None = None
+    numero_nf: str | None = None
+    tipo_emissao: str | None = None
+    qr_versao: str | None = None
+    tp_ambiente: str | None = None
+    tp_id_dest: str | None = None
 
 
 def _chave_de_param_p(parte: str) -> str | None:
@@ -100,6 +109,103 @@ def extrair_chave_de_leitura(bruto: str) -> str | None:
             if cand.startswith("35"):
                 return cand
     return None
+
+
+def _centavos_de_texto(txt: str) -> int | None:
+    bruto = (txt or "").strip()
+    if not bruto:
+        return None
+    if re.match(r"^\d{1,3}(\.\d{3})*,\d{2}$", bruto):
+        normal = bruto.replace(".", "").replace(",", ".")
+    else:
+        normal = bruto.replace(",", ".")
+    try:
+        return int(round(float(normal) * 100))
+    except ValueError:
+        return None
+
+
+def parsear_chave_nfe(chave: str) -> dict[str, Optional[str]]:
+    """Campos estruturais da chave de acesso (44 digitos)."""
+    digitos = re.sub(r"\D", "", chave or "")
+    if len(digitos) != 44:
+        return {}
+    aamm = digitos[2:6]
+    data_ref = None
+    if aamm.isdigit():
+        data_ref = f"20{aamm[0:2]}-{aamm[2:4]}"
+    return {
+        "chave": digitos,
+        "uf_ibge": digitos[0:2],
+        "data_emissao_ref": data_ref,
+        "cnpj_emitente": digitos[6:20],
+        "modelo": digitos[20:22],
+        "serie": digitos[22:25],
+        "numero_nf": digitos[25:34],
+        "tipo_emissao": digitos[34:35],
+    }
+
+
+def _partes_parametro_p(bruto: str) -> list[str]:
+    texto = (bruto or "").strip()
+    m_p = re.search(r"p=([^&\s]+)", texto, re.I)
+    raw = urllib.parse.unquote(m_p.group(1)) if m_p else texto
+    return [p.strip() for p in raw.split("|") if p.strip() != ""]
+
+
+def parsear_parametros_qr(bruto: str) -> dict[str, object]:
+    """Extrai versao, ambiente, valor, dia e destinatario do parametro p= do QR."""
+    partes = _partes_parametro_p(bruto)
+    if len(partes) < 2:
+        return {}
+    out: dict[str, object] = {}
+    if len(partes) >= 2 and re.fullmatch(r"\d{1,2}", partes[1] or ""):
+        out["qr_versao"] = partes[1]
+    if len(partes) >= 3 and re.fullmatch(r"\d", partes[2] or ""):
+        out["tp_ambiente"] = partes[2]
+
+    for i, parte in enumerate(partes):
+        if parte.strip() in {"1", "2", "3"} and i + 1 < len(partes):
+            doc = re.sub(r"\D", "", partes[i + 1])
+            if (parte.strip() == "2" and len(doc) == 11) or (
+                parte.strip() == "1" and len(doc) == 14
+            ):
+                out["tp_id_dest"] = parte.strip()
+                break
+
+    for parte in partes[3:]:
+        if re.fullmatch(r"\d{1,10}[.,]\d{2}", parte):
+            centavos = _centavos_de_texto(parte)
+            if centavos is not None:
+                out["valor_centavos"] = centavos
+            break
+
+    # Layout offline: chave|versao|amb|dia|valor|tpIdDest|dest|hash
+    if (
+        len(partes) >= 5
+        and re.fullmatch(r"\d{1,2}", partes[3] or "")
+        and re.fullmatch(r"\d{1,10}[.,]\d{2}", partes[4] or "")
+    ):
+        n_dia = int(partes[3])
+        if 1 <= n_dia <= 31:
+            out["dia_emissao"] = n_dia
+    return out
+
+
+def parsear_leitura_cupom(bruto: str, chave: Optional[str] = None) -> dict[str, object]:
+    """Junta chave NFe + parametros do QR (tudo que a leitura local consegue)."""
+    chave_n = chave or extrair_chave_de_leitura(bruto) or ""
+    meta: dict[str, object] = {}
+    meta.update(parsear_chave_nfe(chave_n))
+    qr = parsear_parametros_qr(bruto)
+    dia = qr.pop("dia_emissao", None)
+    meta.update(qr)
+    ref = str(meta.get("data_emissao_ref") or "")
+    if dia and len(ref) == 7:
+        meta["data_emissao"] = f"{ref}-{int(dia):02d}"
+    if chave_n:
+        meta["url_consulta"] = montar_url_consulta_sp(chave_n, bruto or "")
+    return meta
 
 
 def qr_indica_cpf_destinatario(bruto: str) -> bool:
@@ -189,6 +295,32 @@ def analisar_html_consumidor(html: str) -> tuple[bool | None, str]:
     return None, "Nao foi possivel determinar o consumidor na consulta SEFAZ."
 
 
+def analisar_html_complementos(html: str) -> dict[str, object]:
+    """Valor e data de emissao quando a pagina publica da SEFAZ traz esses campos."""
+    texto = unescape(re.sub(r"<[^>]+>", " ", html or ""))
+    texto = re.sub(r"\s+", " ", texto)
+    out: dict[str, object] = {}
+    m_val = re.search(
+        r"valor\s*(?:total|da\s*nfc-?e|a\s*pagar)?[^0-9]{0,40}"
+        r"(\d{1,3}(?:\.\d{3})*,\d{2}|\d+,\d{2})",
+        texto,
+        re.I,
+    )
+    if m_val:
+        centavos = _centavos_de_texto(m_val.group(1))
+        if centavos is not None:
+            out["valor_centavos"] = centavos
+    m_dt = re.search(
+        r"emiss[aã]o[^0-9]{0,40}(\d{2}/\d{2}/\d{4})",
+        texto,
+        re.I,
+    )
+    if m_dt:
+        dia, mes, ano = m_dt.group(1).split("/")
+        out["data_emissao"] = f"{ano}-{mes}-{dia}"
+    return out
+
+
 def consultar_elegibilidade_cupom(bruto_ou_chave: str) -> ResultadoChaveCupom:
     """Extrai chave, checa QR offline e consulta pagina publica SP quando preciso."""
     bruto = (bruto_ou_chave or "").strip()
@@ -201,12 +333,25 @@ def consultar_elegibilidade_cupom(bruto_ou_chave: str) -> ResultadoChaveCupom:
         )
 
     cpf_qr = qr_indica_cpf_destinatario(bruto)
-    url = montar_url_consulta_sp(chave, bruto)
+    meta = parsear_leitura_cupom(bruto, chave)
+    url = str(meta.get("url_consulta") or montar_url_consulta_sp(chave, bruto))
     resultado = ResultadoChaveCupom(
         chave=chave,
         qr_bruto=bruto,
         url_consulta=url,
         cpf_no_qr=cpf_qr,
+        cnpj_emitente=str(meta["cnpj_emitente"]) if meta.get("cnpj_emitente") else None,
+        valor_centavos=meta.get("valor_centavos") if isinstance(meta.get("valor_centavos"), int) else None,
+        data_emissao=str(meta["data_emissao"]) if meta.get("data_emissao") else None,
+        data_emissao_ref=str(meta["data_emissao_ref"]) if meta.get("data_emissao_ref") else None,
+        uf_ibge=str(meta["uf_ibge"]) if meta.get("uf_ibge") else None,
+        modelo=str(meta["modelo"]) if meta.get("modelo") else None,
+        serie=str(meta["serie"]) if meta.get("serie") else None,
+        numero_nf=str(meta["numero_nf"]) if meta.get("numero_nf") else None,
+        tipo_emissao=str(meta["tipo_emissao"]) if meta.get("tipo_emissao") else None,
+        qr_versao=str(meta["qr_versao"]) if meta.get("qr_versao") else None,
+        tp_ambiente=str(meta["tp_ambiente"]) if meta.get("tp_ambiente") else None,
+        tp_id_dest=str(meta["tp_id_dest"]) if meta.get("tp_id_dest") else None,
     )
 
     if cpf_qr:
@@ -223,19 +368,24 @@ def consultar_elegibilidade_cupom(bruto_ou_chave: str) -> ResultadoChaveCupom:
     identificado, msg = analisar_html_consumidor(html)
     resultado.consumidor_identificado = identificado
     resultado.mensagem = msg
-
-    # CNPJ emitente a partir da chave (posicoes 7-20, 1-based → [6:20])
-    resultado.cnpj_emitente = chave[6:20]
-    # AAMM na chave [2:6]
-    aamm = chave[2:6]
-    if len(aamm) == 4 and aamm.isdigit():
-        resultado.data_emissao = f"20{aamm[0:2]}-{aamm[2:4]}"
+    extra = analisar_html_complementos(html)
+    if resultado.valor_centavos is None and isinstance(extra.get("valor_centavos"), int):
+        resultado.valor_centavos = extra["valor_centavos"]  # type: ignore[assignment]
+    if extra.get("data_emissao"):
+        resultado.data_emissao = str(extra["data_emissao"])
 
     return resultado
 
 
-# Folga na leitura CareCore vs prazo estrito SEFAZ (dia 20 do mes subsequente).
+# Folga na leitura CareCore vs prazo estrito SEFAZ
+# (dia 20 do 2o mes apos a emissao: retrasado + passado ate o dia 20 vigente).
 FOLGA_DIAS_PRAZO_LEITURA_NFP = 1
+MESES_JANELA_CADASTRO_NFP = 2
+
+
+def _somar_meses(ano: int, mes: int, delta: int) -> tuple[int, int]:
+    total = ano * 12 + (mes - 1) + int(delta)
+    return total // 12, (total % 12) + 1
 
 
 def parse_ano_mes_emissao_ref(data_emissao_ref: Optional[str]) -> Optional[tuple[int, int]]:
@@ -254,10 +404,13 @@ def parse_ano_mes_emissao_ref(data_emissao_ref: Optional[str]) -> Optional[tuple
 
 
 def data_limite_cadastro_sefaz(ano: int, mes: int) -> date:
-    """Ultimo dia em que a SEFAZ aceita cadastro: dia 20 do mes subsequente a emissao."""
-    if mes == 12:
-        return date(ano + 1, 1, 20)
-    return date(ano, mes + 1, 20)
+    """Ultimo dia em que a SEFAZ aceita cadastro.
+
+    Janela: cupons do mes retrasado e do mes passado ate o dia 20 do mes vigente
+    = dia 20 dois meses apos a emissao (ex.: junho -> 20/08).
+    """
+    ano_lim, mes_lim = _somar_meses(ano, mes, MESES_JANELA_CADASTRO_NFP)
+    return date(ano_lim, mes_lim, 20)
 
 
 def data_limite_leitura_carecore(
@@ -297,14 +450,14 @@ def mensagem_rejeicao_prazo(data_emissao_ref: Optional[str]) -> str:
     ym = parse_ano_mes_emissao_ref(data_emissao_ref)
     if not ym:
         return (
-            "Cupom fora do prazo de cadastro NFP (SEFAZ: ate o dia 20 do mes "
-            "subsequente; CareCore leitura com folga de 1 dia)."
+            "Cupom fora do prazo de cadastro NFP (SEFAZ: mes retrasado e passado "
+            "ate o dia 20 do mes vigente; CareCore leitura com folga de 1 dia)."
         )
     ano, mes = ym
     lim_sefaz = data_limite_cadastro_sefaz(ano, mes)
     lim_leitura = data_limite_leitura_carecore(ano, mes)
     return (
         f"Fora do prazo NFP (emissao {ano:04d}-{mes:02d}). "
-        f"SEFAZ ate {lim_sefaz.isoformat()}; "
+        f"SEFAZ ate {lim_sefaz.isoformat()} (2 meses); "
         f"leitura CareCore ate {lim_leitura.isoformat()} (folga 1 dia)."
     )

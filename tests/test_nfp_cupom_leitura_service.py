@@ -194,7 +194,7 @@ def test_leitura_rapida_rejeita_prazo_imediatamente():
     async def caso():
         engine, factory = await _preparar()
         try:
-            # AAMM 2401 → emissao 2024-01; limite leitura 2024-02-21
+            # AAMM 2401 → emissao 2024-01; limite leitura 2024-03-21
             chave_antiga = "35240147508411169495651090002701871160307536"
             async with factory() as session:
                 with patch("nfp_cupom_leitura_service.agendar_checagem_sefaz") as mock_agendar:
@@ -224,7 +224,7 @@ def test_leitura_ainda_aceita_no_dia_da_folga():
     async def caso():
         engine, factory = await _preparar()
         try:
-            # Emissao 2026-07 → SEFAZ 2026-08-20; leitura ate 2026-08-21
+            # Emissao 2026-07 → SEFAZ 2026-09-20; leitura ate 2026-09-21
             chave = "35260747508411169495651090002701871160307536"
             async with factory() as session:
                 with patch("nfp_cupom_leitura_service.agendar_checagem_sefaz") as mock_agendar:
@@ -243,6 +243,61 @@ def test_leitura_ainda_aceita_no_dia_da_folga():
                 assert out["checagem"] == "agendada"
                 assert out["cupom"].status == STATUS_CHECANDO
                 mock_agendar.assert_called_once()
+                assert out["cupom"].modelo == "65"
+                assert out["cupom"].cnpj_emitente
+        finally:
+            await engine.dispose()
+
+    asyncio.run(caso())
+
+
+def test_leitura_aceita_mes_retrasado_antes_do_dia_20():
+    async def caso():
+        engine, factory = await _preparar()
+        try:
+            chave = "35260647508411169495651090002701871160307536"
+            async with factory() as session:
+                with patch("nfp_cupom_leitura_service.agendar_checagem_sefaz") as mock_agendar:
+                    with patch(
+                        "nfp_cupom_leitura_service.agora_operacional_naive"
+                    ) as mock_agora:
+                        from datetime import datetime
+
+                        mock_agora.return_value = datetime(2026, 8, 13, 10, 0, 0)
+                        out = await registrar_leitura_rapida(
+                            session,
+                            organizacao_id=ORG,
+                            captador="SEDE AEB",
+                            bruto=chave,
+                        )
+                assert out["checagem"] == "agendada"
+                assert out["cupom"].status == STATUS_CHECANDO
+                mock_agendar.assert_called_once()
+        finally:
+            await engine.dispose()
+
+    asyncio.run(caso())
+
+
+def test_leitura_grava_valor_e_numero_do_qr():
+    async def caso():
+        engine, factory = await _preparar()
+        try:
+            bruto = (
+                "https://www.nfce.fazenda.sp.gov.br/nfce/qrcode?"
+                f"p={CHAVE_OK}|3|1|05|32.90|1|1|ABC"
+            )
+            async with factory() as session:
+                with patch("nfp_cupom_leitura_service.agendar_checagem_sefaz"):
+                    out = await registrar_leitura_rapida(
+                        session,
+                        organizacao_id=ORG,
+                        captador="SEDE AEB",
+                        bruto=bruto,
+                    )
+                assert out["cupom"].valor_centavos == 3290
+                assert out["cupom"].data_emissao == "2026-08-05"
+                assert out["cupom"].numero_nf == "000270187"
         finally:
             await engine.dispose()
 
