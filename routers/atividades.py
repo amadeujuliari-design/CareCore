@@ -25,8 +25,10 @@ from models import (
     AtividadeSessaoConteudoDB,
     AtividadeSisaVinculoDB,
     ConviventeDB,
+    InstituicaoDB,
     UsuarioDB,
 )
+from config_operacional_projeto import projeto_usa_defaults_siat
 from routers.conviventes_helpers import agora_sao_paulo
 from schemas import (
     AtividadeChamadaResponse,
@@ -58,7 +60,12 @@ from schemas import (
     STATUS_OCORRENCIA_ATIVIDADE,
     TIPOS_FREQUENCIA_ATIVIDADE,
 )
-from security import bloquear_usuario_global_puro, get_usuario_logado, usuario_eh_manutencao
+from security import (
+    bloquear_usuario_global_puro,
+    get_usuario_logado,
+    usuario_eh_manutencao,
+    usuario_pode_gerenciar_cadastro_atividades_siat,
+)
 from tenant_scope import obter_instituicao_escopo
 from atividades_pontos_service import (
     PONTOS_POR_PRESENCA_ATIVIDADE,
@@ -99,9 +106,32 @@ def _periodo_padrao_mes_atual() -> tuple[date, date]:
 
 
 def exigir_edicao_atividades(usuario: dict = Depends(get_usuario_logado)) -> dict:
+    """Operações do módulo (chamada, presença, pontos etc.)."""
     if not usuario_eh_manutencao(usuario):
         bloquear_usuario_global_puro(usuario)
     obter_instituicao_escopo(usuario)
+    return usuario
+
+
+async def exigir_cadastro_atividades(
+    usuario: dict = Depends(get_usuario_logado),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Cadastrar/editar/excluir/gerar sessões: no SIAT só Gestor, Luciana e Manutenção."""
+    if not usuario_eh_manutencao(usuario):
+        bloquear_usuario_global_puro(usuario)
+    instituicao_id = obter_instituicao_escopo(usuario)
+    projeto = await db.get(InstituicaoDB, instituicao_id)
+    if projeto_usa_defaults_siat(projeto) and not usuario_pode_gerenciar_cadastro_atividades_siat(
+        usuario
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                "No SIAT, somente o gestor do projeto, a usuária Luciana e a Manutenção "
+                "podem cadastrar, editar ou excluir atividades."
+            ),
+        )
     return usuario
 
 
@@ -420,7 +450,7 @@ async def listar_atividades(
 async def criar_atividade(
     payload: AtividadeCreate,
     db: AsyncSession = Depends(get_db),
-    usuario_atual: dict = Depends(exigir_edicao_atividades),
+    usuario_atual: dict = Depends(exigir_cadastro_atividades),
 ):
     instituicao_id = obter_instituicao_escopo(usuario_atual)
     _validar_payload_atividade(payload, criacao=True)
@@ -825,7 +855,7 @@ async def atualizar_atividade(
     atividade_id: str,
     payload: AtividadeUpdate,
     db: AsyncSession = Depends(get_db),
-    usuario_atual: dict = Depends(exigir_edicao_atividades),
+    usuario_atual: dict = Depends(exigir_cadastro_atividades),
 ):
     instituicao_id = obter_instituicao_escopo(usuario_atual)
     _validar_payload_atividade(payload)
@@ -877,7 +907,7 @@ async def atualizar_atividade(
 async def excluir_atividade(
     atividade_id: str,
     db: AsyncSession = Depends(get_db),
-    usuario_atual: dict = Depends(exigir_edicao_atividades),
+    usuario_atual: dict = Depends(exigir_cadastro_atividades),
 ):
     """Remove a atividade das opções operacionais.
 
@@ -962,7 +992,7 @@ async def gerar_ocorrencias_atividade(
     atividade_id: str,
     payload: AtividadeGerarOcorrenciasRequest,
     db: AsyncSession = Depends(get_db),
-    usuario_atual: dict = Depends(exigir_edicao_atividades),
+    usuario_atual: dict = Depends(exigir_cadastro_atividades),
 ):
     instituicao_id = obter_instituicao_escopo(usuario_atual)
     atividade = await _buscar_atividade(db, atividade_id, instituicao_id)

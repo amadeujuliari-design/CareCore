@@ -608,6 +608,36 @@ def usuario_eh_gestor(usuario: dict) -> bool:
     )
 
 
+# Allowlist operacional SIAT: cadastro/edição/exclusão de atividades.
+EMAILS_CADASTRO_ATIVIDADES_SIAT = frozenset(
+    {
+        "luciana@carecore.com",
+    }
+)
+
+
+def email_usuario_normalizado(usuario: dict | None) -> str:
+    if not usuario:
+        return ""
+    return str(usuario.get("email") or "").strip().lower()
+
+
+def usuario_na_allowlist_cadastro_atividades_siat(usuario: dict | None) -> bool:
+    email = email_usuario_normalizado(usuario)
+    return bool(email) and email in EMAILS_CADASTRO_ATIVIDADES_SIAT
+
+
+def usuario_pode_gerenciar_cadastro_atividades_siat(usuario: dict | None) -> bool:
+    """No SIAT: Gestor, Luciana (allowlist) e Manutenção."""
+    if not usuario:
+        return False
+    if usuario_eh_manutencao(usuario):
+        return True
+    if usuario_eh_gestor(usuario):
+        return True
+    return usuario_na_allowlist_cadastro_atividades_siat(usuario)
+
+
 def usuario_pode_ver_texto_original(usuario: dict) -> bool:
     """Somente Gestor e Manutenção veem o texto original antes da revisão por IA."""
     return usuario_eh_gestor(usuario) or usuario_eh_manutencao(usuario)

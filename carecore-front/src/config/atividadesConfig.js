@@ -95,7 +95,7 @@ export function criarFormAtividadeInicial() {
 }
 
 /** Somente leitura para Global puro — Manutenção e Gestor operam no projeto. */
-export { usuarioSomenteLeituraAtividades } from '../utils/rbacUtils';
+export { usuarioSomenteLeituraAtividades, usuarioPodeGerenciarCadastroAtividades } from '../utils/rbacUtils';
 
 /** Espelho do catálogo padrão SISA (Relatório Resumo de Atividades). */
 export const SISA_CATALOGO_TIPOS_PADRAO = [

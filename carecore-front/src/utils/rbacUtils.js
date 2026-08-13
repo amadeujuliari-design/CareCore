@@ -189,6 +189,30 @@ export function usuarioSomenteLeituraAtividades(usuario) {
   return usuarioEhGlobalPuro(usuario);
 }
 
+/** E-mails autorizados a gerenciar cadastro de atividades no SIAT (além de Gestor/Manutenção). */
+export const EMAILS_CADASTRO_ATIVIDADES_SIAT = Object.freeze([
+  'luciana@carecore.com',
+]);
+
+export function usuarioPodeGerenciarCadastroAtividades(usuario, opcoes = {}) {
+  if (!usuario) return false;
+  if (usuarioEhGlobalPuro(usuario)) return false;
+  if (usuarioEhManutencao(usuario)) return true;
+
+  const perfilDefaults = String(opcoes.perfilDefaults || opcoes.perfil_defaults || '')
+    .trim()
+    .toLowerCase();
+  const projetoSiat = perfilDefaults === 'siat' || opcoes.projetoSiat === true;
+  if (!projetoSiat) {
+    // Fora do SIAT: mantém regra anterior (qualquer perfil operacional, exceto Global puro).
+    return true;
+  }
+
+  if (usuarioEhGestor(usuario)) return true;
+  const email = String(usuario.email || '').trim().toLowerCase();
+  return EMAILS_CADASTRO_ATIVIDADES_SIAT.includes(email);
+}
+
 export function usuarioPodeGerenciarAdmGlobalOrg(usuario) {
   if (!usuario) return false;
   const perfil = normalizarPerfilRbac(usuario.perfil_acesso);

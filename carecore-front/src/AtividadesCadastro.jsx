@@ -26,7 +26,9 @@ import {
   rotuloCategoriaAtividade,
   rotuloFrequenciaAtividade,
   usuarioSomenteLeituraAtividades,
+  usuarioPodeGerenciarCadastroAtividades,
 } from './config/atividadesConfig';
+import { useConfigOperacional } from './hooks/useConfigOperacional';
 
 function montarPayload(form) {
   const datas = (form.configuracao_agenda.datas_especificas || [])
@@ -80,7 +82,12 @@ function formDeAtividade(item) {
 
 export default function AtividadesCadastro() {
   const { usuario } = useAuth();
+  const { config: configOperacional } = useConfigOperacional();
   const somenteLeitura = usuarioSomenteLeituraAtividades(usuario);
+  const podeGerenciarCadastro = usuarioPodeGerenciarCadastroAtividades(usuario, {
+    perfilDefaults: configOperacional?.perfil_defaults,
+  });
+  const cadastroBloqueado = somenteLeitura || !podeGerenciarCadastro;
   const [atividades, setAtividades] = useState([]);
   const [usuarios, setUsuarios] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -184,7 +191,7 @@ export default function AtividadesCadastro() {
 
   const salvar = async (event) => {
     event.preventDefault();
-    if (somenteLeitura) return;
+    if (cadastroBloqueado) return;
     setSalvando(true);
     setErro('');
     setSucesso('');
@@ -207,7 +214,7 @@ export default function AtividadesCadastro() {
   };
 
   const gerarOcorrencias = async (atividadeId) => {
-    if (somenteLeitura) return;
+    if (cadastroBloqueado) return;
     setGerandoId(atividadeId);
     setErro('');
     setSucesso('');
@@ -222,7 +229,7 @@ export default function AtividadesCadastro() {
   };
 
   const excluir = async (item) => {
-    if (somenteLeitura) return;
+    if (cadastroBloqueado) return;
     const confirmado = window.confirm(
       `Excluir a atividade "${item.nome}"?\n\n`
       + 'Se já houver presença registrada, ela será apenas inativada e sumirá das opções de escolha. '
@@ -266,10 +273,15 @@ export default function AtividadesCadastro() {
         />
 
         <div className="mb-4 flex flex-wrap items-center gap-3">
-          {!somenteLeitura && (
+          {!cadastroBloqueado && (
             <PremiumButton type="button" onClick={abrirNova}>
               Nova atividade
             </PremiumButton>
+          )}
+          {cadastroBloqueado && !somenteLeitura && (
+            <p className="text-sm font-semibold text-amber-700">
+              Neste projeto, apenas o gestor, a Luciana e a Manutenção podem cadastrar, editar ou excluir atividades.
+            </p>
           )}
           <label className="text-sm font-semibold text-gray-600">
             Mês para gerar sessões
@@ -278,6 +290,7 @@ export default function AtividadesCadastro() {
               value={mesGeracao}
               onChange={(event) => setMesGeracao(event.target.value)}
               className="ml-2 rounded-xl border border-gray-200 px-3 py-2 text-sm"
+              disabled={cadastroBloqueado}
             />
           </label>
         </div>
@@ -312,7 +325,7 @@ export default function AtividadesCadastro() {
                       {item.ativo ? 'Ativa' : 'Inativa'}
                     </p>
                   </div>
-                  {!somenteLeitura && (
+                  {!cadastroBloqueado && (
                     <div className="flex flex-wrap gap-2">
                       <PremiumButton type="button" variant="secondary" onClick={() => abrirEdicao(item)}>
                         Editar
@@ -481,7 +494,7 @@ export default function AtividadesCadastro() {
                     onChange={atualizarDatasEspecificas}
                     dataInicio={form.vigencia_inicio}
                     dataFim={form.vigencia_fim}
-                    disabled={somenteLeitura}
+                    disabled={cadastroBloqueado}
                   />
                 )}
                 <div className="rounded-2xl border border-indigo-100 bg-indigo-50/40 p-4">
@@ -493,7 +506,7 @@ export default function AtividadesCadastro() {
                       valor={form.sisa_descricao_atividade}
                       onChange={(valor) => setForm({ ...form, sisa_descricao_atividade: valor })}
                       opcoes={catalogoSisa.descricao_atividade || []}
-                      disabled={somenteLeitura}
+                      disabled={cadastroBloqueado}
                       onCatalogoAtualizado={(catalogo) => setCatalogoSisa(mesclarCatalogoSisaComPadrao(catalogo))}
                     />
                     <SeletorCatalogoSisa
@@ -502,13 +515,13 @@ export default function AtividadesCadastro() {
                       valor={form.sisa_descricao_tema}
                       onChange={(valor) => setForm({ ...form, sisa_descricao_tema: valor })}
                       opcoes={catalogoSisa.descricao_tema || []}
-                      disabled={somenteLeitura}
+                      disabled={cadastroBloqueado}
                       onCatalogoAtualizado={(catalogo) => setCatalogoSisa(mesclarCatalogoSisaComPadrao(catalogo))}
                     />
                     <SeletorHorarioSisa
                       valor={form.sisa_horario_padrao}
                       onChange={(valor) => setForm({ ...form, sisa_horario_padrao: valor })}
-                      disabled={somenteLeitura}
+                      disabled={cadastroBloqueado}
                     />
                   </div>
                 </div>
@@ -517,7 +530,7 @@ export default function AtividadesCadastro() {
                     type="checkbox"
                     checked={Boolean(form.ativo)}
                     onChange={(event) => setForm({ ...form, ativo: event.target.checked })}
-                    disabled={somenteLeitura}
+                    disabled={cadastroBloqueado}
                   />
                   Atividade ativa
                 </label>
@@ -526,7 +539,7 @@ export default function AtividadesCadastro() {
                     type="checkbox"
                     checked={form.contabiliza_pontos !== false}
                     onChange={(event) => setForm({ ...form, contabiliza_pontos: event.target.checked })}
-                    disabled={somenteLeitura}
+                    disabled={cadastroBloqueado}
                   />
                   Esta atividade pontua para brindes
                 </label>
