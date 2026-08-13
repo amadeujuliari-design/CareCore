@@ -23,8 +23,9 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "robo"))
 
 from agente_nfp import (  # noqa: E402
+    _ler_token,
+    apagar_token,
     autenticar,
-    api_com_retry_login,
     carregar_config,
     carregar_config_leve,
     limpar_parar,
@@ -33,7 +34,7 @@ from agente_nfp import (  # noqa: E402
     processar_sessao,
     salvar_credenciais,
 )
-from carecore_api import CareCoreApiError  # noqa: E402
+from carecore_api import CareCoreApi, CareCoreApiError  # noqa: E402
 from chrome_local import abrir_chrome_fazenda, status_cdp  # noqa: E402
 
 HOST = "127.0.0.1"
@@ -94,25 +95,34 @@ def _status_completo() -> dict[str, Any]:
     erro_api = None
     logado = False
     if _credenciais_ok(cfg):
-        try:
-            cfg_full = carregar_config()
-            _api, call = api_com_retry_login(cfg_full)
-            fila = call("fila")
-            logado = True
-            erro_api = None
-        except SystemExit as exc:
-            erro_api = str(exc)
-        except CareCoreApiError as exc:
-            # 429 de login antigo / rate limit — mensagem clara
-            if exc.status == 429:
-                erro_api = (
-                    "Muitas tentativas de login no CareCore. Aguarde 2–3 minutos "
-                    "e clique em Entrar uma vez (nao precisa ficar clicando)."
-                )
-            else:
+        token = _ler_token()
+        if not token:
+            erro_api = (
+                "Senha salva neste PC. Clique em Entrar uma vez para conectar a fila "
+                "(nao deixe o painel tentando sozinho)."
+            )
+        else:
+            try:
+                api = CareCoreApi(cfg["api_base_url"], token=token)
+                fila = api.fila()
+                logado = True
+                erro_api = None
+            except CareCoreApiError as exc:
+                if exc.status == 429:
+                    erro_api = (
+                        "Muitas tentativas de login no CareCore. Feche esta janela, "
+                        "aguarde 15 minutos e clique em Entrar uma unica vez com a senha correta."
+                    )
+                elif exc.status in {401, 403}:
+                    apagar_token()
+                    erro_api = (
+                        "Sessao expirada ou senha antiga neste PC. Digite a senha correta "
+                        "e clique em Entrar uma vez."
+                    )
+                else:
+                    erro_api = str(exc)
+            except Exception as exc:
                 erro_api = str(exc)
-        except Exception as exc:
-            erro_api = str(exc)
     return {
         "ok": True,
         "cdp": cdp,
@@ -450,7 +460,39 @@ class PainelHandler(BaseHTTPRequestHandler):
                 nome = str(body.get("nome_maquina") or "").strip() or None
                 salvar_credenciais(email=email, senha=senha, nome_maquina=nome)
                 cfg = carregar_config()
-                api = autenticar(cfg)  # unico login "pesado" — botao Entrar
+                try:
+                    api = autenticar(cfg)
+                except CareCoreApiError as exc:
+                    if exc.status == 429:
+                        self._send_json(
+                            200,
+                            {
+                                "ok": True,
+                                "senha_salva": True,
+                                "email": cfg["email"],
+                                "mensagem": (
+                                    "Senha gravada neste PC. O CareCore bloqueou o login "
+                                    "(muitas tentativas). Feche esta janela preta, aguarde "
+                                    "15 minutos e clique em Entrar uma unica vez."
+                                ),
+                            },
+                        )
+                        return
+                    if exc.status in {401, 403}:
+                        self._send_json(
+                            401,
+                            {
+                                "ok": False,
+                                "senha_salva": True,
+                                "erro": (
+                                    "Senha gravada neste PC, mas o CareCore recusou o login "
+                                    "(e-mail ou senha incorretos). Confira e clique em Entrar "
+                                    "uma vez. Se aparecer bloqueio, aguarde 15 minutos."
+                                ),
+                            },
+                        )
+                        return
+                    raise
                 try:
                     api.fila()
                     msg = "Login ok. Fila online conectada."

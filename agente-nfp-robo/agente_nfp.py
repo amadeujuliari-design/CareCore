@@ -33,6 +33,7 @@ STOP_FLAG = ROBO_DIR / "_capturas" / "fila_parar.flag"
 CONFIG_PATH = ROOT / "config.json"
 TOKEN_PATH = ROOT / ".token"
 TAMANHO_LOTE = 100
+_bloquear_login_automatico = False
 
 
 def _agora() -> str:
@@ -91,6 +92,13 @@ def _credenciais_ok(cfg: dict[str, Any]) -> bool:
     return True
 
 
+def apagar_token() -> None:
+    try:
+        TOKEN_PATH.unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
 def salvar_credenciais(
     *,
     email: str,
@@ -115,15 +123,33 @@ def salvar_credenciais(
     if not atual.get("tamanho_lote"):
         atual["tamanho_lote"] = TAMANHO_LOTE
     path.write_text(json.dumps(atual, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    apagar_token()
     return atual
 
 
-def autenticar(cfg: dict[str, Any]) -> CareCoreApi:
-    """Login completo (botao Entrar). Sempre gera token novo."""
+def autenticar(cfg: dict[str, Any], *, automatico: bool = False) -> CareCoreApi:
+    """Login completo (botao Entrar). Sempre gera token novo.
+
+    automatico=True: usado por retry interno. Nao deve martelar /api/login
+    depois de um 429 (bloqueio de ~15 min no CareCore).
+    """
+    global _bloquear_login_automatico
+    if automatico and _bloquear_login_automatico:
+        raise CareCoreApiError(
+            "Muitas tentativas de login no CareCore. Aguarde 15 minutos "
+            "e clique em Entrar uma unica vez com a senha correta.",
+            status=429,
+        )
     api = CareCoreApi(cfg["api_base_url"])
     print(f"[{_agora()}] Login em {cfg['api_base_url']} como {cfg['email']}...")
-    api.login(cfg["email"], cfg["senha"])
+    try:
+        api.login(cfg["email"], cfg["senha"])
+    except CareCoreApiError as exc:
+        if exc.status == 429:
+            _bloquear_login_automatico = True
+        raise
     TOKEN_PATH.write_text(api.token, encoding="utf-8")
+    _bloquear_login_automatico = False
     print(f"[{_agora()}] Login ok.")
     return api
 
@@ -146,7 +172,7 @@ def obter_api(cfg: dict[str, Any], *, forcar_login: bool = False) -> CareCoreApi
         token = _ler_token()
         if token:
             return CareCoreApi(cfg["api_base_url"], token=token)
-    return autenticar(cfg)
+    return autenticar(cfg, automatico=not forcar_login)
 
 
 def api_com_retry_login(cfg: dict[str, Any]):
@@ -161,7 +187,7 @@ def api_com_retry_login(cfg: dict[str, Any]):
             return metodo(*args, **kwargs)
         except CareCoreApiError as exc:
             if exc.status == 401:
-                api = autenticar(cfg)
+                api = autenticar(cfg, automatico=True)
                 metodo = getattr(api, fn_name)
                 return metodo(*args, **kwargs)
             raise

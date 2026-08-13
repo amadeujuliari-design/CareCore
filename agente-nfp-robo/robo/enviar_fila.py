@@ -10,6 +10,7 @@ Fluxo oficial do operador (representante ONG — NAO doacao de consumidor):
 
 Trata tambem:
   - popup "Deseja doar todos os documentos...?" → clica Nao
+  - aviso "nao mostrar de novo" (chave 44 digitos, Sim/Nao) → clica Sim
   - "Este pedido já existe no sistema..." → ja resolvido (enviado)
   - sucesso / prazo / erros da SEFAZ
   - se cair no fluxo consumidor (bloqueio terceiros) → para sem martelar
@@ -37,6 +38,7 @@ from ler_planilha_chaves import ler_chaves_json, ler_chaves_xlsx  # noqa: E402
 from contador_estado import marcar_fim, registrar_item  # noqa: E402
 from navegar_doacao_aeb import (  # noqa: E402
     bloqueio_doacao_terceiros_sefaz,
+    fechar_modal_instrutivo,
     garantir_tela_doacao_aeb,
     sessao_nfp_caiu,
     tela_pronta_para_enviar,
@@ -131,6 +133,7 @@ async def processar_retorno(page, *, texto_antes: str = "") -> object:
 
     # Sucesso/erro inline: nao ha Ok para clicar — so fecha se existir modal.
     await fechar_popup_doacao_automatica(page)
+    await fechar_modal_instrutivo(page)
     await fechar_modal_mensagem(page)
     if cls.status_carecore == "rejeitado_prazo":
         await page.wait_for_timeout(100)

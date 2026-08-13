@@ -122,6 +122,12 @@ async def localizar_campo_chave(page):
 
 
 async def preencher_chave(page, chave: str) -> bool:
+    try:
+        from navegar_doacao_aeb import fechar_modal_instrutivo
+
+        await fechar_modal_instrutivo(page)
+    except Exception:
+        pass
     campo = await localizar_campo_chave(page)
     if campo is None:
         print("ERRO: nao achei o campo Chave-de-acesso.")

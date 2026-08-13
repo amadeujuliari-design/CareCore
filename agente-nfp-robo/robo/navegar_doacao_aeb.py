@@ -45,6 +45,51 @@ def _norm_txt(s: str) -> str:
     return " ".join((s or "").upper().replace("Ã", "A").replace("Ç", "C").split())
 
 
+def _norm_modal(texto: str) -> str:
+    t = (texto or "").lower()
+    for origem, destino in (
+        ("á", "a"),
+        ("à", "a"),
+        ("ã", "a"),
+        ("â", "a"),
+        ("é", "e"),
+        ("ê", "e"),
+        ("í", "i"),
+        ("ó", "o"),
+        ("ô", "o"),
+        ("õ", "o"),
+        ("ú", "u"),
+        ("ç", "c"),
+    ):
+        t = t.replace(origem, destino)
+    return " ".join(t.split())
+
+
+def classificar_modal_nfp(texto: str) -> str:
+    """Identifica o dialogo visivel da NFP (texto do body/modal).
+
+    Retornos: bloqueio | doar_todos | instrutivo_chave | generico | nenhum
+    """
+    t = _norm_modal(texto)
+    if not t:
+        return "nenhum"
+    if "indicios de que o consumidor" in t or "nao eram referentes" in t:
+        return "bloqueio"
+    if (
+        "doar todos" in t
+        or "documentos fiscais com o seu cpf" in t
+        or "doacao automatica" in t
+    ):
+        return "doar_todos"
+    if (
+        "nao seja mais apresentada" in t
+        or "pressione esc para fechar" in t
+        or ("possua chave de acesso" in t and "44" in t)
+    ):
+        return "instrutivo_chave"
+    return "generico"
+
+
 async def _texto_corpo(page) -> str:
     try:
         return " ".join(((await page.inner_text("body")) or "").lower().split())
@@ -68,10 +113,88 @@ async def bloqueio_doacao_terceiros_sefaz(page) -> bool:
     return False
 
 
-async def fechar_modal_instrutivo(page) -> bool:
-    """Fecha avisos/modais (overlay ui-widget) que bloqueiam o formulario.
+async def _clicar_botao_rotulo(page, rotulo: str) -> bool:
+    """Clica Sim / Nao / Ok visivel no modal (ids NFP + value/role)."""
+    chave = (rotulo or "").strip().lower()
+    if chave.startswith("n"):
+        chave = "nao"
+    ids = {
+        "sim": "#btnSimAcaoUsuario",
+        "nao": "#btnNaoAcaoUsuario",
+        "ok": "#btnOkAcaoUsuario",
+    }
+    valores = {
+        "sim": ["Sim", "SIM"],
+        "nao": ["Não", "Nao", "NÃO", "NAO"],
+        "ok": ["Ok", "OK", "ok"],
+    }
+    nomes = {
+        "sim": re.compile(r"^sim$", re.I),
+        "nao": re.compile(r"^n[aã]o$", re.I),
+        "ok": re.compile(r"^ok$", re.I),
+    }
+    candidatos = []
+    if chave in ids:
+        candidatos.append(page.locator(ids[chave]))
+    for val in valores.get(chave, []):
+        candidatos.append(page.locator(f'input[type="button"][value="{val}"]'))
+        candidatos.append(page.locator(f'input[type="submit"][value="{val}"]'))
+    nome_re = nomes.get(chave)
+    if nome_re is not None:
+        candidatos.append(page.get_by_role("button", name=nome_re))
+        candidatos.append(page.locator("a", has_text=nome_re))
+        candidatos.append(page.locator("button", has_text=nome_re))
+    for loc in candidatos:
+        try:
+            alvo = loc.first
+            if await alvo.count() == 0:
+                continue
+            if await alvo.is_visible(timeout=400):
+                await alvo.click(force=True, timeout=1500)
+                await page.wait_for_timeout(400)
+                return True
+        except Exception:
+            continue
+    return False
 
-    Nao fecha o bloqueio SEFAZ de 'indicios de doacoes de terceiros' — isso exige parar.
+
+async def _tem_aviso_instrutivo(page) -> bool:
+    return classificar_modal_nfp(await _texto_corpo(page)) == "instrutivo_chave"
+
+
+async def _tem_overlay_ou_aviso(page) -> bool:
+    if await _tem_aviso_instrutivo(page):
+        return True
+    try:
+        return bool(
+            await page.evaluate(
+                """() => {
+                  if (document.querySelector('.ui-widget-overlay')) return true;
+                  const sels = ['.ui-dialog', '[role="dialog"]', '.modal'];
+                  for (const s of sels) {
+                    for (const el of document.querySelectorAll(s)) {
+                      const st = window.getComputedStyle(el);
+                      if (!st || st.display === 'none' || st.visibility === 'hidden' || st.opacity === '0') {
+                        continue;
+                      }
+                      const t = (el.innerText || '').trim();
+                      if (t.length > 15) return true;
+                    }
+                  }
+                  return false;
+                }"""
+            )
+        )
+    except Exception:
+        return False
+
+
+async def fechar_modal_instrutivo(page) -> bool:
+    """Fecha avisos que bloqueiam o formulario (Sim/Nao/Ok/ESC).
+
+    - Aviso 'nao mostrar de novo' (chave 44 digitos): clica Sim.
+    - Convite doar todos / doacao automatica: clica Nao.
+    - Nao fecha o bloqueio SEFAZ de indicios de terceiros.
     """
     if await bloqueio_doacao_terceiros_sefaz(page):
         print(
@@ -81,45 +204,45 @@ async def fechar_modal_instrutivo(page) -> bool:
         return False
 
     fechou = False
-    for _ in range(5):
+    for _ in range(4):
         if await bloqueio_doacao_terceiros_sefaz(page):
             return False
-        overlay = False
-        try:
-            overlay = await page.evaluate(
-                "() => !!document.querySelector('.ui-widget-overlay')"
-            )
-        except Exception:
-            overlay = False
-
-        for sel in ("#btnSimAcaoUsuario", "#btnNaoAcaoUsuario", "#btnOkAcaoUsuario"):
-            loc = page.locator(sel)
-            try:
-                if await loc.count() == 0:
-                    continue
-                await loc.first.click(force=True, timeout=1200)
-                await page.wait_for_timeout(400)
+        tipo = classificar_modal_nfp(await _texto_corpo(page))
+        if tipo == "bloqueio":
+            return False
+        if tipo == "doar_todos":
+            if await _clicar_botao_rotulo(page, "nao"):
+                print("Recuperacao: cliquei em Nao (doar todos / doacao automatica).")
                 fechou = True
-                print(f"Recuperacao: fechei modal ({sel}).")
-            except Exception:
                 continue
-
+        elif tipo == "instrutivo_chave":
+            if await _clicar_botao_rotulo(page, "sim"):
+                print(
+                    "Recuperacao: fechei aviso de chave de acesso "
+                    "(Sim — nao mostrar de novo)."
+                )
+                fechou = True
+                continue
+            try:
+                await page.keyboard.press("Escape")
+                await page.wait_for_timeout(300)
+                print("Recuperacao: fechei aviso de chave de acesso (ESC).")
+                fechou = True
+            except Exception:
+                pass
+            continue
+        if not await _tem_overlay_ou_aviso(page):
+            break
+        if await _clicar_botao_rotulo(page, "ok"):
+            print("Recuperacao: fechei modal (Ok).")
+            fechou = True
+            continue
         try:
             await page.keyboard.press("Escape")
             await page.wait_for_timeout(250)
         except Exception:
             pass
-
-        ainda = False
-        try:
-            ainda = await page.evaluate(
-                "() => !!document.querySelector('.ui-widget-overlay')"
-            )
-        except Exception:
-            ainda = False
-        if not overlay and not ainda:
-            break
-        if not ainda:
+        if not await _tem_overlay_ou_aviso(page):
             break
     return fechou
 
@@ -202,7 +325,7 @@ async def tela_pronta_para_enviar(page, *, fechar_modais: bool = True) -> bool:
 
     fechar_modais=False: checagem rapida entre cupons (tela ja no cadastro).
     """
-    if fechar_modais:
+    if fechar_modais or await _tem_aviso_instrutivo(page):
         await fechar_modal_instrutivo(page)
     url = _url_norm(page.url)
     # Nunca considerar "pronto" a tela de doacao de consumidor
@@ -212,6 +335,8 @@ async def tela_pronta_para_enviar(page, *, fechar_modais: bool = True) -> bool:
         return False
     # Precisa botao Salvar Nota (nao Registrar Doacao)
     if not await _tem_botao_salvar_nota(page):
+        return False
+    if await _tem_aviso_instrutivo(page):
         return False
     return await _entidade_aeb_selecionada(page)
 
