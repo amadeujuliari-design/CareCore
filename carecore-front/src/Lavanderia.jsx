@@ -23,6 +23,7 @@ import {
 } from './utils/prontuarioHistoricoFluxoUtils';
 import { formatarDataBr } from './utils/dataBrasilUtils';
 import LeitorCarteirinhaModal from './components/LeitorCarteirinhaModal';
+import ModalAlertaOk from './components/ModalAlertaOk';
 import { useLeitorUsbGlobal } from './hooks/useLeitorUsbGlobal';
 import { encontrarConviventePorCodigo } from './utils/conviventeIdentificacaoUtils';
 
@@ -86,6 +87,7 @@ export default function Lavanderia() {
   const [buscaConvivente, setBuscaConvivente] = useState('');
   const [mostrarDropdownConvivente, setMostrarDropdownConvivente] = useState(false);
   const [scannerContexto, setScannerContexto] = useState(null);
+  const [alertaOk, setAlertaOk] = useState({ aberto: false, titulo: 'Atenção', mensagem: '' });
 
   const [form, setForm] = useState({
     convivente_id: '',
@@ -229,6 +231,8 @@ export default function Lavanderia() {
       ...registro,
       quantidade_ja_retirada: Number(registro.quantidade_retirada || 0),
       quantidade_retirada: saldoPendenteLavanderia(registro),
+      observacao_entrega: registro.observacao_entrega || '',
+      observacao_retirada_historico: registro.observacao_retirada || '',
       observacao_retirada: '',
       encerrar_pendencia: false,
       motivo_baixa: '',
@@ -438,37 +442,50 @@ export default function Lavanderia() {
     }
   };
 
+  const avisar = (mensagem, titulo = 'Atenção') => {
+    setAlertaOk({ aberto: true, titulo, mensagem });
+  };
+
   const confirmarRetirada = async () => {
     if (!retirada) return;
 
     const quantidade = Number(retirada.quantidade_retirada || 0);
     if (quantidade > 0 && !retirada.carteirinha_conferida) {
-      setErro('Leia a carteirinha do convivente antes de confirmar a retirada.');
+      avisar(
+        'Leia a carteirinha do convivente (QR Code ou código de barras) para confirmar que a retirada é desta pessoa. Sem essa leitura a retirada não pode ser confirmada.',
+        'Carteirinha obrigatória',
+      );
       return;
     }
 
     if (quantidade <= 0 && !retirada.encerrar_pendencia) {
-      setErro('Informe a quantidade retirada ou marque a baixa da pendência.');
+      avisar('Informe a quantidade retirada ou marque a baixa da pendência.');
       return;
     }
 
     const saldoPendente = saldoPendenteLavanderia(retirada);
     if (quantidade > saldoPendente) {
-      setErro(`Há apenas ${saldoPendente} peça(s) pendente(s) neste registro.`);
+      avisar(`Há apenas ${saldoPendente} peça(s) pendente(s) neste registro.`);
       return;
     }
 
     if (retirada.encerrar_pendencia && !retirada.motivo_baixa.trim()) {
-      setErro('Informe o motivo para baixar a pendência.');
+      avisar('Informe o motivo para baixar a pendência.');
+      return;
+    }
+
+    const observacaoAtual = (retirada.observacao_retirada || '').trim();
+    if (quantidade > 0 && quantidade < saldoPendente && !observacaoAtual) {
+      avisar('Na retirada parcial, anote o que está saindo agora (peças retiradas).');
       return;
     }
 
     if (
       retirada.encerrar_pendencia
       && quantidade < saldoPendente
-      && !retirada.observacao_retirada.trim()
+      && !observacaoAtual
     ) {
-      setErro('Baixa com diferença exige observação.');
+      avisar('Baixa com diferença exige observação.');
       return;
     }
 
@@ -476,7 +493,7 @@ export default function Lavanderia() {
       setSalvando(true);
       await retirarLavanderia(retirada.id, {
         quantidade_retirada: quantidade,
-        observacao_retirada: retirada.observacao_retirada.trim() || null,
+        observacao_retirada: observacaoAtual || null,
         encerrar_pendencia: retirada.encerrar_pendencia === true,
         motivo_baixa: retirada.motivo_baixa?.trim() || null,
       });
@@ -491,6 +508,7 @@ export default function Lavanderia() {
     } catch (error) {
       console.error(error);
       setErro(error.response?.data?.detail || 'Erro ao registrar retirada.');
+      avisar(error.response?.data?.detail || 'Erro ao registrar retirada.');
     } finally {
       setSalvando(false);
     }
@@ -986,12 +1004,12 @@ export default function Lavanderia() {
 
       {retirada && (
         <div className="carecore-modal-overlay fixed inset-0 z-50 flex items-center justify-center bg-gray-900/60 p-4 backdrop-blur-sm">
-          <div className="carecore-modal-panel w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl">
+          <div className="carecore-modal-panel flex max-h-[90vh] w-full max-w-md flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
             <div className="bg-emerald-600 p-5 text-white">
               <h2 className="text-lg font-bold">Registrar retirada</h2>
               <p className="text-sm text-emerald-50">{retirada.convivente_nome}</p>
             </div>
-            <div className="space-y-4 p-6">
+            <div className="space-y-4 overflow-y-auto p-6">
               <div className="rounded-xl border border-blue-100 bg-blue-50 px-3 py-2 text-sm font-semibold text-blue-800">
                 Leia a carteirinha do convivente para confirmar que a retirada corresponde a este registro.
               </div>
@@ -1052,15 +1070,34 @@ export default function Lavanderia() {
                   />
                 </label>
               )}
+              <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
+                <span className="mb-1 block text-xs font-black uppercase text-slate-500">Peças deixadas na entrada</span>
+                <p className="whitespace-pre-line text-sm font-semibold text-slate-800">
+                  {retirada.observacao_entrega?.trim()
+                    ? retirada.observacao_entrega
+                    : 'Nenhuma observação foi anotada na entrada.'}
+                </p>
+              </div>
+              {retirada.observacao_retirada_historico?.trim() ? (
+                <div className="rounded-xl border border-amber-100 bg-amber-50 px-3 py-3">
+                  <span className="mb-1 block text-xs font-black uppercase text-amber-700">Retiradas anteriores</span>
+                  <p className="whitespace-pre-line text-sm font-semibold text-amber-950">
+                    {retirada.observacao_retirada_historico}
+                  </p>
+                </div>
+              ) : null}
               <label className="block">
-                <span className="mb-1 block text-xs font-black uppercase text-gray-500">Observação</span>
+                <span className="mb-1 block text-xs font-black uppercase text-gray-500">Observação desta retirada</span>
                 <textarea
                   rows={3}
                   value={retirada.observacao_retirada}
                   onChange={(event) => setRetirada(prev => ({ ...prev, observacao_retirada: event.target.value }))}
                   className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm"
-                  placeholder="Ex.: retirada parcial porque parte das peças ainda não secou."
+                  placeholder="Ex.: 3 camisetas e 2 calças saindo agora. Restam 3 peças secando."
                 />
+                <span className="mt-1 block text-xs font-semibold text-gray-500">
+                  Em retirada parcial, anote o que está saindo agora. Na próxima retirada este texto entra no histórico.
+                </span>
               </label>
               <div className="flex justify-end gap-2">
                 <button type="button" onClick={() => setRetirada(null)} className="rounded-lg bg-gray-100 px-4 py-2 text-sm font-bold text-gray-600">
@@ -1108,6 +1145,12 @@ export default function Lavanderia() {
         subtitulo="Aponte para o QR Code ou código de barras da carteirinha do convivente."
         onCodigoLido={processarCodigoCarteirinha}
         onClose={() => setScannerContexto(null)}
+      />
+      <ModalAlertaOk
+        aberto={alertaOk.aberto}
+        titulo={alertaOk.titulo}
+        mensagem={alertaOk.mensagem}
+        onFechar={() => setAlertaOk({ aberto: false, titulo: 'Atenção', mensagem: '' })}
       />
     </AppShell>
   );

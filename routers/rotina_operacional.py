@@ -537,6 +537,12 @@ async def retirar_lavanderia(
             detail="Informe o motivo para baixar a pendência da lavanderia.",
         )
 
+    if 0 < quantidade_nova < saldo_pendente and not observacao:
+        raise HTTPException(
+            status_code=400,
+            detail="Retirada parcial exige observação do que foi retirado agora.",
+        )
+
     if total_retirado < registro.quantidade_entregue and payload.encerrar_pendencia and not observacao:
         raise HTTPException(
             status_code=400,
