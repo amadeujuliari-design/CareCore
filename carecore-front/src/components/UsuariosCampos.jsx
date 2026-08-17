@@ -1,3 +1,6 @@
+import { useState } from 'react';
+import { Eye, EyeOff } from 'lucide-react';
+
 export function BadgeStatus({ ativo }) {
   return (
     <span
@@ -175,6 +178,10 @@ export function CampoTexto({
   erro = '',
   placeholder,
 }) {
+  const [senhaVisivel, setSenhaVisivel] = useState(false);
+  const ehSenha = type === 'password';
+  const tipoInput = ehSenha ? (senhaVisivel ? 'text' : 'password') : type;
+
   return (
     <div className={className}>
       <label className="mb-1 block text-xs font-semibold text-slate-600">
@@ -182,22 +189,38 @@ export function CampoTexto({
         {required ? ' *' : ''}
       </label>
 
-      <input
-        name={name}
-        type={type}
-        value={value}
-        required={required}
-        maxLength={maxLength}
-        autoComplete={autoComplete}
-        placeholder={placeholder}
-        onBlur={onBlur}
-        onChange={(e) => onChange(e.target.value)}
-        className={`w-full rounded-xl border px-3 py-2 text-sm outline-none ${
-          erro
-            ? 'border-red-400 bg-red-50 focus:border-red-500'
-            : 'border-slate-200 focus:border-slate-400'
-        }`}
-      />
+      <div className={ehSenha ? 'relative' : undefined}>
+        <input
+          name={name}
+          type={tipoInput}
+          value={value}
+          required={required}
+          maxLength={maxLength}
+          autoComplete={autoComplete}
+          placeholder={placeholder}
+          onBlur={onBlur}
+          onChange={(e) => onChange(e.target.value)}
+          className={`w-full rounded-xl border px-3 py-2 text-sm outline-none ${
+            ehSenha ? 'pr-11' : ''
+          } ${
+            erro
+              ? 'border-red-400 bg-red-50 focus:border-red-500'
+              : 'border-slate-200 focus:border-slate-400'
+          }`}
+        />
+        {ehSenha && (
+          <button
+            type="button"
+            onClick={() => setSenhaVisivel((atual) => !atual)}
+            className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg p-1 text-slate-400 transition-colors hover:text-slate-600 focus:outline-none focus:ring-2 focus:ring-slate-200"
+            aria-label={senhaVisivel ? 'Ocultar senha' : 'Mostrar senha'}
+            aria-pressed={senhaVisivel}
+            tabIndex={-1}
+          >
+            {senhaVisivel ? <EyeOff size={18} aria-hidden /> : <Eye size={18} aria-hidden />}
+          </button>
+        )}
+      </div>
 
       {erro && (
         <p className="mt-1 text-xs font-bold text-red-600">

@@ -1,0 +1,26 @@
+---
+description: Antes de desenvolver, reutilizar o padrao ja existente no CareCore+
+alwaysApply: true
+---
+
+# Padrao existente primeiro
+
+Em **qualquer** pedido de desenvolvimento (tela, campo, API, fluxo, agente):
+
+1. **Procure no repositorio** algo similar (componente, utilitario, rota, mensagem, RBAC, impressao).
+2. **Reutilize** o que ja existe. Nao invente um paralelo.
+3. So crie peca nova se nao houver equivalente. Aí copie o padrao visual e de comportamento mais proximo.
+
+## Referencias concretas
+
+- Senha com olho: `carecore-front/src/components/CampoSenha.jsx` (login/cadastro). Em HTML local (ex.: painel NFP), o mesmo olho mostrar/ocultar.
+- Campos de formulario institucionais: `PremiumUI`, `UsuariosCampos`, nao inputs soltos com outro visual.
+- Datas/hora: `time_operacional.py` / fuso America/Sao_Paulo.
+- Permissao: `rbacUtils.js` e `security.py`, nao ifs avulsos na tela.
+
+## Errado vs certo
+
+- Errado: campo `type="password"` sem olho no modulo NFP, porque "e so o agente".
+- Certo: o usuario confirma a senha como no login (`CampoSenha` / botao olho).
+
+Se achar o padrao, **use-o antes de codar**. Se nao achar, diga isso e alinhe ao vizinho mais proximo.

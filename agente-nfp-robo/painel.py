@@ -205,6 +205,14 @@ HTML = r"""<!DOCTYPE html>
       display: block; width: 100%; margin-top: 4px; border: 1px solid var(--line);
       border-radius: 12px; padding: 10px 12px; font-size: .9rem;
     }
+    .senha-wrap { position: relative; display: block; margin-top: 4px; }
+    .senha-wrap input { margin-top: 0; padding-right: 42px; }
+    .olho {
+      position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+      border: 0; background: transparent; color: #64748b; cursor: pointer; padding: 4px;
+      border-radius: 8px; line-height: 0;
+    }
+    .olho:hover { color: #334155; }
     input.limite { width: 140px; display: inline-block; }
     button, .chip {
       border: 0; border-radius: 12px; padding: 10px 14px; font-weight: 700; font-size: .9rem; cursor: pointer;
@@ -254,7 +262,15 @@ HTML = r"""<!DOCTYPE html>
           <input id="email" type="email" autocomplete="username" placeholder="seu.email@aeb.org.br" />
         </label>
         <label class="field">Senha
-          <input id="senha" type="password" autocomplete="current-password" placeholder="Senha do CareCore" />
+          <span class="senha-wrap">
+            <input id="senha" type="password" autocomplete="current-password" placeholder="Senha do CareCore" />
+            <button type="button" class="olho" id="btnVerSenha" aria-label="Mostrar senha" aria-pressed="false">
+              <svg id="iconeOlho" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"></path>
+                <circle cx="12" cy="12" r="3"></circle>
+              </svg>
+            </button>
+          </span>
         </label>
         <label class="field">Nome deste PC (opcional)
           <input id="nomeMaquina" type="text" placeholder="SEDE-PC1" />
@@ -409,6 +425,16 @@ HTML = r"""<!DOCTYPE html>
     }
 
     $('btnRefresh').onclick = refresh;
+    $('btnVerSenha').onclick = () => {
+      const el = $('senha');
+      const mostrar = el.type === 'password';
+      el.type = mostrar ? 'text' : 'password';
+      $('btnVerSenha').setAttribute('aria-label', mostrar ? 'Ocultar senha' : 'Mostrar senha');
+      $('btnVerSenha').setAttribute('aria-pressed', mostrar ? 'true' : 'false');
+      $('iconeOlho').innerHTML = mostrar
+        ? '<path d="M10.7 5.1A10.8 10.8 0 0 1 12 5c6.5 0 10 7 10 7a18 18 0 0 1-1.7 2.6"></path><path d="M6.6 6.6C3.1 8.8 2 12 2 12s3.5 7 10 7a9.7 9.7 0 0 0 5.4-1.6"></path><line x1="2" x2="22" y1="2" y2="22"></line><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"></path>'
+        : '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"></path><circle cx="12" cy="12" r="3"></circle>';
+    };
     $('btnLogin').onclick = async () => {
       try {
         const data = await api('/api/login', {
