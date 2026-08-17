@@ -136,11 +136,51 @@ def marcar_fim(*, mensagem: str = "Sessao encerrada.") -> None:
     salvar(estado)
 
 
+def resumo_exibicao(estado: Optional[dict[str, Any]] = None) -> dict[str, Any]:
+    """Números prontos para o painel e para o HUD."""
+    e = estado if isinstance(estado, dict) else ler()
+    pt = e.get("por_tipo") or {}
+    ps = e.get("por_status") or {}
+    sucesso = int(pt.get("sucesso") or 0)
+    ja = int(pt.get("ja_existe") or 0)
+    enviados = int(ps.get("enviado") or (sucesso + ja))
+    prazo = int(ps.get("rejeitado_prazo") or 0)
+    erros_status = int(ps.get("erro") or 0)
+    inconclusivo = int(pt.get("inconclusivo") or 0)
+    sessao = int(pt.get("sessao_caiu") or 0)
+    bloqueio = int(pt.get("bloqueio_sefaz") or 0)
+    return {
+        "ativo": bool(e.get("ativo")),
+        "mensagem": e.get("mensagem") or "",
+        "atualizado_em": e.get("atualizado_em") or "",
+        "enviados": enviados,
+        "novos": sucesso,
+        "ja_existe": ja,
+        "prazo": prazo,
+        "erros": erros_status + sessao + bloqueio,
+        "inconclusivo": inconclusivo,
+        "total": int(e.get("total") or 0),
+        "ultimo": e.get("ultimo") or None,
+    }
+
+
+def tkinter_disponivel() -> bool:
+    try:
+        import tkinter  # noqa: F401
+
+        return True
+    except Exception:
+        return False
+
+
 def abrir_hud() -> Optional[int]:
     """Abre o HUD flutuante em processo separado. Retorna PID ou None."""
     import os
     import subprocess
     import sys
+
+    if not tkinter_disponivel():
+        return None
 
     hud = Path(__file__).resolve().parent.parent / "contador_hud.py"
     if not hud.is_file():

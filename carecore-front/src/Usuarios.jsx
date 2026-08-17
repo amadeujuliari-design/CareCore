@@ -214,6 +214,7 @@ export default function Usuarios() {
   // ADM Global só opera a aba da organização (não a lista do projeto).
   const soEscopoOrganizacao = podeGerenciarAdmGlobal && !podeGerenciar;
   const [escopoLista, setEscopoLista] = useState('projeto');
+  const podeOperarEscopoAtual = escopoLista === 'organizacao' ? podeGerenciarAdmGlobal : podeGerenciar;
   const perfisDisponiveis = useMemo(
     () => PERFIS.filter((perfil) => podeGerenciarGlobais || perfil !== 'Global'),
     [podeGerenciarGlobais]
@@ -705,8 +706,7 @@ export default function Usuarios() {
   const salvarUsuario = async (e) => {
     e.preventDefault();
 
-    const podeSalvarAgora = escopoLista === 'organizacao' ? podeGerenciarAdmGlobal : podeGerenciar;
-    if (!podeSalvarAgora) {
+    if (!podeOperarEscopoAtual) {
       setErro(
         escopoLista === 'organizacao'
           ? 'Apenas ADM Global, Global ou Manutenção podem gerenciar ADM Global / ADM Produção.'
@@ -833,8 +833,7 @@ export default function Usuarios() {
   };
 
   const alterarStatus = async (usuario, dadosDesligamento = {}) => {
-    const podeAlterar = escopoLista === 'organizacao' ? podeGerenciarAdmGlobal : podeGerenciar;
-    if (!podeAlterar) return;
+    if (!podeOperarEscopoAtual) return;
 
     const novoStatus = !usuario.ativo;
     const texto = novoStatus ? 'ativar' : 'inativar';
@@ -943,9 +942,7 @@ export default function Usuarios() {
           icon="○"
           actions={(
             <>
-            {tela === 'lista' && (
-              (escopoLista === 'organizacao' ? podeGerenciarAdmGlobal : podeGerenciar)
-            ) && (
+            {tela === 'lista' && podeOperarEscopoAtual && (
               <PremiumButton
                 type="button"
                 onClick={abrirNovo}
@@ -1632,7 +1629,7 @@ export default function Usuarios() {
                 Cancelar
               </PremiumButton>
 
-              {podeGerenciar && editandoId && (
+              {podeOperarEscopoAtual && editandoId && (
                 <button
                   type="button"
                   onClick={() => alterarStatus(
@@ -1656,7 +1653,7 @@ export default function Usuarios() {
                 </button>
               )}
 
-              {podeGerenciar && (
+              {podeOperarEscopoAtual && (
                 <PremiumButton
                   type="submit"
                   disabled={salvando}

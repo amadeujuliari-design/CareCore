@@ -126,6 +126,7 @@ PREFIXOS_API_PERMITIDOS_OFICINEIRO = (
     "/api/usuarios/me",
     "/api/passkeys",
     "/api/health",
+    "/api/chat",
 )
 
 PREFIXOS_API_PERMITIDOS_ADM_GLOBAL = (
@@ -137,6 +138,7 @@ PREFIXOS_API_PERMITIDOS_ADM_GLOBAL = (
     "/api/usuarios/organizacao",
     "/api/passkeys",
     "/api/health",
+    "/api/chat",
 )
 
 # ADM Produção: só leitura de cupons (+ auxiliares minimos).
@@ -147,6 +149,7 @@ PREFIXOS_API_BASE_ADM_PRODUCAO = (
     "/api/usuarios/me",
     "/api/passkeys",
     "/api/health",
+    "/api/chat",
 )
 
 

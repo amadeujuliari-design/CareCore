@@ -6,7 +6,7 @@ from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import get_db
-from models import ChatConversaDB, ChatMensagemDB, ChatParticipanteDB, UsuarioDB
+from models import ChatConversaDB, ChatMensagemDB, ChatParticipanteDB, InstituicaoDB, UsuarioDB
 from schemas import (
     ChatConversaCreate,
     ChatConversaResponse,
@@ -16,11 +16,92 @@ from schemas import (
     ChatResumoResponse,
     ChatUsuarioResponse,
 )
-from security import get_usuario_logado
+from security import (
+    PERFIL_ADM_GLOBAL,
+    PERFIL_ADM_PRODUCAO,
+    PERFIL_GESTOR,
+    PERFIL_GLOBAL,
+    PERFIL_MANUTENCAO,
+    get_usuario_logado,
+    normalizar_perfil_acesso,
+    usuario_eh_adm_global,
+    usuario_eh_adm_producao,
+    usuario_eh_manutencao,
+)
 
 
 router = APIRouter(prefix="/api/chat", tags=["Chat Interno"])
 MAX_PARTICIPANTES_GRUPO = 15
+
+
+def _perfil_chat(usuario) -> str:
+    if usuario_eh_manutencao(usuario):
+        return PERFIL_MANUTENCAO
+    if isinstance(usuario, dict):
+        return normalizar_perfil_acesso(usuario.get("perfil_acesso"))
+    return normalizar_perfil_acesso(getattr(usuario, "perfil_acesso", None))
+
+
+def _eh_global_chat(usuario) -> bool:
+    if isinstance(usuario, dict):
+        if bool(usuario.get("is_global")):
+            return True
+    elif bool(getattr(usuario, "is_global", False)):
+        return True
+    return _perfil_chat(usuario) == PERFIL_GLOBAL
+
+
+def _instituicao_de(usuario) -> str:
+    if isinstance(usuario, dict):
+        return (usuario.get("instituicao_id") or "").strip()
+    return (getattr(usuario, "instituicao_id", None) or "").strip()
+
+
+def _id_de(usuario) -> str:
+    if isinstance(usuario, dict):
+        return (usuario.get("sub") or usuario.get("id") or "").strip()
+    return (getattr(usuario, "id", None) or "").strip()
+
+
+def origem_pode_listar_destino(origem, destino) -> bool:
+    """Quem a origem vê na lista de novo chat."""
+    if not origem or not destino:
+        return False
+    if _id_de(origem) and _id_de(destino) and _id_de(origem) == _id_de(destino):
+        return False
+    ativo = destino.get("ativo") if isinstance(destino, dict) else getattr(destino, "ativo", True)
+    if ativo is False:
+        return False
+
+    perfil_destino = _perfil_chat(destino)
+
+    if usuario_eh_adm_global(origem):
+        return perfil_destino in {
+            PERFIL_ADM_GLOBAL,
+            PERFIL_ADM_PRODUCAO,
+            PERFIL_GESTOR,
+            PERFIL_MANUTENCAO,
+        } or _eh_global_chat(destino)
+
+    if usuario_eh_adm_producao(origem):
+        if (
+            perfil_destino in {PERFIL_ADM_GLOBAL, PERFIL_ADM_PRODUCAO, PERFIL_MANUTENCAO}
+            or _eh_global_chat(destino)
+        ):
+            return True
+        return perfil_destino == PERFIL_GESTOR and _instituicao_de(destino) == _instituicao_de(origem)
+
+    # Oficineiro e demais do projeto: colegas do mesmo projeto + HQ (reciprocidade).
+    if _instituicao_de(destino) == _instituicao_de(origem):
+        return True
+    return (
+        perfil_destino in {PERFIL_ADM_GLOBAL, PERFIL_MANUTENCAO}
+        or _eh_global_chat(destino)
+    )
+
+
+def usuarios_podem_conversar(origem, destino) -> bool:
+    return origem_pode_listar_destino(origem, destino) or origem_pode_listar_destino(destino, origem)
 
 
 def _usuario_id(usuario_atual: dict) -> str:
@@ -51,18 +132,60 @@ def _agora() -> datetime:
     return datetime.now(UTC).replace(tzinfo=None)
 
 
+async def _carregar_usuario_db(db: AsyncSession, usuario_id: str) -> UsuarioDB:
+    resultado = await db.execute(select(UsuarioDB).where(UsuarioDB.id == usuario_id))
+    usuario = resultado.scalar_one_or_none()
+    if not usuario:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Usuário logado inválido. Faça login novamente.",
+        )
+    return usuario
+
+
+async def _instituicoes_escopo(db: AsyncSession, usuario_atual: dict) -> List[str]:
+    instituicao_id = _instituicao_id(usuario_atual)
+    organizacao_id = (usuario_atual.get("organizacao_id") or "").strip()
+    if not organizacao_id:
+        resultado_org = await db.execute(
+            select(InstituicaoDB.organizacao_id).where(InstituicaoDB.id == instituicao_id)
+        )
+        organizacao_id = (resultado_org.scalar_one_or_none() or "").strip()
+    if not organizacao_id:
+        return [instituicao_id]
+
+    resultado = await db.execute(
+        select(InstituicaoDB.id).where(InstituicaoDB.organizacao_id == organizacao_id)
+    )
+    ids = [item for item in resultado.scalars().all() if item]
+    if instituicao_id not in ids:
+        ids.append(instituicao_id)
+    return ids
+
+
+def _escolher_instituicao_conversa(origem: UsuarioDB, destinos: List[UsuarioDB]) -> str:
+    inst_origem = (origem.instituicao_id or "").strip()
+    for destino in destinos:
+        inst_destino = (destino.instituicao_id or "").strip()
+        if inst_destino and inst_destino != inst_origem:
+            return inst_destino
+    return inst_origem
+
+
 async def _obter_participacao(
     db: AsyncSession,
     conversa_id: str,
     usuario_id: str,
-    instituicao_id: str,
+    instituicoes_ids: List[str],
 ) -> ChatParticipanteDB:
     resultado = await db.execute(
-        select(ChatParticipanteDB).where(
+        select(ChatParticipanteDB)
+        .join(ChatConversaDB, ChatConversaDB.id == ChatParticipanteDB.conversa_id)
+        .where(
             ChatParticipanteDB.conversa_id == conversa_id,
             ChatParticipanteDB.usuario_id == usuario_id,
-            ChatParticipanteDB.instituicao_id == instituicao_id,
             ChatParticipanteDB.ativo == True,  # noqa: E712
+            ChatConversaDB.instituicao_id.in_(instituicoes_ids),
         )
     )
     participacao = resultado.scalar_one_or_none()
@@ -78,21 +201,19 @@ async def _obter_participacao(
 
 async def _buscar_usuarios_por_ids(
     db: AsyncSession,
-    instituicao_id: str,
     usuarios_ids: List[str],
+    instituicoes_ids: Optional[List[str]] = None,
 ) -> Dict[str, UsuarioDB]:
     ids = list(dict.fromkeys([usuario_id for usuario_id in usuarios_ids if usuario_id]))
 
     if not ids:
         return {}
 
-    resultado = await db.execute(
-        select(UsuarioDB).where(
-            UsuarioDB.instituicao_id == instituicao_id,
-            UsuarioDB.id.in_(ids),
-        )
-    )
+    filtros = [UsuarioDB.id.in_(ids)]
+    if instituicoes_ids:
+        filtros.append(UsuarioDB.instituicao_id.in_(instituicoes_ids))
 
+    resultado = await db.execute(select(UsuarioDB).where(*filtros))
     return {usuario.id: usuario for usuario in resultado.scalars().all()}
 
 
@@ -142,7 +263,7 @@ async def _ultima_mensagem(
     if not mensagem:
         return None
 
-    usuarios = await _buscar_usuarios_por_ids(db, mensagem.instituicao_id, [mensagem.remetente_id])
+    usuarios = await _buscar_usuarios_por_ids(db, [mensagem.remetente_id])
     remetente = usuarios.get(mensagem.remetente_id)
 
     return ChatMensagemResponse(
@@ -171,7 +292,6 @@ async def _conversa_para_response(
     participantes = resultado_participantes.scalars().all()
     usuarios = await _buscar_usuarios_por_ids(
         db,
-        conversa.instituicao_id,
         [participante.usuario_id for participante in participantes],
     )
 
@@ -214,17 +334,15 @@ def _mensagem_para_response(
 
 async def _buscar_conversa_direta_existente(
     db: AsyncSession,
-    instituicao_id: str,
+    instituicoes_ids: List[str],
     usuario_id: str,
     outro_usuario_id: str,
 ) -> Optional[ChatConversaDB]:
     conversas_usuario = select(ChatParticipanteDB.conversa_id).where(
-        ChatParticipanteDB.instituicao_id == instituicao_id,
         ChatParticipanteDB.usuario_id == usuario_id,
         ChatParticipanteDB.ativo == True,  # noqa: E712
     )
     conversas_outro = select(ChatParticipanteDB.conversa_id).where(
-        ChatParticipanteDB.instituicao_id == instituicao_id,
         ChatParticipanteDB.usuario_id == outro_usuario_id,
         ChatParticipanteDB.ativo == True,  # noqa: E712
     )
@@ -232,7 +350,7 @@ async def _buscar_conversa_direta_existente(
     resultado = await db.execute(
         select(ChatConversaDB)
         .where(
-            ChatConversaDB.instituicao_id == instituicao_id,
+            ChatConversaDB.instituicao_id.in_(instituicoes_ids),
             ChatConversaDB.tipo == "direta",
             ChatConversaDB.id.in_(conversas_usuario),
             ChatConversaDB.id.in_(conversas_outro),
@@ -262,10 +380,11 @@ async def listar_usuarios_chat(
     usuario_atual: dict = Depends(get_usuario_logado),
 ):
     usuario_id = _usuario_id(usuario_atual)
-    instituicao_id = _instituicao_id(usuario_atual)
+    instituicoes_ids = await _instituicoes_escopo(db, usuario_atual)
+    origem = await _carregar_usuario_db(db, usuario_id)
 
     filtros = [
-        UsuarioDB.instituicao_id == instituicao_id,
+        UsuarioDB.instituicao_id.in_(instituicoes_ids),
         UsuarioDB.ativo == True,  # noqa: E712
         UsuarioDB.id != usuario_id,
     ]
@@ -285,10 +404,15 @@ async def listar_usuarios_chat(
         select(UsuarioDB)
         .where(*filtros)
         .order_by(UsuarioDB.nome.asc())
-        .limit(limite)
+        .limit(500)
     )
 
-    return [_usuario_para_chat_response(usuario) for usuario in resultado.scalars().all()]
+    visiveis = [
+        usuario
+        for usuario in resultado.scalars().all()
+        if origem_pode_listar_destino(origem, usuario)
+    ]
+    return [_usuario_para_chat_response(usuario) for usuario in visiveis[:limite]]
 
 
 @router.get("/resumo", response_model=ChatResumoResponse)
@@ -297,14 +421,16 @@ async def obter_resumo_chat(
     usuario_atual: dict = Depends(get_usuario_logado),
 ):
     usuario_id = _usuario_id(usuario_atual)
-    instituicao_id = _instituicao_id(usuario_atual)
+    instituicoes_ids = await _instituicoes_escopo(db, usuario_atual)
 
     total_conversas = (
         await db.execute(
-            select(func.count(ChatParticipanteDB.id)).where(
-                ChatParticipanteDB.instituicao_id == instituicao_id,
+            select(func.count(ChatParticipanteDB.id))
+            .join(ChatConversaDB, ChatConversaDB.id == ChatParticipanteDB.conversa_id)
+            .where(
                 ChatParticipanteDB.usuario_id == usuario_id,
                 ChatParticipanteDB.ativo == True,  # noqa: E712
+                ChatConversaDB.instituicao_id.in_(instituicoes_ids),
             )
         )
     ).scalar_one()
@@ -316,13 +442,13 @@ async def obter_resumo_chat(
                 ChatParticipanteDB,
                 and_(
                     ChatParticipanteDB.conversa_id == ChatMensagemDB.conversa_id,
-                    ChatParticipanteDB.instituicao_id == ChatMensagemDB.instituicao_id,
                     ChatParticipanteDB.usuario_id == usuario_id,
                     ChatParticipanteDB.ativo == True,  # noqa: E712
                 ),
             )
+            .join(ChatConversaDB, ChatConversaDB.id == ChatMensagemDB.conversa_id)
             .where(
-                ChatMensagemDB.instituicao_id == instituicao_id,
+                ChatConversaDB.instituicao_id.in_(instituicoes_ids),
                 ChatMensagemDB.remetente_id != usuario_id,
                 or_(
                     ChatParticipanteDB.ultimo_lido_em.is_(None),
@@ -346,7 +472,7 @@ async def listar_conversas(
     usuario_atual: dict = Depends(get_usuario_logado),
 ):
     usuario_id = _usuario_id(usuario_atual)
-    instituicao_id = _instituicao_id(usuario_atual)
+    instituicoes_ids = await _instituicoes_escopo(db, usuario_atual)
 
     resultado = await db.execute(
         select(ChatConversaDB, ChatParticipanteDB)
@@ -358,7 +484,7 @@ async def listar_conversas(
                 ChatParticipanteDB.ativo == True,  # noqa: E712
             ),
         )
-        .where(ChatConversaDB.instituicao_id == instituicao_id)
+        .where(ChatConversaDB.instituicao_id.in_(instituicoes_ids))
         .order_by(ChatConversaDB.atualizado_em.desc())
         .offset(offset)
         .limit(limite)
@@ -373,7 +499,6 @@ async def listar_conversas(
 
     resultado_participantes = await db.execute(
         select(ChatParticipanteDB).where(
-            ChatParticipanteDB.instituicao_id == instituicao_id,
             ChatParticipanteDB.conversa_id.in_(conversas_ids),
             ChatParticipanteDB.ativo == True,  # noqa: E712
         )
@@ -382,8 +507,8 @@ async def listar_conversas(
 
     usuarios = await _buscar_usuarios_por_ids(
         db,
-        instituicao_id,
         list({participante.usuario_id for participante in participantes}),
+        instituicoes_ids,
     )
 
     participantes_por_conversa: Dict[str, List[ChatParticipanteDB]] = {}
@@ -417,7 +542,7 @@ async def listar_conversas(
         mensagem.remetente_id
         for mensagem in ultimas_mensagens.values()
     }
-    usuarios.update(await _buscar_usuarios_por_ids(db, instituicao_id, list(remetentes_ids)))
+    usuarios.update(await _buscar_usuarios_por_ids(db, list(remetentes_ids), instituicoes_ids))
 
     resultado_nao_lidas = await db.execute(
         select(ChatMensagemDB.conversa_id, func.count(ChatMensagemDB.id))
@@ -425,13 +550,11 @@ async def listar_conversas(
             ChatParticipanteDB,
             and_(
                 ChatParticipanteDB.conversa_id == ChatMensagemDB.conversa_id,
-                ChatParticipanteDB.instituicao_id == ChatMensagemDB.instituicao_id,
                 ChatParticipanteDB.usuario_id == usuario_id,
                 ChatParticipanteDB.ativo == True,  # noqa: E712
             ),
         )
         .where(
-            ChatMensagemDB.instituicao_id == instituicao_id,
             ChatMensagemDB.conversa_id.in_(conversas_ids),
             ChatMensagemDB.remetente_id != usuario_id,
             or_(
@@ -479,7 +602,8 @@ async def criar_conversa(
     usuario_atual: dict = Depends(get_usuario_logado),
 ):
     usuario_id = _usuario_id(usuario_atual)
-    instituicao_id = _instituicao_id(usuario_atual)
+    instituicoes_ids = await _instituicoes_escopo(db, usuario_atual)
+    origem = await _carregar_usuario_db(db, usuario_id)
     participantes_ids = list(dict.fromkeys([
         participante_id
         for participante_id in payload.participantes_ids
@@ -499,23 +623,23 @@ async def criar_conversa(
             detail=f"Conversas em grupo podem ter no máximo {MAX_PARTICIPANTES_GRUPO} participantes.",
         )
 
-    usuarios = await _buscar_usuarios_por_ids(db, instituicao_id, participantes_ids)
-    usuarios_ativos = {
-        usuario.id: usuario
-        for usuario in usuarios.values()
-        if usuario.ativo
-    }
+    usuarios = await _buscar_usuarios_por_ids(db, participantes_ids, instituicoes_ids)
+    destinos_validos = []
+    for participante_id in participantes_ids:
+        destino = usuarios.get(participante_id)
+        if not destino or not destino.ativo or not origem_pode_listar_destino(origem, destino):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Um ou mais usuários selecionados não estão disponíveis para conversa.",
+            )
+        destinos_validos.append(destino)
 
-    if len(usuarios_ativos) != len(participantes_ids):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Um ou mais usuários selecionados não estão ativos neste projeto.",
-        )
+    instituicao_conversa = _escolher_instituicao_conversa(origem, destinos_validos)
 
     if len(participantes_ids) == 1:
         conversa_existente = await _buscar_conversa_direta_existente(
             db,
-            instituicao_id,
+            instituicoes_ids,
             usuario_id,
             participantes_ids[0],
         )
@@ -525,7 +649,7 @@ async def criar_conversa(
                 db,
                 conversa_existente.id,
                 usuario_id,
-                instituicao_id,
+                instituicoes_ids,
             )
             return await _conversa_para_response(db, conversa_existente, participacao, usuario_id)
 
@@ -535,7 +659,7 @@ async def criar_conversa(
 
     agora = _agora()
     conversa = ChatConversaDB(
-        instituicao_id=instituicao_id,
+        instituicao_id=instituicao_conversa,
         tipo="direta" if len(participantes_ids) == 1 else "grupo",
         titulo=titulo_limpo or None,
         criado_por_id=usuario_id,
@@ -550,7 +674,7 @@ async def criar_conversa(
             ChatParticipanteDB(
                 conversa_id=conversa.id,
                 usuario_id=participante_id,
-                instituicao_id=instituicao_id,
+                instituicao_id=instituicao_conversa,
                 ativo=True,
                 ultimo_lido_em=agora if participante_id == usuario_id else None,
                 criado_em=agora,
@@ -560,7 +684,7 @@ async def criar_conversa(
     await db.commit()
     await db.refresh(conversa)
 
-    participacao = await _obter_participacao(db, conversa.id, usuario_id, instituicao_id)
+    participacao = await _obter_participacao(db, conversa.id, usuario_id, instituicoes_ids)
     return await _conversa_para_response(db, conversa, participacao, usuario_id)
 
 
@@ -573,13 +697,12 @@ async def listar_mensagens(
     usuario_atual: dict = Depends(get_usuario_logado),
 ):
     usuario_id = _usuario_id(usuario_atual)
-    instituicao_id = _instituicao_id(usuario_atual)
-    participacao = await _obter_participacao(db, conversa_id, usuario_id, instituicao_id)
+    instituicoes_ids = await _instituicoes_escopo(db, usuario_atual)
+    participacao = await _obter_participacao(db, conversa_id, usuario_id, instituicoes_ids)
 
     total_resultado = await db.execute(
         select(func.count(ChatMensagemDB.id)).where(
             ChatMensagemDB.conversa_id == conversa_id,
-            ChatMensagemDB.instituicao_id == instituicao_id,
         )
     )
     total = int(total_resultado.scalar_one() or 0)
@@ -588,7 +711,6 @@ async def listar_mensagens(
         select(ChatMensagemDB)
         .where(
             ChatMensagemDB.conversa_id == conversa_id,
-            ChatMensagemDB.instituicao_id == instituicao_id,
         )
         .order_by(ChatMensagemDB.criado_em.desc())
         .offset(offset)
@@ -597,8 +719,8 @@ async def listar_mensagens(
     mensagens = list(reversed(resultado.scalars().all()))
     usuarios = await _buscar_usuarios_por_ids(
         db,
-        instituicao_id,
         [mensagem.remetente_id for mensagem in mensagens],
+        instituicoes_ids,
     )
 
     ultima_data = max([mensagem.criado_em for mensagem in mensagens], default=None)
@@ -629,13 +751,13 @@ async def enviar_mensagem(
     usuario_atual: dict = Depends(get_usuario_logado),
 ):
     usuario_id = _usuario_id(usuario_atual)
-    instituicao_id = _instituicao_id(usuario_atual)
-    await _obter_participacao(db, conversa_id, usuario_id, instituicao_id)
+    instituicoes_ids = await _instituicoes_escopo(db, usuario_atual)
+    await _obter_participacao(db, conversa_id, usuario_id, instituicoes_ids)
 
     resultado_conversa = await db.execute(
         select(ChatConversaDB).where(
             ChatConversaDB.id == conversa_id,
-            ChatConversaDB.instituicao_id == instituicao_id,
+            ChatConversaDB.instituicao_id.in_(instituicoes_ids),
         )
     )
     conversa = resultado_conversa.scalar_one_or_none()
@@ -646,7 +768,7 @@ async def enviar_mensagem(
     agora = _agora()
     mensagem = ChatMensagemDB(
         conversa_id=conversa_id,
-        instituicao_id=instituicao_id,
+        instituicao_id=conversa.instituicao_id,
         remetente_id=usuario_id,
         conteudo=payload.conteudo.strip(),
         criado_em=agora,

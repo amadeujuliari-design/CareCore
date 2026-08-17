@@ -123,11 +123,20 @@ def _status_completo() -> dict[str, Any]:
                     erro_api = str(exc)
             except Exception as exc:
                 erro_api = str(exc)
+    contador = {}
+    try:
+        from contador_estado import resumo_exibicao, tkinter_disponivel
+
+        contador = resumo_exibicao()
+        contador["janela_extra"] = tkinter_disponivel()
+    except Exception:
+        contador = {"ativo": False, "total": 0, "janela_extra": False}
     return {
         "ok": True,
         "cdp": cdp,
         "fila": fila,
         "job": _snap_job(),
+        "contador": contador,
         "config": {
             "api_base_url": cfg["api_base_url"],
             "email": cfg.get("email") or "",
@@ -221,6 +230,13 @@ HTML = r"""<!DOCTYPE html>
     }
     .badge.on { background: #d1fae5; color: #065f46; }
     .badge.off { background: #fee2e2; color: #991b1b; }
+    .live { border-color: #7dd3fc; background: #f0f9ff; }
+    .live.sending { border-color: #34d399; background: #ecfdf5; }
+    .live h2 { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .live .nums { display: grid; gap: 8px; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); margin: 10px 0 6px; }
+    .live .n { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; }
+    .live .n .v { font-size: 1.35rem; font-weight: 800; line-height: 1.1; }
+    .live .ultimo { font-size: .82rem; color: var(--muted); white-space: pre-wrap; }
   </style>
 </head>
 <body>
@@ -252,6 +268,15 @@ HTML = r"""<!DOCTYPE html>
 
     <div class="grid" id="cards"></div>
 
+    <div class="card box live" id="liveCounter">
+      <h2>Contador desta sessão
+        <span class="badge off" id="badgeContador">aguardando</span>
+      </h2>
+      <p>Acompanha cada cupom lançado agora neste PC (não depende de janela extra).</p>
+      <div class="nums" id="liveNums"></div>
+      <div class="ultimo" id="liveUltimo">Último: —</div>
+    </div>
+
     <div class="card box">
       <h2>1. Abrir site e fazer login na Fazenda</h2>
       <p>Abre o Chrome do robô no portal da SEFAZ. Faça login/CAPTCHA até a tela <strong>Bem-vindo</strong>.</p>
@@ -278,7 +303,7 @@ HTML = r"""<!DOCTYPE html>
         <button class="secondary" id="btnContador" type="button">Abrir contador</button>
         <button class="secondary" id="btnParar" type="button">Parar</button>
       </div>
-      <p class="sub">Continuo: esgota a fila e espera novas leituras. Contador: janela no topo — arraste sobre a Fazenda (abre sozinho ao enviar).</p>
+      <p class="sub">Continuo: esgota a fila e espera novas leituras. O contador desta sessão fica no bloco azul acima (atualiza sozinho). Janela extra só se o Python deste PC tiver Tk.</p>
       <div class="log" id="log"></div>
     </div>
 
@@ -301,6 +326,35 @@ HTML = r"""<!DOCTYPE html>
 
     function card(label, value, ok) {
       return `<div class="card ${ok ? 'ok' : 'warn'}"><div class="lbl">${label}</div><div class="val">${value}</div></div>`;
+    }
+
+    function num(label, value) {
+      return `<div class="n"><div class="lbl">${label}</div><div class="v">${value}</div></div>`;
+    }
+
+    function renderContador(c, running) {
+      const ativo = !!(c.ativo || running);
+      const box = $('liveCounter');
+      box.className = 'card box live' + (ativo ? ' sending' : '');
+      const badge = $('badgeContador');
+      badge.textContent = ativo ? 'enviando' : 'aguardando';
+      badge.className = 'badge ' + (ativo ? 'on' : 'off');
+      $('liveNums').innerHTML = [
+        num('Enviados (ok)', c.enviados ?? 0),
+        num('Novos', c.novos ?? 0),
+        num('Já existiam', c.ja_existe ?? 0),
+        num('Fora do prazo', c.prazo ?? 0),
+        num('Outros erros', c.erros ?? 0),
+        num('Inconclusivos', c.inconclusivo ?? 0),
+        num('Total sessão', c.total ?? 0),
+      ].join('');
+      const ult = c.ultimo || {};
+      if (ult.tipo) {
+        const chave = (ult.chave || '').slice(0, 12);
+        $('liveUltimo').textContent = 'Último: ' + ult.tipo + (chave ? (' · ' + chave + '…') : '') + ' — ' + (ult.mensagem || '');
+      } else {
+        $('liveUltimo').textContent = 'Último: —' + (c.atualizado_em ? (' · ' + c.atualizado_em) : '');
+      }
     }
 
     function render() {
@@ -328,6 +382,7 @@ HTML = r"""<!DOCTYPE html>
       $('btnContinuo').disabled = running || !cfg.config_ok;
       $('btnParar').disabled = !running;
       $('foot').textContent = (cfg.api_base_url || '') + (cfg.email && !cfg.email.startsWith('seu.usuario') ? (' · ' + cfg.email) : '');
+      renderContador(state.contador || {}, running);
       // Nao apagar mensagem operacional (ex.: Abrir Fazenda) no refresh automatico.
       if (Date.now() < msgStickyUntil) return;
       if (!cfg.config_ok) {
@@ -519,8 +574,21 @@ class PainelHandler(BaseHTTPRequestHandler):
                 self._send_json(200, {"ok": True, "mensagem": "Parada solicitada."})
                 return
             if path == "/api/contador":
-                from contador_estado import abrir_hud
+                from contador_estado import abrir_hud, tkinter_disponivel
 
+                if not tkinter_disponivel():
+                    self._send_json(
+                        200,
+                        {
+                            "ok": True,
+                            "mensagem": (
+                                "O contador desta sessão já está neste painel "
+                                "(bloco azul/verde acima). A janela extra não abre "
+                                "neste Python do agente."
+                            ),
+                        },
+                    )
+                    return
                 pid = abrir_hud()
                 if not pid:
                     self._send_json(

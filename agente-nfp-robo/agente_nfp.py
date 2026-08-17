@@ -283,9 +283,13 @@ def processar_sessao(
         from contador_estado import abrir_hud, resetar as resetar_contador
 
         resetar_contador(mensagem="Sessão de envio iniciada.")
-        abrir_hud()
-    except Exception:
-        pass
+        if not abrir_hud():
+            print(
+                f"[{_agora()}] Contador ao vivo no painel do navegador "
+                "(janela extra indisponível neste Python)."
+            )
+    except Exception as exc:
+        print(f"[{_agora()}] Contador: {exc}")
     restante = int(limite) if limite is not None else None
     lotes = 0
     processados = 0

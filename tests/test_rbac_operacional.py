@@ -371,5 +371,7 @@ def test_caminho_api_oficineiro_permite_atividades_e_bloqueia_conviventes():
     assert caminho_api_permitido_para_oficineiro("/api/atividades/sisa/catalogo", "GET")
     assert caminho_api_permitido_para_oficineiro("/api/usuarios", "GET")
     assert caminho_api_permitido_para_oficineiro("/api/usuarios/me", "GET")
+    assert caminho_api_permitido_para_oficineiro("/api/chat", "GET")
+    assert caminho_api_permitido_para_oficineiro("/api/chat/usuarios", "POST")
     assert not caminho_api_permitido_para_oficineiro("/api/conviventes", "GET")
     assert not caminho_api_permitido_para_oficineiro("/api/rotina", "POST")

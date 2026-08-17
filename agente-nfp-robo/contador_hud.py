@@ -15,7 +15,7 @@ from typing import Any
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT / "robo"))
 
-from contador_estado import ler  # noqa: E402
+from contador_estado import resumo_exibicao  # noqa: E402
 
 
 class ContadorHud:
@@ -114,29 +114,14 @@ class ContadorHud:
         self.root.after(500, self._tick)
 
     def _atualizar(self) -> None:
-        e = ler()
-        pt = e.get("por_tipo") or {}
-        ps = e.get("por_status") or {}
-        sucesso = int(pt.get("sucesso") or 0)
-        ja = int(pt.get("ja_existe") or 0)
-        enviados = int(ps.get("enviado") or (sucesso + ja))
-        prazo = int(ps.get("rejeitado_prazo") or 0)
-        # erros "outros": status erro, sem contar prazo
-        erros_status = int(ps.get("erro") or 0)
-        inconclusivo = int(pt.get("inconclusivo") or 0) + int(ps.get("pendente") or 0)
-        # pendente inclui inconclusivo; evita double-count visual — preferir tipo
-        inconclusivo = int(pt.get("inconclusivo") or 0)
-        sessao = int(pt.get("sessao_caiu") or 0)
-        bloqueio = int(pt.get("bloqueio_sefaz") or 0)
-        outros_err = erros_status + sessao + bloqueio
-
-        self.vars["enviados"].set(str(enviados))
-        self.vars["novos"].set(str(sucesso))
-        self.vars["ja_existe"].set(str(ja))
-        self.vars["prazo"].set(str(prazo))
-        self.vars["erros"].set(str(outros_err))
-        self.vars["inconclusivo"].set(str(inconclusivo))
-        self.vars["total"].set(str(int(e.get("total") or 0)))
+        e = resumo_exibicao()
+        self.vars["enviados"].set(str(e["enviados"]))
+        self.vars["novos"].set(str(e["novos"]))
+        self.vars["ja_existe"].set(str(e["ja_existe"]))
+        self.vars["prazo"].set(str(e["prazo"]))
+        self.vars["erros"].set(str(e["erros"]))
+        self.vars["inconclusivo"].set(str(e["inconclusivo"]))
+        self.vars["total"].set(str(e["total"]))
 
         ativo = bool(e.get("ativo"))
         self.lbl_status.config(

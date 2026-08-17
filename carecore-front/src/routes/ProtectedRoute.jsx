@@ -124,7 +124,7 @@ export default function ProtectedRoute({
   return (
     <div className="carecore-premium-frame">
       {children}
-      {!usuarioEhOficineiro(usuario) && !usuarioEhAdmGlobal(usuario) && !usuarioEhAdmProducao(usuario) && <ChatFlutuante />}
+      <ChatFlutuante />
     </div>
   );
 }
