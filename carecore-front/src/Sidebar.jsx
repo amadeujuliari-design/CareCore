@@ -20,6 +20,7 @@ import {
   QrCode,
   Receipt,
   Send,
+  ShoppingCart,
   Target,
   Users,
   UserRoundCog,
@@ -35,7 +36,7 @@ import { carecoreVersaoRotulo } from './config/versao';
 import { MENU_ACOMPANHAMENTOS, MENU_CONVIVENTES } from './config/acompanhamentosConfig';
 import { acompanhamentoAtivo, moduloAtivo } from './config/configOperacionalDefaults';
 import { useConfigOperacional } from './hooks/useConfigOperacional';
-import { usuarioEhAdmGlobal, usuarioEhAdmProducao, usuarioEhOficineiro, normalizarPerfilRbac } from './utils/rbacUtils';
+import { usuarioEhAdmCompras, usuarioEhAdmGlobal, usuarioEhAdmPedidos, usuarioEhAdmProducao, usuarioEhOficineiro, normalizarPerfilRbac, usuarioPodeVerCompras, usuarioPodeAcessarModuloOperacional, PERFIL_ADM_COMPRAS, PERFIL_ADM_GLOBAL, PERFIL_ADM_PRODUCAO } from './utils/rbacUtils';
 import { decodificarPayloadJwt } from './utils/jwtUtils';
 import {
   DIREITOS_RESERVADOS_TITULO,
@@ -120,6 +121,7 @@ export default function Sidebar() {
   const [menusExpandidos, setMenusExpandidos] = useState({});
   const [historicoLegadoApiAtivo, setHistoricoLegadoApiAtivo] = useState(false);
   const [cobrancasClienteVisivel, setCobrancasClienteVisivel] = useState(false);
+  const [comprasModuloVisivel, setComprasModuloVisivel] = useState(false);
   const [modalSenhaAberto, setModalSenhaAberto] = useState(false);
   const [modalPasskeysAberto, setModalPasskeysAberto] = useState(false);
   const [senhaAtual, setSenhaAtual] = useState('');
@@ -183,6 +185,14 @@ export default function Sidebar() {
     perfil_acesso: perfilNormalizado,
     is_manutencao: isManutencao,
   });
+  const ehAdmCompras = usuarioEhAdmCompras({
+    perfil_acesso: perfilNormalizado,
+    is_manutencao: isManutencao,
+  });
+  const ehAdmPedidos = usuarioEhAdmPedidos({
+    perfil_acesso: perfilNormalizado,
+    is_manutencao: isManutencao,
+  });
 
   const nomeExibicao = nomeExibicaoSidebar(nomeUsuario);
   const novaSenhaForte = senhaAtendePolitica(novaSenha);
@@ -195,30 +205,47 @@ export default function Sidebar() {
     if (!token) {
       setHistoricoLegadoApiAtivo(false);
       setCobrancasClienteVisivel(false);
+      setComprasModuloVisivel(false);
       return;
     }
 
-    let ativo = true;
-    api.get(`${API_ROOT}/historico-legado/config`)
-      .then((response) => {
-        if (ativo) setHistoricoLegadoApiAtivo(response.data?.ativo === true);
-      })
-      .catch(() => {
-        if (ativo) setHistoricoLegadoApiAtivo(false);
-      });
+    if (!usuarioPodeAcessarModuloOperacional(usuarioSessao)) {
+      setHistoricoLegadoApiAtivo(false);
+      setCobrancasClienteVisivel(false);
+    }
 
-    api.get(`${API_ROOT}/cobrancas/modulo/status`)
+    let ativo = true;
+
+    if (usuarioPodeAcessarModuloOperacional(usuarioSessao)) {
+      api.get(`${API_ROOT}/historico-legado/config`)
+        .then((response) => {
+          if (ativo) setHistoricoLegadoApiAtivo(response.data?.ativo === true);
+        })
+        .catch(() => {
+          if (ativo) setHistoricoLegadoApiAtivo(false);
+        });
+
+      api.get(`${API_ROOT}/cobrancas/modulo/status`)
+        .then((response) => {
+          if (ativo) setCobrancasClienteVisivel(response.data?.cliente_visivel === true);
+        })
+        .catch(() => {
+          if (ativo) setCobrancasClienteVisivel(false);
+        });
+    }
+
+    api.get(`${API_ROOT}/compras/me/acesso`)
       .then((response) => {
-        if (ativo) setCobrancasClienteVisivel(response.data?.cliente_visivel === true);
+        if (ativo) setComprasModuloVisivel(response.data?.permitido === true);
       })
       .catch(() => {
-        if (ativo) setCobrancasClienteVisivel(false);
+        if (ativo) setComprasModuloVisivel(false);
       });
 
     return () => {
       ativo = false;
     };
-  }, [token]);
+  }, [token, usuarioSessao?.id, usuarioSessao?.perfil_acesso]);
 
   const menuGroups = [
     {
@@ -414,7 +441,7 @@ export default function Sidebar() {
           path: '/usuarios',
           icon: UserRoundCog,
           label: 'Usuários',
-          perfis: ['Gestor', 'Global', 'ADM Global']
+          perfis: ['Gestor', 'Global', PERFIL_ADM_GLOBAL, PERFIL_ADM_COMPRAS]
         },
         {
           path: '/suporte',
@@ -427,10 +454,31 @@ export default function Sidebar() {
       title: 'Gestão Global',
       items: [
         {
+          path: '/compras',
+          icon: ShoppingCart,
+          label: 'Compras',
+          feature: 'compras',
+          children: [
+            {
+              path: '/compras',
+              icon: ShoppingCart,
+              label: 'Pedidos e cotações',
+              feature: 'compras',
+            },
+            {
+              path: '/usuarios',
+              icon: UserRoundCog,
+              label: 'Usuários ADM Global Compras',
+              feature: 'compras',
+              perfis: ['Global', PERFIL_ADM_COMPRAS, 'Manutenção'],
+            },
+          ],
+        },
+        {
           path: '/nfp',
           icon: Receipt,
           label: 'NFP – Créditos',
-          perfis: ['Global', 'ADM Global', 'ADM Produção', 'Manutenção'],
+          perfis: ['Global', PERFIL_ADM_GLOBAL, PERFIL_ADM_PRODUCAO, 'Manutenção'],
           children: [
             {
               path: '/nfp',
@@ -468,13 +516,13 @@ export default function Sidebar() {
               path: '/nfp/envio-sefaz',
               icon: Send,
               label: 'Envio SEFAZ',
-              perfis: ['Global', 'ADM Global', 'Manutenção'],
+              perfis: ['Global', PERFIL_ADM_GLOBAL, 'Manutenção'],
             },
             {
               path: '/usuarios',
               icon: UserRoundCog,
-              label: 'Usuários ADM (Sede/projetos)',
-              perfis: ['Global', 'ADM Global', 'Manutenção'],
+              label: 'Usuários ADM NFP',
+              perfis: ['Global', PERFIL_ADM_GLOBAL, 'Manutenção'],
             },
             {
               path: '/nfp/metas',
@@ -646,6 +694,16 @@ export default function Sidebar() {
     if (ehAdmProducao) {
       return item.path === '/nfp' || item.path === '/nfp/leitura-cupons';
     }
+    if (ehAdmPedidos) {
+      return Boolean(item.path === '/compras' || item.path?.startsWith('/compras/'));
+    }
+    if (ehAdmCompras) {
+      return Boolean(
+        item.path === '/compras'
+        || item.path?.startsWith('/compras/')
+        || item.path === '/usuarios'
+      );
+    }
     if (ehAdmGlobal) {
       return Boolean(
         item.path === '/nfp'
@@ -663,7 +721,12 @@ export default function Sidebar() {
     }
     const featurePermitida =
       (item.feature !== 'historicoLegado' || historicoLegadoAtivo) &&
-      (item.feature !== 'cobrancasCliente' || cobrancasClienteVisivel || isManutencao);
+      (item.feature !== 'cobrancasCliente' || cobrancasClienteVisivel || isManutencao) &&
+      (item.feature !== 'compras' || comprasModuloVisivel || isManutencao || usuarioPodeVerCompras({
+        perfil_acesso: perfilNormalizado,
+        is_manutencao: isManutencao,
+        compras_modulo_ativo: usuarioSessao?.compras_modulo_ativo,
+      }));
     return perfilPermitido && globalPermitido && featurePermitida;
   };
 

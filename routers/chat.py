@@ -17,14 +17,18 @@ from schemas import (
     ChatUsuarioResponse,
 )
 from security import (
+    PERFIL_ADM_COMPRAS,
     PERFIL_ADM_GLOBAL,
+    PERFIL_ADM_PEDIDOS,
     PERFIL_ADM_PRODUCAO,
     PERFIL_GESTOR,
     PERFIL_GLOBAL,
     PERFIL_MANUTENCAO,
     get_usuario_logado,
     normalizar_perfil_acesso,
+    usuario_eh_adm_compras,
     usuario_eh_adm_global,
+    usuario_eh_adm_pedidos,
     usuario_eh_adm_producao,
     usuario_eh_manutencao,
 )
@@ -75,17 +79,25 @@ def origem_pode_listar_destino(origem, destino) -> bool:
 
     perfil_destino = _perfil_chat(destino)
 
-    if usuario_eh_adm_global(origem):
+    if usuario_eh_adm_global(origem) or usuario_eh_adm_compras(origem):
         return perfil_destino in {
             PERFIL_ADM_GLOBAL,
             PERFIL_ADM_PRODUCAO,
+            PERFIL_ADM_COMPRAS,
+            PERFIL_ADM_PEDIDOS,
             PERFIL_GESTOR,
             PERFIL_MANUTENCAO,
         } or _eh_global_chat(destino)
 
-    if usuario_eh_adm_producao(origem):
+    if usuario_eh_adm_producao(origem) or usuario_eh_adm_pedidos(origem):
         if (
-            perfil_destino in {PERFIL_ADM_GLOBAL, PERFIL_ADM_PRODUCAO, PERFIL_MANUTENCAO}
+            perfil_destino in {
+                PERFIL_ADM_GLOBAL,
+                PERFIL_ADM_PRODUCAO,
+                PERFIL_ADM_COMPRAS,
+                PERFIL_ADM_PEDIDOS,
+                PERFIL_MANUTENCAO,
+            }
             or _eh_global_chat(destino)
         ):
             return True
@@ -95,7 +107,7 @@ def origem_pode_listar_destino(origem, destino) -> bool:
     if _instituicao_de(destino) == _instituicao_de(origem):
         return True
     return (
-        perfil_destino in {PERFIL_ADM_GLOBAL, PERFIL_MANUTENCAO}
+        perfil_destino in {PERFIL_ADM_GLOBAL, PERFIL_ADM_COMPRAS, PERFIL_MANUTENCAO}
         or _eh_global_chat(destino)
     )
 

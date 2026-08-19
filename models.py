@@ -27,6 +27,7 @@ class OrganizacaoDB(Base):
     cidade = Column(String, nullable=True)
     uf = Column(String, nullable=True)
     is_active = Column(Boolean, default=True)
+    compras_ativo = Column(Boolean, default=False, nullable=False)
     criado_em = Column(DateTime, default=datetime.datetime.utcnow)
     # Identidade visual/documental dos relatórios da organização (sede)
     relatorio_logo_url = Column(String, nullable=True)
@@ -175,6 +176,9 @@ class UsuarioDB(Base):
 
     # ADM Produção NFP: captador/unidade fixo (ex.: SEDE AEB, CEI LIBERDADE)
     nfp_captador_vinculo = Column(String, nullable=True)
+
+    # Compras: Gestor/Técnico/Administrativo só veem o módulo se o Gestor ligar.
+    compras_modulo_ativo = Column(Boolean, default=False, nullable=False)
 
     conselho_profissional = Column(String, nullable=True)
 
@@ -1965,5 +1969,296 @@ class NfpMetasLinhaDB(Base):
     diego = Column(Float, nullable=False, default=0.0)
     total = Column(Float, nullable=False, default=0.0)
 
+    atualizado_em = Column(DateTime, default=agora_operacional_naive, onupdate=agora_operacional_naive)
+
+
+class ComprasCategoriaDB(Base):
+    __tablename__ = "compras_categorias"
+    __table_args__ = (
+        UniqueConstraint("organizacao_id", "nome", name="uq_compras_categoria_org_nome"),
+        Index("ix_compras_categoria_org", "organizacao_id"),
+    )
+
+    id = Column(String, primary_key=True, default=get_uuid)
+    organizacao_id = Column(String, ForeignKey("organizacoes.id"), nullable=False)
+    nome = Column(String, nullable=False)
+    ativo = Column(Boolean, default=True, nullable=False)
+    criado_em = Column(DateTime, default=agora_operacional_naive)
+
+
+class ComprasItemConsumoDB(Base):
+    __tablename__ = "compras_itens_consumo"
+    __table_args__ = (
+        Index("ix_compras_item_consumo_org", "organizacao_id"),
+        Index("ix_compras_item_consumo_org_ativo", "organizacao_id", "ativo"),
+        UniqueConstraint("organizacao_id", "chave", name="uq_compras_item_consumo_org_chave"),
+    )
+
+    id = Column(String, primary_key=True, default=get_uuid)
+    organizacao_id = Column(String, ForeignKey("organizacoes.id"), nullable=False)
+    categoria_id = Column(String, ForeignKey("compras_categorias.id"), nullable=True)
+    descricao = Column(String, nullable=False)
+    chave = Column(String, nullable=False)
+    unidade_medida = Column(String, nullable=True)
+    embalagem = Column(String, nullable=True)
+    marca_preferencial = Column(String, nullable=True)
+    observacao = Column(Text, nullable=True)
+    ativo = Column(Boolean, default=True, nullable=False)
+    criado_em = Column(DateTime, default=agora_operacional_naive)
+    atualizado_em = Column(DateTime, default=agora_operacional_naive, onupdate=agora_operacional_naive)
+
+
+class ComprasFonteRecursoDB(Base):
+    __tablename__ = "compras_fontes_recurso"
+    __table_args__ = (
+        UniqueConstraint("organizacao_id", "nome", name="uq_compras_fonte_org_nome"),
+        Index("ix_compras_fonte_org", "organizacao_id"),
+    )
+
+    id = Column(String, primary_key=True, default=get_uuid)
+    organizacao_id = Column(String, ForeignKey("organizacoes.id"), nullable=False)
+    nome = Column(String, nullable=False)
+    ativo = Column(Boolean, default=True, nullable=False)
+    criado_em = Column(DateTime, default=agora_operacional_naive)
+
+
+class ComprasFornecedorDB(Base):
+    __tablename__ = "compras_fornecedores"
+    __table_args__ = (
+        Index("ix_compras_fornecedor_org", "organizacao_id"),
+        Index("ix_compras_fornecedor_org_ativo", "organizacao_id", "ativo"),
+    )
+
+    id = Column(String, primary_key=True, default=get_uuid)
+    organizacao_id = Column(String, ForeignKey("organizacoes.id"), nullable=False)
+    categoria_id = Column(String, ForeignKey("compras_categorias.id"), nullable=True)
+    nome = Column(String, nullable=False)
+    cnpj = Column(String, nullable=True)
+    segmento = Column(String, nullable=True)
+    contato = Column(String, nullable=True)
+    telefone = Column(String, nullable=True)
+    email = Column(String, nullable=True)
+    email_empresa = Column(String, nullable=True)
+    cep = Column(String, nullable=True)
+    logradouro = Column(String, nullable=True)
+    numero = Column(String, nullable=True)
+    complemento = Column(String, nullable=True)
+    bairro = Column(String, nullable=True)
+    cidade = Column(String, nullable=True)
+    uf = Column(String, nullable=True)
+    projetos_atendidos = Column(Text, nullable=True)
+    atende_geral = Column(Boolean, default=True, nullable=False)
+    ativo = Column(Boolean, default=True, nullable=False)
+    bloqueado = Column(Boolean, default=False, nullable=False)
+    observacao = Column(Text, nullable=True)
+    criado_em = Column(DateTime, default=agora_operacional_naive)
+    atualizado_em = Column(DateTime, default=agora_operacional_naive, onupdate=agora_operacional_naive)
+
+
+class ComprasFornecedorProjetoDB(Base):
+    __tablename__ = "compras_fornecedor_projetos"
+    __table_args__ = (
+        UniqueConstraint("fornecedor_id", "instituicao_id", name="uq_compras_fornecedor_projeto"),
+        Index("ix_compras_fornecedor_proj_forn", "fornecedor_id"),
+    )
+
+    id = Column(String, primary_key=True, default=get_uuid)
+    fornecedor_id = Column(String, ForeignKey("compras_fornecedores.id", ondelete="CASCADE"), nullable=False)
+    instituicao_id = Column(String, ForeignKey("instituicoes.id", ondelete="CASCADE"), nullable=False)
+    criado_em = Column(DateTime, default=agora_operacional_naive)
+
+
+class ComprasJanelaDB(Base):
+    __tablename__ = "compras_janelas"
+    __table_args__ = (
+        UniqueConstraint("organizacao_id", "competencia", name="uq_compras_janela_org_comp"),
+        Index("ix_compras_janela_org", "organizacao_id"),
+    )
+
+    id = Column(String, primary_key=True, default=get_uuid)
+    organizacao_id = Column(String, ForeignKey("organizacoes.id"), nullable=False)
+    competencia = Column(String, nullable=False)
+    data_inicio = Column(Date, nullable=False)
+    data_fim = Column(Date, nullable=False)
+    criado_por_id = Column(String, ForeignKey("usuarios.id"), nullable=True)
+    criado_em = Column(DateTime, default=agora_operacional_naive)
+    atualizado_em = Column(DateTime, default=agora_operacional_naive, onupdate=agora_operacional_naive)
+
+
+class ComprasJanelaLiberacaoDB(Base):
+    __tablename__ = "compras_janela_liberacoes"
+    __table_args__ = (
+        UniqueConstraint("janela_id", "instituicao_id", name="uq_compras_janela_lib_inst"),
+        Index("ix_compras_janela_lib_janela", "janela_id"),
+    )
+
+    id = Column(String, primary_key=True, default=get_uuid)
+    janela_id = Column(String, ForeignKey("compras_janelas.id"), nullable=False)
+    instituicao_id = Column(String, ForeignKey("instituicoes.id"), nullable=False)
+    motivo = Column(Text, nullable=True)
+    liberado_por_id = Column(String, ForeignKey("usuarios.id"), nullable=True)
+    criado_em = Column(DateTime, default=agora_operacional_naive)
+
+
+class ComprasPedidoDB(Base):
+    __tablename__ = "compras_pedidos"
+    __table_args__ = (
+        Index("ix_compras_pedido_org_status", "organizacao_id", "status"),
+        Index("ix_compras_pedido_instituicao", "instituicao_id", "competencia"),
+    )
+
+    id = Column(String, primary_key=True, default=get_uuid)
+    organizacao_id = Column(String, ForeignKey("organizacoes.id"), nullable=False)
+    instituicao_id = Column(String, ForeignKey("instituicoes.id"), nullable=True)
+    escopo_unidade = Column(String, nullable=False, default="projeto")
+    tipo = Column(String, nullable=False, default="consumo")
+    competencia = Column(String, nullable=False)
+    status = Column(String, nullable=False, default="rascunho")
+    fonte_recurso_id = Column(String, ForeignKey("compras_fontes_recurso.id"), nullable=True)
+    observacao = Column(Text, nullable=True)
+    criado_por_id = Column(String, ForeignKey("usuarios.id"), nullable=False)
+    submetido_em = Column(DateTime, nullable=True)
+    aprovado_unidade_por_id = Column(String, ForeignKey("usuarios.id"), nullable=True)
+    aprovado_unidade_em = Column(DateTime, nullable=True)
+    aprovado_sede_por_id = Column(String, ForeignKey("usuarios.id"), nullable=True)
+    aprovado_sede_em = Column(DateTime, nullable=True)
+    data_envio_prevista = Column(Date, nullable=True)
+    envio_automatico = Column(Boolean, default=False, nullable=False)
+    enviado_em = Column(DateTime, nullable=True)
+    enviado_por_id = Column(String, ForeignKey("usuarios.id"), nullable=True)
+    recebido_em = Column(DateTime, nullable=True)
+    recebido_por_id = Column(String, ForeignKey("usuarios.id"), nullable=True)
+    recebimento_observacao = Column(Text, nullable=True)
+    recebimento_divergencia = Column(Boolean, default=False, nullable=False)
+    cancelado_em = Column(DateTime, nullable=True)
+    cancelado_por_id = Column(String, ForeignKey("usuarios.id"), nullable=True)
+    motivo_cancelamento = Column(Text, nullable=True)
+    status_anterior = Column(String, nullable=True)
+    reprovado_em = Column(DateTime, nullable=True)
+    reprovado_por_id = Column(String, ForeignKey("usuarios.id"), nullable=True)
+    motivo_reprovacao = Column(Text, nullable=True)
+    pedido_compra_anexo_id = Column(String, nullable=True)
+    criado_em = Column(DateTime, default=agora_operacional_naive)
+    atualizado_em = Column(DateTime, default=agora_operacional_naive, onupdate=agora_operacional_naive)
+
+
+class ComprasPedidoItemDB(Base):
+    __tablename__ = "compras_pedido_itens"
+    __table_args__ = (Index("ix_compras_pedido_item_pedido", "pedido_id"),)
+
+    id = Column(String, primary_key=True, default=get_uuid)
+    pedido_id = Column(String, ForeignKey("compras_pedidos.id"), nullable=False)
+    categoria_id = Column(String, ForeignKey("compras_categorias.id"), nullable=True)
+    descricao = Column(String, nullable=False)
+    quantidade = Column(Float, nullable=False, default=1)
+    unidade_medida = Column(String, nullable=True)
+    embalagem = Column(String, nullable=True)
+    marca_preferencial = Column(String, nullable=True)
+    observacao = Column(Text, nullable=True)
+    catalogo_item_id = Column(String, ForeignKey("compras_itens_consumo.id"), nullable=True)
+    quantidade_recebida = Column(Float, nullable=True)
+    validade_lote = Column(Date, nullable=True)
+
+
+class ComprasCotacaoDB(Base):
+    __tablename__ = "compras_cotacoes"
+    __table_args__ = (Index("ix_compras_cotacao_pedido", "pedido_id"),)
+
+    id = Column(String, primary_key=True, default=get_uuid)
+    pedido_id = Column(String, ForeignKey("compras_pedidos.id"), nullable=False)
+    fornecedor_id = Column(String, ForeignKey("compras_fornecedores.id"), nullable=True)
+    fornecedor_nome = Column(String, nullable=False)
+    valor_centavos = Column(Integer, nullable=False, default=0)
+    escolhida = Column(Boolean, default=False, nullable=False)
+    ativa = Column(Boolean, default=True, nullable=False)
+    substituida_por_id = Column(String, nullable=True)
+    observacao = Column(Text, nullable=True)
+    criado_por_id = Column(String, ForeignKey("usuarios.id"), nullable=True)
+    criado_em = Column(DateTime, default=agora_operacional_naive)
+
+
+class ComprasPedidoAnexoDB(Base):
+    __tablename__ = "compras_pedido_anexos"
+    __table_args__ = (Index("ix_compras_pedido_anexo_pedido", "pedido_id"),)
+
+    id = Column(String, primary_key=True, default=get_uuid)
+    pedido_id = Column(String, ForeignKey("compras_pedidos.id"), nullable=False)
+    cotacao_id = Column(String, ForeignKey("compras_cotacoes.id"), nullable=True)
+    nota_fiscal_id = Column(String, nullable=True)
+    tipo = Column(String, nullable=False)
+    nome_arquivo = Column(String, nullable=False)
+    caminho_arquivo = Column(String, nullable=False)
+    content_type = Column(String, nullable=True)
+    tamanho_bytes = Column(Integer, nullable=True)
+    ativo = Column(Boolean, default=True, nullable=False)
+    substituido_por_id = Column(String, nullable=True)
+    criado_por_id = Column(String, ForeignKey("usuarios.id"), nullable=True)
+    criado_em = Column(DateTime, default=agora_operacional_naive)
+
+
+class ComprasPedidoNotaFiscalDB(Base):
+    __tablename__ = "compras_pedido_notas_fiscais"
+    __table_args__ = (Index("ix_compras_pedido_nf_pedido", "pedido_id"),)
+
+    id = Column(String, primary_key=True, default=get_uuid)
+    pedido_id = Column(String, ForeignKey("compras_pedidos.id"), nullable=False)
+    anexo_id = Column(String, ForeignKey("compras_pedido_anexos.id"), nullable=True)
+    tipo_nf = Column(String, nullable=False, default="produto")
+    numero = Column(String, nullable=True)
+    serie = Column(String, nullable=True)
+    chave_acesso = Column(String, nullable=True)
+    emitente_nome = Column(String, nullable=True)
+    emitente_cnpj = Column(String, nullable=True)
+    data_emissao = Column(Date, nullable=True)
+    valor_centavos = Column(Integer, nullable=True)
+    origem_dados = Column(String, nullable=False, default="manual")
+    observacao = Column(Text, nullable=True)
+    criado_por_id = Column(String, ForeignKey("usuarios.id"), nullable=True)
+    criado_em = Column(DateTime, default=agora_operacional_naive)
+
+
+class ComprasPedidoEventoDB(Base):
+    __tablename__ = "compras_pedido_eventos"
+    __table_args__ = (Index("ix_compras_pedido_evento_pedido", "pedido_id"),)
+
+    id = Column(String, primary_key=True, default=get_uuid)
+    pedido_id = Column(String, ForeignKey("compras_pedidos.id"), nullable=False)
+    tipo = Column(String, nullable=False)
+    texto = Column(Text, nullable=True)
+    usuario_id = Column(String, ForeignKey("usuarios.id"), nullable=True)
+    cotacao_id = Column(String, ForeignKey("compras_cotacoes.id"), nullable=True)
+    anexo_id = Column(String, ForeignKey("compras_pedido_anexos.id"), nullable=True)
+    status_anterior = Column(String, nullable=True)
+    status_novo = Column(String, nullable=True)
+    criado_em = Column(DateTime, default=agora_operacional_naive)
+
+
+class ComprasPatrimonioDB(Base):
+    __tablename__ = "compras_patrimonio"
+    __table_args__ = (
+        Index("ix_compras_patrimonio_org_inst", "organizacao_id", "instituicao_id"),
+    )
+
+    id = Column(String, primary_key=True, default=get_uuid)
+    organizacao_id = Column(String, ForeignKey("organizacoes.id"), nullable=False)
+    instituicao_id = Column(String, ForeignKey("instituicoes.id"), nullable=True)
+    pedido_id = Column(String, ForeignKey("compras_pedidos.id"), nullable=True)
+    pedido_item_id = Column(String, ForeignKey("compras_pedido_itens.id"), nullable=True)
+    descricao = Column(String, nullable=False)
+    localizacao = Column(String, nullable=True)
+    documento_nf = Column(String, nullable=True)
+    valor_centavos = Column(Integer, nullable=True)
+    origem = Column(String, nullable=True, default="compra")
+    numero_etiqueta = Column(String, nullable=True)
+    departamento = Column(String, nullable=True)
+    propriedade = Column(String, nullable=True, default="aeb")
+    data_aquisicao = Column(Date, nullable=True)
+    forma_aquisicao = Column(String, nullable=True)
+    situacao = Column(String, nullable=True, default="bom")
+    motivo_baixa = Column(String, nullable=True)
+    data_baixa = Column(Date, nullable=True)
+    observacao = Column(Text, nullable=True)
+    escopo_unidade = Column(String, nullable=False, default="projeto")
+    criado_em = Column(DateTime, default=agora_operacional_naive)
     atualizado_em = Column(DateTime, default=agora_operacional_naive, onupdate=agora_operacional_naive)
 

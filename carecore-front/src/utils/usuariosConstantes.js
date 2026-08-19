@@ -1,7 +1,8 @@
 export const PERFIS = [
   'Gestor',
   'Global',
-  'ADM Produção',
+  'ADM Produção NFP',
+  'ADM Pedidos',
   'Técnico',
   'Orientador',
   'Administrativo',
@@ -65,6 +66,8 @@ export const FORM_INICIAL = {
   cargo: '',
   setor: '',
   nfp_captador_vinculo: '',
+  compras_modulo_ativo: false,
+  instituicao_id: '',
   conselho_profissional: '',
   numero_conselho: '',
   carga_horaria: '',

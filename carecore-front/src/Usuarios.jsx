@@ -51,7 +51,14 @@ import {
   usuarioEhGestor,
 } from './utils/usuariosUtils';
 import { decodificarPayloadJwt } from './utils/jwtUtils';
-import { usuarioPodeGerenciarAdmGlobalOrg } from './utils/rbacUtils';
+import {
+  PERFIL_ADM_COMPRAS,
+  PERFIL_ADM_GLOBAL,
+  PERFIL_ADM_PEDIDOS,
+  PERFIL_ADM_PRODUCAO,
+  usuarioPodeGerenciarAdmGlobalOrg,
+} from './utils/rbacUtils';
+import { comprasUnidades } from './services/comprasService';
 import {
   criarAdmGlobalOrganizacao,
   editarAdmGlobalOrganizacao,
@@ -172,6 +179,7 @@ export default function Usuarios() {
   const [tela, setTela] = useState('lista');
   const [editandoId, setEditandoId] = useState(null);
   const [vinculosNfp, setVinculosNfp] = useState(NFP_CAPTADORES_VINCULO);
+  const [unidadesCompras, setUnidadesCompras] = useState([]);
   const [nomeProjetoAtual, setNomeProjetoAtual] = useState(nomeProjetoSessao);
 
   const [busca, setBusca] = useState('');
@@ -219,6 +227,33 @@ export default function Usuarios() {
     () => PERFIS.filter((perfil) => podeGerenciarGlobais || perfil !== 'Global'),
     [podeGerenciarGlobais]
   );
+  const perfisOrgDisponiveis = useMemo(() => {
+    const perfil = usuarioAuth?.perfil_acesso || '';
+    if (usuarioAuth?.is_manutencao || usuarioAuth?.is_global || perfil === 'Global') {
+      return [PERFIL_ADM_GLOBAL, PERFIL_ADM_PRODUCAO, PERFIL_ADM_COMPRAS, PERFIL_ADM_PEDIDOS];
+    }
+    if (perfil === PERFIL_ADM_COMPRAS) {
+      return [PERFIL_ADM_COMPRAS, PERFIL_ADM_PEDIDOS];
+    }
+    return [PERFIL_ADM_GLOBAL, PERFIL_ADM_PRODUCAO];
+  }, [usuarioAuth]);
+  const temNfpOrg = perfisOrgDisponiveis.some(
+    (perfil) => perfil === PERFIL_ADM_GLOBAL || perfil === PERFIL_ADM_PRODUCAO,
+  );
+  const temComprasOrg = perfisOrgDisponiveis.some(
+    (perfil) => perfil === PERFIL_ADM_COMPRAS || perfil === PERFIL_ADM_PEDIDOS,
+  );
+  const rotuloAbaOrg = temNfpOrg && temComprasOrg
+    ? 'Usuários da organização (NFP e Compras)'
+    : temComprasOrg
+      ? 'Usuários da organização (Compras)'
+      : 'Usuários da organização (NFP)';
+  const rotuloBotaoNovoOrg = temNfpOrg && temComprasOrg
+    ? '+ Novo usuário da organização'
+    : temComprasOrg
+      ? '+ Novo ADM Global Compras'
+      : '+ Novo ADM NFP';
+  const rotuloFiltroOrg = perfisOrgDisponiveis.join(' / ');
   const regrasSenhaInicial = useMemo(() => obterRegrasSenha(form.senha), [form.senha]);
   const regrasSenhaRedefinicao = useMemo(() => obterRegrasSenha(senhaRedefinir), [senhaRedefinir]);
   const exibindoApenasUsuariosAtivos = filtroAtivo === 'true';
@@ -270,6 +305,11 @@ export default function Usuarios() {
         if (ativo && Array.isArray(itens) && itens.length) {
           setVinculosNfp(itens);
         }
+      })
+      .catch(() => {});
+    comprasUnidades()
+      .then((itens) => {
+        if (ativo && Array.isArray(itens)) setUnidadesCompras(itens);
       })
       .catch(() => {});
     return () => {
@@ -376,13 +416,25 @@ export default function Usuarios() {
   const abrirNovo = () => {
     limparAlertas();
     setErrosCampo({});
-    const perfilInicial = escopoLista === 'organizacao' ? 'ADM Produção' : 'Consulta';
+    const perfilInicial = escopoLista === 'organizacao'
+      ? (perfisOrgDisponiveis[0] || PERFIL_ADM_PRODUCAO)
+      : 'Consulta';
+    const cargoOrg = perfilInicial === PERFIL_ADM_COMPRAS
+      ? PERFIL_ADM_COMPRAS
+      : perfilInicial === PERFIL_ADM_PEDIDOS
+        ? PERFIL_ADM_PEDIDOS
+        : perfilInicial === PERFIL_ADM_GLOBAL
+          ? PERFIL_ADM_GLOBAL
+          : PERFIL_ADM_PRODUCAO;
+    const setorOrg = perfilInicial === PERFIL_ADM_COMPRAS || perfilInicial === PERFIL_ADM_PEDIDOS
+      ? (perfilInicial === PERFIL_ADM_PEDIDOS ? 'Compras – Unidade' : 'Compras – Sede')
+      : 'NFP – Créditos';
     setForm({
       ...FORM_INICIAL,
       perfil_acesso: perfilInicial,
       is_global: false,
-      cargo: escopoLista === 'organizacao' ? 'ADM Produção NFP' : '',
-      setor: escopoLista === 'organizacao' ? 'NFP – Créditos' : '',
+      cargo: escopoLista === 'organizacao' ? cargoOrg : '',
+      setor: escopoLista === 'organizacao' ? setorOrg : '',
       nfp_captador_vinculo: '',
     });
     setEditandoId(null);
@@ -438,6 +490,8 @@ export default function Usuarios() {
         cargo: usuario.cargo || '',
         setor: usuario.setor || '',
         nfp_captador_vinculo: usuario.nfp_captador_vinculo || '',
+        compras_modulo_ativo: usuario.compras_modulo_ativo === true,
+        instituicao_id: usuario.instituicao_id || '',
         conselho_profissional: usuario.conselho_profissional || '',
         numero_conselho: usuario.numero_conselho || '',
         carga_horaria: usuario.carga_horaria ?? '',
@@ -652,10 +706,17 @@ export default function Usuarios() {
     if (!form.perfil_acesso) return 'Selecione o perfil de acesso.';
     if (
       escopoLista === 'organizacao'
-      && form.perfil_acesso === 'ADM Produção'
+      && form.perfil_acesso === PERFIL_ADM_PRODUCAO
       && !(form.nfp_captador_vinculo || '').trim()
     ) {
-      return 'Selecione o vínculo NFP (projeto ou Sede) para o ADM Produção.';
+      return 'Selecione o vínculo NFP (projeto ou Sede) para o ADM Produção NFP.';
+    }
+    if (
+      escopoLista === 'organizacao'
+      && form.perfil_acesso === PERFIL_ADM_PEDIDOS
+      && !(form.instituicao_id || '').trim()
+    ) {
+      return 'Selecione o projeto do ADM Pedidos.';
     }
 
     if (form.uf && !UFS.includes(form.uf)) {
@@ -709,7 +770,7 @@ export default function Usuarios() {
     if (!podeOperarEscopoAtual) {
       setErro(
         escopoLista === 'organizacao'
-          ? 'Apenas ADM Global, Global ou Manutenção podem gerenciar ADM Global / ADM Produção.'
+          ? 'Você não pode gerenciar esses usuários da organização com o perfil atual.'
           : 'Apenas Gestor pode criar ou editar usuários.',
       );
       return;
@@ -729,13 +790,18 @@ export default function Usuarios() {
       const payload = montarPayload();
 
       if (escopoLista === 'organizacao') {
-        const perfilOrg = form.perfil_acesso === 'ADM Produção' ? 'ADM Produção' : 'ADM Global';
+        const perfilOrg = perfisOrgDisponiveis.includes(form.perfil_acesso)
+          ? form.perfil_acesso
+          : perfisOrgDisponiveis[0];
         payload.perfil_acesso = perfilOrg;
         payload.is_global = false;
-        if (perfilOrg === 'ADM Produção') {
+        if (perfilOrg === PERFIL_ADM_PRODUCAO) {
           payload.nfp_captador_vinculo = (form.nfp_captador_vinculo || '').trim();
         } else {
           payload.nfp_captador_vinculo = null;
+        }
+        if (perfilOrg === PERFIL_ADM_PEDIDOS) {
+          payload.instituicao_id = form.instituicao_id;
         }
         if (editandoId) {
           await editarAdmGlobalOrganizacao(editandoId, payload);
@@ -947,7 +1013,7 @@ export default function Usuarios() {
                 type="button"
                 onClick={abrirNovo}
               >
-                {escopoLista === 'organizacao' ? '+ Novo ADM NFP' : '+ Novo usuário'}
+                {escopoLista === 'organizacao' ? rotuloBotaoNovoOrg : '+ Novo usuário'}
               </PremiumButton>
             )}
 
@@ -1007,22 +1073,17 @@ export default function Usuarios() {
                   : 'border-slate-200 bg-white text-slate-700'
               }`}
             >
-              Usuários da organização (ADM Global / ADM Produção)
+              {rotuloAbaOrg}
             </button>
           </div>
         )}
 
         {soEscopoOrganizacao && tela === 'lista' && (
           <div className="mb-4 rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
-            Você está na gestão de <strong>ADM Global</strong> e <strong>ADM Produção</strong> da organização.
-            No botão <strong>+ Novo ADM NFP</strong>, escolha o perfil e, para ADM Produção, o vínculo com a
-            {' '}
-            <strong>Sede</strong>
-            {' '}
-            ou com um
-            {' '}
-            <strong>projeto</strong>
-            .
+            Você está em <strong>{rotuloAbaOrg}</strong>.
+            No botão <strong>{rotuloBotaoNovoOrg}</strong> escolha só o perfil permitido para o seu usuário.
+            {temNfpOrg ? <> ADM Produção NFP exige vínculo com a <strong>Sede</strong> ou com um <strong>projeto</strong>.</> : null}
+            {temComprasOrg ? <> ADM Pedidos exige o <strong>projeto</strong> da unidade.</> : null}
           </div>
         )}
 
@@ -1034,13 +1095,23 @@ export default function Usuarios() {
 
         {escopoLista === 'organizacao' && (
           <div className="mb-4 rounded-xl border border-teal-100 bg-teal-50 px-4 py-3 text-sm text-teal-800">
-            ADM Global fica só nesta aba (não entra na lista/faturamento do projeto). ADM Produção precisa de vínculo com projeto/Sede: o vínculo é o mesmo projeto CareCore — o gestor desse projeto vê e administra o usuário na lista do projeto, e ele conta no faturamento desse projeto.
+            {temNfpOrg && (
+              <>
+                ADM Global NFP fica só nesta aba (não entra na lista/faturamento do projeto). ADM Produção NFP precisa de vínculo com projeto/Sede: o gestor desse projeto vê e administra o usuário na lista do projeto.
+                {' '}
+              </>
+            )}
+            {temComprasOrg && (
+              <>
+                ADM Global Compras atua na Sede do módulo Compras. ADM Pedidos fica ligado a um projeto e é administrado também pelo gestor da unidade. ADM Global NFP não cria esses perfis.
+              </>
+            )}
           </div>
         )}
 
         {escopoLista === 'projeto' && (
           <div className="mb-4 rounded-xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm text-slate-700">
-            ADM Produção deste projeto ({nomeProjetoAtual || 'projeto atual'}) aparece aqui para o gestor administrar. ADM Global continua apenas na aba Usuários da organização.
+            ADM Produção NFP deste projeto ({nomeProjetoAtual || 'projeto atual'}) aparece aqui para o gestor administrar. ADM Pedidos da unidade também. ADM Global NFP e ADM Global Compras continuam apenas na aba Usuários da organização.
           </div>
         )}
 
@@ -1067,7 +1138,7 @@ export default function Usuarios() {
                 className="rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400 disabled:bg-slate-50"
               >
                 <option value="">
-                  {escopoLista === 'organizacao' ? 'ADM Global / ADM Produção' : 'Todos os perfis'}
+                  {escopoLista === 'organizacao' ? rotuloFiltroOrg : 'Todos os perfis'}
                 </option>
                 {escopoLista !== 'organizacao' && PERFIS.map((perfil) => (
                   <option key={perfil} value={perfil}>
@@ -1368,7 +1439,9 @@ export default function Usuarios() {
                     <select
                       value={
                         escopoLista === 'organizacao'
-                          ? (form.perfil_acesso === 'ADM Produção' ? 'ADM Produção' : 'ADM Global')
+                          ? (perfisOrgDisponiveis.includes(form.perfil_acesso)
+                            ? form.perfil_acesso
+                            : perfisOrgDisponiveis[0])
                           : form.perfil_acesso
                       }
                       onChange={(e) => atualizarCampo('perfil_acesso', e.target.value)}
@@ -1376,10 +1449,9 @@ export default function Usuarios() {
                       required
                     >
                       {escopoLista === 'organizacao' ? (
-                        <>
-                          <option value="ADM Global">ADM Global</option>
-                          <option value="ADM Produção">ADM Produção</option>
-                        </>
+                        perfisOrgDisponiveis.map((perfil) => (
+                          <option key={perfil} value={perfil}>{perfil}</option>
+                        ))
                       ) : (
                         perfisDisponiveis.map((perfil) => (
                           <option key={perfil} value={perfil}>
@@ -1390,7 +1462,7 @@ export default function Usuarios() {
                     </select>
                   </div>
 
-                  {escopoLista === 'organizacao' && form.perfil_acesso === 'ADM Produção' && (
+                  {escopoLista === 'organizacao' && form.perfil_acesso === PERFIL_ADM_PRODUCAO && (
                     <div className="md:col-span-2 rounded-xl border border-teal-200 bg-teal-50/80 p-3">
                       <label className="mb-1 block text-xs font-bold uppercase tracking-wide text-teal-800">
                         Vínculo obrigatório: Sede ou projeto
@@ -1407,14 +1479,57 @@ export default function Usuarios() {
                         ))}
                       </select>
                       <p className="mt-1.5 text-[11px] text-teal-900/80">
-                        O ADM Produção fica ligado a um único vínculo. O gestor desse projeto vê e administra
+                        O ADM Produção NFP fica ligado a um único vínculo. O gestor desse projeto vê e administra
                         o usuário na lista do projeto; leituras de cupons e faturamento seguem esse vínculo.
-                        ADM Global (perfil acima) não usa vínculo — atua na organização inteira.
+                        ADM Global NFP (perfil acima) não usa vínculo — atua na organização inteira.
                       </p>
                     </div>
                   )}
 
-                  {escopoLista === 'projeto' && form.perfil_acesso === 'ADM Produção' && (
+                  {escopoLista === 'organizacao' && form.perfil_acesso === PERFIL_ADM_PEDIDOS && (
+                    <div className="md:col-span-2 rounded-xl border border-orange-200 bg-orange-50/80 p-3">
+                      <label className="mb-1 block text-xs font-bold uppercase tracking-wide text-orange-800">
+                        Projeto do ADM Pedidos
+                      </label>
+                      <select
+                        value={form.instituicao_id || ''}
+                        onChange={(e) => atualizarCampo('instituicao_id', e.target.value)}
+                        className="w-full rounded-xl border border-orange-200 bg-white px-3 py-2 text-sm outline-none focus:border-orange-400"
+                        required
+                      >
+                        <option value="">Selecione o projeto…</option>
+                        {unidadesCompras.map((un) => (
+                          <option key={un.id} value={un.id}>{un.nome}</option>
+                        ))}
+                      </select>
+                      <p className="mt-1.5 text-[11px] text-orange-900/80">
+                        O ADM Pedidos fica ligado a um único projeto (instituicao_id). O gestor desse projeto administra o usuário na lista do projeto. Não usa conviventes nem rotina.
+                      </p>
+                    </div>
+                  )}
+
+                  {escopoLista === 'projeto' && form.perfil_acesso === PERFIL_ADM_PEDIDOS && (
+                    <div className="rounded-xl border border-orange-100 bg-orange-50 px-3 py-2 text-sm text-orange-900 md:col-span-2">
+                      ADM Pedidos deste projeto: {nomeProjetoAtual || 'projeto atual'}. Acesso só ao módulo Compras da unidade.
+                    </div>
+                  )}
+
+                  {escopoLista === 'projeto' && ['Gestor', 'Técnico', 'Administrativo'].includes(form.perfil_acesso) && (
+                    <label className="md:col-span-2 flex items-start gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={form.compras_modulo_ativo === true}
+                        onChange={(e) => atualizarCampo('compras_modulo_ativo', e.target.checked)}
+                        className="mt-1"
+                      />
+                      <span>
+                        Liberar módulo Compras para este usuário.
+                        O Gestor pode marcar mesmo sem ter o módulo no próprio cadastro.
+                      </span>
+                    </label>
+                  )}
+
+                  {escopoLista === 'projeto' && form.perfil_acesso === PERFIL_ADM_PRODUCAO && (
                     <div className="rounded-xl border border-teal-100 bg-teal-50 px-3 py-2 text-sm text-teal-900 md:col-span-2">
                       Vínculo NFP fixo deste projeto:{' '}
                       <strong>{nomeProjetoAtual || form.nfp_captador_vinculo || 'projeto atual'}</strong>

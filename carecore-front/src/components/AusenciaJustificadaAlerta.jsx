@@ -6,6 +6,7 @@ import {
   responderAusenciaJustificada,
 } from '../services/ausenciasJustificadasService';
 import ModalAlertaOk from './ModalAlertaOk';
+import { obterUsuarioSessao, usuarioPodeAcessarModuloOperacional } from '../utils/rbacUtils';
 
 function obterTokenLocal() {
   return localStorage.getItem('@CareCore:token') || localStorage.getItem('token');
@@ -29,7 +30,12 @@ export default function AusenciaJustificadaAlerta() {
   );
 
   const carregarPendencias = useCallback(async () => {
-    if (!obterTokenLocal() || location.pathname === '/' || document.hidden) return;
+    if (
+      !obterTokenLocal()
+      || location.pathname === '/'
+      || document.hidden
+      || !usuarioPodeAcessarModuloOperacional(obterUsuarioSessao())
+    ) return;
 
     try {
       const dados = await listarAusenciasJustificadasPendentes();

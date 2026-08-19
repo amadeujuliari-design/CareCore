@@ -287,8 +287,10 @@ class GestaoGlobalResumoResponse(BaseModel):
 PERFIS_ACESSO_VALIDOS = {
     "Gestor",
     "Global",
-    "ADM Global",
-    "ADM Produção",
+    "ADM Global NFP",
+    "ADM Produção NFP",
+    "ADM Global Compras",
+    "ADM Pedidos",
     "Manutenção",
     "Técnico",
     "Orientador",
@@ -304,11 +306,18 @@ MAPEAMENTO_PERFIS_LEGADOS = {
     "Manutencao": "Manutenção",
     "Manutenção": "Manutenção",
     "Oficineiro": "Oficineiro(a)",
-    "Adm Global": "ADM Global",
-    "ADMGlobal": "ADM Global",
-    "Adm Producao": "ADM Produção",
-    "Adm Produção": "ADM Produção",
-    "ADMProducao": "ADM Produção",
+    "Adm Global": "ADM Global NFP",
+    "ADMGlobal": "ADM Global NFP",
+    "ADM Global": "ADM Global NFP",
+    "Adm Producao": "ADM Produção NFP",
+    "Adm Produção": "ADM Produção NFP",
+    "ADMProducao": "ADM Produção NFP",
+    "ADM Produção": "ADM Produção NFP",
+    "Adm Compras": "ADM Global Compras",
+    "ADMCompras": "ADM Global Compras",
+    "ADM Compras": "ADM Global Compras",
+    "Adm Pedidos": "ADM Pedidos",
+    "ADMPedidos": "ADM Pedidos",
 }
 
 
@@ -542,7 +551,7 @@ def normalizar_perfil_acesso(valor: Optional[str]) -> str:
     if perfil not in PERFIS_ACESSO_VALIDOS:
         raise ValueError(
             "Perfil de acesso inválido. "
-            "Use: Gestor, Global, ADM Global, ADM Produção, Manutenção, Técnico, Orientador, Administrativo, Consulta ou Oficineiro(a)."
+            "Use: Gestor, Global, ADM Global NFP, ADM Produção NFP, ADM Global Compras, ADM Pedidos, Manutenção, Técnico, Orientador, Administrativo, Consulta ou Oficineiro(a)."
         )
 
     return perfil
@@ -577,6 +586,7 @@ class UsuarioBase(BaseModel):
     cargo: Optional[str] = None
     setor: Optional[str] = None
     nfp_captador_vinculo: Optional[str] = None
+    compras_modulo_ativo: bool = False
     conselho_profissional: Optional[str] = None
     numero_conselho: Optional[str] = None
     carga_horaria: Optional[int] = None
@@ -659,6 +669,7 @@ class UsuarioBase(BaseModel):
 
 class UsuarioCreate(UsuarioBase):
     senha: str
+    instituicao_id: Optional[str] = None
 
     @field_validator("senha")
     @classmethod
@@ -696,6 +707,8 @@ class UsuarioUpdate(BaseModel):
     cargo: Optional[str] = None
     setor: Optional[str] = None
     nfp_captador_vinculo: Optional[str] = None
+    compras_modulo_ativo: Optional[bool] = None
+    instituicao_id: Optional[str] = None
     conselho_profissional: Optional[str] = None
     numero_conselho: Optional[str] = None
     carga_horaria: Optional[int] = None
@@ -845,6 +858,8 @@ class UsuarioResumoResponse(BaseModel):
     cargo: Optional[str] = None
     setor: Optional[str] = None
     nfp_captador_vinculo: Optional[str] = None
+    compras_modulo_ativo: bool = False
+    instituicao_id: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -858,6 +873,8 @@ class UsuarioSessaoResponse(BaseModel):
     instituicao_id: Optional[str] = None
     organizacao_id: Optional[str] = None
     projeto_nome: Optional[str] = None
+    organizacao_nome: Optional[str] = None
+    nfp_captador_vinculo: Optional[str] = None
     perfil_acesso: str
     is_master: bool = False
     is_global: bool = False
@@ -865,6 +882,7 @@ class UsuarioSessaoResponse(BaseModel):
     ativo: bool = True
     avatar_url: Optional[str] = None
     token_version: Optional[int] = None
+    compras_modulo_ativo: bool = False
 
     model_config = ConfigDict(from_attributes=True)
 

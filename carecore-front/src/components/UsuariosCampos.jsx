@@ -19,8 +19,13 @@ export function BadgePerfil({ perfil }) {
   const mapa = {
     Gestor: 'border-indigo-200 bg-indigo-50 text-indigo-700',
     Global: 'border-violet-200 bg-violet-50 text-violet-700',
+    'ADM Global NFP': 'border-teal-200 bg-teal-50 text-teal-700',
+    'ADM Produção NFP': 'border-cyan-200 bg-cyan-50 text-cyan-800',
+    'ADM Global Compras': 'border-orange-200 bg-orange-50 text-orange-800',
+    'ADM Pedidos': 'border-amber-200 bg-amber-50 text-amber-800',
     'ADM Global': 'border-teal-200 bg-teal-50 text-teal-700',
     'ADM Produção': 'border-cyan-200 bg-cyan-50 text-cyan-800',
+    'ADM Compras': 'border-orange-200 bg-orange-50 text-orange-800',
     Técnico: 'border-blue-200 bg-blue-50 text-blue-700',
     Orientador: 'border-amber-200 bg-amber-50 text-amber-700',
     Administrativo: 'border-slate-200 bg-slate-50 text-slate-700',
@@ -174,9 +179,11 @@ export function CampoTexto({
   type = 'text',
   required = false,
   className = '',
-  maxLength,
-  erro = '',
-  placeholder,
+    maxLength,
+    erro = '',
+    placeholder,
+    min,
+    max,
 }) {
   const [senhaVisivel, setSenhaVisivel] = useState(false);
   const ehSenha = type === 'password';
@@ -198,6 +205,8 @@ export function CampoTexto({
           maxLength={maxLength}
           autoComplete={autoComplete}
           placeholder={placeholder}
+          min={min}
+          max={max}
           onBlur={onBlur}
           onChange={(e) => onChange(e.target.value)}
           className={`w-full rounded-xl border px-3 py-2 text-sm outline-none ${

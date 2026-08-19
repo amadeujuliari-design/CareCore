@@ -2,6 +2,10 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 
 import { buscarConfigOperacional } from '../services/configOperacionalService';
 import { montarConfigOperacionalPadrao } from '../config/configOperacionalDefaults';
+import {
+  obterUsuarioSessao,
+  usuarioPodeAcessarModuloOperacional,
+} from '../utils/rbacUtils';
 
 const ConfigOperacionalContext = createContext({
   config: null,
@@ -18,6 +22,14 @@ export function ConfigOperacionalProvider({ children }) {
   const recarregar = useCallback(async () => {
     const token = localStorage.getItem('@CareCore:token') || localStorage.getItem('token');
     if (!token) {
+      setConfig(montarConfigOperacionalPadrao());
+      setCarregando(false);
+      setErro('');
+      return;
+    }
+
+    const usuario = obterUsuarioSessao();
+    if (!usuarioPodeAcessarModuloOperacional(usuario)) {
       setConfig(montarConfigOperacionalPadrao());
       setCarregando(false);
       setErro('');

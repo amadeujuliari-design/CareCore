@@ -1,13 +1,15 @@
 const PERFIS_GESTAO = ['Gestor', 'Gestao', 'Gestão', 'Gerente'];
 const PERFIS_TECNICOS = ['Técnico', 'Tecnico'];
 export const PERFIL_OFICINEIRO = 'Oficineiro(a)';
-export const PERFIL_ADM_GLOBAL = 'ADM Global';
-export const PERFIL_ADM_PRODUCAO = 'ADM Produção';
-export const PERFIS_MODULO_NFP = ['Global', 'ADM Global', 'ADM Produção', 'Manutenção'];
-export const PERFIS_NFP_GESTAO = ['Global', 'ADM Global', 'Manutenção'];
-export const PERFIS_NFP_LEITURA_CUPONS = ['Global', 'ADM Global', 'ADM Produção', 'Manutenção'];
-export const PERFIS_NFP_ENVIO_SEFAZ = ['Global', 'ADM Global', 'Manutenção'];
-export const PERFIS_NFP_OPERAR_ENVIO_SEFAZ = ['ADM Global', 'Manutenção'];
+export const PERFIL_ADM_GLOBAL = 'ADM Global NFP';
+export const PERFIL_ADM_PRODUCAO = 'ADM Produção NFP';
+export const PERFIL_ADM_COMPRAS = 'ADM Global Compras';
+export const PERFIL_ADM_PEDIDOS = 'ADM Pedidos';
+export const PERFIS_MODULO_NFP = ['Global', PERFIL_ADM_GLOBAL, PERFIL_ADM_PRODUCAO, 'Manutenção'];
+export const PERFIS_NFP_GESTAO = ['Global', PERFIL_ADM_GLOBAL, 'Manutenção'];
+export const PERFIS_NFP_LEITURA_CUPONS = ['Global', PERFIL_ADM_GLOBAL, PERFIL_ADM_PRODUCAO, 'Manutenção'];
+export const PERFIS_NFP_ENVIO_SEFAZ = ['Global', PERFIL_ADM_GLOBAL, 'Manutenção'];
+export const PERFIS_NFP_OPERAR_ENVIO_SEFAZ = [PERFIL_ADM_GLOBAL, 'Manutenção'];
 
 export const PERFIS_MODULO_ATIVIDADES = [
   'Gestor',
@@ -27,9 +29,16 @@ export function normalizarPerfilRbac(perfil) {
     Oficineiro: PERFIL_OFICINEIRO,
     'Adm Global': PERFIL_ADM_GLOBAL,
     ADMGlobal: PERFIL_ADM_GLOBAL,
+    'ADM Global': PERFIL_ADM_GLOBAL,
     'Adm Producao': PERFIL_ADM_PRODUCAO,
     'Adm Produção': PERFIL_ADM_PRODUCAO,
     ADMProducao: PERFIL_ADM_PRODUCAO,
+    'ADM Produção': PERFIL_ADM_PRODUCAO,
+    'Adm Compras': PERFIL_ADM_COMPRAS,
+    ADMCompras: PERFIL_ADM_COMPRAS,
+    'ADM Compras': PERFIL_ADM_COMPRAS,
+    'Adm Pedidos': PERFIL_ADM_PEDIDOS,
+    ADMPedidos: PERFIL_ADM_PEDIDOS,
   };
   return mapa[perfil] || perfil || '';
 }
@@ -85,6 +94,74 @@ export function usuarioEhAdmNfpOrg(usuario) {
   return usuarioEhAdmGlobal(usuario) || usuarioEhAdmProducao(usuario);
 }
 
+export function usuarioEhAdmCompras(usuario) {
+  if (!usuario || usuarioEhManutencao(usuario)) return false;
+  return normalizarPerfilRbac(usuario.perfil_acesso) === PERFIL_ADM_COMPRAS;
+}
+
+export function usuarioEhAdmPedidos(usuario) {
+  if (!usuario || usuarioEhManutencao(usuario)) return false;
+  return normalizarPerfilRbac(usuario.perfil_acesso) === PERFIL_ADM_PEDIDOS;
+}
+
+/** Rotulos de Sede (espelha ROTULOS_SEDE / vinculo_eh_sede do backend). */
+export function vinculoEhSede(valor) {
+  const n = String(valor || '')
+    .trim()
+    .toUpperCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[–—]/g, '-');
+  if (!n) return false;
+  return n === 'SEDE AEB' || n === 'SEDE' || n.startsWith('SEDE');
+}
+
+/** Badge e contexto de sessão: perfis ligados à organização (não a um projeto). */
+export function obterUsuarioSessao() {
+  try {
+    const bruto = localStorage.getItem('@CareCore:user') || localStorage.getItem('usuario');
+    return bruto ? JSON.parse(bruto) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Dashboard, config operacional, ausências etc. — perfis só Compras/NFP não entram. */
+export function usuarioPodeAcessarModuloOperacional(usuario) {
+  if (!usuario) return false;
+  if (usuarioEhManutencao(usuario)) return true;
+  if (usuarioEhAdmCompras(usuario) || usuarioEhAdmPedidos(usuario)) return false;
+  if (usuarioEhAdmGlobal(usuario) || usuarioEhAdmProducao(usuario)) return false;
+  if (usuarioEhGlobalPuro(usuario)) return false;
+  return true;
+}
+
+export function usuarioEscopoOrganizacao(usuario) {
+  if (!usuario) return false;
+  if (usuarioEhAdmGlobal(usuario) || usuarioEhAdmCompras(usuario)) {
+    return true;
+  }
+  if (usuarioEhAdmProducao(usuario)) {
+    return vinculoEhSede(usuario.nfp_captador_vinculo);
+  }
+  if (usuarioEhAdmPedidos(usuario)) {
+    return vinculoEhSede(usuario.projeto_nome);
+  }
+  return false;
+}
+
+export function usuarioPodeVerCompras(usuario) {
+  if (!usuario) return false;
+  if (usuarioEhManutencao(usuario) || usuarioEhAdmCompras(usuario) || usuarioEhAdmPedidos(usuario)) {
+    return true;
+  }
+  const perfil = normalizarPerfilRbac(usuario.perfil_acesso);
+  if (['Gestor', 'Técnico', 'Administrativo'].includes(perfil)) {
+    return usuario.compras_modulo_ativo === true;
+  }
+  return false;
+}
+
 export function usuarioPodeAcessarNfp(usuario) {
   if (!usuario) return false;
   if (usuarioEhManutencao(usuario) || usuarioEhAdmNfpOrg(usuario)) return true;
@@ -126,6 +203,9 @@ export function rotaInicialPosLogin(usuario) {
   if (usuarioEhAdmGlobal(usuario)) {
     return '/nfp';
   }
+  if (usuarioEhAdmPedidos(usuario) || usuarioEhAdmCompras(usuario)) {
+    return '/compras';
+  }
   if (usuarioEhOficineiro(usuario)) {
     return '/atividades/chamada';
   }
@@ -140,12 +220,26 @@ export function rotaEhModuloNfp(pathname) {
   return pathname === '/nfp' || pathname.startsWith('/nfp/');
 }
 
+export function rotaEhModuloCompras(pathname) {
+  return pathname === '/compras' || pathname.startsWith('/compras/');
+}
+
 /** Rotas extras liberadas para ADM Global além do módulo NFP. */
 export function rotaPermitidaAdmGlobal(pathname) {
   if (rotaEhModuloNfp(pathname)) return true;
   // Administração de ADM Global / ADM Produção (vínculo Sede ou projeto)
   if (pathname === '/usuarios' || pathname.startsWith('/usuarios/')) return true;
   return false;
+}
+
+export function rotaPermitidaAdmCompras(pathname) {
+  if (rotaEhModuloCompras(pathname)) return true;
+  if (pathname === '/usuarios' || pathname.startsWith('/usuarios/')) return true;
+  return false;
+}
+
+export function rotaPermitidaAdmPedidos(pathname) {
+  return rotaEhModuloCompras(pathname);
 }
 
 export function rotaEhLeituraCuponsNfp(pathname) {
@@ -165,7 +259,10 @@ export function usuarioEhGlobalPuro(usuario) {
 
 /** Pode editar/salvar dados operacionais do projeto. */
 export function usuarioPodeOperarProjeto(usuario) {
-  return !usuarioEhGlobalPuro(usuario) && !usuarioEhAdmNfpOrg(usuario);
+  return !usuarioEhGlobalPuro(usuario)
+    && !usuarioEhAdmNfpOrg(usuario)
+    && !usuarioEhAdmCompras(usuario)
+    && !usuarioEhAdmPedidos(usuario);
 }
 
 /** Alias usado nas telas operacionais (conviventes, rotina). */
@@ -218,5 +315,6 @@ export function usuarioPodeGerenciarAdmGlobalOrg(usuario) {
   const perfil = normalizarPerfilRbac(usuario.perfil_acesso);
   return usuarioEhManutencao(usuario) || usuario.is_global === true
     || perfil === 'Global'
-    || perfil === 'ADM Global';
+    || perfil === PERFIL_ADM_GLOBAL
+    || perfil === PERFIL_ADM_COMPRAS;
 }

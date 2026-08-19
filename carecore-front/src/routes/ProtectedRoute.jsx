@@ -11,11 +11,17 @@ import {
   normalizarPerfilRbac,
   rotaEhLeituraCuponsNfp,
   rotaEhModuloAtividades,
+  rotaEhModuloCompras,
   rotaInicialPosLogin,
+  rotaPermitidaAdmCompras,
   rotaPermitidaAdmGlobal,
+  rotaPermitidaAdmPedidos,
+  usuarioEhAdmCompras,
   usuarioEhAdmGlobal,
+  usuarioEhAdmPedidos,
   usuarioEhAdmProducao,
   usuarioEhOficineiro,
+  usuarioPodeVerCompras,
 } from '../utils/rbacUtils';
 
 const PERFIS_LEGADOS = {
@@ -89,8 +95,38 @@ export default function ProtectedRoute({
     return <Navigate to="/nfp/leitura-cupons" replace />;
   }
 
+  if (usuarioEhAdmPedidos(usuario) && !rotaPermitidaAdmPedidos(pathname)) {
+    return <Navigate to="/compras" replace />;
+  }
+
+  if (usuarioEhAdmCompras(usuario) && !rotaPermitidaAdmCompras(pathname)) {
+    return <Navigate to="/compras" replace />;
+  }
+
   if (usuarioEhAdmGlobal(usuario) && !rotaPermitidaAdmGlobal(pathname)) {
     return <Navigate to="/nfp" replace />;
+  }
+
+  if (rotaEhModuloCompras(pathname) && !usuarioPodeVerCompras(usuario) && usuario.is_manutencao !== true) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
+        <div className="bg-white p-8 rounded-xl shadow-xl border border-red-100 max-w-md text-center">
+          <h1 className="text-xl font-bold text-red-600">
+            Acesso negado
+          </h1>
+          <p className="mt-3 text-sm text-gray-600">
+            Você não possui permissão para o módulo Compras.
+          </p>
+          <button
+            type="button"
+            onClick={() => navigate(rotaInicialPosLogin(usuario))}
+            className="mt-6 inline-flex items-center justify-center rounded-xl bg-brand px-5 py-2.5 text-sm font-bold text-white shadow-sm hover:bg-brandDark transition-colors"
+          >
+            Voltar
+          </button>
+        </div>
+      </div>
+    );
   }
 
   if (

@@ -25,11 +25,15 @@ from observability import configurar_observabilidade_carecore
 from presenca_operacional import PRESENCA_REGRAS_BUILD
 from revisao_texto import gemini_configurado
 from security import (
+    caminho_api_permitido_para_adm_compras,
     caminho_api_permitido_para_adm_global,
+    caminho_api_permitido_para_adm_pedidos,
     caminho_api_permitido_para_adm_producao,
     caminho_api_permitido_para_oficineiro,
     extrair_payload_autorizacao_bearer,
+    usuario_eh_adm_compras,
     usuario_eh_adm_global,
+    usuario_eh_adm_pedidos,
     usuario_eh_adm_producao,
     usuario_eh_oficineiro,
 )
@@ -53,6 +57,7 @@ from routers import atividades
 from routers import atividades_sisa
 from routers import texto
 from routers import nfp
+from routers import compras
 
 
 configurar_logging_carecore()
@@ -106,6 +111,224 @@ def origem_corresponde_regex(padrao: str | None, origin: str | None) -> bool:
             },
         )
         return False
+
+
+def _garantir_schema_compras_escopo_sede(sync_conn):
+    """Local/SQLite: escopo_unidade e instituicao_id nullable (alembic q3r4s5t6u7v8)."""
+    import sqlalchemy as sa
+    from alembic.operations import Operations
+    from alembic.runtime.migration import MigrationContext
+    from sqlalchemy import inspect
+
+    inspector = inspect(sync_conn)
+    tabelas = set(inspector.get_table_names())
+    if "compras_pedidos" not in tabelas:
+        return
+
+    cols = {c["name"] for c in inspector.get_columns("compras_pedidos")}
+    if "escopo_unidade" not in cols:
+        sync_conn.execute(text(
+            "ALTER TABLE compras_pedidos ADD COLUMN escopo_unidade VARCHAR NOT NULL DEFAULT 'projeto'"
+        ))
+        inspector = inspect(sync_conn)
+        cols = {c["name"] for c in inspector.get_columns("compras_pedidos")}
+    if "data_envio_prevista" not in cols:
+        sync_conn.execute(text("ALTER TABLE compras_pedidos ADD COLUMN data_envio_prevista DATE"))
+        cols.add("data_envio_prevista")
+    if "envio_automatico" not in cols:
+        sync_conn.execute(text("ALTER TABLE compras_pedidos ADD COLUMN envio_automatico BOOLEAN DEFAULT 0"))
+        cols.add("envio_automatico")
+    for ddl in (
+        "ALTER TABLE compras_pedidos ADD COLUMN status_anterior VARCHAR",
+        "ALTER TABLE compras_pedidos ADD COLUMN reprovado_em DATETIME",
+        "ALTER TABLE compras_pedidos ADD COLUMN reprovado_por_id VARCHAR",
+        "ALTER TABLE compras_pedidos ADD COLUMN motivo_reprovacao TEXT",
+        "ALTER TABLE compras_pedidos ADD COLUMN pedido_compra_anexo_id VARCHAR",
+    ):
+        col = ddl.split("ADD COLUMN ")[1].split(" ")[0]
+        if col not in cols:
+            sync_conn.execute(text(ddl))
+            cols.add(col)
+
+    if "compras_cotacoes" in tabelas:
+        cols_cot = {c["name"] for c in inspector.get_columns("compras_cotacoes")}
+        if "ativa" not in cols_cot:
+            sync_conn.execute(text("ALTER TABLE compras_cotacoes ADD COLUMN ativa BOOLEAN NOT NULL DEFAULT 1"))
+        if "substituida_por_id" not in cols_cot:
+            sync_conn.execute(text("ALTER TABLE compras_cotacoes ADD COLUMN substituida_por_id VARCHAR"))
+
+    if "compras_pedido_anexos" not in tabelas:
+        sync_conn.execute(text(
+            "CREATE TABLE IF NOT EXISTS compras_pedido_anexos ("
+            "id VARCHAR PRIMARY KEY, "
+            "pedido_id VARCHAR NOT NULL, "
+            "cotacao_id VARCHAR, "
+            "nota_fiscal_id VARCHAR, "
+            "tipo VARCHAR NOT NULL, "
+            "nome_arquivo VARCHAR NOT NULL, "
+            "caminho_arquivo VARCHAR NOT NULL, "
+            "content_type VARCHAR, "
+            "tamanho_bytes INTEGER, "
+            "ativo BOOLEAN NOT NULL DEFAULT 1, "
+            "substituido_por_id VARCHAR, "
+            "criado_por_id VARCHAR, "
+            "criado_em DATETIME"
+            ")"
+        ))
+        sync_conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_compras_pedido_anexo_pedido ON compras_pedido_anexos (pedido_id)"
+        ))
+
+    if "compras_pedido_notas_fiscais" not in tabelas:
+        sync_conn.execute(text(
+            "CREATE TABLE IF NOT EXISTS compras_pedido_notas_fiscais ("
+            "id VARCHAR PRIMARY KEY, "
+            "pedido_id VARCHAR NOT NULL, "
+            "anexo_id VARCHAR, "
+            "tipo_nf VARCHAR NOT NULL DEFAULT 'produto', "
+            "numero VARCHAR, "
+            "serie VARCHAR, "
+            "chave_acesso VARCHAR, "
+            "emitente_nome VARCHAR, "
+            "emitente_cnpj VARCHAR, "
+            "data_emissao DATE, "
+            "valor_centavos INTEGER, "
+            "origem_dados VARCHAR NOT NULL DEFAULT 'manual', "
+            "observacao TEXT, "
+            "criado_por_id VARCHAR, "
+            "criado_em DATETIME"
+            ")"
+        ))
+        sync_conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_compras_pedido_nf_pedido ON compras_pedido_notas_fiscais (pedido_id)"
+        ))
+
+    if "compras_pedido_eventos" not in tabelas:
+        sync_conn.execute(text(
+            "CREATE TABLE IF NOT EXISTS compras_pedido_eventos ("
+            "id VARCHAR PRIMARY KEY, "
+            "pedido_id VARCHAR NOT NULL, "
+            "tipo VARCHAR NOT NULL, "
+            "texto TEXT, "
+            "usuario_id VARCHAR, "
+            "cotacao_id VARCHAR, "
+            "anexo_id VARCHAR, "
+            "status_anterior VARCHAR, "
+            "status_novo VARCHAR, "
+            "criado_em DATETIME"
+            ")"
+        ))
+        sync_conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_compras_pedido_evento_pedido ON compras_pedido_eventos (pedido_id)"
+        ))
+
+    inst_col = next(
+        (c for c in inspector.get_columns("compras_pedidos") if c["name"] == "instituicao_id"),
+        None,
+    )
+    if inst_col and not inst_col.get("nullable"):
+        ctx = MigrationContext.configure(sync_conn)
+        op = Operations(ctx)
+        with op.batch_alter_table("compras_pedidos") as batch_op:
+            batch_op.alter_column("instituicao_id", existing_type=sa.String(), nullable=True)
+
+    if "compras_patrimonio" in tabelas:
+        pat_col = next(
+            (c for c in inspector.get_columns("compras_patrimonio") if c["name"] == "instituicao_id"),
+            None,
+        )
+        if pat_col and not pat_col.get("nullable"):
+            ctx = MigrationContext.configure(sync_conn)
+            op = Operations(ctx)
+            with op.batch_alter_table("compras_patrimonio") as batch_op:
+                batch_op.alter_column("instituicao_id", existing_type=sa.String(), nullable=True)
+        cols_pat = {c["name"] for c in inspector.get_columns("compras_patrimonio")}
+        for ddl in (
+            "ALTER TABLE compras_patrimonio ADD COLUMN numero_etiqueta VARCHAR",
+            "ALTER TABLE compras_patrimonio ADD COLUMN departamento VARCHAR",
+            "ALTER TABLE compras_patrimonio ADD COLUMN propriedade VARCHAR DEFAULT 'aeb'",
+            "ALTER TABLE compras_patrimonio ADD COLUMN data_aquisicao DATE",
+            "ALTER TABLE compras_patrimonio ADD COLUMN forma_aquisicao VARCHAR",
+            "ALTER TABLE compras_patrimonio ADD COLUMN situacao VARCHAR DEFAULT 'bom'",
+            "ALTER TABLE compras_patrimonio ADD COLUMN motivo_baixa VARCHAR",
+            "ALTER TABLE compras_patrimonio ADD COLUMN data_baixa DATE",
+            "ALTER TABLE compras_patrimonio ADD COLUMN observacao TEXT",
+            "ALTER TABLE compras_patrimonio ADD COLUMN escopo_unidade VARCHAR DEFAULT 'projeto'",
+            "ALTER TABLE compras_patrimonio ADD COLUMN atualizado_em DATETIME",
+        ):
+            col = ddl.split("ADD COLUMN ")[1].split(" ")[0]
+            if col not in cols_pat:
+                sync_conn.execute(text(ddl))
+                cols_pat.add(col)
+
+    if "compras_fornecedores" in tabelas:
+        cols_forn = {c["name"] for c in inspector.get_columns("compras_fornecedores")}
+        if "atende_geral" not in cols_forn:
+            sync_conn.execute(text(
+                "ALTER TABLE compras_fornecedores ADD COLUMN atende_geral BOOLEAN NOT NULL DEFAULT 1"
+            ))
+
+    if "compras_fornecedor_projetos" not in tabelas:
+        sync_conn.execute(text(
+            "CREATE TABLE IF NOT EXISTS compras_fornecedor_projetos ("
+            "id VARCHAR PRIMARY KEY, "
+            "fornecedor_id VARCHAR NOT NULL, "
+            "instituicao_id VARCHAR NOT NULL, "
+            "criado_em DATETIME, "
+            "UNIQUE (fornecedor_id, instituicao_id)"
+            ")"
+        ))
+
+    if "compras_itens_consumo" not in tabelas:
+        sync_conn.execute(text(
+            "CREATE TABLE IF NOT EXISTS compras_itens_consumo ("
+            "id VARCHAR PRIMARY KEY, "
+            "organizacao_id VARCHAR NOT NULL, "
+            "categoria_id VARCHAR, "
+            "descricao VARCHAR NOT NULL, "
+            "chave VARCHAR NOT NULL, "
+            "unidade_medida VARCHAR, "
+            "embalagem VARCHAR, "
+            "marca_preferencial VARCHAR, "
+            "observacao TEXT, "
+            "ativo BOOLEAN NOT NULL DEFAULT 1, "
+            "criado_em DATETIME, "
+            "atualizado_em DATETIME"
+            ")"
+        ))
+        sync_conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_compras_item_consumo_org ON compras_itens_consumo (organizacao_id)"
+        ))
+        sync_conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_compras_item_consumo_org_ativo "
+            "ON compras_itens_consumo (organizacao_id, ativo)"
+        ))
+        sync_conn.execute(text("DROP INDEX IF EXISTS ix_compras_item_consumo_chave"))
+        sync_conn.execute(text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_compras_item_consumo_org_chave "
+            "ON compras_itens_consumo (organizacao_id, chave)"
+        ))
+    elif "compras_itens_consumo" in tabelas:
+        sync_conn.execute(text("DROP INDEX IF EXISTS ix_compras_item_consumo_chave"))
+        sync_conn.execute(text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_compras_item_consumo_org_chave "
+            "ON compras_itens_consumo (organizacao_id, chave)"
+        ))
+        inspector = inspect(sync_conn)
+        cols_cons = {c["name"] for c in inspector.get_columns("compras_itens_consumo")}
+        if "embalagem" not in cols_cons:
+            sync_conn.execute(text("ALTER TABLE compras_itens_consumo ADD COLUMN embalagem VARCHAR"))
+
+    if "compras_pedido_itens" in tabelas:
+        cols_item = {c["name"] for c in inspector.get_columns("compras_pedido_itens")}
+        if "catalogo_item_id" not in cols_item:
+            sync_conn.execute(text(
+                "ALTER TABLE compras_pedido_itens ADD COLUMN catalogo_item_id VARCHAR"
+            ))
+        if "embalagem" not in cols_item:
+            sync_conn.execute(text(
+                "ALTER TABLE compras_pedido_itens ADD COLUMN embalagem VARCHAR"
+            ))
 
 
 @contextlib.asynccontextmanager
@@ -186,9 +409,35 @@ async def lifespan(app: FastAPI):
                 "ALTER TABLE interacoes_ocorrencias ADD COLUMN mensagem_original TEXT",
                 "ALTER TABLE avisos ADD COLUMN titulo_original TEXT",
                 "ALTER TABLE avisos ADD COLUMN mensagem_original TEXT",
+                "ALTER TABLE compras_pedidos ADD COLUMN escopo_unidade VARCHAR DEFAULT 'projeto'",
+                "ALTER TABLE compras_pedidos ADD COLUMN data_envio_prevista DATE",
+                "ALTER TABLE compras_pedidos ADD COLUMN envio_automatico BOOLEAN DEFAULT 0",
+                "ALTER TABLE compras_fornecedores ADD COLUMN segmento VARCHAR",
+                "ALTER TABLE compras_fornecedores ADD COLUMN email_empresa VARCHAR",
+                "ALTER TABLE compras_fornecedores ADD COLUMN projetos_atendidos TEXT",
+                "ALTER TABLE compras_fornecedores ADD COLUMN cep VARCHAR",
+                "ALTER TABLE compras_fornecedores ADD COLUMN logradouro VARCHAR",
+                "ALTER TABLE compras_fornecedores ADD COLUMN numero VARCHAR",
+                "ALTER TABLE compras_fornecedores ADD COLUMN complemento VARCHAR",
+                "ALTER TABLE compras_fornecedores ADD COLUMN bairro VARCHAR",
+                "ALTER TABLE compras_fornecedores ADD COLUMN uf VARCHAR",
+                "ALTER TABLE compras_fornecedores ADD COLUMN atende_geral BOOLEAN DEFAULT 1",
+                "ALTER TABLE compras_patrimonio ADD COLUMN numero_etiqueta VARCHAR",
+                "ALTER TABLE compras_patrimonio ADD COLUMN departamento VARCHAR",
+                "ALTER TABLE compras_patrimonio ADD COLUMN propriedade VARCHAR DEFAULT 'aeb'",
+                "ALTER TABLE compras_patrimonio ADD COLUMN data_aquisicao DATE",
+                "ALTER TABLE compras_patrimonio ADD COLUMN forma_aquisicao VARCHAR",
+                "ALTER TABLE compras_patrimonio ADD COLUMN situacao VARCHAR DEFAULT 'bom'",
+                "ALTER TABLE compras_patrimonio ADD COLUMN motivo_baixa VARCHAR",
+                "ALTER TABLE compras_patrimonio ADD COLUMN data_baixa DATE",
+                "ALTER TABLE compras_patrimonio ADD COLUMN observacao TEXT",
+                "ALTER TABLE compras_patrimonio ADD COLUMN escopo_unidade VARCHAR DEFAULT 'projeto'",
+                "ALTER TABLE compras_patrimonio ADD COLUMN atualizado_em DATETIME",
             ):
                 with contextlib.suppress(Exception):
                     await conn.execute(text(ddl))
+            with contextlib.suppress(Exception):
+                await conn.run_sync(_garantir_schema_compras_escopo_sede)
             with contextlib.suppress(Exception):
                 await conn.execute(text(
                     "INSERT INTO organizacoes (id, nome, cnpj, telefone, is_active, criado_em) "
@@ -307,12 +556,33 @@ async def lifespan(app: FastAPI):
                 await asyncio.sleep(300)
 
     job_snapshots = asyncio.create_task(_job_snapshots_dashboard_operacional())
+
+    async def _job_compras_envio_automatico():
+        from compras_service import processar_envios_automaticos
+        await asyncio.sleep(90)
+        while True:
+            try:
+                async with AsyncSessionLocal() as session:
+                    resultado = await processar_envios_automaticos(session)
+                if resultado.get("enviados"):
+                    logger.info("Compras envio automático: %s", resultado)
+                await asyncio.sleep(120)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception("Falha no job de envio automático de compras")
+                await asyncio.sleep(120)
+
+    job_compras = asyncio.create_task(_job_compras_envio_automatico())
     try:
         yield
     finally:
         job_snapshots.cancel()
+        job_compras.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await job_snapshots
+        with contextlib.suppress(asyncio.CancelledError):
+            await job_compras
 
 
 app = FastAPI(
@@ -389,6 +659,48 @@ async def rbac_adm_producao_middleware(request: Request, call_next):
         status_code=403,
         content={
             "detail": "Perfil ADM Produção tem acesso apenas à Leitura de Cupons (NFP).",
+        },
+    )
+
+
+@app.middleware("http")
+async def rbac_adm_compras_middleware(request: Request, call_next):
+    path = request.url.path
+    if not path.startswith("/api/"):
+        return await call_next(request)
+
+    payload = extrair_payload_autorizacao_bearer(request.headers.get("authorization"))
+    if not payload or not usuario_eh_adm_compras(payload):
+        return await call_next(request)
+
+    if caminho_api_permitido_para_adm_compras(path, request.method):
+        return await call_next(request)
+
+    return JSONResponse(
+        status_code=403,
+        content={
+            "detail": "Perfil ADM Compras tem acesso apenas ao módulo Compras.",
+        },
+    )
+
+
+@app.middleware("http")
+async def rbac_adm_pedidos_middleware(request: Request, call_next):
+    path = request.url.path
+    if not path.startswith("/api/"):
+        return await call_next(request)
+
+    payload = extrair_payload_autorizacao_bearer(request.headers.get("authorization"))
+    if not payload or not usuario_eh_adm_pedidos(payload):
+        return await call_next(request)
+
+    if caminho_api_permitido_para_adm_pedidos(path, request.method):
+        return await call_next(request)
+
+    return JSONResponse(
+        status_code=403,
+        content={
+            "detail": "Perfil ADM Pedidos tem acesso apenas ao módulo Compras da unidade.",
         },
     )
 
@@ -585,4 +897,5 @@ app.include_router(atividades_sisa.router)
 app.include_router(atividades.router)
 app.include_router(texto.router)
 app.include_router(nfp.router)
+app.include_router(compras.router)
 

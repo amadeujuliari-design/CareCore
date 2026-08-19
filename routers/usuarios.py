@@ -34,11 +34,15 @@ from schemas import (
     UsuarioAtivarInativar,
 )
 from security import (
+    PERFIL_ADM_COMPRAS,
     PERFIL_ADM_GLOBAL,
+    PERFIL_ADM_PEDIDOS,
     PERFIL_ADM_PRODUCAO,
+    PERFIS_ADM_COMPRAS_ORG,
     PERFIS_ADM_NFP_ORG,
     get_usuario_logado,
     gerar_hash_senha,
+    usuario_eh_adm_compras,
     usuario_eh_adm_global,
     usuario_eh_adm_nfp_org,
     usuario_eh_gestor,
@@ -61,8 +65,10 @@ router = APIRouter(
 PERFIS_ACESSO_VALIDOS = {
     "Gestor",
     "Global",
-    "ADM Global",
-    "ADM Produção",
+    PERFIL_ADM_GLOBAL,
+    PERFIL_ADM_PRODUCAO,
+    PERFIL_ADM_COMPRAS,
+    PERFIL_ADM_PEDIDOS,
     "Manutenção",
     "Técnico",
     "Orientador",
@@ -78,11 +84,18 @@ PERFIS_LEGADOS_MAPEAMENTO = {
     "Manutencao": "Manutenção",
     "Manutenção": "Manutenção",
     "Oficineiro": "Oficineiro(a)",
-    "Adm Global": "ADM Global",
-    "ADMGlobal": "ADM Global",
-    "Adm Producao": "ADM Produção",
-    "Adm Produção": "ADM Produção",
-    "ADMProducao": "ADM Produção",
+    "Adm Global": PERFIL_ADM_GLOBAL,
+    "ADMGlobal": PERFIL_ADM_GLOBAL,
+    "ADM Global": PERFIL_ADM_GLOBAL,
+    "Adm Producao": PERFIL_ADM_PRODUCAO,
+    "Adm Produção": PERFIL_ADM_PRODUCAO,
+    "ADMProducao": PERFIL_ADM_PRODUCAO,
+    "ADM Produção": PERFIL_ADM_PRODUCAO,
+    "Adm Compras": PERFIL_ADM_COMPRAS,
+    "ADMCompras": PERFIL_ADM_COMPRAS,
+    "ADM Compras": PERFIL_ADM_COMPRAS,
+    "Adm Pedidos": PERFIL_ADM_PEDIDOS,
+    "ADMPedidos": PERFIL_ADM_PEDIDOS,
 }
 
 
@@ -115,23 +128,40 @@ def exigir_nao_manutencao(usuario: UsuarioDB) -> None:
 
 
 def exigir_nao_adm_global_na_lista_projeto(usuario: UsuarioDB) -> None:
-    """ADM Global fica só na aba org. ADM Produção do próprio projeto pode ser gerido pelo gestor."""
-    if usuario_eh_adm_global(usuario):
+    """ADM Global e ADM Compras ficam só na aba org."""
+    if usuario_eh_adm_global(usuario) or usuario_eh_adm_compras(usuario):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Usuários ADM Global são gerenciados na aba Usuários da organização.",
+            detail="Usuários ADM Global e ADM Compras são gerenciados na aba Usuários da organização.",
         )
 
 
 def exigir_gestao_adm_global_org(usuario_atual: dict) -> None:
     if usuario_eh_manutencao(usuario_atual) or usuario_atual.get("is_global"):
         return
-    if usuario_eh_adm_global(usuario_atual):
+    if usuario_eh_adm_global(usuario_atual) or usuario_eh_adm_compras(usuario_atual):
         return
     raise HTTPException(
         status_code=status.HTTP_403_FORBIDDEN,
-        detail="Apenas ADM Global, Global ou Manutenção podem gerenciar usuários ADM Global / ADM Produção.",
+        detail="Apenas Sede, Global ou Manutenção podem gerenciar usuários da organização.",
     )
+
+
+def perfil_adm_org_valido(perfil: Optional[str], usuario_atual: dict) -> str:
+    perfil_n = normalizar_perfil_acesso(perfil or PERFIL_ADM_GLOBAL)
+    permitidos = set()
+    if usuario_eh_manutencao(usuario_atual) or usuario_atual.get("is_global"):
+        permitidos = set(PERFIS_ADM_NFP_ORG) | set(PERFIS_ADM_COMPRAS_ORG)
+    elif usuario_eh_adm_global(usuario_atual):
+        permitidos = set(PERFIS_ADM_NFP_ORG)
+    elif usuario_eh_adm_compras(usuario_atual):
+        permitidos = set(PERFIS_ADM_COMPRAS_ORG)
+    if perfil_n not in permitidos:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Perfil da organização inválido para o seu usuário.",
+        )
+    return perfil_n
 
 
 def perfil_adm_nfp_org_valido(perfil: Optional[str]) -> str:
@@ -142,6 +172,50 @@ def perfil_adm_nfp_org_valido(perfil: Optional[str]) -> str:
             detail="Perfil deve ser ADM Global ou ADM Produção.",
         )
     return perfil_n
+
+
+def perfis_adm_org_visiveis(usuario_atual: dict) -> list[str]:
+    if usuario_eh_manutencao(usuario_atual) or usuario_atual.get("is_global"):
+        return list(PERFIS_ADM_NFP_ORG | PERFIS_ADM_COMPRAS_ORG)
+    if usuario_eh_adm_compras(usuario_atual):
+        return list(PERFIS_ADM_COMPRAS_ORG)
+    return list(PERFIS_ADM_NFP_ORG)
+
+
+async def resolver_instituicao_adm_pedidos(
+    db: AsyncSession,
+    *,
+    organizacao_id: str,
+    instituicao_id: Optional[str],
+    instituicao_fallback_id: Optional[str],
+) -> str:
+    alvo = (instituicao_id or instituicao_fallback_id or "").strip()
+    if not alvo:
+        raise HTTPException(
+            status_code=400,
+            detail="ADM Pedidos precisa estar vinculado a um projeto da organização.",
+        )
+    projeto = (
+        await db.execute(
+            select(InstituicaoDB).where(
+                InstituicaoDB.id == alvo,
+                InstituicaoDB.organizacao_id == organizacao_id,
+            )
+        )
+    ).scalar_one_or_none()
+    if not projeto:
+        raise HTTPException(status_code=400, detail="Projeto inválido para o ADM Pedidos.")
+    return projeto.id
+
+
+def cargo_setor_adm_org(perfil: str, payload) -> tuple[str, str]:
+    if perfil == PERFIL_ADM_COMPRAS:
+        return (payload.cargo or "ADM Compras", payload.setor or "Compras – Sede")
+    if perfil == PERFIL_ADM_PEDIDOS:
+        return (payload.cargo or "ADM Pedidos", payload.setor or "Compras – Unidade")
+    if perfil == PERFIL_ADM_GLOBAL:
+        return (payload.cargo or "ADM Global NFP", payload.setor or "NFP – Créditos")
+    return (payload.cargo or "ADM Produção NFP", payload.setor or "NFP – Créditos")
 
 
 def normalizar_vinculo_nfp_captador(
@@ -276,7 +350,7 @@ def normalizar_perfil_acesso(perfil: Optional[str]) -> str:
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=(
                 "Perfil de acesso inválido. "
-                "Use: Gestor, Global, ADM Global, ADM Produção, Manutenção, Técnico, Orientador, Administrativo, Consulta ou Oficineiro(a)."
+                "Use: Gestor, Global, ADM Global, ADM Produção, ADM Compras, ADM Pedidos, Manutenção, Técnico, Orientador, Administrativo, Consulta ou Oficineiro(a)."
             ),
         )
 
@@ -381,6 +455,7 @@ def aplicar_dados_usuario(
         "cargo",
         "setor",
         "nfp_captador_vinculo",
+        "compras_modulo_ativo",
         "instituicao_id",
         "conselho_profissional",
         "numero_conselho",
@@ -533,6 +608,7 @@ async def listar_usuarios(
         UsuarioDB.instituicao_id == instituicao_id,
         UsuarioDB.perfil_acesso != "Manutenção",
         UsuarioDB.perfil_acesso != PERFIL_ADM_GLOBAL,
+        UsuarioDB.perfil_acesso != PERFIL_ADM_COMPRAS,
         UsuarioDB.perfil_acesso != PERFIL_ADM_PRODUCAO,
     ]
 
@@ -641,9 +717,9 @@ async def listar_adm_global_organizacao(
     if not organizacao_id:
         raise HTTPException(status_code=400, detail="Usuário sem organização vinculada.")
 
-    perfis = list(PERFIS_ADM_NFP_ORG)
+    perfis = perfis_adm_org_visiveis(usuario_atual)
     if perfil:
-        perfis = [perfil_adm_nfp_org_valido(perfil)]
+        perfis = [perfil_adm_org_valido(perfil, usuario_atual)]
 
     filtros = [
         UsuarioDB.organizacao_id == organizacao_id,
@@ -704,8 +780,8 @@ async def criar_adm_global_organizacao(
     await verificar_email_unico(db, payload.email)
     await verificar_cpf_unico(db, payload.cpf)
 
-    perfil = perfil_adm_nfp_org_valido(payload.perfil_acesso or PERFIL_ADM_GLOBAL)
-    cargo_padrao = "ADM Global NFP" if perfil == PERFIL_ADM_GLOBAL else "ADM Produção NFP"
+    perfil = perfil_adm_org_valido(payload.perfil_acesso or PERFIL_ADM_GLOBAL, usuario_atual)
+    cargo_padrao, setor_padrao = cargo_setor_adm_org(perfil, payload)
     instituicao_fallback = obter_instituicao_escopo(usuario_atual)
     vinculo = None
     instituicao_id = instituicao_fallback
@@ -715,6 +791,13 @@ async def criar_adm_global_organizacao(
             organizacao_id=organizacao_id,
             captador=getattr(payload, "nfp_captador_vinculo", None) or "",
             instituicao_fallback_id=instituicao_fallback,
+        )
+    elif perfil == PERFIL_ADM_PEDIDOS:
+        instituicao_id = await resolver_instituicao_adm_pedidos(
+            db,
+            organizacao_id=organizacao_id,
+            instituicao_id=getattr(payload, "instituicao_id", None),
+            instituicao_fallback_id=None,
         )
 
     novo_usuario = UsuarioDB(
@@ -730,8 +813,8 @@ async def criar_adm_global_organizacao(
         is_master=False,
         is_global=False,
         ativo=True,
-        cargo=payload.cargo or cargo_padrao,
-        setor=payload.setor or "NFP – Créditos",
+        cargo=cargo_padrao,
+        setor=setor_padrao,
         nfp_captador_vinculo=vinculo,
         criado_em=agora_utc(),
         criado_por_id=obter_usuario_id(usuario_atual),
@@ -769,7 +852,7 @@ async def editar_adm_global_organizacao(
         select(UsuarioDB).where(
             UsuarioDB.id == usuario_id,
             UsuarioDB.organizacao_id == organizacao_id,
-            UsuarioDB.perfil_acesso.in_(list(PERFIS_ADM_NFP_ORG)),
+            UsuarioDB.perfil_acesso.in_(perfis_adm_org_visiveis(usuario_atual)),
         )
     )
     usuario = resultado.scalar_one_or_none()
@@ -778,7 +861,7 @@ async def editar_adm_global_organizacao(
 
     dados = payload.model_dump(exclude_unset=True)
     if "perfil_acesso" in dados and dados["perfil_acesso"]:
-        dados["perfil_acesso"] = perfil_adm_nfp_org_valido(dados["perfil_acesso"])
+        dados["perfil_acesso"] = perfil_adm_org_valido(dados["perfil_acesso"], usuario_atual)
     else:
         dados.pop("perfil_acesso", None)
     dados.pop("is_global", None)
@@ -798,6 +881,14 @@ async def editar_adm_global_organizacao(
         )
         dados["nfp_captador_vinculo"] = vinculo
         dados["instituicao_id"] = instituicao_id
+    elif perfil_final == PERFIL_ADM_PEDIDOS:
+        dados["nfp_captador_vinculo"] = None
+        dados["instituicao_id"] = await resolver_instituicao_adm_pedidos(
+            db,
+            organizacao_id=organizacao_id,
+            instituicao_id=dados.get("instituicao_id") or usuario.instituicao_id,
+            instituicao_fallback_id=None,
+        )
     else:
         dados["nfp_captador_vinculo"] = None
 
@@ -837,7 +928,7 @@ async def status_adm_global_organizacao(
         select(UsuarioDB).where(
             UsuarioDB.id == usuario_id,
             UsuarioDB.organizacao_id == organizacao_id,
-            UsuarioDB.perfil_acesso.in_(list(PERFIS_ADM_NFP_ORG)),
+            UsuarioDB.perfil_acesso.in_(perfis_adm_org_visiveis(usuario_atual)),
         )
     )
     usuario = resultado.scalar_one_or_none()
@@ -900,10 +991,10 @@ async def criar_usuario(
     usuario_atual: dict = Depends(exigir_gestor_ou_global),
 ):
     perfil_normalizado = normalizar_perfil_acesso(payload.perfil_acesso)
-    if perfil_normalizado == PERFIL_ADM_GLOBAL:
+    if perfil_normalizado in {PERFIL_ADM_GLOBAL, PERFIL_ADM_COMPRAS}:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Crie usuários ADM Global na aba Usuários da organização.",
+            detail="Crie usuários ADM Global e ADM Compras na aba Usuários da organização.",
         )
     solicita_acesso_global = bool(payload.is_global) or perfil_normalizado == "Global"
 
@@ -942,6 +1033,14 @@ async def criar_usuario(
         cargo = cargo or "ADM Produção NFP"
         setor = setor or "NFP – Créditos"
 
+    if perfil_normalizado == PERFIL_ADM_PEDIDOS:
+        cargo = cargo or "ADM Pedidos"
+        setor = setor or "Compras – Unidade"
+
+    compras_modulo_ativo = False
+    if perfil_normalizado in {"Gestor", "Técnico", "Administrativo"}:
+        compras_modulo_ativo = bool(getattr(payload, "compras_modulo_ativo", False))
+
     novo_usuario = UsuarioDB(
         instituicao_id=instituicao_id,
         organizacao_id=organizacao_id,
@@ -972,6 +1071,7 @@ async def criar_usuario(
         cargo=cargo,
         setor=setor,
         nfp_captador_vinculo=vinculo,
+        compras_modulo_ativo=compras_modulo_ativo,
         conselho_profissional=payload.conselho_profissional,
         numero_conselho=payload.numero_conselho,
         carga_horaria=payload.carga_horaria,
@@ -1030,10 +1130,10 @@ async def editar_usuario(
     perfil_final = normalizar_perfil_acesso(
         dados.get("perfil_acesso") or usuario.perfil_acesso
     )
-    if perfil_final == PERFIL_ADM_GLOBAL:
+    if perfil_final in {PERFIL_ADM_GLOBAL, PERFIL_ADM_COMPRAS}:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Usuários ADM Global são gerenciados na aba Usuários da organização.",
+            detail="Usuários ADM Global e ADM Compras são gerenciados na aba Usuários da organização.",
         )
     validar_alteracao_global(usuario_atual, dados.get("is_global"))
 
@@ -1059,8 +1159,19 @@ async def editar_usuario(
         dados["instituicao_id"] = instituicao_resolvida
         dados.setdefault("cargo", getattr(usuario, "cargo", None) or "ADM Produção NFP")
         dados.setdefault("setor", getattr(usuario, "setor", None) or "NFP – Créditos")
+    elif perfil_final == PERFIL_ADM_PEDIDOS:
+        dados["nfp_captador_vinculo"] = None
+        dados["instituicao_id"] = instituicao_id
+        dados.setdefault("cargo", getattr(usuario, "cargo", None) or "ADM Pedidos")
+        dados.setdefault("setor", getattr(usuario, "setor", None) or "Compras – Unidade")
     else:
         dados["nfp_captador_vinculo"] = None
+
+    if "compras_modulo_ativo" in dados:
+        if perfil_final in {"Gestor", "Técnico", "Administrativo"}:
+            dados["compras_modulo_ativo"] = bool(dados["compras_modulo_ativo"])
+        else:
+            dados["compras_modulo_ativo"] = False
 
     if "email" in dados and dados["email"]:
         await verificar_email_unico(

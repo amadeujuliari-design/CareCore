@@ -66,7 +66,7 @@ def test_caminho_api_adm_global():
     assert caminho_api_permitido_para_adm_global("/api/chat") is True
     assert caminho_api_permitido_para_adm_global("/api/chat/usuarios") is True
     assert caminho_api_permitido_para_adm_global("/api/conviventes") is False
-    assert PERFIL_ADM_GLOBAL == "ADM Global"
+    assert PERFIL_ADM_GLOBAL == "ADM Global NFP"
 
 
 def test_caminho_api_adm_producao():
@@ -76,4 +76,4 @@ def test_caminho_api_adm_producao():
     assert caminho_api_permitido_para_adm_producao("/api/chat/conversas", "GET") is True
     assert caminho_api_permitido_para_adm_producao("/api/nfp/dashboard", "GET") is False
     assert caminho_api_permitido_para_adm_producao("/api/nfp/cupons/x/status", "PATCH") is False
-    assert PERFIL_ADM_PRODUCAO == "ADM Produção"
+    assert PERFIL_ADM_PRODUCAO == "ADM Produção NFP"

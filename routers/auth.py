@@ -318,7 +318,11 @@ async def verificar_cpf_unico(
         )
 
 
-def montar_payload_token(usuario: UsuarioDB, projeto: InstituicaoDB | None = None) -> dict:
+def montar_payload_token(
+    usuario: UsuarioDB,
+    projeto: InstituicaoDB | None = None,
+    organizacao: OrganizacaoDB | None = None,
+) -> dict:
     perfil_acesso = normalizar_perfil_acesso(
         getattr(usuario, "perfil_acesso", None)
     )
@@ -333,12 +337,15 @@ def montar_payload_token(usuario: UsuarioDB, projeto: InstituicaoDB | None = Non
         "instituicao_id": usuario.instituicao_id,
         "organizacao_id": getattr(usuario, "organizacao_id", None),
         "projeto_nome": getattr(projeto, "nome_fantasia", None),
+        "organizacao_nome": getattr(organizacao, "nome", None),
         "perfil_acesso": perfil_acesso,
         "is_master": bool(getattr(usuario, "is_master", False)),
         "is_global": bool(getattr(usuario, "is_global", False)),
         "is_manutencao": manutencao,
         "ativo": bool(getattr(usuario, "ativo", True)),
         "token_version": int(getattr(usuario, "token_version", 0) or 0),
+        "compras_modulo_ativo": bool(getattr(usuario, "compras_modulo_ativo", False)),
+        "nfp_captador_vinculo": getattr(usuario, "nfp_captador_vinculo", None),
     }
 
 
@@ -417,6 +424,14 @@ async def login(
     )
     projeto = projeto_resultado.scalar_one_or_none()
 
+    organizacao = None
+    org_id = getattr(usuario, "organizacao_id", None)
+    if org_id:
+        org_resultado = await db.execute(
+            select(OrganizacaoDB).where(OrganizacaoDB.id == org_id)
+        )
+        organizacao = org_resultado.scalar_one_or_none()
+
     registrar_evento_auditoria(
         "login_sucesso",
         usuario_id=usuario.id,
@@ -427,7 +442,7 @@ async def login(
     )
 
     token = criar_access_token(
-        data=montar_payload_token(usuario, projeto),
+        data=montar_payload_token(usuario, projeto, organizacao),
         expires_delta=timedelta(hours=12),
     )
 
@@ -435,7 +450,7 @@ async def login(
         "access_token": token,
         "token_type": "bearer",
         "usuario": {
-            **montar_payload_token(usuario, projeto),
+            **montar_payload_token(usuario, projeto, organizacao),
             "avatar_url": getattr(usuario, "avatar_url", None),
         },
     }

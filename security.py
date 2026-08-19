@@ -69,8 +69,10 @@ bearer_scheme = HTTPBearer(auto_error=True)
 
 PERFIL_GESTOR = "Gestor"
 PERFIL_GLOBAL = "Global"
-PERFIL_ADM_GLOBAL = "ADM Global"
-PERFIL_ADM_PRODUCAO = "ADM Produção"
+PERFIL_ADM_GLOBAL = "ADM Global NFP"
+PERFIL_ADM_PRODUCAO = "ADM Produção NFP"
+PERFIL_ADM_COMPRAS = "ADM Global Compras"
+PERFIL_ADM_PEDIDOS = "ADM Pedidos"
 PERFIL_MANUTENCAO = "Manutenção"
 PERFIL_TECNICO = "Técnico"
 PERFIL_ORIENTADOR = "Orientador"
@@ -83,6 +85,8 @@ PERFIS_ACESSO_VALIDOS = {
     PERFIL_GLOBAL,
     PERFIL_ADM_GLOBAL,
     PERFIL_ADM_PRODUCAO,
+    PERFIL_ADM_COMPRAS,
+    PERFIL_ADM_PEDIDOS,
     PERFIL_MANUTENCAO,
     PERFIL_TECNICO,
     PERFIL_ORIENTADOR,
@@ -95,11 +99,17 @@ PERFIS_ACESSO_VALIDOS = {
 PERFIS_EXCLUIDOS_LISTA_PROJETO = {
     PERFIL_MANUTENCAO,
     PERFIL_ADM_GLOBAL,
+    PERFIL_ADM_COMPRAS,
 }
 
 PERFIS_ADM_NFP_ORG = {
     PERFIL_ADM_GLOBAL,
     PERFIL_ADM_PRODUCAO,
+}
+
+PERFIS_ADM_COMPRAS_ORG = {
+    PERFIL_ADM_COMPRAS,
+    PERFIL_ADM_PEDIDOS,
 }
 
 PERFIS_LEGADOS_MAPEAMENTO = {
@@ -112,10 +122,16 @@ PERFIS_LEGADOS_MAPEAMENTO = {
     "Oficineiro": PERFIL_OFICINEIRO,
     "Adm Global": PERFIL_ADM_GLOBAL,
     "ADMGlobal": PERFIL_ADM_GLOBAL,
+    "ADM Global": PERFIL_ADM_GLOBAL,
     "Adm Producao": PERFIL_ADM_PRODUCAO,
     "Adm Produção": PERFIL_ADM_PRODUCAO,
     "ADMProducao": PERFIL_ADM_PRODUCAO,
     "ADM Produção": PERFIL_ADM_PRODUCAO,
+    "Adm Compras": PERFIL_ADM_COMPRAS,
+    "ADMCompras": PERFIL_ADM_COMPRAS,
+    "ADM Compras": PERFIL_ADM_COMPRAS,
+    "Adm Pedidos": PERFIL_ADM_PEDIDOS,
+    "ADMPedidos": PERFIL_ADM_PEDIDOS,
 }
 
 PREFIXOS_API_PERMITIDOS_OFICINEIRO = (
@@ -143,6 +159,29 @@ PREFIXOS_API_PERMITIDOS_ADM_GLOBAL = (
 
 # ADM Produção: só leitura de cupons (+ auxiliares minimos).
 PREFIXOS_API_BASE_ADM_PRODUCAO = (
+    "/api/auth",
+    "/api/login",
+    "/api/onboarding",
+    "/api/usuarios/me",
+    "/api/passkeys",
+    "/api/health",
+    "/api/chat",
+)
+
+PREFIXOS_API_PERMITIDOS_ADM_COMPRAS = (
+    "/api/compras",
+    "/api/auth",
+    "/api/login",
+    "/api/onboarding",
+    "/api/usuarios/me",
+    "/api/usuarios/organizacao",
+    "/api/passkeys",
+    "/api/health",
+    "/api/chat",
+)
+
+PREFIXOS_API_BASE_ADM_PEDIDOS = (
+    "/api/compras",
     "/api/auth",
     "/api/login",
     "/api/onboarding",
@@ -229,6 +268,30 @@ def usuario_eh_adm_producao(usuario: dict | UsuarioDB | None) -> bool:
     else:
         perfil = normalizar_perfil_acesso(getattr(usuario, "perfil_acesso", None))
     return perfil == PERFIL_ADM_PRODUCAO
+
+
+def usuario_eh_adm_compras(usuario: dict | UsuarioDB | None) -> bool:
+    if not usuario:
+        return False
+    if usuario_eh_manutencao(usuario):
+        return False
+    if isinstance(usuario, dict):
+        perfil = normalizar_perfil_acesso(usuario.get("perfil_acesso"))
+    else:
+        perfil = normalizar_perfil_acesso(getattr(usuario, "perfil_acesso", None))
+    return perfil == PERFIL_ADM_COMPRAS
+
+
+def usuario_eh_adm_pedidos(usuario: dict | UsuarioDB | None) -> bool:
+    if not usuario:
+        return False
+    if usuario_eh_manutencao(usuario):
+        return False
+    if isinstance(usuario, dict):
+        perfil = normalizar_perfil_acesso(usuario.get("perfil_acesso"))
+    else:
+        perfil = normalizar_perfil_acesso(getattr(usuario, "perfil_acesso", None))
+    return perfil == PERFIL_ADM_PEDIDOS
 
 
 def usuario_eh_adm_nfp_org(usuario: dict | UsuarioDB | None) -> bool:
@@ -567,6 +630,7 @@ async def get_usuario_logado(
         "ativo": bool(getattr(usuario, "ativo", True)),
         "token_version": int(getattr(usuario, "token_version", 0) or 0),
         "nfp_captador_vinculo": getattr(usuario, "nfp_captador_vinculo", None),
+        "compras_modulo_ativo": bool(getattr(usuario, "compras_modulo_ativo", False)),
     }
 
 
@@ -720,6 +784,22 @@ def caminho_api_permitido_para_adm_producao(path: str, method: str = "GET") -> b
         return True
     if path == "/api/nfp/agentes/garantir-padrao" and metodo == "POST":
         return True
+    return False
+
+
+def caminho_api_permitido_para_adm_compras(path: str, method: str = "GET") -> bool:
+    del method
+    for prefixo in PREFIXOS_API_PERMITIDOS_ADM_COMPRAS:
+        if path == prefixo or path.startswith(prefixo + "/"):
+            return True
+    return False
+
+
+def caminho_api_permitido_para_adm_pedidos(path: str, method: str = "GET") -> bool:
+    del method
+    for prefixo in PREFIXOS_API_BASE_ADM_PEDIDOS:
+        if path == prefixo or path.startswith(prefixo + "/"):
+            return True
     return False
 
 

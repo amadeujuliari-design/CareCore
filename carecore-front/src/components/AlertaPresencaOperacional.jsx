@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 
 import api from '../services/api';
+import { obterUsuarioSessao, usuarioPodeAcessarModuloOperacional } from '../utils/rbacUtils';
 
 const CHAVE_ALERTA_FECHADO = 'carecore-alerta-operacional-fechado-total';
 
@@ -18,7 +19,12 @@ export default function AlertaPresencaOperacional() {
   });
 
   const carregar = useCallback(async () => {
-    if (!obterTokenLocal() || location.pathname === '/' || document.hidden) return;
+    if (
+      !obterTokenLocal()
+      || location.pathname === '/'
+      || document.hidden
+      || !usuarioPodeAcessarModuloOperacional(obterUsuarioSessao())
+    ) return;
 
     try {
       const response = await api.get('/api/rotina/dashboard-operacional', {
