@@ -15,6 +15,7 @@ export function itemConsumoBateBusca(item, termo) {
     item.observacao,
     item.unidade_medida,
     item.embalagem,
+    item.sinonimos,
     item.categoria_nome,
   ].join(' ');
   return normalizarBuscaItem(blob).includes(termo);

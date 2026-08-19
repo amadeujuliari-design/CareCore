@@ -63,6 +63,14 @@ describe('comprasItensConsumoUtils', () => {
     assert.equal(lista[0].id, '1');
   });
 
+  it('busca também por sinônimo', () => {
+    const lista = filtrarItensConsumo(
+      [{ ...ITENS[0], sinonimos: 'toalha interfolha' }],
+      { busca: 'interfolha', status: 'ativo' },
+    );
+    assert.equal(lista.length, 1);
+  });
+
   it('reusa o item do cadastro quando o erro cita a descrição', () => {
     const achado = itemConsumoPeloDetalheErro(
       ITENS,

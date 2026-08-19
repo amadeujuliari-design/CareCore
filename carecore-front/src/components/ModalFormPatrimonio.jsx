@@ -1,5 +1,6 @@
 import { CampoSelect, CampoTexto } from './UsuariosCampos';
 import { PremiumButton } from './PremiumUI';
+import { rotuloCategoria } from '../utils/comprasCategoriaUtils';
 import {
   PATRIMONIO_ORIGEM,
   PATRIMONIO_PROPRIEDADE,
@@ -12,6 +13,7 @@ export default function ModalFormPatrimonio({
   salvando = false,
   sede = false,
   unidades = [],
+  categorias = [],
   onAtualizar,
   onSalvar,
   onCancelar,
@@ -109,6 +111,13 @@ export default function ModalFormPatrimonio({
                 label="Departamento"
                 value={form.departamento}
                 onChange={(valor) => onAtualizar('departamento', valor)}
+              />
+              <CampoSelect
+                label="Categoria (opcional)"
+                value={form.categoria_id}
+                onChange={(valor) => onAtualizar('categoria_id', valor)}
+                options={categorias.map((c) => ({ value: c.id, label: rotuloCategoria(c) }))}
+                placeholder="Sem categoria"
               />
               <CampoSelect
                 label="Propriedade"

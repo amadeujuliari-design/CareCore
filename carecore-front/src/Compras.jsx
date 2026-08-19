@@ -609,6 +609,7 @@ export default function Compras() {
               <ComprasPatrimonioCadastro
                 itens={patrimonio}
                 unidades={unidades}
+                categorias={categorias}
                 sede={sede}
                 onRecarregar={carregar}
                 onMensagem={({ ok: msgOk, erro: msgErro }) => {

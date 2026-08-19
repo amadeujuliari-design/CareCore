@@ -22,6 +22,10 @@ const ITEM_VAZIO = {
   embalagem: '',
   marca_preferencial: '',
   observacao: '',
+  sinonimos: '',
+  fator_embalagem: '',
+  perecivel: false,
+  equivalente_item_id: '',
   ativo: true,
 };
 
@@ -85,6 +89,10 @@ export default function ComprasItensConsumoCadastro({
       embalagem: item.embalagem || '',
       marca_preferencial: item.marca_preferencial || '',
       observacao: item.observacao || '',
+      sinonimos: item.sinonimos || '',
+      fator_embalagem: item.fator_embalagem != null ? String(item.fator_embalagem) : '',
+      perecivel: Boolean(item.perecivel),
+      equivalente_item_id: item.equivalente_item_id || '',
       ativo: item.ativo !== false,
     });
     setFormAberto(true);
@@ -102,6 +110,10 @@ export default function ComprasItensConsumoCadastro({
         embalagem: form.embalagem.trim() || null,
         marca_preferencial: form.marca_preferencial.trim() || null,
         observacao: form.observacao.trim() || null,
+        sinonimos: form.sinonimos.trim() || null,
+        fator_embalagem: form.fator_embalagem === '' ? null : Number(String(form.fator_embalagem).replace(',', '.')),
+        perecivel: Boolean(form.perecivel),
+        equivalente_item_id: form.equivalente_item_id || null,
         ativo: form.ativo,
       }, form.id || undefined);
       setFormAberto(false);
@@ -370,7 +382,36 @@ export default function ComprasItensConsumoCadastro({
                   value={form.marca_preferencial}
                   onChange={(valor) => setForm((atual) => ({ ...atual, marca_preferencial: valor }))}
                 />
+                <CampoTexto
+                  label="Fator da embalagem"
+                  value={form.fator_embalagem}
+                  onChange={(valor) => setForm((atual) => ({ ...atual, fator_embalagem: valor }))}
+                  placeholder="Ex.: 12 (unidades por fardo)"
+                />
               </div>
+              <CampoTexto
+                label="Sinônimos / nomes equivalentes"
+                value={form.sinonimos}
+                onChange={(valor) => setForm((atual) => ({ ...atual, sinonimos: valor }))}
+                placeholder="Separe por vírgula. Ex.: papel toalha, toalha interfolha"
+              />
+              <CampoSelect
+                label="Item equivalente (opcional)"
+                value={form.equivalente_item_id}
+                onChange={(valor) => setForm((atual) => ({ ...atual, equivalente_item_id: valor }))}
+                options={itens
+                  .filter((item) => item.id !== form.id)
+                  .map((item) => ({ value: item.id, label: item.descricao }))}
+                placeholder="Nenhum"
+              />
+              <label className="flex items-center gap-2 text-sm text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={Boolean(form.perecivel)}
+                  onChange={(e) => setForm((atual) => ({ ...atual, perecivel: e.target.checked }))}
+                />
+                Perecível
+              </label>
               <CampoTexto
                 label="Observação"
                 value={form.observacao}

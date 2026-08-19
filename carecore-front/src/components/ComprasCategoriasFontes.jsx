@@ -1,9 +1,22 @@
 import { useMemo, useState } from 'react';
 
-import { CampoTexto } from './UsuariosCampos';
+import { CampoSelect, CampoTexto } from './UsuariosCampos';
 import { EmptyState, PremiumBadge, PremiumButton, SectionCard } from './PremiumUI';
 import { comprasSalvarCategoria, comprasSalvarFonte } from '../services/comprasService';
 import { conflitosNomeCadastro } from '../utils/comprasCategoriaUtils';
+
+const FONTES_TIPO_OPCOES = [
+  { value: 'convenio', label: 'Convênio' },
+  { value: 'emenda', label: 'Emenda parlamentar' },
+  { value: 'custo_indireto', label: 'Custo indireto' },
+  { value: 'proprio', label: 'Recurso próprio' },
+  { value: 'doacao', label: 'Doação' },
+  { value: 'outros', label: 'Outros' },
+];
+
+function rotuloTipoFonte(tipo) {
+  return FONTES_TIPO_OPCOES.find((item) => item.value === tipo)?.label || tipo || '—';
+}
 
 function ListaNomes({
   titulo,
@@ -16,6 +29,9 @@ function ListaNomes({
   onSalvar,
 }) {
   const [nome, setNome] = useState('');
+  const [tipoFonte, setTipoFonte] = useState('outros');
+  const [vigenciaInicio, setVigenciaInicio] = useState('');
+  const [vigenciaFim, setVigenciaFim] = useState('');
   const [salvando, setSalvando] = useState(false);
   const semelhantes = useMemo(
     () => conflitosNomeCadastro(nome, itens.map((item) => item.nome)),
@@ -28,8 +44,15 @@ function ListaNomes({
     if (!valor || semelhantes.length) return;
     setSalvando(true);
     try {
-      await onSalvar(valor);
+      await onSalvar(
+        tipo === 'fonte'
+          ? { nome: valor, tipo: tipoFonte, vigencia_inicio: vigenciaInicio || null, vigencia_fim: vigenciaFim || null }
+          : valor,
+      );
       setNome('');
+      setTipoFonte('outros');
+      setVigenciaInicio('');
+      setVigenciaFim('');
     } finally {
       setSalvando(false);
     }
@@ -50,10 +73,36 @@ function ListaNomes({
                   placeholder="Digite para ver se já existe"
                 />
               </div>
+              {tipo === 'fonte' ? (
+                <div className="sm:w-56">
+                  <CampoSelect
+                    label="Tipo"
+                    value={tipoFonte}
+                    onChange={setTipoFonte}
+                    options={FONTES_TIPO_OPCOES}
+                  />
+                </div>
+              ) : null}
               <PremiumButton type="submit" disabled={salvando || !nome.trim() || semelhantes.length > 0}>
                 Cadastrar
               </PremiumButton>
             </div>
+            {tipo === 'fonte' ? (
+              <div className="grid gap-2 sm:grid-cols-2">
+                <CampoTexto
+                  label="Vigência inicial (opcional)"
+                  type="date"
+                  value={vigenciaInicio}
+                  onChange={setVigenciaInicio}
+                />
+                <CampoTexto
+                  label="Vigência final (opcional)"
+                  type="date"
+                  value={vigenciaFim}
+                  onChange={setVigenciaFim}
+                />
+              </div>
+            ) : null}
             {semelhantes.length > 0 ? (
               <p className="text-sm text-amber-800">
                 Já existe {tipo} semelhante: {semelhantes.map((item) => `"${item}"`).join(', ')}.
@@ -71,6 +120,8 @@ function ListaNomes({
               <thead>
                 <tr className="text-left text-xs uppercase tracking-wide text-slate-500">
                   <th className="px-2 py-2">Nome</th>
+                  {tipo === 'fonte' ? <th className="px-2 py-2">Tipo</th> : null}
+                  {tipo === 'fonte' ? <th className="px-2 py-2">Vigência</th> : null}
                   <th className="px-2 py-2">{colunaUso}</th>
                   <th className="px-2 py-2">Status</th>
                 </tr>
@@ -79,6 +130,14 @@ function ListaNomes({
                 {itens.map((item) => (
                   <tr key={item.id} className="border-t border-slate-100">
                     <td className="px-2 py-2.5 font-medium text-slate-900">{item.nome}</td>
+                    {tipo === 'fonte' ? (
+                      <td className="px-2 py-2.5">{rotuloTipoFonte(item.tipo)}</td>
+                    ) : null}
+                    {tipo === 'fonte' ? (
+                      <td className="px-2 py-2.5">
+                        {[item.vigencia_inicio, item.vigencia_fim].filter(Boolean).join(' a ') || '—'}
+                      </td>
+                    ) : null}
                     <td className="px-2 py-2.5">{Number(item.qtd_uso) || 0}</td>
                     <td className="px-2 py-2.5">
                       {item.ativo === false
@@ -124,9 +183,10 @@ export default function ComprasCategoriasFontes({
     }
   };
 
-  const salvarFonte = async (nome) => {
+  const salvarFonte = async (payload) => {
     try {
-      await comprasSalvarFonte({ nome });
+      const corpo = typeof payload === 'string' ? { nome: payload } : payload;
+      await comprasSalvarFonte(corpo);
       onMensagem?.({ ok: 'Fonte cadastrada.' });
       await onRecarregar?.();
     } catch (err) {

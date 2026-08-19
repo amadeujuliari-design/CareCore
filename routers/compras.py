@@ -65,9 +65,10 @@ from compras_service import (
     substituir_itens,
     sugestao_janela,
     _mapa_projetos_fornecedores,
+    _mapa_categorias_fornecedores,
     _serializar_fornecedor,
 )
-from compras_regras import usuario_ve_modulo_compras
+from compras_regras import usuario_e_sede_compras, usuario_ve_modulo_compras
 from database import get_db
 from security import get_usuario_logado
 
@@ -166,6 +167,12 @@ class NomeCadastroIn(BaseModel):
     ativo: Optional[bool] = True
 
 
+class FonteIn(NomeCadastroIn):
+    tipo: Optional[str] = None
+    vigencia_inicio: Optional[str] = None
+    vigencia_fim: Optional[str] = None
+
+
 class FornecedorIn(BaseModel):
     nome: str
     categoria_id: Optional[str] = None
@@ -183,6 +190,8 @@ class FornecedorIn(BaseModel):
     cidade: Optional[str] = None
     uf: Optional[str] = None
     atende_geral: Optional[bool] = True
+    prazo_entrega_dias: Optional[int] = None
+    categoria_ids: Optional[list[str]] = None
     projeto_ids: Optional[list[str]] = None
     ativo: Optional[bool] = True
     bloqueado: Optional[bool] = False
@@ -207,6 +216,7 @@ class PatrimonioIn(BaseModel):
     motivo_baixa: Optional[str] = None
     data_baixa: Optional[str] = None
     observacao: Optional[str] = None
+    categoria_id: Optional[str] = None
 
 
 class ModuloIn(BaseModel):
@@ -233,7 +243,10 @@ async def me_acesso(
         is_manutencao=bool(usuario_atual.get("is_manutencao")),
         org_compras_ativo=ativo,
     )
-    sede = usuario_atual.get("perfil_acesso") == "ADM Compras" or bool(usuario_atual.get("is_manutencao"))
+    sede = usuario_e_sede_compras(
+        perfil=usuario_atual.get("perfil_acesso") or "",
+        is_manutencao=bool(usuario_atual.get("is_manutencao")),
+    )
     return {
         "permitido": permitido,
         "compras_ativo": ativo,
@@ -385,6 +398,10 @@ class ItemConsumoIn(BaseModel):
     unidade_medida: Optional[str] = None
     embalagem: Optional[str] = None
     marca_preferencial: Optional[str] = None
+    sinonimos: Optional[str] = None
+    fator_embalagem: Optional[float] = None
+    perecivel: Optional[bool] = None
+    equivalente_item_id: Optional[str] = None
     observacao: Optional[str] = None
     ativo: Optional[bool] = True
 
@@ -411,6 +428,10 @@ async def _resposta_item_consumo(db, usuario, row) -> dict:
         "unidade_medida": row.unidade_medida,
         "embalagem": getattr(row, "embalagem", None),
         "marca_preferencial": row.marca_preferencial,
+        "sinonimos": getattr(row, "sinonimos", None),
+        "fator_embalagem": getattr(row, "fator_embalagem", None),
+        "perecivel": bool(getattr(row, "perecivel", False)),
+        "equivalente_item_id": getattr(row, "equivalente_item_id", None),
         "observacao": row.observacao,
         "ativo": bool(row.ativo),
     }
@@ -481,7 +502,7 @@ async def get_fontes(
 
 @router.post("/fontes")
 async def post_fonte(
-    payload: NomeCadastroIn,
+    payload: FonteIn,
     db: AsyncSession = Depends(get_db),
     usuario_atual: dict = Depends(get_usuario_logado),
 ):
@@ -489,13 +510,13 @@ async def post_fonte(
     row = await salvar_fonte(db, usuario_atual, payload.model_dump())
     await db.commit()
     await db.refresh(row)
-    return {"id": row.id, "nome": row.nome, "ativo": row.ativo}
+    return {"id": row.id, "nome": row.nome, "ativo": row.ativo, "tipo": getattr(row, "tipo", None)}
 
 
 @router.put("/fontes/{fonte_id}")
 async def put_fonte(
     fonte_id: str,
-    payload: NomeCadastroIn,
+    payload: FonteIn,
     db: AsyncSession = Depends(get_db),
     usuario_atual: dict = Depends(get_usuario_logado),
 ):
@@ -517,7 +538,8 @@ async def get_fornecedores(
 
 async def _resposta_fornecedor(db, row) -> dict:
     mapa = await _mapa_projetos_fornecedores(db, [row.id])
-    return _serializar_fornecedor(row, mapa.get(row.id, []))
+    cats = await _mapa_categorias_fornecedores(db, [row.id])
+    return _serializar_fornecedor(row, mapa.get(row.id, []), cats.get(row.id, []))
 
 
 @router.post("/fornecedores")

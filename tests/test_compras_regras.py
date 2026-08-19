@@ -17,6 +17,7 @@ from compras_regras import (
     rotulo_sede_relatorio,
     rotulo_unidade_relatorio,
     sugerir_segunda_semana_util,
+    usuario_e_sede_compras,
     usuario_pode_aprovar_sede,
     usuario_pode_aprovar_unidade,
     usuario_pode_pedir,
@@ -165,6 +166,11 @@ def test_periodo_janela_nao_inverte_nem_muda_de_mes():
 
 def test_rbac_visibilidade():
     assert usuario_ve_modulo_compras(perfil="ADM Global Compras", compras_modulo_ativo=False, org_compras_ativo=False)
+    assert usuario_ve_modulo_compras(perfil="ADM Compras", compras_modulo_ativo=False, org_compras_ativo=False)
+    assert usuario_e_sede_compras(perfil="ADM Global Compras")
+    assert usuario_e_sede_compras(perfil="ADM Compras")
+    assert usuario_pode_aprovar_sede(perfil="ADM Global Compras")
+    assert not usuario_e_sede_compras(perfil="ADM Pedidos")
     assert not usuario_ve_modulo_compras(perfil="ADM Pedidos", compras_modulo_ativo=False, org_compras_ativo=False)
     assert usuario_ve_modulo_compras(perfil="ADM Pedidos", compras_modulo_ativo=False, org_compras_ativo=True)
     assert usuario_ve_modulo_compras(perfil="Gestor", compras_modulo_ativo=True)
@@ -225,3 +231,20 @@ def test_rascunho_so_exclui_sem_tramitacao():
     assert not pedido_rascunho_pode_excluir(
         status="aguardando_cotacao", qtd_cotacoes=0, qtd_anexos=0, qtd_eventos=0, qtd_notas=0,
     )
+
+
+def test_inferir_cadastros_compras():
+    from compras_regras import (
+        inferir_fator_embalagem,
+        inferir_perecivel,
+        inferir_tipo_fonte,
+        normalizar_tipo_fonte,
+    )
+
+    assert inferir_tipo_fonte("Convênio municipal") == "convenio"
+    assert inferir_tipo_fonte("Emenda parlamentar") == "emenda"
+    assert normalizar_tipo_fonte("proprio", nome="X") == "proprio"
+    assert inferir_fator_embalagem("fardo 12 un") == 12.0
+    assert inferir_fator_embalagem("") is None
+    assert inferir_perecivel(categoria_nome="Alimentação")
+    assert not inferir_perecivel(categoria_nome="Higiene e limpeza")

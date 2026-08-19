@@ -69,6 +69,7 @@ export default function ModalFichaPatrimonio({ item, onFechar, onEditar }) {
 
         <div className="mt-4 grid gap-4 sm:grid-cols-2">
           <ItemFicha label="Unidade / Sede" valor={item.instituicao_nome} />
+          <ItemFicha label="Categoria" valor={item.categoria_nome} />
           <ItemFicha label="Nº da etiqueta" valor={item.numero_etiqueta} />
           <ItemFicha label="Localização" valor={item.localizacao} />
           <ItemFicha label="Departamento" valor={item.departamento} />

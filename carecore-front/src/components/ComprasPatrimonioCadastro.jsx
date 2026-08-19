@@ -33,6 +33,7 @@ const ITEM_VAZIO = {
   motivo_baixa: '',
   data_baixa: '',
   observacao: '',
+  categoria_id: '',
 };
 
 function unidadeEhSede(unidade) {
@@ -52,6 +53,7 @@ function badgeSituacao(situacao) {
 export default function ComprasPatrimonioCadastro({
   itens = [],
   unidades = [],
+  categorias = [],
   sede = false,
   onRecarregar,
   onMensagem,
@@ -136,6 +138,7 @@ export default function ComprasPatrimonioCadastro({
       motivo_baixa: item.motivo_baixa || '',
       data_baixa: item.data_baixa || '',
       observacao: item.observacao || '',
+      categoria_id: item.categoria_id || '',
     });
     setErros({});
     setFormAberto(true);
@@ -177,6 +180,7 @@ export default function ComprasPatrimonioCadastro({
         motivo_baixa: form.motivo_baixa.trim() || null,
         data_baixa: form.data_baixa || null,
         observacao: form.observacao.trim() || null,
+        categoria_id: form.categoria_id || null,
       }, form.id || undefined);
       onMensagem?.({ ok: form.id ? 'Bem atualizado.' : 'Bem incluído.' });
       fecharForm();
@@ -383,6 +387,7 @@ export default function ComprasPatrimonioCadastro({
           salvando={salvando}
           sede={sede}
           unidades={unidadesProjeto}
+          categorias={categorias}
           onAtualizar={atualizar}
           onSalvar={salvar}
           onCancelar={fecharForm}

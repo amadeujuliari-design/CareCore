@@ -151,6 +151,27 @@ def limpar_documento(valor) -> str:
     return so_digitos(valor)
 
 
+# INTEGER do Postgres; nº de cadastro NFP é sequencial pequeno.
+_MAX_NUMERO_CADASTRO_BUSCA = 2_147_483_647
+
+
+def numero_cadastro_da_busca(valor) -> Optional[int]:
+    """Converte busca em nº de cadastro só se couber em INTEGER.
+
+    CNPJ/CPF só com dígitos (11 ou 14) estourava o INTEGER no Postgres (500).
+    """
+    texto = str(valor or "").strip()
+    if not texto.isdigit():
+        return None
+    try:
+        numero = int(texto)
+    except ValueError:
+        return None
+    if numero < 0 or numero > _MAX_NUMERO_CADASTRO_BUSCA:
+        return None
+    return numero
+
+
 def limpar_nota(valor) -> str:
     texto = str(valor or "").strip()
     if not texto or texto.lower() == "nan":

@@ -2,7 +2,6 @@ import NfpEnderecoFields from './nfp/NfpEnderecoFields';
 import { CampoSelect, CampoTexto } from './UsuariosCampos';
 import { PremiumButton } from './PremiumUI';
 import { formatarTelefoneInputCompras, telefoneComprasValido } from '../utils/comprasTelefoneUtils';
-import { formatarCNPJ } from '../utils/nfpCadastroUtils';
 import { rotuloCategoria } from '../utils/comprasCategoriaUtils';
 
 export default function ModalFormFornecedor({
@@ -12,6 +11,11 @@ export default function ModalFormFornecedor({
   categorias = [],
   unidades = [],
   onAtualizar,
+  onAtualizarCnpj,
+  onConsultarCnpj,
+  onValidarCnpj,
+  buscandoCnpj = false,
+  avisoConsultaCnpj = '',
   onErroChange,
   onAlternarGeral,
   onAlternarProjeto,
@@ -57,6 +61,11 @@ export default function ModalFormFornecedor({
             <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
               Identificação
             </p>
+            {avisoConsultaCnpj ? (
+              <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                {avisoConsultaCnpj}
+              </div>
+            ) : null}
             <div className="grid gap-3 md:grid-cols-2">
               <CampoTexto
                 label="Nome / razão social"
@@ -66,20 +75,78 @@ export default function ModalFormFornecedor({
                 erro={erros.nome}
                 className="md:col-span-2"
               />
-              <CampoTexto
-                label="CNPJ"
-                value={form.cnpj}
-                onChange={(valor) => onAtualizar('cnpj', formatarCNPJ(valor))}
-                erro={erros.cnpj}
-                placeholder="00.000.000/0000-00"
-              />
+              <div className="flex gap-2 md:col-span-2">
+                <CampoTexto
+                  label="CNPJ"
+                  value={form.cnpj}
+                  onChange={(valor) => onAtualizarCnpj(valor)}
+                  onBlur={() => {
+                    if (!form.cnpj) return;
+                    if (onValidarCnpj && !onValidarCnpj(form.cnpj)) return;
+                    onConsultarCnpj?.(form.cnpj);
+                  }}
+                  erro={erros.cnpj}
+                  placeholder="00.000.000/0000-00"
+                  className="flex-1"
+                />
+                <div className="flex items-end pb-1">
+                  <button
+                    type="button"
+                    disabled={buscandoCnpj}
+                    onClick={() => {
+                      if (!form.cnpj) {
+                        onErroChange('cnpj', 'Informe o CNPJ.');
+                        return;
+                      }
+                      if (onValidarCnpj && !onValidarCnpj(form.cnpj)) return;
+                      onConsultarCnpj?.(form.cnpj, { forcar: true });
+                    }}
+                    className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                  >
+                    {buscandoCnpj ? 'Buscando...' : 'Buscar CNPJ'}
+                  </button>
+                </div>
+              </div>
               <CampoSelect
-                label="Categoria (cotação)"
+                label="Categoria principal"
                 value={form.categoria_id}
-                onChange={(valor) => onAtualizar('categoria_id', valor)}
+                onChange={(valor) => {
+                  const atuais = form.categoria_ids || [];
+                  onAtualizar('categoria_id', valor);
+                  if (valor && !atuais.includes(valor)) {
+                    onAtualizar('categoria_ids', [...atuais, valor]);
+                  }
+                }}
                 options={opcoesCategoria}
                 placeholder="Opcional"
               />
+              <CampoTexto
+                label="Prazo de entrega (dias)"
+                value={form.prazo_entrega_dias}
+                onChange={(valor) => onAtualizar('prazo_entrega_dias', valor.replace(/\D/g, ''))}
+                placeholder="Ex.: 7"
+              />
+              <div className="md:col-span-2">
+                <p className="mb-2 text-sm font-medium text-slate-700">Outras categorias (opcional)</p>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {categorias.map((cat) => (
+                    <label key={cat.id} className="flex cursor-pointer items-start gap-2 rounded-xl border border-slate-100 bg-white px-3 py-2 text-sm">
+                      <input
+                        type="checkbox"
+                        className="mt-0.5 rounded border-slate-300 text-violet-600 focus:ring-violet-500"
+                        checked={(form.categoria_ids || []).includes(cat.id) || form.categoria_id === cat.id}
+                        onChange={(e) => {
+                          const atual = new Set(form.categoria_ids || []);
+                          if (e.target.checked) atual.add(cat.id);
+                          else atual.delete(cat.id);
+                          onAtualizar('categoria_ids', [...atual]);
+                        }}
+                      />
+                      <span>{rotuloCategoria(cat)}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
               <CampoTexto
                 label="Segmento / tipo de serviço"
                 value={form.segmento}

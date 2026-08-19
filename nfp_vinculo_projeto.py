@@ -7,7 +7,7 @@ from typing import Optional
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from models import InstituicaoDB, NfpAgenteCaptadorDB
+from models import InstituicaoDB, NfpAgenteCaptadorDB, OrganizacaoDB
 from nfp_metas_utils import ALIASES_PROJETO_METAS, codigo_projeto_metas, _norm
 from nfp_utils import CAPTADORES_PADRAO, normalizar_agente_captacao, percentual_agente_padrao
 from time_operacional import agora_operacional_naive
@@ -43,6 +43,46 @@ def rotulo_captador_de_projeto(nome_fantasia: Optional[str]) -> str:
 def vinculo_eh_sede(captador: Optional[str]) -> bool:
     n = _norm_cap(captador)
     return n in {_norm_cap(x) for x in ROTULOS_SEDE} or n.startswith("SEDE")
+
+
+CAMPOS_ENDERECO_ORG = (
+    "cep",
+    "logradouro",
+    "numero",
+    "complemento",
+    "bairro",
+    "cidade",
+    "uf",
+    "cnpj",
+    "telefone",
+    "email",
+    "emails_adicionais",
+)
+
+
+def aplicar_endereco_org_na_instituicao_sede(org: OrganizacaoDB, inst: InstituicaoDB) -> bool:
+    """Copia endereço e contato da organização para o projeto SEDE AEB."""
+    mudou = False
+    for campo in CAMPOS_ENDERECO_ORG:
+        val = getattr(org, campo, None)
+        if getattr(inst, campo) != val:
+            setattr(inst, campo, val)
+            mudou = True
+    return mudou
+
+
+async def sincronizar_sede_com_organizacao(db: AsyncSession, org: OrganizacaoDB) -> int:
+    """Alinha todos os projetos Sede da org ao endereço da organização."""
+    if not org or not org.id:
+        return 0
+    rows = (
+        await db.execute(select(InstituicaoDB).where(InstituicaoDB.organizacao_id == org.id))
+    ).scalars().all()
+    n = 0
+    for inst in rows:
+        if vinculo_eh_sede(inst.nome_fantasia) and aplicar_endereco_org_na_instituicao_sede(org, inst):
+            n += 1
+    return n
 
 
 def captadores_compativeis_com_projeto(nome_fantasia: Optional[str]) -> set[str]:

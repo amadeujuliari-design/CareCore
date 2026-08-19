@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from datetime import date, datetime
+from collections import defaultdict
 from typing import Optional
 
 from fastapi import HTTPException, status
@@ -31,6 +32,10 @@ from compras_regras import (
     ESCOPO_PROJETO,
     ESCOPO_SEDE,
     FONTES_PADRAO,
+    inferir_fator_embalagem,
+    inferir_perecivel,
+    inferir_tipo_fonte,
+    normalizar_tipo_fonte,
     PATRIMONIO_ORIGEM_COMPRA,
     PATRIMONIO_SITUACAO_BOM,
     STATUS_AGUARDANDO_COTACAO,
@@ -92,6 +97,7 @@ from models import (
     ComprasItemConsumoDB,
     ComprasFonteRecursoDB,
     ComprasFornecedorDB,
+    ComprasFornecedorCategoriaDB,
     ComprasFornecedorProjetoDB,
     ComprasJanelaDB,
     ComprasJanelaLiberacaoDB,
@@ -196,7 +202,12 @@ async def garantir_cadastros_padrao(db: AsyncSession, organizacao_id: str) -> No
     }
     for nome in FONTES_PADRAO:
         if nome.lower() not in existentes_fonte:
-            db.add(ComprasFonteRecursoDB(organizacao_id=organizacao_id, nome=nome, ativo=True))
+            db.add(ComprasFonteRecursoDB(
+                organizacao_id=organizacao_id,
+                nome=nome,
+                tipo=inferir_tipo_fonte(nome),
+                ativo=True,
+            ))
             existentes_fonte.add(nome.lower())
 
 
@@ -1233,8 +1244,12 @@ async def _mapa_projetos_fornecedores(
 def _serializar_fornecedor(
     f: ComprasFornecedorDB,
     projetos: Optional[list[dict]] = None,
+    categoria_ids: Optional[list[str]] = None,
 ) -> dict:
     lista_projetos = projetos if projetos is not None else []
+    ids_cat = list(categoria_ids or [])
+    if f.categoria_id and f.categoria_id not in ids_cat:
+        ids_cat.insert(0, f.categoria_id)
     atende_geral = bool(getattr(f, "atende_geral", True))
     rotulo = montar_rotulo_projetos(
         atende_geral=atende_geral,
@@ -1242,7 +1257,8 @@ def _serializar_fornecedor(
     )
     return {
         "id": f.id,
-        "categoria_id": f.categoria_id,
+        "categoria_id": f.categoria_id or (ids_cat[0] if ids_cat else None),
+        "categoria_ids": ids_cat,
         "nome": f.nome,
         "cnpj": f.cnpj,
         "segmento": f.segmento,
@@ -1258,6 +1274,7 @@ def _serializar_fornecedor(
         "cidade": f.cidade,
         "uf": f.uf,
         "atende_geral": atende_geral,
+        "prazo_entrega_dias": getattr(f, "prazo_entrega_dias", None),
         "projeto_ids": [p["id"] for p in lista_projetos],
         "projetos": lista_projetos,
         "projetos_atendidos": rotulo or f.projetos_atendidos,
@@ -1280,7 +1297,70 @@ async def listar_fornecedores(db: AsyncSession, usuario: dict, ativos: Optional[
         )
     ).scalars().all()
     mapa_projetos = await _mapa_projetos_fornecedores(db, [f.id for f in rows])
-    return [_serializar_fornecedor(f, mapa_projetos.get(f.id, [])) for f in rows]
+    mapa_cats = await _mapa_categorias_fornecedores(db, [f.id for f in rows])
+    return [
+        _serializar_fornecedor(f, mapa_projetos.get(f.id, []), mapa_cats.get(f.id, []))
+        for f in rows
+    ]
+
+
+async def _mapa_categorias_fornecedores(db: AsyncSession, fornecedor_ids: list[str]) -> dict[str, list[str]]:
+    if not fornecedor_ids:
+        return {}
+    vinculos = (
+        await db.execute(
+            select(
+                ComprasFornecedorCategoriaDB.fornecedor_id,
+                ComprasFornecedorCategoriaDB.categoria_id,
+            ).where(ComprasFornecedorCategoriaDB.fornecedor_id.in_(fornecedor_ids))
+        )
+    ).all()
+    mapa: dict[str, list[str]] = defaultdict(list)
+    for fornecedor_id, categoria_id in vinculos:
+        if categoria_id and categoria_id not in mapa[fornecedor_id]:
+            mapa[fornecedor_id].append(categoria_id)
+    return mapa
+
+
+async def _sync_categorias_fornecedor(
+    db: AsyncSession,
+    fornecedor: ComprasFornecedorDB,
+    categoria_ids: list[str],
+    org_id: str,
+) -> None:
+    limpos: list[str] = []
+    visto: set[str] = set()
+    for cid in categoria_ids:
+        token = (cid or "").strip()
+        if not token or token in visto:
+            continue
+        visto.add(token)
+        limpos.append(token)
+    principal = (fornecedor.categoria_id or "").strip()
+    if principal and principal not in visto:
+        limpos.insert(0, principal)
+        visto.add(principal)
+    if limpos:
+        validos = {
+            row[0]
+            for row in (
+                await db.execute(
+                    select(ComprasCategoriaDB.id).where(
+                        ComprasCategoriaDB.organizacao_id == org_id,
+                        ComprasCategoriaDB.id.in_(limpos),
+                    )
+                )
+            ).all()
+        }
+        limpos = [cid for cid in limpos if cid in validos]
+    await db.execute(
+        delete(ComprasFornecedorCategoriaDB).where(
+            ComprasFornecedorCategoriaDB.fornecedor_id == fornecedor.id
+        )
+    )
+    for cid in limpos:
+        db.add(ComprasFornecedorCategoriaDB(fornecedor_id=fornecedor.id, categoria_id=cid))
+    fornecedor.categoria_id = limpos[0] if limpos else None
 
 
 async def _sync_projetos_fornecedor(
@@ -1374,7 +1454,23 @@ async def salvar_fornecedor(db: AsyncSession, usuario: dict, payload: dict, forn
         fornecedor = ComprasFornecedorDB(organizacao_id=_org_id(usuario))
         db.add(fornecedor)
     fornecedor.nome = nome
-    fornecedor.categoria_id = payload.get("categoria_id") or None
+    ids_cat = payload.get("categoria_ids")
+    if isinstance(ids_cat, str):
+        ids_cat = [p.strip() for p in ids_cat.split(",") if p.strip()]
+    if ids_cat is None:
+        ids_cat = [payload.get("categoria_id")] if payload.get("categoria_id") else []
+    fornecedor.categoria_id = payload.get("categoria_id") or (ids_cat[0] if ids_cat else None)
+    prazo = payload.get("prazo_entrega_dias")
+    if prazo in (None, ""):
+        fornecedor.prazo_entrega_dias = None
+    else:
+        try:
+            dias = int(prazo)
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="Prazo de entrega inválido.")
+        if dias < 0 or dias > 365:
+            raise HTTPException(status_code=400, detail="Prazo de entrega deve ser entre 0 e 365 dias.")
+        fornecedor.prazo_entrega_dias = dias
     fornecedor.cnpj = payload.get("cnpj") or None
     fornecedor.segmento = payload.get("segmento") or None
     fornecedor.contato = payload.get("contato") or None
@@ -1425,6 +1521,8 @@ async def salvar_fornecedor(db: AsyncSession, usuario: dict, payload: dict, forn
     if "bloqueado" in payload:
         fornecedor.bloqueado = bool(payload["bloqueado"])
     fornecedor.observacao = payload.get("observacao") or None
+    await db.flush()
+    await _sync_categorias_fornecedor(db, fornecedor, list(ids_cat or []), _org_id(usuario))
     fornecedor.atualizado_em = agora_operacional_naive()
     return fornecedor
 
@@ -1512,10 +1610,11 @@ async def listar_categorias(db: AsyncSession, usuario: dict) -> list[dict]:
             "nome": r.nome,
             "ativo": bool(r.ativo),
             "qtd_itens": contagem.get(r.id, 0),
+            "ordem": int(getattr(r, "ordem", 0) or 0),
         }
         for r in rows
     ]
-    saida.sort(key=lambda item: (-item["qtd_itens"], (item["nome"] or "").lower()))
+    saida.sort(key=lambda item: (item["ordem"], -item["qtd_itens"], (item["nome"] or "").lower()))
     return saida
 
 
@@ -1583,6 +1682,10 @@ def _serializar_item_consumo(row: ComprasItemConsumoDB, categorias: dict[str, st
         "unidade_medida": row.unidade_medida,
         "embalagem": getattr(row, "embalagem", None),
         "marca_preferencial": row.marca_preferencial,
+        "sinonimos": getattr(row, "sinonimos", None),
+        "fator_embalagem": getattr(row, "fator_embalagem", None),
+        "perecivel": bool(getattr(row, "perecivel", False)),
+        "equivalente_item_id": getattr(row, "equivalente_item_id", None),
         "observacao": row.observacao,
         "ativo": bool(row.ativo),
         "atualizado_em": _iso(row.atualizado_em),
@@ -1667,6 +1770,39 @@ async def salvar_item_consumo(db: AsyncSession, usuario: dict, payload: dict, it
     row.embalagem = limpo["embalagem"]
     row.marca_preferencial = limpo["marca_preferencial"]
     row.observacao = limpo["observacao"]
+    row.sinonimos = (payload.get("sinonimos") or "").strip() or None
+    fator = payload.get("fator_embalagem")
+    if fator in (None, ""):
+        if getattr(row, "fator_embalagem", None) is None:
+            row.fator_embalagem = inferir_fator_embalagem(row.embalagem)
+    else:
+        try:
+            row.fator_embalagem = float(str(fator).replace(",", "."))
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Fator de embalagem inválido.")
+    cats = await _mapa_nomes_categoria(db, org_id)
+    if "perecivel" in payload and payload.get("perecivel") is not None:
+        row.perecivel = bool(payload.get("perecivel"))
+    elif not item_id:
+        row.perecivel = inferir_perecivel(
+            categoria_nome=cats.get(row.categoria_id) if row.categoria_id else None,
+            descricao=row.descricao,
+        )
+    eq_id = (payload.get("equivalente_item_id") or "").strip() or None
+    if eq_id:
+        if eq_id == (item_id or row.id):
+            raise HTTPException(status_code=400, detail="Item equivalente não pode ser o próprio cadastro.")
+        eq_row = (
+            await db.execute(
+                select(ComprasItemConsumoDB.id).where(
+                    ComprasItemConsumoDB.id == eq_id,
+                    ComprasItemConsumoDB.organizacao_id == org_id,
+                )
+            )
+        ).scalar_one_or_none()
+        if not eq_row:
+            raise HTTPException(status_code=400, detail="Item equivalente inválido.")
+    row.equivalente_item_id = eq_id
     if "ativo" in payload:
         row.ativo = bool(payload["ativo"])
     row.atualizado_em = agora_operacional_naive()
@@ -1729,6 +1865,13 @@ async def importar_itens_consumo(db: AsyncSession, usuario: dict, linhas) -> dic
         row.marca_preferencial = limpo["marca_preferencial"] or row.marca_preferencial
         row.observacao = limpo["observacao"] if limpo["observacao"] is not None else row.observacao
         row.ativo = bool(linha.ativo)
+        if getattr(row, "fator_embalagem", None) is None:
+            row.fator_embalagem = inferir_fator_embalagem(getattr(row, "embalagem", None))
+        if not getattr(row, "perecivel", False):
+            row.perecivel = inferir_perecivel(
+                categoria_nome=categoria.nome if categoria else None,
+                descricao=row.descricao,
+            )
         row.atualizado_em = agora_operacional_naive()
     return {
         "criados": criados,
@@ -1827,6 +1970,9 @@ async def listar_fontes(db: AsyncSession, usuario: dict) -> list[dict]:
             "id": r.id,
             "nome": r.nome,
             "ativo": bool(r.ativo),
+            "tipo": getattr(r, "tipo", None) or inferir_tipo_fonte(r.nome),
+            "vigencia_inicio": r.vigencia_inicio.isoformat() if getattr(r, "vigencia_inicio", None) else None,
+            "vigencia_fim": r.vigencia_fim.isoformat() if getattr(r, "vigencia_fim", None) else None,
             "qtd_pedidos": contagem.get(r.id, 0),
         }
         for r in rows
@@ -1866,6 +2012,9 @@ async def salvar_fonte(db: AsyncSession, usuario: dict, payload: dict, fonte_id:
         row = ComprasFonteRecursoDB(organizacao_id=org_id)
         db.add(row)
     row.nome = nome
+    row.tipo = normalizar_tipo_fonte(payload.get("tipo"), nome=nome)
+    row.vigencia_inicio = parse_data_aquisicao(payload.get("vigencia_inicio"))
+    row.vigencia_fim = parse_data_aquisicao(payload.get("vigencia_fim"))
     if "ativo" in payload:
         row.ativo = bool(payload["ativo"])
     return row
@@ -1884,10 +2033,16 @@ async def listar_patrimonio(db: AsyncSession, usuario: dict) -> list[dict]:
     ).scalars().all()
     nomes = await _nomes_instituicao(db, [r.instituicao_id for r in rows if r.instituicao_id])
     org_nome = await _nome_organizacao(db, _org_id(usuario))
-    return [_serializar_patrimonio(r, nomes, org_nome) for r in rows]
+    cats = await _mapa_nomes_categoria(db, _org_id(usuario))
+    return [_serializar_patrimonio(r, nomes, org_nome, cats) for r in rows]
 
 
-def _serializar_patrimonio(r: ComprasPatrimonioDB, nomes: dict[str, str], org_nome: Optional[str]) -> dict:
+def _serializar_patrimonio(
+    r: ComprasPatrimonioDB,
+    nomes: dict[str, str],
+    org_nome: Optional[str],
+    categorias: Optional[dict[str, str]] = None,
+) -> dict:
     escopo = getattr(r, "escopo_unidade", ESCOPO_PROJETO) or ESCOPO_PROJETO
     inst_nome = rotulo_unidade_relatorio(
         escopo_unidade=ESCOPO_SEDE if pedido_escopo_sede(escopo) or not r.instituicao_id else ESCOPO_PROJETO,
@@ -1920,6 +2075,8 @@ def _serializar_patrimonio(r: ComprasPatrimonioDB, nomes: dict[str, str], org_no
         "motivo_baixa": r.motivo_baixa,
         "data_baixa": r.data_baixa.isoformat() if r.data_baixa else None,
         "observacao": r.observacao,
+        "categoria_id": getattr(r, "categoria_id", None),
+        "categoria_nome": (categorias or {}).get(getattr(r, "categoria_id", None)) if getattr(r, "categoria_id", None) else None,
         "criado_em": _iso(r.criado_em),
     }
 
@@ -1948,8 +2105,10 @@ async def salvar_patrimonio(
         if not _sede(usuario) and item.instituicao_id != usuario.get("instituicao_id"):
             raise HTTPException(status_code=403, detail="Sem permissão para editar este bem.")
     else:
-        item = ComprasPatrimonioDB(organizacao_id=_org_id(usuario))
+        item = ComprasPatrimonioDB(organizacao_id=_org_id(usuario), descricao=descricao)
         db.add(item)
+
+    item.descricao = descricao
 
     if _sede(usuario):
         escopo = normalizar_escopo_unidade(payload.get("escopo_unidade") or ESCOPO_PROJETO)
@@ -1978,7 +2137,6 @@ async def salvar_patrimonio(
         item.escopo_unidade = ESCOPO_PROJETO
         item.instituicao_id = inst_id
 
-    item.descricao = descricao
     item.numero_etiqueta = (payload.get("numero_etiqueta") or "").strip() or None
     item.localizacao = (payload.get("localizacao") or "").strip() or None
     item.departamento = (payload.get("departamento") or "").strip() or None
@@ -1991,6 +2149,7 @@ async def salvar_patrimonio(
     item.motivo_baixa = (payload.get("motivo_baixa") or "").strip() or None
     item.data_baixa = parse_data_aquisicao(payload.get("data_baixa"))
     item.observacao = (payload.get("observacao") or "").strip() or None
+    item.categoria_id = (payload.get("categoria_id") or "").strip() or None
     if "valor_centavos" in payload and payload.get("valor_centavos") is not None:
         item.valor_centavos = int(payload["valor_centavos"])
     elif payload.get("valor_reais") not in (None, ""):
@@ -2065,9 +2224,9 @@ def sugestao_janela(competencia: str, *, semana: Optional[int] = None) -> dict:
 
 async def definir_modulo_ativo(db: AsyncSession, usuario: dict, ativo: bool) -> dict:
     if not (
-        usuario.get("is_manutencao")
+        _sede(usuario)
         or usuario.get("is_global")
-        or _perfil(usuario) in {"Global", "ADM Compras"}
+        or _perfil(usuario) == "Global"
     ):
         raise HTTPException(status_code=403, detail="Somente Sede, Global ou Manutenção ativam o módulo.")
     org = (

@@ -68,6 +68,10 @@ export default function ModalFichaFornecedor({
             valor={fornecedor.cnpj && cnpjValido(fornecedor.cnpj) ? formatarCNPJ(fornecedor.cnpj) : fornecedor.cnpj}
           />
           <ItemFicha label="Categoria (cotação)" valor={categoriaNome} />
+          <ItemFicha
+            label="Prazo de entrega"
+            valor={fornecedor.prazo_entrega_dias != null ? `${fornecedor.prazo_entrega_dias} dia(s)` : ''}
+          />
           <ItemFicha label="Segmento / tipo de serviço" valor={fornecedor.segmento} className="sm:col-span-2" />
 
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 sm:col-span-2">

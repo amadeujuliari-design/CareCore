@@ -47,7 +47,7 @@ from security import (
     usuario_eh_manutencao,
 )
 from imagem_upload import eh_arquivo_imagem, padronizar_upload_imagem
-from nfp_vinculo_projeto import garantir_agente_para_projeto
+from nfp_vinculo_projeto import garantir_agente_para_projeto, sincronizar_sede_com_organizacao
 from storage_uploads import (
     StorageErro,
     extrair_bucket_caminho_storage,
@@ -596,6 +596,7 @@ async def atualizar_cadastro_organizacao(
     exigir_manutencao_ou_global(usuario_atual)
     organizacao = await obter_organizacao_para_cadastro(db, usuario_atual, organizacao_id)
     aplicar_cadastro_contato(organizacao, payload, telefone_obrigatorio=False)
+    await sincronizar_sede_com_organizacao(db, organizacao)
     await db.commit()
     await db.refresh(organizacao)
     return organizacao
@@ -662,6 +663,7 @@ async def atualizar_organizacao_cadastro_do_projeto(
         )
     organizacao = await obter_organizacao_para_cadastro(db, usuario_atual, projeto.organizacao_id)
     aplicar_cadastro_contato(organizacao, payload, telefone_obrigatorio=False)
+    await sincronizar_sede_com_organizacao(db, organizacao)
     await db.commit()
     await db.refresh(organizacao)
     return organizacao

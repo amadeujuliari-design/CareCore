@@ -52,6 +52,14 @@ export function cnpjValido(valor) {
   return cnpj.endsWith(primeiroDigito + segundoDigito);
 }
 
+export function mensagemErroCnpjDigitado(valor) {
+  const cnpj = limparMascara(valor);
+  if (!cnpj) return '';
+  if (cnpj.length !== 14) return 'CNPJ incompleto.';
+  if (!cnpjValido(cnpj)) return 'CNPJ inválido.';
+  return '';
+}
+
 export function formatarNumeroCadastro(valor) {
   const n = Number(valor);
   if (!Number.isFinite(n) || n <= 0) return '—';

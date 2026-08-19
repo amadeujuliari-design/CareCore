@@ -318,6 +318,49 @@ def _garantir_schema_compras_escopo_sede(sync_conn):
         cols_cons = {c["name"] for c in inspector.get_columns("compras_itens_consumo")}
         if "embalagem" not in cols_cons:
             sync_conn.execute(text("ALTER TABLE compras_itens_consumo ADD COLUMN embalagem VARCHAR"))
+        if "sinonimos" not in cols_cons:
+            sync_conn.execute(text("ALTER TABLE compras_itens_consumo ADD COLUMN sinonimos TEXT"))
+        if "fator_embalagem" not in cols_cons:
+            sync_conn.execute(text("ALTER TABLE compras_itens_consumo ADD COLUMN fator_embalagem FLOAT"))
+        if "perecivel" not in cols_cons:
+            sync_conn.execute(text("ALTER TABLE compras_itens_consumo ADD COLUMN perecivel BOOLEAN DEFAULT 0"))
+        if "equivalente_item_id" not in cols_cons:
+            sync_conn.execute(text("ALTER TABLE compras_itens_consumo ADD COLUMN equivalente_item_id VARCHAR"))
+
+    if "compras_categorias" in tabelas:
+        cols_cat = {c["name"] for c in inspector.get_columns("compras_categorias")}
+        if "ordem" not in cols_cat:
+            sync_conn.execute(text("ALTER TABLE compras_categorias ADD COLUMN ordem INTEGER DEFAULT 0"))
+
+    if "compras_fontes_recurso" in tabelas:
+        cols_fonte = {c["name"] for c in inspector.get_columns("compras_fontes_recurso")}
+        if "tipo" not in cols_fonte:
+            sync_conn.execute(text("ALTER TABLE compras_fontes_recurso ADD COLUMN tipo VARCHAR DEFAULT 'outros'"))
+        if "vigencia_inicio" not in cols_fonte:
+            sync_conn.execute(text("ALTER TABLE compras_fontes_recurso ADD COLUMN vigencia_inicio DATE"))
+        if "vigencia_fim" not in cols_fonte:
+            sync_conn.execute(text("ALTER TABLE compras_fontes_recurso ADD COLUMN vigencia_fim DATE"))
+
+    if "compras_fornecedores" in tabelas:
+        cols_forn2 = {c["name"] for c in inspector.get_columns("compras_fornecedores")}
+        if "prazo_entrega_dias" not in cols_forn2:
+            sync_conn.execute(text("ALTER TABLE compras_fornecedores ADD COLUMN prazo_entrega_dias INTEGER"))
+
+    if "compras_patrimonio" in tabelas:
+        cols_pat2 = {c["name"] for c in inspector.get_columns("compras_patrimonio")}
+        if "categoria_id" not in cols_pat2:
+            sync_conn.execute(text("ALTER TABLE compras_patrimonio ADD COLUMN categoria_id VARCHAR"))
+
+    if "compras_fornecedor_categorias" not in tabelas:
+        sync_conn.execute(text(
+            "CREATE TABLE IF NOT EXISTS compras_fornecedor_categorias ("
+            "id VARCHAR PRIMARY KEY, "
+            "fornecedor_id VARCHAR NOT NULL, "
+            "categoria_id VARCHAR NOT NULL, "
+            "criado_em DATETIME, "
+            "UNIQUE (fornecedor_id, categoria_id)"
+            ")"
+        ))
 
     if "compras_pedido_itens" in tabelas:
         cols_item = {c["name"] for c in inspector.get_columns("compras_pedido_itens")}
@@ -422,6 +465,16 @@ async def lifespan(app: FastAPI):
                 "ALTER TABLE compras_fornecedores ADD COLUMN bairro VARCHAR",
                 "ALTER TABLE compras_fornecedores ADD COLUMN uf VARCHAR",
                 "ALTER TABLE compras_fornecedores ADD COLUMN atende_geral BOOLEAN DEFAULT 1",
+                "ALTER TABLE compras_fornecedores ADD COLUMN prazo_entrega_dias INTEGER",
+                "ALTER TABLE compras_itens_consumo ADD COLUMN sinonimos TEXT",
+                "ALTER TABLE compras_itens_consumo ADD COLUMN fator_embalagem FLOAT",
+                "ALTER TABLE compras_itens_consumo ADD COLUMN perecivel BOOLEAN DEFAULT 0",
+                "ALTER TABLE compras_itens_consumo ADD COLUMN equivalente_item_id VARCHAR",
+                "ALTER TABLE compras_categorias ADD COLUMN ordem INTEGER DEFAULT 0",
+                "ALTER TABLE compras_fontes_recurso ADD COLUMN tipo VARCHAR DEFAULT 'outros'",
+                "ALTER TABLE compras_fontes_recurso ADD COLUMN vigencia_inicio DATE",
+                "ALTER TABLE compras_fontes_recurso ADD COLUMN vigencia_fim DATE",
+                "ALTER TABLE compras_patrimonio ADD COLUMN categoria_id VARCHAR",
                 "ALTER TABLE compras_patrimonio ADD COLUMN numero_etiqueta VARCHAR",
                 "ALTER TABLE compras_patrimonio ADD COLUMN departamento VARCHAR",
                 "ALTER TABLE compras_patrimonio ADD COLUMN propriedade VARCHAR DEFAULT 'aeb'",

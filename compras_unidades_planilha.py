@@ -16,6 +16,7 @@ from compras_unidades_nome_utils import (
     nome_fantasia_de_aba,
     usa_cnpj_matriz,
 )
+from nfp_metas_utils import codigo_projeto_metas
 
 _ABAS_IGNORAR = frozenset({"CALENDARIO", "CALENDARIO ", "CALENDÁRIO", "CALENDÁRIO "})
 _RE_CNPJ = re.compile(r"\d{2}\.?\d{3}\.?\d{3}/?\d{4}-?\d{2}")
@@ -95,12 +96,14 @@ def _parse_endereco(blob: str) -> dict[str, Optional[str]]:
     end_m = _RE_ENDERECO.search(blob)
     texto_end = (end_m.group(1) if end_m else "").strip(" .|")
     if not texto_end:
-        # fallback: trecho após CNPJ com padrão "Rua ..."
-        pos = blob.upper().find("RUA ")
-        if pos < 0:
-            pos = blob.upper().find("AV")
-        if pos >= 0:
-            texto_end = blob[pos:].split("CEP")[0].strip(" .")
+        # Não usar "AV" solto: casa "AVIS" (itens de pedido da aba SEDE).
+        logradouro_m = re.search(
+            r"\b(?:RUA|AVENIDA|AV\.|ALAMEDA|ESTRADA|PRA[CÇ]A|R\.)\s+",
+            blob,
+            re.I,
+        )
+        if logradouro_m:
+            texto_end = blob[logradouro_m.start() :].split("CEP")[0].strip(" .")
     if not texto_end:
         return out
 
@@ -130,7 +133,18 @@ def _parse_aba(ws, aba: str, fonte: str) -> Optional[UnidadePlanilha]:
     cnpj = _extrair_cnpj(blob)
     titulo = _titulo_aba(ws)
     nome = nome_fantasia_de_aba(aba, titulo)
-    end = _parse_endereco(blob)
+    # Sede usa o endereço da organização, não o blob da planilha (itens de pedido).
+    if codigo_projeto_metas(nome) == "SEDE":
+        end = {
+            "cep": None,
+            "logradouro": None,
+            "numero": None,
+            "bairro": None,
+            "cidade": None,
+            "uf": None,
+        }
+    else:
+        end = _parse_endereco(blob)
     return UnidadePlanilha(
         aba=aba.strip(),
         nome_fantasia=nome,

@@ -1983,6 +1983,7 @@ class ComprasCategoriaDB(Base):
     organizacao_id = Column(String, ForeignKey("organizacoes.id"), nullable=False)
     nome = Column(String, nullable=False)
     ativo = Column(Boolean, default=True, nullable=False)
+    ordem = Column(Integer, nullable=False, default=0)
     criado_em = Column(DateTime, default=agora_operacional_naive)
 
 
@@ -2002,6 +2003,10 @@ class ComprasItemConsumoDB(Base):
     unidade_medida = Column(String, nullable=True)
     embalagem = Column(String, nullable=True)
     marca_preferencial = Column(String, nullable=True)
+    sinonimos = Column(Text, nullable=True)
+    fator_embalagem = Column(Float, nullable=True)
+    perecivel = Column(Boolean, default=False, nullable=False)
+    equivalente_item_id = Column(String, nullable=True)
     observacao = Column(Text, nullable=True)
     ativo = Column(Boolean, default=True, nullable=False)
     criado_em = Column(DateTime, default=agora_operacional_naive)
@@ -2018,6 +2023,9 @@ class ComprasFonteRecursoDB(Base):
     id = Column(String, primary_key=True, default=get_uuid)
     organizacao_id = Column(String, ForeignKey("organizacoes.id"), nullable=False)
     nome = Column(String, nullable=False)
+    tipo = Column(String, nullable=False, default="outros")
+    vigencia_inicio = Column(Date, nullable=True)
+    vigencia_fim = Column(Date, nullable=True)
     ativo = Column(Boolean, default=True, nullable=False)
     criado_em = Column(DateTime, default=agora_operacional_naive)
 
@@ -2048,6 +2056,7 @@ class ComprasFornecedorDB(Base):
     uf = Column(String, nullable=True)
     projetos_atendidos = Column(Text, nullable=True)
     atende_geral = Column(Boolean, default=True, nullable=False)
+    prazo_entrega_dias = Column(Integer, nullable=True)
     ativo = Column(Boolean, default=True, nullable=False)
     bloqueado = Column(Boolean, default=False, nullable=False)
     observacao = Column(Text, nullable=True)
@@ -2065,6 +2074,19 @@ class ComprasFornecedorProjetoDB(Base):
     id = Column(String, primary_key=True, default=get_uuid)
     fornecedor_id = Column(String, ForeignKey("compras_fornecedores.id", ondelete="CASCADE"), nullable=False)
     instituicao_id = Column(String, ForeignKey("instituicoes.id", ondelete="CASCADE"), nullable=False)
+    criado_em = Column(DateTime, default=agora_operacional_naive)
+
+
+class ComprasFornecedorCategoriaDB(Base):
+    __tablename__ = "compras_fornecedor_categorias"
+    __table_args__ = (
+        UniqueConstraint("fornecedor_id", "categoria_id", name="uq_compras_fornecedor_categoria"),
+        Index("ix_compras_fornecedor_cat_forn", "fornecedor_id"),
+    )
+
+    id = Column(String, primary_key=True, default=get_uuid)
+    fornecedor_id = Column(String, ForeignKey("compras_fornecedores.id", ondelete="CASCADE"), nullable=False)
+    categoria_id = Column(String, ForeignKey("compras_categorias.id", ondelete="CASCADE"), nullable=False)
     criado_em = Column(DateTime, default=agora_operacional_naive)
 
 
@@ -2258,6 +2280,7 @@ class ComprasPatrimonioDB(Base):
     motivo_baixa = Column(String, nullable=True)
     data_baixa = Column(Date, nullable=True)
     observacao = Column(Text, nullable=True)
+    categoria_id = Column(String, ForeignKey("compras_categorias.id"), nullable=True)
     escopo_unidade = Column(String, nullable=False, default="projeto")
     criado_em = Column(DateTime, default=agora_operacional_naive)
     atualizado_em = Column(DateTime, default=agora_operacional_naive, onupdate=agora_operacional_naive)

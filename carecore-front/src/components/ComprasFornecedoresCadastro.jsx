@@ -5,13 +5,15 @@ import ModalFichaFornecedor from './ModalFichaFornecedor';
 import ModalFormFornecedor from './ModalFormFornecedor';
 import { EmptyState, PremiumBadge, PremiumButton, SectionCard } from './PremiumUI';
 import { comprasSalvarFornecedor, comprasUnidades } from '../services/comprasService';
+import { consultarCnpjReceita } from '../services/cnpjConsultaService';
 import { rotuloProjetosFornecedor } from '../utils/comprasFornecedorUtils';
 import {
   formatarTelefoneCompras,
   normalizarTelefoneComprasParaSalvar,
   telefoneComprasValido,
 } from '../utils/comprasTelefoneUtils';
-import { cnpjValido, formatarCNPJ } from '../utils/nfpCadastroUtils';
+import { formatarCNPJ, mensagemErroCnpjDigitado } from '../utils/nfpCadastroUtils';
+import { aplicarConsultaCnpjNoFornecedor, textoAvisoConsultaCnpj } from '../utils/nfpConsultaCnpjUtils';
 import { emailValido, formatarCEP, limparMascara } from '../utils/usuariosUtils';
 
 const FORNECEDOR_VAZIO = {
@@ -19,6 +21,8 @@ const FORNECEDOR_VAZIO = {
   nome: '',
   cnpj: '',
   categoria_id: '',
+  categoria_ids: [],
+  prazo_entrega_dias: '',
   segmento: '',
   contato: '',
   telefone: '',
@@ -71,6 +75,9 @@ export default function ComprasFornecedoresCadastro({
   const [unidades, setUnidades] = useState([]);
   const [busca, setBusca] = useState('');
   const [filtroStatus, setFiltroStatus] = useState('ativo');
+  const [buscandoCnpj, setBuscandoCnpj] = useState(false);
+  const [avisoConsultaCnpj, setAvisoConsultaCnpj] = useState('');
+  const [cnpjConsultado, setCnpjConsultado] = useState('');
 
   useEffect(() => {
     let ativo = true;
@@ -103,10 +110,60 @@ export default function ComprasFornecedoresCadastro({
     setErros((atual) => ({ ...atual, [campo]: '' }));
   }, []);
 
+  const consultarEstabelecimento = useCallback(async (valorCnpj, { forcar = false } = {}) => {
+    const limpo = limparMascara(valorCnpj);
+    if (limpo.length !== 14 || mensagemErroCnpjDigitado(limpo)) return;
+    if (!forcar && limpo === cnpjConsultado) return;
+
+    setCnpjConsultado(limpo);
+    setBuscandoCnpj(true);
+    try {
+      const dados = await consultarCnpjReceita(limpo);
+      if (!dados) {
+        setAvisoConsultaCnpj('');
+        return;
+      }
+      setForm((atual) => {
+        if (limparMascara(atual.cnpj) !== limpo) return atual;
+        return aplicarConsultaCnpjNoFornecedor(atual, dados, {
+          somenteVazios: Boolean(atual.id),
+        });
+      });
+      setAvisoConsultaCnpj(textoAvisoConsultaCnpj(dados.situacao));
+    } catch {
+      setAvisoConsultaCnpj('');
+    } finally {
+      setBuscandoCnpj(false);
+    }
+  }, [cnpjConsultado]);
+
+  const atualizarCnpj = useCallback((valor) => {
+    const formatado = formatarCNPJ(valor);
+    atualizar('cnpj', formatado);
+    setAvisoConsultaCnpj('');
+    const limpo = limparMascara(formatado);
+    if (limpo.length === 14) {
+      const mensagem = mensagemErroCnpjDigitado(formatado);
+      if (mensagem) setErros((atual) => ({ ...atual, cnpj: mensagem }));
+      else consultarEstabelecimento(formatado);
+    }
+  }, [atualizar, consultarEstabelecimento]);
+
+  const validarCnpjCampo = useCallback((valorCnpj) => {
+    const mensagem = mensagemErroCnpjDigitado(valorCnpj);
+    if (mensagem) {
+      setErros((atual) => ({ ...atual, cnpj: mensagem }));
+      return false;
+    }
+    return true;
+  }, []);
+
   const abrirNovo = useCallback(() => {
     setFicha(null);
     setForm(FORNECEDOR_VAZIO);
     setErros({});
+    setAvisoConsultaCnpj('');
+    setCnpjConsultado('');
     setFormAberto(true);
   }, []);
 
@@ -116,6 +173,10 @@ export default function ComprasFornecedoresCadastro({
       ...FORNECEDOR_VAZIO,
       ...fornecedor,
       categoria_id: fornecedor.categoria_id || '',
+      categoria_ids: Array.isArray(fornecedor.categoria_ids)
+        ? [...fornecedor.categoria_ids]
+        : (fornecedor.categoria_id ? [fornecedor.categoria_id] : []),
+      prazo_entrega_dias: fornecedor.prazo_entrega_dias != null ? String(fornecedor.prazo_entrega_dias) : '',
       cnpj: fornecedor.cnpj ? formatarCNPJ(fornecedor.cnpj) : '',
       cep: fornecedor.cep ? formatarCEP(fornecedor.cep) : '',
       uf: fornecedor.uf || 'SP',
@@ -126,6 +187,8 @@ export default function ComprasFornecedoresCadastro({
       projeto_ids: Array.isArray(fornecedor.projeto_ids) ? [...fornecedor.projeto_ids] : [],
     });
     setErros({});
+    setAvisoConsultaCnpj('');
+    setCnpjConsultado(fornecedor.cnpj ? limparMascara(fornecedor.cnpj) : '');
     setFormAberto(true);
   }, []);
 
@@ -133,12 +196,17 @@ export default function ComprasFornecedoresCadastro({
     setFormAberto(false);
     setForm(FORNECEDOR_VAZIO);
     setErros({});
+    setAvisoConsultaCnpj('');
+    setCnpjConsultado('');
   }, []);
 
   const validar = useCallback(() => {
     const novos = {};
     if (!form.nome.trim()) novos.nome = 'Informe o nome do fornecedor.';
-    if (form.cnpj && !cnpjValido(form.cnpj)) novos.cnpj = 'CNPJ inválido.';
+    if (form.cnpj) {
+      const mensagemCnpj = mensagemErroCnpjDigitado(form.cnpj);
+      if (mensagemCnpj) novos.cnpj = mensagemCnpj;
+    }
     if (form.email && !emailValido(form.email)) novos.email = 'E-mail inválido.';
     if (form.email_empresa && !emailValido(form.email_empresa)) novos.email_empresa = 'E-mail da empresa inválido.';
     if (form.telefone && !telefoneComprasValido(form.telefone)) novos.telefone = 'Telefone inválido.';
@@ -152,6 +220,10 @@ export default function ComprasFornecedoresCadastro({
   const montarPayload = useCallback(() => ({
     nome: form.nome.trim(),
     categoria_id: form.categoria_id || null,
+    categoria_ids: [...new Set([form.categoria_id, ...(form.categoria_ids || [])].filter(Boolean))],
+    prazo_entrega_dias: form.prazo_entrega_dias === '' || form.prazo_entrega_dias == null
+      ? null
+      : Number(form.prazo_entrega_dias),
     cnpj: form.cnpj ? limparMascara(form.cnpj) : null,
     segmento: form.segmento.trim() || null,
     contato: form.contato.trim() || null,
@@ -357,6 +429,11 @@ export default function ComprasFornecedoresCadastro({
           categorias={categorias}
           unidades={unidades}
           onAtualizar={atualizar}
+          onAtualizarCnpj={atualizarCnpj}
+          onConsultarCnpj={consultarEstabelecimento}
+          onValidarCnpj={validarCnpjCampo}
+          buscandoCnpj={buscandoCnpj}
+          avisoConsultaCnpj={avisoConsultaCnpj}
           onErroChange={(campo, mensagem) => setErros((atual) => ({ ...atual, [campo]: mensagem }))}
           onAlternarGeral={alternarGeral}
           onAlternarProjeto={alternarProjeto}

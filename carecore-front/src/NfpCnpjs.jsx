@@ -17,6 +17,7 @@ import {
   nfpObterCnpj,
   nfpObterCpfCaptado,
 } from './services/nfpService';
+import { consultarCnpjReceita } from './services/cnpjConsultaService';
 import {
   exportarCadastroNfpCnpjs,
   imprimirCadastroNfpCnpjs,
@@ -38,9 +39,11 @@ import {
   erroApiNfp,
   formatarCNPJ,
   formatarNumeroCadastro,
+  mensagemErroCnpjDigitado,
   montarEnderecoPayload,
   opcoesAgentesCaptacao,
 } from './utils/nfpCadastroUtils';
+import { aplicarConsultaCnpjNoForm, textoAvisoConsultaCnpj } from './utils/nfpConsultaCnpjUtils';
 import { decodificarPayloadJwt } from './utils/jwtUtils';
 import { usuarioSomenteLeituraNfp } from './utils/rbacUtils';
 
@@ -131,6 +134,9 @@ export default function NfpCnpjs() {
   const [formCnpj, setFormCnpj] = useState(FORM_CNPJ_INICIAL);
   const [formCpf, setFormCpf] = useState(FORM_CPF_INICIAL);
   const [errosCampo, setErrosCampo] = useState({});
+  const [buscandoCnpj, setBuscandoCnpj] = useState(false);
+  const [avisoConsultaCnpj, setAvisoConsultaCnpj] = useState('');
+  const [cnpjConsultado, setCnpjConsultado] = useState('');
 
   const opcoesCaptador = useMemo(
     () => opcoesAgentesCaptacao(agentes).filter((op) => op.value && op.value !== 'AEB'),
@@ -228,6 +234,39 @@ export default function NfpCnpjs() {
     setErrosCampo((atual) => ({ ...atual, [campo]: mensagem }));
   };
 
+  const consultarEstabelecimento = useCallback(async (valorCnpj, { forcar = false } = {}) => {
+    if (somenteLeitura) return;
+    const limpo = limparMascara(valorCnpj);
+    if (limpo.length !== 14 || !cnpjValido(limpo)) return;
+    if (!forcar && limpo === cnpjConsultado) return;
+
+    setCnpjConsultado(limpo);
+    setBuscandoCnpj(true);
+    try {
+      const dados = await consultarCnpjReceita(limpo);
+      if (!dados) {
+        setAvisoConsultaCnpj('');
+        return;
+      }
+      setFormCnpj((atual) => {
+        if (limparMascara(atual.cnpj) !== limpo) return atual;
+        const lojaAntes = atual.loja;
+        const proximo = aplicarConsultaCnpjNoForm(atual, dados, {
+          somenteVazios: Boolean(editandoId),
+        });
+        if (proximo.loja !== lojaAntes) {
+          proximo.cnpj_conferir = nomeGenerico(proximo.loja);
+        }
+        return proximo;
+      });
+      setAvisoConsultaCnpj(textoAvisoConsultaCnpj(dados.situacao));
+    } catch {
+      setAvisoConsultaCnpj('');
+    } finally {
+      setBuscandoCnpj(false);
+    }
+  }, [cnpjConsultado, editandoId, somenteLeitura]);
+
   const atualizarCampoCnpj = (campo, valor) => {
     let valorFinal = valor;
     if (campo === 'cnpj') valorFinal = formatarCNPJ(valor);
@@ -238,6 +277,23 @@ export default function NfpCnpjs() {
       if (campo === 'loja' && !editandoId) proximo.cnpj_conferir = nomeGenerico(valorFinal);
       return proximo;
     });
+    if (campo === 'cnpj') {
+      setAvisoConsultaCnpj('');
+      const limpo = limparMascara(valorFinal);
+      if (limpo.length === 14) {
+        if (cnpjValido(limpo)) consultarEstabelecimento(valorFinal);
+        else setErrosCampo((atual) => ({ ...atual, cnpj: 'CNPJ inválido.' }));
+      }
+    }
+  };
+
+  const validarCnpjCampo = (valorCnpj) => {
+    const mensagem = mensagemErroCnpjDigitado(valorCnpj);
+    if (mensagem) {
+      setErrosCampo((atual) => ({ ...atual, cnpj: mensagem }));
+      return false;
+    }
+    return true;
   };
 
   const atualizarCampoCpf = (campo, valor) => {
@@ -251,7 +307,10 @@ export default function NfpCnpjs() {
   const validarFormCnpj = () => {
     const erros = {};
     if (!formCnpj.cnpj.trim()) erros.cnpj = 'Informe o CNPJ.';
-    else if (!cnpjValido(formCnpj.cnpj)) erros.cnpj = 'CNPJ inválido.';
+    else {
+      const mensagemCnpj = mensagemErroCnpjDigitado(formCnpj.cnpj);
+      if (mensagemCnpj) erros.cnpj = mensagemCnpj;
+    }
     if (!formCnpj.captador) erros.captador = 'Selecione o captador.';
     if (formCnpj.email && !emailValido(formCnpj.email)) erros.email = 'E-mail inválido.';
     if (formCnpj.telefone && !telefoneValido(formCnpj.telefone)) erros.telefone = 'Telefone inválido.';
@@ -300,6 +359,8 @@ export default function NfpCnpjs() {
     limparAlertas();
     setEditandoId(null);
     setErrosCampo({});
+    setAvisoConsultaCnpj('');
+    setCnpjConsultado('');
     if (aba === 'cpfs') {
       setFormCpf({ ...FORM_CPF_INICIAL, captador: opcoesCaptador[0]?.value || '' });
     } else {
@@ -313,6 +374,8 @@ export default function NfpCnpjs() {
     setEditandoId(item.id);
     setFormCnpj(montarFormCnpj(item));
     setErrosCampo({});
+    setAvisoConsultaCnpj('');
+    setCnpjConsultado(limparMascara(item.cnpj));
     setTela('form');
     try {
       setFormCnpj(montarFormCnpj(await nfpObterCnpj(item.id)));
@@ -727,6 +790,11 @@ export default function NfpCnpjs() {
                   : (editandoId ? 'Editar CNPJ / loja' : 'Novo CNPJ / loja')}
               </h3>
               <fieldset disabled={somenteLeitura} className="min-w-0 border-0 p-0">
+                {avisoConsultaCnpj ? (
+                  <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                    {avisoConsultaCnpj}
+                  </div>
+                ) : null}
                 <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
                   <div>
                     <label className="mb-1 block text-xs font-semibold text-slate-600">Nº cadastro</label>
@@ -736,13 +804,37 @@ export default function NfpCnpjs() {
                         : 'Gerado automaticamente ao salvar'}
                     </div>
                   </div>
-                  <CampoTexto
-                    label="CNPJ"
-                    value={formCnpj.cnpj}
-                    onChange={(valor) => atualizarCampoCnpj('cnpj', valor)}
-                    erro={errosCampo.cnpj}
-                    required
-                  />
+                  <div className="md:col-span-2 flex gap-2">
+                    <CampoTexto
+                      label="CNPJ"
+                      value={formCnpj.cnpj}
+                      onChange={(valor) => atualizarCampoCnpj('cnpj', valor)}
+                      onBlur={() => {
+                        if (!validarCnpjCampo(formCnpj.cnpj)) return;
+                        consultarEstabelecimento(formCnpj.cnpj);
+                      }}
+                      erro={errosCampo.cnpj}
+                      required
+                      className="flex-1"
+                    />
+                    <div className="flex items-end pb-1">
+                      <button
+                        type="button"
+                        disabled={buscandoCnpj || somenteLeitura}
+                        onClick={() => {
+                          if (!limparMascara(formCnpj.cnpj)) {
+                            setErrosCampo((atual) => ({ ...atual, cnpj: 'Informe o CNPJ.' }));
+                            return;
+                          }
+                          if (!validarCnpjCampo(formCnpj.cnpj)) return;
+                          consultarEstabelecimento(formCnpj.cnpj, { forcar: true });
+                        }}
+                        className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                      >
+                        {buscandoCnpj ? 'Buscando...' : 'Buscar CNPJ'}
+                      </button>
+                    </div>
+                  </div>
                   <CampoTexto
                     label="Loja / nome fantasia"
                     value={formCnpj.loja}

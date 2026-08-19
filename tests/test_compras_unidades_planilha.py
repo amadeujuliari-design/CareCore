@@ -9,7 +9,7 @@ from compras_unidades_nome_utils import (
     rotulo_nfp_canonico,
     usa_cnpj_matriz,
 )
-from compras_unidades_planilha import extrair_unidades_compras_aeb, mesclar_unidades
+from compras_unidades_planilha import _parse_endereco, extrair_unidades_compras_aeb, mesclar_unidades
 
 ROOT = Path(r"c:\Users\AClaudio\Downloads\Arquivos Módulo Compras")
 
@@ -20,6 +20,15 @@ def test_nome_aba_siat():
 
 def test_nome_aba_cei_belem():
     assert nome_fantasia_de_aba("CEI BELEM", "CEI BELEM") == "CEI BELÉM"
+
+
+def test_parse_endereco_nao_usa_avis_como_avenida():
+    blob = (
+        "SEDE AEB 61.705.877/0001-72 AVIS 1 CAIXA DE COPO DESCARTAVEL 180ml "
+        "10 PACOTES DE BOLACHA AGUA E SAL CEP 00000-000"
+    )
+    end = _parse_endereco(blob)
+    assert end["logradouro"] is None or "AVIS" not in (end["logradouro"] or "").upper()
 
 
 def test_cnpj_matriz():

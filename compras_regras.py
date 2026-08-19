@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta
+import re
+import unicodedata
 from typing import Optional
 
 TIPO_CONSUMO = "consumo"
@@ -86,6 +88,22 @@ FONTES_PADRAO = (
     "Doação",
     "Outros",
 )
+
+FONTE_TIPO_CONVENIO = "convenio"
+FONTE_TIPO_EMENDA = "emenda"
+FONTE_TIPO_CUSTO_INDIRETO = "custo_indireto"
+FONTE_TIPO_PROPRIO = "proprio"
+FONTE_TIPO_DOACAO = "doacao"
+FONTE_TIPO_OUTROS = "outros"
+FONTES_TIPOS = (
+    FONTE_TIPO_CONVENIO,
+    FONTE_TIPO_EMENDA,
+    FONTE_TIPO_CUSTO_INDIRETO,
+    FONTE_TIPO_PROPRIO,
+    FONTE_TIPO_DOACAO,
+    FONTE_TIPO_OUTROS,
+)
+CATEGORIAS_PERECIVEIS = frozenset({"alimentação", "alimentacao", "carne", "peixe"})
 
 PATRIMONIO_PROPRIEDADE_AEB = "aeb"
 PATRIMONIO_PROPRIEDADE_PUBLICO = "publico"
@@ -296,6 +314,13 @@ def pode_enviar_consumo(
     return True, ""
 
 
+def _perfil_adm_compras(perfil: str) -> str:
+    texto = (perfil or "").strip()
+    if texto in {"ADM Compras", "Adm Compras", "ADMCompras"}:
+        return PERFIL_ADM_COMPRAS
+    return texto
+
+
 def usuario_ve_modulo_compras(
     *,
     perfil: str,
@@ -305,8 +330,9 @@ def usuario_ve_modulo_compras(
 ) -> bool:
     if is_manutencao:
         return True
+    perfil_n = _perfil_adm_compras(perfil)
     # ADM Compras entra mesmo com o SaaS desligado — é quem liga o módulo da org.
-    if perfil == PERFIL_ADM_COMPRAS:
+    if perfil_n == PERFIL_ADM_COMPRAS:
         return True
     if not org_compras_ativo:
         return False
@@ -352,11 +378,60 @@ def usuario_pode_aprovar_unidade(
 
 
 def usuario_pode_aprovar_sede(*, perfil: str, is_manutencao: bool = False) -> bool:
-    return is_manutencao or perfil == PERFIL_ADM_COMPRAS
+    return is_manutencao or _perfil_adm_compras(perfil) == PERFIL_ADM_COMPRAS
 
 
 def usuario_e_sede_compras(*, perfil: str, is_manutencao: bool = False) -> bool:
-    return is_manutencao or perfil == PERFIL_ADM_COMPRAS
+    return is_manutencao or _perfil_adm_compras(perfil) == PERFIL_ADM_COMPRAS
+
+
+def _norm_tipo_texto(valor: Optional[str]) -> str:
+    bruto = unicodedata.normalize("NFKD", (valor or "").strip().lower())
+    return "".join(ch for ch in bruto if not unicodedata.combining(ch))
+
+
+def inferir_tipo_fonte(nome: Optional[str]) -> str:
+    chave = _norm_tipo_texto(nome)
+    if "convenio" in chave:
+        return FONTE_TIPO_CONVENIO
+    if "emenda" in chave:
+        return FONTE_TIPO_EMENDA
+    if "indireto" in chave:
+        return FONTE_TIPO_CUSTO_INDIRETO
+    if "proprio" in chave or "próprio" in chave:
+        return FONTE_TIPO_PROPRIO
+    if "doacao" in chave or "doação" in chave:
+        return FONTE_TIPO_DOACAO
+    return FONTE_TIPO_OUTROS
+
+
+def inferir_fator_embalagem(embalagem: Optional[str]) -> Optional[float]:
+    texto = (embalagem or "").strip()
+    if not texto:
+        return None
+    achado = re.search(r"(\d+(?:[.,]\d+)?)", texto)
+    if not achado:
+        return None
+    try:
+        numero = float(achado.group(1).replace(",", "."))
+    except ValueError:
+        return None
+    if numero <= 0 or numero > 10_000:
+        return None
+    return numero
+
+
+def inferir_perecivel(*, categoria_nome: Optional[str] = None, descricao: Optional[str] = None) -> bool:
+    blob = f"{categoria_nome or ''} {descricao or ''}"
+    chave = _norm_tipo_texto(blob)
+    return any(token in chave for token in CATEGORIAS_PERECIVEIS)
+
+
+def normalizar_tipo_fonte(valor: Optional[str], *, nome: Optional[str] = None) -> str:
+    texto = (valor or "").strip().lower()
+    if texto in FONTES_TIPOS:
+        return texto
+    return inferir_tipo_fonte(nome or texto)
 
 
 def exige_tres_cotacoes(tipo: str) -> bool:

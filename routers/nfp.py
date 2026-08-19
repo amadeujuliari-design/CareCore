@@ -66,6 +66,7 @@ from nfp_utils import (
     limpar_documento,
     nome_loja_para_cadastro,
     normalizar_agente_captacao,
+    numero_cadastro_da_busca,
     percentual_agente_padrao,
     NOME_GENERICO_CONFERIR,
 )
@@ -496,8 +497,12 @@ async def listar_doadores(
             NfpDoadorDB.cpf.ilike(termo),
             cast(NfpDoadorDB.numero_cadastro, String).ilike(termo),
         ]
-        if termo_bruto.isdigit():
-            filtros.append(NfpDoadorDB.numero_cadastro == int(termo_bruto))
+        digitos = limpar_documento(termo_bruto)
+        if digitos:
+            filtros.append(NfpDoadorDB.cpf.ilike(f"%{digitos}%"))
+        numero = numero_cadastro_da_busca(termo_bruto)
+        if numero is not None:
+            filtros.append(NfpDoadorDB.numero_cadastro == numero)
         q = q.where(or_(*filtros))
     rows = (await db.execute(q.offset(offset).limit(limite))).scalars().all()
     return [serializar_doador(r) for r in rows]
@@ -633,8 +638,12 @@ async def listar_cnpjs(
             NfpCnpjLojaDB.cnpj.ilike(termo),
             cast(NfpCnpjLojaDB.numero_cadastro, String).ilike(termo),
         ]
-        if termo_bruto.isdigit():
-            filtros.append(NfpCnpjLojaDB.numero_cadastro == int(termo_bruto))
+        digitos = limpar_documento(termo_bruto)
+        if digitos:
+            filtros.append(NfpCnpjLojaDB.cnpj.ilike(f"%{digitos}%"))
+        numero = numero_cadastro_da_busca(termo_bruto)
+        if numero is not None:
+            filtros.append(NfpCnpjLojaDB.numero_cadastro == numero)
         q = q.where(or_(*filtros))
     if captador:
         q = q.where(NfpCnpjLojaDB.captador == captador.strip().upper())
@@ -772,8 +781,9 @@ async def listar_cpfs_captados(
         digitos = limpar_documento(termo_bruto)
         if digitos:
             filtros.append(NfpCpfCaptadoDB.cpf.ilike(f"%{digitos}%"))
-        if termo_bruto.isdigit():
-            filtros.append(NfpCpfCaptadoDB.numero_cadastro == int(termo_bruto))
+        numero = numero_cadastro_da_busca(termo_bruto)
+        if numero is not None:
+            filtros.append(NfpCpfCaptadoDB.numero_cadastro == numero)
         q = q.where(or_(*filtros))
     if captador:
         q = q.where(NfpCpfCaptadoDB.captador == captador.strip().upper())
