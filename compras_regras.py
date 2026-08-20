@@ -421,6 +421,57 @@ def inferir_fator_embalagem(embalagem: Optional[str]) -> Optional[float]:
     return numero
 
 
+# Unidades contínuas: se o fator da embalagem for diferente de 1, o pedido conta pacotes (un).
+_UNIDADES_CONTAGEM_PEDIDO = {
+    "un", "und", "uni", "unid", "unidade", "unidades",
+    "pct", "pc", "pcte", "pacote", "pacotes",
+    "cx", "caixa", "caixas",
+    "fd", "fardo", "fardos",
+    "sc", "saco", "sacos",
+    "rolo", "rolos",
+}
+_UNIDADES_CONTINUAS_PEDIDO = {
+    "kg", "g", "gr", "grama", "gramas",
+    "l", "lt", "litro", "litros", "ml",
+    "m", "mt", "metro", "metros", "cm", "mm",
+}
+
+
+def _chave_unidade_pedido(valor: Optional[str]) -> str:
+    return (valor or "").strip().lower().replace(".", "")
+
+
+def fator_embalagem_efetivo(
+    fator: Optional[float | int | str] = None,
+    embalagem: Optional[str] = None,
+) -> Optional[float]:
+    if fator is not None and str(fator).strip() != "":
+        try:
+            numero = float(str(fator).replace(",", "."))
+        except ValueError:
+            numero = None
+        if numero is not None and numero > 0:
+            return numero
+    return inferir_fator_embalagem(embalagem)
+
+
+def unidade_medida_para_pedido(
+    unidade: Optional[str],
+    *,
+    fator_embalagem: Optional[float | int | str] = None,
+    embalagem: Optional[str] = None,
+) -> str:
+    """No pedido, fator != 1 troca kg/L/m por unidade (conta a embalagem)."""
+    original = (unidade or "").strip()
+    chave = _chave_unidade_pedido(original)
+    if chave in _UNIDADES_CONTAGEM_PEDIDO:
+        return original or "un"
+    fator = fator_embalagem_efetivo(fator_embalagem, embalagem)
+    if chave in _UNIDADES_CONTINUAS_PEDIDO and fator is not None and fator != 1:
+        return "un"
+    return original or "un"
+
+
 def inferir_perecivel(*, categoria_nome: Optional[str] = None, descricao: Optional[str] = None) -> bool:
     blob = f"{categoria_nome or ''} {descricao or ''}"
     chave = _norm_tipo_texto(blob)

@@ -50,7 +50,7 @@ export default function ModalFichaItemConsumo({ item, onFechar, onEditar }) {
           <ItemFicha label="Categoria" valor={item.categoria_nome} />
           <ItemFicha label="Unidade de medida" valor={item.unidade_medida} />
           <ItemFicha label="Embalagem" valor={item.embalagem} className="sm:col-span-2" />
-          <ItemFicha label="Fator da embalagem" valor={item.fator_embalagem} />
+          <ItemFicha label="Quantidade na embalagem" valor={item.fator_embalagem} />
           <ItemFicha label="Perecível" valor={item.perecivel ? 'Sim' : 'Não'} />
           <ItemFicha label="Sinônimos" valor={item.sinonimos} className="sm:col-span-2" />
           <ItemFicha label="Marca preferencial" valor={item.marca_preferencial} className="sm:col-span-2" />

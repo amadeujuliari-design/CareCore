@@ -165,19 +165,80 @@ def _juntar_embalagem(*partes: str) -> str:
 
 def _inferir_unidade(embalagem: str, atual: str = "") -> str:
     if (atual or "").strip():
-        return atual.strip()
+        return sanitizar_unidade_medida(atual)
     u = _sem_acento(embalagem).upper()
     if "FARDO" in u:
         return "fardo"
     if "CAIXA" in u or re.search(r"\bCX\b", u):
         return "cx"
     if "BALDE" in u:
-        return "balde"
+        return "un"
     if "PACOTE" in u or re.search(r"\bPCT\b", u):
         return "pct"
     if re.search(r"\bKG\b", u) and not re.search(r"\b(UN|CX|PCT|FARDO)\b", u):
         return "kg"
+    if re.search(r"\b(ML)\b", u) and not re.search(r"\b(UN|CX|PCT|FARDO|KG)\b", u):
+        return "ml"
+    if re.search(r"\b(L|LT|LITRO)\b", u) and not re.search(r"\b(UN|CX|PCT|FARDO|KG|ML)\b", u):
+        return "l"
+    if re.search(r"\b(M|MT|METRO)\b", u) and not re.search(r"\b(UN|CX|PCT|FARDO|KG|ML|L)\b", u):
+        return "m"
     return "un" if embalagem else ""
+
+
+# Códigos canônicos de unidade no cadastro de item de consumo.
+UNIDADES_MEDIDA_ITEM = ("un", "kg", "pct", "cx", "fardo", "rolo", "l", "ml", "g", "m")
+
+_ALIAS_UNIDADE_MEDIDA = {
+    "und": "un",
+    "uni": "un",
+    "unid": "un",
+    "unidade": "un",
+    "unidades": "un",
+    "u": "un",
+    "quilo": "kg",
+    "quilos": "kg",
+    "kilo": "kg",
+    "kilos": "kg",
+    "kilograma": "kg",
+    "quilograma": "kg",
+    "pc": "pct",
+    "pcte": "pct",
+    "pacote": "pct",
+    "pacotes": "pct",
+    "caixa": "cx",
+    "caixas": "cx",
+    "fardos": "fardo",
+    "rolos": "rolo",
+    "lt": "l",
+    "litro": "l",
+    "litros": "l",
+    "gr": "g",
+    "grama": "g",
+    "gramas": "g",
+    "mt": "m",
+    "metro": "m",
+    "metros": "m",
+    "balde": "un",
+    "baldes": "un",
+}
+
+
+def sanitizar_unidade_medida(valor: str | None) -> str | None:
+    """Normaliza variantes (KG, und, quilo…) para o código da lista oficial."""
+    texto = (valor or "").strip().lower().replace(".", "")
+    if not texto:
+        return None
+    if texto in UNIDADES_MEDIDA_ITEM:
+        return texto
+    mapped = _ALIAS_UNIDADE_MEDIDA.get(texto)
+    if mapped:
+        return mapped
+    # "und." / espaços extras já tratados; tenta prefixo conhecido
+    for alias, canonico in _ALIAS_UNIDADE_MEDIDA.items():
+        if texto.startswith(alias):
+            return canonico
+    return "un"
 
 
 def _obs_e_embalagem(observacao: str) -> tuple[str, str]:
@@ -275,7 +336,7 @@ def limpar_item_consumo(
         "lixo": lixo,
         "descricao": desc,
         "embalagem": emb or None,
-        "unidade_medida": unidade or None,
+        "unidade_medida": sanitizar_unidade_medida(unidade),
         "marca_preferencial": marca or None,
         "observacao": obs or None,
         "chave": chave_item_consumo(desc) if desc else "",

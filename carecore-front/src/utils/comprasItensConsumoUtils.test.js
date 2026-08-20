@@ -8,6 +8,8 @@ import {
   pedidoItemUnidadeConfusa,
   sugerirItensConsumo,
   unidadeParaPedido,
+  sanitizarUnidadeMedida,
+  digitarQuantidadeEmbalagem,
 } from './comprasItensConsumoUtils.js';
 
 const ITENS = [
@@ -79,14 +81,34 @@ describe('comprasItensConsumoUtils', () => {
     assert.equal(achado?.id, '1');
   });
 
-  it('no pedido conta pacotes quando o cadastro tem embalagem e unidade em kg', () => {
+  it('no pedido conta embalagem quando o fator e diferente de 1', () => {
     assert.equal(unidadeParaPedido({ unidade_medida: 'kg', embalagem: 'PCT 2 kg' }), 'un');
+    assert.equal(unidadeParaPedido({ unidade_medida: 'kg', fator_embalagem: 12, embalagem: '' }), 'un');
+    assert.equal(unidadeParaPedido({ unidade_medida: 'l', fator_embalagem: 5 }), 'un');
+    assert.equal(unidadeParaPedido({ unidade_medida: 'm', fator_embalagem: 10 }), 'un');
+    assert.equal(unidadeParaPedido({ unidade_medida: 'kg', fator_embalagem: 1 }), 'kg');
     assert.equal(unidadeParaPedido({ unidade_medida: 'un', embalagem: '5 L' }), 'un');
     assert.equal(unidadeParaPedido({ unidade_medida: 'kg', embalagem: '' }), 'kg');
   });
 
-  it('marca linha confusa quando pede kg de um item com pacote', () => {
+  it('marca linha confusa so quando unidade continua ainda nao virou un', () => {
     assert.equal(pedidoItemUnidadeConfusa({ unidade_medida: 'kg', embalagem: 'PCT 2 kg' }), true);
+    assert.equal(pedidoItemUnidadeConfusa({ unidade_medida: 'kg', fator_embalagem: 1 }), false);
     assert.equal(pedidoItemUnidadeConfusa({ unidade_medida: 'un', embalagem: 'PCT 2 kg' }), false);
+  });
+
+  it('sanitiza variantes de unidade para o codigo padrao', () => {
+    assert.equal(sanitizarUnidadeMedida('KG'), 'kg');
+    assert.equal(sanitizarUnidadeMedida('und'), 'un');
+    assert.equal(sanitizarUnidadeMedida('quilo'), 'kg');
+    assert.equal(sanitizarUnidadeMedida('pacote'), 'pct');
+    assert.equal(sanitizarUnidadeMedida('caixa'), 'cx');
+    assert.equal(sanitizarUnidadeMedida(''), '');
+  });
+
+  it('aceita so numero na quantidade da embalagem', () => {
+    assert.equal(digitarQuantidadeEmbalagem('12abc'), '12');
+    assert.equal(digitarQuantidadeEmbalagem('12,5x'), '12,5');
+    assert.equal(digitarQuantidadeEmbalagem('abc'), '');
   });
 });

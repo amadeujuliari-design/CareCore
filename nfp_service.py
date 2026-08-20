@@ -1463,6 +1463,85 @@ async def calcular_rateio(db: AsyncSession, organizacao_id: str, competencia: st
     return {"grupos": len(grupos), "competencia": competencia}
 
 
+def montar_totais_bruto_lojas_cpf(
+    bruto_rateio_agente_centavos: int,
+    doador_aeb_loja_agente_centavos: int,
+    bruto_cpf_agente_centavos: int,
+) -> dict[str, int]:
+    """
+    Brutos "cheios" (ainda sem separar doador AEB das lojas):
+    - bruto_lojas_cpfs = rateio agente (lojas+CPF) + doador AEB nas lojas
+    - bruto_cpf = creditos via CPF captado (ja entram no rateio agente)
+    - bruto_lojas = bruto_lojas_cpfs - bruto_cpf
+    """
+    rateio = max(0, int(bruto_rateio_agente_centavos or 0))
+    doador = max(0, int(doador_aeb_loja_agente_centavos or 0))
+    bruto_cpf = max(0, int(bruto_cpf_agente_centavos or 0))
+    if bruto_cpf > rateio:
+        bruto_cpf = rateio
+    bruto_lojas_cpfs = rateio + doador
+    return {
+        "bruto_lojas_cpfs_centavos": bruto_lojas_cpfs,
+        "bruto_lojas_centavos": max(0, bruto_lojas_cpfs - bruto_cpf),
+        "bruto_cpf_centavos": bruto_cpf,
+    }
+
+
+async def _bruto_cpf_agente_centavos(
+    db: AsyncSession,
+    organizacao_id: str,
+    competencia: str,
+    agente_sel: str,
+) -> int:
+    """Soma creditos SEFAZ atribuidos via CPF captado (mesma regra do rateio)."""
+    mapa_cpf_agente = await mapa_cpfs_captados_agente(db, organizacao_id)
+    if agente_sel:
+        cpfs_ok = {cpf for cpf, ag in mapa_cpf_agente.items() if ag == agente_sel}
+    else:
+        cpfs_ok = set(mapa_cpf_agente.keys())
+    if not cpfs_ok:
+        return 0
+
+    doacoes = (
+        await db.execute(
+            select(NfpDoacaoAutomaticaDB).where(
+                NfpDoacaoAutomaticaDB.organizacao_id == organizacao_id,
+                NfpDoacaoAutomaticaDB.competencia == competencia,
+            )
+        )
+    ).scalars().all()
+    chaves_cpf: set[tuple[str, str]] = set()
+    for d in doacoes:
+        cpf = limpar_documento(d.cpf_doador_cadastrador)
+        if cpf not in cpfs_ok:
+            continue
+        cnpj = limpar_documento(d.cnpj_estabelecimento)
+        numero = limpar_nota(d.numero_nota)
+        if cnpj and numero:
+            chaves_cpf.add((cnpj, numero))
+    if not chaves_cpf:
+        return 0
+
+    sefaz = (
+        await db.execute(
+            select(
+                NfpSefazCreditoDB.cnpj_emitente,
+                NfpSefazCreditoDB.numero_nota,
+                NfpSefazCreditoDB.creditos_centavos,
+            ).where(
+                NfpSefazCreditoDB.organizacao_id == organizacao_id,
+                NfpSefazCreditoDB.competencia == competencia,
+            )
+        )
+    ).all()
+    total = 0
+    for cnpj_emitente, numero_nota, creditos_centavos in sefaz:
+        chave = (limpar_documento(cnpj_emitente), limpar_nota(numero_nota))
+        if chave in chaves_cpf:
+            total += int(creditos_centavos or 0)
+    return total
+
+
 async def resumo_dashboard(
     db: AsyncSession,
     organizacao_id: str,
@@ -1562,6 +1641,15 @@ async def resumo_dashboard(
                 elif origem_n == "DIRETO_AEB":
                     direto_aeb += retorno_c
 
+    bruto_cpf_agente = 0
+    if competencia_atual:
+        bruto_cpf_agente = await _bruto_cpf_agente_centavos(
+            db, organizacao_id, competencia_atual, agente_sel
+        )
+    brutos_lojas_cpf = montar_totais_bruto_lojas_cpf(
+        bruto_lojas_agente, doador_aeb_em_loja_agente, bruto_cpf_agente
+    )
+
     return {
         "competencia": competencia_atual,
         "competencias": list(comps),
@@ -1587,6 +1675,12 @@ async def resumo_dashboard(
         "total_aeb": centavos_para_float(parte_aeb),
         "bruto_lojas_agente_centavos": bruto_lojas_agente,
         "bruto_lojas_agente": centavos_para_float(bruto_lojas_agente),
+        "bruto_lojas_cpfs_agente_centavos": brutos_lojas_cpf["bruto_lojas_cpfs_centavos"],
+        "bruto_lojas_cpfs_agente": centavos_para_float(brutos_lojas_cpf["bruto_lojas_cpfs_centavos"]),
+        "bruto_lojas_somente_centavos": brutos_lojas_cpf["bruto_lojas_centavos"],
+        "bruto_lojas_somente": centavos_para_float(brutos_lojas_cpf["bruto_lojas_centavos"]),
+        "bruto_cpf_agente_centavos": brutos_lojas_cpf["bruto_cpf_centavos"],
+        "bruto_cpf_agente": centavos_para_float(brutos_lojas_cpf["bruto_cpf_centavos"]),
         "parte_agente_centavos": parte_agente,
         "parte_agente": centavos_para_float(parte_agente),
         "parte_agente_50_centavos": parte_agente,

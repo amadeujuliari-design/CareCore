@@ -1,7 +1,13 @@
 # -*- coding: utf-8 -*-
 
 from compras_itens_consumo_planilha import extrair_itens_consumo
-from compras_itens_consumo_utils import chave_item_consumo, filtrar_itens_consumo, limpar_item_consumo, embalagem_efetiva_pedido
+from compras_itens_consumo_utils import (
+    chave_item_consumo,
+    filtrar_itens_consumo,
+    limpar_item_consumo,
+    embalagem_efetiva_pedido,
+    sanitizar_unidade_medida,
+)
 
 
 def test_chave_ignora_quantidade_e_embalagem():
@@ -83,3 +89,15 @@ def test_embalagem_do_pedido_prevalece_sobre_o_cadastro():
     assert embalagem_efetiva_pedido("PCT 1 kg", "PCT 2 kg") == "PCT 1 kg"
     assert embalagem_efetiva_pedido("", "PCT 2 kg") == "PCT 2 kg"
     assert embalagem_efetiva_pedido(None, None) is None
+
+
+def test_sanitizar_unidade_medida():
+    assert sanitizar_unidade_medida("KG") == "kg"
+    assert sanitizar_unidade_medida("und") == "un"
+    assert sanitizar_unidade_medida("quilo") == "kg"
+    assert sanitizar_unidade_medida("pacote") == "pct"
+    assert sanitizar_unidade_medida("caixa") == "cx"
+    assert sanitizar_unidade_medida("balde") == "un"
+    assert sanitizar_unidade_medida("") is None
+    limpo = limpar_item_consumo(descricao="Arroz tipo 1", unidade_medida="Quilo")
+    assert limpo["unidade_medida"] == "kg"

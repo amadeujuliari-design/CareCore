@@ -9,7 +9,7 @@ import {
   exportarItensConsumo,
   imprimirItensConsumo,
 } from '../utils/comprasItensConsumoExportPrint';
-import { filtrarItensConsumo } from '../utils/comprasItensConsumoUtils';
+import { filtrarItensConsumo, digitarQuantidadeEmbalagem, sanitizarUnidadeMedida, UNIDADES_MEDIDA_ITEM } from '../utils/comprasItensConsumoUtils';
 import { rotuloCategoria } from '../utils/comprasCategoriaUtils';
 
 const ITENS_POR_PAGINA = 40;
@@ -85,7 +85,7 @@ export default function ComprasItensConsumoCadastro({
       id: item.id,
       descricao: item.descricao || '',
       categoria_id: item.categoria_id || '',
-      unidade_medida: item.unidade_medida || '',
+      unidade_medida: sanitizarUnidadeMedida(item.unidade_medida),
       embalagem: item.embalagem || '',
       marca_preferencial: item.marca_preferencial || '',
       observacao: item.observacao || '',
@@ -106,7 +106,7 @@ export default function ComprasItensConsumoCadastro({
       await comprasSalvarItemConsumo({
         descricao: form.descricao.trim(),
         categoria_id: form.categoria_id || null,
-        unidade_medida: form.unidade_medida.trim() || null,
+        unidade_medida: sanitizarUnidadeMedida(form.unidade_medida) || null,
         embalagem: form.embalagem.trim() || null,
         marca_preferencial: form.marca_preferencial.trim() || null,
         observacao: form.observacao.trim() || null,
@@ -365,17 +365,18 @@ export default function ComprasItensConsumoCadastro({
                 placeholder="Selecione"
               />
               <div className="grid gap-3 md:grid-cols-2">
-                <CampoTexto
+                <CampoSelect
                   label="Unidade de medida"
                   value={form.unidade_medida}
                   onChange={(valor) => setForm((atual) => ({ ...atual, unidade_medida: valor }))}
-                  placeholder="un, cx, kg…"
+                  options={UNIDADES_MEDIDA_ITEM}
+                  placeholder="Selecione"
                 />
                 <CampoTexto
                   label="Embalagem"
                   value={form.embalagem}
                   onChange={(valor) => setForm((atual) => ({ ...atual, embalagem: valor }))}
-                  placeholder="fardo com 6 un de 5 kg"
+                  placeholder="Ex.: fardo com 12 · PCT 2 kg"
                 />
                 <CampoTexto
                   label="Marca preferencial"
@@ -383,12 +384,20 @@ export default function ComprasItensConsumoCadastro({
                   onChange={(valor) => setForm((atual) => ({ ...atual, marca_preferencial: valor }))}
                 />
                 <CampoTexto
-                  label="Fator da embalagem"
+                  label="Quantidade na embalagem"
                   value={form.fator_embalagem}
-                  onChange={(valor) => setForm((atual) => ({ ...atual, fator_embalagem: valor }))}
-                  placeholder="Ex.: 12 (unidades por fardo)"
+                  onChange={(valor) => setForm((atual) => ({
+                    ...atual,
+                    fator_embalagem: digitarQuantidadeEmbalagem(valor),
+                  }))}
+                  placeholder="Ex.: 12"
+                  inputMode="decimal"
                 />
               </div>
+              <p className="-mt-1 text-xs text-slate-500">
+                Quantidade na embalagem: quantas unidades vêm no pacote/fardo/caixa.
+                Se for 1 (ou a granel), deixe 1 ou vazio.
+              </p>
               <CampoTexto
                 label="Sinônimos / nomes equivalentes"
                 value={form.sinonimos}

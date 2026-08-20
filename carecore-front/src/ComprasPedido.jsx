@@ -453,7 +453,7 @@ export default function ComprasPedido() {
                     </thead>
                     <tbody>
                       {(pedido.itens || []).map((linha) => {
-                        const confusa = pedidoItemUnidadeConfusa(linha);
+                        const confusa = pedido.status === 'rascunho' && pedidoItemUnidadeConfusa(linha);
                         return (
                           <tr key={linha.id} className="border-t border-slate-100 align-top">
                             <td className="px-2 py-2.5 font-medium text-slate-900">{linha.quantidade}</td>

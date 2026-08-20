@@ -248,3 +248,15 @@ def test_inferir_cadastros_compras():
     assert inferir_fator_embalagem("") is None
     assert inferir_perecivel(categoria_nome="Alimentação")
     assert not inferir_perecivel(categoria_nome="Higiene e limpeza")
+
+
+def test_unidade_medida_para_pedido_por_fator():
+    from compras_regras import unidade_medida_para_pedido
+
+    assert unidade_medida_para_pedido("kg", embalagem="PCT 2 kg") == "un"
+    assert unidade_medida_para_pedido("kg", fator_embalagem=12) == "un"
+    assert unidade_medida_para_pedido("l", fator_embalagem=5) == "un"
+    assert unidade_medida_para_pedido("m", fator_embalagem=10) == "un"
+    assert unidade_medida_para_pedido("kg", fator_embalagem=1) == "kg"
+    assert unidade_medida_para_pedido("kg", embalagem="") == "kg"
+    assert unidade_medida_para_pedido("pct", embalagem="PCT 1Kg") == "pct"

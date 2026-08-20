@@ -17,7 +17,7 @@ from compras_categoria_utils import (
     nomes_cadastro_semelhantes,
     resolver_nome_cadastro,
 )
-from compras_itens_consumo_utils import chave_item_consumo, embalagem_efetiva_pedido, limpar_item_consumo
+from compras_itens_consumo_utils import chave_item_consumo, embalagem_efetiva_pedido, limpar_item_consumo, sanitizar_unidade_medida
 from compras_fornecedor_projetos_utils import montar_rotulo_projetos
 from compras_telefone_utils import formatar_telefone_compras, sanitizar_telefone_compras
 from compras_patrimonio_utils import (
@@ -36,6 +36,7 @@ from compras_regras import (
     inferir_perecivel,
     inferir_tipo_fonte,
     normalizar_tipo_fonte,
+    unidade_medida_para_pedido,
     PATRIMONIO_ORIGEM_COMPRA,
     PATRIMONIO_SITUACAO_BOM,
     STATUS_AGUARDANDO_COTACAO,
@@ -301,13 +302,14 @@ async def serializar_pedido(
     catalogo_campos: dict[str, dict] = {}
     if ids_catalogo:
         catalogo_campos = {
-            row[0]: {"embalagem": row[1], "marca": row[2]}
+            row[0]: {"embalagem": row[1], "marca": row[2], "fator_embalagem": row[3]}
             for row in (
                 await db.execute(
                     select(
                         ComprasItemConsumoDB.id,
                         ComprasItemConsumoDB.embalagem,
                         ComprasItemConsumoDB.marca_preferencial,
+                        ComprasItemConsumoDB.fator_embalagem,
                     ).where(ComprasItemConsumoDB.id.in_(ids_catalogo))
                 )
             ).all()
@@ -319,34 +321,37 @@ async def serializar_pedido(
             .order_by(ComprasCotacaoDB.valor_centavos.asc())
         )
     ).scalars().all()
-    payload["itens"] = [
-        {
-            "id": item.id,
-            "categoria_id": item.categoria_id,
-            "descricao": item.descricao,
-            "quantidade": item.quantidade,
-            "unidade_medida": item.unidade_medida,
-            "embalagem": embalagem_efetiva_pedido(
-                getattr(item, "embalagem", None),
-                (catalogo_campos.get(getattr(item, "catalogo_item_id", None) or "") or {}).get("embalagem"),
-            ),
-            "embalagem_cadastro": (
-                (catalogo_campos.get(getattr(item, "catalogo_item_id", None) or "") or {}).get("embalagem") or None
-            ),
-            "marca_preferencial": embalagem_efetiva_pedido(
-                item.marca_preferencial,
-                (catalogo_campos.get(getattr(item, "catalogo_item_id", None) or "") or {}).get("marca"),
-            ),
-            "marca_cadastro": (
-                (catalogo_campos.get(getattr(item, "catalogo_item_id", None) or "") or {}).get("marca") or None
-            ),
-            "observacao": item.observacao,
-            "catalogo_item_id": getattr(item, "catalogo_item_id", None),
-            "quantidade_recebida": item.quantidade_recebida,
-            "validade_lote": _iso(item.validade_lote),
-        }
-        for item in itens
-    ]
+    payload["itens"] = []
+    for item in itens:
+        cat = catalogo_campos.get(getattr(item, "catalogo_item_id", None) or "") or {}
+        embalagem = embalagem_efetiva_pedido(
+            getattr(item, "embalagem", None),
+            cat.get("embalagem"),
+        )
+        payload["itens"].append(
+            {
+                "id": item.id,
+                "categoria_id": item.categoria_id,
+                "descricao": item.descricao,
+                "quantidade": item.quantidade,
+                "unidade_medida": unidade_medida_para_pedido(
+                    item.unidade_medida,
+                    fator_embalagem=cat.get("fator_embalagem"),
+                    embalagem=embalagem,
+                ),
+                "embalagem": embalagem,
+                "embalagem_cadastro": cat.get("embalagem") or None,
+                "marca_preferencial": embalagem_efetiva_pedido(
+                    item.marca_preferencial,
+                    cat.get("marca"),
+                ),
+                "marca_cadastro": cat.get("marca") or None,
+                "observacao": item.observacao,
+                "catalogo_item_id": getattr(item, "catalogo_item_id", None),
+                "quantidade_recebida": item.quantidade_recebida,
+                "validade_lote": _iso(item.validade_lote),
+            }
+        )
     payload["cotacoes"] = [
         {
             "id": cotacao.id,
@@ -608,17 +613,20 @@ async def criar_pedido(
     db.add(pedido)
     await db.flush()
 
-    for item in payload.get("itens") or []:
-        descricao = (item.get("descricao") or "").strip()
-        if not descricao:
-            continue
+    linhas = [item for item in (payload.get("itens") or []) if (item.get("descricao") or "").strip()]
+    catalogo = await _fator_catalogo_por_ids(
+        db,
+        [item.get("catalogo_item_id") for item in linhas],
+    )
+    for item in linhas:
+        cat = catalogo.get(item.get("catalogo_item_id") or "") or {}
         db.add(
             ComprasPedidoItemDB(
                 pedido_id=pedido.id,
                 categoria_id=item.get("categoria_id") or None,
-                descricao=descricao,
+                descricao=(item.get("descricao") or "").strip(),
                 quantidade=float(item.get("quantidade") or 1),
-                unidade_medida=item.get("unidade_medida") or None,
+                unidade_medida=_unidade_linha_pedido(item, cat),
                 embalagem=(item.get("embalagem") or "").strip() or None,
                 marca_preferencial=item.get("marca_preferencial") or None,
                 observacao=item.get("observacao") or None,
@@ -626,6 +634,34 @@ async def criar_pedido(
             )
         )
     return pedido
+
+
+async def _fator_catalogo_por_ids(db: AsyncSession, ids: list[str]) -> dict[str, dict]:
+    ids_ok = [item_id for item_id in ids if item_id]
+    if not ids_ok:
+        return {}
+    return {
+        row[0]: {"fator_embalagem": row[1], "embalagem": row[2]}
+        for row in (
+            await db.execute(
+                select(
+                    ComprasItemConsumoDB.id,
+                    ComprasItemConsumoDB.fator_embalagem,
+                    ComprasItemConsumoDB.embalagem,
+                ).where(ComprasItemConsumoDB.id.in_(ids_ok))
+            )
+        ).all()
+    }
+
+
+def _unidade_linha_pedido(item: dict, catalogo: dict | None = None) -> str:
+    cat = catalogo or {}
+    embalagem = (item.get("embalagem") or cat.get("embalagem") or "").strip() or None
+    return unidade_medida_para_pedido(
+        item.get("unidade_medida"),
+        fator_embalagem=item.get("fator_embalagem", cat.get("fator_embalagem")),
+        embalagem=embalagem,
+    )
 
 
 async def substituir_itens(
@@ -641,17 +677,20 @@ async def substituir_itens(
     ).scalars().all()
     for item in atuais:
         await db.delete(item)
-    for item in itens or []:
-        descricao = (item.get("descricao") or "").strip()
-        if not descricao:
-            continue
+    linhas = [item for item in (itens or []) if (item.get("descricao") or "").strip()]
+    catalogo = await _fator_catalogo_por_ids(
+        db,
+        [item.get("catalogo_item_id") for item in linhas],
+    )
+    for item in linhas:
+        cat = catalogo.get(item.get("catalogo_item_id") or "") or {}
         db.add(
             ComprasPedidoItemDB(
                 pedido_id=pedido.id,
                 categoria_id=item.get("categoria_id") or None,
-                descricao=descricao,
+                descricao=(item.get("descricao") or "").strip(),
                 quantidade=float(item.get("quantidade") or 1),
-                unidade_medida=item.get("unidade_medida") or None,
+                unidade_medida=_unidade_linha_pedido(item, cat),
                 embalagem=(item.get("embalagem") or "").strip() or None,
                 marca_preferencial=item.get("marca_preferencial") or None,
                 observacao=item.get("observacao") or None,
@@ -1679,7 +1718,7 @@ def _serializar_item_consumo(row: ComprasItemConsumoDB, categorias: dict[str, st
         "categoria_nome": categorias.get(row.categoria_id) if row.categoria_id else None,
         "descricao": row.descricao,
         "chave": row.chave,
-        "unidade_medida": row.unidade_medida,
+        "unidade_medida": sanitizar_unidade_medida(row.unidade_medida),
         "embalagem": getattr(row, "embalagem", None),
         "marca_preferencial": row.marca_preferencial,
         "sinonimos": getattr(row, "sinonimos", None),
@@ -1779,7 +1818,7 @@ async def salvar_item_consumo(db: AsyncSession, usuario: dict, payload: dict, it
         try:
             row.fator_embalagem = float(str(fator).replace(",", "."))
         except ValueError:
-            raise HTTPException(status_code=400, detail="Fator de embalagem inválido.")
+            raise HTTPException(status_code=400, detail="Quantidade na embalagem inválida.")
     cats = await _mapa_nomes_categoria(db, org_id)
     if "perecivel" in payload and payload.get("perecivel") is not None:
         row.perecivel = bool(payload.get("perecivel"))

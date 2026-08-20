@@ -184,6 +184,7 @@ export function CampoTexto({
     placeholder,
     min,
     max,
+    inputMode,
 }) {
   const [senhaVisivel, setSenhaVisivel] = useState(false);
   const ehSenha = type === 'password';
@@ -207,6 +208,7 @@ export function CampoTexto({
           placeholder={placeholder}
           min={min}
           max={max}
+          inputMode={inputMode}
           onBlur={onBlur}
           onChange={(e) => onChange(e.target.value)}
           className={`w-full rounded-xl border px-3 py-2 text-sm outline-none ${

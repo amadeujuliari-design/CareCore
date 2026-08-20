@@ -449,14 +449,28 @@ export default function NfpCreditos() {
                         </>
                       )}
                     </p>
-                    <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                    <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                       {[
                         [
-                          `Bruto lojas ${rotuloAgente}`,
-                          money(resumo?.bruto_lojas_agente ?? resumo?.bruto_lojas_diego),
+                          `Bruto Lojas/CPFs`,
+                          money(resumo?.bruto_lojas_cpfs_agente),
                           visaoTodos
-                            ? 'Créditos das lojas com rateio de agentes'
-                            : 'Créditos das lojas do agente (base do rateio)',
+                            ? 'Lojas + CPFs dos agentes, ainda sem separar doador AEB'
+                            : 'Lojas + CPFs do agente, ainda sem separar doador AEB',
+                        ],
+                        [
+                          'Bruto Lojas',
+                          money(resumo?.bruto_lojas_somente),
+                          visaoTodos
+                            ? 'Só lojas (bruto, inclui doador AEB nestas lojas)'
+                            : 'Só lojas (bruto, inclui doador AEB nestas lojas)',
+                        ],
+                        [
+                          'Bruto CPF',
+                          money(resumo?.bruto_cpf_agente),
+                          visaoTodos
+                            ? 'Só CPFs captados pelos agentes (bruto)'
+                            : 'Só CPFs captados do agente (bruto)',
                         ],
                         [
                           `Doador AEB em lojas ${rotuloAgente}`,
@@ -468,14 +482,14 @@ export default function NfpCreditos() {
                           money(resumo?.parte_agente ?? resumo?.parte_agente_50 ?? resumo?.parte_diego_50 ?? resumo?.total_diego),
                           visaoTodos
                             ? 'Retirada consolidada dos agentes (conforme % de cada um)'
-                            : `Retirada do agente (${percentualAgente}% do bruto)`,
+                            : `Retirada do agente (${percentualAgente}% do bruto de rateio)`,
                         ],
                         [
                           'Parte AEB',
                           money(resumo?.parte_aeb_consolidada_agente),
                           visaoTodos
                             ? 'Retirada AEB deste bloco (rateio AEB + doador nas lojas dos agentes)'
-                            : `Retirada AEB deste bloco (${percentualAeb}% do bruto + doador)`,
+                            : `Retirada AEB deste bloco (${percentualAeb}% do bruto de rateio + doador)`,
                         ],
                       ].map(([label, valor, ajuda]) => (
                         <article key={label} className="rounded-2xl border border-teal-100 bg-white p-4 shadow-sm">

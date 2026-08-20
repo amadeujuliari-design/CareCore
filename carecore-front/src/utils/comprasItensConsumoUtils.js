@@ -7,6 +7,74 @@ export function normalizarBuscaItem(texto) {
     .trim();
 }
 
+/** Códigos canônicos — select do cadastro de item de consumo. */
+export const UNIDADES_MEDIDA_ITEM = [
+  { value: 'un', label: 'un — unidade' },
+  { value: 'kg', label: 'kg — quilograma' },
+  { value: 'g', label: 'g — grama' },
+  { value: 'pct', label: 'pct — pacote' },
+  { value: 'cx', label: 'cx — caixa' },
+  { value: 'fardo', label: 'fardo' },
+  { value: 'rolo', label: 'rolo' },
+  { value: 'l', label: 'l — litro' },
+  { value: 'ml', label: 'ml — mililitro' },
+  { value: 'm', label: 'm — metro' },
+];
+
+const ALIAS_UNIDADE_MEDIDA = {
+  und: 'un',
+  uni: 'un',
+  unid: 'un',
+  unidade: 'un',
+  unidades: 'un',
+  u: 'un',
+  quilo: 'kg',
+  quilos: 'kg',
+  kilo: 'kg',
+  kilos: 'kg',
+  kilograma: 'kg',
+  quilograma: 'kg',
+  pc: 'pct',
+  pcte: 'pct',
+  pacote: 'pct',
+  pacotes: 'pct',
+  caixa: 'cx',
+  caixas: 'cx',
+  fardos: 'fardo',
+  rolos: 'rolo',
+  lt: 'l',
+  litro: 'l',
+  litros: 'l',
+  gr: 'g',
+  grama: 'g',
+  gramas: 'g',
+  mt: 'm',
+  metro: 'm',
+  metros: 'm',
+  balde: 'un',
+  baldes: 'un',
+};
+
+export function sanitizarUnidadeMedida(valor) {
+  const texto = String(valor || '').trim().toLowerCase().replace(/\./g, '');
+  if (!texto) return '';
+  if (UNIDADES_MEDIDA_ITEM.some((u) => u.value === texto)) return texto;
+  if (ALIAS_UNIDADE_MEDIDA[texto]) return ALIAS_UNIDADE_MEDIDA[texto];
+  const alias = Object.keys(ALIAS_UNIDADE_MEDIDA).find((chave) => texto.startsWith(chave));
+  if (alias) return ALIAS_UNIDADE_MEDIDA[alias];
+  return 'un';
+}
+
+/** Só dígitos e no máximo um separador decimal (, ou .). */
+export function digitarQuantidadeEmbalagem(valor) {
+  let texto = String(valor ?? '').replace(/[^\d.,]/g, '');
+  const sep = texto.includes(',') ? ',' : (texto.includes('.') ? '.' : '');
+  if (!sep) return texto.replace(/\D/g, '').slice(0, 6);
+  const [inteiro, ...resto] = texto.split(sep);
+  const dec = resto.join('').replace(/\D/g, '').slice(0, 3);
+  return `${inteiro.replace(/\D/g, '').slice(0, 6)}${sep}${dec}`;
+}
+
 export function itemConsumoBateBusca(item, termo) {
   if (!termo) return true;
   const blob = [
@@ -56,20 +124,42 @@ const UNIDADES_CONTAGEM = new Set([
   'rolo', 'rolos',
 ]);
 
-const UNIDADES_PESO_VOLUME = new Set([
+const UNIDADES_CONTINUAS = new Set([
   'kg', 'g', 'gr', 'grama', 'gramas',
   'l', 'lt', 'litro', 'litros', 'ml',
+  'm', 'mt', 'metro', 'metros', 'cm', 'mm',
 ]);
 
 function chaveUnidade(texto) {
   return String(texto || '').trim().toLowerCase().replace(/\./g, '');
 }
 
+export function inferirFatorEmbalagem(embalagem) {
+  const texto = String(embalagem || '').trim();
+  if (!texto) return null;
+  const achado = texto.match(/(\d+(?:[.,]\d+)?)/);
+  if (!achado) return null;
+  const numero = Number.parseFloat(achado[1].replace(',', '.'));
+  if (!Number.isFinite(numero) || numero <= 0 || numero > 10000) return null;
+  return numero;
+}
+
+export function fatorEmbalagemEfetivo(item = {}) {
+  const bruto = item.fator_embalagem;
+  if (bruto !== null && bruto !== undefined && String(bruto).trim() !== '') {
+    const numero = Number.parseFloat(String(bruto).replace(',', '.'));
+    if (Number.isFinite(numero) && numero > 0) return numero;
+  }
+  return inferirFatorEmbalagem(item.embalagem);
+}
+
 export function unidadeParaPedido(item = {}) {
   const original = String(item.unidade_medida || '').trim();
   const chave = chaveUnidade(original);
   if (UNIDADES_CONTAGEM.has(chave)) return original || 'un';
-  if (String(item.embalagem || '').trim() && UNIDADES_PESO_VOLUME.has(chave)) {
+  const fator = fatorEmbalagemEfetivo(item);
+  // Fator diferente de 1: conta a embalagem (un), não kg/L/m.
+  if (UNIDADES_CONTINUAS.has(chave) && fator != null && fator !== 1) {
     return 'un';
   }
   return original || 'un';
@@ -77,5 +167,7 @@ export function unidadeParaPedido(item = {}) {
 
 export function pedidoItemUnidadeConfusa(linha = {}) {
   const chave = chaveUnidade(linha.unidade_medida);
-  return Boolean(String(linha.embalagem || '').trim()) && UNIDADES_PESO_VOLUME.has(chave);
+  if (!UNIDADES_CONTINUAS.has(chave)) return false;
+  const fator = fatorEmbalagemEfetivo(linha);
+  return fator != null && fator !== 1;
 }
