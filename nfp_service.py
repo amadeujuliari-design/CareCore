@@ -1908,6 +1908,185 @@ async def relatorio_rateio_consolidado(
     }
 
 
+async def _mapas_classificacao_rateio(
+    db: AsyncSession,
+    organizacao_id: str,
+    competencia: str,
+) -> dict:
+    """Mapas usados para classificar cada credito SEFAZ (mesma regra do calcular_rateio)."""
+    await garantir_agentes_padrao(db, organizacao_id)
+    mapa_pct = await mapa_percentual_agentes(db, organizacao_id)
+
+    cnpjs = (
+        await db.execute(
+            select(NfpCnpjLojaDB).where(NfpCnpjLojaDB.organizacao_id == organizacao_id)
+        )
+    ).scalars().all()
+    mapa_cnpjs: dict[str, dict] = {}
+    for item in cnpjs:
+        c = limpar_documento(item.cnpj)
+        if not c:
+            continue
+        mapa_cnpjs[c] = {
+            "loja": item.loja or "",
+            "captador": normalizar_agente_captacao(item.captador),
+        }
+
+    cnpjs_agente: dict[str, str] = {}
+    vigentes = await mapa_cnpjs_captacao_vigente(db, organizacao_id, competencia)
+    if vigentes:
+        for c, info in vigentes.items():
+            captador = normalizar_agente_captacao(info.get("captador"))
+            if not c or not captador:
+                continue
+            cnpjs_agente[c] = captador
+            base = mapa_cnpjs.get(c, {"loja": "", "captador": captador})
+            if info.get("loja") and not nome_eh_generico(info.get("loja")):
+                base["loja"] = info["loja"]
+            base["captador"] = captador
+            mapa_cnpjs[c] = base
+    else:
+        for c, info in mapa_cnpjs.items():
+            captador = normalizar_agente_captacao(info.get("captador"))
+            if captador:
+                cnpjs_agente[c] = captador
+
+    doacoes = (
+        await db.execute(
+            select(NfpDoacaoAutomaticaDB).where(
+                NfpDoacaoAutomaticaDB.organizacao_id == organizacao_id,
+                NfpDoacaoAutomaticaDB.competencia == competencia,
+            )
+        )
+    ).scalars().all()
+    chaves_auto = {
+        (limpar_documento(d.cnpj_estabelecimento), limpar_nota(d.numero_nota))
+        for d in doacoes
+    }
+    cpf_por_chave_auto: dict[tuple[str, str], str] = {}
+    for d in doacoes:
+        chave = (limpar_documento(d.cnpj_estabelecimento), limpar_nota(d.numero_nota))
+        cpf = limpar_documento(d.cpf_doador_cadastrador)
+        if chave[0] and chave[1] and cpf and chave not in cpf_por_chave_auto:
+            cpf_por_chave_auto[chave] = cpf
+
+    mapa_cpf_agente = await mapa_cpfs_captados_agente(db, organizacao_id)
+    return {
+        "mapa_pct": mapa_pct,
+        "mapa_cnpjs": mapa_cnpjs,
+        "cnpjs_agente": cnpjs_agente,
+        "chaves_auto": chaves_auto,
+        "cpf_por_chave_auto": cpf_por_chave_auto,
+        "mapa_cpf_agente": mapa_cpf_agente,
+    }
+
+
+def _classificar_credito_sefaz(
+    *,
+    cnpj: str,
+    numero: str,
+    emitente: str,
+    creditos_centavos: int,
+    mapas: dict,
+) -> dict:
+    mapa_cnpjs = mapas["mapa_cnpjs"]
+    cnpjs_agente = mapas["cnpjs_agente"]
+    chaves_auto = mapas["chaves_auto"]
+    cpf_por_chave_auto = mapas["cpf_por_chave_auto"]
+    mapa_cpf_agente = mapas["mapa_cpf_agente"]
+    mapa_pct = mapas["mapa_pct"]
+
+    info = mapa_cnpjs.get(cnpj, {})
+    loja = info.get("loja") or emitente or ""
+    captador_loja = normalizar_agente_captacao(info.get("captador"))
+    eh_agente = cnpj in cnpjs_agente
+    agente = cnpjs_agente.get(cnpj) or captador_loja
+    eh_auto = (cnpj, numero) in chaves_auto
+    cpf_doador = cpf_por_chave_auto.get((cnpj, numero))
+    captador_cpf = mapa_cpf_agente.get(cpf_doador) if cpf_doador else None
+    origem, captador_efetivo = decidir_origem_rateio_credito(
+        captador_cnpj=agente,
+        eh_loja_agente=eh_agente,
+        eh_doacao_automatica=eh_auto,
+        captador_cpf=captador_cpf,
+    )
+    captador = captador_efetivo or agente or captador_loja
+    retorno_c = max(0, int(creditos_centavos or 0))
+    if origem_eh_rateio_agente(origem):
+        pct = mapa_pct.get(
+            normalizar_agente_captacao(captador or origem),
+            percentual_agente_padrao(origem),
+        )
+        valor_agente, valor_aeb = rateio_centavos(retorno_c, pct)
+    else:
+        valor_agente, valor_aeb = 0, retorno_c
+
+    origem_n = normalizar_agente_captacao(origem)
+    if captador_cpf:
+        fonte = "CPF"
+        retorno_loja_c, retorno_cpf_c = 0, retorno_c
+    elif origem_n.startswith("DOADOR_AUTOMATICO"):
+        if origem_n == "DOADOR_AUTOMATICO_AEB":
+            fonte = "Doador automático AEB"
+            retorno_loja_c, retorno_cpf_c = 0, 0
+        else:
+            fonte = "Doador AEB"
+            retorno_loja_c, retorno_cpf_c = retorno_c, 0
+    elif origem_eh_rateio_agente(origem_n):
+        fonte = "Loja"
+        retorno_loja_c, retorno_cpf_c = retorno_c, 0
+    else:
+        fonte = "Direto AEB" if origem_n == "DIRETO_AEB" else "Outros"
+        retorno_loja_c, retorno_cpf_c = 0, 0
+
+    return {
+        "cnpj": cnpj,
+        "loja": loja,
+        "captador": captador or None,
+        "origem": origem,
+        "numero_nota": numero or None,
+        "cpf_doador": cpf_doador or None,
+        "fonte": fonte,
+        "retorno_centavos": retorno_c,
+        "retorno_loja_centavos": retorno_loja_c,
+        "retorno_cpf_centavos": retorno_cpf_c,
+        "valor_agente_centavos": int(valor_agente or 0),
+        "valor_aeb_centavos": int(valor_aeb or 0),
+    }
+
+
+def _linha_passa_filtros_rateio(
+    *,
+    cnpj: str,
+    loja: str,
+    captador: Optional[str],
+    origem: str,
+    agente_sel: str,
+    origem_sel: str,
+    busca: str,
+) -> bool:
+    origem_n = normalizar_agente_captacao(origem)
+    captador_n = normalizar_agente_captacao(captador)
+    if agente_sel:
+        auto = origem_doador_auto_agente(agente_sel)
+        if origem_n not in {agente_sel, auto} and captador_n != agente_sel:
+            return False
+    if origem_sel and origem_n != origem_sel:
+        return False
+    if busca:
+        termo = busca.strip().lower()
+        digitos = limpar_documento(termo)
+        cnpj_limpo = limpar_documento(cnpj)
+        if digitos and digitos in cnpj_limpo:
+            return True
+        if termo in (loja or "").lower():
+            return True
+        if termo in (cnpj or "").lower():
+            return True
+        return False
+    return True
+
+
 async def relatorio_rateio_detalhado(
     db: AsyncSession,
     organizacao_id: str,
@@ -1916,35 +2095,24 @@ async def relatorio_rateio_detalhado(
     origem: Optional[str] = None,
     busca: Optional[str] = None,
     limite: int = 2000,
+    modo: str = "agrupado",
 ) -> dict:
     if not competencia_valida(competencia):
         raise ValueError("Competencia invalida. Use YYYY-MM.")
 
+    modo_n = (modo or "agrupado").strip().lower()
+    if modo_n in {"nota", "por_nota", "detalhado", "lancamento", "lancamentos"}:
+        modo_n = "por_nota"
+    else:
+        modo_n = "agrupado"
+
     agente_sel = normalizar_agente_captacao(agente)
     origem_sel = normalizar_agente_captacao(origem)
-    q = select(NfpRateioDB).where(
-        NfpRateioDB.organizacao_id == organizacao_id,
-        NfpRateioDB.competencia == competencia,
-    )
-    if agente_sel:
-        q = q.where(
-            (NfpRateioDB.captador == agente_sel)
-            | (NfpRateioDB.origem == agente_sel)
-            | (NfpRateioDB.origem == origem_doador_auto_agente(agente_sel))
-        )
-    if origem_sel:
-        q = q.where(NfpRateioDB.origem == origem_sel)
-    if busca:
-        termo = f"%{busca.strip()}%"
-        q = q.where((NfpRateioDB.loja.ilike(termo)) | (NfpRateioDB.cnpj.ilike(termo)))
+    busca_txt = (busca or "").strip()
+    limite_cap = 15000 if modo_n == "por_nota" else 5000
+    limite_n = max(1, min(int(limite or 2000), limite_cap))
 
-    rows = (
-        await db.execute(
-            q.order_by(NfpRateioDB.origem, NfpRateioDB.loja).limit(max(1, min(limite, 5000)))
-        )
-    ).scalars().all()
-
-    linhas = []
+    linhas: list[dict] = []
     totais_filtro = {
         "total_creditos": 0.0,
         "parte_agente": 0.0,
@@ -1952,47 +2120,150 @@ async def relatorio_rateio_detalhado(
         "qtd_linhas": 0,
         "qtd_notas": 0,
     }
-    cpf_por_cnpj = await _mapa_creditos_cpf_por_cnpj(
-        db, organizacao_id, competencia, agente_sel
-    )
-    cpf_restante = dict(cpf_por_cnpj)
+    truncado = False
+    total_encontrado = 0
 
-    for r in rows:
-        retorno = float(r.retorno or 0)
-        parte_ag = float(r.valor_diego or 0)
-        parte_aeb = float(r.valor_aeb or 0)
-        qtd = int(r.qtd or 0)
-        retorno_c = int(r.retorno_centavos or valor_para_centavos(retorno) or 0)
-        partes = atribuir_retorno_loja_cpf(
-            origem=r.origem,
-            retorno_centavos=retorno_c,
-            cpf_restante_por_cnpj=cpf_restante,
-            cnpj=r.cnpj,
+    if modo_n == "por_nota":
+        mapas = await _mapas_classificacao_rateio(db, organizacao_id, competencia)
+        sefaz = (
+            await db.execute(
+                select(NfpSefazCreditoDB).where(
+                    NfpSefazCreditoDB.organizacao_id == organizacao_id,
+                    NfpSefazCreditoDB.competencia == competencia,
+                ).order_by(NfpSefazCreditoDB.cnpj_emitente, NfpSefazCreditoDB.numero_nota)
+            )
+        ).scalars().all()
+
+        for s in sefaz:
+            cnpj = limpar_documento(s.cnpj_emitente)
+            numero = limpar_nota(s.numero_nota)
+            classif = _classificar_credito_sefaz(
+                cnpj=cnpj,
+                numero=numero,
+                emitente=s.emitente or "",
+                creditos_centavos=int(s.creditos_centavos or 0),
+                mapas=mapas,
+            )
+            if not _linha_passa_filtros_rateio(
+                cnpj=classif["cnpj"],
+                loja=classif["loja"] or "",
+                captador=classif["captador"],
+                origem=classif["origem"],
+                agente_sel=agente_sel,
+                origem_sel=origem_sel,
+                busca=busca_txt,
+            ):
+                continue
+            total_encontrado += 1
+            if len(linhas) >= limite_n:
+                truncado = True
+                continue
+
+            retorno = centavos_para_float(classif["retorno_centavos"])
+            parte_ag = centavos_para_float(classif["valor_agente_centavos"])
+            parte_aeb = centavos_para_float(classif["valor_aeb_centavos"])
+            linhas.append(
+                {
+                    "id": s.id,
+                    "cnpj": classif["cnpj"],
+                    "loja": classif["loja"],
+                    "captador": classif["captador"],
+                    "origem": classif["origem"],
+                    "numero_nota": classif["numero_nota"],
+                    "cpf_doador": classif["cpf_doador"],
+                    "qtd": 1,
+                    "retorno": retorno,
+                    "retorno_loja": centavos_para_float(classif["retorno_loja_centavos"]),
+                    "retorno_cpf": centavos_para_float(classif["retorno_cpf_centavos"]),
+                    "fonte": classif["fonte"],
+                    "valor_agente": parte_ag,
+                    "valor_diego": parte_ag,
+                    "valor_aeb": parte_aeb,
+                    "final": retorno,
+                    "competencia": competencia,
+                }
+            )
+            totais_filtro["total_creditos"] += retorno
+            totais_filtro["parte_agente"] += parte_ag
+            totais_filtro["parte_aeb"] += parte_aeb
+            totais_filtro["qtd_linhas"] += 1
+            totais_filtro["qtd_notas"] += 1
+    else:
+        q = select(NfpRateioDB).where(
+            NfpRateioDB.organizacao_id == organizacao_id,
+            NfpRateioDB.competencia == competencia,
         )
-        linhas.append(
-            {
-                "id": r.id,
-                "cnpj": r.cnpj,
-                "loja": r.loja,
-                "captador": r.captador,
-                "origem": r.origem,
-                "qtd": qtd,
-                "retorno": retorno,
-                "retorno_loja": centavos_para_float(int(partes["retorno_loja_centavos"])),
-                "retorno_cpf": centavos_para_float(int(partes["retorno_cpf_centavos"])),
-                "fonte": partes["fonte"],
-                "valor_agente": parte_ag,
-                "valor_diego": parte_ag,
-                "valor_aeb": parte_aeb,
-                "final": float(r.final or 0),
-                "competencia": r.competencia,
-            }
+        if agente_sel:
+            q = q.where(
+                (NfpRateioDB.captador == agente_sel)
+                | (NfpRateioDB.origem == agente_sel)
+                | (NfpRateioDB.origem == origem_doador_auto_agente(agente_sel))
+            )
+        if origem_sel:
+            q = q.where(NfpRateioDB.origem == origem_sel)
+        if busca_txt:
+            termo = f"%{busca_txt}%"
+            q = q.where((NfpRateioDB.loja.ilike(termo)) | (NfpRateioDB.cnpj.ilike(termo)))
+
+        total_encontrado = int(
+            (
+                await db.execute(
+                    select(func.count()).select_from(q.order_by(None).subquery())
+                )
+            ).scalar_one()
+            or 0
         )
-        totais_filtro["total_creditos"] += retorno
-        totais_filtro["parte_agente"] += parte_ag
-        totais_filtro["parte_aeb"] += parte_aeb
-        totais_filtro["qtd_linhas"] += 1
-        totais_filtro["qtd_notas"] += qtd
+        truncado = total_encontrado > limite_n
+
+        rows = (
+            await db.execute(
+                q.order_by(NfpRateioDB.origem, NfpRateioDB.loja).limit(limite_n)
+            )
+        ).scalars().all()
+
+        cpf_por_cnpj = await _mapa_creditos_cpf_por_cnpj(
+            db, organizacao_id, competencia, agente_sel
+        )
+        cpf_restante = dict(cpf_por_cnpj)
+
+        for r in rows:
+            retorno = float(r.retorno or 0)
+            parte_ag = float(r.valor_diego or 0)
+            parte_aeb = float(r.valor_aeb or 0)
+            qtd = int(r.qtd or 0)
+            retorno_c = int(r.retorno_centavos or valor_para_centavos(retorno) or 0)
+            partes = atribuir_retorno_loja_cpf(
+                origem=r.origem,
+                retorno_centavos=retorno_c,
+                cpf_restante_por_cnpj=cpf_restante,
+                cnpj=r.cnpj,
+            )
+            linhas.append(
+                {
+                    "id": r.id,
+                    "cnpj": r.cnpj,
+                    "loja": r.loja,
+                    "captador": r.captador,
+                    "origem": r.origem,
+                    "numero_nota": None,
+                    "cpf_doador": None,
+                    "qtd": qtd,
+                    "retorno": retorno,
+                    "retorno_loja": centavos_para_float(int(partes["retorno_loja_centavos"])),
+                    "retorno_cpf": centavos_para_float(int(partes["retorno_cpf_centavos"])),
+                    "fonte": partes["fonte"],
+                    "valor_agente": parte_ag,
+                    "valor_diego": parte_ag,
+                    "valor_aeb": parte_aeb,
+                    "final": float(r.final or 0),
+                    "competencia": r.competencia,
+                }
+            )
+            totais_filtro["total_creditos"] += retorno
+            totais_filtro["parte_agente"] += parte_ag
+            totais_filtro["parte_aeb"] += parte_aeb
+            totais_filtro["qtd_linhas"] += 1
+            totais_filtro["qtd_notas"] += qtd
 
     # Mesmos totais de retirada do dashboard (competencia + agente),
     # independente de filtros de origem/busca na tabela.
@@ -2015,13 +2286,16 @@ async def relatorio_rateio_detalhado(
         "bruto_lojas_agente": float(dash.get("bruto_lojas_agente") or 0),
         "rotulo_parte_agente": rotulo_parte,
         "visao_todos": bool(dash.get("visao_todos")),
+        "total_encontrado": total_encontrado if total_encontrado else totais_filtro["qtd_linhas"],
+        "truncado": truncado,
     }
 
     return {
         "competencia": competencia,
         "agente": agente_sel or None,
         "origem": origem_sel or None,
-        "busca": (busca or "").strip() or None,
+        "busca": busca_txt or None,
+        "modo": modo_n,
         "totais": totais,
         "linhas": linhas,
     }

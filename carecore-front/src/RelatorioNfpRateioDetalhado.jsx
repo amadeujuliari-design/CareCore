@@ -36,6 +36,7 @@ export default function RelatorioNfpRateioDetalhado() {
   const [agente, setAgente] = useState('');
   const [origem, setOrigem] = useState('');
   const [busca, setBusca] = useState('');
+  const [modo, setModo] = useState('agrupado');
   const [agentes, setAgentes] = useState([]);
   const [origens, setOrigens] = useState([]);
   const [relatorio, setRelatorio] = useState(null);
@@ -92,7 +93,8 @@ export default function RelatorioNfpRateioDetalhado() {
         agente: agente || undefined,
         origem: origem || undefined,
         busca: busca || undefined,
-        limite: 3000,
+        modo,
+        limite: modo === 'por_nota' ? 15000 : 3000,
       });
       setRelatorio(dados);
     } catch (error) {
@@ -101,10 +103,12 @@ export default function RelatorioNfpRateioDetalhado() {
     } finally {
       setLoading(false);
     }
-  }, [agente, busca, competencia, origem]);
+  }, [agente, busca, competencia, modo, origem]);
 
   const linhas = relatorio?.linhas || [];
   const totais = relatorio?.totais || {};
+  const modoAtual = relatorio?.modo || modo;
+  const porNota = modoAtual === 'por_nota';
   const visaoTodos = !agente || Boolean(totais.visao_todos);
   const rotuloAgente = visaoTodos
     ? 'agentes'
@@ -127,14 +131,16 @@ export default function RelatorioNfpRateioDetalhado() {
   const exportarXlsx = async () => {
     if (!linhas.length) return;
     const dadosXlsx = montarExportacaoRateioDetalhadoXlsx(relatorio);
+    const filtrosBase = {
+      Competência: competencia,
+      Agente: agente || 'Todos',
+      Origem: origem ? rotuloOrigemRateio(origem) : 'Todas',
+      Busca: busca || '—',
+      Exibição: porNota ? 'Por nota (cada lançamento)' : 'Agrupado por CNPJ',
+    };
     const montado = montarLinhasRelatorioXlsx({
       titulo: 'NFP – Rateio detalhado',
-      filtros: {
-        Competência: competencia,
-        Agente: agente || 'Todos',
-        Origem: origem ? rotuloOrigemRateio(origem) : 'Todas',
-        Busca: busca || '—',
-      },
+      filtros: filtrosBase,
       colunas: COLUNAS_RATEIO_DETALHADO,
       dados: dadosXlsx,
       blocoTotais: [],
@@ -149,14 +155,9 @@ export default function RelatorioNfpRateioDetalhado() {
       nomeColunaFn: nomeColuna,
     });
     await exportarRelatorioXlsx({
-      nomeArquivo: `nfp_rateio_detalhado_${competencia}`,
+      nomeArquivo: `nfp_rateio_detalhado_${competencia}_${porNota ? 'por_nota' : 'agrupado'}`,
       titulo: 'NFP – Rateio detalhado',
-      filtros: {
-        Competência: competencia,
-        Agente: agente || 'Todos',
-        Origem: origem ? rotuloOrigemRateio(origem) : 'Todas',
-        Busca: busca || '—',
-      },
+      filtros: filtrosBase,
       colunas: COLUNAS_RATEIO_DETALHADO,
       dados: dadosXlsx,
       blocoTotais,
@@ -170,7 +171,7 @@ export default function RelatorioNfpRateioDetalhado() {
         <PageHeader
           eyebrow="NFP – Relatórios"
           title="Rateio detalhado"
-          subtitle="Linhas por CNPJ, loja e origem, com identidade visual e exportação XLSX."
+          subtitle="Agrupado por CNPJ ou cada lançamento SEFAZ, com totais iguais ao dashboard e exportação XLSX."
           icon={<FileBarChart className="h-5 w-5" />}
           backTo="/nfp/relatorios"
           backLabel="Voltar aos relatórios"
@@ -205,7 +206,7 @@ export default function RelatorioNfpRateioDetalhado() {
           )}
 
           <section className="mb-5 rounded-3xl border border-slate-100 bg-white p-5 shadow-sm">
-            <div className="grid gap-3 md:grid-cols-4">
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
               <label className="text-sm text-slate-700">
                 <span className="mb-1 block text-xs font-semibold text-slate-600">Competência *</span>
                 <input
@@ -242,6 +243,17 @@ export default function RelatorioNfpRateioDetalhado() {
                 </select>
               </label>
               <label className="text-sm text-slate-700">
+                <span className="mb-1 block text-xs font-semibold text-slate-600">Exibição</span>
+                <select
+                  value={modo}
+                  onChange={(e) => setModo(e.target.value)}
+                  className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
+                >
+                  <option value="agrupado">Agrupado por CNPJ</option>
+                  <option value="por_nota">Por nota (cada lançamento)</option>
+                </select>
+              </label>
+              <label className="text-sm text-slate-700">
                 <span className="mb-1 block text-xs font-semibold text-slate-600">Busca loja/CNPJ</span>
                 <input
                   value={busca}
@@ -255,10 +267,21 @@ export default function RelatorioNfpRateioDetalhado() {
                 Nenhuma origem encontrada nesta competência (é preciso ter rateio calculado).
               </p>
             ) : null}
+            {modo === 'por_nota' ? (
+              <p className="mt-3 text-xs text-slate-500">
+                No modo por nota, cada crédito SEFAZ vira uma linha (até 15.000). Prefira filtrar por agente.
+              </p>
+            ) : null}
           </section>
 
           {relatorio && (
             <>
+              {totais.truncado ? (
+                <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                  Lista truncada: mostrando {totais.qtd_linhas ?? linhas.length} de {totais.total_encontrado ?? '—'} registros.
+                  Refine o filtro (agente/origem/busca) para ver o restante. Os totais de retirada do dashboard continuam completos.
+                </div>
+              ) : null}
               <div className="mb-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
                 {cardsRetirada.map(([label, valor]) => (
                   <article key={label} className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
@@ -270,6 +293,8 @@ export default function RelatorioNfpRateioDetalhado() {
               <p className="mb-4 text-xs text-slate-500">
                 Totais de retirada iguais ao dashboard (competência + agente).
                 Origem/busca filtram só a tabela abaixo.
+                {' '}
+                Exibição: {porNota ? 'por nota' : 'agrupado por CNPJ'}.
               </p>
 
               <section className="overflow-x-auto rounded-3xl border border-slate-100 bg-white p-5 shadow-sm">
@@ -281,6 +306,7 @@ export default function RelatorioNfpRateioDetalhado() {
                       <th className="px-2 py-2">Captador</th>
                       <th className="px-2 py-2">Origem</th>
                       <th className="px-2 py-2">Fonte</th>
+                      <th className="px-2 py-2">Nº nota</th>
                       <th className="px-2 py-2">Qtd</th>
                       <th className="px-2 py-2">Retorno</th>
                       <th className="px-2 py-2">Retorno loja</th>
@@ -291,12 +317,13 @@ export default function RelatorioNfpRateioDetalhado() {
                   </thead>
                   <tbody>
                     {linhas.map((item) => (
-                      <tr key={item.id} className="border-t border-slate-100">
+                      <tr key={`${item.id}-${item.numero_nota || 'g'}`} className="border-t border-slate-100">
                         <td className="px-2 py-2">{formatarCNPJ(item.cnpj)}</td>
                         <td className="px-2 py-2">{item.loja || '—'}</td>
                         <td className="px-2 py-2">{item.captador || '—'}</td>
                         <td className="px-2 py-2">{rotuloOrigemRateio(item.origem)}</td>
                         <td className="px-2 py-2">{item.fonte || '—'}</td>
+                        <td className="px-2 py-2">{item.numero_nota || '—'}</td>
                         <td className="px-2 py-2">{item.qtd ?? 0}</td>
                         <td className="px-2 py-2">{moneyRelatorioNfp(item.retorno)}</td>
                         <td className="px-2 py-2">{moneyRelatorioNfp(item.retorno_loja ?? item.retorno)}</td>
@@ -307,7 +334,7 @@ export default function RelatorioNfpRateioDetalhado() {
                     ))}
                     {!linhas.length && (
                       <tr>
-                        <td colSpan={11} className="px-2 py-8 text-center text-slate-500">
+                        <td colSpan={12} className="px-2 py-8 text-center text-slate-500">
                           Sem linhas de rateio para o filtro informado.
                         </td>
                       </tr>

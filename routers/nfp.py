@@ -1110,7 +1110,8 @@ async def get_relatorio_rateio_detalhado(
     agente: Optional[str] = Query(None),
     origem: Optional[str] = Query(None),
     busca: Optional[str] = Query(None),
-    limite: int = Query(2000, ge=1, le=5000),
+    modo: str = Query("agrupado", description="agrupado | por_nota"),
+    limite: int = Query(3000, ge=1, le=20000),
     db: AsyncSession = Depends(get_db),
     usuario_atual: dict = Depends(get_usuario_logado),
 ):
@@ -1123,6 +1124,7 @@ async def get_relatorio_rateio_detalhado(
             agente=agente,
             origem=origem,
             busca=busca,
+            modo=modo,
             limite=limite,
         )
     except ValueError as exc:
