@@ -104,6 +104,24 @@ export default function RelatorioNfpRateioDetalhado() {
 
   const linhas = relatorio?.linhas || [];
   const totais = relatorio?.totais || {};
+  const visaoTodos = !agente || Boolean(totais.visao_todos);
+  const rotuloAgente = visaoTodos
+    ? 'agentes'
+    : (totais.rotulo_parte_agente || agente || 'agente');
+  const rotuloParte = visaoTodos ? 'Parte agentes' : `Parte ${rotuloAgente}`;
+  const rotuloDoador = visaoTodos
+    ? 'Doador AEB em lojas agentes'
+    : `Doador AEB em lojas ${rotuloAgente}`;
+
+  const cardsRetirada = [
+    ['Bruto Lojas/CPFs', moneyRelatorioNfp(totais.bruto_lojas_cpfs_agente)],
+    ['Bruto Lojas', moneyRelatorioNfp(totais.bruto_lojas_somente)],
+    ['Bruto CPF', moneyRelatorioNfp(totais.bruto_cpf_agente)],
+    [rotuloDoador, moneyRelatorioNfp(totais.doador_aeb_loja_agente)],
+    [rotuloParte, moneyRelatorioNfp(totais.parte_agente)],
+    ['Parte AEB', moneyRelatorioNfp(totais.parte_aeb_consolidada_agente ?? totais.parte_aeb)],
+    ['Linhas / notas', `${totais.qtd_linhas ?? 0} / ${totais.qtd_notas ?? 0}`],
+  ];
 
   const exportarXlsx = async () => {
     if (!linhas.length) return;
@@ -115,7 +133,12 @@ export default function RelatorioNfpRateioDetalhado() {
         Agente: agente || 'Todos',
         Origem: origem ? rotuloOrigemRateio(origem) : 'Todas',
         Busca: busca || '—',
-        'Total créditos': moneyRelatorioNfp(totais.total_creditos),
+        'Bruto Lojas/CPFs': moneyRelatorioNfp(totais.bruto_lojas_cpfs_agente),
+        'Bruto Lojas': moneyRelatorioNfp(totais.bruto_lojas_somente),
+        'Bruto CPF': moneyRelatorioNfp(totais.bruto_cpf_agente),
+        [rotuloDoador]: moneyRelatorioNfp(totais.doador_aeb_loja_agente),
+        [rotuloParte]: moneyRelatorioNfp(totais.parte_agente),
+        'Parte AEB': moneyRelatorioNfp(totais.parte_aeb_consolidada_agente ?? totais.parte_aeb),
       },
       colunas: COLUNAS_RATEIO_DETALHADO,
       dados: montarExportacaoRateioDetalhado(relatorio),
@@ -218,19 +241,18 @@ export default function RelatorioNfpRateioDetalhado() {
 
           {relatorio && (
             <>
-              <div className="mb-4 grid gap-3 md:grid-cols-4">
-                {[
-                  ['Total créditos', moneyRelatorioNfp(totais.total_creditos)],
-                  ['Parte agente', moneyRelatorioNfp(totais.parte_agente)],
-                  ['Parte AEB', moneyRelatorioNfp(totais.parte_aeb)],
-                  ['Linhas / notas', `${totais.qtd_linhas ?? 0} / ${totais.qtd_notas ?? 0}`],
-                ].map(([label, valor]) => (
+              <div className="mb-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                {cardsRetirada.map(([label, valor]) => (
                   <article key={label} className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
                     <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</p>
                     <p className="mt-2 text-xl font-bold text-slate-900">{valor}</p>
                   </article>
                 ))}
               </div>
+              <p className="mb-4 text-xs text-slate-500">
+                Totais de retirada iguais ao dashboard (competência + agente).
+                Origem/busca filtram só a tabela abaixo.
+              </p>
 
               <section className="overflow-x-auto rounded-3xl border border-slate-100 bg-white p-5 shadow-sm">
                 <table className="min-w-full text-sm">

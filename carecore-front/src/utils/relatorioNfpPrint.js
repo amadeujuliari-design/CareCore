@@ -64,6 +64,14 @@ export async function imprimirRelatorioNfpRateioDetalhado({
 
   const logoRelatorioDataUrl = await obterLogoRelatorioDataUrl(identidadeRelatorio);
   const totais = relatorio?.totais || {};
+  const visaoTodos = !relatorio?.agente || Boolean(totais.visao_todos);
+  const rotuloAgente = visaoTodos
+    ? 'agentes'
+    : (totais.rotulo_parte_agente || relatorio?.agente || 'agente');
+  const rotuloParte = visaoTodos ? 'Parte agentes' : `Parte ${rotuloAgente}`;
+  const rotuloDoador = visaoTodos
+    ? 'Doador AEB em lojas agentes'
+    : `Doador AEB em lojas ${rotuloAgente}`;
 
   imprimirRelatorio({
     titulo: 'NFP – Rateio detalhado',
@@ -74,10 +82,16 @@ export async function imprimirRelatorioNfpRateioDetalhado({
       relatorio?.busca ? `Busca: ${relatorio.busca}` : null,
     ].filter(Boolean).join(' · '),
     metricas: [
-      { label: 'Total créditos', valor: moneyRelatorioNfp(totais.total_creditos) },
-      { label: 'Parte agente', valor: moneyRelatorioNfp(totais.parte_agente) },
-      { label: 'Parte AEB', valor: moneyRelatorioNfp(totais.parte_aeb) },
-      { label: 'Linhas', valor: totais.qtd_linhas ?? 0 },
+      { label: 'Bruto Lojas/CPFs', valor: moneyRelatorioNfp(totais.bruto_lojas_cpfs_agente) },
+      { label: 'Bruto Lojas', valor: moneyRelatorioNfp(totais.bruto_lojas_somente) },
+      { label: 'Bruto CPF', valor: moneyRelatorioNfp(totais.bruto_cpf_agente) },
+      { label: rotuloDoador, valor: moneyRelatorioNfp(totais.doador_aeb_loja_agente) },
+      { label: rotuloParte, valor: moneyRelatorioNfp(totais.parte_agente) },
+      {
+        label: 'Parte AEB',
+        valor: moneyRelatorioNfp(totais.parte_aeb_consolidada_agente ?? totais.parte_aeb),
+      },
+      { label: 'Linhas / notas', valor: `${totais.qtd_linhas ?? 0} / ${totais.qtd_notas ?? 0}` },
     ],
     colunas: COLUNAS_RATEIO_DETALHADO,
     dados,

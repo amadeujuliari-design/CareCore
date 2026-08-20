@@ -1878,7 +1878,7 @@ async def relatorio_rateio_detalhado(
     ).scalars().all()
 
     linhas = []
-    totais = {
+    totais_filtro = {
         "total_creditos": 0.0,
         "parte_agente": 0.0,
         "parte_aeb": 0.0,
@@ -1906,11 +1906,34 @@ async def relatorio_rateio_detalhado(
                 "competencia": r.competencia,
             }
         )
-        totais["total_creditos"] += retorno
-        totais["parte_agente"] += parte_ag
-        totais["parte_aeb"] += parte_aeb
-        totais["qtd_linhas"] += 1
-        totais["qtd_notas"] += qtd
+        totais_filtro["total_creditos"] += retorno
+        totais_filtro["parte_agente"] += parte_ag
+        totais_filtro["parte_aeb"] += parte_aeb
+        totais_filtro["qtd_linhas"] += 1
+        totais_filtro["qtd_notas"] += qtd
+
+    # Mesmos totais de retirada do dashboard (competencia + agente),
+    # independente de filtros de origem/busca na tabela.
+    dash = await resumo_dashboard(
+        db,
+        organizacao_id,
+        competencia=competencia,
+        agente=agente_sel or "TODOS",
+    )
+    rotulo_parte = agente_sel if agente_sel else "agentes"
+    totais = {
+        **totais_filtro,
+        "bruto_lojas_cpfs_agente": float(dash.get("bruto_lojas_cpfs_agente") or 0),
+        "bruto_lojas_somente": float(dash.get("bruto_lojas_somente") or 0),
+        "bruto_cpf_agente": float(dash.get("bruto_cpf_agente") or 0),
+        "doador_aeb_loja_agente": float(dash.get("doador_aeb_loja_agente") or 0),
+        "parte_agente": float(dash.get("parte_agente") or 0),
+        "parte_aeb": float(dash.get("parte_aeb_consolidada_agente") or 0),
+        "parte_aeb_consolidada_agente": float(dash.get("parte_aeb_consolidada_agente") or 0),
+        "bruto_lojas_agente": float(dash.get("bruto_lojas_agente") or 0),
+        "rotulo_parte_agente": rotulo_parte,
+        "visao_todos": bool(dash.get("visao_todos")),
+    }
 
     return {
         "competencia": competencia,
