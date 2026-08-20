@@ -160,6 +160,15 @@ function nomeColuna(indice) {
 function celulaXml(valor, linha, coluna) {
   const referencia = `${nomeColuna(coluna)}${linha}`;
 
+  if (valor && typeof valor === "object" && !Array.isArray(valor) && valor.formula) {
+    const formula = String(valor.formula).replace(/^\s*=/, "");
+    const cached = valor.value;
+    if (typeof cached === "number" && Number.isFinite(cached)) {
+      return `<c r="${referencia}"><f>${escaparXml(formula)}</f><v>${cached}</v></c>`;
+    }
+    return `<c r="${referencia}"><f>${escaparXml(formula)}</f></c>`;
+  }
+
   if (typeof valor === "number" && Number.isFinite(valor)) {
     return `<c r="${referencia}"><v>${valor}</v></c>`;
   }
@@ -176,6 +185,7 @@ export function montarLinhasRelatorioXlsx({
   filtros = {},
   colunas = [],
   dados = [],
+  blocoTotais = [],
   dataAtual = new Date().toLocaleString("pt-BR"),
 }) {
   const linhas = [];
@@ -194,6 +204,7 @@ export function montarLinhasRelatorioXlsx({
     linhas.push([]);
   }
 
+  const indiceCabecalho = linhas.length;
   linhas.push(colunas);
 
   dados.forEach((item) => {
@@ -202,12 +213,36 @@ export function montarLinhasRelatorioXlsx({
     );
   });
 
+  const primeiraLinhaDados = dados.length ? indiceCabecalho + 2 : null;
+  const ultimaLinhaDados = dados.length
+    ? indiceCabecalho + 1 + dados.length
+    : null;
+
+  if (blocoTotais.length > 0) {
+    linhas.push([]);
+    linhas.push(["TOTAIS (fórmulas Excel)"]);
+    blocoTotais.forEach((item) => {
+      if (Array.isArray(item)) {
+        linhas.push(item);
+        return;
+      }
+      linhas.push([item.label, item.celula ?? item.value ?? ""]);
+    });
+  }
+
   linhas.push([]);
   linhas.push([DIREITOS_RESERVADOS_TITULO]);
   linhas.push([DIREITOS_RESERVADOS_TEXTO]);
   linhas.push([`Página pública: ${obterUrlDireitosReservados()}`]);
 
-  return linhas;
+  return {
+    linhas,
+    meta: {
+      indiceCabecalho: indiceCabecalho + 1,
+      primeiraLinhaDados,
+      ultimaLinhaDados,
+    },
+  };
 }
 
 export function criarArquivoXlsx(linhas, quantidadeColunas = 1) {
@@ -256,6 +291,7 @@ export function criarArquivoXlsx(linhas, quantidadeColunas = 1) {
   <sheets>
     <sheet name="Relatório" sheetId="1" r:id="rId1"/>
   </sheets>
+  <calcPr fullCalcOnLoad="1"/>
 </workbook>`,
     },
     {
@@ -297,14 +333,19 @@ export async function exportarRelatorioXlsx({
   filtros = {},
   colunas = [],
   dados = [],
+  blocoTotais = [],
 }) {
-  const linhas = montarLinhasRelatorioXlsx({
+  const montado = montarLinhasRelatorioXlsx({
     titulo,
     filtros,
     colunas,
     dados,
+    blocoTotais,
   });
-  const bytes = criarArquivoXlsx(linhas, colunas.length);
+  const bytes = criarArquivoXlsx(montado.linhas, Math.max(colunas.length, 2));
 
   baixarArquivoXlsx(bytes, nomeArquivo);
+  return montado.meta;
 }
+
+export { nomeColuna };

@@ -1487,20 +1487,20 @@ def montar_totais_bruto_lojas_cpf(
     }
 
 
-async def _bruto_cpf_agente_centavos(
+async def _mapa_creditos_cpf_por_cnpj(
     db: AsyncSession,
     organizacao_id: str,
     competencia: str,
     agente_sel: str,
-) -> int:
-    """Soma creditos SEFAZ atribuidos via CPF captado (mesma regra do rateio)."""
+) -> dict[str, int]:
+    """CNPJ -> creditos SEFAZ (centavos) atribuidos via CPF captado."""
     mapa_cpf_agente = await mapa_cpfs_captados_agente(db, organizacao_id)
     if agente_sel:
         cpfs_ok = {cpf for cpf, ag in mapa_cpf_agente.items() if ag == agente_sel}
     else:
         cpfs_ok = set(mapa_cpf_agente.keys())
     if not cpfs_ok:
-        return 0
+        return {}
 
     doacoes = (
         await db.execute(
@@ -1520,7 +1520,7 @@ async def _bruto_cpf_agente_centavos(
         if cnpj and numero:
             chaves_cpf.add((cnpj, numero))
     if not chaves_cpf:
-        return 0
+        return {}
 
     sefaz = (
         await db.execute(
@@ -1534,12 +1534,79 @@ async def _bruto_cpf_agente_centavos(
             )
         )
     ).all()
-    total = 0
+    por_cnpj: dict[str, int] = {}
     for cnpj_emitente, numero_nota, creditos_centavos in sefaz:
-        chave = (limpar_documento(cnpj_emitente), limpar_nota(numero_nota))
-        if chave in chaves_cpf:
-            total += int(creditos_centavos or 0)
-    return total
+        cnpj = limpar_documento(cnpj_emitente)
+        chave = (cnpj, limpar_nota(numero_nota))
+        if chave not in chaves_cpf:
+            continue
+        por_cnpj[cnpj] = int(por_cnpj.get(cnpj, 0)) + int(creditos_centavos or 0)
+    return por_cnpj
+
+
+async def _bruto_cpf_agente_centavos(
+    db: AsyncSession,
+    organizacao_id: str,
+    competencia: str,
+    agente_sel: str,
+) -> int:
+    """Soma creditos SEFAZ atribuidos via CPF captado (mesma regra do rateio)."""
+    mapa = await _mapa_creditos_cpf_por_cnpj(db, organizacao_id, competencia, agente_sel)
+    return int(sum(mapa.values()))
+
+
+def atribuir_retorno_loja_cpf(
+    *,
+    origem: Optional[str],
+    retorno_centavos: int,
+    cpf_restante_por_cnpj: dict[str, int],
+    cnpj: Optional[str],
+) -> dict[str, object]:
+    """
+    Parte o retorno da linha em loja vs CPF (centavos) e define fonte.
+    Consome o saldo de CPF por CNPJ para nao duplicar em linhas irmas.
+    """
+    origem_n = normalizar_agente_captacao(origem)
+    retorno_c = max(0, int(retorno_centavos or 0))
+    cnpj_limpo = limpar_documento(cnpj)
+
+    if origem_n.startswith("DOADOR_AUTOMATICO"):
+        if origem_n == "DOADOR_AUTOMATICO_AEB":
+            return {
+                "retorno_loja_centavos": 0,
+                "retorno_cpf_centavos": 0,
+                "fonte": "Doador automático AEB",
+            }
+        return {
+            "retorno_loja_centavos": retorno_c,
+            "retorno_cpf_centavos": 0,
+            "fonte": "Doador AEB",
+        }
+
+    if not origem_eh_rateio_agente(origem_n):
+        fonte = "Direto AEB" if origem_n == "DIRETO_AEB" else "Outros"
+        return {
+            "retorno_loja_centavos": 0,
+            "retorno_cpf_centavos": 0,
+            "fonte": fonte,
+        }
+
+    saldo_cpf = max(0, int(cpf_restante_por_cnpj.get(cnpj_limpo, 0) or 0))
+    cpf_c = min(saldo_cpf, retorno_c)
+    if cnpj_limpo:
+        cpf_restante_por_cnpj[cnpj_limpo] = saldo_cpf - cpf_c
+    loja_c = retorno_c - cpf_c
+    if cpf_c > 0 and loja_c > 0:
+        fonte = "Misto"
+    elif cpf_c > 0:
+        fonte = "CPF"
+    else:
+        fonte = "Loja"
+    return {
+        "retorno_loja_centavos": loja_c,
+        "retorno_cpf_centavos": cpf_c,
+        "fonte": fonte,
+    }
 
 
 async def resumo_dashboard(
@@ -1885,11 +1952,23 @@ async def relatorio_rateio_detalhado(
         "qtd_linhas": 0,
         "qtd_notas": 0,
     }
+    cpf_por_cnpj = await _mapa_creditos_cpf_por_cnpj(
+        db, organizacao_id, competencia, agente_sel
+    )
+    cpf_restante = dict(cpf_por_cnpj)
+
     for r in rows:
         retorno = float(r.retorno or 0)
         parte_ag = float(r.valor_diego or 0)
         parte_aeb = float(r.valor_aeb or 0)
         qtd = int(r.qtd or 0)
+        retorno_c = int(r.retorno_centavos or valor_para_centavos(retorno) or 0)
+        partes = atribuir_retorno_loja_cpf(
+            origem=r.origem,
+            retorno_centavos=retorno_c,
+            cpf_restante_por_cnpj=cpf_restante,
+            cnpj=r.cnpj,
+        )
         linhas.append(
             {
                 "id": r.id,
@@ -1899,6 +1978,9 @@ async def relatorio_rateio_detalhado(
                 "origem": r.origem,
                 "qtd": qtd,
                 "retorno": retorno,
+                "retorno_loja": centavos_para_float(int(partes["retorno_loja_centavos"])),
+                "retorno_cpf": centavos_para_float(int(partes["retorno_cpf_centavos"])),
+                "fonte": partes["fonte"],
                 "valor_agente": parte_ag,
                 "valor_diego": parte_ag,
                 "valor_aeb": parte_aeb,

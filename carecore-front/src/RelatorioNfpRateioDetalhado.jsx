@@ -13,14 +13,15 @@ import {
 import DireitosReservadosAviso from './components/DireitosReservadosAviso';
 import { nfpAcesso } from './services/nfpService';
 import { nfpOrigensRateio, nfpRelatorioRateioDetalhado } from './services/relatorioNfpService';
-import { exportarRelatorioXlsx } from './utils/exportarRelatorioXlsx';
+import { exportarRelatorioXlsx, montarLinhasRelatorioXlsx, nomeColuna } from './utils/exportarRelatorioXlsx';
 import { buscarIdentidadeRelatoriosOrganizacao } from './utils/relatorioIdentidadePrint';
 import { formatarCNPJ } from './utils/nfpCadastroUtils';
 import { imprimirRelatorioNfpRateioDetalhado } from './utils/relatorioNfpPrint';
 import {
   COLUNAS_RATEIO_DETALHADO,
   moneyRelatorioNfp,
-  montarExportacaoRateioDetalhado,
+  montarBlocoTotaisRateioDetalhadoXlsx,
+  montarExportacaoRateioDetalhadoXlsx,
   rotuloOrigemRateio,
 } from './utils/relatorioNfpUtils';
 
@@ -125,6 +126,28 @@ export default function RelatorioNfpRateioDetalhado() {
 
   const exportarXlsx = async () => {
     if (!linhas.length) return;
+    const dadosXlsx = montarExportacaoRateioDetalhadoXlsx(relatorio);
+    const montado = montarLinhasRelatorioXlsx({
+      titulo: 'NFP – Rateio detalhado',
+      filtros: {
+        Competência: competencia,
+        Agente: agente || 'Todos',
+        Origem: origem ? rotuloOrigemRateio(origem) : 'Todas',
+        Busca: busca || '—',
+      },
+      colunas: COLUNAS_RATEIO_DETALHADO,
+      dados: dadosXlsx,
+      blocoTotais: [],
+    });
+    const blocoTotais = montarBlocoTotaisRateioDetalhadoXlsx({
+      colunas: COLUNAS_RATEIO_DETALHADO,
+      primeiraLinhaDados: montado.meta.primeiraLinhaDados,
+      ultimaLinhaDados: montado.meta.ultimaLinhaDados,
+      totais,
+      rotuloParte,
+      rotuloDoador,
+      nomeColunaFn: nomeColuna,
+    });
     await exportarRelatorioXlsx({
       nomeArquivo: `nfp_rateio_detalhado_${competencia}`,
       titulo: 'NFP – Rateio detalhado',
@@ -133,15 +156,10 @@ export default function RelatorioNfpRateioDetalhado() {
         Agente: agente || 'Todos',
         Origem: origem ? rotuloOrigemRateio(origem) : 'Todas',
         Busca: busca || '—',
-        'Bruto Lojas/CPFs': moneyRelatorioNfp(totais.bruto_lojas_cpfs_agente),
-        'Bruto Lojas': moneyRelatorioNfp(totais.bruto_lojas_somente),
-        'Bruto CPF': moneyRelatorioNfp(totais.bruto_cpf_agente),
-        [rotuloDoador]: moneyRelatorioNfp(totais.doador_aeb_loja_agente),
-        [rotuloParte]: moneyRelatorioNfp(totais.parte_agente),
-        'Parte AEB': moneyRelatorioNfp(totais.parte_aeb_consolidada_agente ?? totais.parte_aeb),
       },
       colunas: COLUNAS_RATEIO_DETALHADO,
-      dados: montarExportacaoRateioDetalhado(relatorio),
+      dados: dadosXlsx,
+      blocoTotais,
     });
   };
 
@@ -262,8 +280,11 @@ export default function RelatorioNfpRateioDetalhado() {
                       <th className="px-2 py-2">Loja</th>
                       <th className="px-2 py-2">Captador</th>
                       <th className="px-2 py-2">Origem</th>
+                      <th className="px-2 py-2">Fonte</th>
                       <th className="px-2 py-2">Qtd</th>
                       <th className="px-2 py-2">Retorno</th>
+                      <th className="px-2 py-2">Retorno loja</th>
+                      <th className="px-2 py-2">Retorno CPF</th>
                       <th className="px-2 py-2">Agente</th>
                       <th className="px-2 py-2">AEB</th>
                     </tr>
@@ -275,15 +296,18 @@ export default function RelatorioNfpRateioDetalhado() {
                         <td className="px-2 py-2">{item.loja || '—'}</td>
                         <td className="px-2 py-2">{item.captador || '—'}</td>
                         <td className="px-2 py-2">{rotuloOrigemRateio(item.origem)}</td>
+                        <td className="px-2 py-2">{item.fonte || '—'}</td>
                         <td className="px-2 py-2">{item.qtd ?? 0}</td>
                         <td className="px-2 py-2">{moneyRelatorioNfp(item.retorno)}</td>
+                        <td className="px-2 py-2">{moneyRelatorioNfp(item.retorno_loja ?? item.retorno)}</td>
+                        <td className="px-2 py-2">{moneyRelatorioNfp(item.retorno_cpf ?? 0)}</td>
                         <td className="px-2 py-2">{moneyRelatorioNfp(item.valor_agente ?? item.valor_diego)}</td>
                         <td className="px-2 py-2">{moneyRelatorioNfp(item.valor_aeb)}</td>
                       </tr>
                     ))}
                     {!linhas.length && (
                       <tr>
-                        <td colSpan={8} className="px-2 py-8 text-center text-slate-500">
+                        <td colSpan={11} className="px-2 py-8 text-center text-slate-500">
                           Sem linhas de rateio para o filtro informado.
                         </td>
                       </tr>

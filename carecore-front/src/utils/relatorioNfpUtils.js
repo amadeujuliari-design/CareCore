@@ -71,8 +71,11 @@ export const COLUNAS_RATEIO_DETALHADO = [
   'Loja',
   'Captador',
   'Origem',
+  'Fonte',
   'Qtd',
   'Retorno',
+  'Retorno loja',
+  'Retorno CPF',
   'Parte agente',
   'Parte AEB',
   'Final',
@@ -103,19 +106,110 @@ export function montarExportacaoRateioConsolidadoAgente(relatorio) {
   }));
 }
 
+function numeroExportacao(valor) {
+  const n = Number(valor || 0);
+  return Number.isFinite(n) ? Math.round(n * 100) / 100 : 0;
+}
+
 export function montarExportacaoRateioDetalhado(relatorio) {
   return (relatorio?.linhas || []).map((item) => ({
     CNPJ: item.cnpj || '',
     Loja: item.loja || '',
     Captador: item.captador || '',
     Origem: rotuloOrigemRateio(item.origem),
+    Fonte: item.fonte || '—',
     Qtd: item.qtd ?? 0,
     Retorno: formatarNumeroRelatorioNfp(item.retorno),
+    'Retorno loja': formatarNumeroRelatorioNfp(item.retorno_loja ?? item.retorno),
+    'Retorno CPF': formatarNumeroRelatorioNfp(item.retorno_cpf ?? 0),
     'Parte agente': formatarNumeroRelatorioNfp(item.valor_agente ?? item.valor_diego),
     'Parte AEB': formatarNumeroRelatorioNfp(item.valor_aeb),
     Final: formatarNumeroRelatorioNfp(item.final),
     Competência: item.competencia || '',
   }));
+}
+
+/** Linhas numéricas para XLSX com fórmulas de total. */
+export function montarExportacaoRateioDetalhadoXlsx(relatorio) {
+  return (relatorio?.linhas || []).map((item) => ({
+    CNPJ: item.cnpj || '',
+    Loja: item.loja || '',
+    Captador: item.captador || '',
+    Origem: rotuloOrigemRateio(item.origem),
+    Fonte: item.fonte || '',
+    Qtd: item.qtd ?? 0,
+    Retorno: numeroExportacao(item.retorno),
+    'Retorno loja': numeroExportacao(item.retorno_loja ?? item.retorno),
+    'Retorno CPF': numeroExportacao(item.retorno_cpf ?? 0),
+    'Parte agente': numeroExportacao(item.valor_agente ?? item.valor_diego),
+    'Parte AEB': numeroExportacao(item.valor_aeb),
+    Final: numeroExportacao(item.final),
+    Competência: item.competencia || '',
+  }));
+}
+
+export function montarBlocoTotaisRateioDetalhadoXlsx({
+  colunas,
+  primeiraLinhaDados,
+  ultimaLinhaDados,
+  totais = {},
+  rotuloParte = 'Parte agentes',
+  rotuloDoador = 'Doador AEB em lojas agentes',
+  nomeColunaFn,
+}) {
+  if (!primeiraLinhaDados || !ultimaLinhaDados || !nomeColunaFn) return [];
+
+  const idx = (nome) => colunas.indexOf(nome);
+  const col = (nome) => nomeColunaFn(idx(nome));
+  const r1 = primeiraLinhaDados;
+  const r2 = ultimaLinhaDados;
+  const cRet = col('Retorno');
+  const cLoja = col('Retorno loja');
+  const cCpf = col('Retorno CPF');
+  const cFonte = col('Fonte');
+  const cParteAg = col('Parte agente');
+  const cParteAeb = col('Parte AEB');
+
+  const formula = (expr, value) => ({ formula: expr, value: numeroExportacao(value) });
+
+  return [
+    {
+      label: 'Bruto Lojas/CPFs',
+      celula: formula(
+        `SUM(${cLoja}${r1}:${cLoja}${r2})+SUM(${cCpf}${r1}:${cCpf}${r2})`,
+        totais.bruto_lojas_cpfs_agente,
+      ),
+    },
+    {
+      label: 'Bruto Lojas',
+      celula: formula(`SUM(${cLoja}${r1}:${cLoja}${r2})`, totais.bruto_lojas_somente),
+    },
+    {
+      label: 'Bruto CPF',
+      celula: formula(`SUM(${cCpf}${r1}:${cCpf}${r2})`, totais.bruto_cpf_agente),
+    },
+    {
+      label: rotuloDoador,
+      celula: formula(
+        `SUMIF(${cFonte}${r1}:${cFonte}${r2},"Doador AEB",${cRet}${r1}:${cRet}${r2})`,
+        totais.doador_aeb_loja_agente,
+      ),
+    },
+    {
+      label: rotuloParte,
+      celula: formula(`SUM(${cParteAg}${r1}:${cParteAg}${r2})`, totais.parte_agente),
+    },
+    {
+      label: 'Parte AEB',
+      celula: formula(
+        `SUMIF(${cFonte}${r1}:${cFonte}${r2},"Loja",${cParteAeb}${r1}:${cParteAeb}${r2})`
+        + `+SUMIF(${cFonte}${r1}:${cFonte}${r2},"CPF",${cParteAeb}${r1}:${cParteAeb}${r2})`
+        + `+SUMIF(${cFonte}${r1}:${cFonte}${r2},"Misto",${cParteAeb}${r1}:${cParteAeb}${r2})`
+        + `+SUMIF(${cFonte}${r1}:${cFonte}${r2},"Doador AEB",${cRet}${r1}:${cRet}${r2})`,
+        totais.parte_aeb_consolidada_agente ?? totais.parte_aeb,
+      ),
+    },
+  ];
 }
 
 export const STATUS_CUPONS_RELATORIO = [
