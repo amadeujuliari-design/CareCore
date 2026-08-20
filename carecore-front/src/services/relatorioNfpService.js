@@ -10,6 +10,15 @@ export async function nfpRelatorioRateioDetalhado(params = {}) {
   return data;
 }
 
+export async function nfpExportarRateioDetalhado(params = {}) {
+  const response = await api.get('/api/nfp/relatorios/rateio-detalhado/exportar', {
+    params,
+    responseType: 'blob',
+    timeout: 600_000,
+  });
+  return response;
+}
+
 export async function nfpOrigensRateio(params = {}) {
   const { data } = await api.get('/api/nfp/relatorios/origens-rateio', { params });
   return data;

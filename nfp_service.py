@@ -2087,37 +2087,43 @@ def _linha_passa_filtros_rateio(
     return True
 
 
-async def relatorio_rateio_detalhado(
+def _normalizar_modo_rateio_detalhado(modo: Optional[str]) -> str:
+    modo_n = (modo or "agrupado").strip().lower()
+    if modo_n in {"nota", "por_nota", "detalhado", "lancamento", "lancamentos"}:
+        return "por_nota"
+    return "agrupado"
+
+
+def _rotulo_origem_rateio(origem: Optional[str]) -> str:
+    valor = normalizar_agente_captacao(origem)
+    if not valor:
+        return "—"
+    if valor == "DIRETO_AEB":
+        return "Direto AEB"
+    if valor == "DOADOR_AUTOMATICO_AEB":
+        return "Doador automático AEB"
+    if valor.startswith("DOADOR_AUTOMATICO_"):
+        return f"Doador automático {valor.replace('DOADOR_AUTOMATICO_', '', 1)}"
+    return valor
+
+
+def _csv_celula(valor: Any) -> str:
+    texto = "" if valor is None else str(valor)
+    if any(ch in texto for ch in (";", '"', "\n", "\r")):
+        return '"' + texto.replace('"', '""') + '"'
+    return texto
+
+
+async def _iter_linhas_rateio_detalhado(
     db: AsyncSession,
     organizacao_id: str,
     competencia: str,
-    agente: Optional[str] = None,
-    origem: Optional[str] = None,
-    busca: Optional[str] = None,
-    limite: int = 100,
-    offset: int = 0,
-    modo: str = "agrupado",
-    exportacao: bool = False,
-) -> dict:
-    if not competencia_valida(competencia):
-        raise ValueError("Competencia invalida. Use YYYY-MM.")
-
-    modo_n = (modo or "agrupado").strip().lower()
-    if modo_n in {"nota", "por_nota", "detalhado", "lancamento", "lancamentos"}:
-        modo_n = "por_nota"
-    else:
-        modo_n = "agrupado"
-
-    agente_sel = normalizar_agente_captacao(agente)
-    origem_sel = normalizar_agente_captacao(origem)
-    busca_txt = (busca or "").strip()
-    offset_n = max(0, int(offset or 0))
-    # UI: ate 5k/pagina; exportacao: ate 50k por lote (front pagina ate o total).
-    limite_cap = 50000 if exportacao else 5000
-    limite_n = max(1, min(int(limite or 100), limite_cap))
-
-    todas_linhas: list[dict] = []
-
+    agente_sel: str,
+    origem_sel: str,
+    busca_txt: str,
+    modo_n: str,
+):
+    """Gera linhas filtradas sem materializar a lista inteira na memoria."""
     if modo_n == "por_nota":
         mapas = await _mapas_classificacao_rateio(db, organizacao_id, competencia)
         sefaz = (
@@ -2153,91 +2159,126 @@ async def relatorio_rateio_detalhado(
             retorno = centavos_para_float(classif["retorno_centavos"])
             parte_ag = centavos_para_float(classif["valor_agente_centavos"])
             parte_aeb = centavos_para_float(classif["valor_aeb_centavos"])
-            todas_linhas.append(
-                {
-                    "id": s.id,
-                    "cnpj": classif["cnpj"],
-                    "loja": classif["loja"],
-                    "captador": classif["captador"],
-                    "origem": classif["origem"],
-                    "numero_nota": classif["numero_nota"],
-                    "cpf_doador": classif["cpf_doador"],
-                    "qtd": 1,
-                    "retorno": retorno,
-                    "retorno_loja": centavos_para_float(classif["retorno_loja_centavos"]),
-                    "retorno_cpf": centavos_para_float(classif["retorno_cpf_centavos"]),
-                    "fonte": classif["fonte"],
-                    "valor_agente": parte_ag,
-                    "valor_diego": parte_ag,
-                    "valor_aeb": parte_aeb,
-                    "final": retorno,
-                    "competencia": competencia,
-                }
-            )
-    else:
-        q = select(NfpRateioDB).where(
-            NfpRateioDB.organizacao_id == organizacao_id,
-            NfpRateioDB.competencia == competencia,
+            yield {
+                "id": s.id,
+                "cnpj": classif["cnpj"],
+                "loja": classif["loja"],
+                "captador": classif["captador"],
+                "origem": classif["origem"],
+                "numero_nota": classif["numero_nota"],
+                "cpf_doador": classif["cpf_doador"],
+                "qtd": 1,
+                "retorno": retorno,
+                "retorno_loja": centavos_para_float(classif["retorno_loja_centavos"]),
+                "retorno_cpf": centavos_para_float(classif["retorno_cpf_centavos"]),
+                "fonte": classif["fonte"],
+                "valor_agente": parte_ag,
+                "valor_diego": parte_ag,
+                "valor_aeb": parte_aeb,
+                "final": retorno,
+                "competencia": competencia,
+            }
+        return
+
+    q = select(NfpRateioDB).where(
+        NfpRateioDB.organizacao_id == organizacao_id,
+        NfpRateioDB.competencia == competencia,
+    )
+    if agente_sel:
+        q = q.where(
+            (NfpRateioDB.captador == agente_sel)
+            | (NfpRateioDB.origem == agente_sel)
+            | (NfpRateioDB.origem == origem_doador_auto_agente(agente_sel))
         )
-        if agente_sel:
-            q = q.where(
-                (NfpRateioDB.captador == agente_sel)
-                | (NfpRateioDB.origem == agente_sel)
-                | (NfpRateioDB.origem == origem_doador_auto_agente(agente_sel))
-            )
-        if origem_sel:
-            q = q.where(NfpRateioDB.origem == origem_sel)
-        if busca_txt:
-            termo = f"%{busca_txt}%"
-            q = q.where((NfpRateioDB.loja.ilike(termo)) | (NfpRateioDB.cnpj.ilike(termo)))
+    if origem_sel:
+        q = q.where(NfpRateioDB.origem == origem_sel)
+    if busca_txt:
+        termo = f"%{busca_txt}%"
+        q = q.where((NfpRateioDB.loja.ilike(termo)) | (NfpRateioDB.cnpj.ilike(termo)))
 
-        rows = (
-            await db.execute(
-                q.order_by(NfpRateioDB.origem, NfpRateioDB.loja)
-            )
-        ).scalars().all()
-
-        cpf_por_cnpj = await _mapa_creditos_cpf_por_cnpj(
-            db, organizacao_id, competencia, agente_sel
+    rows = (
+        await db.execute(
+            q.order_by(NfpRateioDB.origem, NfpRateioDB.loja)
         )
-        cpf_restante = dict(cpf_por_cnpj)
+    ).scalars().all()
 
-        for r in rows:
-            retorno = float(r.retorno or 0)
-            parte_ag = float(r.valor_diego or 0)
-            parte_aeb = float(r.valor_aeb or 0)
-            qtd = int(r.qtd or 0)
-            retorno_c = int(r.retorno_centavos or valor_para_centavos(retorno) or 0)
-            partes = atribuir_retorno_loja_cpf(
-                origem=r.origem,
-                retorno_centavos=retorno_c,
-                cpf_restante_por_cnpj=cpf_restante,
-                cnpj=r.cnpj,
-            )
-            todas_linhas.append(
-                {
-                    "id": r.id,
-                    "cnpj": r.cnpj,
-                    "loja": r.loja,
-                    "captador": r.captador,
-                    "origem": r.origem,
-                    "numero_nota": None,
-                    "cpf_doador": None,
-                    "qtd": qtd,
-                    "retorno": retorno,
-                    "retorno_loja": centavos_para_float(int(partes["retorno_loja_centavos"])),
-                    "retorno_cpf": centavos_para_float(int(partes["retorno_cpf_centavos"])),
-                    "fonte": partes["fonte"],
-                    "valor_agente": parte_ag,
-                    "valor_diego": parte_ag,
-                    "valor_aeb": parte_aeb,
-                    "final": float(r.final or 0),
-                    "competencia": r.competencia,
-                }
-            )
+    cpf_por_cnpj = await _mapa_creditos_cpf_por_cnpj(
+        db, organizacao_id, competencia, agente_sel
+    )
+    cpf_restante = dict(cpf_por_cnpj)
 
-    total_encontrado = len(todas_linhas)
-    linhas = todas_linhas[offset_n : offset_n + limite_n]
+    for r in rows:
+        retorno = float(r.retorno or 0)
+        parte_ag = float(r.valor_diego or 0)
+        parte_aeb = float(r.valor_aeb or 0)
+        qtd = int(r.qtd or 0)
+        retorno_c = int(r.retorno_centavos or valor_para_centavos(retorno) or 0)
+        partes = atribuir_retorno_loja_cpf(
+            origem=r.origem,
+            retorno_centavos=retorno_c,
+            cpf_restante_por_cnpj=cpf_restante,
+            cnpj=r.cnpj,
+        )
+        yield {
+            "id": r.id,
+            "cnpj": r.cnpj,
+            "loja": r.loja,
+            "captador": r.captador,
+            "origem": r.origem,
+            "numero_nota": None,
+            "cpf_doador": None,
+            "qtd": qtd,
+            "retorno": retorno,
+            "retorno_loja": centavos_para_float(int(partes["retorno_loja_centavos"])),
+            "retorno_cpf": centavos_para_float(int(partes["retorno_cpf_centavos"])),
+            "fonte": partes["fonte"],
+            "valor_agente": parte_ag,
+            "valor_diego": parte_ag,
+            "valor_aeb": parte_aeb,
+            "final": float(r.final or 0),
+            "competencia": r.competencia,
+        }
+
+
+async def relatorio_rateio_detalhado(
+    db: AsyncSession,
+    organizacao_id: str,
+    competencia: str,
+    agente: Optional[str] = None,
+    origem: Optional[str] = None,
+    busca: Optional[str] = None,
+    limite: int = 100,
+    offset: int = 0,
+    modo: str = "agrupado",
+    exportacao: bool = False,
+) -> dict:
+    if not competencia_valida(competencia):
+        raise ValueError("Competencia invalida. Use YYYY-MM.")
+
+    modo_n = _normalizar_modo_rateio_detalhado(modo)
+    agente_sel = normalizar_agente_captacao(agente)
+    origem_sel = normalizar_agente_captacao(origem)
+    busca_txt = (busca or "").strip()
+    offset_n = max(0, int(offset or 0))
+    # UI: ate 5k/pagina; exportacao: ate 50k por lote (legado; preferir endpoint /exportar).
+    limite_cap = 50000 if exportacao else 5000
+    limite_n = max(1, min(int(limite or 100), limite_cap))
+
+    linhas: list[dict] = []
+    total_encontrado = 0
+    async for item in _iter_linhas_rateio_detalhado(
+        db,
+        organizacao_id,
+        competencia,
+        agente_sel=agente_sel,
+        origem_sel=origem_sel,
+        busca_txt=busca_txt,
+        modo_n=modo_n,
+    ):
+        if offset_n <= total_encontrado < offset_n + limite_n:
+            linhas.append(item)
+        total_encontrado += 1
+
     truncado = (offset_n + len(linhas)) < total_encontrado or offset_n > 0
 
     totais_filtro = {
@@ -2295,6 +2336,117 @@ async def relatorio_rateio_detalhado(
             "pagina": (offset_n // limite_n) + 1 if limite_n else 1,
         },
     }
+
+
+async def exportar_relatorio_rateio_detalhado_csv(
+    db: AsyncSession,
+    organizacao_id: str,
+    competencia: str,
+    agente: Optional[str] = None,
+    origem: Optional[str] = None,
+    busca: Optional[str] = None,
+    modo: str = "agrupado",
+) -> tuple[str, bytes]:
+    """
+    Monta CSV (separador ;) com BOM UTF-8 para abrir no Excel.
+    Gera o arquivo completo ainda com a sessao do banco aberta (volumes grandes).
+    """
+    if not competencia_valida(competencia):
+        raise ValueError("Competencia invalida. Use YYYY-MM.")
+
+    modo_n = _normalizar_modo_rateio_detalhado(modo)
+    agente_sel = normalizar_agente_captacao(agente)
+    origem_sel = normalizar_agente_captacao(origem)
+    busca_txt = (busca or "").strip()
+
+    dash = await resumo_dashboard(
+        db,
+        organizacao_id,
+        competencia=competencia,
+        agente=agente_sel or "TODOS",
+    )
+    visao_todos = bool(dash.get("visao_todos")) or not agente_sel
+    rotulo_agente = "agentes" if visao_todos else (agente_sel or "agente")
+    rotulo_parte = "Parte agentes" if visao_todos else f"Parte {rotulo_agente}"
+    rotulo_doador = (
+        "Doador AEB em lojas agentes"
+        if visao_todos
+        else f"Doador AEB em lojas {rotulo_agente}"
+    )
+    modo_rotulo = "Sem agrupar (cada lancamento)" if modo_n == "por_nota" else "Agrupado por CNPJ"
+    nome = (
+        f"nfp_rateio_detalhado_{competencia}_"
+        f"{'por_nota' if modo_n == 'por_nota' else 'agrupado'}.csv"
+    )
+
+    out = io.StringIO()
+    out.write("\ufeff")
+    out.write("NFP - Rateio detalhado\n")
+    out.write(f"Competencia;{_csv_celula(competencia)}\n")
+    out.write(f"Agente;{_csv_celula(agente_sel or 'Todos')}\n")
+    out.write(
+        f"Origem;{_csv_celula(_rotulo_origem_rateio(origem_sel) if origem_sel else 'Todas')}\n"
+    )
+    out.write(f"Busca;{_csv_celula(busca_txt or '—')}\n")
+    out.write(f"Exibicao;{_csv_celula(modo_rotulo)}\n")
+    out.write("\n")
+    out.write("Totais de retirada (dashboard)\n")
+    out.write(f"Bruto Lojas/CPFs;{float(dash.get('bruto_lojas_cpfs_agente') or 0):.2f}\n")
+    out.write(f"Bruto Lojas;{float(dash.get('bruto_lojas_somente') or 0):.2f}\n")
+    out.write(f"Bruto CPF;{float(dash.get('bruto_cpf_agente') or 0):.2f}\n")
+    out.write(f"{_csv_celula(rotulo_doador)};{float(dash.get('doador_aeb_loja_agente') or 0):.2f}\n")
+    out.write(f"{_csv_celula(rotulo_parte)};{float(dash.get('parte_agente') or 0):.2f}\n")
+    out.write(f"Parte AEB;{float(dash.get('parte_aeb_consolidada_agente') or 0):.2f}\n")
+    out.write("\n")
+    out.write(
+        "CNPJ;Loja;Captador;Origem;Fonte;Numero nota;Qtd;Retorno;"
+        "Retorno loja;Retorno CPF;Parte agente;Parte AEB;Final;Competencia\n"
+    )
+
+    total = 0
+    async for item in _iter_linhas_rateio_detalhado(
+        db,
+        organizacao_id,
+        competencia,
+        agente_sel=agente_sel,
+        origem_sel=origem_sel,
+        busca_txt=busca_txt,
+        modo_n=modo_n,
+    ):
+        total += 1
+        retorno = float(item.get("retorno") or 0)
+        retorno_loja = item.get("retorno_loja")
+        if retorno_loja is None:
+            retorno_loja = retorno
+        valor_agente = item.get("valor_agente")
+        if valor_agente is None:
+            valor_agente = item.get("valor_diego")
+        out.write(
+            ";".join(
+                [
+                    _csv_celula(item.get("cnpj")),
+                    _csv_celula(item.get("loja")),
+                    _csv_celula(item.get("captador")),
+                    _csv_celula(_rotulo_origem_rateio(item.get("origem"))),
+                    _csv_celula(item.get("fonte") or ""),
+                    _csv_celula(item.get("numero_nota") or ""),
+                    _csv_celula(int(item.get("qtd") or 0)),
+                    f"{retorno:.2f}",
+                    f"{float(retorno_loja or 0):.2f}",
+                    f"{float(item.get('retorno_cpf') or 0):.2f}",
+                    f"{float(valor_agente or 0):.2f}",
+                    f"{float(item.get('valor_aeb') or 0):.2f}",
+                    f"{float(item.get('final') or 0):.2f}",
+                    _csv_celula(item.get("competencia") or competencia),
+                ]
+            )
+            + "\n"
+        )
+        if total % 5000 == 0:
+            await asyncio.sleep(0)
+
+    out.write(f"\nTotal de linhas;{total}\n")
+    return nome, out.getvalue().encode("utf-8")
 
 
 async def listar_origens_rateio(

@@ -12,26 +12,49 @@ import {
 } from './components/PremiumUI';
 import DireitosReservadosAviso from './components/DireitosReservadosAviso';
 import { nfpAcesso } from './services/nfpService';
-import { nfpOrigensRateio, nfpRelatorioRateioDetalhado } from './services/relatorioNfpService';
-import { exportarRelatorioXlsx, montarLinhasRelatorioXlsx, nomeColuna } from './utils/exportarRelatorioXlsx';
+import {
+  nfpExportarRateioDetalhado,
+  nfpOrigensRateio,
+  nfpRelatorioRateioDetalhado,
+} from './services/relatorioNfpService';
 import { buscarIdentidadeRelatoriosOrganizacao } from './utils/relatorioIdentidadePrint';
 import { formatarCNPJ } from './utils/nfpCadastroUtils';
 import { imprimirRelatorioNfpRateioDetalhado } from './utils/relatorioNfpPrint';
-import {
-  COLUNAS_RATEIO_DETALHADO,
-  moneyRelatorioNfp,
-  montarBlocoTotaisRateioDetalhadoXlsx,
-  montarExportacaoRateioDetalhadoXlsx,
-  rotuloOrigemRateio,
-} from './utils/relatorioNfpUtils';
+import { moneyRelatorioNfp, rotuloOrigemRateio } from './utils/relatorioNfpUtils';
 
 const PAGE_SIZE = 100;
-const EXPORT_PAGE_SIZE = 5000;
+const LIMITE_IMPRESSAO = 3000;
 
 function competenciaAtual() {
   const agora = new Date();
   const mes = String(agora.getMonth() + 1).padStart(2, '0');
   return `${agora.getFullYear()}-${mes}`;
+}
+
+async function detalheErroExportacao(error) {
+  const data = error?.response?.data;
+  if (data instanceof Blob) {
+    try {
+      const texto = await data.text();
+      const json = JSON.parse(texto);
+      if (typeof json?.detail === 'string') return json.detail;
+      return texto || 'Não foi possível exportar o relatório completo.';
+    } catch {
+      return 'Não foi possível exportar o relatório completo.';
+    }
+  }
+  return error?.response?.data?.detail || 'Não foi possível exportar o relatório completo.';
+}
+
+function baixarBlob(blob, nomeArquivo) {
+  const url = window.URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.setAttribute('download', nomeArquivo);
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.URL.revokeObjectURL(url);
 }
 
 function BarraPaginacao({ pagina, totalPaginas, total, limite, onMudar, disabled }) {
@@ -156,48 +179,6 @@ export default function RelatorioNfpRateioDetalhado() {
     await carregarPagina(1, { inicial: true });
   }, [carregarPagina]);
 
-  const buscarTodasLinhas = useCallback(async () => {
-    const acumulado = [];
-    let offset = 0;
-    let total = Infinity;
-    let primeiro = null;
-
-    while (offset < total) {
-      const dados = await nfpRelatorioRateioDetalhado({
-        ...paramsBase,
-        limite: EXPORT_PAGE_SIZE,
-        offset,
-        exportacao: true,
-      });
-      if (!primeiro) primeiro = dados;
-      const lote = dados?.linhas || [];
-      acumulado.push(...lote);
-      total = Number(dados?.paginacao?.total ?? dados?.totais?.total_encontrado ?? acumulado.length);
-      if (!lote.length) break;
-      offset += lote.length;
-      if (lote.length < EXPORT_PAGE_SIZE) break;
-    }
-
-    return {
-      ...(primeiro || {}),
-      linhas: acumulado,
-      totais: {
-        ...(primeiro?.totais || {}),
-        qtd_linhas: acumulado.length,
-        qtd_notas: acumulado.reduce((acc, item) => acc + Number(item.qtd || 0), 0),
-        total_encontrado: total === Infinity ? acumulado.length : total,
-        truncado: false,
-      },
-      paginacao: {
-        total: total === Infinity ? acumulado.length : total,
-        limite: acumulado.length,
-        offset: 0,
-        total_paginas: 1,
-        pagina: 1,
-      },
-    };
-  }, [paramsBase]);
-
   const linhas = relatorio?.linhas || [];
   const totais = relatorio?.totais || {};
   const pag = relatorio?.paginacao || {};
@@ -224,47 +205,17 @@ export default function RelatorioNfpRateioDetalhado() {
     ['Linhas (página) / total', `${totais.qtd_linhas ?? 0} / ${totalRegistros || 0}`],
   ];
 
-  const exportarXlsx = async () => {
+  const exportarPlanilha = async () => {
     if (!relatorio) return;
     setTrabalhandoCompleto(true);
     setErro('');
     try {
-      const completo = await buscarTodasLinhas();
-      const dadosXlsx = montarExportacaoRateioDetalhadoXlsx(completo);
-      const filtrosBase = {
-        Competência: competencia,
-        Agente: agente || 'Todos',
-        Origem: origem ? rotuloOrigemRateio(origem) : 'Todas',
-        Busca: busca || '—',
-        Exibição: porNota ? 'Sem agrupar (cada lançamento)' : 'Agrupado por CNPJ',
-        Registros: String(completo.linhas?.length || 0),
-      };
-      const montado = montarLinhasRelatorioXlsx({
-        titulo: 'NFP – Rateio detalhado',
-        filtros: filtrosBase,
-        colunas: COLUNAS_RATEIO_DETALHADO,
-        dados: dadosXlsx,
-        blocoTotais: [],
-      });
-      const blocoTotais = montarBlocoTotaisRateioDetalhadoXlsx({
-        colunas: COLUNAS_RATEIO_DETALHADO,
-        primeiraLinhaDados: montado.meta.primeiraLinhaDados,
-        ultimaLinhaDados: montado.meta.ultimaLinhaDados,
-        totais: completo.totais,
-        rotuloParte,
-        rotuloDoador,
-        nomeColunaFn: nomeColuna,
-      });
-      await exportarRelatorioXlsx({
-        nomeArquivo: `nfp_rateio_detalhado_${competencia}_${porNota ? 'por_nota' : 'agrupado'}`,
-        titulo: 'NFP – Rateio detalhado',
-        filtros: filtrosBase,
-        colunas: COLUNAS_RATEIO_DETALHADO,
-        dados: dadosXlsx,
-        blocoTotais,
-      });
+      const response = await nfpExportarRateioDetalhado(paramsBase);
+      const blob = new Blob([response.data], { type: 'text/csv;charset=utf-8' });
+      const nome = `nfp_rateio_detalhado_${competencia}_${porNota ? 'por_nota' : 'agrupado'}.csv`;
+      baixarBlob(blob, nome);
     } catch (error) {
-      setErro(error?.response?.data?.detail || 'Não foi possível exportar o relatório completo.');
+      setErro(await detalheErroExportacao(error));
     } finally {
       setTrabalhandoCompleto(false);
     }
@@ -272,16 +223,51 @@ export default function RelatorioNfpRateioDetalhado() {
 
   const imprimirCompleto = async () => {
     if (!relatorio) return;
+    if (totalRegistros > LIMITE_IMPRESSAO) {
+      setErro(
+        `Impressão limitada a ${LIMITE_IMPRESSAO.toLocaleString('pt-BR')} linhas. `
+        + `Este filtro tem ${totalRegistros.toLocaleString('pt-BR')}. `
+        + 'Refine agente/origem/busca ou use Exportar planilha (CSV abre no Excel).',
+      );
+      return;
+    }
     setTrabalhandoCompleto(true);
     setErro('');
     try {
-      const completo = await buscarTodasLinhas();
+      const acumulado = [];
+      let offset = 0;
+      let total = totalRegistros || Infinity;
+      let primeiro = null;
+      const loteSize = 1000;
+      while (offset < total && acumulado.length < LIMITE_IMPRESSAO) {
+        const dados = await nfpRelatorioRateioDetalhado({
+          ...paramsBase,
+          limite: loteSize,
+          offset,
+          exportacao: true,
+        });
+        if (!primeiro) primeiro = dados;
+        const lote = dados?.linhas || [];
+        acumulado.push(...lote);
+        total = Number(dados?.paginacao?.total ?? total);
+        if (!lote.length) break;
+        offset += lote.length;
+        if (lote.length < loteSize) break;
+      }
       await imprimirRelatorioNfpRateioDetalhado({
-        relatorio: completo,
+        relatorio: {
+          ...(primeiro || {}),
+          linhas: acumulado,
+          totais: {
+            ...(primeiro?.totais || {}),
+            qtd_linhas: acumulado.length,
+            qtd_notas: acumulado.reduce((acc, item) => acc + Number(item.qtd || 0), 0),
+          },
+        },
         identidadeRelatorio,
       });
     } catch (error) {
-      setErro(error?.response?.data?.detail || 'Não foi possível preparar a impressão completa.');
+      setErro(error?.response?.data?.detail || 'Não foi possível preparar a impressão.');
     } finally {
       setTrabalhandoCompleto(false);
     }
@@ -294,7 +280,7 @@ export default function RelatorioNfpRateioDetalhado() {
         <PageHeader
           eyebrow="NFP – Relatórios"
           title="Rateio detalhado"
-          subtitle="Agrupado ou sem agrupar, com paginação. Exportar/Imprimir montam o relatório completo."
+          subtitle="Agrupado ou sem agrupar, com paginação. Exportar gera CSV completo no servidor (abre no Excel)."
           icon={<FileBarChart className="h-5 w-5" />}
           backTo="/nfp/relatorios"
           backLabel="Voltar aos relatórios"
@@ -303,9 +289,9 @@ export default function RelatorioNfpRateioDetalhado() {
               <ReportActionButton
                 type="button"
                 disabled={!relatorio || trabalhandoCompleto || loading}
-                onClick={exportarXlsx}
+                onClick={exportarPlanilha}
               >
-                {trabalhandoCompleto ? 'Preparando...' : 'Exportar XLSX'}
+                {trabalhandoCompleto ? 'Preparando...' : 'Exportar planilha'}
               </ReportActionButton>
               <ReportActionButton
                 type="button"
@@ -404,7 +390,12 @@ export default function RelatorioNfpRateioDetalhado() {
                 em
                 {' '}
                 {PAGE_SIZE}
-                ; Exportar/Imprimir buscam o conjunto completo.
+                . Exportar planilha gera CSV completo no servidor (abre no Excel).
+                Impressão só até
+                {' '}
+                {LIMITE_IMPRESSAO.toLocaleString('pt-BR')}
+                {' '}
+                linhas — acima disso use exportação ou refine o filtro.
               </p>
             ) : (
               <p className="mt-3 text-xs text-slate-500">
@@ -431,7 +422,9 @@ export default function RelatorioNfpRateioDetalhado() {
                 {' '}
                 {totalRegistros.toLocaleString('pt-BR')}
                 {' '}
-                registros). Os totais de retirada do dashboard são completos; Exportar XLSX e Imprimir montam o relatório inteiro.
+                registros). Totais de retirada do dashboard são completos.
+                {' '}
+                Exportar planilha baixa o filtro inteiro em CSV (Excel).
               </div>
               <div className="mb-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
                 {cardsRetirada.map(([label, valor]) => (

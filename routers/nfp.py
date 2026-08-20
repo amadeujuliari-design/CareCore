@@ -48,6 +48,7 @@ from nfp_service import (
     proximo_numero_cadastro_cpf_captado,
     proximo_numero_cadastro_doador,
     relatorio_rateio_consolidado,
+    exportar_relatorio_rateio_detalhado_csv,
     relatorio_rateio_detalhado,
     listar_origens_rateio,
     resumo_dashboard,
@@ -1133,6 +1134,41 @@ async def get_relatorio_rateio_detalhado(
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/relatorios/rateio-detalhado/exportar")
+async def exportar_relatorio_rateio_detalhado(
+    competencia: str = Query(...),
+    agente: Optional[str] = Query(None),
+    origem: Optional[str] = Query(None),
+    busca: Optional[str] = Query(None),
+    modo: str = Query("agrupado", description="agrupado | por_nota"),
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    """Exporta o filtro completo em CSV (abre no Excel). Adequado a volumes grandes."""
+    _exigir_nfp_gestao(usuario_atual)
+    try:
+        nome, conteudo = await exportar_relatorio_rateio_detalhado_csv(
+            db,
+            _organizacao_id(usuario_atual),
+            competencia=competencia,
+            agente=agente,
+            origem=origem,
+            busca=busca,
+            modo=modo,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return Response(
+        content=conteudo,
+        media_type="text/csv; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="{nome}"',
+            "Cache-Control": "no-store",
+        },
+    )
 
 
 @router.get("/relatorios/cupons")
