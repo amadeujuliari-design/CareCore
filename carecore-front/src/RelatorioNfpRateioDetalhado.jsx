@@ -136,7 +136,7 @@ export default function RelatorioNfpRateioDetalhado() {
       Agente: agente || 'Todos',
       Origem: origem ? rotuloOrigemRateio(origem) : 'Todas',
       Busca: busca || '—',
-      Exibição: porNota ? 'Por nota (cada lançamento)' : 'Agrupado por CNPJ',
+      Exibição: porNota ? 'Sem agrupar (cada lançamento)' : 'Agrupado por CNPJ',
     };
     const montado = montarLinhasRelatorioXlsx({
       titulo: 'NFP – Rateio detalhado',
@@ -171,7 +171,7 @@ export default function RelatorioNfpRateioDetalhado() {
         <PageHeader
           eyebrow="NFP – Relatórios"
           title="Rateio detalhado"
-          subtitle="Agrupado por CNPJ ou cada lançamento SEFAZ, com totais iguais ao dashboard e exportação XLSX."
+          subtitle="Agrupado por CNPJ ou sem agrupar (cada lançamento SEFAZ), com totais iguais ao dashboard e exportação XLSX."
           icon={<FileBarChart className="h-5 w-5" />}
           backTo="/nfp/relatorios"
           backLabel="Voltar aos relatórios"
@@ -246,11 +246,14 @@ export default function RelatorioNfpRateioDetalhado() {
                 <span className="mb-1 block text-xs font-semibold text-slate-600">Exibição</span>
                 <select
                   value={modo}
-                  onChange={(e) => setModo(e.target.value)}
+                  onChange={(e) => {
+                    setModo(e.target.value);
+                    setRelatorio(null);
+                  }}
                   className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
                 >
                   <option value="agrupado">Agrupado por CNPJ</option>
-                  <option value="por_nota">Por nota (cada lançamento)</option>
+                  <option value="por_nota">Sem agrupar (cada lançamento)</option>
                 </select>
               </label>
               <label className="text-sm text-slate-700">
@@ -269,9 +272,13 @@ export default function RelatorioNfpRateioDetalhado() {
             ) : null}
             {modo === 'por_nota' ? (
               <p className="mt-3 text-xs text-slate-500">
-                No modo por nota, cada crédito SEFAZ vira uma linha (até 15.000). Prefira filtrar por agente.
+                Sem agrupar: cada crédito SEFAZ vira uma linha (não soma por CNPJ nem por CPF). Até 15.000 linhas — prefira filtrar por agente e clique em Gerar relatório.
               </p>
-            ) : null}
+            ) : (
+              <p className="mt-3 text-xs text-slate-500">
+                Agrupado: soma as notas do mesmo CNPJ/origem em uma linha. Para ver cada lançamento, use Sem agrupar.
+              </p>
+            )}
           </section>
 
           {relatorio && (
@@ -294,7 +301,7 @@ export default function RelatorioNfpRateioDetalhado() {
                 Totais de retirada iguais ao dashboard (competência + agente).
                 Origem/busca filtram só a tabela abaixo.
                 {' '}
-                Exibição: {porNota ? 'por nota' : 'agrupado por CNPJ'}.
+                Exibição: {porNota ? 'sem agrupar (cada lançamento)' : 'agrupado por CNPJ'}.
               </p>
 
               <section className="overflow-x-auto rounded-3xl border border-slate-100 bg-white p-5 shadow-sm">

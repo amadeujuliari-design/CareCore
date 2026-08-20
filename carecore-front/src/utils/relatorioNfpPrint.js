@@ -78,7 +78,7 @@ export async function imprimirRelatorioNfpRateioDetalhado({
     subtitulo: [
       `Competência: ${relatorio?.competencia || '—'}`,
       relatorio?.agente ? `Agente: ${relatorio.agente}` : 'Agente: todos',
-      relatorio?.modo === 'por_nota' ? 'Exibição: por nota' : 'Exibição: agrupado',
+      relatorio?.modo === 'por_nota' ? 'Exibição: sem agrupar' : 'Exibição: agrupado',
       relatorio?.origem ? `Origem: ${relatorio.origem}` : null,
       relatorio?.busca ? `Busca: ${relatorio.busca}` : null,
     ].filter(Boolean).join(' · '),
