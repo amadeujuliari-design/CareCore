@@ -1111,7 +1111,9 @@ async def get_relatorio_rateio_detalhado(
     origem: Optional[str] = Query(None),
     busca: Optional[str] = Query(None),
     modo: str = Query("agrupado", description="agrupado | por_nota"),
-    limite: int = Query(3000, ge=1, le=20000),
+    limite: int = Query(100, ge=1, le=50000),
+    offset: int = Query(0, ge=0),
+    exportacao: bool = Query(False, description="Permite lotes maiores para exportar/imprimir completo"),
     db: AsyncSession = Depends(get_db),
     usuario_atual: dict = Depends(get_usuario_logado),
 ):
@@ -1126,6 +1128,8 @@ async def get_relatorio_rateio_detalhado(
             busca=busca,
             modo=modo,
             limite=limite,
+            offset=offset,
+            exportacao=exportacao,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

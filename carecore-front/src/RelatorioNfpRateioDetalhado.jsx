@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { FileBarChart } from 'lucide-react';
 
 import Sidebar from './Sidebar';
@@ -25,10 +25,46 @@ import {
   rotuloOrigemRateio,
 } from './utils/relatorioNfpUtils';
 
+const PAGE_SIZE = 100;
+const EXPORT_PAGE_SIZE = 5000;
+
 function competenciaAtual() {
   const agora = new Date();
   const mes = String(agora.getMonth() + 1).padStart(2, '0');
   return `${agora.getFullYear()}-${mes}`;
+}
+
+function BarraPaginacao({ pagina, totalPaginas, total, limite, onMudar, disabled }) {
+  if (!total) return null;
+  return (
+    <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-sm text-slate-600">
+      <span>
+        {total.toLocaleString('pt-BR')} registro(s) · página {pagina} de {totalPaginas}
+        {' '}
+        (
+        {limite}
+        /página)
+      </span>
+      <div className="flex gap-2">
+        <button
+          type="button"
+          disabled={disabled || pagina <= 1}
+          onClick={() => onMudar(pagina - 1)}
+          className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 font-semibold disabled:opacity-40"
+        >
+          Anterior
+        </button>
+        <button
+          type="button"
+          disabled={disabled || pagina >= totalPaginas}
+          onClick={() => onMudar(pagina + 1)}
+          className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 font-semibold disabled:opacity-40"
+        >
+          Próxima
+        </button>
+      </div>
+    </div>
+  );
 }
 
 export default function RelatorioNfpRateioDetalhado() {
@@ -37,10 +73,13 @@ export default function RelatorioNfpRateioDetalhado() {
   const [origem, setOrigem] = useState('');
   const [busca, setBusca] = useState('');
   const [modo, setModo] = useState('agrupado');
+  const [pagina, setPagina] = useState(1);
   const [agentes, setAgentes] = useState([]);
   const [origens, setOrigens] = useState([]);
   const [relatorio, setRelatorio] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [loadingPagina, setLoadingPagina] = useState(false);
+  const [trabalhandoCompleto, setTrabalhandoCompleto] = useState(false);
   const [erro, setErro] = useState('');
   const [identidadeRelatorio, setIdentidadeRelatorio] = useState(null);
 
@@ -80,33 +119,90 @@ export default function RelatorioNfpRateioDetalhado() {
     };
   }, [agente, competencia]);
 
-  const carregar = useCallback(async () => {
+  const paramsBase = useMemo(() => ({
+    competencia,
+    agente: agente || undefined,
+    origem: origem || undefined,
+    busca: busca || undefined,
+    modo,
+  }), [agente, busca, competencia, modo, origem]);
+
+  const carregarPagina = useCallback(async (novaPagina, { inicial = false } = {}) => {
     if (!competencia) {
       setErro('Informe a competência.');
       return;
     }
-    setLoading(true);
+    if (inicial) setLoading(true);
+    else setLoadingPagina(true);
     setErro('');
     try {
       const dados = await nfpRelatorioRateioDetalhado({
-        competencia,
-        agente: agente || undefined,
-        origem: origem || undefined,
-        busca: busca || undefined,
-        modo,
-        limite: modo === 'por_nota' ? 15000 : 3000,
+        ...paramsBase,
+        limite: PAGE_SIZE,
+        offset: (novaPagina - 1) * PAGE_SIZE,
       });
+      setPagina(novaPagina);
       setRelatorio(dados);
     } catch (error) {
-      setRelatorio(null);
+      if (inicial) setRelatorio(null);
       setErro(error?.response?.data?.detail || 'Não foi possível gerar o relatório.');
     } finally {
       setLoading(false);
+      setLoadingPagina(false);
     }
-  }, [agente, busca, competencia, modo, origem]);
+  }, [competencia, paramsBase]);
+
+  const carregar = useCallback(async () => {
+    await carregarPagina(1, { inicial: true });
+  }, [carregarPagina]);
+
+  const buscarTodasLinhas = useCallback(async () => {
+    const acumulado = [];
+    let offset = 0;
+    let total = Infinity;
+    let primeiro = null;
+
+    while (offset < total) {
+      const dados = await nfpRelatorioRateioDetalhado({
+        ...paramsBase,
+        limite: EXPORT_PAGE_SIZE,
+        offset,
+        exportacao: true,
+      });
+      if (!primeiro) primeiro = dados;
+      const lote = dados?.linhas || [];
+      acumulado.push(...lote);
+      total = Number(dados?.paginacao?.total ?? dados?.totais?.total_encontrado ?? acumulado.length);
+      if (!lote.length) break;
+      offset += lote.length;
+      if (lote.length < EXPORT_PAGE_SIZE) break;
+    }
+
+    return {
+      ...(primeiro || {}),
+      linhas: acumulado,
+      totais: {
+        ...(primeiro?.totais || {}),
+        qtd_linhas: acumulado.length,
+        qtd_notas: acumulado.reduce((acc, item) => acc + Number(item.qtd || 0), 0),
+        total_encontrado: total === Infinity ? acumulado.length : total,
+        truncado: false,
+      },
+      paginacao: {
+        total: total === Infinity ? acumulado.length : total,
+        limite: acumulado.length,
+        offset: 0,
+        total_paginas: 1,
+        pagina: 1,
+      },
+    };
+  }, [paramsBase]);
 
   const linhas = relatorio?.linhas || [];
   const totais = relatorio?.totais || {};
+  const pag = relatorio?.paginacao || {};
+  const totalRegistros = Number(pag.total ?? totais.total_encontrado ?? 0);
+  const totalPaginas = Number(pag.total_paginas || Math.max(1, Math.ceil(totalRegistros / PAGE_SIZE)));
   const modoAtual = relatorio?.modo || modo;
   const porNota = modoAtual === 'por_nota';
   const visaoTodos = !agente || Boolean(totais.visao_todos);
@@ -125,43 +221,70 @@ export default function RelatorioNfpRateioDetalhado() {
     [rotuloDoador, moneyRelatorioNfp(totais.doador_aeb_loja_agente)],
     [rotuloParte, moneyRelatorioNfp(totais.parte_agente)],
     ['Parte AEB', moneyRelatorioNfp(totais.parte_aeb_consolidada_agente ?? totais.parte_aeb)],
-    ['Linhas / notas', `${totais.qtd_linhas ?? 0} / ${totais.qtd_notas ?? 0}`],
+    ['Linhas (página) / total', `${totais.qtd_linhas ?? 0} / ${totalRegistros || 0}`],
   ];
 
   const exportarXlsx = async () => {
-    if (!linhas.length) return;
-    const dadosXlsx = montarExportacaoRateioDetalhadoXlsx(relatorio);
-    const filtrosBase = {
-      Competência: competencia,
-      Agente: agente || 'Todos',
-      Origem: origem ? rotuloOrigemRateio(origem) : 'Todas',
-      Busca: busca || '—',
-      Exibição: porNota ? 'Sem agrupar (cada lançamento)' : 'Agrupado por CNPJ',
-    };
-    const montado = montarLinhasRelatorioXlsx({
-      titulo: 'NFP – Rateio detalhado',
-      filtros: filtrosBase,
-      colunas: COLUNAS_RATEIO_DETALHADO,
-      dados: dadosXlsx,
-      blocoTotais: [],
-    });
-    const blocoTotais = montarBlocoTotaisRateioDetalhadoXlsx({
-      colunas: COLUNAS_RATEIO_DETALHADO,
-      primeiraLinhaDados: montado.meta.primeiraLinhaDados,
-      ultimaLinhaDados: montado.meta.ultimaLinhaDados,
-      totais,
-      rotuloParte,
-      rotuloDoador,
-      nomeColunaFn: nomeColuna,
-    });
-    await exportarRelatorioXlsx({
-      nomeArquivo: `nfp_rateio_detalhado_${competencia}_${porNota ? 'por_nota' : 'agrupado'}`,
-      titulo: 'NFP – Rateio detalhado',
-      filtros: filtrosBase,
-      colunas: COLUNAS_RATEIO_DETALHADO,
-      dados: dadosXlsx,
-      blocoTotais,
-    });
+    if (!relatorio) return;
+    setTrabalhandoCompleto(true);
+    setErro('');
+    try {
+      const completo = await buscarTodasLinhas();
+      const dadosXlsx = montarExportacaoRateioDetalhadoXlsx(completo);
+      const filtrosBase = {
+        Competência: competencia,
+        Agente: agente || 'Todos',
+        Origem: origem ? rotuloOrigemRateio(origem) : 'Todas',
+        Busca: busca || '—',
+        Exibição: porNota ? 'Sem agrupar (cada lançamento)' : 'Agrupado por CNPJ',
+        Registros: String(completo.linhas?.length || 0),
+      };
+      const montado = montarLinhasRelatorioXlsx({
+        titulo: 'NFP – Rateio detalhado',
+        filtros: filtrosBase,
+        colunas: COLUNAS_RATEIO_DETALHADO,
+        dados: dadosXlsx,
+        blocoTotais: [],
+      });
+      const blocoTotais = montarBlocoTotaisRateioDetalhadoXlsx({
+        colunas: COLUNAS_RATEIO_DETALHADO,
+        primeiraLinhaDados: montado.meta.primeiraLinhaDados,
+        ultimaLinhaDados: montado.meta.ultimaLinhaDados,
+        totais: completo.totais,
+        rotuloParte,
+        rotuloDoador,
+        nomeColunaFn: nomeColuna,
+      });
+      await exportarRelatorioXlsx({
+        nomeArquivo: `nfp_rateio_detalhado_${competencia}_${porNota ? 'por_nota' : 'agrupado'}`,
+        titulo: 'NFP – Rateio detalhado',
+        filtros: filtrosBase,
+        colunas: COLUNAS_RATEIO_DETALHADO,
+        dados: dadosXlsx,
+        blocoTotais,
+      });
+    } catch (error) {
+      setErro(error?.response?.data?.detail || 'Não foi possível exportar o relatório completo.');
+    } finally {
+      setTrabalhandoCompleto(false);
+    }
+  };
+
+  const imprimirCompleto = async () => {
+    if (!relatorio) return;
+    setTrabalhandoCompleto(true);
+    setErro('');
+    try {
+      const completo = await buscarTodasLinhas();
+      await imprimirRelatorioNfpRateioDetalhado({
+        relatorio: completo,
+        identidadeRelatorio,
+      });
+    } catch (error) {
+      setErro(error?.response?.data?.detail || 'Não foi possível preparar a impressão completa.');
+    } finally {
+      setTrabalhandoCompleto(false);
+    }
   };
 
   return (
@@ -171,26 +294,27 @@ export default function RelatorioNfpRateioDetalhado() {
         <PageHeader
           eyebrow="NFP – Relatórios"
           title="Rateio detalhado"
-          subtitle="Agrupado por CNPJ ou sem agrupar (cada lançamento SEFAZ), com totais iguais ao dashboard e exportação XLSX."
+          subtitle="Agrupado ou sem agrupar, com paginação. Exportar/Imprimir montam o relatório completo."
           icon={<FileBarChart className="h-5 w-5" />}
           backTo="/nfp/relatorios"
           backLabel="Voltar aos relatórios"
           actions={(
             <div className="flex flex-wrap gap-2">
-              <ReportActionButton type="button" disabled={!linhas.length} onClick={exportarXlsx}>
-                Exportar XLSX
+              <ReportActionButton
+                type="button"
+                disabled={!relatorio || trabalhandoCompleto || loading}
+                onClick={exportarXlsx}
+              >
+                {trabalhandoCompleto ? 'Preparando...' : 'Exportar XLSX'}
               </ReportActionButton>
               <ReportActionButton
                 type="button"
-                disabled={!linhas.length}
-                onClick={() => imprimirRelatorioNfpRateioDetalhado({
-                  relatorio,
-                  identidadeRelatorio,
-                })}
+                disabled={!relatorio || trabalhandoCompleto || loading}
+                onClick={imprimirCompleto}
               >
                 Imprimir
               </ReportActionButton>
-              <PremiumButton type="button" disabled={loading} onClick={carregar}>
+              <PremiumButton type="button" disabled={loading || trabalhandoCompleto} onClick={carregar}>
                 {loading ? 'Gerando...' : 'Gerar relatório'}
               </PremiumButton>
             </div>
@@ -249,6 +373,7 @@ export default function RelatorioNfpRateioDetalhado() {
                   onChange={(e) => {
                     setModo(e.target.value);
                     setRelatorio(null);
+                    setPagina(1);
                   }}
                   className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
                 >
@@ -272,23 +397,42 @@ export default function RelatorioNfpRateioDetalhado() {
             ) : null}
             {modo === 'por_nota' ? (
               <p className="mt-3 text-xs text-slate-500">
-                Sem agrupar: cada crédito SEFAZ vira uma linha (não soma por CNPJ nem por CPF). Até 15.000 linhas — prefira filtrar por agente e clique em Gerar relatório.
+                Sem agrupar: cada crédito SEFAZ vira uma linha. A tela pagina de
+                {' '}
+                {PAGE_SIZE}
+                {' '}
+                em
+                {' '}
+                {PAGE_SIZE}
+                ; Exportar/Imprimir buscam o conjunto completo.
               </p>
             ) : (
               <p className="mt-3 text-xs text-slate-500">
-                Agrupado: soma as notas do mesmo CNPJ/origem em uma linha. Para ver cada lançamento, use Sem agrupar.
+                Agrupado: soma as notas do mesmo CNPJ/origem. Para ver cada lançamento, use Sem agrupar.
               </p>
             )}
           </section>
 
           {relatorio && (
             <>
-              {totais.truncado ? (
-                <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-                  Lista truncada: mostrando {totais.qtd_linhas ?? linhas.length} de {totais.total_encontrado ?? '—'} registros.
-                  Refine o filtro (agente/origem/busca) para ver o restante. Os totais de retirada do dashboard continuam completos.
-                </div>
-              ) : null}
+              <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+                Exibindo página
+                {' '}
+                {pagina}
+                {' '}
+                de
+                {' '}
+                {totalPaginas}
+                {' '}
+                (
+                {(totais.qtd_linhas ?? linhas.length).toLocaleString('pt-BR')}
+                {' '}
+                de
+                {' '}
+                {totalRegistros.toLocaleString('pt-BR')}
+                {' '}
+                registros). Os totais de retirada do dashboard são completos; Exportar XLSX e Imprimir montam o relatório inteiro.
+              </div>
               <div className="mb-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
                 {cardsRetirada.map(([label, valor]) => (
                   <article key={label} className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
@@ -299,9 +443,12 @@ export default function RelatorioNfpRateioDetalhado() {
               </div>
               <p className="mb-4 text-xs text-slate-500">
                 Totais de retirada iguais ao dashboard (competência + agente).
-                Origem/busca filtram só a tabela abaixo.
+                Origem/busca filtram a tabela.
                 {' '}
-                Exibição: {porNota ? 'sem agrupar (cada lançamento)' : 'agrupado por CNPJ'}.
+                Exibição:
+                {' '}
+                {porNota ? 'sem agrupar (cada lançamento)' : 'agrupado por CNPJ'}
+                .
               </p>
 
               <section className="overflow-x-auto rounded-3xl border border-slate-100 bg-white p-5 shadow-sm">
@@ -348,6 +495,14 @@ export default function RelatorioNfpRateioDetalhado() {
                     )}
                   </tbody>
                 </table>
+                <BarraPaginacao
+                  pagina={pagina}
+                  totalPaginas={totalPaginas}
+                  total={totalRegistros}
+                  limite={PAGE_SIZE}
+                  disabled={loadingPagina || loading || trabalhandoCompleto}
+                  onMudar={(nova) => carregarPagina(nova)}
+                />
               </section>
             </>
           )}

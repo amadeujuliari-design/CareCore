@@ -2094,8 +2094,10 @@ async def relatorio_rateio_detalhado(
     agente: Optional[str] = None,
     origem: Optional[str] = None,
     busca: Optional[str] = None,
-    limite: int = 2000,
+    limite: int = 100,
+    offset: int = 0,
     modo: str = "agrupado",
+    exportacao: bool = False,
 ) -> dict:
     if not competencia_valida(competencia):
         raise ValueError("Competencia invalida. Use YYYY-MM.")
@@ -2109,19 +2111,12 @@ async def relatorio_rateio_detalhado(
     agente_sel = normalizar_agente_captacao(agente)
     origem_sel = normalizar_agente_captacao(origem)
     busca_txt = (busca or "").strip()
-    limite_cap = 15000 if modo_n == "por_nota" else 5000
-    limite_n = max(1, min(int(limite or 2000), limite_cap))
+    offset_n = max(0, int(offset or 0))
+    # UI: ate 5k/pagina; exportacao: ate 50k por lote (front pagina ate o total).
+    limite_cap = 50000 if exportacao else 5000
+    limite_n = max(1, min(int(limite or 100), limite_cap))
 
-    linhas: list[dict] = []
-    totais_filtro = {
-        "total_creditos": 0.0,
-        "parte_agente": 0.0,
-        "parte_aeb": 0.0,
-        "qtd_linhas": 0,
-        "qtd_notas": 0,
-    }
-    truncado = False
-    total_encontrado = 0
+    todas_linhas: list[dict] = []
 
     if modo_n == "por_nota":
         mapas = await _mapas_classificacao_rateio(db, organizacao_id, competencia)
@@ -2154,15 +2149,11 @@ async def relatorio_rateio_detalhado(
                 busca=busca_txt,
             ):
                 continue
-            total_encontrado += 1
-            if len(linhas) >= limite_n:
-                truncado = True
-                continue
 
             retorno = centavos_para_float(classif["retorno_centavos"])
             parte_ag = centavos_para_float(classif["valor_agente_centavos"])
             parte_aeb = centavos_para_float(classif["valor_aeb_centavos"])
-            linhas.append(
+            todas_linhas.append(
                 {
                     "id": s.id,
                     "cnpj": classif["cnpj"],
@@ -2183,11 +2174,6 @@ async def relatorio_rateio_detalhado(
                     "competencia": competencia,
                 }
             )
-            totais_filtro["total_creditos"] += retorno
-            totais_filtro["parte_agente"] += parte_ag
-            totais_filtro["parte_aeb"] += parte_aeb
-            totais_filtro["qtd_linhas"] += 1
-            totais_filtro["qtd_notas"] += 1
     else:
         q = select(NfpRateioDB).where(
             NfpRateioDB.organizacao_id == organizacao_id,
@@ -2205,19 +2191,9 @@ async def relatorio_rateio_detalhado(
             termo = f"%{busca_txt}%"
             q = q.where((NfpRateioDB.loja.ilike(termo)) | (NfpRateioDB.cnpj.ilike(termo)))
 
-        total_encontrado = int(
-            (
-                await db.execute(
-                    select(func.count()).select_from(q.order_by(None).subquery())
-                )
-            ).scalar_one()
-            or 0
-        )
-        truncado = total_encontrado > limite_n
-
         rows = (
             await db.execute(
-                q.order_by(NfpRateioDB.origem, NfpRateioDB.loja).limit(limite_n)
+                q.order_by(NfpRateioDB.origem, NfpRateioDB.loja)
             )
         ).scalars().all()
 
@@ -2238,7 +2214,7 @@ async def relatorio_rateio_detalhado(
                 cpf_restante_por_cnpj=cpf_restante,
                 cnpj=r.cnpj,
             )
-            linhas.append(
+            todas_linhas.append(
                 {
                     "id": r.id,
                     "cnpj": r.cnpj,
@@ -2259,14 +2235,26 @@ async def relatorio_rateio_detalhado(
                     "competencia": r.competencia,
                 }
             )
-            totais_filtro["total_creditos"] += retorno
-            totais_filtro["parte_agente"] += parte_ag
-            totais_filtro["parte_aeb"] += parte_aeb
-            totais_filtro["qtd_linhas"] += 1
-            totais_filtro["qtd_notas"] += qtd
+
+    total_encontrado = len(todas_linhas)
+    linhas = todas_linhas[offset_n : offset_n + limite_n]
+    truncado = (offset_n + len(linhas)) < total_encontrado or offset_n > 0
+
+    totais_filtro = {
+        "total_creditos": 0.0,
+        "parte_agente": 0.0,
+        "parte_aeb": 0.0,
+        "qtd_linhas": len(linhas),
+        "qtd_notas": 0,
+    }
+    for item in linhas:
+        totais_filtro["total_creditos"] += float(item.get("retorno") or 0)
+        totais_filtro["parte_agente"] += float(item.get("valor_agente") or 0)
+        totais_filtro["parte_aeb"] += float(item.get("valor_aeb") or 0)
+        totais_filtro["qtd_notas"] += int(item.get("qtd") or 0)
 
     # Mesmos totais de retirada do dashboard (competencia + agente),
-    # independente de filtros de origem/busca na tabela.
+    # independente de pagina/filtros de origem/busca na tabela.
     dash = await resumo_dashboard(
         db,
         organizacao_id,
@@ -2274,6 +2262,7 @@ async def relatorio_rateio_detalhado(
         agente=agente_sel or "TODOS",
     )
     rotulo_parte = agente_sel if agente_sel else "agentes"
+    total_paginas = max(1, (total_encontrado + limite_n - 1) // limite_n) if limite_n else 1
     totais = {
         **totais_filtro,
         "bruto_lojas_cpfs_agente": float(dash.get("bruto_lojas_cpfs_agente") or 0),
@@ -2286,8 +2275,8 @@ async def relatorio_rateio_detalhado(
         "bruto_lojas_agente": float(dash.get("bruto_lojas_agente") or 0),
         "rotulo_parte_agente": rotulo_parte,
         "visao_todos": bool(dash.get("visao_todos")),
-        "total_encontrado": total_encontrado if total_encontrado else totais_filtro["qtd_linhas"],
-        "truncado": truncado,
+        "total_encontrado": total_encontrado,
+        "truncado": truncado and total_encontrado > len(linhas),
     }
 
     return {
@@ -2298,6 +2287,13 @@ async def relatorio_rateio_detalhado(
         "modo": modo_n,
         "totais": totais,
         "linhas": linhas,
+        "paginacao": {
+            "total": total_encontrado,
+            "limite": limite_n,
+            "offset": offset_n,
+            "total_paginas": total_paginas,
+            "pagina": (offset_n // limite_n) + 1 if limite_n else 1,
+        },
     }
 
 
