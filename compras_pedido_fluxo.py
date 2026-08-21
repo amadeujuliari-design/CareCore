@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 from datetime import date
 from io import BytesIO
 from pathlib import Path
@@ -75,6 +76,52 @@ from storage_uploads import (
     storage_supabase_configurado,
 )
 from time_operacional import agora_operacional_naive
+
+
+_PADRAO_SOLICITACAO_COTACAO = re.compile(
+    r"Pedido de cotação enviado para\s+(.+?)\s+<([^>]+)>(?:\s*\[id:([^\]]+)\])?",
+    re.IGNORECASE,
+)
+
+
+def _fornecedores_solicitacao_dos_eventos(
+    eventos: list[ComprasPedidoEventoDB],
+    fornecedores: list[ComprasFornecedorDB],
+) -> list[dict[str, str]]:
+    """Extrai fornecedores a quem a Sede pediu cotação por e-mail (timeline)."""
+    por_id = {f.id: f for f in fornecedores}
+    por_email = {}
+    for f in fornecedores:
+        for campo in (f.email, f.email_empresa):
+            em = (campo or "").strip().lower()
+            if em:
+                por_email[em] = f
+
+    vistos: set[str] = set()
+    saida: list[dict[str, str]] = []
+    for ev in eventos:
+        if ev.tipo != TIPO_EVENTO_EMAIL:
+            continue
+        texto = (ev.texto or "").strip()
+        if "Pedido de cotação enviado" not in texto:
+            continue
+        m = _PADRAO_SOLICITACAO_COTACAO.search(texto)
+        if not m:
+            continue
+        nome, email, fid = m.group(1).strip(), m.group(2).strip(), (m.group(3) or "").strip()
+        forn = por_id.get(fid) if fid else None
+        if not forn:
+            forn = por_email.get(email.lower())
+        chave = (forn.id if forn else email.lower())
+        if chave in vistos:
+            continue
+        vistos.add(chave)
+        saida.append({
+            "id": forn.id if forn else "",
+            "nome": (forn.nome if forn else nome) or nome,
+            "email": (forn.email or forn.email_empresa if forn else email) or email,
+        })
+    return saida
 
 
 def _uid(usuario: dict) -> str:
@@ -254,6 +301,18 @@ async def extras_serializacao_pedido(db: AsyncSession, pedido: ComprasPedidoDB) 
             )
         if ultimo_itens.texto:
             aviso_alteracao = f"{aviso_alteracao} Última alteração: {ultimo_itens.texto}"
+
+    fornecedores_org = list(
+        (
+            await db.execute(
+                select(ComprasFornecedorDB).where(
+                    ComprasFornecedorDB.organizacao_id == pedido.organizacao_id,
+                )
+            )
+        ).scalars().all()
+    )
+    fornecedores_solicitacao = _fornecedores_solicitacao_dos_eventos(eventos, fornecedores_org)
+
     return {
         "anexos": [_serializar_anexo(a) for a in anexos],
         "notas_fiscais": [_serializar_nota(n) for n in notas],
@@ -262,6 +321,7 @@ async def extras_serializacao_pedido(db: AsyncSession, pedido: ComprasPedidoDB) 
         "aviso_alteracao_itens": aviso_alteracao,
         "precisa_revisar_cotacao": precisa_revisar,
         "pode_editar_itens": pedido_itens_podem_editar(pedido.status),
+        "fornecedores_solicitacao": fornecedores_solicitacao,
         "motivo_reprovacao": pedido.motivo_reprovacao,
         "motivo_cancelamento": pedido.motivo_cancelamento,
         "status_anterior": pedido.status_anterior,
@@ -927,10 +987,12 @@ async def enviar_solicitacao_cotacao_fornecedores(
             perfil="compras",
         )
         if resultado.enviado:
-            texto_evento = f"Pedido de cotação enviado para {forn.nome} <{email_dest}>."
+            texto_evento = f"Pedido de cotação enviado para {forn.nome} <{email_dest}> [id:{forn.id}]."
             enviados.append({"fornecedor_id": forn.id, "nome": forn.nome, "email": email_dest})
         else:
-            texto_evento = f"Falha ao pedir cotação a {forn.nome} <{email_dest}>: {resultado.erro}"
+            texto_evento = (
+                f"Falha ao pedir cotação a {forn.nome} <{email_dest}> [id:{forn.id}]: {resultado.erro}"
+            )
             falhas.append({
                 "fornecedor_id": forn.id,
                 "nome": forn.nome,

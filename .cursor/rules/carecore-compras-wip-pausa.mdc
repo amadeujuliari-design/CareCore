@@ -33,21 +33,20 @@ Atualizado em **2026-08-21** (America/Sao_Paulo).
 - “2. Registrar orçamentos recebidos” = lançar valor+PDF.
 - Botão pós-aprovação: “E-mail ao fornecedor escolhido”.
 
-## Já no ar (produção)
+## Já no ar (produção) — v1.6.37
 
-- Consulta CNPJ, cadastros enriquecidos, unidade/embalagem (~v1.6.25+)
-- NFP paginação/export (trabalho paralelo)
+- Cotação multi-fornecedor (To individual) + Graph + PDF AEB
+- Confirmação com nomes dos fornecedores
+- Edição de itens até e-mail de compra / itens_ok
+- Consulta CNPJ, cadastros enriquecidos, NFP export (anteriores)
 
-## Cenário de teste cotação (local)
+## Cenário de teste cotação
 
 - Fornecedores: `CARECORE TESTE Compras1/2/3`
-- Pedido SIAT `6aed8b59-c308-4a32-9ba4-7688b5fe468f` — `aguardando_cotacao`
-- PDFs em `tmp_compras_teste_cotacoes/`
-- Graph Compras: `CARECORE_GRAPH_*` no `.env` (SMTP AUTH bloqueado pelos padrões de segurança)
+- Pedido SIAT `6aed8b59-…` (local)
+- Graph: `CARECORE_GRAPH_*` no `.env` local e secrets Fly
 
 ## Próximos passos
 
-1. Testar pedido de cotação real aos 3 fornecedores de teste (To individual via Graph).
-2. Registrar 3 orçamentos + anexos, aprovar, e-mail ao escolhido.
-3. Em produção Fly: setar secrets `CARECORE_GRAPH_*` antes do deploy.
-4. Commit/subir quando o usuário pedir.
+1. Validar em produção um pedido de cotação real (3 fornecedores).
+2. Registrar orçamentos + aprovar + e-mail ao escolhido.

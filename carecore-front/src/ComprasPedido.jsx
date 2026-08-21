@@ -47,6 +47,7 @@ import { usuarioEhAdmCompras, usuarioEhAdmPedidos, usuarioEhManutencao } from '.
 import { formatarDataBr } from './utils/comprasJanelaUtils';
 import { rotuloCategoria } from './utils/comprasCategoriaUtils';
 import { itemConsumoPeloDetalheErro, pedidoItemUnidadeConfusa, sugerirItensConsumo, unidadeParaPedido } from './utils/comprasItensConsumoUtils';
+import { centavosParaInput, reaisParaCentavos } from './utils/comprasPatrimonioUtils';
 
 const STATUS_LABEL = {
   rascunho: 'Rascunho',
@@ -93,6 +94,12 @@ function usuarioSessao() {
   } catch {
     return {};
   }
+}
+
+function mascararMoedaDigitando(texto) {
+  const digitos = String(texto || '').replace(/\D/g, '');
+  if (!digitos) return '';
+  return centavosParaInput(Number(digitos));
 }
 
 function anexosDaCotacao(anexos, cotacaoId) {
@@ -194,6 +201,9 @@ export default function ComprasPedido() {
   const podeEncerrar = pedido.status === 'enviado_fornecedor' && (sede || (unidade && !pedidoSede));
   const podeReabrir = pedido.pode_reabrir && pedido.fechado_por_id === usuarioId;
   const pedidoCompra = (pedido.anexos || []).find((a) => a.tipo === 'pedido_compra');
+  const fornecedoresSolicitacao = (pedido.fornecedores_solicitacao || []).filter((f) => f.id);
+  const idsSolicitacao = new Set(fornecedoresSolicitacao.map((f) => f.id));
+  const fornecedoresOutros = fornecedores.filter((f) => !idsSolicitacao.has(f.id));
 
   const promptMotivo = (titulo) => {
     const valor = window.prompt(titulo);
@@ -871,11 +881,16 @@ export default function ComprasPedido() {
                   className="grid gap-2 md:grid-cols-5"
                   onSubmit={async (e) => {
                     e.preventDefault();
+                    const centavos = reaisParaCentavos(cotacao.valor_reais);
+                    if (centavos == null || centavos < 0) {
+                      setErro('Informe um valor válido em R$.');
+                      return;
+                    }
                     await agir(async () => {
                       const dados = await comprasCotacao(pedido.id, {
                         fornecedor_id: cotacao.fornecedor_id || null,
                         fornecedor_nome: cotacao.fornecedor_nome || null,
-                        valor_reais: Number(cotacao.valor_reais || 0),
+                        valor_centavos: centavos,
                       });
                       const nova = (dados.cotacoes || []).slice(-1)[0];
                       if (arqCotacao && nova?.id) {
@@ -885,20 +900,40 @@ export default function ComprasPedido() {
                         fd.append('arquivo', arqCotacao);
                         await comprasAnexarArquivo(pedido.id, fd);
                       }
-                    }, 'Cotação lançada.');
+                    }, 'Orçamento registrado.');
                     setCotacao({ fornecedor_id: '', valor_reais: '', fornecedor_nome: '' });
                     setArqCotacao(null);
                   }}
                 >
                   <select
                     value={cotacao.fornecedor_id}
-                    onChange={(e) => setCotacao((a) => ({ ...a, fornecedor_id: e.target.value }))}
+                    onChange={(e) => {
+                      const id = e.target.value;
+                      const lista = [...fornecedoresSolicitacao, ...fornecedores];
+                      const escolhido = lista.find((f) => f.id === id);
+                      setCotacao((a) => ({
+                        ...a,
+                        fornecedor_id: id,
+                        fornecedor_nome: escolhido?.nome || a.fornecedor_nome,
+                      }));
+                    }}
                     className="rounded-xl border border-slate-200 px-3 py-2 text-sm md:col-span-2"
                   >
                     <option value="">Fornecedor cadastrado…</option>
-                    {fornecedores.map((f) => (
-                      <option key={f.id} value={f.id}>{f.nome}</option>
-                    ))}
+                    {fornecedoresSolicitacao.length > 0 && (
+                      <optgroup label="Solicitados por e-mail">
+                        {fornecedoresSolicitacao.map((f) => (
+                          <option key={f.id} value={f.id}>{f.nome}</option>
+                        ))}
+                      </optgroup>
+                    )}
+                    {fornecedoresOutros.length > 0 && (
+                      <optgroup label={fornecedoresSolicitacao.length ? 'Outros cadastrados' : 'Fornecedores'}>
+                        {fornecedoresOutros.map((f) => (
+                          <option key={f.id} value={f.id}>{f.nome}</option>
+                        ))}
+                      </optgroup>
+                    )}
                   </select>
                   <input
                     value={cotacao.fornecedor_nome}
@@ -908,8 +943,9 @@ export default function ComprasPedido() {
                   />
                   <input
                     value={cotacao.valor_reais}
-                    onChange={(e) => setCotacao((a) => ({ ...a, valor_reais: e.target.value }))}
-                    placeholder="Valor R$"
+                    onChange={(e) => setCotacao((a) => ({ ...a, valor_reais: mascararMoedaDigitando(e.target.value) }))}
+                    placeholder="R$ 0,00"
+                    inputMode="numeric"
                     className="rounded-xl border border-slate-200 px-3 py-2 text-sm"
                     required
                   />

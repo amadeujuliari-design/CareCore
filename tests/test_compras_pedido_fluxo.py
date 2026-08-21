@@ -91,6 +91,29 @@ def test_solicitacao_cotacao_pdf_padrao_aeb():
     assert len(pdf) > 500
 
 
+def test_extrai_fornecedores_solicitacao_dos_eventos():
+    from types import SimpleNamespace
+    from compras_pedido_fluxo import _fornecedores_solicitacao_dos_eventos
+
+    forns = [
+        SimpleNamespace(
+            id="f1", nome="CARECORE TESTE Compras1",
+            email="a@x.com", email_empresa=None,
+        ),
+        SimpleNamespace(
+            id="f2", nome="CARECORE TESTE Compras2",
+            email="b@x.com", email_empresa="b@x.com",
+        ),
+    ]
+    eventos = [
+        SimpleNamespace(tipo="email", texto="Pedido de cotação enviado para CARECORE TESTE Compras1 <a@x.com>."),
+        SimpleNamespace(tipo="email", texto="Pedido de cotação enviado para CARECORE TESTE Compras2 <b@x.com> [id:f2]."),
+        SimpleNamespace(tipo="email", texto="E-mail enviado para outro@x.com."),
+    ]
+    lista = _fornecedores_solicitacao_dos_eventos(eventos, forns)
+    assert [x["id"] for x in lista] == ["f1", "f2"]
+
+
 def test_pedido_compra_pdf_com_fornecedor():
     pdf = montar_pdf_pedido_compra(
         pedido={"competencia": "2026-08", "tipo": "consumo"},
