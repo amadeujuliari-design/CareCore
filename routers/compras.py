@@ -11,8 +11,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from compras_itens_consumo_planilha import extrair_itens_consumo
 from compras_pedido_fluxo import (
+    confirmar_revisao_itens_pedido,
     desativar_cotacao,
     enviar_email_fornecedor,
+    enviar_solicitacao_cotacao_fornecedores,
     gerar_pedido_compra,
     ler_bytes_anexo,
     registrar_comunicacao_pedido,
@@ -144,6 +146,10 @@ class ReprovarIn(BaseModel):
 
 class DesativarCotacaoIn(BaseModel):
     motivo: Optional[str] = None
+
+
+class SolicitacaoCotacaoIn(BaseModel):
+    fornecedor_ids: list[str] = Field(default_factory=list, min_length=1)
 
 
 class JanelaIn(BaseModel):
@@ -807,6 +813,20 @@ async def post_comunicacao(
     return await serializar_pedido(db, pedido, incluir_detalhe=True)
 
 
+@router.post("/pedidos/{pedido_id}/itens-revisados")
+async def post_itens_revisados(
+    pedido_id: str,
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    """Confirma conferência da última alteração de itens (aviso âmbar → padrão)."""
+    await _ctx(db, usuario_atual)
+    pedido = await obter_pedido(db, usuario_atual, pedido_id)
+    await confirmar_revisao_itens_pedido(db, usuario_atual, pedido)
+    await db.commit()
+    return await serializar_pedido(db, pedido, incluir_detalhe=True)
+
+
 @router.post("/pedidos/{pedido_id}/anexos")
 async def post_anexo(
     pedido_id: str,
@@ -921,6 +941,24 @@ async def post_enviar_email(
     resultado = await enviar_email_fornecedor(db, usuario_atual, pedido)
     await db.commit()
     return resultado
+
+
+@router.post("/pedidos/{pedido_id}/solicitar-cotacao")
+async def post_solicitar_cotacao(
+    pedido_id: str,
+    payload: SolicitacaoCotacaoIn,
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    """Pede cotação por e-mail a N fornecedores (To individual em cada envio)."""
+    await _ctx(db, usuario_atual)
+    pedido = await obter_pedido(db, usuario_atual, pedido_id)
+    resultado = await enviar_solicitacao_cotacao_fornecedores(
+        db, usuario_atual, pedido, payload.fornecedor_ids,
+    )
+    await db.commit()
+    detalhe = await serializar_pedido(db, pedido, incluir_detalhe=True)
+    return {**resultado, "pedido": detalhe}
 
 
 @router.post("/pedidos/{pedido_id}/cotacoes/{cotacao_id}/desativar")

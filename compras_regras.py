@@ -42,6 +42,8 @@ TIPO_EVENTO_OBSERVACAO = "observacao"
 TIPO_EVENTO_STATUS = "status"
 TIPO_EVENTO_ANEXO = "anexo"
 TIPO_EVENTO_EMAIL = "email"
+TIPO_EVENTO_ITENS = "itens"
+TIPO_EVENTO_ITENS_OK = "itens_ok"
 
 TIPOS_EVENTO_PEDIDO = {
     TIPO_EVENTO_PARECER,
@@ -50,7 +52,79 @@ TIPOS_EVENTO_PEDIDO = {
     TIPO_EVENTO_STATUS,
     TIPO_EVENTO_ANEXO,
     TIPO_EVENTO_EMAIL,
+    TIPO_EVENTO_ITENS,
+    TIPO_EVENTO_ITENS_OK,
 }
+
+# Itens editáveis até o e-mail de pedido de compra ao fornecedor.
+STATUS_PEDIDO_ITENS_EDITAVEIS = frozenset(
+    {
+        STATUS_RASCUNHO,
+        STATUS_AGUARDANDO_COTACAO,
+        STATUS_EM_COTACAO,
+        STATUS_AGUARDANDO_UNIDADE,
+        STATUS_AGUARDANDO_SEDE,
+        STATUS_APROVADO,
+    }
+)
+
+
+def pedido_itens_podem_editar(status: Optional[str]) -> bool:
+    return (status or "").strip() in STATUS_PEDIDO_ITENS_EDITAVEIS
+
+
+def _chave_item_pedido_diff(item: dict) -> str:
+    cat = (item.get("catalogo_item_id") or "").strip()
+    desc = (item.get("descricao") or "").strip().lower()
+    return cat or f"desc:{desc}"
+
+
+def resumo_alteracao_itens_pedido(antes: list[dict], depois: list[dict]) -> str:
+    """Texto de timeline para diff de itens (sem I/O)."""
+    mapa_antes = {_chave_item_pedido_diff(i): i for i in antes}
+    mapa_depois = {_chave_item_pedido_diff(i): i for i in depois}
+    partes: list[str] = []
+    for chave in sorted(set(mapa_antes) - set(mapa_depois)):
+        partes.append(f"retirou «{mapa_antes[chave].get('descricao') or 'item'}»")
+    for chave in sorted(set(mapa_depois) - set(mapa_antes)):
+        d = mapa_depois[chave]
+        emb = (d.get("embalagem") or "").strip()
+        partes.append(
+            f"incluiu «{d.get('descricao') or 'item'}» "
+            f"({float(d.get('quantidade') or 0):g} {d.get('unidade_medida') or 'un'}"
+            + (f", emb. {emb}" if emb else "")
+            + ")"
+        )
+    for chave in sorted(set(mapa_antes) & set(mapa_depois)):
+        a = mapa_antes[chave]
+        d = mapa_depois[chave]
+        mudancas: list[str] = []
+        aq, dq = float(a.get("quantidade") or 0), float(d.get("quantidade") or 0)
+        au = (a.get("unidade_medida") or "un").strip() or "un"
+        du = (d.get("unidade_medida") or "un").strip() or "un"
+        if aq != dq or au != du:
+            mudancas.append(f"qtd {aq:g} {au} → {dq:g} {du}")
+        ae = (a.get("embalagem") or "").strip()
+        de = (d.get("embalagem") or "").strip()
+        if ae != de:
+            mudancas.append(f"embalagem «{ae or '—'}» → «{de or '—'}»")
+        am = (a.get("marca_preferencial") or "").strip()
+        dm = (d.get("marca_preferencial") or "").strip()
+        if am != dm:
+            mudancas.append(f"marca «{am or '—'}» → «{dm or '—'}»")
+        ad = (a.get("descricao") or "").strip()
+        dd = (d.get("descricao") or "").strip()
+        if ad != dd:
+            mudancas.append(f"descrição «{ad}» → «{dd}»")
+        if mudancas:
+            partes.append(f"«{dd or ad}»: " + "; ".join(mudancas))
+    if not partes:
+        return "Itens regravados sem mudança detectada."
+    if len(partes) > 8:
+        resto = len(partes) - 8
+        partes = partes[:8] + [f"… e mais {resto} alteração(ões)"]
+    return "Alterou itens: " + "; ".join(partes)
+
 
 MIN_COTACOES_RECOMENDADAS = 3
 

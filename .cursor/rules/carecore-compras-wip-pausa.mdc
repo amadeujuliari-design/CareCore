@@ -1,0 +1,53 @@
+---
+description: Estado do módulo Compras — Graph e-mail + cotação multi (2026-08-21)
+alwaysApply: true
+---
+
+# Compras — retrato WIP
+
+Atualizado em **2026-08-21** (America/Sao_Paulo).
+
+## Em teste local (~v1.6.36)
+
+**PDF Compras no padrão de relatórios AEB:**
+
+- Solicitação de cotação e pedido de compra saem em **PDF** (não HTML).
+- Cabeçalho com logo + nome de exibição; rodapé com linhas/telefone/e-mail/site da identidade do projeto (fallback org).
+- Dependência: `reportlab`.
+
+**E-mail Compras via Microsoft Graph** (sem desligar Security Defaults):
+
+- App Entra `CareCore Compras Email` + `Mail.Send` (aplicativo).
+- Vars locais: `CARECORE_GRAPH_TENANT_ID`, `CLIENT_ID`, `CLIENT_SECRET`, `MAILBOX`.
+- `email_utils`: Compras prefere Graph; SMTP fica como fallback.
+
+**Edição de itens até o e-mail de compra** (`enviado_fornecedor`):
+
+- Projeto e Sede editam itens nesta tela do pedido enquanto status ∈ rascunho…aprovado.
+- Histórico tipo `itens` / `itens_ok`; aviso âmbar → “Ok, conferi”.
+
+**Pedido de cotação por e-mail (multi-fornecedor):**
+
+- Bloco “1. Pedir cotação por e-mail” com checkboxes (3+ recomendado).
+- `POST /api/compras/pedidos/{id}/solicitar-cotacao` — um envio por fornecedor (`To` só dele).
+- “2. Registrar orçamentos recebidos” = lançar valor+PDF.
+- Botão pós-aprovação: “E-mail ao fornecedor escolhido”.
+
+## Já no ar (produção)
+
+- Consulta CNPJ, cadastros enriquecidos, unidade/embalagem (~v1.6.25+)
+- NFP paginação/export (trabalho paralelo)
+
+## Cenário de teste cotação (local)
+
+- Fornecedores: `CARECORE TESTE Compras1/2/3`
+- Pedido SIAT `6aed8b59-c308-4a32-9ba4-7688b5fe468f` — `aguardando_cotacao`
+- PDFs em `tmp_compras_teste_cotacoes/`
+- Graph Compras: `CARECORE_GRAPH_*` no `.env` (SMTP AUTH bloqueado pelos padrões de segurança)
+
+## Próximos passos
+
+1. Testar pedido de cotação real aos 3 fornecedores de teste (To individual via Graph).
+2. Registrar 3 orçamentos + anexos, aprovar, e-mail ao escolhido.
+3. Em produção Fly: setar secrets `CARECORE_GRAPH_*` antes do deploy.
+4. Commit/subir quando o usuário pedir.

@@ -22,6 +22,7 @@ import {
   comprasCancelar,
   comprasCategorias,
   comprasComunicacao,
+  comprasConfirmarRevisaoItens,
   comprasCotacao,
   comprasDesativarCotacao,
   comprasEnviar,
@@ -38,6 +39,7 @@ import {
   comprasReprovar,
   comprasSalvarItemConsumo,
   comprasSalvarItens,
+  comprasSolicitarCotacao,
   comprasSubmeter,
   moneyCentavos,
 } from './services/comprasService';
@@ -66,6 +68,8 @@ const ROTULO_EVENTO = {
   status: 'Status',
   anexo: 'Anexo',
   email: 'E-mail',
+  itens: 'Itens',
+  itens_ok: 'Itens conferidos',
 };
 
 const ITEM_VAZIO = {
@@ -116,6 +120,7 @@ export default function ComprasPedido() {
   const [desfazerItens, setDesfazerItens] = useState(null);
   const [cotacao, setCotacao] = useState({ fornecedor_id: '', valor_reais: '', fornecedor_nome: '' });
   const [arqCotacao, setArqCotacao] = useState(null);
+  const [fornecedoresCotacaoIds, setFornecedoresCotacaoIds] = useState([]);
   const [comunicacao, setComunicacao] = useState({ tipo: 'observacao', texto: '' });
   const [nfForm, setNfForm] = useState({
     tipo_nf: 'produto', numero: '', serie: '', valor_reais: '', observacao: '',
@@ -174,12 +179,18 @@ export default function ComprasPedido() {
 
   const pedidoSede = pedido.escopo_unidade === 'sede';
   const terminal = ['recebido', 'cancelado', 'reprovado'].includes(pedido.status);
+  const podeEditarItens = Boolean(pedido.pode_editar_itens)
+    || ['rascunho', 'aguardando_cotacao', 'em_cotacao', 'aguardando_aprovacao_unidade', 'aguardando_aprovacao_sede', 'aprovado'].includes(pedido.status);
   const podeEscolherCotacaoConsumo = pedido.tipo === 'consumo' && unidade && !pedidoSede
     && ['em_cotacao', 'aguardando_aprovacao_unidade'].includes(pedido.status);
   const podeEscolherCotacaoImobilizado = pedido.tipo === 'imobilizado' && unidade && !pedidoSede
     && pedido.status === 'rascunho';
   const podeLancarCotacao = (sede && pedido.tipo === 'consumo' && !terminal)
     || (unidade && pedido.tipo === 'imobilizado' && pedido.status === 'rascunho');
+  const podePedirCotacaoEmail = sede
+    && pedido.tipo === 'consumo'
+    && !terminal
+    && ['aguardando_cotacao', 'em_cotacao', 'aguardando_aprovacao_unidade', 'aguardando_aprovacao_sede', 'aprovado'].includes(pedido.status);
   const podeEncerrar = pedido.status === 'enviado_fornecedor' && (sede || (unidade && !pedidoSede));
   const podeReabrir = pedido.pode_reabrir && pedido.fechado_por_id === usuarioId;
   const pedidoCompra = (pedido.anexos || []).find((a) => a.tipo === 'pedido_compra');
@@ -275,7 +286,7 @@ export default function ComprasPedido() {
     const cadastroAtual = String(
       (campo === 'marca_preferencial' ? linha.marca_cadastro : linha.embalagem_cadastro) || '',
     ).trim();
-    if (sede && linha.catalogo_item_id && novo && novo !== cadastroAtual) {
+    if (linha.catalogo_item_id && novo && novo !== cadastroAtual) {
       setPerguntaCadastro({
         campo,
         itemId: linha.id,
@@ -420,12 +431,39 @@ export default function ComprasPedido() {
             {ok && (
               <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">{ok}</div>
             )}
-            {desfazerItens && pedido.status === 'rascunho' && (
+            {desfazerItens && podeEditarItens && (
               <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700">
                 <span>Última alteração nos itens ainda pode ser desfeita.</span>
                 <PremiumButton variant="secondary" type="button" onClick={desfazerUltimaAlteracaoItens}>
                   Desfazer
                 </PremiumButton>
+              </div>
+            )}
+            {pedido.aviso_alteracao_itens && !terminal && (
+              <div
+                className={`flex flex-wrap items-start justify-between gap-3 rounded-xl border px-4 py-3 text-sm ${
+                  pedido.precisa_revisar_cotacao
+                    ? 'border-amber-200 bg-amber-50 text-amber-900'
+                    : 'border-slate-200 bg-slate-50 text-slate-700'
+                }`}
+              >
+                <p className="min-w-0 flex-1">{pedido.aviso_alteracao_itens}</p>
+                {pedido.precisa_revisar_cotacao ? (
+                  <PremiumButton
+                    type="button"
+                    variant="secondary"
+                    onClick={() => agir(
+                      () => comprasConfirmarRevisaoItens(pedido.id),
+                      'Alteração de itens conferida.',
+                    )}
+                  >
+                    Ok, conferi
+                  </PremiumButton>
+                ) : (
+                  <span className="shrink-0 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Conferido
+                  </span>
+                )}
               </div>
             )}
             {pedido.aviso_cotacoes && !terminal && (
@@ -437,7 +475,7 @@ export default function ComprasPedido() {
             <SectionCard title="Itens">
               <div className="px-5 py-4">
               {(pedido.itens || []).length === 0 ? (
-                <p className="mb-3 text-sm text-slate-500">Nenhum item neste rascunho.</p>
+                <p className="mb-3 text-sm text-slate-500">Nenhum item neste pedido.</p>
               ) : (
                 <div className="mb-4 overflow-x-auto">
                   <table className="min-w-full text-sm">
@@ -448,12 +486,12 @@ export default function ComprasPedido() {
                         <th className="px-2 py-2">Item</th>
                         <th className="px-2 py-2">Embalagem</th>
                         <th className="px-2 py-2">Marca</th>
-                        {pedido.status === 'rascunho' ? <th className="px-2 py-2" /> : null}
+                        {podeEditarItens ? <th className="px-2 py-2" /> : null}
                       </tr>
                     </thead>
                     <tbody>
                       {(pedido.itens || []).map((linha) => {
-                        const confusa = pedido.status === 'rascunho' && pedidoItemUnidadeConfusa(linha);
+                        const confusa = podeEditarItens && pedidoItemUnidadeConfusa(linha);
                         return (
                           <tr key={linha.id} className="border-t border-slate-100 align-top">
                             <td className="px-2 py-2.5 font-medium text-slate-900">{linha.quantidade}</td>
@@ -468,7 +506,7 @@ export default function ComprasPedido() {
                               ) : null}
                             </td>
                             <td className="px-2 py-2.5">
-                              {pedido.status === 'rascunho' ? (
+                              {podeEditarItens ? (
                                 <input
                                   value={edicaoLinha[`${linha.id}:embalagem`] ?? (linha.embalagem || '')}
                                   onChange={(e) => setEdicaoLinha((mapa) => ({
@@ -486,7 +524,7 @@ export default function ComprasPedido() {
                               ) : (linha.embalagem || '—')}
                             </td>
                             <td className="px-2 py-2.5">
-                              {pedido.status === 'rascunho' ? (
+                              {podeEditarItens ? (
                                 <input
                                   value={edicaoLinha[`${linha.id}:marca_preferencial`] ?? (linha.marca_preferencial || '')}
                                   onChange={(e) => setEdicaoLinha((mapa) => ({
@@ -503,7 +541,7 @@ export default function ComprasPedido() {
                                 />
                               ) : (linha.marca_preferencial || '—')}
                             </td>
-                            {pedido.status === 'rascunho' ? (
+                            {podeEditarItens ? (
                               <td className="px-2 py-2.5 text-right">
                                 <div className="flex flex-wrap justify-end gap-2">
                                   {confusa ? (
@@ -556,9 +594,13 @@ export default function ComprasPedido() {
                 </div>
               ) : null}
               <p className="mb-3 text-xs text-slate-500">
-                Quantidade = volumes neste pedido. Embalagem e marca podem valer só nesta compra ou atualizar o cadastro.
+                {podeEditarItens
+                  ? 'Itens editáveis até o e-mail de compra ao fornecedor. Alterações ficam no histórico; confira se precisa reenviar cotação.'
+                  : 'Itens bloqueados após o envio do pedido de compra ao fornecedor.'}
+                {' '}
+                Embalagem e marca podem valer só nesta compra ou atualizar o cadastro.
               </p>
-              {pedido.status === 'rascunho' && (
+              {podeEditarItens && (
                 <form className="grid gap-2 md:grid-cols-8" onSubmit={incluirItem}>
                   <ComprasItemTypeahead
                     className="md:col-span-4"
@@ -669,9 +711,98 @@ export default function ComprasPedido() {
             </SectionCard>
 
             <SectionCard title="Cotações e orçamentos">
+              <p className="mb-3 text-xs text-slate-500">
+                Dois passos distintos: (1) pedir cotação por e-mail aos fornecedores;
+                (2) registrar o orçamento que voltou (valor + PDF). Imobilizado: a unidade anexa os orçamentos.
+              </p>
+
+              {podePedirCotacaoEmail && (
+                <div className="mb-4 rounded-xl border border-violet-100 bg-violet-50/60 p-3">
+                  <p className="text-sm font-semibold text-slate-800">1. Pedir cotação por e-mail</p>
+                  <p className="mt-1 text-xs text-slate-600">
+                    Selecione os fornecedores (recomendado 3 ou mais). Cada um recebe um e-mail só com o endereço dele no campo Para — nunca vê os demais.
+                  </p>
+                  <ul className="mt-3 max-h-48 space-y-1.5 overflow-y-auto text-sm">
+                    {fornecedores.map((f) => {
+                      const email = (f.email || f.email_empresa || '').trim();
+                      const checked = fornecedoresCotacaoIds.includes(f.id);
+                      return (
+                        <li key={f.id}>
+                          <label className={`flex cursor-pointer items-start gap-2 rounded-lg px-2 py-1.5 ${email ? 'hover:bg-white/80' : 'opacity-50'}`}>
+                            <input
+                              type="checkbox"
+                              className="mt-1"
+                              disabled={!email}
+                              checked={checked}
+                              onChange={() => {
+                                setFornecedoresCotacaoIds((prev) => (
+                                  checked ? prev.filter((id) => id !== f.id) : [...prev, f.id]
+                                ));
+                              }}
+                            />
+                            <span>
+                              <span className="font-medium text-slate-800">{f.nome}</span>
+                              <span className="block text-xs text-slate-500">
+                                {email || 'Sem e-mail cadastrado'}
+                              </span>
+                            </span>
+                          </label>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <PremiumButton
+                      disabled={fornecedoresCotacaoIds.length < 1}
+                      onClick={async () => {
+                        setErro('');
+                        setOk('');
+                        try {
+                          const res = await comprasSolicitarCotacao(pedido.id, fornecedoresCotacaoIds);
+                          const enviados = res.enviados || [];
+                          const falhas = res.falhas || [];
+                          if (res.pedido) setPedido(res.pedido);
+                          setFornecedoresCotacaoIds([]);
+
+                          if (!enviados.length) {
+                            throw new Error(falhas[0]?.erro || 'Nenhum e-mail enviado.');
+                          }
+
+                          const nomesOk = enviados.map((e) => e.nome).filter(Boolean);
+                          let textoAlerta = `Cotações enviadas com sucesso para:\n\n${nomesOk.map((n) => `• ${n}`).join('\n')}`;
+                          if (falhas.length) {
+                            const nomesFail = falhas.map((f) => `${f.nome}${f.erro ? ` (${f.erro})` : ''}`);
+                            textoAlerta += `\n\nNão enviadas:\n${nomesFail.map((n) => `• ${n}`).join('\n')}`;
+                          }
+                          window.alert(textoAlerta);
+                          setOk(
+                            falhas.length
+                              ? `Cotações enviadas para ${nomesOk.join(', ')}. Algumas falharam — veja o aviso.`
+                              : `Cotações enviadas com sucesso para: ${nomesOk.join(', ')}.`,
+                          );
+                          await carregar();
+                        } catch (err) {
+                          setErro(err.response?.data?.detail || err.message || 'Não foi possível enviar as cotações.');
+                        }
+                      }}
+                    >
+                      <span className="inline-flex items-center gap-1.5">
+                        <Mail size={16} />
+                        Enviar pedido de cotação
+                      </span>
+                    </PremiumButton>
+                    <span className="text-xs text-slate-500">
+                      {fornecedoresCotacaoIds.length} selecionado(s)
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              <p className="mb-2 text-sm font-semibold text-slate-800">
+                {podePedirCotacaoEmail ? '2. Registrar orçamentos recebidos' : 'Orçamentos lançados'}
+              </p>
               <p className="mb-2 text-xs text-slate-500">
-                Consumo: a Sede lança orçamentos (PDF). Imobilizado: a unidade anexa os orçamentos.
-                Orçamentos podem ser substituídos enquanto o processo não encerrar.
+                Aqui você registra o valor e o PDF que o fornecedor devolveu — não é o envio do pedido de cotação.
               </p>
               <ul className="mb-3 space-y-2 text-sm">
                 {(pedido.cotacoes || []).map((c) => (
@@ -788,7 +919,9 @@ export default function ComprasPedido() {
                     onChange={(e) => setArqCotacao(e.target.files?.[0] || null)}
                     className="text-xs"
                   />
-                  <PremiumButton type="submit" className="md:col-span-5 md:max-w-xs">Lançar cotação</PremiumButton>
+                  <PremiumButton type="submit" className="md:col-span-5 md:max-w-xs">
+                    Registrar orçamento recebido
+                  </PremiumButton>
                 </form>
               )}
             </SectionCard>
@@ -1025,11 +1158,11 @@ export default function ComprasPedido() {
                 {['aprovado', 'enviado_fornecedor'].includes(pedido.status) && sede && (
                   <PremiumButton
                     variant="secondary"
-                    onClick={() => agir(() => comprasEnviarEmailFornecedor(pedido.id), 'E-mail processado (veja timeline).')}
+                    onClick={() => agir(() => comprasEnviarEmailFornecedor(pedido.id), 'E-mail do pedido de compra processado (veja timeline).')}
                   >
                     <span className="inline-flex items-center gap-1.5">
                       <Mail size={16} />
-                      Enviar / reenviar e-mail
+                      E-mail ao fornecedor escolhido
                     </span>
                   </PremiumButton>
                 )}

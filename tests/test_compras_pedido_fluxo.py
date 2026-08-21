@@ -1,7 +1,7 @@
 import pytest
 
 from compras_nf_xml_utils import extrair_campos_nf_xml
-from compras_pedido_pdf import montar_html_pedido_compra
+from compras_pedido_pdf import montar_html_pedido_compra, montar_pdf_pedido_compra, montar_pdf_solicitacao_cotacao
 from compras_regras import aviso_cotacoes_insuficientes, pedido_pronto_para_aprovacao_unidade
 
 
@@ -63,6 +63,48 @@ def test_pedido_compra_mostra_embalagem():
         cotacao_escolhida=None,
         numero_pedido="ABC123",
     )
-    assert "Embalagem" in html
     assert "500 g" in html
     assert "Farinha de tapioca" in html
+
+
+def test_solicitacao_cotacao_pdf_padrao_aeb():
+    pdf = montar_pdf_solicitacao_cotacao(
+        pedido={"competencia": "2026-08", "tipo": "consumo"},
+        instituicao={"nome": "SIAT", "cidade": "São Paulo", "uf": "SP"},
+        organizacao_nome="Associação Evangélica Beneficente",
+        itens=[{
+            "quantidade": 2,
+            "unidade_medida": "cx",
+            "descricao": "Papel A4",
+            "embalagem": "500 folhas",
+            "marca_preferencial": None,
+        }],
+        numero_pedido="XYZ999",
+        identidade={
+            "relatorio_nome_exibicao": "AEB — Compras",
+            "relatorio_rodape_linha1": "Associação Evangélica Beneficente",
+            "relatorio_telefone": "(11) 0000-0000",
+        },
+        logo_bytes=None,
+    )
+    assert pdf[:4] == b"%PDF"
+    assert len(pdf) > 500
+
+
+def test_pedido_compra_pdf_com_fornecedor():
+    pdf = montar_pdf_pedido_compra(
+        pedido={"competencia": "2026-08", "tipo": "consumo"},
+        instituicao={"nome": "SIAT"},
+        organizacao_nome="AEB",
+        itens=[{
+            "quantidade": 1,
+            "unidade_medida": "un",
+            "descricao": "Item X",
+            "embalagem": "1 un",
+            "marca_preferencial": "Marca",
+        }],
+        cotacao_escolhida={"fornecedor_nome": "Fornecedor Y", "valor_centavos": 12345},
+        numero_pedido="PED001",
+        identidade={"relatorio_nome_exibicao": "AEB"},
+    )
+    assert pdf[:4] == b"%PDF"

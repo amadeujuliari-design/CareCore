@@ -51,6 +51,7 @@ from compras_regras import (
     STATUS_REPROVADO,
     STATUS_TERMINAIS_PEDIDO,
     TIPO_CONSUMO,
+    TIPO_EVENTO_ITENS,
     TIPO_EVENTO_STATUS,
     TIPO_IMOBILIZADO,
     TIPOS_PEDIDO,
@@ -63,10 +64,12 @@ from compras_regras import (
     normalizar_escopo_unidade,
     normalizar_competencia,
     pedido_escopo_sede,
+    pedido_itens_podem_editar,
     pedido_pronto_para_aprovacao_unidade,
     pedido_rascunho_pode_excluir,
     pode_criar_rascunho_consumo,
     pode_enviar_consumo,
+    resumo_alteracao_itens_pedido,
     rotulo_unidade_relatorio,
     status_janela,
     periodo_semana_util_mes,
@@ -664,24 +667,58 @@ def _unidade_linha_pedido(item: dict, catalogo: dict | None = None) -> str:
     )
 
 
+def _chave_item_pedido_diff(item: dict | object) -> str:
+    if isinstance(item, dict):
+        cat = (item.get("catalogo_item_id") or "").strip()
+        desc = (item.get("descricao") or "").strip().lower()
+        return cat or f"desc:{desc}"
+    cat = (getattr(item, "catalogo_item_id", None) or "").strip()
+    desc = (getattr(item, "descricao", None) or "").strip().lower()
+    return cat or f"desc:{desc}"
+
+
+def _snapshot_item_pedido(item: dict | object) -> dict:
+    if isinstance(item, dict):
+        return {
+            "descricao": (item.get("descricao") or "").strip(),
+            "quantidade": float(item.get("quantidade") or 0),
+            "unidade_medida": (item.get("unidade_medida") or "").strip() or "un",
+            "embalagem": (item.get("embalagem") or "").strip(),
+            "marca_preferencial": (item.get("marca_preferencial") or "").strip(),
+            "catalogo_item_id": (item.get("catalogo_item_id") or "").strip() or None,
+        }
+    return {
+        "descricao": (getattr(item, "descricao", None) or "").strip(),
+        "quantidade": float(getattr(item, "quantidade", None) or 0),
+        "unidade_medida": (getattr(item, "unidade_medida", None) or "").strip() or "un",
+        "embalagem": (getattr(item, "embalagem", None) or "").strip(),
+        "marca_preferencial": (getattr(item, "marca_preferencial", None) or "").strip(),
+        "catalogo_item_id": (getattr(item, "catalogo_item_id", None) or "").strip() or None,
+    }
+
+
 async def substituir_itens(
     db: AsyncSession,
     usuario: dict,
     pedido: ComprasPedidoDB,
     itens: list[dict],
 ) -> None:
-    if pedido.status not in {STATUS_RASCUNHO}:
-        raise HTTPException(status_code=400, detail="Só é possível editar itens em rascunho.")
+    if not pedido_itens_podem_editar(pedido.status):
+        raise HTTPException(
+            status_code=400,
+            detail="Só é possível editar itens até o pedido de compra ser enviado ao fornecedor.",
+        )
     atuais = (
         await db.execute(select(ComprasPedidoItemDB).where(ComprasPedidoItemDB.pedido_id == pedido.id))
     ).scalars().all()
-    for item in atuais:
-        await db.delete(item)
+    snapshot_antes = [_snapshot_item_pedido(item) for item in atuais]
     linhas = [item for item in (itens or []) if (item.get("descricao") or "").strip()]
     catalogo = await _fator_catalogo_por_ids(
         db,
         [item.get("catalogo_item_id") for item in linhas],
     )
+    for item in atuais:
+        await db.delete(item)
     for item in linhas:
         cat = catalogo.get(item.get("catalogo_item_id") or "") or {}
         db.add(
@@ -699,6 +736,32 @@ async def substituir_itens(
         )
     pedido.atualizado_em = agora_operacional_naive()
 
+    snapshot_depois = []
+    for item in linhas:
+        cat = catalogo.get(item.get("catalogo_item_id") or "") or {}
+        snap = _snapshot_item_pedido(item)
+        snap["unidade_medida"] = _unidade_linha_pedido(item, cat)
+        snapshot_depois.append(snap)
+    resumo = resumo_alteracao_itens_pedido(snapshot_antes, snapshot_depois)
+    if resumo.startswith("Itens regravados sem mudança"):
+        return
+
+    nome = (
+        (usuario.get("nome") or usuario.get("nome_completo") or usuario.get("email") or "Usuário")
+    ).strip()
+    texto = f"{nome}: {resumo}"
+    if pedido.status != STATUS_RASCUNHO:
+        texto += (
+            " Confira se é necessário reenviar a cotação aos fornecedores"
+            " e anexar novo orçamento, se o PDF anterior ficou desatualizado."
+        )
+    await registrar_evento_pedido(
+        db,
+        pedido_id=pedido.id,
+        tipo=TIPO_EVENTO_ITENS,
+        texto=texto,
+        usuario_id=_uid(usuario),
+    )
 
 async def _cotacoes_do_pedido(db: AsyncSession, pedido_id: str) -> list[ComprasCotacaoDB]:
     return list(
@@ -1760,7 +1823,49 @@ async def listar_itens_consumo(db: AsyncSession, usuario: dict, ativos: Optional
 
 
 async def salvar_item_consumo(db: AsyncSession, usuario: dict, payload: dict, item_id: Optional[str] = None):
-    exigir_sede(usuario)
+    org_id = _org_id(usuario)
+
+    # Projeto/unidade: só atualiza embalagem/marca de item já cadastrado (via pedido).
+    if not _sede(usuario):
+        if not item_id:
+            raise HTTPException(
+                status_code=403,
+                detail="Sem permissão para cadastrar item novo. Escolha um do cadastro ou peça à Sede.",
+            )
+        row = (
+            await db.execute(
+                select(ComprasItemConsumoDB).where(
+                    ComprasItemConsumoDB.id == item_id,
+                    ComprasItemConsumoDB.organizacao_id == org_id,
+                )
+            )
+        ).scalar_one_or_none()
+        if not row:
+            raise HTTPException(status_code=404, detail="Item não encontrado.")
+        limpo_parcial = limpar_item_consumo(
+            descricao=row.descricao or "",
+            unidade_medida=row.unidade_medida or "",
+            marca_preferencial=(
+                payload.get("marca_preferencial")
+                if "marca_preferencial" in payload
+                else (row.marca_preferencial or "")
+            ),
+            observacao=row.observacao or "",
+            embalagem=(
+                payload.get("embalagem")
+                if "embalagem" in payload
+                else (getattr(row, "embalagem", None) or "")
+            ),
+        )
+        if "embalagem" in payload:
+            row.embalagem = limpo_parcial["embalagem"] or None
+            if getattr(row, "fator_embalagem", None) is None:
+                row.fator_embalagem = inferir_fator_embalagem(row.embalagem)
+        if "marca_preferencial" in payload:
+            row.marca_preferencial = limpo_parcial["marca_preferencial"] or None
+        row.atualizado_em = agora_operacional_naive()
+        return row
+
     limpo = limpar_item_consumo(
         descricao=(payload.get("descricao") or "").strip(),
         unidade_medida=payload.get("unidade_medida") or "",
@@ -1772,7 +1877,6 @@ async def salvar_item_consumo(db: AsyncSession, usuario: dict, payload: dict, it
         raise HTTPException(status_code=400, detail="Descrição do item inválida.")
     descricao = limpo["descricao"]
     chave = limpo["chave"] or chave_item_consumo(descricao)
-    org_id = _org_id(usuario)
     extra = [ComprasItemConsumoDB.id != item_id] if item_id else []
     duplicado = (
         await db.execute(

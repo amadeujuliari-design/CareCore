@@ -233,6 +233,44 @@ def test_rascunho_so_exclui_sem_tramitacao():
     )
 
 
+def test_pedido_itens_editaveis_ate_envio_fornecedor():
+    from compras_regras import pedido_itens_podem_editar
+
+    assert pedido_itens_podem_editar("rascunho")
+    assert pedido_itens_podem_editar("aguardando_cotacao")
+    assert pedido_itens_podem_editar("em_cotacao")
+    assert pedido_itens_podem_editar("aguardando_aprovacao_unidade")
+    assert pedido_itens_podem_editar("aguardando_aprovacao_sede")
+    assert pedido_itens_podem_editar("aprovado")
+    assert not pedido_itens_podem_editar("enviado_fornecedor")
+    assert not pedido_itens_podem_editar("recebido")
+    assert not pedido_itens_podem_editar("cancelado")
+
+
+def test_resumo_alteracao_itens_embalagem():
+    from compras_regras import resumo_alteracao_itens_pedido
+
+    antes = [{
+        "descricao": "Absorvente",
+        "quantidade": 15,
+        "unidade_medida": "pct",
+        "embalagem": "",
+        "marca_preferencial": "",
+        "catalogo_item_id": "abc",
+    }]
+    depois = [{
+        "descricao": "Absorvente",
+        "quantidade": 15,
+        "unidade_medida": "pct",
+        "embalagem": "PCT 16",
+        "marca_preferencial": "",
+        "catalogo_item_id": "abc",
+    }]
+    texto = resumo_alteracao_itens_pedido(antes, depois)
+    assert "Absorvente" in texto
+    assert "PCT 16" in texto
+
+
 def test_inferir_cadastros_compras():
     from compras_regras import (
         inferir_fator_embalagem,

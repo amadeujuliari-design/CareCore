@@ -14,17 +14,22 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from compras_itens_consumo_utils import embalagem_efetiva_pedido
 from compras_nf_xml_utils import extrair_campos_nf_xml
-from compras_pedido_pdf import montar_html_pedido_compra
+from compras_pedido_pdf import montar_pdf_pedido_compra, montar_pdf_solicitacao_cotacao
 from compras_regras import (
     ESCOPO_PROJETO,
     PATRIMONIO_ORIGEM_COMPRA,
     PATRIMONIO_SITUACAO_BOM,
+    STATUS_AGUARDANDO_COTACAO,
+    STATUS_AGUARDANDO_SEDE,
+    STATUS_AGUARDANDO_UNIDADE,
     STATUS_APROVADO,
     STATUS_CANCELADO,
+    STATUS_EM_COTACAO,
     STATUS_ENVIADO,
     STATUS_RECEBIDO,
     STATUS_REPROVADO,
     STATUS_TERMINAIS_PEDIDO,
+    TIPO_CONSUMO,
     TIPO_ANEXO_NF_PDF,
     TIPO_ANEXO_NF_XML,
     TIPO_ANEXO_ORCAMENTO,
@@ -32,6 +37,8 @@ from compras_regras import (
     TIPO_ANEXO_RESPOSTA_FORNECEDOR,
     TIPO_EVENTO_ANEXO,
     TIPO_EVENTO_EMAIL,
+    TIPO_EVENTO_ITENS,
+    TIPO_EVENTO_ITENS_OK,
     TIPO_EVENTO_NEGATIVA,
     TIPO_EVENTO_OBSERVACAO,
     TIPO_EVENTO_PARECER,
@@ -42,7 +49,9 @@ from compras_regras import (
     aviso_cotacoes_insuficientes,
     data_operacional,
     pedido_escopo_sede,
+    pedido_itens_podem_editar,
     pedido_rascunho_pode_excluir,
+    usuario_e_sede_compras,
 )
 from compras_upload_utils import salvar_arquivo_compras
 from email_utils import enviar_email_smtp_com_anexo
@@ -221,11 +230,38 @@ async def extras_serializacao_pedido(db: AsyncSession, pedido: ComprasPedidoDB) 
         ).scalars().all()
     )
     fechado_por = pedido.reprovado_por_id or pedido.cancelado_por_id
+    eventos_itens = [e for e in eventos if e.tipo == TIPO_EVENTO_ITENS]
+    ultimo_itens = eventos_itens[-1] if eventos_itens else None
+    tem_cotacao = bool(cotacoes)
+    aviso_alteracao = None
+    precisa_revisar = False
+    if ultimo_itens and pedido_itens_podem_editar(pedido.status) and pedido.status != "rascunho":
+        # Pendente enquanto o último evento relevante for alteração de itens (não o OK).
+        for ev in reversed(eventos):
+            if ev.tipo == TIPO_EVENTO_ITENS_OK:
+                break
+            if ev.tipo == TIPO_EVENTO_ITENS:
+                precisa_revisar = True
+                break
+        if tem_cotacao:
+            aviso_alteracao = (
+                "Itens alterados após o envio/cotação. Confira se precisa reenviar a cotação "
+                "aos fornecedores e anexar novo orçamento se o PDF anterior ficou desatualizado."
+            )
+        else:
+            aviso_alteracao = (
+                "Itens alterados após o envio do pedido. Confira a lista antes de solicitar cotação."
+            )
+        if ultimo_itens.texto:
+            aviso_alteracao = f"{aviso_alteracao} Última alteração: {ultimo_itens.texto}"
     return {
         "anexos": [_serializar_anexo(a) for a in anexos],
         "notas_fiscais": [_serializar_nota(n) for n in notas],
         "eventos": [_serializar_evento(e) for e in eventos],
         "aviso_cotacoes": aviso_cotacoes_insuficientes(len(cotacoes)),
+        "aviso_alteracao_itens": aviso_alteracao,
+        "precisa_revisar_cotacao": precisa_revisar,
+        "pode_editar_itens": pedido_itens_podem_editar(pedido.status),
         "motivo_reprovacao": pedido.motivo_reprovacao,
         "motivo_cancelamento": pedido.motivo_cancelamento,
         "status_anterior": pedido.status_anterior,
@@ -362,6 +398,30 @@ async def registrar_comunicacao_pedido(
     return evento
 
 
+async def confirmar_revisao_itens_pedido(
+    db: AsyncSession,
+    usuario: dict,
+    pedido: ComprasPedidoDB,
+) -> ComprasPedidoEventoDB:
+    """Marca que o usuário conferiu a última alteração de itens (baixa o aviso âmbar)."""
+    if pedido.status in STATUS_TERMINAIS_PEDIDO:
+        raise HTTPException(status_code=400, detail="Processo encerrado.")
+    if not pedido_itens_podem_editar(pedido.status) or pedido.status == "rascunho":
+        raise HTTPException(status_code=400, detail="Não há alteração de itens pendente de conferência.")
+    nome = (
+        (usuario.get("nome") or usuario.get("nome_completo") or usuario.get("email") or "Usuário")
+    ).strip()
+    evento = await registrar_evento_pedido(
+        db,
+        pedido_id=pedido.id,
+        tipo=TIPO_EVENTO_ITENS_OK,
+        texto=f"{nome}: conferiu a alteração dos itens.",
+        usuario_id=_uid(usuario),
+    )
+    pedido.atualizado_em = agora_operacional_naive()
+    return evento
+
+
 async def reprovar_pedido(
     db: AsyncSession,
     usuario: dict,
@@ -452,7 +512,80 @@ async def _dados_instituicao(db: AsyncSession, pedido: ComprasPedidoDB) -> Optio
         "bairro": inst.bairro,
         "cidade": inst.cidade,
         "uf": inst.uf,
+        "relatorio_logo_url": getattr(inst, "relatorio_logo_url", None),
+        "relatorio_nome_exibicao": getattr(inst, "relatorio_nome_exibicao", None),
+        "relatorio_rodape_linha1": getattr(inst, "relatorio_rodape_linha1", None),
+        "relatorio_rodape_linha2": getattr(inst, "relatorio_rodape_linha2", None),
+        "relatorio_telefone": getattr(inst, "relatorio_telefone", None) or getattr(inst, "telefone", None),
+        "relatorio_email": getattr(inst, "relatorio_email", None) or getattr(inst, "email", None),
+        "relatorio_site": getattr(inst, "relatorio_site", None),
     }
+
+
+def _identidade_de_entidade(entidade: Any) -> dict[str, Any]:
+    return {
+        "relatorio_logo_url": getattr(entidade, "relatorio_logo_url", None),
+        "relatorio_nome_exibicao": getattr(entidade, "relatorio_nome_exibicao", None)
+        or getattr(entidade, "nome_fantasia", None)
+        or getattr(entidade, "nome", None),
+        "relatorio_rodape_linha1": getattr(entidade, "relatorio_rodape_linha1", None),
+        "relatorio_rodape_linha2": getattr(entidade, "relatorio_rodape_linha2", None),
+        "relatorio_telefone": getattr(entidade, "relatorio_telefone", None)
+        or getattr(entidade, "telefone", None),
+        "relatorio_email": getattr(entidade, "relatorio_email", None) or getattr(entidade, "email", None),
+        "relatorio_site": getattr(entidade, "relatorio_site", None),
+    }
+
+
+async def _identidade_relatorio_pedido(
+    db: AsyncSession,
+    pedido: ComprasPedidoDB,
+    org: Optional[OrganizacaoDB],
+) -> dict[str, Any]:
+    """Preferência: identidade do projeto; fallback organização (padrão relatórios AEB)."""
+    if pedido.instituicao_id:
+        inst = (
+            await db.execute(select(InstituicaoDB).where(InstituicaoDB.id == pedido.instituicao_id))
+        ).scalar_one_or_none()
+        if inst:
+            idn = _identidade_de_entidade(inst)
+            if any(idn.get(k) for k in (
+                "relatorio_logo_url",
+                "relatorio_nome_exibicao",
+                "relatorio_rodape_linha1",
+                "relatorio_rodape_linha2",
+            )):
+                return idn
+    if org:
+        return _identidade_de_entidade(org)
+    return {"relatorio_nome_exibicao": "AEB"}
+
+
+def _logo_bytes_relatorio(logo_url: Optional[str]) -> Optional[bytes]:
+    if not logo_url:
+        return None
+    caminho = str(logo_url).strip().replace("\\", "/")
+    try:
+        storage_ref = extrair_bucket_caminho_storage(caminho)
+        if storage_ref and storage_supabase_configurado():
+            bucket, path = storage_ref
+            arquivo = baixar_supabase_storage(bucket, path)
+            return arquivo.conteudo if arquivo else None
+    except (StorageErro, Exception):  # noqa: BLE001
+        pass
+
+    if caminho.startswith("/uploads/"):
+        local = Path(caminho.lstrip("/"))
+    elif caminho.startswith("uploads/"):
+        local = Path(caminho)
+    else:
+        return None
+    try:
+        if local.is_file():
+            return local.read_bytes()
+    except OSError:
+        return None
+    return None
 
 
 async def gerar_pedido_compra(
@@ -492,8 +625,10 @@ async def gerar_pedido_compra(
         await db.execute(select(OrganizacaoDB).where(OrganizacaoDB.id == pedido.organizacao_id))
     ).scalar_one_or_none()
     inst = await _dados_instituicao(db, pedido)
+    identidade = await _identidade_relatorio_pedido(db, pedido, org)
+    logo_bytes = _logo_bytes_relatorio(identidade.get("relatorio_logo_url"))
     numero = pedido.id.split("-")[0].upper()[:8]
-    html = montar_html_pedido_compra(
+    pdf_bytes = montar_pdf_pedido_compra(
         pedido={
             "competencia": pedido.competencia,
             "tipo": pedido.tipo,
@@ -522,13 +657,15 @@ async def gerar_pedido_compra(
             "valor_centavos": escolhida.valor_centavos,
         },
         numero_pedido=numero,
+        identidade=identidade,
+        logo_bytes=logo_bytes,
     )
-    conteudo = html.encode("utf-8")
-    nome_arquivo = f"pedido-compra-{numero}.html"
+    conteudo = pdf_bytes
+    nome_arquivo = f"pedido-compra-{numero}.pdf"
 
     class _ArquivoGerado:
         filename = nome_arquivo
-        content_type = "text/html"
+        content_type = "application/pdf"
 
     caminho, nome_original, tamanho = await salvar_arquivo_compras(
         organizacao_id=pedido.organizacao_id,
@@ -551,7 +688,7 @@ async def gerar_pedido_compra(
         tipo=TIPO_ANEXO_PEDIDO_PDF,
         nome_arquivo=nome_original,
         caminho_arquivo=caminho,
-        content_type="text/html",
+        content_type="application/pdf",
         tamanho_bytes=tamanho,
         criado_por_id=_uid(usuario),
     )
@@ -615,7 +752,7 @@ async def enviar_email_fornecedor(
         para=email_dest,
         anexo_nome=anexo.nome_arquivo,
         anexo_bytes=bytes_arquivo,
-        anexo_content_type=content_type or "text/html",
+        anexo_content_type=content_type or getattr(anexo, "content_type", None) or "application/pdf",
         perfil="compras",
     )
     texto_evento = f"E-mail enviado para {email_dest}." if resultado.enviado else f"Falha no e-mail: {resultado.erro}"
@@ -628,6 +765,206 @@ async def enviar_email_fornecedor(
         anexo_id=anexo.id,
     )
     return {"enviado": resultado.enviado, "erro": resultado.erro, "destinatario": email_dest}
+
+
+def _email_destino_fornecedor(fornecedor: ComprasFornecedorDB) -> str:
+    return ((fornecedor.email or fornecedor.email_empresa or "") or "").strip()
+
+
+async def _itens_html_pedido(db: AsyncSession, pedido: ComprasPedidoDB) -> list[dict]:
+    itens = (
+        await db.execute(
+            select(ComprasPedidoItemDB).where(ComprasPedidoItemDB.pedido_id == pedido.id)
+        )
+    ).scalars().all()
+    ids_catalogo = [getattr(i, "catalogo_item_id", None) for i in itens if getattr(i, "catalogo_item_id", None)]
+    catalogo_campos: dict[str, dict] = {}
+    if ids_catalogo:
+        catalogo_campos = {
+            row[0]: {"embalagem": row[1], "marca": row[2]}
+            for row in (
+                await db.execute(
+                    select(
+                        ComprasItemConsumoDB.id,
+                        ComprasItemConsumoDB.embalagem,
+                        ComprasItemConsumoDB.marca_preferencial,
+                    ).where(ComprasItemConsumoDB.id.in_(ids_catalogo))
+                )
+            ).all()
+        }
+    return [
+        {
+            "descricao": i.descricao,
+            "quantidade": i.quantidade,
+            "unidade_medida": i.unidade_medida,
+            "embalagem": embalagem_efetiva_pedido(
+                getattr(i, "embalagem", None),
+                (catalogo_campos.get(getattr(i, "catalogo_item_id", None) or "") or {}).get("embalagem"),
+            ),
+            "marca_preferencial": embalagem_efetiva_pedido(
+                i.marca_preferencial,
+                (catalogo_campos.get(getattr(i, "catalogo_item_id", None) or "") or {}).get("marca"),
+            ),
+        }
+        for i in itens
+    ]
+
+
+async def enviar_solicitacao_cotacao_fornecedores(
+    db: AsyncSession,
+    usuario: dict,
+    pedido: ComprasPedidoDB,
+    fornecedor_ids: list[str],
+) -> dict:
+    """Envia pedido de cotação por e-mail: um To por fornecedor (nunca lista no mesmo e-mail)."""
+    perfil = str(usuario.get("perfil_acesso") or usuario.get("perfil") or "")
+    if not usuario_e_sede_compras(
+        perfil=perfil,
+        is_manutencao=bool(usuario.get("is_manutencao")),
+    ):
+        raise HTTPException(status_code=403, detail="Pedido de cotação é enviado pela Sede (ADM Compras).")
+    if pedido.tipo != TIPO_CONSUMO:
+        raise HTTPException(status_code=400, detail="Pedido de cotação por e-mail é para consumo (Sede).")
+    if pedido.status in STATUS_TERMINAIS_PEDIDO:
+        raise HTTPException(status_code=400, detail="Pedido encerrado não aceita nova solicitação de cotação.")
+    if pedido.status not in {
+        STATUS_AGUARDANDO_COTACAO,
+        STATUS_EM_COTACAO,
+        STATUS_AGUARDANDO_UNIDADE,
+        STATUS_AGUARDANDO_SEDE,
+        STATUS_APROVADO,
+    }:
+        raise HTTPException(
+            status_code=400,
+            detail="Status do pedido não permite solicitar cotação por e-mail.",
+        )
+
+    ids = []
+    vistos = set()
+    for raw in fornecedor_ids or []:
+        fid = str(raw or "").strip()
+        if not fid or fid in vistos:
+            continue
+        vistos.add(fid)
+        ids.append(fid)
+    if not ids:
+        raise HTTPException(status_code=400, detail="Selecione ao menos um fornecedor.")
+
+    fornecedores = (
+        await db.execute(
+            select(ComprasFornecedorDB).where(
+                ComprasFornecedorDB.id.in_(ids),
+                ComprasFornecedorDB.organizacao_id == pedido.organizacao_id,
+            )
+        )
+    ).scalars().all()
+    mapa = {f.id: f for f in fornecedores}
+    faltando = [fid for fid in ids if fid not in mapa]
+    if faltando:
+        raise HTTPException(status_code=400, detail="Um ou mais fornecedores são inválidos.")
+
+    sem_email = [f.nome for f in fornecedores if not _email_destino_fornecedor(f)]
+    if sem_email:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cadastre e-mail antes de enviar: {', '.join(sem_email)}.",
+        )
+    bloqueados = [f.nome for f in fornecedores if f.bloqueado or not f.ativo]
+    if bloqueados:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Fornecedor inativo ou bloqueado: {', '.join(bloqueados)}.",
+        )
+
+    itens_html = await _itens_html_pedido(db, pedido)
+    if not itens_html:
+        raise HTTPException(status_code=400, detail="Pedido sem itens para cotar.")
+
+    org = (
+        await db.execute(select(OrganizacaoDB).where(OrganizacaoDB.id == pedido.organizacao_id))
+    ).scalar_one_or_none()
+    inst = await _dados_instituicao(db, pedido)
+    identidade = await _identidade_relatorio_pedido(db, pedido, org)
+    logo_bytes = _logo_bytes_relatorio(identidade.get("relatorio_logo_url"))
+    numero = pedido.id.split("-")[0].upper()[:8]
+    anexo_bytes = montar_pdf_solicitacao_cotacao(
+        pedido={
+            "competencia": pedido.competencia,
+            "tipo": pedido.tipo,
+            "instituicao_nome": inst.get("nome") if inst else None,
+        },
+        instituicao=inst,
+        organizacao_nome=org.nome if org else "AEB",
+        itens=itens_html,
+        numero_pedido=numero,
+        identidade=identidade,
+        logo_bytes=logo_bytes,
+    )
+    anexo_nome = f"solicitacao-cotacao-{numero}.pdf"
+    projeto = (inst or {}).get("nome") or "projeto"
+    assunto = f"Solicitação de cotação CareCore · {projeto} · {pedido.competencia}"
+
+    enviados: list[dict] = []
+    falhas: list[dict] = []
+    # Ordem da seleção do usuário
+    ordenados = [mapa[fid] for fid in ids]
+    for forn in ordenados:
+        email_dest = _email_destino_fornecedor(forn)
+        corpo = (
+            f"Prezado(a),\n\n"
+            f"Solicitamos cotação para o projeto {projeto} (competência {pedido.competencia}).\n"
+            f"Segue em anexo a lista de itens em PDF.\n\n"
+            f"Responda a este e-mail com o orçamento em PDF.\n\n"
+            f"— CareCore+ / Compras AEB"
+        )
+        resultado = enviar_email_smtp_com_anexo(
+            assunto=assunto,
+            corpo=corpo,
+            para=email_dest,
+            anexo_nome=anexo_nome,
+            anexo_bytes=anexo_bytes,
+            anexo_content_type="application/pdf",
+            perfil="compras",
+        )
+        if resultado.enviado:
+            texto_evento = f"Pedido de cotação enviado para {forn.nome} <{email_dest}>."
+            enviados.append({"fornecedor_id": forn.id, "nome": forn.nome, "email": email_dest})
+        else:
+            texto_evento = f"Falha ao pedir cotação a {forn.nome} <{email_dest}>: {resultado.erro}"
+            falhas.append({
+                "fornecedor_id": forn.id,
+                "nome": forn.nome,
+                "email": email_dest,
+                "erro": resultado.erro,
+            })
+        await registrar_evento_pedido(
+            db,
+            pedido_id=pedido.id,
+            tipo=TIPO_EVENTO_EMAIL,
+            texto=texto_evento,
+            usuario_id=_uid(usuario),
+        )
+
+    status_anterior = pedido.status
+    if pedido.status == STATUS_AGUARDANDO_COTACAO and enviados:
+        pedido.status = STATUS_EM_COTACAO
+        await registrar_evento_pedido(
+            db,
+            pedido_id=pedido.id,
+            tipo=TIPO_EVENTO_STATUS,
+            texto="Status atualizado após pedido de cotação por e-mail.",
+            usuario_id=_uid(usuario),
+            status_anterior=status_anterior,
+            status_novo=STATUS_EM_COTACAO,
+        )
+    pedido.atualizado_em = agora_operacional_naive()
+
+    return {
+        "enviados": enviados,
+        "falhas": falhas,
+        "total_enviados": len(enviados),
+        "total_falhas": len(falhas),
+    }
 
 
 async def registrar_nota_fiscal(

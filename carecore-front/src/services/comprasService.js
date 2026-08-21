@@ -171,6 +171,11 @@ export async function comprasComunicacao(id, payload) {
   return data;
 }
 
+export async function comprasConfirmarRevisaoItens(id) {
+  const { data } = await api.post(`/api/compras/pedidos/${id}/itens-revisados`);
+  return data;
+}
+
 export async function comprasAnexarArquivo(id, formData) {
   const { data } = await api.post(`/api/compras/pedidos/${id}/anexos`, formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
@@ -192,6 +197,13 @@ export async function comprasGerarPedidoCompra(id) {
 
 export async function comprasEnviarEmailFornecedor(id) {
   const { data } = await api.post(`/api/compras/pedidos/${id}/enviar-email`);
+  return data;
+}
+
+export async function comprasSolicitarCotacao(id, fornecedorIds) {
+  const { data } = await api.post(`/api/compras/pedidos/${id}/solicitar-cotacao`, {
+    fornecedor_ids: fornecedorIds,
+  });
   return data;
 }
 
