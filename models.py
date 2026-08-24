@@ -56,7 +56,9 @@ class InstituicaoDB(Base):
     uf = Column(String, nullable=True)
     tipo_projeto = Column(String, default="Projeto")
     projeto_unico = Column(Boolean, default=True)
-    is_active = Column(Boolean, default=True) 
+    is_active = Column(Boolean, default=True)
+    # Se False, o projeto/SEDE não entra na contagem nem no rateio de cobrança (persistente).
+    cobranca_ativa = Column(Boolean, default=True, nullable=False)
     # Controle SaaS / assinatura da instituição
     status_assinatura = Column(String, default="Ativa")
     data_vencimento = Column(Date, nullable=True)

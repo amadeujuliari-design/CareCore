@@ -423,7 +423,7 @@ export default function NfpLeituraCupons() {
           backTo="/nfp"
         />
         <ScrollArea>
-          <div className="mx-auto flex w-full max-w-6xl flex-col gap-3 px-4 pb-10 pt-2">
+          <div className="mx-auto flex w-full min-w-0 max-w-6xl flex-col gap-3 px-4 pb-10 pt-2">
             {somenteLeitura && (
               <BannerSomenteLeituraGlobal modulo="a leitura de cupons NFP" />
             )}
@@ -450,7 +450,7 @@ export default function NfpLeituraCupons() {
               </div>
             ) : null}
 
-            <div className="grid gap-3 lg:grid-cols-[minmax(0,280px)_1fr] lg:items-start">
+            <div className="grid min-w-0 gap-3 lg:grid-cols-[minmax(0,280px)_minmax(0,1fr)] lg:items-start">
               {!somenteLeitura && (
               <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
                 {forcarVinculo ? (
@@ -535,13 +535,13 @@ export default function NfpLeituraCupons() {
 
               <div
                 ref={listaTopoRef}
-                className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
+                className="min-w-0 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
               >
-                <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
+                <div className="mb-2 flex min-w-0 flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
                   <h2 className="text-base font-semibold text-slate-800">
                     Lista ({totalLista.toLocaleString('pt-BR')})
                   </h2>
-                  <div className="flex flex-wrap items-center gap-3">
+                  <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2">
                     <label className="text-xs text-slate-600">
                       Status
                       <select
@@ -551,7 +551,7 @@ export default function NfpLeituraCupons() {
                           setFiltroStatus(v);
                           carregarLista({ paginaAlvo: 1, statusAlvo: v });
                         }}
-                        className="ml-2 rounded-lg border border-slate-200 px-2 py-1 text-sm"
+                        className="ml-2 max-w-full rounded-lg border border-slate-200 px-2 py-1 text-sm"
                       >
                         <option value="">Todos</option>
                         <option value="checando">Checando</option>
@@ -565,7 +565,7 @@ export default function NfpLeituraCupons() {
                     </label>
                     <button
                       type="button"
-                      className="text-sm text-slate-600 underline"
+                      className="shrink-0 text-sm text-slate-600 underline"
                       onClick={async () => {
                         try {
                           const data = await nfpListarCupons({
@@ -598,7 +598,7 @@ export default function NfpLeituraCupons() {
                     </button>
                     <button
                       type="button"
-                      className="text-sm text-slate-600 underline"
+                      className="shrink-0 text-sm text-slate-600 underline"
                       onClick={() => carregarLista()}
                     >
                       Atualizar
@@ -617,38 +617,43 @@ export default function NfpLeituraCupons() {
                   <p className="text-sm text-slate-500">Nenhuma leitura ainda.</p>
                 ) : (
                   <>
-                    <ul className="max-h-[min(70vh,560px)] divide-y divide-slate-100 overflow-y-auto">
+                    <ul className="max-h-[min(70vh,560px)] divide-y divide-slate-100 overflow-x-hidden overflow-y-auto">
                       {itens.map((item) => {
                         const destaque = item.id === ultimoIdLido;
                         return (
                           <li
                             key={item.id}
-                            className={`flex flex-wrap items-baseline justify-between gap-2 py-2.5 text-sm ${
+                            className={`flex min-w-0 flex-wrap items-baseline justify-between gap-2 py-2.5 text-sm ${
                               destaque
                                 ? 'rounded-xl bg-emerald-50 px-2 ring-2 ring-emerald-300'
                                 : ''
                             }`}
                           >
-                            <div>
+                            <div className="min-w-0 flex-1 break-words">
                               {destaque ? (
                                 <span className="mr-2 inline-flex items-center gap-1 rounded-full bg-emerald-600 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
                                   Novo
                                 </span>
                               ) : null}
-                              <span className="font-mono text-slate-800">{item.chave}</span>
+                              <span
+                                className="font-mono text-slate-800"
+                                title={item.chave || undefined}
+                              >
+                                {chaveCurta(item.chave)}
+                              </span>
                               <span className="ml-2 text-slate-500">{item.captador}</span>
                               {detalheLeituraCupom(item) ? (
-                                <div className="mt-0.5 text-xs text-slate-500">{detalheLeituraCupom(item)}</div>
+                                <div className="mt-0.5 break-words text-xs text-slate-500">{detalheLeituraCupom(item)}</div>
                               ) : null}
                             </div>
-                            <div className="text-slate-500">
+                            <div className="shrink-0 text-right text-slate-500">
                               <span
-                                className={`mr-2 rounded-full px-2 py-0.5 text-xs font-semibold uppercase tracking-wide ${classeBadgeStatus(item.status)}`}
+                                className={`inline-block rounded-full px-2 py-0.5 text-xs font-semibold uppercase tracking-wide ${classeBadgeStatus(item.status)}`}
                                 title={item.mensagem || ''}
                               >
                                 {rotuloStatusCupom(item.status)}
                               </span>
-                              {item.lido_em || '—'}
+                              <div className="mt-0.5 text-xs">{item.lido_em || '—'}</div>
                             </div>
                           </li>
                         );

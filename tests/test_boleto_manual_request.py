@@ -17,6 +17,16 @@ def test_boleto_manual_request_valida_escopo_e_valor():
     assert payload.fechar_ciclo is True
 
 
+def test_boleto_manual_request_aceita_projeto_id():
+    payload = BoletoManualRequest(
+        escopo_documento="projeto",
+        projeto_id="abc-123",
+        valor=1500,
+        vencimento="2026-08-29",
+    )
+    assert payload.projeto_id == "abc-123"
+
+
 def test_boleto_manual_request_rejeita_escopo_invalido():
     with pytest.raises(ValidationError):
         BoletoManualRequest(

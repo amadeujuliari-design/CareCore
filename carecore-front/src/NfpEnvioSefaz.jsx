@@ -513,11 +513,17 @@ export default function NfpEnvioSefaz() {
                     A lista abaixo é só prévia. O total real está nos cards acima; a rotina usa todas as pendentes (ou o limite informado).
                   </p>
                   <ul className="space-y-1 text-xs text-slate-700">
-                    {status.pendentes.map((c) => (
-                      <li key={c.id} className="font-mono">
-                        {c.chave} · {c.captador || '—'}
-                      </li>
-                    ))}
+                    {status.pendentes.map((c) => {
+                      const chave = c.chave || '';
+                      const curta = chave.length >= 44
+                        ? `${chave.slice(0, 8)}…${chave.slice(-8)}`
+                        : (chave || '—');
+                      return (
+                        <li key={c.id} className="min-w-0 break-words font-mono" title={chave || undefined}>
+                          {curta} · {c.captador || '—'}
+                        </li>
+                      );
+                    })}
                   </ul>
                 </section>
               )}

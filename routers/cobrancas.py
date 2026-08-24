@@ -100,6 +100,7 @@ class SimularStatusCobrancaRequest(BaseModel):
 
 class BoletoManualRequest(BaseModel):
     escopo_documento: str = Field(default="organizacao")
+    projeto_id: str | None = None
     valor: float = Field(gt=0, le=500000)
     vencimento: date
     fechar_ciclo: bool = False
@@ -114,6 +115,10 @@ class BoletoManualRequest(BaseModel):
         if normalizado not in {"organizacao", "projeto"}:
             raise ValueError("Escopo deve ser 'organizacao' ou 'projeto'.")
         return normalizado
+
+
+class ProjetoCobrancaAtivaRequest(BaseModel):
+    cobranca_ativa: bool
 
 
 class LiberacaoTemporariaRequest(BaseModel):
@@ -645,6 +650,7 @@ async def calcular_resumo_cobranca_organizacao(
     ).scalars().all()
 
     projetos_para_rateio = []
+    projetos_desligados = []
     for projeto in projetos:
         conviventes = (
             await db.execute(
@@ -684,15 +690,35 @@ async def calcular_resumo_cobranca_organizacao(
                 data_fechamento=data_fechamento_calculo,
             )
         )
-        projetos_para_rateio.append({
+        cobranca_ativa = bool(getattr(projeto, "cobranca_ativa", True))
+        item = {
             "projeto_id": projeto.id,
             "projeto_nome": projeto.nome_fantasia,
+            "cnpj": projeto.cnpj,
+            "cobranca_ativa": cobranca_ativa,
             "conviventes_faturaveis": cadastros_faturaveis,
             "usuarios_faturaveis": usuarios_faturaveis,
             "cadastros_faturaveis": cadastros_faturaveis + usuarios_faturaveis,
-        })
+        }
+        if cobranca_ativa:
+            projetos_para_rateio.append(item)
+        else:
+            projetos_desligados.append({
+                **item,
+                "percentual_rateio": None,
+                "valor_mensalidade": 0.0,
+            })
 
     rateio = calcular_rateio_organizacao(projetos_para_rateio)
+    projetos_resultado = []
+    for projeto_rateio in rateio["projetos"]:
+        projetos_resultado.append({
+            **projeto_rateio,
+            "cobranca_ativa": True,
+            "cnpj": projeto_rateio.get("cnpj"),
+        })
+    projetos_resultado.extend(projetos_desligados)
+    projetos_resultado.sort(key=lambda p: (not p.get("cobranca_ativa", True), (p.get("projeto_nome") or "").upper()))
 
     return {
         "organizacao_id": organizacao_id_escopo,
@@ -701,7 +727,11 @@ async def calcular_resumo_cobranca_organizacao(
         "data_corte_inativacao": data_corte_inativacao.isoformat(),
         "data_vencimento": data_vencimento.isoformat(),
         "dias_corte_inativacao": DIAS_ANTECEDENCIA_EXCLUSAO_INATIVO,
-        **rateio,
+        "modo": rateio["modo"],
+        "limite_rateio_cadastros": rateio["limite_rateio_cadastros"],
+        "total_cadastros_faturaveis": rateio["total_cadastros_faturaveis"],
+        "valor_total_mensalidade": rateio["valor_total_mensalidade"],
+        "projetos": projetos_resultado,
     }
 
 
@@ -720,6 +750,46 @@ async def resumo_cobranca_organizacao(
         data_fechamento,
         organizacao_id,
     )
+
+
+@router.patch("/organizacao/projetos/{projeto_id}/cobranca-ativa")
+async def atualizar_cobranca_ativa_projeto(
+    projeto_id: str,
+    payload: ProjetoCobrancaAtivaRequest,
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    """Liga/desliga cobrança persistente de um projeto/SEDE (somente Manutenção)."""
+    exigir_usuario_manutencao_financeira(usuario_atual)
+    organizacao_id_escopo = await obter_organizacao_cobranca_id(db, usuario_atual, None)
+    projeto = (
+        await db.execute(
+            select(InstituicaoDB).where(
+                InstituicaoDB.id == projeto_id,
+                InstituicaoDB.organizacao_id == organizacao_id_escopo,
+            )
+        )
+    ).scalar_one_or_none()
+    if not projeto:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Projeto não encontrado.")
+
+    projeto.cobranca_ativa = bool(payload.cobranca_ativa)
+    await db.commit()
+    await db.refresh(projeto)
+
+    resumo = await calcular_resumo_cobranca_organizacao(
+        db,
+        usuario_atual,
+        None,
+        organizacao_id_escopo,
+    )
+    return {
+        "ok": True,
+        "projeto_id": projeto.id,
+        "projeto_nome": projeto.nome_fantasia,
+        "cobranca_ativa": bool(projeto.cobranca_ativa),
+        "resumo": resumo,
+    }
 
 
 @router.get("/modulo/status")
@@ -1107,6 +1177,8 @@ async def fechar_ciclo_cobranca_organizacao(
 
     rateios_criados = []
     for projeto in resumo["projetos"]:
+        if projeto.get("cobranca_ativa") is False:
+            continue
         rateio = CobrancaProjetoRateioDB(
             ciclo_id=ciclo.id,
             organizacao_id=resumo["organizacao_id"],
@@ -1338,7 +1410,19 @@ async def contexto_boleto_manual(
             "cnpj": projeto.cnpj,
             "email": projeto.email,
             "emails_adicionais": getattr(projeto, "emails_adicionais", None),
+            "cobranca_ativa": bool(getattr(projeto, "cobranca_ativa", True)),
         } if projeto else None,
+        "projetos_cobraveis": [
+            {
+                "projeto_id": p["projeto_id"],
+                "projeto_nome": p["projeto_nome"],
+                "cnpj": p.get("cnpj"),
+                "cadastros_faturaveis": p.get("cadastros_faturaveis") or 0,
+                "valor_mensalidade": p.get("valor_mensalidade") or 0,
+            }
+            for p in (resumo.get("projetos") or [])
+            if p.get("cobranca_ativa") and (p.get("valor_mensalidade") or 0) > 0
+        ],
         "resumo_calculado": {
             "data_fechamento": resumo["data_fechamento"],
             "data_vencimento": resumo["data_vencimento"],
@@ -1380,19 +1464,25 @@ async def emitir_boleto_manual(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organização não encontrada.")
 
     projeto = None
-    instituicao_id = usuario_atual.get("instituicao_id")
-    if instituicao_id:
+    if payload.escopo_documento == "projeto":
+        projeto_id_escolhido = (payload.projeto_id or "").strip() or usuario_atual.get("instituicao_id")
+        if not projeto_id_escolhido:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Selecione o projeto/CNPJ do boleto.",
+            )
         projeto = (
             await db.execute(
-                select(InstituicaoDB).where(InstituicaoDB.id == instituicao_id)
+                select(InstituicaoDB).where(
+                    InstituicaoDB.id == projeto_id_escolhido,
+                    InstituicaoDB.organizacao_id == organizacao.id,
+                )
             )
         ).scalar_one_or_none()
-
-    if payload.escopo_documento == "projeto":
         if not projeto:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Entre em um projeto para emitir boleto no CNPJ do projeto.",
+                detail="Projeto não encontrado na organização.",
             )
         dados_cliente = montar_cliente_asaas_projeto(projeto)
         nome_pagador = projeto.nome_fantasia
@@ -1401,7 +1491,17 @@ async def emitir_boleto_manual(
         nome_pagador = organizacao.nome
 
     valor_informado = round(float(payload.valor), 2)
-    valor_calculado = round(float(resumo["valor_total_mensalidade"] or 0), 2)
+    if payload.escopo_documento == "projeto" and projeto:
+        projeto_resumo = next(
+            (
+                p for p in (resumo.get("projetos") or [])
+                if p.get("projeto_id") == projeto.id
+            ),
+            None,
+        )
+        valor_calculado = round(float((projeto_resumo or {}).get("valor_mensalidade") or 0), 2)
+    else:
+        valor_calculado = round(float(resumo["valor_total_mensalidade"] or 0), 2)
     divergencia = abs(valor_informado - valor_calculado) >= 0.01
 
     ciclo = None
@@ -1463,6 +1563,8 @@ async def emitir_boleto_manual(
         await db.execute(delete(CobrancaProjetoRateioDB).where(CobrancaProjetoRateioDB.ciclo_id == ciclo.id))
 
         for projeto_rateio in resumo["projetos"]:
+            if projeto_rateio.get("cobranca_ativa") is False:
+                continue
             rateio = CobrancaProjetoRateioDB(
                 ciclo_id=ciclo.id,
                 organizacao_id=resumo["organizacao_id"],

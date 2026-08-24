@@ -93,12 +93,14 @@ export default function Cobrancas() {
   const [resultadoBoleto, setResultadoBoleto] = useState(null);
   const [formBoleto, setFormBoleto] = useState({
     escopo_documento: 'projeto',
+    projeto_id: '',
     valor: '',
     vencimento: dataIsoDaquiDias(5),
     fechar_ciclo: false,
     confirmar_divergencia: false,
     descricao: '',
   });
+  const [salvandoCobrancaProjetoId, setSalvandoCobrancaProjetoId] = useState(null);
 
 
   async function carregarStatus() {
@@ -146,14 +148,24 @@ export default function Cobrancas() {
         try {
           const contextoResponse = await api.get('/api/cobrancas/asaas/boleto-manual/contexto');
           setContextoBoleto(contextoResponse.data);
-          const valorSugerido = contextoResponse.data?.resumo_calculado?.valor_total_mensalidade;
+          const cobraveis = contextoResponse.data?.projetos_cobraveis || [];
           const vencimentoSugerido = contextoResponse.data?.resumo_calculado?.data_vencimento;
-          setFormBoleto((prev) => ({
-            ...prev,
-            valor: prev.valor || (valorSugerido != null ? String(valorSugerido) : ''),
-            vencimento: prev.vencimento || vencimentoSugerido || dataIsoDaquiDias(5),
-            escopo_documento: contextoResponse.data?.projeto?.cnpj ? prev.escopo_documento : 'organizacao',
-          }));
+          setFormBoleto((prev) => {
+            const projetoAtual = cobraveis.find((p) => p.projeto_id === prev.projeto_id)
+              || cobraveis[0]
+              || null;
+            const valorSugerido = projetoAtual?.valor_mensalidade
+              ?? contextoResponse.data?.resumo_calculado?.valor_total_mensalidade;
+            return {
+              ...prev,
+              projeto_id: projetoAtual?.projeto_id || '',
+              escopo_documento: projetoAtual?.cnpj
+                ? 'projeto'
+                : (contextoResponse.data?.organizacao?.cnpj ? 'organizacao' : prev.escopo_documento),
+              valor: prev.valor || (valorSugerido != null ? String(valorSugerido) : ''),
+              vencimento: prev.vencimento || vencimentoSugerido || dataIsoDaquiDias(5),
+            };
+          });
         } catch (error) {
           if (error?.response?.status !== 403) {
             throw error;
@@ -225,6 +237,36 @@ export default function Cobrancas() {
     return fallback;
   }
 
+  async function alternarCobrancaProjeto(projetoId, cobrancaAtiva) {
+    if (!projetoId) return;
+    setErro('');
+    try {
+      setSalvandoCobrancaProjetoId(projetoId);
+      const response = await api.patch(
+        `/api/cobrancas/organizacao/projetos/${projetoId}/cobranca-ativa`,
+        { cobranca_ativa: cobrancaAtiva },
+      );
+      if (response.data?.resumo) {
+        setResumoCobranca(response.data.resumo);
+      }
+      await carregarStatus();
+    } catch (error) {
+      setErro(mensagemErroApi(error, 'Não foi possível atualizar a cobrança do projeto.'));
+    } finally {
+      setSalvandoCobrancaProjetoId(null);
+    }
+  }
+
+  function selecionarCobrancaProjeto(projeto) {
+    if (!projeto) return;
+    setFormBoleto((prev) => ({
+      ...prev,
+      escopo_documento: projeto.cnpj ? 'projeto' : 'organizacao',
+      projeto_id: projeto.projeto_id || '',
+      valor: projeto.valor_mensalidade != null ? String(projeto.valor_mensalidade) : prev.valor,
+    }));
+  }
+
   async function emitirBoletoManual({ confirmarDivergencia = false } = {}) {
     setErro('');
     setResultadoBoleto(null);
@@ -237,11 +279,16 @@ export default function Cobrancas() {
       setErro('Informe a data de vencimento.');
       return;
     }
+    if (formBoleto.escopo_documento === 'projeto' && !formBoleto.projeto_id) {
+      setErro('Selecione o projeto/CNPJ da cobrança.');
+      return;
+    }
 
     try {
       setEmitindoBoleto(true);
       const response = await api.post('/api/cobrancas/asaas/boleto-manual', {
         escopo_documento: formBoleto.escopo_documento,
+        projeto_id: formBoleto.escopo_documento === 'projeto' ? formBoleto.projeto_id : null,
         valor: valorNumero,
         vencimento: formBoleto.vencimento,
         fechar_ciclo: formBoleto.fechar_ciclo,
@@ -400,7 +447,7 @@ export default function Cobrancas() {
             </div>
 
             <div className="mt-4 rounded-2xl border border-blue-100 bg-blue-50 p-4 text-sm font-semibold text-blue-800">
-              Entram no ciclo os conviventes e usuários ativos do sistema. Cadastros inativados até a data de corte não entram no fechamento; inativações após essa data ainda compõem o ciclo.
+              Entram no ciclo os conviventes e usuários dos projetos com cobrança ligada. Cadastros inativados até a data de corte não entram; inativações após essa data ainda compõem. Projetos/SEDE com cobrança desligada (implantação/teste) ficam fora da contagem e do rateio.
             </div>
 
             <div className="mt-5 overflow-hidden rounded-2xl border border-slate-100">
@@ -408,26 +455,63 @@ export default function Cobrancas() {
                 <table className="min-w-full divide-y divide-slate-100 text-sm">
                   <thead className="bg-slate-50 text-xs font-black uppercase tracking-[0.16em] text-slate-400">
                     <tr>
-                      <th className="px-4 py-3 text-left">Projeto</th>
+                      <th className="px-4 py-3 text-left">Projeto / CNPJ</th>
                       <th className="px-4 py-3 text-right">Conviventes</th>
                       <th className="px-4 py-3 text-right">Usuários</th>
                       <th className="px-4 py-3 text-right">Total</th>
                       <th className="px-4 py-3 text-right">Mensalidade</th>
+                      {ehManutencao ? (
+                        <th className="px-4 py-3 text-right">Cobrança</th>
+                      ) : null}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 bg-white">
-                    {(resumoCobranca?.projetos || []).map((projeto) => (
-                      <tr key={projeto.projeto_id}>
-                        <td className="px-4 py-3 font-black text-slate-900">{projeto.projeto_nome}</td>
-                        <td className="px-4 py-3 text-right font-bold text-slate-600">{projeto.conviventes_faturaveis ?? 0}</td>
-                        <td className="px-4 py-3 text-right font-bold text-slate-600">{projeto.usuarios_faturaveis ?? 0}</td>
-                        <td className="px-4 py-3 text-right font-bold text-slate-600">{projeto.cadastros_faturaveis}</td>
-                        <td className="px-4 py-3 text-right font-black text-slate-900">{formatarMoeda(projeto.valor_mensalidade)}</td>
-                      </tr>
-                    ))}
+                    {(resumoCobranca?.projetos || []).map((projeto) => {
+                      const ligada = projeto.cobranca_ativa !== false;
+                      return (
+                        <tr
+                          key={projeto.projeto_id}
+                          className={ligada ? undefined : 'bg-slate-50/80 text-slate-500'}
+                        >
+                          <td className="px-4 py-3">
+                            <p className={`font-black ${ligada ? 'text-slate-900' : 'text-slate-500'}`}>
+                              {projeto.projeto_nome}
+                            </p>
+                            <p className="mt-0.5 text-xs font-semibold text-slate-400">
+                              {projeto.cnpj || 'Sem CNPJ cadastrado'}
+                              {!ligada ? ' · fora do rateio' : ''}
+                            </p>
+                          </td>
+                          <td className="px-4 py-3 text-right font-bold text-slate-600">{projeto.conviventes_faturaveis ?? 0}</td>
+                          <td className="px-4 py-3 text-right font-bold text-slate-600">{projeto.usuarios_faturaveis ?? 0}</td>
+                          <td className="px-4 py-3 text-right font-bold text-slate-600">{projeto.cadastros_faturaveis}</td>
+                          <td className="px-4 py-3 text-right font-black text-slate-900">
+                            {ligada ? formatarMoeda(projeto.valor_mensalidade) : '—'}
+                          </td>
+                          {ehManutencao ? (
+                            <td className="px-4 py-3 text-right">
+                              <button
+                                type="button"
+                                disabled={salvandoCobrancaProjetoId === projeto.projeto_id}
+                                onClick={() => alternarCobrancaProjeto(projeto.projeto_id, !ligada)}
+                                className={`rounded-full px-3 py-1.5 text-xs font-black transition disabled:opacity-60 ${
+                                  ligada
+                                    ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                                    : 'bg-slate-200 text-slate-600 hover:bg-slate-300'
+                                }`}
+                              >
+                                {salvandoCobrancaProjetoId === projeto.projeto_id
+                                  ? '…'
+                                  : (ligada ? 'Ligada' : 'Desligada')}
+                              </button>
+                            </td>
+                          ) : null}
+                        </tr>
+                      );
+                    })}
                     {!resumoCobranca?.projetos?.length ? (
                       <tr>
-                        <td colSpan={5} className="px-4 py-6 text-center font-semibold text-slate-500">
+                        <td colSpan={ehManutencao ? 6 : 5} className="px-4 py-6 text-center font-semibold text-slate-500">
                           Nenhum projeto ativo encontrado para cobrança.
                         </td>
                       </tr>
@@ -439,8 +523,15 @@ export default function Cobrancas() {
 
             <div className="mt-5 flex flex-col gap-3 rounded-2xl border border-slate-100 bg-slate-50 p-4 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <p className="text-xs font-black uppercase tracking-[0.18em] text-slate-400">Mensalidade do ciclo</p>
+                <p className="text-xs font-black uppercase tracking-[0.18em] text-slate-400">
+                  Total da organização (só projetos ligados)
+                </p>
                 <p className="mt-1 text-2xl font-black text-slate-950">{formatarMoeda(resumoCobranca?.valor_total_mensalidade)}</p>
+                {resumoCobranca?.modo ? (
+                  <p className="mt-1 text-xs font-semibold text-slate-500">
+                    Modo: {resumoCobranca.modo === 'rateio_organizacao' ? 'rateio por cadastro (≥501)' : 'individual por projeto (≤500)'}
+                  </p>
+                ) : null}
               </div>
               {linkPagamentoCicloAtual ? (
                 <a
@@ -469,9 +560,9 @@ export default function Cobrancas() {
           <section className="rounded-3xl border border-emerald-100 bg-white p-5 shadow-sm">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
               <div>
-                <h2 className="text-lg font-black text-slate-900">Boleto manual (livre)</h2>
+                <h2 className="text-lg font-black text-slate-900">Boleto manual (por CNPJ)</h2>
                 <p className="mt-1 text-sm font-medium text-slate-500">
-                  Emite boleto no Asaas com valor e vencimento definidos por você. Automação mensal permanece desligada.
+                  Cada projeto/SEDE com cobrança ligada tem seu valor. Selecione o CNPJ e emita o boleto correspondente — o total da org é só resumo.
                 </p>
               </div>
               <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-black text-emerald-700">
@@ -479,39 +570,101 @@ export default function Cobrancas() {
               </span>
             </div>
 
+            {(contextoBoleto?.projetos_cobraveis || []).length ? (
+              <div className="mt-4 grid gap-3 md:grid-cols-2">
+                {(contextoBoleto.projetos_cobraveis || []).map((projeto) => {
+                  const selecionado = formBoleto.escopo_documento === 'projeto'
+                    && formBoleto.projeto_id === projeto.projeto_id;
+                  return (
+                    <button
+                      key={projeto.projeto_id}
+                      type="button"
+                      onClick={() => selecionarCobrancaProjeto(projeto)}
+                      className={`rounded-2xl border p-4 text-left transition ${
+                        selecionado
+                          ? 'border-emerald-400 bg-emerald-50 shadow-sm'
+                          : 'border-slate-100 bg-white hover:border-slate-200'
+                      }`}
+                    >
+                      <p className="text-sm font-black text-slate-900">{projeto.projeto_nome}</p>
+                      <p className="mt-1 text-xs font-semibold text-slate-500">
+                        {projeto.cnpj || 'Sem CNPJ'} · {projeto.cadastros_faturaveis} cadastros
+                      </p>
+                      <p className="mt-2 text-lg font-black text-slate-950">
+                        {formatarMoeda(projeto.valor_mensalidade)}
+                      </p>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="mt-4 rounded-2xl border border-amber-100 bg-amber-50 p-4 text-sm font-semibold text-amber-800">
+                Nenhum projeto com cobrança ligada e valor &gt; 0. Ligue a cobrança na tabela acima ou use o CNPJ da organização.
+              </div>
+            )}
+
             <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
               <InfoCard
-                titulo="Cadastros calculados"
+                titulo="Cadastros no rateio"
                 valor={String(contextoBoleto?.resumo_calculado?.total_cadastros_faturaveis ?? '-')}
               />
               <InfoCard
-                titulo="Valor sugerido"
+                titulo="Total org (resumo)"
                 valor={formatarMoeda(contextoBoleto?.resumo_calculado?.valor_total_mensalidade)}
+              />
+              <InfoCard
+                titulo="Valor do boleto selecionado"
+                valor={formatarMoeda(formBoleto.valor || null)}
               />
               <InfoCard
                 titulo="CNPJ organização"
                 valor={contextoBoleto?.organizacao?.cnpj || '-'}
               />
-              <InfoCard
-                titulo="CNPJ projeto"
-                valor={contextoBoleto?.projeto?.cnpj || 'Projeto sem CNPJ'}
-              />
             </div>
 
             <div className="mt-5 grid gap-3 md:grid-cols-2">
-              <label className="block">
+              <label className="block md:col-span-2">
                 <span className="mb-1 block text-xs font-black uppercase tracking-wide text-slate-500">CNPJ do boleto</span>
                 <select
                   className="min-h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800"
-                  value={formBoleto.escopo_documento}
-                  onChange={(e) => setFormBoleto((prev) => ({ ...prev, escopo_documento: e.target.value }))}
+                  value={
+                    formBoleto.escopo_documento === 'organizacao'
+                      ? 'organizacao'
+                      : `projeto:${formBoleto.projeto_id || ''}`
+                  }
+                  onChange={(e) => {
+                    const valor = e.target.value;
+                    if (valor === 'organizacao') {
+                      setFormBoleto((prev) => ({
+                        ...prev,
+                        escopo_documento: 'organizacao',
+                        projeto_id: '',
+                        valor: contextoBoleto?.resumo_calculado?.valor_total_mensalidade != null
+                          ? String(contextoBoleto.resumo_calculado.valor_total_mensalidade)
+                          : prev.valor,
+                      }));
+                      return;
+                    }
+                    const projetoId = valor.replace(/^projeto:/, '');
+                    const projeto = (contextoBoleto?.projetos_cobraveis || []).find((p) => p.projeto_id === projetoId)
+                      || (contextoBoleto?.resumo_calculado?.projetos || []).find((p) => p.projeto_id === projetoId);
+                    selecionarCobrancaProjeto(projeto || { projeto_id: projetoId, valor_mensalidade: '' });
+                  }}
                 >
                   <option value="organizacao">
                     Organização — {contextoBoleto?.organizacao?.nome || 'AEB'} ({contextoBoleto?.organizacao?.cnpj || 'sem CNPJ'})
                   </option>
-                  <option value="projeto" disabled={!contextoBoleto?.projeto?.cnpj}>
-                    Projeto — {contextoBoleto?.projeto?.nome || 'atual'} ({contextoBoleto?.projeto?.cnpj || 'sem CNPJ'})
-                  </option>
+                  {(contextoBoleto?.resumo_calculado?.projetos || [])
+                    .filter((p) => p.cobranca_ativa !== false)
+                    .map((projeto) => (
+                      <option
+                        key={projeto.projeto_id}
+                        value={`projeto:${projeto.projeto_id}`}
+                        disabled={!projeto.cnpj}
+                      >
+                        {projeto.projeto_nome} — {projeto.cnpj || 'sem CNPJ'} ({formatarMoeda(projeto.valor_mensalidade)})
+                      </option>
+                    ))}
                 </select>
               </label>
 

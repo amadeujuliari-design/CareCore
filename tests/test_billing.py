@@ -138,5 +138,21 @@ def test_organizacao_acima_de_500_cadastros_rateia_pelo_total_exato():
     assert round(sum(projeto["valor_mensalidade"] for projeto in rateio["projetos"]), 2) == 3393.64
 
 
+def test_rateio_ignora_projeto_desligado_quando_nao_incluido_na_lista():
+    """Projetos com cobrança desligada não devem ser passados ao rateio."""
+    rateio = calcular_rateio_organizacao([
+        {
+            "projeto_id": "siat",
+            "projeto_nome": "SIAT II Armênia",
+            "cadastros_faturaveis": 260,
+            "cnpj": "61705877003279",
+        },
+    ])
+    assert rateio["modo"] == "individual_por_projeto"
+    assert rateio["valor_total_mensalidade"] == 1500.0
+    assert len(rateio["projetos"]) == 1
+    assert rateio["projetos"][0]["cnpj"] == "61705877003279"
+
+
 def test_constante_carencia():
     assert DIAS_ANTECEDENCIA_EXCLUSAO_INATIVO == 15
