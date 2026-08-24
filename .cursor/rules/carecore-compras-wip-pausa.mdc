@@ -5,9 +5,14 @@ alwaysApply: true
 
 # Compras — retrato WIP
 
-Atualizado em **2026-08-21** (America/Sao_Paulo).
+Atualizado em **2026-08-24** (America/Sao_Paulo).
 
-## Em teste local (~v1.6.36)
+## Em teste local (~v1.6.39)
+
+**Anexos Compras — Storage:**
+
+- Imagens (JPG/PNG/WebP) padronizadas na anexação (lado máx. 2048, JPEG q~85).
+- Ao substituir anexo / cotação / regenerar pedido PDF, remove o blob antigo do Storage.
 
 **PDF Compras no padrão de relatórios AEB:**
 

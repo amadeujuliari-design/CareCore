@@ -54,7 +54,7 @@ from compras_regras import (
     pedido_rascunho_pode_excluir,
     usuario_e_sede_compras,
 )
-from compras_upload_utils import salvar_arquivo_compras
+from compras_upload_utils import remover_arquivo_compras, salvar_arquivo_compras
 from email_utils import enviar_email_smtp_com_anexo
 from models import (
     ComprasCotacaoDB,
@@ -379,7 +379,7 @@ async def upload_anexo_pedido(
         raise HTTPException(status_code=400, detail="Tipo de anexo inválido.")
 
     conteudo = await file.read()
-    caminho, nome_original, tamanho = await salvar_arquivo_compras(
+    caminho, nome_original, tamanho, content_type = await salvar_arquivo_compras(
         organizacao_id=pedido.organizacao_id,
         pedido_id=pedido.id,
         file=file,
@@ -397,6 +397,7 @@ async def upload_anexo_pedido(
         ).scalar_one_or_none()
         if anterior:
             anterior.ativo = False
+            remover_arquivo_compras(anterior.caminho_arquivo)
     else:
         anterior = None
 
@@ -406,7 +407,7 @@ async def upload_anexo_pedido(
         tipo=tipo,
         nome_arquivo=nome_original,
         caminho_arquivo=caminho,
-        content_type=(file.content_type or "").split(";", 1)[0].strip() or None,
+        content_type=content_type or None,
         tamanho_bytes=tamanho,
         substituido_por_id=None,
         criado_por_id=_uid(usuario),
@@ -727,7 +728,7 @@ async def gerar_pedido_compra(
         filename = nome_arquivo
         content_type = "application/pdf"
 
-    caminho, nome_original, tamanho = await salvar_arquivo_compras(
+    caminho, nome_original, tamanho, content_type = await salvar_arquivo_compras(
         organizacao_id=pedido.organizacao_id,
         pedido_id=pedido.id,
         file=_ArquivoGerado(),  # type: ignore[arg-type]
@@ -742,13 +743,14 @@ async def gerar_pedido_compra(
         ).scalar_one_or_none()
         if antigo:
             antigo.ativo = False
+            remover_arquivo_compras(antigo.caminho_arquivo)
 
     anexo = ComprasPedidoAnexoDB(
         pedido_id=pedido.id,
         tipo=TIPO_ANEXO_PEDIDO_PDF,
         nome_arquivo=nome_original,
         caminho_arquivo=caminho,
-        content_type="application/pdf",
+        content_type=content_type or "application/pdf",
         tamanho_bytes=tamanho,
         criado_por_id=_uid(usuario),
     )
@@ -1231,6 +1233,18 @@ async def desativar_cotacao(
     cotacao.ativa = False
     if cotacao.escolhida:
         cotacao.escolhida = False
+    anexos = (
+        await db.execute(
+            select(ComprasPedidoAnexoDB).where(
+                ComprasPedidoAnexoDB.pedido_id == pedido.id,
+                ComprasPedidoAnexoDB.cotacao_id == cotacao.id,
+                ComprasPedidoAnexoDB.ativo.is_(True),
+            )
+        )
+    ).scalars().all()
+    for anexo in anexos:
+        anexo.ativo = False
+        remover_arquivo_compras(anexo.caminho_arquivo)
     texto = (motivo or "Cotação substituída/desativada.").strip()
     await registrar_evento_pedido(
         db,
