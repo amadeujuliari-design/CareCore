@@ -103,6 +103,60 @@ export function segmentoDoTipoPedido(tipo) {
   return SEGMENTO_CONSUMO;
 }
 
+/**
+ * Segmento usado para filtrar fornecedores na cotação.
+ * Diferente de segmentoDoTipoPedido: serviço também tem segmento próprio.
+ */
+export function segmentoFornecedorDoTipoPedido(tipo) {
+  const t = String(tipo || '').trim().toLowerCase();
+  if (t === TIPO_MANUTENCAO) return SEGMENTO_MANUTENCAO;
+  if (t === TIPO_IMOBILIZADO) return SEGMENTO_IMOBILIZADO;
+  if (t === TIPO_SERVICO) return SEGMENTO_SERVICO;
+  return SEGMENTO_CONSUMO;
+}
+
+export function idsCategoriasFornecedor(fornecedor) {
+  const ids = [];
+  const vistos = new Set();
+  const push = (raw) => {
+    const id = String(raw || '').trim();
+    if (!id || vistos.has(id)) return;
+    vistos.add(id);
+    ids.push(id);
+  };
+  if (Array.isArray(fornecedor?.categoria_ids)) {
+    fornecedor.categoria_ids.forEach(push);
+  }
+  push(fornecedor?.categoria_id);
+  return ids;
+}
+
+/** Sem nenhuma categoria no cadastro → entra em qualquer tipo de pedido. */
+export function fornecedorSemCategoria(fornecedor) {
+  return idsCategoriasFornecedor(fornecedor).length === 0;
+}
+
+export function fornecedorAtendeSegmentoPedido(fornecedor, categorias = [], tipoPedido) {
+  if (fornecedorSemCategoria(fornecedor)) return true;
+  const segmentoAlvo = segmentoFornecedorDoTipoPedido(tipoPedido);
+  const mapa = new Map(
+    (categorias || []).map((cat) => [
+      String(cat.id),
+      normalizarSegmentoCatalogo(cat.segmento || SEGMENTO_CONSUMO),
+    ]),
+  );
+  return idsCategoriasFornecedor(fornecedor).some(
+    (id) => (mapa.get(id) || SEGMENTO_CONSUMO) === segmentoAlvo,
+  );
+}
+
+/** Lista de fornecedores elegíveis para pedir/registrar cotação deste pedido. */
+export function fornecedoresParaCotacaoPedido(fornecedores = [], categorias = [], tipoPedido) {
+  return (fornecedores || []).filter((f) => (
+    fornecedorAtendeSegmentoPedido(f, categorias, tipoPedido)
+  ));
+}
+
 export function itensConsumoDoSegmentoPedido(itens = [], tipoPedido) {
   const segmento = segmentoDoTipoPedido(tipoPedido);
   if (segmento == null) return [];

@@ -131,3 +131,20 @@ def test_pedido_compra_pdf_com_fornecedor():
         identidade={"relatorio_nome_exibicao": "AEB"},
     )
     assert pdf[:4] == b"%PDF"
+
+
+def test_pdf_aprovacao_orcamento_sede():
+    from compras_pedido_pdf import montar_pdf_aprovacao_orcamento_sede
+
+    pdf = montar_pdf_aprovacao_orcamento_sede(
+        pedido={"competencia": "2026-08", "tipo": "imobilizado"},
+        instituicao={"nome": "Casa Porto"},
+        organizacao_nome="AEB",
+        cotacao_escolhida={"fornecedor_nome": "Fornecedor Z", "valor_centavos": 9900},
+        numero_pedido="ASS001",
+        assinante_nome="ADM Compras",
+        assinado_em_texto="25/08/2026 14:00",
+        arquivo_orcamento_original="orcamento-z.pdf",
+        identidade={"relatorio_nome_exibicao": "AEB"},
+    )
+    assert pdf[:4] == b"%PDF"

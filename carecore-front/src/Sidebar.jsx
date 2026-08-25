@@ -27,6 +27,7 @@ import {
   Users,
   UserRoundCog,
   WashingMachine,
+  FilePenLine,
 } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import logoCarecore from './assets/logo.PNG';
@@ -466,6 +467,13 @@ export default function Sidebar() {
               icon: ShoppingCart,
               label: 'Pedidos e cotações',
               feature: 'compras',
+            },
+            {
+              path: '/compras/aguardando-assinatura',
+              icon: FilePenLine,
+              label: 'Aguardando assinatura',
+              feature: 'compras',
+              perfis: [PERFIL_ADM_COMPRAS, 'Manutenção'],
             },
             {
               path: '/compras?aba=itens',

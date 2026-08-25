@@ -383,6 +383,75 @@ def montar_pdf_pedido_compra(
     return _build_pdf(story)
 
 
+def montar_pdf_aprovacao_orcamento_sede(
+    *,
+    pedido: dict[str, Any],
+    instituicao: Optional[dict[str, Any]],
+    organizacao_nome: str,
+    cotacao_escolhida: dict[str, Any],
+    numero_pedido: str,
+    assinante_nome: str,
+    assinado_em_texto: str,
+    arquivo_orcamento_original: Optional[str] = None,
+    identidade: Optional[dict[str, Any]] = None,
+    logo_bytes: Optional[bytes] = None,
+) -> bytes:
+    """Folha de assinatura digitalizada da Sede sobre o orçamento vencedor."""
+    styles = _styles()
+    projeto = (instituicao or {}).get("nome") or pedido.get("instituicao_nome") or "Projeto"
+    org = organizacao_nome or "AEB"
+    fornecedor = (cotacao_escolhida or {}).get("fornecedor_nome") or "—"
+    valor = "—"
+    if cotacao_escolhida and cotacao_escolhida.get("valor_centavos") is not None:
+        valor = _fmt_moeda_centavos(int(cotacao_escolhida.get("valor_centavos") or 0))
+    tipo = pedido.get("tipo") or ""
+    competencia = pedido.get("competencia") or ""
+    subtitulo = f"{org} · {tipo} · competência {competencia}"
+    arq = (arquivo_orcamento_original or "").strip() or "—"
+
+    story: list = [
+        _cabecalho(
+            styles,
+            titulo=f"Aprovação e assinatura · {numero_pedido}",
+            subtitulo=subtitulo,
+            identidade=identidade,
+            logo_bytes=logo_bytes,
+        ),
+        Spacer(1, 8),
+        _caixa(
+            styles,
+            "Orçamento aprovado pela Sede",
+            [
+                Paragraph(f"<b>Projeto:</b> {projeto}", styles["corpo"]),
+                Paragraph(f"<b>Fornecedor vencedor:</b> {fornecedor}", styles["corpo"]),
+                Paragraph(f"<b>Valor:</b> {valor}", styles["corpo"]),
+                Paragraph(f"<b>Arquivo do orçamento:</b> {arq}", styles["corpo"]),
+            ],
+        ),
+        Spacer(1, 10),
+        _caixa(
+            styles,
+            "Assinatura digitalizada — ADM Compras (Sede)",
+            [
+                Paragraph(
+                    "Documento aprovado e assinado digitalmente no CareCore+. "
+                    "Esta folha acompanha o orçamento vencedor anexado ao pedido.",
+                    styles["corpo"],
+                ),
+                Paragraph("<br/>", styles["corpo"]),
+                Paragraph(f"<b>Assinado por:</b> {assinante_nome or 'ADM Compras'}", styles["corpo_forte"]),
+                Paragraph(f"<b>Data/hora:</b> {assinado_em_texto}", styles["corpo"]),
+                Paragraph("<br/><br/>________________________________", styles["corpo"]),
+                Paragraph("Assinatura digitalizada da Sede", styles["rodape"]),
+            ],
+        ),
+        Spacer(1, 12),
+    ]
+    for linha in _rodape_itens(identidade, "Uso interno CareCore+ / Compras."):
+        story.append(Paragraph(linha, styles["rodape"]))
+    return _build_pdf(story)
+
+
 # Compat: HTML legado (testes / fallback visual antigo).
 from html import escape as _escape_html  # noqa: E402
 

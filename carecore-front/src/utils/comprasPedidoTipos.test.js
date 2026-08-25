@@ -3,8 +3,11 @@ import { describe, it } from 'node:test';
 
 import {
   chaveSplitCategoriaPedido,
+  fornecedorSemCategoria,
+  fornecedoresParaCotacaoPedido,
   itensConsumoDoSegmentoPedido,
   itensConsumoDoSplitPedido,
+  segmentoFornecedorDoTipoPedido,
 } from './comprasPedidoTipos.js';
 
 describe('chaveSplitCategoriaPedido', () => {
@@ -89,5 +92,53 @@ describe('itensConsumoDoSplitPedido', () => {
 describe('itensConsumoDoSegmentoPedido', () => {
   it('serviço não usa catálogo de produto', () => {
     assert.deepEqual(itensConsumoDoSegmentoPedido([{ id: '1', segmento: 'servico' }], 'servico'), []);
+  });
+});
+
+describe('fornecedoresParaCotacaoPedido', () => {
+  const categorias = [
+    { id: 'hig', nome: 'Higiene', segmento: 'consumo' },
+    { id: 'man', nome: 'Manutenção', segmento: 'manutencao' },
+    { id: 'bem', nome: 'Bem / imobilizado', segmento: 'imobilizado' },
+    { id: 'srv', nome: 'Serviços', segmento: 'servico' },
+  ];
+  const fornecedores = [
+    { id: 'sem', nome: 'Sem categoria' },
+    { id: 'hig1', nome: 'Limpeza SA', categoria_ids: ['hig'] },
+    { id: 'man1', nome: 'Manutencao SA', categoria_id: 'man' },
+    { id: 'bem1', nome: 'Moveis SA', categoria_ids: ['bem', 'hig'] },
+    { id: 'srv1', nome: 'Servicos SA', categoria_ids: ['srv'] },
+  ];
+
+  it('sem categoria entra em qualquer tipo', () => {
+    assert.equal(fornecedorSemCategoria(fornecedores[0]), true);
+    for (const tipo of ['consumo', 'manutencao', 'imobilizado', 'servico']) {
+      const ids = fornecedoresParaCotacaoPedido(fornecedores, categorias, tipo).map((f) => f.id);
+      assert.ok(ids.includes('sem'));
+    }
+  });
+
+  it('filtra pelo segmento do pedido quando tem categoria', () => {
+    assert.deepEqual(
+      fornecedoresParaCotacaoPedido(fornecedores, categorias, 'consumo').map((f) => f.id),
+      ['sem', 'hig1', 'bem1'],
+    );
+    assert.deepEqual(
+      fornecedoresParaCotacaoPedido(fornecedores, categorias, 'manutencao').map((f) => f.id),
+      ['sem', 'man1'],
+    );
+    assert.deepEqual(
+      fornecedoresParaCotacaoPedido(fornecedores, categorias, 'imobilizado').map((f) => f.id),
+      ['sem', 'bem1'],
+    );
+    assert.deepEqual(
+      fornecedoresParaCotacaoPedido(fornecedores, categorias, 'servico').map((f) => f.id),
+      ['sem', 'srv1'],
+    );
+  });
+
+  it('mapeia tipo serviço para segmento serviço', () => {
+    assert.equal(segmentoFornecedorDoTipoPedido('servico'), 'servico');
+    assert.equal(segmentoFornecedorDoTipoPedido('consumo'), 'consumo');
   });
 });

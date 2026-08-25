@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from compras_itens_consumo_planilha import extrair_itens_consumo
 from compras_pedido_fluxo import (
+    assinar_orcamento_e_aprovar_sede,
     confirmar_evento_pedido,
     confirmar_revisao_itens_pedido,
     desativar_cotacao,
@@ -768,6 +769,20 @@ async def post_aprovar_sede(
     await _ctx(db, usuario_atual)
     pedido = await obter_pedido(db, usuario_atual, pedido_id)
     await aprovar_sede(db, usuario_atual, pedido)
+    await db.commit()
+    return await serializar_pedido(db, pedido, incluir_detalhe=True, usuario=usuario_atual)
+
+
+@router.post("/pedidos/{pedido_id}/assinar-orcamento-sede")
+async def post_assinar_orcamento_sede(
+    pedido_id: str,
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    """Assina o orçamento vencedor (folha digitalizada) e aprova — cotação do projeto."""
+    await _ctx(db, usuario_atual)
+    pedido = await obter_pedido(db, usuario_atual, pedido_id)
+    await assinar_orcamento_e_aprovar_sede(db, usuario_atual, pedido)
     await db.commit()
     return await serializar_pedido(db, pedido, incluir_detalhe=True, usuario=usuario_atual)
 

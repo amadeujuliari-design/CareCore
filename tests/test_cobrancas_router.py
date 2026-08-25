@@ -58,13 +58,19 @@ def test_orientador_nao_pode_ver_cobrancas():
         exigir_usuario_pode_ver_cobrancas({"perfil_acesso": "Orientador"})
 
 
-def test_fechamento_padrao_usa_dia_25_do_mes_corrente_ate_o_dia_25():
+def test_fechamento_padrao_usa_dia_25_do_mes_corrente():
     assert data_fechamento_padrao(date(2026, 6, 15)) == date(2026, 6, 25)
     assert data_fechamento_padrao(date(2026, 6, 25)) == date(2026, 6, 25)
+    # Atraso após o dia 25 ainda fecha o mês vigente (não pula para o 25 seguinte).
+    assert data_fechamento_padrao(date(2026, 6, 26)) == date(2026, 6, 25)
+    assert data_fechamento_padrao(date(2026, 7, 28)) == date(2026, 7, 25)
 
 
-def test_fechamento_padrao_vira_para_proximo_mes_depois_do_dia_25():
-    assert data_fechamento_padrao(date(2026, 6, 26)) == date(2026, 7, 25)
+def test_fechamento_padrao_inicio_do_mes_e_atraso_do_mes_anterior():
+    assert data_fechamento_padrao(date(2026, 7, 1)) == date(2026, 6, 25)
+    assert data_fechamento_padrao(date(2026, 7, 5)) == date(2026, 6, 25)
+    assert data_fechamento_padrao(date(2026, 7, 6)) == date(2026, 7, 25)
+    assert data_fechamento_padrao(date(2026, 1, 3)) == date(2025, 12, 25)
 
 
 def test_vencimento_ciclo_e_dia_5_do_mes_seguinte():

@@ -136,6 +136,11 @@ export async function comprasAprovarSede(id) {
   return data;
 }
 
+export async function comprasAssinarOrcamentoSede(id) {
+  const { data } = await api.post(`/api/compras/pedidos/${id}/assinar-orcamento-sede`);
+  return data;
+}
+
 export async function comprasEnviar(id) {
   const { data } = await api.post(`/api/compras/pedidos/${id}/enviar`);
   return data;

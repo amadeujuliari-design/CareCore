@@ -91,6 +91,7 @@ export default function Cobrancas() {
   const [contextoBoleto, setContextoBoleto] = useState(null);
   const [emitindoBoleto, setEmitindoBoleto] = useState(false);
   const [resultadoBoleto, setResultadoBoleto] = useState(null);
+  const [erroBoleto, setErroBoleto] = useState('');
   const [formBoleto, setFormBoleto] = useState({
     escopo_documento: 'projeto',
     projeto_id: '',
@@ -103,10 +104,13 @@ export default function Cobrancas() {
   const [salvandoCobrancaProjetoId, setSalvandoCobrancaProjetoId] = useState(null);
 
 
-  async function carregarStatus() {
-    setErro('');
-    setResultadoTeste(null);
-    setCobrancaTeste(null);
+  async function carregarStatus({ preservarFeedback = false } = {}) {
+    if (!preservarFeedback) {
+      setErro('');
+      setErroBoleto('');
+      setResultadoTeste(null);
+      setCobrancaTeste(null);
+    }
     try {
       setCarregando(true);
       const moduloResponse = await api.get('/api/cobrancas/modulo/status');
@@ -269,18 +273,19 @@ export default function Cobrancas() {
 
   async function emitirBoletoManual({ confirmarDivergencia = false } = {}) {
     setErro('');
+    setErroBoleto('');
     setResultadoBoleto(null);
     const valorNumero = Number(String(formBoleto.valor).replace(',', '.'));
     if (!Number.isFinite(valorNumero) || valorNumero <= 0) {
-      setErro('Informe um valor válido para o boleto.');
+      setErroBoleto('Informe um valor válido para o boleto.');
       return;
     }
     if (!formBoleto.vencimento) {
-      setErro('Informe a data de vencimento.');
+      setErroBoleto('Informe a data de vencimento.');
       return;
     }
     if (formBoleto.escopo_documento === 'projeto' && !formBoleto.projeto_id) {
-      setErro('Selecione o projeto/CNPJ da cobrança.');
+      setErroBoleto('Selecione o projeto/CNPJ da cobrança.');
       return;
     }
 
@@ -297,7 +302,7 @@ export default function Cobrancas() {
       });
       setResultadoBoleto(response.data);
       setFormBoleto((prev) => ({ ...prev, confirmar_divergencia: false }));
-      await carregarStatus();
+      await carregarStatus({ preservarFeedback: true });
     } catch (error) {
       const detail = error?.response?.data?.detail;
       if (error?.response?.status === 409 && detail?.codigo === 'divergencia_valor_ciclo') {
@@ -308,10 +313,17 @@ export default function Cobrancas() {
           await emitirBoletoManual({ confirmarDivergencia: true });
           return;
         }
-        setErro(detail.mensagem);
+        setErroBoleto(detail.mensagem);
         return;
       }
-      setErro(mensagemErroApi(error, 'Não foi possível emitir o boleto manual.'));
+      if (error?.response?.status === 409 && detail?.codigo === 'ciclo_ja_tem_cobranca') {
+        setErroBoleto(detail.mensagem || 'Este ciclo já possui boleto no Asaas.');
+        setErro(detail.mensagem || 'Este ciclo já possui boleto no Asaas.');
+        return;
+      }
+      const msg = mensagemErroApi(error, 'Não foi possível emitir o boleto manual.');
+      setErroBoleto(msg);
+      setErro(msg);
     } finally {
       setEmitindoBoleto(false);
     }
@@ -358,6 +370,9 @@ export default function Cobrancas() {
     (cobranca) => cobranca.data_fechamento === resumoCobranca?.data_fechamento
   );
   const linkPagamentoCicloAtual = faturaCicloAtual?.invoice_url || faturaCicloAtual?.bank_slip_url;
+  const cicloAtualJaTemBoleto = Boolean(
+    faturaCicloAtual && (faturaCicloAtual.invoice_url || faturaCicloAtual.bank_slip_url || faturaCicloAtual.status_pagamento === 'Pago')
+  );
 
   return (
     <AppShell>
@@ -440,10 +455,10 @@ export default function Cobrancas() {
             </div>
 
             <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              <InfoCard titulo="Cadastros computados" valor={String(resumoCobranca?.total_cadastros_faturaveis ?? '-')} />
               <InfoCard titulo="Fechamento do ciclo" valor={formatarData(resumoCobranca?.data_fechamento)} />
+              <InfoCard titulo="Vencimento (dia 05)" valor={formatarData(resumoCobranca?.data_vencimento)} />
               <InfoCard titulo="Corte para inativação" valor={formatarData(resumoCobranca?.data_corte_inativacao)} />
-              <InfoCard titulo="Vencimento" valor={formatarData(resumoCobranca?.data_vencimento)} />
+              <InfoCard titulo="Cadastros computados" valor={String(resumoCobranca?.total_cadastros_faturaveis ?? '-')} />
             </div>
 
             <div className="mt-4 rounded-2xl border border-blue-100 bg-blue-50 p-4 text-sm font-semibold text-blue-800">
@@ -562,7 +577,8 @@ export default function Cobrancas() {
               <div>
                 <h2 className="text-lg font-black text-slate-900">Boleto manual (por CNPJ)</h2>
                 <p className="mt-1 text-sm font-medium text-slate-500">
-                  Cada projeto/SEDE com cobrança ligada tem seu valor. Selecione o CNPJ e emita o boleto correspondente — o total da org é só resumo.
+                  Fecha o ciclo do mês vigente (~dia 25) para pagamento no dia 05 do mês seguinte.
+                  Cada projeto/SEDE com cobrança ligada tem seu valor — selecione o CNPJ e emita o boleto.
                 </p>
               </div>
               <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-black text-emerald-700">
@@ -716,11 +732,37 @@ export default function Cobrancas() {
               </span>
             </label>
 
+            {cicloAtualJaTemBoleto && formBoleto.fechar_ciclo ? (
+              <div className="mt-3 flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-900">
+                <AlertTriangle className="mt-0.5 shrink-0" size={18} />
+                <div>
+                  <p>
+                    O ciclo de {formatarData(resumoCobranca?.data_fechamento)} já tem fatura
+                    {faturaCicloAtual?.status_pagamento ? ` (${faturaCicloAtual.status_pagamento})` : ''}.
+                    Não dá para emitir outro boleto fechando o mesmo ciclo.
+                  </p>
+                  <p className="mt-2">
+                    Use «Gerar 2ª via / pagar» acima, ou desmarque «fechar o ciclo» para emitir uma cobrança avulsa.
+                  </p>
+                  {linkPagamentoCicloAtual ? (
+                    <a
+                      href={linkPagamentoCicloAtual}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="mt-3 inline-flex rounded-xl bg-amber-800 px-4 py-2 text-xs font-black text-white"
+                    >
+                      Abrir boleto / 2ª via
+                    </a>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
+
             <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center">
               <button
                 type="button"
                 onClick={() => emitirBoletoManual()}
-                disabled={emitindoBoleto || !statusAsaas?.valido}
+                disabled={emitindoBoleto || !statusAsaas?.valido || (cicloAtualJaTemBoleto && formBoleto.fechar_ciclo)}
                 className="inline-flex items-center justify-center gap-2 rounded-2xl bg-emerald-600 px-5 py-3 text-sm font-black text-white shadow-lg shadow-emerald-600/20 transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:shadow-none"
               >
                 <CreditCard size={17} />
@@ -732,6 +774,13 @@ export default function Cobrancas() {
                 </p>
               ) : null}
             </div>
+
+            {erroBoleto ? (
+              <div className="mt-4 flex items-start gap-3 rounded-2xl border border-red-100 bg-red-50 p-4 text-sm font-semibold text-red-700">
+                <AlertTriangle className="mt-0.5 shrink-0" size={18} />
+                <span>{erroBoleto}</span>
+              </div>
+            ) : null}
 
             {resultadoBoleto?.cobranca ? (
               <div className="mt-5 rounded-2xl border border-emerald-100 bg-emerald-50 p-4 text-sm font-semibold text-emerald-800">

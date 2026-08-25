@@ -16,6 +16,7 @@ import {
 import {
   comprasAnexarArquivo,
   comprasAprovarSede,
+  comprasAssinarOrcamentoSede,
   comprasAprovarUnidade,
   comprasAtualizarRascunho,
   comprasBaixarAnexo,
@@ -52,8 +53,12 @@ import { centavosParaInput, reaisParaCentavos } from './utils/comprasPatrimonioU
 import {
   STEPS_COTACAO_PROJETO,
   etapaCotacaoProjeto,
+  fornecedorSemCategoria,
+  fornecedoresParaCotacaoPedido,
   itensConsumoDoSplitPedido,
+  rotuloSegmentoCatalogo,
   rotuloTipoPedido,
+  segmentoFornecedorDoTipoPedido,
   tipoEhCotacaoProjeto,
 } from './utils/comprasPedidoTipos';
 
@@ -139,6 +144,8 @@ export default function ComprasPedido() {
   const [cotacao, setCotacao] = useState({ fornecedor_id: '', valor_reais: '', fornecedor_nome: '' });
   const [arqCotacao, setArqCotacao] = useState(null);
   const [fornecedoresCotacaoIds, setFornecedoresCotacaoIds] = useState([]);
+  const [buscaFornecedorCotacao, setBuscaFornecedorCotacao] = useState('');
+  const [buscaFornecedorLancamento, setBuscaFornecedorLancamento] = useState('');
   const [comunicacao, setComunicacao] = useState({ tipo: 'observacao', texto: '' });
   const [nfForm, setNfForm] = useState({
     tipo_nf: 'produto', numero: '', serie: '', valor_reais: '', observacao: '',
@@ -168,6 +175,26 @@ export default function ComprasPedido() {
   useEffect(() => {
     carregar();
   }, [carregar]);
+
+  const fornecedoresCotacao = useMemo(
+    () => fornecedoresParaCotacaoPedido(fornecedores, categorias, pedido?.tipo),
+    [fornecedores, categorias, pedido?.tipo],
+  );
+
+  const fornecedoresCotacaoFiltrados = useMemo(() => {
+    const q = buscaFornecedorCotacao.trim().toLowerCase();
+    if (!q) return fornecedoresCotacao;
+    return fornecedoresCotacao.filter((f) => {
+      const nome = (f.nome || '').toLowerCase();
+      const email = ((f.email || f.email_empresa || '')).toLowerCase();
+      return nome.includes(q) || email.includes(q);
+    });
+  }, [fornecedoresCotacao, buscaFornecedorCotacao]);
+
+  useEffect(() => {
+    const idsOk = new Set(fornecedoresCotacao.map((f) => f.id));
+    setFornecedoresCotacaoIds((prev) => prev.filter((id) => idsOk.has(id)));
+  }, [fornecedoresCotacao]);
 
   const agir = async (fn, mensagemOk = '') => {
     setErro('');
@@ -201,6 +228,7 @@ export default function ComprasPedido() {
   const podeEditarItens = Boolean(pedido.pode_editar_itens);
   const podeSubstituirOrcamento = Boolean(pedido.pode_substituir_orcamento) || sede;
   const cotacaoProjeto = tipoEhCotacaoProjeto(pedido.tipo);
+  const segmentoCotacao = segmentoFornecedorDoTipoPedido(pedido.tipo);
   const podeEscolherCotacaoConsumo = pedido.tipo === 'consumo' && unidade && !pedidoSede
     && ['em_cotacao', 'aguardando_aprovacao_unidade'].includes(pedido.status);
   const podeEscolherCotacaoImobilizado = cotacaoProjeto && unidade && !pedidoSede
@@ -216,9 +244,23 @@ export default function ComprasPedido() {
   const podeEncerrar = pedido.status === 'enviado_fornecedor' && (sede || (unidade && !pedidoSede));
   const podeReabrir = pedido.pode_reabrir && pedido.fechado_por_id === usuarioId;
   const pedidoCompra = (pedido.anexos || []).find((a) => a.tipo === 'pedido_compra');
+  const emailPedidoCompraEnviado = Boolean(pedido.email_pedido_compra_enviado);
+  const podeEnviarPedidoCompra = ['aprovado', 'enviado_fornecedor'].includes(pedido.status)
+    && (sede || (cotacaoProjeto && unidade && !pedidoSede));
   const fornecedoresSolicitacao = (pedido.fornecedores_solicitacao || []).filter((f) => f.id);
   const idsSolicitacao = new Set(fornecedoresSolicitacao.map((f) => f.id));
-  const fornecedoresOutros = fornecedores.filter((f) => !idsSolicitacao.has(f.id));
+  const fornecedoresOutros = fornecedoresCotacao.filter((f) => !idsSolicitacao.has(f.id));
+  const filtrarLancamento = (lista) => {
+    const q = buscaFornecedorLancamento.trim().toLowerCase();
+    if (!q) return lista;
+    return lista.filter((f) => {
+      const nome = (f.nome || '').toLowerCase();
+      const email = ((f.email || f.email_empresa || '')).toLowerCase();
+      return nome.includes(q) || email.includes(q);
+    });
+  };
+  const fornecedoresSolicitacaoFilt = filtrarLancamento(fornecedoresSolicitacao);
+  const fornecedoresOutrosFilt = filtrarLancamento(fornecedoresOutros);
 
   const promptMotivo = (titulo) => {
     const valor = window.prompt(titulo);
@@ -841,6 +883,8 @@ export default function ComprasPedido() {
                   <p className="text-sm font-semibold text-slate-800">1. Pedir cotação por e-mail</p>
                   <p className="mt-1 text-xs text-slate-600">
                     Selecione os fornecedores (recomendado 3 ou mais). Cada um recebe um e-mail só com o endereço dele no campo Para — nunca vê os demais.
+                    Lista filtrada para <strong>{rotuloSegmentoCatalogo(segmentoCotacao)}</strong>
+                    {' '}(sem categoria no cadastro continua aparecendo em todos os tipos).
                   </p>
                   {cotacaoProjeto ? (
                     pedido.email_adm_compras ? (
@@ -858,8 +902,23 @@ export default function ComprasPedido() {
                       Remetente: caixa da Sede (Compras / suprimentos).
                     </p>
                   )}
-                  <ul className="mt-3 max-h-48 space-y-1.5 overflow-y-auto text-sm">
-                    {fornecedores.map((f) => {
+                  {fornecedoresCotacao.length === 0 ? (
+                    <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-2 py-1.5 text-xs text-amber-900">
+                      Nenhum fornecedor elegível para este tipo de pedido. Cadastre categorias no fornecedor ou deixe sem categoria para ele aparecer em todos.
+                    </p>
+                  ) : (
+                  <>
+                  <input
+                    value={buscaFornecedorCotacao}
+                    onChange={(e) => setBuscaFornecedorCotacao(e.target.value)}
+                    placeholder="Buscar fornecedor por nome ou e-mail…"
+                    className="mt-3 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
+                  />
+                  <ul className="mt-2 max-h-48 space-y-1.5 overflow-y-auto text-sm">
+                    {fornecedoresCotacaoFiltrados.length === 0 ? (
+                      <li className="px-2 py-1.5 text-xs text-slate-500">Nenhum fornecedor com esse filtro.</li>
+                    ) : null}
+                    {fornecedoresCotacaoFiltrados.map((f) => {
                       const email = (f.email || f.email_empresa || '').trim();
                       const checked = fornecedoresCotacaoIds.includes(f.id);
                       return (
@@ -880,6 +939,7 @@ export default function ComprasPedido() {
                               <span className="font-medium text-slate-800">{f.nome}</span>
                               <span className="block text-xs text-slate-500">
                                 {email || 'Sem e-mail cadastrado'}
+                                {fornecedorSemCategoria(f) ? ' · sem categoria (todos os tipos)' : ''}
                               </span>
                             </span>
                           </label>
@@ -887,6 +947,8 @@ export default function ComprasPedido() {
                       );
                     })}
                   </ul>
+                  </>
+                  )}
                   <div className="mt-3 flex flex-wrap items-center gap-2">
                     <PremiumButton
                       disabled={
@@ -932,7 +994,7 @@ export default function ComprasPedido() {
                       </span>
                     </PremiumButton>
                     <span className="text-xs text-slate-500">
-                      {fornecedoresCotacaoIds.length} selecionado(s)
+                      {fornecedoresCotacaoIds.length} selecionado(s) · {fornecedoresCotacaoFiltrados.length} na busca · {fornecedoresCotacao.length} elegível(is)
                     </span>
                   </div>
                 </div>
@@ -985,6 +1047,7 @@ export default function ComprasPedido() {
                           className="text-xs font-semibold text-violet-700 underline"
                           onClick={() => comprasBaixarAnexo(pedido.id, anexo.id, anexo.nome_arquivo).catch(() => setErro('Não foi possível abrir o orçamento.'))}
                         >
+                          {anexo.tipo === 'orcamento_assinado' ? 'Assinado: ' : ''}
                           {anexo.nome_arquivo}
                         </button>
                       ))}
@@ -1041,11 +1104,17 @@ export default function ComprasPedido() {
                     setArqCotacao(null);
                   }}
                 >
+                  <input
+                    value={buscaFornecedorLancamento}
+                    onChange={(e) => setBuscaFornecedorLancamento(e.target.value)}
+                    placeholder="Buscar na lista de fornecedores…"
+                    className="rounded-xl border border-slate-200 px-3 py-2 text-sm md:col-span-5"
+                  />
                   <select
                     value={cotacao.fornecedor_id}
                     onChange={(e) => {
                       const id = e.target.value;
-                      const lista = [...fornecedoresSolicitacao, ...fornecedores];
+                      const lista = [...fornecedoresSolicitacao, ...fornecedoresCotacao];
                       const escolhido = lista.find((f) => f.id === id);
                       setCotacao((a) => ({
                         ...a,
@@ -1056,16 +1125,16 @@ export default function ComprasPedido() {
                     className="rounded-xl border border-slate-200 px-3 py-2 text-sm md:col-span-2"
                   >
                     <option value="">Fornecedor cadastrado…</option>
-                    {fornecedoresSolicitacao.length > 0 && (
+                    {fornecedoresSolicitacaoFilt.length > 0 && (
                       <optgroup label="Solicitados por e-mail">
-                        {fornecedoresSolicitacao.map((f) => (
+                        {fornecedoresSolicitacaoFilt.map((f) => (
                           <option key={f.id} value={f.id}>{f.nome}</option>
                         ))}
                       </optgroup>
                     )}
-                    {fornecedoresOutros.length > 0 && (
-                      <optgroup label={fornecedoresSolicitacao.length ? 'Outros cadastrados' : 'Fornecedores'}>
-                        {fornecedoresOutros.map((f) => (
+                    {fornecedoresOutrosFilt.length > 0 && (
+                      <optgroup label={fornecedoresSolicitacaoFilt.length ? 'Outros cadastrados' : 'Fornecedores'}>
+                        {fornecedoresOutrosFilt.map((f) => (
                           <option key={f.id} value={f.id}>{f.nome}</option>
                         ))}
                       </optgroup>
@@ -1195,14 +1264,39 @@ export default function ComprasPedido() {
               </ul>
             </SectionCard>
 
-            {pedidoCompra && (
-              <SectionCard title="Pedido de compra gerado">
-                <PremiumButton
-                  variant="secondary"
-                  onClick={() => comprasBaixarAnexo(pedido.id, pedidoCompra.id, pedidoCompra.nome_arquivo)}
-                >
-                  Abrir / imprimir pedido enviado
-                </PremiumButton>
+            {emailPedidoCompraEnviado && pedidoCompra && (
+              <SectionCard title="Pedido de compra enviado">
+                <p className="mb-3 text-sm text-emerald-800">
+                  E-mail enviado com sucesso ao fornecedor. Você pode baixar o PDF e, se precisar, reenviar.
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <PremiumButton
+                    variant="secondary"
+                    onClick={() => comprasBaixarAnexo(pedido.id, pedidoCompra.id, pedidoCompra.nome_arquivo)}
+                  >
+                    Baixar PDF do pedido
+                  </PremiumButton>
+                  {podeEnviarPedidoCompra && (
+                    <PremiumButton
+                      variant="secondary"
+                      onClick={async () => {
+                        const okEnvio = await agir(async () => {
+                          const res = await comprasEnviarEmailFornecedor(pedido.id);
+                          if (!res?.enviado) {
+                            throw new Error(res?.erro || 'Falha no e-mail ao fornecedor.');
+                          }
+                          window.alert(`Pedido de compra reenviado com sucesso para:\n\n${res.destinatario || 'fornecedor'}`);
+                        }, 'E-mail reenviado com sucesso.');
+                        if (!okEnvio) return;
+                      }}
+                    >
+                      <span className="inline-flex items-center gap-1.5">
+                        <Mail size={16} />
+                        Reenviar e-mail ao fornecedor
+                      </span>
+                    </PremiumButton>
+                  )}
+                </div>
               </SectionCard>
             )}
 
@@ -1351,29 +1445,44 @@ export default function ComprasPedido() {
                   </PremiumButton>
                 )}
                 {pedido.status === 'aguardando_aprovacao_sede' && sede && (
-                  <PremiumButton onClick={() => agir(() => comprasAprovarSede(pedido.id), 'Sede aprovou / assinou.')}>
-                    {cotacaoProjeto ? 'Aprovar e assinar (Sede)' : 'Aprovar na Sede'}
-                  </PremiumButton>
-                )}
-                {pedido.status === 'aprovado' && (sede || (cotacaoProjeto && unidade && !pedidoSede)) && (
-                  <>
-                    <PremiumButton onClick={() => agir(() => comprasGerarPedidoCompra(pedido.id), 'Pedido gerado.')}>
-                      Gerar pedido de compra
+                  cotacaoProjeto ? (
+                    <PremiumButton
+                      onClick={() => agir(
+                        () => comprasAssinarOrcamentoSede(pedido.id),
+                        'Orçamento assinado digitalmente e pedido aprovado na Sede.',
+                      )}
+                    >
+                      Assinar orçamento e aprovar (Sede)
                     </PremiumButton>
-                    <PremiumButton onClick={() => agir(() => comprasEnviar(pedido.id), 'Marcado como enviado.')}>
-                      Enviar ao fornecedor
+                  ) : (
+                    <PremiumButton onClick={() => agir(() => comprasAprovarSede(pedido.id), 'Sede aprovou.')}>
+                      Aprovar na Sede
                     </PremiumButton>
-                  </>
+                  )
                 )}
-                {['aprovado', 'enviado_fornecedor'].includes(pedido.status)
-                  && (sede || (cotacaoProjeto && unidade && !pedidoSede)) && (
+                {podeEnviarPedidoCompra && !emailPedidoCompraEnviado && (
                   <PremiumButton
-                    variant="secondary"
-                    onClick={() => agir(() => comprasEnviarEmailFornecedor(pedido.id), 'E-mail do pedido de compra processado (veja timeline).')}
+                    onClick={async () => {
+                      const okEnvio = await agir(async () => {
+                        if (pedido.status === 'aprovado') {
+                          await comprasEnviar(pedido.id);
+                        } else if (!pedidoCompra) {
+                          await comprasGerarPedidoCompra(pedido.id);
+                        }
+                        const res = await comprasEnviarEmailFornecedor(pedido.id);
+                        if (!res?.enviado) {
+                          throw new Error(res?.erro || 'Falha no e-mail ao fornecedor.');
+                        }
+                        window.alert(
+                          `Pedido de compra enviado com sucesso para:\n\n${res.destinatario || 'fornecedor'}\n\nAgora você pode baixar o PDF.`,
+                        );
+                      }, 'Pedido de compra enviado com sucesso ao fornecedor.');
+                      if (!okEnvio) return;
+                    }}
                   >
                     <span className="inline-flex items-center gap-1.5">
                       <Mail size={16} />
-                      E-mail ao fornecedor escolhido
+                      Enviar pedido de compra por e-mail
                     </span>
                   </PremiumButton>
                 )}

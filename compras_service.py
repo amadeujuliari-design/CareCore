@@ -513,10 +513,12 @@ async def serializar_pedido(
     )
     payload.update(await extras_serializacao_pedido(db, pedido))
     pode_itens = bool(payload.get("pode_editar_itens"))
+    # Projeto: fora da janela não edita itens (exceto rascunho). Sede pode editar mesmo fora.
     if (
         pode_itens
         and pedido.tipo == TIPO_CONSUMO
         and pedido.status != STATUS_RASCUNHO
+        and not (usuario and _sede(usuario))
         and not await _janela_aberta_para_pedido(db, pedido)
     ):
         pode_itens = False
@@ -892,6 +894,7 @@ async def substituir_itens(
     if (
         pedido.tipo == TIPO_CONSUMO
         and pedido.status != STATUS_RASCUNHO
+        and not _sede(usuario)
         and not await _janela_aberta_para_pedido(db, pedido)
     ):
         raise HTTPException(
@@ -1056,6 +1059,9 @@ async def submeter_pedido(
                 detail="Escolha o orçamento vencedor antes de enviar à Sede.",
             )
         status_anterior = pedido.status
+        # Envio à Sede = aprovação do projeto (não passa por aguardando_unidade).
+        pedido.aprovado_unidade_por_id = _uid(usuario)
+        pedido.aprovado_unidade_em = agora_operacional_naive()
         pedido.status = STATUS_AGUARDANDO_SEDE
         pedido.submetido_em = agora_operacional_naive()
         pedido.atualizado_em = agora_operacional_naive()

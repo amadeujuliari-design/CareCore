@@ -40,6 +40,7 @@ from models import (
     UsuarioDB,
 )
 from security import get_usuario_logado, usuario_eh_gestor, usuario_eh_manutencao
+from time_operacional import agora_operacional_naive
 
 
 router = APIRouter(
@@ -289,15 +290,24 @@ async def obter_ciclo_cobranca_autorizado(
 
 
 def data_fechamento_padrao(hoje: date | None = None) -> date:
-    referencia = hoje or date.today()
-    if referencia.day <= 25:
-        return referencia.replace(day=25)
-    proximo_mes = referencia.month + 1
-    ano = referencia.year
-    if proximo_mes == 13:
-        proximo_mes = 1
-        ano += 1
-    return date(ano, proximo_mes, 25)
+    """
+    Dia 25 do mês do ciclo que está sendo fechado.
+
+    Regra operacional SIAT/AEB:
+    - fecha ~dia 25 o ciclo do mês vigente;
+    - vencimento do boleto = dia 05 do mês seguinte;
+    - atraso de poucos dias após o 25 ainda é o mesmo mês (não pula para o 25 seguinte);
+    - nos primeiros dias do mês seguinte (1–5), ainda trata como fechamento atrasado do mês anterior.
+    """
+    referencia = hoje or agora_operacional_naive().date()
+    if referencia.day <= 5:
+        mes = referencia.month - 1
+        ano = referencia.year
+        if mes == 0:
+            mes = 12
+            ano -= 1
+        return date(ano, mes, 25)
+    return referencia.replace(day=25)
 
 
 def data_vencimento_ciclo(data_fechamento: date) -> date:
@@ -1548,7 +1558,21 @@ async def emitir_boleto_manual(
             if ciclo.asaas_payment_id:
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
-                    detail="Este ciclo já possui cobrança vinculada ao Asaas.",
+                    detail={
+                        "codigo": "ciclo_ja_tem_cobranca",
+                        "mensagem": (
+                            "O ciclo atual (fechamento "
+                            f"{data_fechamento.strftime('%d/%m/%Y')}) já tem boleto no Asaas "
+                            f"(status: {ciclo.status_pagamento or ciclo.status}). "
+                            "Use «Gerar 2ª via / pagar» no resumo ou «Pagar» no histórico. "
+                            "Para emitir outra cobrança avulsa, desmarque "
+                            "«Também fechar o ciclo de cobrança»."
+                        ),
+                        "ciclo_id": ciclo.id,
+                        "status_pagamento": ciclo.status_pagamento,
+                        "invoice_url": ciclo.asaas_invoice_url,
+                        "bank_slip_url": ciclo.asaas_bank_slip_url,
+                    },
                 )
             ciclo.atualizado_em = agora
             ciclo.data_vencimento = payload.vencimento

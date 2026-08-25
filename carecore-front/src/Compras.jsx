@@ -152,6 +152,22 @@ export default function Compras() {
     carregar();
   }, [carregar]);
 
+  // Ao abrir o catálogo, recarrega os itens (evita lista antiga/curta na sessão).
+  useEffect(() => {
+    const vendoItens = aba === 'itens' || (aba === 'cadastros' && abaCadastro === 'itens');
+    if (!vendoItens || !acesso?.compras_ativo) return undefined;
+    let cancelado = false;
+    (async () => {
+      try {
+        const catalogo = await comprasItensConsumo();
+        if (!cancelado) setItensConsumo(catalogo);
+      } catch {
+        /* carregar() já cobre o erro principal */
+      }
+    })();
+    return () => { cancelado = true; };
+  }, [aba, abaCadastro, acesso?.compras_ativo]);
+
   useEffect(() => {
     const abaParam = (searchParams.get('aba') || '').trim().toLowerCase();
     if (abaParam === 'fornecedores' || abaParam === 'itens' || abaParam === 'categorias') {

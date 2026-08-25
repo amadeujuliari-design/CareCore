@@ -15,7 +15,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from compras_itens_consumo_utils import embalagem_efetiva_pedido
 from compras_nf_xml_utils import extrair_campos_nf_xml
-from compras_pedido_pdf import montar_pdf_pedido_compra, montar_pdf_solicitacao_cotacao
+from compras_pedido_pdf import (
+    montar_pdf_aprovacao_orcamento_sede,
+    montar_pdf_pedido_compra,
+    montar_pdf_solicitacao_cotacao,
+)
 from compras_regras import (
     ESCOPO_PROJETO,
     PATRIMONIO_ORIGEM_COMPRA,
@@ -35,6 +39,7 @@ from compras_regras import (
     TIPO_ANEXO_NF_PDF,
     TIPO_ANEXO_NF_XML,
     TIPO_ANEXO_ORCAMENTO,
+    TIPO_ANEXO_ORCAMENTO_ASSINADO,
     TIPO_ANEXO_PEDIDO_PDF,
     TIPO_ANEXO_RESPOSTA_FORNECEDOR,
     TIPO_EVENTO_ANEXO,
@@ -57,6 +62,7 @@ from compras_regras import (
     pedido_rascunho_pode_excluir,
     tipo_eh_cotacao_projeto,
     usuario_e_sede_compras,
+    usuario_pode_aprovar_sede,
     usuario_pode_pedir,
 )
 from compras_upload_utils import remover_arquivo_compras, salvar_arquivo_compras
@@ -325,6 +331,10 @@ async def extras_serializacao_pedido(db: AsyncSession, pedido: ComprasPedidoDB) 
     )
     fornecedores_solicitacao = _fornecedores_solicitacao_dos_eventos(eventos, fornecedores_org)
     qtd_orcamentos = len([c for c in cotacoes if getattr(c, "ativa", True)])
+    email_pedido_ok = any(
+        e.tipo == TIPO_EVENTO_EMAIL and (e.texto or "").startswith("E-mail enviado para")
+        for e in eventos
+    )
 
     return {
         "anexos": [_serializar_anexo(a) for a in anexos],
@@ -342,6 +352,7 @@ async def extras_serializacao_pedido(db: AsyncSession, pedido: ComprasPedidoDB) 
         "status_anterior": pedido.status_anterior,
         "fechado_por_id": fechado_por,
         "pedido_compra_anexo_id": pedido.pedido_compra_anexo_id,
+        "email_pedido_compra_enviado": bool(email_pedido_ok and pedido.pedido_compra_anexo_id),
         "pode_reabrir": pedido.status in {STATUS_REPROVADO, STATUS_CANCELADO},
         "pode_excluir": pedido_rascunho_pode_excluir(
             status=pedido.status,
@@ -1384,3 +1395,152 @@ async def desativar_cotacao(
         aguardando_confirmacao=False,
     )
     pedido.atualizado_em = agora_operacional_naive()
+
+
+async def assinar_orcamento_e_aprovar_sede(
+    db: AsyncSession,
+    usuario: dict,
+    pedido: ComprasPedidoDB,
+) -> ComprasPedidoDB:
+    """Assina o orçamento vencedor (folha digitalizada) e aprova na Sede — só cotação do projeto."""
+    if not usuario_pode_aprovar_sede(
+        perfil=str(usuario.get("perfil_acesso") or usuario.get("perfil") or ""),
+        is_manutencao=bool(usuario.get("is_manutencao")),
+    ):
+        raise HTTPException(status_code=403, detail="Somente ADM Compras aprova na Sede.")
+    if not tipo_eh_cotacao_projeto(pedido.tipo):
+        raise HTTPException(
+            status_code=400,
+            detail="Assinatura de orçamento vale para bem, manutenção ou prestação de serviço.",
+        )
+    if pedido.status != STATUS_AGUARDANDO_SEDE:
+        raise HTTPException(status_code=400, detail="Pedido não está aguardando aprovação da Sede.")
+    if not pedido.aprovado_unidade_em and not pedido_escopo_sede(getattr(pedido, "escopo_unidade", None)):
+        raise HTTPException(
+            status_code=400,
+            detail="O projeto precisa enviar o pedido à Sede antes da assinatura.",
+        )
+
+    cotacoes = await _cotacoes_ativas(db, pedido.id)
+    escolhida = next((c for c in cotacoes if c.escolhida), None)
+    if not escolhida:
+        raise HTTPException(status_code=400, detail="Não há orçamento vencedor escolhido.")
+
+    anexos_orc = (
+        await db.execute(
+            select(ComprasPedidoAnexoDB).where(
+                ComprasPedidoAnexoDB.pedido_id == pedido.id,
+                ComprasPedidoAnexoDB.cotacao_id == escolhida.id,
+                ComprasPedidoAnexoDB.tipo == TIPO_ANEXO_ORCAMENTO,
+                ComprasPedidoAnexoDB.ativo.is_(True),
+            )
+        )
+    ).scalars().all()
+    if not anexos_orc:
+        raise HTTPException(
+            status_code=400,
+            detail="Anexe o PDF do orçamento vencedor antes de assinar na Sede.",
+        )
+    orcamento_original = anexos_orc[0]
+
+    agora = agora_operacional_naive()
+    assinante = (
+        (usuario.get("nome") or usuario.get("nome_completo") or usuario.get("email") or "ADM Compras")
+    ).strip()
+    assinado_em_texto = agora.strftime("%d/%m/%Y %H:%M")
+
+    org = (
+        await db.execute(select(OrganizacaoDB).where(OrganizacaoDB.id == pedido.organizacao_id))
+    ).scalar_one_or_none()
+    inst = await _dados_instituicao(db, pedido)
+    identidade = await _identidade_relatorio_pedido(db, pedido, org)
+    logo_bytes = _logo_bytes_relatorio(identidade.get("relatorio_logo_url"))
+    numero = pedido.id.split("-")[0].upper()[:8]
+    pdf_bytes = montar_pdf_aprovacao_orcamento_sede(
+        pedido={
+            "competencia": pedido.competencia,
+            "tipo": pedido.tipo,
+            "instituicao_nome": (inst or {}).get("nome"),
+        },
+        instituicao=inst,
+        organizacao_nome=org.nome if org else "AEB",
+        cotacao_escolhida={
+            "fornecedor_nome": escolhida.fornecedor_nome,
+            "valor_centavos": escolhida.valor_centavos,
+        },
+        numero_pedido=numero,
+        assinante_nome=assinante,
+        assinado_em_texto=assinado_em_texto,
+        arquivo_orcamento_original=orcamento_original.nome_arquivo,
+        identidade=identidade,
+        logo_bytes=logo_bytes,
+    )
+    nome_arquivo = f"orcamento-assinado-sede-{numero}.pdf"
+
+    class _ArquivoGerado:
+        filename = nome_arquivo
+        content_type = "application/pdf"
+
+    caminho, nome_original, tamanho, content_type = await salvar_arquivo_compras(
+        organizacao_id=pedido.organizacao_id,
+        pedido_id=pedido.id,
+        file=_ArquivoGerado(),  # type: ignore[arg-type]
+        conteudo=pdf_bytes,
+    )
+
+    anteriores = (
+        await db.execute(
+            select(ComprasPedidoAnexoDB).where(
+                ComprasPedidoAnexoDB.pedido_id == pedido.id,
+                ComprasPedidoAnexoDB.cotacao_id == escolhida.id,
+                ComprasPedidoAnexoDB.tipo == TIPO_ANEXO_ORCAMENTO_ASSINADO,
+                ComprasPedidoAnexoDB.ativo.is_(True),
+            )
+        )
+    ).scalars().all()
+    for ant in anteriores:
+        ant.ativo = False
+        remover_arquivo_compras(ant.caminho_arquivo)
+
+    anexo = ComprasPedidoAnexoDB(
+        pedido_id=pedido.id,
+        cotacao_id=escolhida.id,
+        tipo=TIPO_ANEXO_ORCAMENTO_ASSINADO,
+        nome_arquivo=nome_original,
+        caminho_arquivo=caminho,
+        content_type=content_type or "application/pdf",
+        tamanho_bytes=tamanho,
+        criado_por_id=_uid(usuario),
+    )
+    db.add(anexo)
+    await db.flush()
+
+    pedido.aprovado_sede_por_id = _uid(usuario)
+    pedido.aprovado_sede_em = agora
+    pedido.status = STATUS_APROVADO
+    pedido.atualizado_em = agora
+
+    await registrar_evento_pedido(
+        db,
+        pedido_id=pedido.id,
+        tipo=TIPO_EVENTO_STATUS,
+        texto=(
+            f"Orçamento de {escolhida.fornecedor_nome} assinado digitalmente pela Sede "
+            f"({assinante}) e pedido aprovado."
+        ),
+        usuario_id=_uid(usuario),
+        anexo_id=anexo.id,
+        cotacao_id=escolhida.id,
+        status_anterior=STATUS_AGUARDANDO_SEDE,
+        status_novo=STATUS_APROVADO,
+    )
+    await registrar_evento_pedido(
+        db,
+        pedido_id=pedido.id,
+        tipo=TIPO_EVENTO_ANEXO,
+        texto=f"Orçamento assinado (Sede): {nome_original}. Disponível para o projeto.",
+        usuario_id=_uid(usuario),
+        anexo_id=anexo.id,
+        cotacao_id=escolhida.id,
+    )
+    return pedido

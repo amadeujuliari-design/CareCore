@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Eye, Pencil, Plus, Search } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Eye, Pencil, Plus, RefreshCw, Search, X } from 'lucide-react';
 
 import ModalFichaItemConsumo from './ModalFichaItemConsumo';
 import { CampoSelect, CampoTexto } from './UsuariosCampos';
@@ -22,7 +22,8 @@ import {
   rotuloSegmentoCatalogo,
 } from '../utils/comprasPedidoTipos';
 
-const ITENS_POR_PAGINA = 40;
+/** Página menor para caber melhor na tela e permitir navegar listas médias. */
+const ITENS_POR_PAGINA = 25;
 
 const ITEM_VAZIO = {
   id: '',
@@ -58,6 +59,7 @@ export default function ComprasItensConsumoCadastro({
   const [formAberto, setFormAberto] = useState(false);
   const [ficha, setFicha] = useState(null);
   const [salvando, setSalvando] = useState(false);
+  const tabelaTopoRef = useRef(null);
 
   const categoriasFiltradas = useMemo(() => {
     if (!filtroSegmento) return categorias;
@@ -74,6 +76,28 @@ export default function ComprasItensConsumoCadastro({
     }),
     [itens, busca, filtroCategoria, filtroSegmento, filtroCompetencia, filtroStatus],
   );
+
+  const filtrosAtivos = Boolean(
+    busca.trim()
+    || filtroCategoria
+    || filtroSegmento
+    || filtroCompetencia
+    || filtroStatus !== 'ativo',
+  );
+
+  const limparFiltros = () => {
+    setBusca('');
+    setFiltroCategoria('');
+    setFiltroSegmento('');
+    setFiltroCompetencia('');
+    setFiltroStatus('ativo');
+    setPagina(1);
+  };
+
+  const irParaPagina = (novaPagina) => {
+    setPagina(novaPagina);
+    tabelaTopoRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
 
   useEffect(() => {
     setPagina(1);
@@ -187,9 +211,25 @@ export default function ComprasItensConsumoCadastro({
     <>
       <SectionCard
         title="Catálogo de itens"
-        subtitle={`${listaFiltrada.length} de ${itens.length} itens`}
+        subtitle={
+          filtrosAtivos
+            ? `${listaFiltrada.length} filtrado(s) · ${itens.length} no catálogo`
+            : `${itens.length} item${itens.length === 1 ? '' : 's'} no catálogo`
+        }
         actions={(
           <div className="flex flex-wrap gap-2">
+            {typeof onRecarregar === 'function' ? (
+              <PremiumButton
+                type="button"
+                variant="secondary"
+                onClick={() => onRecarregar()}
+              >
+                <span className="inline-flex items-center gap-1.5">
+                  <RefreshCw size={16} />
+                  Atualizar
+                </span>
+              </PremiumButton>
+            ) : null}
             <ReportActionButton
               action="export"
               disabled={!listaFiltrada.length}
@@ -214,7 +254,7 @@ export default function ComprasItensConsumoCadastro({
           </div>
         )}
       >
-        <div className="px-5 py-4">
+        <div className="px-5 py-4" ref={tabelaTopoRef}>
           <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
             <div className="sm:col-span-2">
               <span className="mb-1 block text-xs font-semibold text-slate-600">Busca</span>
@@ -280,6 +320,26 @@ export default function ComprasItensConsumoCadastro({
               </select>
             </label>
           </div>
+
+          {filtrosAtivos ? (
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-100 bg-amber-50/80 px-3 py-2 text-xs text-amber-950">
+              <span>
+                Filtros ativos: mostrando <strong>{listaFiltrada.length}</strong> de{' '}
+                <strong>{itens.length}</strong> itens do catálogo.
+                {listaFiltrada.length <= ITENS_POR_PAGINA && itens.length > ITENS_POR_PAGINA
+                  ? ' Limpe a busca/filtros para paginar o catálogo completo.'
+                  : null}
+              </span>
+              <button
+                type="button"
+                onClick={limparFiltros}
+                className="inline-flex items-center gap-1 rounded-lg border border-amber-200 bg-white px-2.5 py-1.5 font-bold text-amber-900 hover:bg-amber-100"
+              >
+                <X size={14} />
+                Limpar filtros
+              </button>
+            </div>
+          ) : null}
 
           {itens.length === 0 ? (
             <EmptyState
@@ -359,12 +419,15 @@ export default function ComprasItensConsumoCadastro({
           {listaFiltrada.length > 0 && (
             <div className="mt-5 flex flex-col gap-3 rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
               <p className="text-xs font-semibold text-slate-500">
-                Exibindo {inicio + 1} a {Math.min(inicio + ITENS_POR_PAGINA, listaFiltrada.length)} de {listaFiltrada.length} item{listaFiltrada.length === 1 ? '' : 's'}.
+                Exibindo {inicio + 1} a {Math.min(inicio + ITENS_POR_PAGINA, listaFiltrada.length)} de {listaFiltrada.length} item{listaFiltrada.length === 1 ? '' : 's'}
+                {filtrosAtivos ? ` (filtro · ${itens.length} no catálogo)` : ''}
+                {' · '}
+                {ITENS_POR_PAGINA} por página.
               </p>
               <div className="flex items-center justify-between gap-2 sm:justify-end">
                 <button
                   type="button"
-                  onClick={() => setPagina(paginaSegura - 1)}
+                  onClick={() => irParaPagina(paginaSegura - 1)}
                   disabled={paginaSegura <= 1}
                   className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600 disabled:cursor-not-allowed disabled:opacity-40"
                 >
@@ -375,7 +438,7 @@ export default function ComprasItensConsumoCadastro({
                 </span>
                 <button
                   type="button"
-                  onClick={() => setPagina(paginaSegura + 1)}
+                  onClick={() => irParaPagina(paginaSegura + 1)}
                   disabled={paginaSegura >= totalPaginas}
                   className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600 disabled:cursor-not-allowed disabled:opacity-40"
                 >

@@ -57,6 +57,7 @@ const RelatorioNfpCupons = lazy(() => import('../RelatorioNfpCupons'));
 const Compras = lazy(() => import('../Compras'));
 const ComprasPedido = lazy(() => import('../ComprasPedido'));
 const ComprasPedidoNovo = lazy(() => import('../ComprasPedidoNovo'));
+const ComprasAguardandoAssinatura = lazy(() => import('../ComprasAguardandoAssinatura'));
 
 function RotasAplicacao() {
   return (
@@ -328,6 +329,15 @@ function RotasAplicacao() {
           element={
             <ProtectedRoute>
               <Compras />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/compras/aguardando-assinatura"
+          element={
+            <ProtectedRoute perfis={[PERFIL_ADM_COMPRAS, 'Manutenção']}>
+              <ComprasAguardandoAssinatura />
             </ProtectedRoute>
           }
         />
