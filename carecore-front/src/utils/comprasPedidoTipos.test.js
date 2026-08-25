@@ -8,6 +8,7 @@ import {
   itensConsumoDoSegmentoPedido,
   itensConsumoDoSplitPedido,
   segmentoFornecedorDoTipoPedido,
+  sugerirFornecedoresBusca,
 } from './comprasPedidoTipos.js';
 
 describe('chaveSplitCategoriaPedido', () => {
@@ -140,5 +141,32 @@ describe('fornecedoresParaCotacaoPedido', () => {
   it('mapeia tipo serviço para segmento serviço', () => {
     assert.equal(segmentoFornecedorDoTipoPedido('servico'), 'servico');
     assert.equal(segmentoFornecedorDoTipoPedido('consumo'), 'consumo');
+  });
+});
+
+describe('sugerirFornecedoresBusca', () => {
+  const lista = [
+    { id: '1', nome: 'CARECORE TESTE Compras1', email: 'a@x.com' },
+    { id: '2', nome: 'Mercado Central', email: 'mercado@x.com' },
+    { id: '3', nome: 'Ação Limpeza', email: 'acao@x.com' },
+    { id: '4', nome: 'Beta Alimentos', email_empresa: 'beta@x.com' },
+  ];
+
+  it('mostra resultados a partir da 1ª letra (prefixo)', () => {
+    const ids = sugerirFornecedoresBusca(lista, 'c').map((f) => f.id);
+    assert.ok(ids.includes('1')); // CARECORE…
+    assert.ok(ids.includes('2')); // …Central
+    assert.ok(!ids.includes('3')); // Ação — "c" no meio, curto demais
+    assert.ok(!ids.includes('4'));
+  });
+
+  it('normaliza acento na busca', () => {
+    const ids = sugerirFornecedoresBusca(lista, 'acao').map((f) => f.id);
+    assert.deepEqual(ids, ['3']);
+  });
+
+  it('sem termo não lista ninguém (typeahead)', () => {
+    assert.deepEqual(sugerirFornecedoresBusca(lista, ''), []);
+    assert.deepEqual(sugerirFornecedoresBusca(lista, '  '), []);
   });
 });

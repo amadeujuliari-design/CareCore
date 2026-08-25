@@ -157,6 +157,42 @@ export function fornecedoresParaCotacaoPedido(fornecedores = [], categorias = []
   ));
 }
 
+function _normBuscaFornecedor(texto) {
+  return String(texto || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, ' ');
+}
+
+/**
+ * Busca de fornecedores no pedido de cotação: a partir da 1ª letra.
+ * Prioriza nome que começa com o termo; depois palavra do nome; depois e-mail / contém.
+ */
+export function sugerirFornecedoresBusca(fornecedores = [], busca = '', limite = 40) {
+  const termo = _normBuscaFornecedor(busca);
+  if (!termo) return [];
+  const ranqueados = [];
+  for (const f of fornecedores || []) {
+    const nome = _normBuscaFornecedor(f?.nome);
+    const email = _normBuscaFornecedor(f?.email || f?.email_empresa);
+    if (!nome && !email) continue;
+    let score = null;
+    if (nome.startsWith(termo)) score = 0;
+    else {
+      const palavras = nome.split(/[^a-z0-9]+/).filter(Boolean);
+      if (palavras.some((p) => p.startsWith(termo))) score = 1;
+      else if (email.startsWith(termo)) score = 2;
+      else if (termo.length > 2 && (nome.includes(termo) || email.includes(termo))) score = 3;
+    }
+    if (score == null) continue;
+    ranqueados.push({ f, score, nome });
+  }
+  ranqueados.sort((a, b) => a.score - b.score || a.nome.localeCompare(b.nome, 'pt-BR'));
+  return ranqueados.slice(0, limite).map((row) => row.f);
+}
+
 export function itensConsumoDoSegmentoPedido(itens = [], tipoPedido) {
   const segmento = segmentoDoTipoPedido(tipoPedido);
   if (segmento == null) return [];

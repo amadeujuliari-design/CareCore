@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { FileText, Mail, ShoppingCart } from 'lucide-react';
+import { FileText, Mail, Search, ShoppingCart } from 'lucide-react';
 
 import ComprasItemTypeahead from './components/ComprasItemTypeahead';
 import Sidebar from './Sidebar';
@@ -59,6 +59,7 @@ import {
   rotuloSegmentoCatalogo,
   rotuloTipoPedido,
   segmentoFornecedorDoTipoPedido,
+  sugerirFornecedoresBusca,
   tipoEhCotacaoProjeto,
 } from './utils/comprasPedidoTipos';
 
@@ -181,15 +182,15 @@ export default function ComprasPedido() {
     [fornecedores, categorias, pedido?.tipo],
   );
 
-  const fornecedoresCotacaoFiltrados = useMemo(() => {
-    const q = buscaFornecedorCotacao.trim().toLowerCase();
-    if (!q) return fornecedoresCotacao;
-    return fornecedoresCotacao.filter((f) => {
-      const nome = (f.nome || '').toLowerCase();
-      const email = ((f.email || f.email_empresa || '')).toLowerCase();
-      return nome.includes(q) || email.includes(q);
-    });
-  }, [fornecedoresCotacao, buscaFornecedorCotacao]);
+  const fornecedoresCotacaoFiltrados = useMemo(
+    () => sugerirFornecedoresBusca(fornecedoresCotacao, buscaFornecedorCotacao),
+    [fornecedoresCotacao, buscaFornecedorCotacao],
+  );
+
+  const fornecedoresSelecionadosCotacao = useMemo(
+    () => fornecedoresCotacao.filter((f) => fornecedoresCotacaoIds.includes(f.id)),
+    [fornecedoresCotacao, fornecedoresCotacaoIds],
+  );
 
   useEffect(() => {
     const idsOk = new Set(fornecedoresCotacao.map((f) => f.id));
@@ -251,13 +252,9 @@ export default function ComprasPedido() {
   const idsSolicitacao = new Set(fornecedoresSolicitacao.map((f) => f.id));
   const fornecedoresOutros = fornecedoresCotacao.filter((f) => !idsSolicitacao.has(f.id));
   const filtrarLancamento = (lista) => {
-    const q = buscaFornecedorLancamento.trim().toLowerCase();
-    if (!q) return lista;
-    return lista.filter((f) => {
-      const nome = (f.nome || '').toLowerCase();
-      const email = ((f.email || f.email_empresa || '')).toLowerCase();
-      return nome.includes(q) || email.includes(q);
-    });
+    if (!buscaFornecedorLancamento.trim()) return lista;
+    const ids = new Set(sugerirFornecedoresBusca(lista, buscaFornecedorLancamento, 80).map((f) => f.id));
+    return lista.filter((f) => ids.has(f.id));
   };
   const fornecedoresSolicitacaoFilt = filtrarLancamento(fornecedoresSolicitacao);
   const fornecedoresOutrosFilt = filtrarLancamento(fornecedoresOutros);
@@ -908,44 +905,75 @@ export default function ComprasPedido() {
                     </p>
                   ) : (
                   <>
-                  <input
-                    value={buscaFornecedorCotacao}
-                    onChange={(e) => setBuscaFornecedorCotacao(e.target.value)}
-                    placeholder="Buscar fornecedor por nome ou e-mail…"
-                    className="mt-3 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
-                  />
-                  <ul className="mt-2 max-h-48 space-y-1.5 overflow-y-auto text-sm">
-                    {fornecedoresCotacaoFiltrados.length === 0 ? (
-                      <li className="px-2 py-1.5 text-xs text-slate-500">Nenhum fornecedor com esse filtro.</li>
-                    ) : null}
-                    {fornecedoresCotacaoFiltrados.map((f) => {
-                      const email = (f.email || f.email_empresa || '').trim();
-                      const checked = fornecedoresCotacaoIds.includes(f.id);
-                      return (
-                        <li key={f.id}>
-                          <label className={`flex cursor-pointer items-start gap-2 rounded-lg px-2 py-1.5 ${email ? 'hover:bg-white/80' : 'opacity-50'}`}>
-                            <input
-                              type="checkbox"
-                              className="mt-1"
-                              disabled={!email}
-                              checked={checked}
-                              onChange={() => {
-                                setFornecedoresCotacaoIds((prev) => (
-                                  checked ? prev.filter((id) => id !== f.id) : [...prev, f.id]
-                                ));
-                              }}
-                            />
+                  <div className="relative mt-3">
+                    <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <input
+                      value={buscaFornecedorCotacao}
+                      onChange={(e) => setBuscaFornecedorCotacao(e.target.value)}
+                      placeholder="Digite o nome ou e-mail — resultados desde a 1ª letra"
+                      autoComplete="off"
+                      className="w-full rounded-xl border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm outline-none focus:border-slate-400"
+                    />
+                  </div>
+                  {fornecedoresSelecionadosCotacao.length > 0 ? (
+                    <ul className="mt-2 space-y-1 text-sm">
+                      {fornecedoresSelecionadosCotacao.map((f) => {
+                        const email = (f.email || f.email_empresa || '').trim();
+                        return (
+                          <li key={`sel-${f.id}`} className="flex items-start justify-between gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-1.5">
                             <span>
                               <span className="font-medium text-slate-800">{f.nome}</span>
-                              <span className="block text-xs text-slate-500">
-                                {email || 'Sem e-mail cadastrado'}
-                                {fornecedorSemCategoria(f) ? ' · sem categoria (todos os tipos)' : ''}
-                              </span>
+                              <span className="block text-xs text-slate-500">{email || 'Sem e-mail'}</span>
                             </span>
-                          </label>
-                        </li>
-                      );
-                    })}
+                            <button
+                              type="button"
+                              className="text-xs font-semibold text-emerald-800 underline"
+                              onClick={() => setFornecedoresCotacaoIds((prev) => prev.filter((id) => id !== f.id))}
+                            >
+                              Retirar
+                            </button>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  ) : null}
+                  <ul className="mt-2 max-h-56 space-y-1.5 overflow-y-auto text-sm">
+                    {!buscaFornecedorCotacao.trim() ? (
+                      <li className="px-2 py-1.5 text-xs text-slate-500">
+                        Digite para buscar entre {fornecedoresCotacao.length} fornecedor(es) elegível(is).
+                      </li>
+                    ) : fornecedoresCotacaoFiltrados.length === 0 ? (
+                      <li className="px-2 py-1.5 text-xs text-slate-500">Nenhum fornecedor com «{buscaFornecedorCotacao.trim()}».</li>
+                    ) : (
+                      fornecedoresCotacaoFiltrados.map((f) => {
+                        const email = (f.email || f.email_empresa || '').trim();
+                        const checked = fornecedoresCotacaoIds.includes(f.id);
+                        return (
+                          <li key={f.id}>
+                            <label className={`flex cursor-pointer items-start gap-2 rounded-lg px-2 py-1.5 ${email ? 'hover:bg-white/80' : 'opacity-50'}`}>
+                              <input
+                                type="checkbox"
+                                className="mt-1"
+                                disabled={!email}
+                                checked={checked}
+                                onChange={() => {
+                                  setFornecedoresCotacaoIds((prev) => (
+                                    checked ? prev.filter((id) => id !== f.id) : [...prev, f.id]
+                                  ));
+                                }}
+                              />
+                              <span>
+                                <span className="font-medium text-slate-800">{f.nome}</span>
+                                <span className="block text-xs text-slate-500">
+                                  {email || 'Sem e-mail cadastrado'}
+                                  {fornecedorSemCategoria(f) ? ' · sem categoria (todos os tipos)' : ''}
+                                </span>
+                              </span>
+                            </label>
+                          </li>
+                        );
+                      })
+                    )}
                   </ul>
                   </>
                   )}
@@ -964,6 +992,7 @@ export default function ComprasPedido() {
                           const falhas = res.falhas || [];
                           if (res.pedido) setPedido(res.pedido);
                           setFornecedoresCotacaoIds([]);
+                          setBuscaFornecedorCotacao('');
 
                           if (!enviados.length) {
                             throw new Error(falhas[0]?.erro || 'Nenhum e-mail enviado.');
@@ -994,7 +1023,10 @@ export default function ComprasPedido() {
                       </span>
                     </PremiumButton>
                     <span className="text-xs text-slate-500">
-                      {fornecedoresCotacaoIds.length} selecionado(s) · {fornecedoresCotacaoFiltrados.length} na busca · {fornecedoresCotacao.length} elegível(is)
+                      {fornecedoresCotacaoIds.length} selecionado(s)
+                      {buscaFornecedorCotacao.trim()
+                        ? ` · ${fornecedoresCotacaoFiltrados.length} na busca`
+                        : ` · ${fornecedoresCotacao.length} elegível(is)`}
                     </span>
                   </div>
                 </div>
