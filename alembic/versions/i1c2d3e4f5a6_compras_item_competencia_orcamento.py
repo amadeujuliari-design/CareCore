@@ -112,9 +112,16 @@ def _garantir_categoria(bind, org_id: str, nome: str, segmento: str) -> str:
         sa.text(
             "INSERT INTO compras_categorias "
             "(id, organizacao_id, nome, segmento, ativo, ordem) "
-            "VALUES (:id, :org, :nome, :seg, 1, 0)"
+            "VALUES (:id, :org, :nome, :seg, :ativo, :ordem)"
         ),
-        {"id": novo_id, "org": org_id, "nome": nome, "seg": segmento},
+        {
+            "id": novo_id,
+            "org": org_id,
+            "nome": nome,
+            "seg": segmento,
+            "ativo": True,
+            "ordem": 0,
+        },
     )
     return novo_id
 
