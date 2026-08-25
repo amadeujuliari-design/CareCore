@@ -99,6 +99,15 @@ def _credenciais_graph_compras() -> dict[str, str]:
     }
 
 
+def mailbox_graph_compras(mailbox: str | None = None) -> str:
+    """Caixa From efetiva no Graph (override do projeto ou mailbox padrão Compras)."""
+    _carregar_env_email_local()
+    override = (mailbox or "").strip()
+    if override:
+        return override
+    return _credenciais_graph_compras()["mailbox"] or GRAPH_MAILBOX_COMPRAS_PADRAO
+
+
 def graph_compras_configurado() -> bool:
     cred = _credenciais_graph_compras()
     return bool(cred["tenant_id"] and cred["client_id"] and cred["client_secret"] and cred["mailbox"])
@@ -131,6 +140,7 @@ def enviar_email_graph_com_anexo(
     anexo_nome: str,
     anexo_bytes: bytes,
     anexo_content_type: str = "application/pdf",
+    mailbox: str | None = None,
 ) -> ResultadoEnvioEmail:
     """Envia e-mail via Microsoft Graph (app Entra + Mail.Send), sem SMTP AUTH."""
     _carregar_env_email_local()
@@ -147,6 +157,7 @@ def enviar_email_graph_com_anexo(
             "CARECORE_GRAPH_CLIENT_ID e CARECORE_GRAPH_CLIENT_SECRET.",
         )
 
+    caixa = (mailbox or "").strip() or cred["mailbox"]
     cc = (cred["copia"] or "").strip()
     payload: dict = {
         "message": {
@@ -171,7 +182,7 @@ def enviar_email_graph_com_anexo(
         token = _graph_obter_token(cred["tenant_id"], cred["client_id"], cred["client_secret"])
         send_url = (
             "https://graph.microsoft.com/v1.0/users/"
-            f"{urllib.parse.quote(cred['mailbox'])}/sendMail"
+            f"{urllib.parse.quote(caixa)}/sendMail"
         )
         req = urllib.request.Request(
             send_url,
@@ -253,6 +264,7 @@ def enviar_email_smtp_com_anexo(
     anexo_bytes: bytes,
     anexo_content_type: str = "application/pdf",
     perfil: str = "compras",
+    mailbox: str | None = None,
 ) -> ResultadoEnvioEmail:
     """Envia e-mail com anexo. Compras: Graph (preferencial) ou SMTP M365; suporte permanece no SMTP CareCore."""
     _carregar_env_email_local()
@@ -269,6 +281,7 @@ def enviar_email_smtp_com_anexo(
             anexo_nome=anexo_nome,
             anexo_bytes=anexo_bytes,
             anexo_content_type=anexo_content_type,
+            mailbox=mailbox,
         )
 
     cred = _credenciais_smtp(perfil=perfil)

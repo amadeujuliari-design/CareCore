@@ -1,4 +1,8 @@
 import { PremiumBadge, PremiumButton } from './PremiumUI';
+import {
+  rotuloCompetenciaOrcamento,
+  rotuloSegmentoCatalogo,
+} from '../utils/comprasPedidoTipos';
 
 function ItemFicha({ label, valor, className = '' }) {
   const texto = valor != null && String(valor).trim() !== '' ? String(valor).trim() : '—';
@@ -27,7 +31,7 @@ export default function ModalFichaItemConsumo({ item, onFechar, onEditar }) {
       >
         <div className="flex items-start justify-between gap-3 border-b border-slate-100 pb-4">
           <div className="min-w-0">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Item de consumo</p>
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Catálogo de itens</p>
             <h2 id="ficha-item-consumo-titulo" className="mt-1 text-xl font-bold text-slate-900">
               {item.descricao}
             </h2>
@@ -48,6 +52,8 @@ export default function ModalFichaItemConsumo({ item, onFechar, onEditar }) {
 
         <div className="mt-4 grid gap-4 sm:grid-cols-2">
           <ItemFicha label="Categoria" valor={item.categoria_nome} />
+          <ItemFicha label="Uso no pedido" valor={rotuloSegmentoCatalogo(item.segmento)} />
+          <ItemFicha label="Competência" valor={rotuloCompetenciaOrcamento(item.competencia_orcamento)} />
           <ItemFicha label="Unidade de medida" valor={item.unidade_medida} />
           <ItemFicha label="Embalagem" valor={item.embalagem} className="sm:col-span-2" />
           <ItemFicha label="Quantidade na embalagem" valor={item.fator_embalagem} />

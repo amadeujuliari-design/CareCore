@@ -89,20 +89,79 @@ export function itemConsumoBateBusca(item, termo) {
   return normalizarBuscaItem(blob).includes(termo);
 }
 
-export function filtrarItensConsumo(itens = [], { busca = '', categoriaId = '', status = 'ativo' } = {}) {
+export function filtrarItensConsumo(itens = [], {
+  busca = '',
+  categoriaId = '',
+  segmento = '',
+  competencia = '',
+  status = 'ativo',
+} = {}) {
   const termo = normalizarBuscaItem(busca);
+  const seg = String(segmento || '').trim().toLowerCase();
+  const comp = String(competencia || '').trim().toLowerCase();
   return itens.filter((item) => {
     if (status === 'ativo' && !item.ativo) return false;
     if (status === 'inativo' && item.ativo) return false;
     if (categoriaId && item.categoria_id !== categoriaId) return false;
+    if (seg && String(item.segmento || 'consumo').toLowerCase() !== seg) return false;
+    if (comp && String(item.competencia_orcamento || 'sede').toLowerCase() !== comp) return false;
     return itemConsumoBateBusca(item, termo);
   });
+}
+
+/**
+ * Pontuação para o typeahead do pedido: menor = melhor.
+ * Termos curtos (1–2 letras) só batem no início do nome/palavra —
+ * evita "j" achar "seja" ou "c" encher a lista com Acendedor/Achocolatado.
+ */
+export function pontuacaoSugestaoItemConsumo(item, termo) {
+  const chave = normalizarBuscaItem(termo);
+  if (!chave) return null;
+  const desc = normalizarBuscaItem(item.descricao);
+  if (!desc) return null;
+  if (desc.startsWith(chave)) return 0;
+  const palavras = desc.split(/[^a-z0-9]+/).filter(Boolean);
+  if (palavras.some((palavra) => palavra.startsWith(chave))) return 1;
+
+  const sinonimos = normalizarBuscaItem(item.sinonimos);
+  const palavrasSinonimo = sinonimos ? sinonimos.split(/[^a-z0-9]+/).filter(Boolean) : [];
+  if (sinonimos && (sinonimos.startsWith(chave) || palavrasSinonimo.some((p) => p.startsWith(chave)))) {
+    return 2;
+  }
+
+  // Digitação curta: só prefixo (nome ou sinônimo).
+  if (chave.length <= 2) return null;
+
+  if (desc.includes(chave)) return 3;
+  if (sinonimos && sinonimos.includes(chave)) return 4;
+
+  const extras = normalizarBuscaItem([
+    item.marca_preferencial,
+    item.observacao,
+    item.embalagem,
+    item.categoria_nome,
+    item.unidade_medida,
+  ].join(' '));
+  if (extras.includes(chave)) return 5;
+  return null;
 }
 
 export function sugerirItensConsumo(itens = [], busca = '', limite = 12) {
   const termo = normalizarBuscaItem(busca);
   if (!termo) return [];
-  return filtrarItensConsumo(itens, { busca, status: 'ativo' }).slice(0, limite);
+  const ranqueados = [];
+  for (const item of itens) {
+    if (item?.ativo === false) continue;
+    const score = pontuacaoSugestaoItemConsumo(item, termo);
+    if (score == null) continue;
+    ranqueados.push({
+      item,
+      score,
+      desc: normalizarBuscaItem(item.descricao),
+    });
+  }
+  ranqueados.sort((a, b) => a.score - b.score || a.desc.localeCompare(b.desc, 'pt-BR'));
+  return ranqueados.slice(0, limite).map((row) => row.item);
 }
 
 export function itemConsumoPeloDetalheErro(itens = [], detail) {

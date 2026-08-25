@@ -119,6 +119,7 @@ class InstituicaoBase(EnderecoBase):
     telefone: str
     email: Optional[str] = None
     emails_adicionais: Optional[str] = None
+    email_adm_compras: Optional[str] = None
     tipo_projeto: Optional[str] = "Projeto"
     projeto_unico: Optional[bool] = True
 
@@ -153,6 +154,11 @@ class InstituicaoBase(EnderecoBase):
     def validar_emails_adicionais(cls, valor: Optional[str]):
         return normalizar_emails_adicionais(valor)
 
+    @field_validator("email_adm_compras")
+    @classmethod
+    def validar_email_adm_compras(cls, valor: Optional[str]):
+        return normalizar_email(valor)
+
 
 class InstituicaoCreate(InstituicaoBase):
     pass
@@ -164,6 +170,8 @@ class CadastroContatoUpdate(EnderecoBase):
     telefone: Optional[str] = None
     email: Optional[str] = None
     emails_adicionais: Optional[str] = None
+    # Só aplicado em instituição/projeto (ignorado na organização).
+    email_adm_compras: Optional[str] = None
 
     @field_validator("telefone")
     @classmethod
@@ -179,6 +187,11 @@ class CadastroContatoUpdate(EnderecoBase):
     @classmethod
     def validar_emails_adicionais(cls, valor: Optional[str]):
         return normalizar_emails_adicionais(valor)
+
+    @field_validator("email_adm_compras")
+    @classmethod
+    def validar_email_adm_compras(cls, valor: Optional[str]):
+        return normalizar_email(valor)
 
 
 class InstituicaoResponse(InstituicaoBase):

@@ -21,7 +21,9 @@ import {
   Receipt,
   Send,
   ShoppingCart,
+  Tags,
   Target,
+  Truck,
   Users,
   UserRoundCog,
   WashingMachine,
@@ -466,6 +468,24 @@ export default function Sidebar() {
               feature: 'compras',
             },
             {
+              path: '/compras?aba=itens',
+              icon: ClipboardList,
+              label: 'Catálogo de itens',
+              feature: 'compras',
+            },
+            {
+              path: '/compras?aba=categorias',
+              icon: Tags,
+              label: 'Categorias',
+              feature: 'compras',
+            },
+            {
+              path: '/compras?aba=fornecedores',
+              icon: Truck,
+              label: 'Fornecedores',
+              feature: 'compras',
+            },
+            {
               path: '/usuarios',
               icon: UserRoundCog,
               label: 'Usuários ADM Global Compras',
@@ -676,9 +696,14 @@ export default function Sidebar() {
       return location.pathname.startsWith('/conviventes/acompanhamentos');
     }
 
+    const [pathnameAlvo, queryAlvo = ''] = String(path || '').split('?');
+    if (queryAlvo) {
+      return location.pathname === pathnameAlvo && location.search.replace(/^\?/, '') === queryAlvo;
+    }
+
     return (
-      location.pathname === path ||
-      location.pathname.startsWith(path + '/')
+      location.pathname === pathnameAlvo ||
+      location.pathname.startsWith(`${pathnameAlvo}/`)
     );
   };
 
@@ -695,12 +720,17 @@ export default function Sidebar() {
       return item.path === '/nfp' || item.path === '/nfp/leitura-cupons';
     }
     if (ehAdmPedidos) {
-      return Boolean(item.path === '/compras' || item.path?.startsWith('/compras/'));
+      return Boolean(
+        item.path === '/compras'
+        || item.path?.startsWith('/compras/')
+        || item.path?.startsWith('/compras?')
+      );
     }
     if (ehAdmCompras) {
       return Boolean(
         item.path === '/compras'
         || item.path?.startsWith('/compras/')
+        || item.path?.startsWith('/compras?')
         || item.path === '/usuarios'
       );
     }

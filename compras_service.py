@@ -32,13 +32,9 @@ from compras_regras import (
     ESCOPO_PROJETO,
     ESCOPO_SEDE,
     FONTES_PADRAO,
-    inferir_fator_embalagem,
-    inferir_perecivel,
-    inferir_tipo_fonte,
-    normalizar_tipo_fonte,
-    unidade_medida_para_pedido,
     PATRIMONIO_ORIGEM_COMPRA,
     PATRIMONIO_SITUACAO_BOM,
+    SEGMENTO_CONSUMO,
     STATUS_AGUARDANDO_COTACAO,
     STATUS_AGUARDANDO_SEDE,
     STATUS_AGUARDANDO_UNIDADE,
@@ -54,29 +50,49 @@ from compras_regras import (
     TIPO_EVENTO_ITENS,
     TIPO_EVENTO_STATUS,
     TIPO_IMOBILIZADO,
+    TIPO_MANUTENCAO,
+    TIPO_SERVICO,
     TIPOS_PEDIDO,
+    TIPOS_MANUTENCAO,
+    URGENCIAS_PEDIDO,
+    URGENCIA_NORMAL,
+    chave_split_categoria_pedido,
     competencia_de_data,
     data_operacional,
     dias_liberados_janela,
     economia_centavos,
     exige_tres_cotacoes,
+    formatar_grupo_codigo,
+    competencia_padrao_do_segmento,
+    inferir_fator_embalagem,
+    inferir_perecivel,
+    inferir_segmento_por_nome_categoria,
+    inferir_tipo_fonte,
     janela_consumo_aberta,
-    normalizar_escopo_unidade,
     normalizar_competencia,
+    normalizar_competencia_orcamento,
+    normalizar_escopo_unidade,
+    normalizar_segmento_catalogo,
+    normalizar_tipo_fonte,
     pedido_escopo_sede,
     pedido_itens_podem_editar,
     pedido_pronto_para_aprovacao_unidade,
     pedido_rascunho_pode_excluir,
+    periodo_semana_util_mes,
     pode_criar_rascunho_consumo,
     pode_enviar_consumo,
     resumo_alteracao_itens_pedido,
+    rotulo_tipo_pedido,
     rotulo_unidade_relatorio,
+    sequencia_grupo_codigo,
     status_janela,
-    periodo_semana_util_mes,
     sugerir_janela_competencia,
+    tipo_eh_cotacao_projeto,
+    unidade_medida_para_pedido,
     usuario_e_sede_compras,
     usuario_pode_aprovar_sede,
     usuario_pode_aprovar_unidade,
+    usuario_pode_cadastrar_mestre_compras,
     usuario_pode_pedir,
     usuario_ve_modulo_compras,
     validar_periodo_janela,
@@ -113,6 +129,7 @@ from models import (
     ComprasPedidoNotaFiscalDB,
     InstituicaoDB,
     OrganizacaoDB,
+    get_uuid,
 )
 from time_operacional import agora_operacional_naive
 
@@ -170,12 +187,88 @@ def _sede(usuario: dict) -> bool:
     )
 
 
+def _aplicar_cabecalho_cotacao_projeto(
+    pedido: ComprasPedidoDB,
+    payload: dict,
+    *,
+    obrigatorio: bool = False,
+) -> None:
+    """Aplica campos de bem/manutenção/serviço. Consumo ignora (não grava)."""
+    if not tipo_eh_cotacao_projeto(pedido.tipo):
+        return
+
+    if "titulo" in payload:
+        pedido.titulo = (payload.get("titulo") or "").strip() or None
+    if "justificativa" in payload:
+        pedido.justificativa = (payload.get("justificativa") or "").strip() or None
+    if "urgencia" in payload:
+        urg = (payload.get("urgencia") or URGENCIA_NORMAL).strip().lower()
+        if urg not in URGENCIAS_PEDIDO:
+            raise HTTPException(status_code=400, detail="Urgência inválida.")
+        pedido.urgencia = urg
+    if "data_desejada" in payload:
+        raw = payload.get("data_desejada")
+        if raw:
+            try:
+                pedido.data_desejada = date.fromisoformat(str(raw)[:10])
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail="Data desejada inválida.") from exc
+        else:
+            pedido.data_desejada = None
+    if "local_texto" in payload:
+        pedido.local_texto = (payload.get("local_texto") or "").strip() or None
+    if "patrimonio_id" in payload:
+        pedido.patrimonio_id = (payload.get("patrimonio_id") or "").strip() or None
+    if "defeito" in payload:
+        pedido.defeito = (payload.get("defeito") or "").strip() or None
+    if "tipo_manutencao" in payload:
+        tm = (payload.get("tipo_manutencao") or "").strip().lower() or None
+        if tm and tm not in TIPOS_MANUTENCAO:
+            raise HTTPException(status_code=400, detail="Tipo de manutenção inválido.")
+        pedido.tipo_manutencao = tm
+    if "escopo_servico" in payload:
+        pedido.escopo_servico = (payload.get("escopo_servico") or "").strip() or None
+    if "valor_estimado_centavos" in payload:
+        ve = payload.get("valor_estimado_centavos")
+        pedido.valor_estimado_centavos = int(ve) if ve is not None and str(ve).strip() != "" else None
+    elif "valor_estimado_reais" in payload and payload.get("valor_estimado_reais") is not None:
+        pedido.valor_estimado_centavos = int(round(float(payload["valor_estimado_reais"]) * 100))
+    if "fonte_recurso_id" in payload:
+        pedido.fonte_recurso_id = payload.get("fonte_recurso_id") or None
+    if "observacao" in payload:
+        pedido.observacao = (payload.get("observacao") or "").strip() or None
+
+    if obrigatorio:
+        if not (pedido.titulo or "").strip():
+            raise HTTPException(status_code=400, detail="Informe o título / objeto do pedido.")
+        if not (pedido.justificativa or "").strip():
+            raise HTTPException(status_code=400, detail="Informe a justificativa.")
+        if not pedido.data_desejada:
+            raise HTTPException(status_code=400, detail="Informe a data desejada.")
+        if pedido.tipo == TIPO_MANUTENCAO and not (pedido.defeito or "").strip():
+            raise HTTPException(status_code=400, detail="Descreva o defeito ou sintoma.")
+        if pedido.tipo == TIPO_SERVICO and not (pedido.escopo_servico or "").strip():
+            raise HTTPException(status_code=400, detail="Descreva o escopo do serviço.")
+
+
 def exigir_sede(usuario: dict) -> None:
     if not _sede(usuario):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Ação restrita à Sede (ADM Compras).",
         )
+
+
+def exigir_cadastro_mestre_compras(usuario: dict) -> None:
+    if usuario_pode_cadastrar_mestre_compras(
+        perfil=_perfil(usuario),
+        is_manutencao=bool(usuario.get("is_manutencao")),
+    ):
+        return
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Cadastro de categorias/itens/fornecedores restrito à Sede ou ADM Pedidos.",
+    )
 
 
 async def garantir_cadastros_padrao(db: AsyncSession, organizacao_id: str) -> None:
@@ -191,7 +284,12 @@ async def garantir_cadastros_padrao(db: AsyncSession, organizacao_id: str) -> No
     }
     for nome in CATEGORIAS_PADRAO:
         if nome.lower() not in existentes_cat:
-            db.add(ComprasCategoriaDB(organizacao_id=organizacao_id, nome=nome, ativo=True))
+            db.add(ComprasCategoriaDB(
+                organizacao_id=organizacao_id,
+                nome=nome,
+                segmento=inferir_segmento_por_nome_categoria(nome),
+                ativo=True,
+            ))
             existentes_cat.add(nome.lower())
 
     existentes_fonte = {
@@ -266,19 +364,43 @@ async def serializar_pedido(
     pedido: ComprasPedidoDB,
     *,
     incluir_detalhe: bool = False,
+    usuario: Optional[dict] = None,
 ) -> dict:
     instituicao_nome = await _rotulo_unidade_pedido(db, pedido)
+    email_adm_compras = None
+    if pedido.instituicao_id:
+        email_adm_compras = (
+            await db.execute(
+                select(InstituicaoDB.email_adm_compras).where(
+                    InstituicaoDB.id == pedido.instituicao_id
+                )
+            )
+        ).scalar_one_or_none()
+        email_adm_compras = (email_adm_compras or "").strip() or None
     payload = {
         "id": pedido.id,
         "organizacao_id": pedido.organizacao_id,
         "instituicao_id": pedido.instituicao_id,
         "escopo_unidade": getattr(pedido, "escopo_unidade", ESCOPO_PROJETO) or ESCOPO_PROJETO,
         "instituicao_nome": instituicao_nome,
+        "email_adm_compras": email_adm_compras,
         "tipo": pedido.tipo,
+        "tipo_rotulo": rotulo_tipo_pedido(pedido.tipo),
+        "cotacao_projeto": tipo_eh_cotacao_projeto(pedido.tipo),
         "competencia": pedido.competencia,
         "status": pedido.status,
         "fonte_recurso_id": pedido.fonte_recurso_id,
         "observacao": pedido.observacao,
+        "titulo": getattr(pedido, "titulo", None),
+        "justificativa": getattr(pedido, "justificativa", None),
+        "urgencia": getattr(pedido, "urgencia", None) or URGENCIA_NORMAL,
+        "data_desejada": pedido.data_desejada.isoformat() if getattr(pedido, "data_desejada", None) else None,
+        "local_texto": getattr(pedido, "local_texto", None),
+        "patrimonio_id": getattr(pedido, "patrimonio_id", None),
+        "defeito": getattr(pedido, "defeito", None),
+        "tipo_manutencao": getattr(pedido, "tipo_manutencao", None),
+        "escopo_servico": getattr(pedido, "escopo_servico", None),
+        "valor_estimado_centavos": getattr(pedido, "valor_estimado_centavos", None),
         "data_envio_prevista": pedido.data_envio_prevista.isoformat() if getattr(pedido, "data_envio_prevista", None) else None,
         "envio_automatico": bool(getattr(pedido, "envio_automatico", False)),
         "aprovado_unidade_em": _iso(pedido.aprovado_unidade_em),
@@ -287,9 +409,25 @@ async def serializar_pedido(
         "recebido_em": _iso(pedido.recebido_em),
         "recebimento_observacao": pedido.recebimento_observacao,
         "recebimento_divergencia": bool(pedido.recebimento_divergencia),
+        "pedido_origem_id": getattr(pedido, "pedido_origem_id", None),
+        "grupo_split_id": getattr(pedido, "grupo_split_id", None),
+        "grupo_codigo": getattr(pedido, "grupo_codigo", None),
+        "categoria_split_id": getattr(pedido, "categoria_split_id", None),
+        "categoria_split_nome": getattr(pedido, "categoria_split_nome", None),
         "criado_em": _iso(pedido.criado_em),
         "atualizado_em": _iso(pedido.atualizado_em),
     }
+    qtd_orc = (
+        await db.execute(
+            select(func.count())
+            .select_from(ComprasCotacaoDB)
+            .where(
+                ComprasCotacaoDB.pedido_id == pedido.id,
+                ComprasCotacaoDB.ativa.is_(True),
+            )
+        )
+    ).scalar_one()
+    payload["qtd_orcamentos"] = int(qtd_orc or 0)
     if not incluir_detalhe:
         return payload
 
@@ -374,6 +512,16 @@ async def serializar_pedido(
         escolhida.valor_centavos if escolhida else None,
     )
     payload.update(await extras_serializacao_pedido(db, pedido))
+    pode_itens = bool(payload.get("pode_editar_itens"))
+    if (
+        pode_itens
+        and pedido.tipo == TIPO_CONSUMO
+        and pedido.status != STATUS_RASCUNHO
+        and not await _janela_aberta_para_pedido(db, pedido)
+    ):
+        pode_itens = False
+    payload["pode_editar_itens"] = pode_itens
+    payload["pode_substituir_orcamento"] = bool(usuario and _sede(usuario))
     return payload
 
 
@@ -428,6 +576,22 @@ async def _liberacao_projeto(
         )
     ).scalar_one_or_none()
     return bool(row)
+
+
+async def _janela_aberta_para_pedido(db: AsyncSession, pedido: ComprasPedidoDB) -> bool:
+    """Consumo: janela (ou liberação) aberta para a competência do pedido."""
+    if (pedido.tipo or "").strip().lower() != TIPO_CONSUMO:
+        return True
+    janela = await _janela_da_competencia(db, pedido.organizacao_id, pedido.competencia)
+    liberacao = False
+    if not _pedido_escopo_sede(pedido) and pedido.instituicao_id:
+        liberacao = await _liberacao_projeto(db, janela, pedido.instituicao_id)
+    return janela_consumo_aberta(
+        hoje=data_operacional(),
+        data_inicio=janela.data_inicio if janela else None,
+        data_fim=janela.data_fim if janela else None,
+        liberacao_projeto=liberacao,
+    )
 
 
 async def exigir_janela_consumo(
@@ -500,6 +664,10 @@ async def listar_pedidos(
     filtros = [ComprasPedidoDB.organizacao_id == _org_id(usuario)]
     if not _sede(usuario):
         filtros.append(ComprasPedidoDB.instituicao_id == usuario.get("instituicao_id"))
+    else:
+        # ADM Global Compras: não lista rascunhos (só após envio pelo projeto).
+        if not status_filtro:
+            filtros.append(ComprasPedidoDB.status != STATUS_RASCUNHO)
     if competencia:
         filtros.append(ComprasPedidoDB.competencia == normalizar_competencia(competencia))
     if status_filtro:
@@ -532,7 +700,10 @@ async def criar_pedido(
 
     tipo = (payload.get("tipo") or TIPO_CONSUMO).strip().lower()
     if tipo not in TIPOS_PEDIDO:
-        raise HTTPException(status_code=400, detail="Tipo inválido. Use consumo ou imobilizado.")
+        raise HTTPException(
+            status_code=400,
+            detail="Tipo inválido. Use consumo, imobilizado, manutencao ou servico.",
+        )
 
     try:
         escopo = normalizar_escopo_unidade(payload.get("escopo_unidade"))
@@ -613,6 +784,7 @@ async def criar_pedido(
         data_envio_prevista=data_prevista if tipo == TIPO_CONSUMO else None,
         envio_automatico=bool(payload.get("envio_automatico")) if tipo == TIPO_CONSUMO else False,
     )
+    _aplicar_cabecalho_cotacao_projeto(pedido, payload, obrigatorio=tipo_eh_cotacao_projeto(tipo))
     db.add(pedido)
     await db.flush()
 
@@ -636,6 +808,15 @@ async def criar_pedido(
                 catalogo_item_id=item.get("catalogo_item_id") or None,
             )
         )
+    await registrar_evento_pedido(
+        db,
+        pedido_id=pedido.id,
+        tipo=TIPO_EVENTO_STATUS,
+        texto="Rascunho criado.",
+        usuario_id=_uid(usuario),
+        status_novo=STATUS_RASCUNHO,
+        aguardando_confirmacao=False,
+    )
     return pedido
 
 
@@ -708,11 +889,55 @@ async def substituir_itens(
             status_code=400,
             detail="Só é possível editar itens até o pedido de compra ser enviado ao fornecedor.",
         )
+    if (
+        pedido.tipo == TIPO_CONSUMO
+        and pedido.status != STATUS_RASCUNHO
+        and not await _janela_aberta_para_pedido(db, pedido)
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="Janela mensal encerrada: não é mais possível editar itens. Use parecer, observação ou aprovação.",
+        )
+
+    linhas = [item for item in (itens or []) if (item.get("descricao") or "").strip()]
+    if getattr(pedido, "grupo_split_id", None):
+        chave_pedido, rotulo_pedido = chave_split_categoria_pedido(
+            getattr(pedido, "categoria_split_nome", None),
+            getattr(pedido, "categoria_split_id", None),
+        )
+        cat_ids = {i.get("categoria_id") for i in linhas if i.get("categoria_id")}
+        nomes_cat: dict[str, str] = {}
+        if cat_ids:
+            nomes_cat = {
+                row[0]: row[1]
+                for row in (
+                    await db.execute(
+                        select(ComprasCategoriaDB.id, ComprasCategoriaDB.nome).where(
+                            ComprasCategoriaDB.id.in_(list(cat_ids))
+                        )
+                    )
+                ).all()
+            }
+        for item in linhas:
+            nome = nomes_cat.get(item.get("categoria_id") or "", "") if item.get("categoria_id") else ""
+            chave, _ = chave_split_categoria_pedido(
+                nome,
+                item.get("categoria_id"),
+                item.get("descricao"),
+            )
+            if chave != chave_pedido:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"Este pedido é só da categoria «{rotulo_pedido}». "
+                        "Inclua itens de outra categoria no pedido correspondente do mesmo grupo."
+                    ),
+                )
+
     atuais = (
         await db.execute(select(ComprasPedidoItemDB).where(ComprasPedidoItemDB.pedido_id == pedido.id))
     ).scalars().all()
     snapshot_antes = [_snapshot_item_pedido(item) for item in atuais]
-    linhas = [item for item in (itens or []) if (item.get("descricao") or "").strip()]
     catalogo = await _fator_catalogo_por_ids(
         db,
         [item.get("catalogo_item_id") for item in linhas],
@@ -746,15 +971,18 @@ async def substituir_itens(
     if resumo.startswith("Itens regravados sem mudança"):
         return
 
+    # No rascunho: salva sem poluir a timeline (só "Rascunho criado" / "Pedido enviado").
+    if pedido.status == STATUS_RASCUNHO:
+        return
+
     nome = (
         (usuario.get("nome") or usuario.get("nome_completo") or usuario.get("email") or "Usuário")
     ).strip()
     texto = f"{nome}: {resumo}"
-    if pedido.status != STATUS_RASCUNHO:
-        texto += (
-            " Confira se é necessário reenviar a cotação aos fornecedores"
-            " e anexar novo orçamento, se o PDF anterior ficou desatualizado."
-        )
+    texto += (
+        " Confira se é necessário reenviar a cotação aos fornecedores"
+        " e anexar novo orçamento, se o PDF anterior ficou desatualizado."
+    )
     await registrar_evento_pedido(
         db,
         pedido_id=pedido.id,
@@ -773,14 +1001,84 @@ async def _cotacoes_do_pedido(db: AsyncSession, pedido_id: str) -> list[ComprasC
     )
 
 
-async def submeter_pedido(db: AsyncSession, usuario: dict, pedido: ComprasPedidoDB) -> ComprasPedidoDB:
+async def _proximo_grupo_codigo(
+    db: AsyncSession,
+    *,
+    instituicao_id: Optional[str],
+    agora: datetime,
+) -> str:
+    """Próximo N-DD/MM/AAAA do projeto no dia operacional (lote de envio)."""
+    dia = agora.date() if hasattr(agora, "date") else data_operacional()
+    dia_fmt = dia.strftime("%d/%m/%Y")
+    q = select(ComprasPedidoDB.grupo_codigo).where(
+        ComprasPedidoDB.grupo_codigo.is_not(None),
+        ComprasPedidoDB.grupo_codigo != "",
+    )
+    if instituicao_id:
+        q = q.where(ComprasPedidoDB.instituicao_id == instituicao_id)
+    else:
+        q = q.where(ComprasPedidoDB.instituicao_id.is_(None))
+    rows = (await db.execute(q)).scalars().all()
+    max_seq = 0
+    for codigo in rows:
+        seq = sequencia_grupo_codigo(codigo, dia_fmt)
+        if seq is not None and seq > max_seq:
+            max_seq = seq
+    return formatar_grupo_codigo(max_seq + 1, dia)
+
+
+async def submeter_pedido(
+    db: AsyncSession,
+    usuario: dict,
+    pedido: ComprasPedidoDB,
+) -> list[ComprasPedidoDB]:
+    """Envia o rascunho. Em consumo, parte por categoria (Carne/Alimentação separados)."""
+    if tipo_eh_cotacao_projeto(pedido.tipo):
+        if pedido.status not in {STATUS_RASCUNHO, STATUS_EM_COTACAO, STATUS_AGUARDANDO_COTACAO}:
+            raise HTTPException(
+                status_code=400,
+                detail="Este pedido não pode ser enviado à Sede neste status.",
+            )
+        itens_proj = list(
+            (
+                await db.execute(
+                    select(ComprasPedidoItemDB).where(ComprasPedidoItemDB.pedido_id == pedido.id)
+                )
+            ).scalars().all()
+        )
+        if not itens_proj:
+            raise HTTPException(status_code=400, detail="Inclua ao menos um item antes de enviar.")
+        cotacoes = [c for c in await _cotacoes_do_pedido(db, pedido.id) if getattr(c, "ativa", True)]
+        escolhida = any(c.escolhida for c in cotacoes)
+        if not pedido_pronto_para_aprovacao_unidade(pedido.tipo, len(cotacoes), escolhida):
+            raise HTTPException(
+                status_code=400,
+                detail="Escolha o orçamento vencedor antes de enviar à Sede.",
+            )
+        status_anterior = pedido.status
+        pedido.status = STATUS_AGUARDANDO_SEDE
+        pedido.submetido_em = agora_operacional_naive()
+        pedido.atualizado_em = agora_operacional_naive()
+        await registrar_evento_pedido(
+            db,
+            pedido_id=pedido.id,
+            tipo=TIPO_EVENTO_STATUS,
+            texto="Pedido enviado à Sede para assinatura.",
+            usuario_id=_uid(usuario),
+            status_anterior=status_anterior,
+            status_novo=pedido.status,
+        )
+        return [pedido]
+
     if pedido.status != STATUS_RASCUNHO:
         raise HTTPException(status_code=400, detail="Somente rascunho pode ser enviado.")
-    itens = (
-        await db.execute(
-            select(ComprasPedidoItemDB.id).where(ComprasPedidoItemDB.pedido_id == pedido.id)
-        )
-    ).scalars().all()
+    itens = list(
+        (
+            await db.execute(
+                select(ComprasPedidoItemDB).where(ComprasPedidoItemDB.pedido_id == pedido.id)
+            )
+        ).scalars().all()
+    )
     if not itens:
         raise HTTPException(status_code=400, detail="Inclua ao menos um item antes de enviar.")
 
@@ -794,22 +1092,120 @@ async def submeter_pedido(db: AsyncSession, usuario: dict, pedido: ComprasPedido
         data_prevista=getattr(pedido, "data_envio_prevista", None),
     )
 
-    cotacoes = [c for c in await _cotacoes_do_pedido(db, pedido.id) if getattr(c, "ativa", True)]
-    escolhida = any(c.escolhida for c in cotacoes)
-    if pedido.tipo == TIPO_IMOBILIZADO:
-        if not pedido_pronto_para_aprovacao_unidade(pedido.tipo, len(cotacoes), escolhida):
-            raise HTTPException(
-                status_code=400,
-                detail="Imobilizado exige ao menos uma cotação escolhida antes do envio.",
-            )
-        pedido.status = (
-            STATUS_AGUARDANDO_SEDE if _pedido_escopo_sede(pedido) else STATUS_AGUARDANDO_UNIDADE
+    # Consumo: agrupar por categoria (Carne / Alimentação / demais).
+    cat_ids = {i.categoria_id for i in itens if i.categoria_id}
+    nomes_cat: dict[str, str] = {}
+    if cat_ids:
+        nomes_cat = {
+            row[0]: row[1]
+            for row in (
+                await db.execute(
+                    select(ComprasCategoriaDB.id, ComprasCategoriaDB.nome).where(
+                        ComprasCategoriaDB.id.in_(list(cat_ids))
+                    )
+                )
+            ).all()
+        }
+
+    grupos: dict[str, list[ComprasPedidoItemDB]] = defaultdict(list)
+    rotulos: dict[str, str] = {}
+    cat_ids_grupo: dict[str, Optional[str]] = {}
+    for item in itens:
+        nome = nomes_cat.get(item.categoria_id or "", "") if item.categoria_id else ""
+        chave, rotulo = chave_split_categoria_pedido(nome, item.categoria_id, item.descricao)
+        grupos[chave].append(item)
+        rotulos[chave] = rotulo
+        cat_ids_grupo[chave] = item.categoria_id
+
+    chaves = list(grupos.keys())
+    grupo_split_id = pedido.id
+    agora = agora_operacional_naive()
+    grupo_codigo = await _proximo_grupo_codigo(
+        db,
+        instituicao_id=pedido.instituicao_id,
+        agora=agora,
+    )
+    pedidos_resultado: list[ComprasPedidoDB] = []
+
+    async def _aplicar_envio(p: ComprasPedidoDB, chave: str, itens_grupo: list[ComprasPedidoItemDB]) -> None:
+        p.grupo_split_id = grupo_split_id
+        p.grupo_codigo = grupo_codigo
+        p.categoria_split_nome = rotulos[chave]
+        p.categoria_split_id = cat_ids_grupo.get(chave)
+        p.status = STATUS_AGUARDANDO_COTACAO
+        p.submetido_em = agora
+        p.atualizado_em = agora
+        for item in itens_grupo:
+            item.pedido_id = p.id
+        await registrar_evento_pedido(
+            db,
+            pedido_id=p.id,
+            tipo=TIPO_EVENTO_STATUS,
+            texto=(
+                f"Pedido enviado — categoria {rotulos[chave]} (grupo {grupo_codigo})."
+                if len(chaves) > 1
+                else f"Pedido enviado (grupo {grupo_codigo})."
+            ),
+            usuario_id=_uid(usuario),
+            status_anterior=STATUS_RASCUNHO,
+            status_novo=STATUS_AGUARDANDO_COTACAO,
         )
-    else:
-        pedido.status = STATUS_AGUARDANDO_COTACAO
-    pedido.submetido_em = agora_operacional_naive()
-    pedido.atualizado_em = agora_operacional_naive()
-    return pedido
+
+    if len(chaves) == 1:
+        chave = chaves[0]
+        await _aplicar_envio(pedido, chave, grupos[chave])
+        pedidos_resultado.append(pedido)
+        return pedidos_resultado
+
+    # Primeiro grupo fica no pedido original; demais viram irmãos.
+    primeira = chaves[0]
+    await _aplicar_envio(pedido, primeira, grupos[primeira])
+    pedido.pedido_origem_id = None
+    pedidos_resultado.append(pedido)
+
+    for chave in chaves[1:]:
+        irmao = ComprasPedidoDB(
+            id=get_uuid(),
+            organizacao_id=pedido.organizacao_id,
+            instituicao_id=pedido.instituicao_id,
+            escopo_unidade=getattr(pedido, "escopo_unidade", ESCOPO_PROJETO),
+            tipo=pedido.tipo,
+            competencia=pedido.competencia,
+            status=STATUS_RASCUNHO,
+            fonte_recurso_id=pedido.fonte_recurso_id,
+            observacao=pedido.observacao,
+            criado_por_id=pedido.criado_por_id,
+            data_envio_prevista=getattr(pedido, "data_envio_prevista", None),
+            envio_automatico=bool(getattr(pedido, "envio_automatico", False)),
+            pedido_origem_id=grupo_split_id,
+            grupo_split_id=grupo_split_id,
+            grupo_codigo=grupo_codigo,
+            criado_em=agora,
+            atualizado_em=agora,
+        )
+        db.add(irmao)
+        await db.flush()
+        await _aplicar_envio(irmao, chave, grupos[chave])
+        await registrar_evento_pedido(
+            db,
+            pedido_id=irmao.id,
+            tipo=TIPO_EVENTO_STATUS,
+            texto=f"Separado do grupo {grupo_codigo} ({rotulos[chave]}).",
+            usuario_id=_uid(usuario),
+        )
+        pedidos_resultado.append(irmao)
+
+    await registrar_evento_pedido(
+        db,
+        pedido_id=pedido.id,
+        tipo=TIPO_EVENTO_STATUS,
+        texto=(
+            f"Pedido dividido em {len(chaves)} por categoria "
+            f"({', '.join(rotulos[c] for c in chaves)}). Grupo {grupo_codigo}."
+        ),
+        usuario_id=_uid(usuario),
+    )
+    return pedidos_resultado
 
 
 async def atualizar_rascunho(
@@ -820,6 +1216,12 @@ async def atualizar_rascunho(
 ) -> ComprasPedidoDB:
     if pedido.status != STATUS_RASCUNHO:
         raise HTTPException(status_code=400, detail="Só o rascunho pode ser ajustado aqui.")
+
+    if tipo_eh_cotacao_projeto(pedido.tipo):
+        _aplicar_cabecalho_cotacao_projeto(pedido, payload, obrigatorio=False)
+        pedido.atualizado_em = agora_operacional_naive()
+        return pedido
+
     if pedido.tipo != TIPO_CONSUMO:
         raise HTTPException(status_code=400, detail="Envio automático vale só para pedido de consumo.")
 
@@ -858,12 +1260,18 @@ async def registrar_cotacao(
     pedido: ComprasPedidoDB,
     payload: dict,
 ) -> ComprasCotacaoDB:
-    unidade_imobilizado = (
-        pedido.tipo == TIPO_IMOBILIZADO
-        and pedido.status in {STATUS_RASCUNHO, STATUS_AGUARDANDO_UNIDADE}
+    unidade_cotacao_projeto = (
+        tipo_eh_cotacao_projeto(pedido.tipo)
+        and pedido.status in {
+            STATUS_RASCUNHO,
+            STATUS_AGUARDANDO_COTACAO,
+            STATUS_EM_COTACAO,
+            STATUS_AGUARDANDO_UNIDADE,
+            STATUS_AGUARDANDO_SEDE,
+        }
         and not _sede(usuario)
     )
-    if not _sede(usuario) and not unidade_imobilizado:
+    if not _sede(usuario) and not unidade_cotacao_projeto:
         raise HTTPException(status_code=403, detail="Cotações de consumo são lançadas pela Sede.")
     if pedido.status not in {
         STATUS_RASCUNHO,
@@ -928,9 +1336,9 @@ async def escolher_cotacao(
     if not alvo:
         raise HTTPException(status_code=404, detail="Cotação não encontrada.")
 
-    unidade_imobilizado = pedido.tipo == TIPO_IMOBILIZADO and not _sede(usuario)
+    unidade_projeto = tipo_eh_cotacao_projeto(pedido.tipo) and not _sede(usuario)
     unidade_consumo = pedido.tipo == TIPO_CONSUMO and not _sede(usuario)
-    if not _sede(usuario) and not unidade_imobilizado and not unidade_consumo:
+    if not _sede(usuario) and not unidade_projeto and not unidade_consumo:
         raise HTTPException(status_code=403, detail="Sem permissão para escolher esta cotação.")
 
     for cotacao in cotacoes:
@@ -994,9 +1402,28 @@ async def aprovar_sede(db: AsyncSession, usuario: dict, pedido: ComprasPedidoDB)
 
 
 async def enviar_fornecedor(db: AsyncSession, usuario: dict, pedido: ComprasPedidoDB) -> ComprasPedidoDB:
-    exigir_sede(usuario)
+    if tipo_eh_cotacao_projeto(pedido.tipo):
+        if not _sede(usuario):
+            if not usuario_pode_pedir(
+                perfil=_perfil(usuario),
+                compras_modulo_ativo=bool(usuario.get("compras_modulo_ativo")),
+                is_manutencao=bool(usuario.get("is_manutencao")),
+                org_compras_ativo=True,
+            ):
+                raise HTTPException(status_code=403, detail="Sem permissão para enviar ao fornecedor.")
+            if pedido.instituicao_id != usuario.get("instituicao_id") and not usuario.get("is_manutencao"):
+                raise HTTPException(status_code=403, detail="Envio ao fornecedor só no próprio projeto.")
+    else:
+        exigir_sede(usuario)
     if pedido.status != STATUS_APROVADO:
-        raise HTTPException(status_code=400, detail="Envio ao fornecedor só após as duas aprovações.")
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Envio ao fornecedor só após assinatura/aprovação da Sede."
+                if tipo_eh_cotacao_projeto(pedido.tipo)
+                else "Envio ao fornecedor só após as duas aprovações."
+            ),
+        )
     await gerar_pedido_compra(db, usuario, pedido)
     pedido.status = STATUS_ENVIADO
     pedido.enviado_em = agora_operacional_naive()
@@ -1537,7 +1964,7 @@ async def _sync_projetos_fornecedor(
 
 
 async def salvar_fornecedor(db: AsyncSession, usuario: dict, payload: dict, fornecedor_id: Optional[str] = None):
-    exigir_sede(usuario)
+    exigir_cadastro_mestre_compras(usuario)
     nome = (payload.get("nome") or "").strip()
     if not nome:
         raise HTTPException(status_code=400, detail="Nome do fornecedor obrigatório.")
@@ -1710,6 +2137,7 @@ async def listar_categorias(db: AsyncSession, usuario: dict) -> list[dict]:
         {
             "id": r.id,
             "nome": r.nome,
+            "segmento": normalizar_segmento_catalogo(getattr(r, "segmento", None) or SEGMENTO_CONSUMO),
             "ativo": bool(r.ativo),
             "qtd_itens": contagem.get(r.id, 0),
             "ordem": int(getattr(r, "ordem", 0) or 0),
@@ -1747,7 +2175,7 @@ def _recusar_nome_semelhante(*, tipo: str, nome: str, existentes: list[str]) -> 
 
 
 async def salvar_categoria(db: AsyncSession, usuario: dict, payload: dict, categoria_id: Optional[str] = None):
-    exigir_sede(usuario)
+    exigir_cadastro_mestre_compras(usuario)
     nome = (payload.get("nome") or "").strip()
     if not nome:
         raise HTTPException(status_code=400, detail="Nome da categoria obrigatório.")
@@ -1769,16 +2197,33 @@ async def salvar_categoria(db: AsyncSession, usuario: dict, payload: dict, categ
         row = ComprasCategoriaDB(organizacao_id=org_id)
         db.add(row)
     row.nome = nome
+    if "segmento" in payload and payload.get("segmento") is not None:
+        row.segmento = normalizar_segmento_catalogo(payload.get("segmento"))
+    elif not categoria_id:
+        row.segmento = inferir_segmento_por_nome_categoria(nome)
+    elif not getattr(row, "segmento", None):
+        row.segmento = inferir_segmento_por_nome_categoria(nome)
     if "ativo" in payload:
         row.ativo = bool(payload["ativo"])
     return row
 
 
-def _serializar_item_consumo(row: ComprasItemConsumoDB, categorias: dict[str, str]) -> dict:
+def _serializar_item_consumo(row: ComprasItemConsumoDB, categorias: dict) -> dict:
+    meta = categorias.get(row.categoria_id) if row.categoria_id else None
+    if isinstance(meta, dict):
+        cat_nome = meta.get("nome")
+        segmento = normalizar_segmento_catalogo(meta.get("segmento") or SEGMENTO_CONSUMO)
+    else:
+        cat_nome = meta
+        segmento = SEGMENTO_CONSUMO
     return {
         "id": row.id,
         "categoria_id": row.categoria_id,
-        "categoria_nome": categorias.get(row.categoria_id) if row.categoria_id else None,
+        "categoria_nome": cat_nome,
+        "segmento": segmento,
+        "competencia_orcamento": normalizar_competencia_orcamento(
+            getattr(row, "competencia_orcamento", None) or competencia_padrao_do_segmento(segmento)
+        ),
         "descricao": row.descricao,
         "chave": row.chave,
         "unidade_medida": sanitizar_unidade_medida(row.unidade_medida),
@@ -1794,15 +2239,23 @@ def _serializar_item_consumo(row: ComprasItemConsumoDB, categorias: dict[str, st
     }
 
 
-async def _mapa_nomes_categoria(db: AsyncSession, organizacao_id: str) -> dict[str, str]:
+async def _mapa_nomes_categoria(db: AsyncSession, organizacao_id: str) -> dict[str, dict]:
     rows = (
         await db.execute(
-            select(ComprasCategoriaDB.id, ComprasCategoriaDB.nome).where(
-                ComprasCategoriaDB.organizacao_id == organizacao_id
-            )
+            select(
+                ComprasCategoriaDB.id,
+                ComprasCategoriaDB.nome,
+                ComprasCategoriaDB.segmento,
+            ).where(ComprasCategoriaDB.organizacao_id == organizacao_id)
         )
     ).all()
-    return {row[0]: row[1] for row in rows}
+    return {
+        row[0]: {
+            "nome": row[1],
+            "segmento": normalizar_segmento_catalogo(row[2] or SEGMENTO_CONSUMO),
+        }
+        for row in rows
+    }
 
 
 async def listar_itens_consumo(db: AsyncSession, usuario: dict, ativos: Optional[bool] = None) -> list[dict]:
@@ -1824,13 +2277,17 @@ async def listar_itens_consumo(db: AsyncSession, usuario: dict, ativos: Optional
 
 async def salvar_item_consumo(db: AsyncSession, usuario: dict, payload: dict, item_id: Optional[str] = None):
     org_id = _org_id(usuario)
+    pode_mestre = usuario_pode_cadastrar_mestre_compras(
+        perfil=_perfil(usuario),
+        is_manutencao=bool(usuario.get("is_manutencao")),
+    )
 
-    # Projeto/unidade: só atualiza embalagem/marca de item já cadastrado (via pedido).
-    if not _sede(usuario):
+    # Projeto/unidade sem ADM Pedidos: só atualiza embalagem/marca de item já cadastrado (via pedido).
+    if not pode_mestre:
         if not item_id:
             raise HTTPException(
                 status_code=403,
-                detail="Sem permissão para cadastrar item novo. Escolha um do cadastro ou peça à Sede.",
+                detail="Sem permissão para cadastrar item novo. Escolha um do cadastro ou peça à Sede/ADM Pedidos.",
             )
         row = (
             await db.execute(
@@ -1914,6 +2371,14 @@ async def salvar_item_consumo(db: AsyncSession, usuario: dict, payload: dict, it
     row.marca_preferencial = limpo["marca_preferencial"]
     row.observacao = limpo["observacao"]
     row.sinonimos = (payload.get("sinonimos") or "").strip() or None
+    cats = await _mapa_nomes_categoria(db, org_id)
+    seg_item = SEGMENTO_CONSUMO
+    if row.categoria_id and row.categoria_id in cats:
+        seg_item = normalizar_segmento_catalogo((cats[row.categoria_id] or {}).get("segmento"))
+    if "competencia_orcamento" in payload and payload.get("competencia_orcamento") is not None:
+        row.competencia_orcamento = normalizar_competencia_orcamento(payload.get("competencia_orcamento"))
+    elif not item_id or not getattr(row, "competencia_orcamento", None):
+        row.competencia_orcamento = competencia_padrao_do_segmento(seg_item)
     fator = payload.get("fator_embalagem")
     if fator in (None, ""):
         if getattr(row, "fator_embalagem", None) is None:
@@ -1923,12 +2388,11 @@ async def salvar_item_consumo(db: AsyncSession, usuario: dict, payload: dict, it
             row.fator_embalagem = float(str(fator).replace(",", "."))
         except ValueError:
             raise HTTPException(status_code=400, detail="Quantidade na embalagem inválida.")
-    cats = await _mapa_nomes_categoria(db, org_id)
     if "perecivel" in payload and payload.get("perecivel") is not None:
         row.perecivel = bool(payload.get("perecivel"))
     elif not item_id:
         row.perecivel = inferir_perecivel(
-            categoria_nome=cats.get(row.categoria_id) if row.categoria_id else None,
+            categoria_nome=(cats.get(row.categoria_id) or {}).get("nome") if row.categoria_id else None,
             descricao=row.descricao,
         )
     eq_id = (payload.get("equivalente_item_id") or "").strip() or None
@@ -2184,7 +2648,7 @@ def _serializar_patrimonio(
     r: ComprasPatrimonioDB,
     nomes: dict[str, str],
     org_nome: Optional[str],
-    categorias: Optional[dict[str, str]] = None,
+    categorias: Optional[dict] = None,
 ) -> dict:
     escopo = getattr(r, "escopo_unidade", ESCOPO_PROJETO) or ESCOPO_PROJETO
     inst_nome = rotulo_unidade_relatorio(
@@ -2198,6 +2662,9 @@ def _serializar_patrimonio(
             instituicao_nome=None,
             organizacao_nome=org_nome,
         )
+    cat_id = getattr(r, "categoria_id", None)
+    cat_meta = (categorias or {}).get(cat_id) if cat_id else None
+    cat_nome = cat_meta.get("nome") if isinstance(cat_meta, dict) else cat_meta
     return {
         "id": r.id,
         "instituicao_id": r.instituicao_id,
@@ -2218,8 +2685,8 @@ def _serializar_patrimonio(
         "motivo_baixa": r.motivo_baixa,
         "data_baixa": r.data_baixa.isoformat() if r.data_baixa else None,
         "observacao": r.observacao,
-        "categoria_id": getattr(r, "categoria_id", None),
-        "categoria_nome": (categorias or {}).get(getattr(r, "categoria_id", None)) if getattr(r, "categoria_id", None) else None,
+        "categoria_id": cat_id,
+        "categoria_nome": cat_nome,
         "criado_em": _iso(r.criado_em),
     }
 

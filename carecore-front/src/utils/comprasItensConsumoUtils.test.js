@@ -46,10 +46,60 @@ describe('comprasItensConsumoUtils', () => {
     assert.equal(normalizarBuscaItem('Álcool  70%'), 'alcool 70%');
   });
 
-  it('mostra resultados assim que começa a digitar', () => {
+  it('mostra resultados assim que começa a digitar, priorizando o início do nome', () => {
     const sugestoes = sugerirItensConsumo(ITENS, 'al');
-    assert.equal(sugestoes.length, 2);
+    assert.equal(sugestoes.length, 1);
     assert.equal(sugestoes[0].descricao, 'Álcool 70% gel');
+  });
+
+  it('no typeahead prioriza itens que começam com a letra digitada', () => {
+    const itens = [
+      {
+        id: 'a1',
+        descricao: 'Acendedor',
+        categoria_nome: 'Higiene e limpeza',
+        ativo: true,
+      },
+      {
+        id: 'c1',
+        descricao: 'Carne pct PCT 1Kg',
+        categoria_nome: 'Carne',
+        ativo: true,
+      },
+      {
+        id: 'a2',
+        descricao: 'Achocolatado ITALAC',
+        categoria_nome: 'Alimentação',
+        ativo: true,
+      },
+      {
+        id: 'c2',
+        descricao: 'Canjica branca',
+        categoria_nome: 'Alimentação',
+        ativo: true,
+      },
+    ];
+    const sugestoes = sugerirItensConsumo(itens, 'c');
+    assert.deepEqual(sugestoes.map((item) => item.id), ['c2', 'c1']);
+  });
+
+  it('nao puxa item pela observação em busca curta (ex.: j em "seja")', () => {
+    const itens = [
+      {
+        id: 'carne',
+        descricao: 'CARNE SECA (OBS. que não seja muito gorda)',
+        observacao: 'que não seja muito gorda',
+        ativo: true,
+      },
+      {
+        id: 'jabuticaba',
+        descricao: 'Jabuticaba',
+        ativo: true,
+      },
+    ];
+    const sugestoes = sugerirItensConsumo(itens, 'j');
+    assert.equal(sugestoes.length, 1);
+    assert.equal(sugestoes[0].id, 'jabuticaba');
   });
 
   it('filtra por categoria e esconde inativo no padrão', () => {

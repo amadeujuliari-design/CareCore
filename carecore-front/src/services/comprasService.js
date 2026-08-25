@@ -176,6 +176,11 @@ export async function comprasConfirmarRevisaoItens(id) {
   return data;
 }
 
+export async function comprasConfirmarEvento(pedidoId, eventoId) {
+  const { data } = await api.post(`/api/compras/pedidos/${pedidoId}/eventos/${eventoId}/confirmar`);
+  return data;
+}
+
 export async function comprasAnexarArquivo(id, formData) {
   const { data } = await api.post(`/api/compras/pedidos/${id}/anexos`, formData, {
     headers: { 'Content-Type': 'multipart/form-data' },

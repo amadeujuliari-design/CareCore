@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from compras_itens_consumo_planilha import extrair_itens_consumo
 from compras_pedido_fluxo import (
+    confirmar_evento_pedido,
     confirmar_revisao_itens_pedido,
     desativar_cotacao,
     enviar_email_fornecedor,
@@ -70,7 +71,11 @@ from compras_service import (
     _mapa_categorias_fornecedores,
     _serializar_fornecedor,
 )
-from compras_regras import usuario_e_sede_compras, usuario_ve_modulo_compras
+from compras_regras import (
+    usuario_e_sede_compras,
+    usuario_pode_cadastrar_mestre_compras,
+    usuario_ve_modulo_compras,
+)
 from database import get_db
 from security import get_usuario_logado
 
@@ -97,12 +102,36 @@ class PedidoCreateIn(BaseModel):
     observacao: Optional[str] = None
     data_envio_prevista: Optional[str] = None
     envio_automatico: Optional[bool] = False
+    titulo: Optional[str] = None
+    justificativa: Optional[str] = None
+    urgencia: Optional[str] = None
+    data_desejada: Optional[str] = None
+    local_texto: Optional[str] = None
+    patrimonio_id: Optional[str] = None
+    defeito: Optional[str] = None
+    tipo_manutencao: Optional[str] = None
+    escopo_servico: Optional[str] = None
+    valor_estimado_centavos: Optional[int] = None
+    valor_estimado_reais: Optional[float] = None
     itens: list[PedidoItemIn] = Field(default_factory=list)
 
 
 class PedidoRascunhoIn(BaseModel):
     data_envio_prevista: Optional[str] = None
     envio_automatico: Optional[bool] = None
+    titulo: Optional[str] = None
+    justificativa: Optional[str] = None
+    urgencia: Optional[str] = None
+    data_desejada: Optional[str] = None
+    local_texto: Optional[str] = None
+    patrimonio_id: Optional[str] = None
+    defeito: Optional[str] = None
+    tipo_manutencao: Optional[str] = None
+    escopo_servico: Optional[str] = None
+    valor_estimado_centavos: Optional[int] = None
+    valor_estimado_reais: Optional[float] = None
+    fonte_recurso_id: Optional[str] = None
+    observacao: Optional[str] = None
 
 
 class PedidoItensIn(BaseModel):
@@ -171,6 +200,11 @@ class LiberacaoIn(BaseModel):
 class NomeCadastroIn(BaseModel):
     nome: str
     ativo: Optional[bool] = True
+    segmento: Optional[str] = None
+
+
+class CategoriaIn(NomeCadastroIn):
+    segmento: Optional[str] = "consumo"
 
 
 class FonteIn(NomeCadastroIn):
@@ -253,10 +287,15 @@ async def me_acesso(
         perfil=usuario_atual.get("perfil_acesso") or "",
         is_manutencao=bool(usuario_atual.get("is_manutencao")),
     )
+    pode_mestre = usuario_pode_cadastrar_mestre_compras(
+        perfil=usuario_atual.get("perfil_acesso") or "",
+        is_manutencao=bool(usuario_atual.get("is_manutencao")),
+    )
     return {
         "permitido": permitido,
         "compras_ativo": ativo,
         "sede": sede,
+        "pode_cadastrar_mestre": pode_mestre,
         "pode_ativar": sede
         or bool(usuario_atual.get("is_global"))
         or (usuario_atual.get("perfil_acesso") == "Global"),
@@ -374,7 +413,7 @@ async def get_categorias(
 
 @router.post("/categorias")
 async def post_categoria(
-    payload: NomeCadastroIn,
+    payload: CategoriaIn,
     db: AsyncSession = Depends(get_db),
     usuario_atual: dict = Depends(get_usuario_logado),
 ):
@@ -382,20 +421,30 @@ async def post_categoria(
     row = await salvar_categoria(db, usuario_atual, payload.model_dump())
     await db.commit()
     await db.refresh(row)
-    return {"id": row.id, "nome": row.nome, "ativo": row.ativo}
+    return {
+        "id": row.id,
+        "nome": row.nome,
+        "segmento": getattr(row, "segmento", None) or "consumo",
+        "ativo": row.ativo,
+    }
 
 
 @router.put("/categorias/{categoria_id}")
 async def put_categoria(
     categoria_id: str,
-    payload: NomeCadastroIn,
+    payload: CategoriaIn,
     db: AsyncSession = Depends(get_db),
     usuario_atual: dict = Depends(get_usuario_logado),
 ):
     await _ctx(db, usuario_atual)
     row = await salvar_categoria(db, usuario_atual, payload.model_dump(), categoria_id)
     await db.commit()
-    return {"id": row.id, "nome": row.nome, "ativo": row.ativo}
+    return {
+        "id": row.id,
+        "nome": row.nome,
+        "segmento": getattr(row, "segmento", None) or "consumo",
+        "ativo": row.ativo,
+    }
 
 
 class ItemConsumoIn(BaseModel):
@@ -409,6 +458,7 @@ class ItemConsumoIn(BaseModel):
     perecivel: Optional[bool] = None
     equivalente_item_id: Optional[str] = None
     observacao: Optional[str] = None
+    competencia_orcamento: Optional[str] = None
     ativo: Optional[bool] = True
 
 
@@ -424,11 +474,14 @@ async def get_itens_consumo(
 
 async def _resposta_item_consumo(db, usuario, row) -> dict:
     cats = await listar_categorias(db, usuario)
-    nomes = {c["id"]: c["nome"] for c in cats}
+    meta = {c["id"]: c for c in cats}
+    cat = meta.get(row.categoria_id) if row.categoria_id else None
     return {
         "id": row.id,
         "categoria_id": row.categoria_id,
-        "categoria_nome": nomes.get(row.categoria_id) if row.categoria_id else None,
+        "categoria_nome": cat.get("nome") if cat else None,
+        "segmento": cat.get("segmento") if cat else "consumo",
+        "competencia_orcamento": getattr(row, "competencia_orcamento", None) or "sede",
         "descricao": row.descricao,
         "chave": row.chave,
         "unidade_medida": row.unidade_medida,
@@ -601,7 +654,7 @@ async def post_pedido(
     pedido = await criar_pedido(db, usuario_atual, payload.model_dump())
     await db.commit()
     await db.refresh(pedido)
-    return await serializar_pedido(db, pedido, incluir_detalhe=True)
+    return await serializar_pedido(db, pedido, incluir_detalhe=True, usuario=usuario_atual)
 
 
 @router.get("/pedidos/{pedido_id}")
@@ -612,7 +665,7 @@ async def get_pedido(
 ):
     await _ctx(db, usuario_atual)
     pedido = await obter_pedido(db, usuario_atual, pedido_id)
-    return await serializar_pedido(db, pedido, incluir_detalhe=True)
+    return await serializar_pedido(db, pedido, incluir_detalhe=True, usuario=usuario_atual)
 
 
 @router.patch("/pedidos/{pedido_id}")
@@ -627,7 +680,7 @@ async def patch_pedido(
     await atualizar_rascunho(db, usuario_atual, pedido, payload.model_dump(exclude_unset=True))
     await db.commit()
     await db.refresh(pedido)
-    return await serializar_pedido(db, pedido, incluir_detalhe=True)
+    return await serializar_pedido(db, pedido, incluir_detalhe=True, usuario=usuario_atual)
 
 
 @router.put("/pedidos/{pedido_id}/itens")
@@ -641,7 +694,7 @@ async def put_itens(
     pedido = await obter_pedido(db, usuario_atual, pedido_id)
     await substituir_itens(db, usuario_atual, pedido, [i.model_dump() for i in payload.itens])
     await db.commit()
-    return await serializar_pedido(db, pedido, incluir_detalhe=True)
+    return await serializar_pedido(db, pedido, incluir_detalhe=True, usuario=usuario_atual)
 
 
 @router.post("/pedidos/{pedido_id}/submeter")
@@ -652,9 +705,17 @@ async def post_submeter(
 ):
     await _ctx(db, usuario_atual)
     pedido = await obter_pedido(db, usuario_atual, pedido_id)
-    await submeter_pedido(db, usuario_atual, pedido)
+    pedidos = await submeter_pedido(db, usuario_atual, pedido)
     await db.commit()
-    return await serializar_pedido(db, pedido, incluir_detalhe=True)
+    serializados = [
+        await serializar_pedido(db, p, incluir_detalhe=True, usuario=usuario_atual)
+        for p in pedidos
+    ]
+    return {
+        "pedido": serializados[0],
+        "pedidos": serializados,
+        "dividido": len(serializados) > 1,
+    }
 
 
 @router.post("/pedidos/{pedido_id}/cotacoes")
@@ -668,7 +729,7 @@ async def post_cotacao(
     pedido = await obter_pedido(db, usuario_atual, pedido_id)
     await registrar_cotacao(db, usuario_atual, pedido, payload.model_dump())
     await db.commit()
-    return await serializar_pedido(db, pedido, incluir_detalhe=True)
+    return await serializar_pedido(db, pedido, incluir_detalhe=True, usuario=usuario_atual)
 
 
 @router.post("/pedidos/{pedido_id}/cotacoes/{cotacao_id}/escolher")
@@ -682,7 +743,7 @@ async def post_escolher(
     pedido = await obter_pedido(db, usuario_atual, pedido_id)
     await escolher_cotacao(db, usuario_atual, pedido, cotacao_id)
     await db.commit()
-    return await serializar_pedido(db, pedido, incluir_detalhe=True)
+    return await serializar_pedido(db, pedido, incluir_detalhe=True, usuario=usuario_atual)
 
 
 @router.post("/pedidos/{pedido_id}/aprovar-unidade")
@@ -695,7 +756,7 @@ async def post_aprovar_unidade(
     pedido = await obter_pedido(db, usuario_atual, pedido_id)
     await aprovar_unidade(db, usuario_atual, pedido)
     await db.commit()
-    return await serializar_pedido(db, pedido, incluir_detalhe=True)
+    return await serializar_pedido(db, pedido, incluir_detalhe=True, usuario=usuario_atual)
 
 
 @router.post("/pedidos/{pedido_id}/aprovar-sede")
@@ -708,7 +769,7 @@ async def post_aprovar_sede(
     pedido = await obter_pedido(db, usuario_atual, pedido_id)
     await aprovar_sede(db, usuario_atual, pedido)
     await db.commit()
-    return await serializar_pedido(db, pedido, incluir_detalhe=True)
+    return await serializar_pedido(db, pedido, incluir_detalhe=True, usuario=usuario_atual)
 
 
 @router.post("/pedidos/{pedido_id}/enviar")
@@ -721,7 +782,7 @@ async def post_enviar(
     pedido = await obter_pedido(db, usuario_atual, pedido_id)
     await enviar_fornecedor(db, usuario_atual, pedido)
     await db.commit()
-    return await serializar_pedido(db, pedido, incluir_detalhe=True)
+    return await serializar_pedido(db, pedido, incluir_detalhe=True, usuario=usuario_atual)
 
 
 @router.post("/pedidos/{pedido_id}/receber")
@@ -735,7 +796,7 @@ async def post_receber(
     pedido = await obter_pedido(db, usuario_atual, pedido_id)
     await receber_pedido(db, usuario_atual, pedido, payload.model_dump())
     await db.commit()
-    return await serializar_pedido(db, pedido, incluir_detalhe=True)
+    return await serializar_pedido(db, pedido, incluir_detalhe=True, usuario=usuario_atual)
 
 
 @router.post("/pedidos/{pedido_id}/cancelar")
@@ -749,7 +810,7 @@ async def post_cancelar(
     pedido = await obter_pedido(db, usuario_atual, pedido_id)
     await cancelar_pedido(db, usuario_atual, pedido, payload.motivo)
     await db.commit()
-    return await serializar_pedido(db, pedido, incluir_detalhe=True)
+    return await serializar_pedido(db, pedido, incluir_detalhe=True, usuario=usuario_atual)
 
 
 @router.post("/pedidos/{pedido_id}/excluir")
@@ -776,7 +837,7 @@ async def post_reprovar(
     pedido = await obter_pedido(db, usuario_atual, pedido_id)
     await reprovar_pedido(db, usuario_atual, pedido, payload.motivo)
     await db.commit()
-    return await serializar_pedido(db, pedido, incluir_detalhe=True)
+    return await serializar_pedido(db, pedido, incluir_detalhe=True, usuario=usuario_atual)
 
 
 @router.post("/pedidos/{pedido_id}/reabrir")
@@ -789,7 +850,7 @@ async def post_reabrir(
     pedido = await obter_pedido(db, usuario_atual, pedido_id)
     await reabrir_pedido(db, usuario_atual, pedido)
     await db.commit()
-    return await serializar_pedido(db, pedido, incluir_detalhe=True)
+    return await serializar_pedido(db, pedido, incluir_detalhe=True, usuario=usuario_atual)
 
 
 @router.post("/pedidos/{pedido_id}/comunicacao")
@@ -810,7 +871,7 @@ async def post_comunicacao(
         cotacao_id=payload.cotacao_id,
     )
     await db.commit()
-    return await serializar_pedido(db, pedido, incluir_detalhe=True)
+    return await serializar_pedido(db, pedido, incluir_detalhe=True, usuario=usuario_atual)
 
 
 @router.post("/pedidos/{pedido_id}/itens-revisados")
@@ -824,7 +885,22 @@ async def post_itens_revisados(
     pedido = await obter_pedido(db, usuario_atual, pedido_id)
     await confirmar_revisao_itens_pedido(db, usuario_atual, pedido)
     await db.commit()
-    return await serializar_pedido(db, pedido, incluir_detalhe=True)
+    return await serializar_pedido(db, pedido, incluir_detalhe=True, usuario=usuario_atual)
+
+
+@router.post("/pedidos/{pedido_id}/eventos/{evento_id}/confirmar")
+async def post_confirmar_evento(
+    pedido_id: str,
+    evento_id: str,
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    """Ok na timeline: outra parte confirma alteração/anexo pendente."""
+    await _ctx(db, usuario_atual)
+    pedido = await obter_pedido(db, usuario_atual, pedido_id)
+    await confirmar_evento_pedido(db, usuario_atual, pedido, evento_id)
+    await db.commit()
+    return await serializar_pedido(db, pedido, incluir_detalhe=True, usuario=usuario_atual)
 
 
 @router.post("/pedidos/{pedido_id}/anexos")
@@ -849,7 +925,7 @@ async def post_anexo(
         substituir_anexo_id=substituir_anexo_id,
     )
     await db.commit()
-    return await serializar_pedido(db, pedido, incluir_detalhe=True)
+    return await serializar_pedido(db, pedido, incluir_detalhe=True, usuario=usuario_atual)
 
 
 @router.get("/pedidos/{pedido_id}/anexos/{anexo_id}/arquivo")
@@ -914,7 +990,7 @@ async def post_nota_fiscal(
     }
     await registrar_nota_fiscal(db, usuario_atual, pedido, file=arquivo, conteudo_xml=None, payload=payload)
     await db.commit()
-    return await serializar_pedido(db, pedido, incluir_detalhe=True)
+    return await serializar_pedido(db, pedido, incluir_detalhe=True, usuario=usuario_atual)
 
 
 @router.post("/pedidos/{pedido_id}/gerar-pedido-compra")
@@ -927,7 +1003,7 @@ async def post_gerar_pedido_compra(
     pedido = await obter_pedido(db, usuario_atual, pedido_id)
     await gerar_pedido_compra(db, usuario_atual, pedido)
     await db.commit()
-    return await serializar_pedido(db, pedido, incluir_detalhe=True)
+    return await serializar_pedido(db, pedido, incluir_detalhe=True, usuario=usuario_atual)
 
 
 @router.post("/pedidos/{pedido_id}/enviar-email")
@@ -957,7 +1033,7 @@ async def post_solicitar_cotacao(
         db, usuario_atual, pedido, payload.fornecedor_ids,
     )
     await db.commit()
-    detalhe = await serializar_pedido(db, pedido, incluir_detalhe=True)
+    detalhe = await serializar_pedido(db, pedido, incluir_detalhe=True, usuario=usuario_atual)
     return {**resultado, "pedido": detalhe}
 
 
@@ -973,7 +1049,7 @@ async def post_desativar_cotacao(
     pedido = await obter_pedido(db, usuario_atual, pedido_id)
     await desativar_cotacao(db, usuario_atual, pedido, cotacao_id, payload.motivo)
     await db.commit()
-    return await serializar_pedido(db, pedido, incluir_detalhe=True)
+    return await serializar_pedido(db, pedido, incluir_detalhe=True, usuario=usuario_atual)
 
 
 @router.get("/patrimonio")

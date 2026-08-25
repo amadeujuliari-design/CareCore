@@ -48,6 +48,23 @@ def test_lixo_quantidade_sem_produto():
     assert limpo["lixo"] is True
 
 
+def test_lixo_cabecalho_projeto_planilha():
+    limpo = limpar_item_consumo(
+        descricao="Caef - Rivoli",
+        marca_preferencial="DATA DO PEDIDO:",
+        observacao="DATA DA ENTREGA:",
+    )
+    assert limpo["lixo"] is True
+    limpo2 = limpar_item_consumo(
+        descricao="Casa Porto",
+        marca_preferencial="DATA DO PEDIDO: 14",
+        observacao="DATA DA ENTREGA: 01/07/2025",
+    )
+    assert limpo2["lixo"] is True
+    ok = limpar_item_consumo(descricao="Carne moída", marca_preferencial="Friboi")
+    assert ok["lixo"] is False
+
+
 def test_separa_embalagem_da_descricao():
     alcool = limpar_item_consumo(descricao="ALCOOL GEL para mãos 5L", unidade_medida="un")
     assert alcool["lixo"] is False

@@ -289,6 +289,12 @@ def _extrair_embalagem_descricao(descricao: str) -> tuple[str, str]:
     return texto, _juntar_embalagem(*reversed(embalagens))
 
 
+def _rotulo_cabecalho_planilha_pedido(texto: str) -> bool:
+    """Cabeçalhos de aba (DATA DO PEDIDO / DATA DA ENTREGA) importados como marca/obs."""
+    t = re.sub(r"[\s:]+", " ", _sem_acento(texto or "").upper()).strip()
+    return t.startswith("DATA DO PEDIDO") or t.startswith("DATA DA ENTREGA")
+
+
 def item_consumo_eh_lixo(descricao: str, *, marca: str = "", observacao: str = "") -> bool:
     desc = _sem_acento(descricao).upper().strip()
     desc = re.sub(r"\s+", " ", desc)
@@ -301,6 +307,9 @@ def item_consumo_eh_lixo(descricao: str, *, marca: str = "", observacao: str = "
     marca_n = re.sub(r"\s+", " ", _sem_acento(marca).upper())
     obs_n = _sem_acento(observacao).upper().strip()
     if "MARCA C" in marca_n and "NECESSITE" in marca_n and obs_n in _OBS_LIXO:
+        return True
+    # Nome de projeto/aba (Caef, CEI…) veio como item com marca "DATA DO PEDIDO:".
+    if _rotulo_cabecalho_planilha_pedido(marca) or _rotulo_cabecalho_planilha_pedido(observacao):
         return True
     chave = chave_item_consumo(descricao)
     if chave in {"ITEM"} or len(chave) < 3:

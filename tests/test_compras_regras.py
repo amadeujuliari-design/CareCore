@@ -193,6 +193,19 @@ def test_tres_cotacoes_imobilizado():
     assert pedido_pronto_para_aprovacao_unidade("imobilizado", 2, True)
     assert pedido_pronto_para_aprovacao_unidade("imobilizado", 3, True)
     assert not pedido_pronto_para_aprovacao_unidade("imobilizado", 1, False)
+    assert pedido_pronto_para_aprovacao_unidade("manutencao", 1, True)
+    assert pedido_pronto_para_aprovacao_unidade("servico", 2, True)
+
+
+def test_tipos_cotacao_projeto():
+    from compras_regras import exige_tres_cotacoes, rotulo_tipo_pedido, tipo_eh_cotacao_projeto
+
+    assert tipo_eh_cotacao_projeto("imobilizado")
+    assert tipo_eh_cotacao_projeto("manutencao")
+    assert tipo_eh_cotacao_projeto("servico")
+    assert not tipo_eh_cotacao_projeto("consumo")
+    assert exige_tres_cotacoes("servico")
+    assert rotulo_tipo_pedido("manutencao") == "Manutenção"
     assert pedido_pronto_para_aprovacao_unidade("consumo", 1, True)
     assert not pedido_pronto_para_aprovacao_unidade("consumo", 1, False)
     assert aviso_cotacoes_insuficientes(2)
@@ -269,6 +282,77 @@ def test_resumo_alteracao_itens_embalagem():
     texto = resumo_alteracao_itens_pedido(antes, depois)
     assert "Absorvente" in texto
     assert "PCT 16" in texto
+
+
+def test_chave_split_categoria_pedido():
+    from compras_regras import chave_split_categoria_pedido
+
+    assert chave_split_categoria_pedido("Carne bovina") == ("carne", "Carne")
+    assert chave_split_categoria_pedido("Peixe fresco") == ("peixe", "Peixe")
+    assert chave_split_categoria_pedido("Alimentação") == ("alimentacao", "Alimentação")
+    chave, rotulo = chave_split_categoria_pedido("Papelaria", "cat-1")
+    assert chave == "cat:cat-1"
+    assert rotulo == "Papelaria"
+    # Sem categoria Carne no cadastro, o texto do item não move o grupo
+    assert chave_split_categoria_pedido(
+        "Alimentação", "ali-1", "Carne Bovina Acem Moido"
+    ) == ("alimentacao", "Alimentação")
+    assert chave_split_categoria_pedido(
+        "Alimentação", "ali-1", "Acem Isca"
+    ) == ("alimentacao", "Alimentação")
+
+
+def test_competencia_orcamento():
+    from compras_regras import (
+        COMPETENCIA_PROJETO,
+        COMPETENCIA_SEDE,
+        competencia_padrao_do_segmento,
+        normalizar_competencia_orcamento,
+    )
+
+    assert normalizar_competencia_orcamento("projeto") == COMPETENCIA_PROJETO
+    assert normalizar_competencia_orcamento("sede") == COMPETENCIA_SEDE
+    assert competencia_padrao_do_segmento("manutencao") == COMPETENCIA_PROJETO
+    assert competencia_padrao_do_segmento("consumo") == COMPETENCIA_SEDE
+
+
+def test_segmento_catalogo():
+    from compras_regras import (
+        SEGMENTO_CONSUMO,
+        SEGMENTO_MANUTENCAO,
+        inferir_segmento_por_nome_categoria,
+        segmento_do_tipo_pedido,
+    )
+
+    assert inferir_segmento_por_nome_categoria("Manutenção") == SEGMENTO_MANUTENCAO
+    assert inferir_segmento_por_nome_categoria("Infraestrutura") == SEGMENTO_MANUTENCAO
+    assert inferir_segmento_por_nome_categoria("Alimentação") == SEGMENTO_CONSUMO
+    assert segmento_do_tipo_pedido("consumo") == SEGMENTO_CONSUMO
+    assert segmento_do_tipo_pedido("manutencao") == SEGMENTO_MANUTENCAO
+    assert segmento_do_tipo_pedido("servico") is None
+
+
+def test_formatar_grupo_codigo():
+    from datetime import date
+
+    from compras_regras import formatar_grupo_codigo, sequencia_grupo_codigo
+
+    assert formatar_grupo_codigo(1, date(2026, 8, 24)) == "1-24/08/2026"
+    assert formatar_grupo_codigo(12, date(2026, 8, 24)) == "12-24/08/2026"
+    assert sequencia_grupo_codigo("1-24/08/2026", "24/08/2026") == 1
+    assert sequencia_grupo_codigo("12-24/08/2026", "24/08/2026") == 12
+    assert sequencia_grupo_codigo("1-23/08/2026", "24/08/2026") is None
+    assert sequencia_grupo_codigo("abc-24/08/2026", "24/08/2026") is None
+
+
+def test_usuario_pode_cadastrar_mestre_compras():
+    from compras_regras import usuario_pode_cadastrar_mestre_compras
+
+    assert usuario_pode_cadastrar_mestre_compras(perfil="ADM Global Compras")
+    assert usuario_pode_cadastrar_mestre_compras(perfil="ADM Pedidos")
+    assert usuario_pode_cadastrar_mestre_compras(perfil="Gestor", is_manutencao=True)
+    assert not usuario_pode_cadastrar_mestre_compras(perfil="Gestor")
+    assert not usuario_pode_cadastrar_mestre_compras(perfil="Técnico")
 
 
 def test_inferir_cadastros_compras():

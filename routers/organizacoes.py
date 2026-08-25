@@ -164,6 +164,8 @@ def aplicar_cadastro_contato(
         )
 
     for campo, valor in dados.items():
+        if not hasattr(entidade, campo):
+            continue
         if isinstance(valor, str):
             valor = valor.strip() or None
         setattr(entidade, campo, valor)
@@ -987,6 +989,7 @@ async def criar_projeto_organizacao(
         telefone=payload.telefone,
         email=payload.email,
         emails_adicionais=payload.emails_adicionais,
+        email_adm_compras=payload.email_adm_compras,
         cep=payload.cep,
         logradouro=payload.logradouro,
         numero=payload.numero,

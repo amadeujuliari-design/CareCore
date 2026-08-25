@@ -47,6 +47,8 @@ class InstituicaoDB(Base):
     telefone = Column(String, nullable=False)
     email = Column(String, nullable=True)
     emails_adicionais = Column(Text, nullable=True)
+    # Caixa operacional Graph / Compras (pedido de orçamento do projeto). ≠ email de contato/relatório.
+    email_adm_compras = Column(String, nullable=True)
     cep = Column(String, nullable=True)
     logradouro = Column(String, nullable=True)
     numero = Column(String, nullable=True)
@@ -1984,6 +1986,8 @@ class ComprasCategoriaDB(Base):
     id = Column(String, primary_key=True, default=get_uuid)
     organizacao_id = Column(String, ForeignKey("organizacoes.id"), nullable=False)
     nome = Column(String, nullable=False)
+    # consumo | manutencao | imobilizado | servico — define em qual tipo de pedido o item aparece
+    segmento = Column(String, nullable=False, default="consumo")
     ativo = Column(Boolean, default=True, nullable=False)
     ordem = Column(Integer, nullable=False, default=0)
     criado_em = Column(DateTime, default=agora_operacional_naive)
@@ -2010,6 +2014,8 @@ class ComprasItemConsumoDB(Base):
     perecivel = Column(Boolean, default=False, nullable=False)
     equivalente_item_id = Column(String, nullable=True)
     observacao = Column(Text, nullable=True)
+    # sede = orçado pela Sede (janela/consumo) | projeto = orçado pelo projeto (cotação do projeto)
+    competencia_orcamento = Column(String, nullable=False, default="sede")
     ativo = Column(Boolean, default=True, nullable=False)
     criado_em = Column(DateTime, default=agora_operacional_naive)
     atualizado_em = Column(DateTime, default=agora_operacional_naive, onupdate=agora_operacional_naive)
@@ -2140,6 +2146,17 @@ class ComprasPedidoDB(Base):
     status = Column(String, nullable=False, default="rascunho")
     fonte_recurso_id = Column(String, ForeignKey("compras_fontes_recurso.id"), nullable=True)
     observacao = Column(Text, nullable=True)
+    # Cabeçalho — cotação do projeto (bem / manutenção / serviço)
+    titulo = Column(String, nullable=True)
+    justificativa = Column(Text, nullable=True)
+    urgencia = Column(String, nullable=True)  # normal | urgente
+    data_desejada = Column(Date, nullable=True)
+    local_texto = Column(String, nullable=True)
+    patrimonio_id = Column(String, ForeignKey("compras_patrimonio.id"), nullable=True)
+    defeito = Column(Text, nullable=True)
+    tipo_manutencao = Column(String, nullable=True)  # corretiva | preventiva
+    escopo_servico = Column(Text, nullable=True)
+    valor_estimado_centavos = Column(Integer, nullable=True)
     criado_por_id = Column(String, ForeignKey("usuarios.id"), nullable=False)
     submetido_em = Column(DateTime, nullable=True)
     aprovado_unidade_por_id = Column(String, ForeignKey("usuarios.id"), nullable=True)
@@ -2162,6 +2179,13 @@ class ComprasPedidoDB(Base):
     reprovado_por_id = Column(String, ForeignKey("usuarios.id"), nullable=True)
     motivo_reprovacao = Column(Text, nullable=True)
     pedido_compra_anexo_id = Column(String, nullable=True)
+    # Split por categoria no envio (consumo): filhos compartilham grupo_split_id.
+    pedido_origem_id = Column(String, nullable=True, index=True)
+    grupo_split_id = Column(String, nullable=True, index=True)
+    # Código curto do lote: N-DD/MM/AAAA (mesmo valor em todos os irmãos do split).
+    grupo_codigo = Column(String, nullable=True)
+    categoria_split_id = Column(String, nullable=True)
+    categoria_split_nome = Column(String, nullable=True)
     criado_em = Column(DateTime, default=agora_operacional_naive)
     atualizado_em = Column(DateTime, default=agora_operacional_naive, onupdate=agora_operacional_naive)
 
@@ -2254,6 +2278,9 @@ class ComprasPedidoEventoDB(Base):
     anexo_id = Column(String, ForeignKey("compras_pedido_anexos.id"), nullable=True)
     status_anterior = Column(String, nullable=True)
     status_novo = Column(String, nullable=True)
+    aguardando_confirmacao = Column(Boolean, default=False, nullable=False)
+    confirmado_em = Column(DateTime, nullable=True)
+    confirmado_por_id = Column(String, ForeignKey("usuarios.id"), nullable=True)
     criado_em = Column(DateTime, default=agora_operacional_naive)
 
 

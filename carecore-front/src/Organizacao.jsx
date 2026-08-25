@@ -23,6 +23,7 @@ const FORM_PROJETO_VAZIO = {
   telefone: '',
   email: '',
   emails_adicionais: '',
+  email_adm_compras: '',
   cep: '',
   logradouro: '',
   numero: '',
@@ -37,6 +38,7 @@ const FORM_CONTATO_VAZIO = {
   telefone: '',
   email: '',
   emails_adicionais: '',
+  email_adm_compras: '',
   cep: '',
   logradouro: '',
   numero: '',
@@ -97,6 +99,7 @@ function montarFormContato(origem = {}) {
     telefone: origem.telefone ? formatarTelefone(origem.telefone) : '',
     email: origem.email || '',
     emails_adicionais: origem.emails_adicionais || '',
+    email_adm_compras: origem.email_adm_compras || '',
     cep: origem.cep ? formatarCEP(origem.cep) : '',
     logradouro: origem.logradouro || '',
     numero: origem.numero || '',
@@ -112,6 +115,7 @@ function FormularioContato({
   errosCampo,
   buscandoCep,
   telefoneObrigatorio,
+  mostrarEmailAdmCompras = false,
   onChange,
   onBuscarCep,
 }) {
@@ -150,6 +154,24 @@ function FormularioContato({
           Separe por vírgula. Usados nas notificações do boleto (Asaas).
         </span>
       </Campo>
+
+      {mostrarEmailAdmCompras ? (
+        <Campo
+          label="E-mail administrativo (Compras)"
+          erro={errosCampo.email_adm_compras}
+        >
+          <input
+            type="email"
+            className={`${inputClassName} w-full ${errosCampo.email_adm_compras ? inputErroClassName : ''}`}
+            value={form.email_adm_compras || ''}
+            onChange={(e) => onChange('email_adm_compras', e.target.value)}
+            placeholder="unidade.adm@aeb-brasil.org.br"
+          />
+          <span className="mt-1 block text-[11px] font-semibold text-gray-500">
+            Caixa usada como remetente dos pedidos de orçamento (Microsoft Graph). Não é o e-mail de login do usuário.
+          </span>
+        </Campo>
+      ) : null}
 
       <Campo label={buscandoCep ? 'CEP - buscando endereço...' : 'CEP'} erro={errosCampo.cep}>
         <input
@@ -348,6 +370,10 @@ export default function Organizacao() {
       }
     }
 
+    if (form.email_adm_compras && !emailValido(form.email_adm_compras)) {
+      novosErros.email_adm_compras = 'E-mail administrativo inválido.';
+    }
+
     if (form.cep && !cepValido(form.cep)) {
       novosErros.cep = 'CEP incompleto.';
     }
@@ -360,7 +386,7 @@ export default function Organizacao() {
     return Object.keys(novosErros).length === 0;
   };
 
-  const validarFormularioContato = (dados, telefoneObrigatorio) => {
+  const validarFormularioContato = (dados, telefoneObrigatorio, { validarEmailAdmCompras = false } = {}) => {
     const novosErros = {};
 
     if (telefoneObrigatorio && !dados.telefone.trim()) {
@@ -379,6 +405,10 @@ export default function Organizacao() {
       if (invalido) {
         novosErros.emails_adicionais = `E-mail adicional inválido: ${invalido}`;
       }
+    }
+
+    if (validarEmailAdmCompras && dados.email_adm_compras && !emailValido(dados.email_adm_compras)) {
+      novosErros.email_adm_compras = 'E-mail administrativo inválido.';
     }
 
     if (dados.cep && !cepValido(dados.cep)) {
@@ -498,7 +528,9 @@ export default function Organizacao() {
     setSucesso('');
 
     const telefoneObrigatorio = edicaoAlvo.tipo === 'projeto';
-    if (!validarFormularioContato(formEdicao, telefoneObrigatorio)) {
+    if (!validarFormularioContato(formEdicao, telefoneObrigatorio, {
+      validarEmailAdmCompras: edicaoAlvo.tipo === 'projeto',
+    })) {
       setErro('Corrija os campos destacados antes de salvar.');
       return;
     }
@@ -515,6 +547,9 @@ export default function Organizacao() {
       cidade: formEdicao.cidade.trim() || null,
       uf: formEdicao.uf.trim().toUpperCase() || null,
     };
+    if (edicaoAlvo.tipo === 'projeto') {
+      payload.email_adm_compras = (formEdicao.email_adm_compras || '').trim() || null;
+    }
 
     setSalvandoEdicao(true);
     try {
@@ -582,6 +617,9 @@ export default function Organizacao() {
                             {projeto.emails_adicionais ? ` · + ${projeto.emails_adicionais}` : ''}
                           </p>
                           <p className="mt-1 text-xs text-gray-500">
+                            Compras (orçamentos): {projeto.email_adm_compras || 'não informado'}
+                          </p>
+                          <p className="mt-1 text-xs text-gray-500">
                             {[projeto.logradouro, projeto.numero, projeto.bairro, projeto.cidade, projeto.uf]
                               .filter(Boolean)
                               .join(', ') || 'Endereço não informado'}
@@ -644,6 +682,7 @@ export default function Organizacao() {
                       errosCampo={errosEdicao}
                       buscandoCep={buscandoCepEdicao}
                       telefoneObrigatorio={edicaoAlvo.tipo === 'projeto'}
+                      mostrarEmailAdmCompras={edicaoAlvo.tipo === 'projeto'}
                       onChange={atualizarCampoEdicao}
                       onBuscarCep={buscarCepEdicao}
                     />
@@ -710,6 +749,7 @@ export default function Organizacao() {
                   errosCampo={errosCampo}
                   buscandoCep={buscandoCep}
                   telefoneObrigatorio
+                  mostrarEmailAdmCompras
                   onChange={atualizarCampo}
                   onBuscarCep={buscarCep}
                 />

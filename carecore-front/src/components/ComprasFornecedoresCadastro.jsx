@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Eye, Pencil, Plus, Search } from 'lucide-react';
+import { Eye, Pencil, Plus, Printer, Search } from 'lucide-react';
 
 import ModalFichaFornecedor from './ModalFichaFornecedor';
 import ModalFormFornecedor from './ModalFormFornecedor';
@@ -7,6 +7,7 @@ import { EmptyState, PremiumBadge, PremiumButton, SectionCard } from './PremiumU
 import { comprasSalvarFornecedor, comprasUnidades } from '../services/comprasService';
 import { consultarCnpjReceita } from '../services/cnpjConsultaService';
 import { rotuloProjetosFornecedor } from '../utils/comprasFornecedorUtils';
+import { imprimirFornecedores } from '../utils/comprasFornecedoresExportPrint';
 import {
   formatarTelefoneCompras,
   normalizarTelefoneComprasParaSalvar,
@@ -64,6 +65,7 @@ function textoBusca(fornecedor) {
 export default function ComprasFornecedoresCadastro({
   fornecedores = [],
   categorias = [],
+  sede = false,
   onRecarregar,
   onMensagem,
 }) {
@@ -299,18 +301,39 @@ export default function ComprasFornecedoresCadastro({
     return () => window.removeEventListener('keydown', aoTeclar);
   }, [fecharForm, ficha, formAberto]);
 
+  const imprimir = useCallback(async () => {
+    const ok = await imprimirFornecedores({
+      fornecedores: listaFiltrada,
+      categorias,
+      filtros: {
+        Status: filtroStatus,
+        Busca: busca.trim() || undefined,
+      },
+      sede,
+    });
+    if (!ok) onMensagem?.({ erro: 'Não há fornecedores para imprimir com os filtros atuais.' });
+  }, [busca, categorias, filtroStatus, listaFiltrada, onMensagem, sede]);
+
   return (
     <>
       <SectionCard
         title="Fornecedores"
         subtitle={`${listaFiltrada.length} de ${fornecedores.length} cadastros`}
         actions={(
-          <PremiumButton type="button" onClick={abrirNovo}>
-            <span className="inline-flex items-center gap-1.5">
-              <Plus size={16} />
-              Novo fornecedor
-            </span>
-          </PremiumButton>
+          <div className="flex flex-wrap gap-2">
+            <PremiumButton type="button" variant="secondary" onClick={imprimir}>
+              <span className="inline-flex items-center gap-1.5">
+                <Printer size={16} />
+                Imprimir
+              </span>
+            </PremiumButton>
+            <PremiumButton type="button" onClick={abrirNovo}>
+              <span className="inline-flex items-center gap-1.5">
+                <Plus size={16} />
+                Novo fornecedor
+              </span>
+            </PremiumButton>
+          </div>
         )}
       >
         <div className="px-5 py-4">

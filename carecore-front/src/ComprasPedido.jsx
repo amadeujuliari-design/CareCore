@@ -22,6 +22,7 @@ import {
   comprasCancelar,
   comprasCategorias,
   comprasComunicacao,
+  comprasConfirmarEvento,
   comprasConfirmarRevisaoItens,
   comprasCotacao,
   comprasDesativarCotacao,
@@ -48,6 +49,13 @@ import { formatarDataBr } from './utils/comprasJanelaUtils';
 import { rotuloCategoria } from './utils/comprasCategoriaUtils';
 import { itemConsumoPeloDetalheErro, pedidoItemUnidadeConfusa, sugerirItensConsumo, unidadeParaPedido } from './utils/comprasItensConsumoUtils';
 import { centavosParaInput, reaisParaCentavos } from './utils/comprasPatrimonioUtils';
+import {
+  STEPS_COTACAO_PROJETO,
+  etapaCotacaoProjeto,
+  itensConsumoDoSplitPedido,
+  rotuloTipoPedido,
+  tipoEhCotacaoProjeto,
+} from './utils/comprasPedidoTipos';
 
 const STATUS_LABEL = {
   rascunho: 'Rascunho',
@@ -71,6 +79,7 @@ const ROTULO_EVENTO = {
   email: 'E-mail',
   itens: 'Itens',
   itens_ok: 'Itens conferidos',
+  ok: 'Confirmado',
 };
 
 const ITEM_VAZIO = {
@@ -112,7 +121,9 @@ export default function ComprasPedido() {
   const usuario = useMemo(() => usuarioSessao(), []);
   const usuarioId = usuario.id || usuario.usuario_id;
   const sede = usuarioEhAdmCompras(usuario) || usuarioEhManutencao(usuario);
-  const unidade = usuarioEhAdmPedidos(usuario)
+  const admPedidos = usuarioEhAdmPedidos(usuario);
+  const podeCadastrarMestre = sede || admPedidos;
+  const unidade = admPedidos
     || ['Gestor', 'Técnico', 'Administrativo'].includes(usuario.perfil_acesso);
   const [pedido, setPedido] = useState(null);
   const [fornecedores, setFornecedores] = useState([]);
@@ -142,7 +153,7 @@ export default function ComprasPedido() {
       const [catalogo, cats, fornecs] = await Promise.all([
         comprasItensConsumo({ ativos: true }),
         comprasCategorias(),
-        (sede || dados.tipo === 'imobilizado')
+        (sede || tipoEhCotacaoProjeto(dados.tipo))
           ? comprasFornecedores({ ativos: true })
           : Promise.resolve(null),
       ]);
@@ -186,18 +197,22 @@ export default function ComprasPedido() {
 
   const pedidoSede = pedido.escopo_unidade === 'sede';
   const terminal = ['recebido', 'cancelado', 'reprovado'].includes(pedido.status);
-  const podeEditarItens = Boolean(pedido.pode_editar_itens)
-    || ['rascunho', 'aguardando_cotacao', 'em_cotacao', 'aguardando_aprovacao_unidade', 'aguardando_aprovacao_sede', 'aprovado'].includes(pedido.status);
+  const ehRascunho = pedido.status === 'rascunho';
+  const podeEditarItens = Boolean(pedido.pode_editar_itens);
+  const podeSubstituirOrcamento = Boolean(pedido.pode_substituir_orcamento) || sede;
+  const cotacaoProjeto = tipoEhCotacaoProjeto(pedido.tipo);
   const podeEscolherCotacaoConsumo = pedido.tipo === 'consumo' && unidade && !pedidoSede
     && ['em_cotacao', 'aguardando_aprovacao_unidade'].includes(pedido.status);
-  const podeEscolherCotacaoImobilizado = pedido.tipo === 'imobilizado' && unidade && !pedidoSede
-    && pedido.status === 'rascunho';
+  const podeEscolherCotacaoImobilizado = cotacaoProjeto && unidade && !pedidoSede
+    && ['rascunho', 'em_cotacao', 'aguardando_cotacao'].includes(pedido.status);
   const podeLancarCotacao = (sede && pedido.tipo === 'consumo' && !terminal)
-    || (unidade && pedido.tipo === 'imobilizado' && pedido.status === 'rascunho');
-  const podePedirCotacaoEmail = sede
-    && pedido.tipo === 'consumo'
-    && !terminal
-    && ['aguardando_cotacao', 'em_cotacao', 'aguardando_aprovacao_unidade', 'aguardando_aprovacao_sede', 'aprovado'].includes(pedido.status);
+    || (unidade && cotacaoProjeto && ['rascunho', 'em_cotacao', 'aguardando_cotacao'].includes(pedido.status));
+  const podePedirCotacaoEmail = (
+    (sede && pedido.tipo === 'consumo'
+      && ['aguardando_cotacao', 'em_cotacao', 'aguardando_aprovacao_unidade', 'aguardando_aprovacao_sede', 'aprovado'].includes(pedido.status))
+    || (unidade && cotacaoProjeto
+      && ['rascunho', 'em_cotacao', 'aguardando_cotacao'].includes(pedido.status))
+  ) && !terminal;
   const podeEncerrar = pedido.status === 'enviado_fornecedor' && (sede || (unidade && !pedidoSede));
   const podeReabrir = pedido.pode_reabrir && pedido.fechado_por_id === usuarioId;
   const pedidoCompra = (pedido.anexos || []).find((a) => a.tipo === 'pedido_compra');
@@ -212,8 +227,11 @@ export default function ComprasPedido() {
   };
 
   const itemAvulso = Boolean(item.descricao.trim()) && !item.catalogo_item_id;
-  const sugestoesItem = sugerirItensConsumo(itensConsumo, item.descricao);
+  const itensBuscaPedido = itensConsumoDoSplitPedido(itensConsumo, pedido);
+  const sugestoesItem = sugerirItensConsumo(itensBuscaPedido, item.descricao);
   const semCadastro = itemAvulso && sugestoesItem.length === 0;
+  const rotuloSplit = pedido.categoria_split_nome || '';
+  const buscaRestritaCategoria = Boolean(pedido.grupo_split_id && rotuloSplit);
 
   const payloadDasLinhas = (linhas) => (linhas || []).map((linha) => ({
     descricao: linha.descricao,
@@ -348,13 +366,14 @@ export default function ComprasPedido() {
     };
     let mensagemOk = 'Item incluído.';
 
-    if (!catalogo.catalogo_item_id && sugerirItensConsumo(itensConsumo, descricao).length > 0) {
+    if (!catalogo.catalogo_item_id
+      && sugerirItensConsumo(itensConsumoDoSplitPedido(itensConsumo, pedido), descricao).length > 0) {
       setErro('Há itens parecidos no cadastro. Escolha um da lista para não duplicar.');
       setOk('');
       return;
     }
 
-    if (!catalogo.catalogo_item_id && sede && cadastrarNoCatalogo) {
+    if (!catalogo.catalogo_item_id && podeCadastrarMestre && cadastrarNoCatalogo) {
       if (!item.categoria_id) {
         setErro('Selecione a categoria para cadastrar o item.');
         setOk('');
@@ -428,8 +447,17 @@ export default function ComprasPedido() {
       <MainShell>
         <PageHeader
           eyebrow={pedido.instituicao_nome}
-          title={`Pedido ${pedido.tipo}`}
-          subtitle={`${STATUS_LABEL[pedido.status] || pedido.status} · ${pedido.competencia}`}
+          title={pedido.titulo
+            ? pedido.titulo
+            : `Pedido · ${rotuloTipoPedido(pedido.tipo)}${pedido.categoria_split_nome ? ` · ${pedido.categoria_split_nome}` : ''}${pedido.grupo_codigo ? ` · ${pedido.grupo_codigo}` : ''}`}
+          subtitle={[
+            rotuloTipoPedido(pedido.tipo),
+            STATUS_LABEL[pedido.status] || pedido.status,
+            pedido.competencia,
+            typeof pedido.qtd_orcamentos === 'number'
+              ? `${pedido.qtd_orcamentos} orçamento(s)`
+              : null,
+          ].filter(Boolean).join(' · ')}
           icon={<ShoppingCart className="h-5 w-5" />}
           backTo="/compras"
         />
@@ -441,6 +469,43 @@ export default function ComprasPedido() {
             {ok && (
               <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">{ok}</div>
             )}
+            {cotacaoProjeto ? (
+              <div className="flex flex-wrap gap-2 rounded-2xl border border-slate-100 bg-white p-3">
+                {STEPS_COTACAO_PROJETO.map((step) => {
+                  const atual = etapaCotacaoProjeto(pedido.status);
+                  const ativo = step.n <= atual;
+                  return (
+                    <span
+                      key={step.n}
+                      className={`rounded-full px-3 py-1 text-xs font-bold ${
+                        ativo ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-500'
+                      }`}
+                    >
+                      {step.n}. {step.rotulo}
+                    </span>
+                  );
+                })}
+              </div>
+            ) : null}
+            {cotacaoProjeto ? (
+              <SectionCard title="Cabeçalho">
+                <dl className="grid gap-2 text-sm text-slate-700 md:grid-cols-2">
+                  <div><dt className="text-xs font-semibold uppercase text-slate-500">Justificativa</dt><dd>{pedido.justificativa || '—'}</dd></div>
+                  <div><dt className="text-xs font-semibold uppercase text-slate-500">Urgência</dt><dd>{pedido.urgencia || 'normal'}</dd></div>
+                  <div><dt className="text-xs font-semibold uppercase text-slate-500">Data desejada</dt><dd>{pedido.data_desejada ? formatarDataBr(pedido.data_desejada) : '—'}</dd></div>
+                  <div><dt className="text-xs font-semibold uppercase text-slate-500">Local</dt><dd>{pedido.local_texto || pedido.instituicao_nome || '—'}</dd></div>
+                  {pedido.tipo === 'manutencao' ? (
+                    <>
+                      <div><dt className="text-xs font-semibold uppercase text-slate-500">Tipo manutenção</dt><dd>{pedido.tipo_manutencao || '—'}</dd></div>
+                      <div className="md:col-span-2"><dt className="text-xs font-semibold uppercase text-slate-500">Defeito</dt><dd>{pedido.defeito || '—'}</dd></div>
+                    </>
+                  ) : null}
+                  {pedido.tipo === 'servico' ? (
+                    <div className="md:col-span-2"><dt className="text-xs font-semibold uppercase text-slate-500">Escopo</dt><dd>{pedido.escopo_servico || '—'}</dd></div>
+                  ) : null}
+                </dl>
+              </SectionCard>
+            ) : null}
             {desfazerItens && podeEditarItens && (
               <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700">
                 <span>Última alteração nos itens ainda pode ser desfeita.</span>
@@ -484,151 +549,32 @@ export default function ComprasPedido() {
 
             <SectionCard title="Itens">
               <div className="px-5 py-4">
-              {(pedido.itens || []).length === 0 ? (
-                <p className="mb-3 text-sm text-slate-500">Nenhum item neste pedido.</p>
-              ) : (
-                <div className="mb-4 overflow-x-auto">
-                  <table className="min-w-full text-sm">
-                    <thead>
-                      <tr className="text-left text-xs uppercase tracking-wide text-slate-500">
-                        <th className="px-2 py-2">Qtd neste pedido</th>
-                        <th className="px-2 py-2">Unidade</th>
-                        <th className="px-2 py-2">Item</th>
-                        <th className="px-2 py-2">Embalagem</th>
-                        <th className="px-2 py-2">Marca</th>
-                        {podeEditarItens ? <th className="px-2 py-2" /> : null}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {(pedido.itens || []).map((linha) => {
-                        const confusa = podeEditarItens && pedidoItemUnidadeConfusa(linha);
-                        return (
-                          <tr key={linha.id} className="border-t border-slate-100 align-top">
-                            <td className="px-2 py-2.5 font-medium text-slate-900">{linha.quantidade}</td>
-                            <td className="px-2 py-2.5">{linha.unidade_medida || 'un'}</td>
-                            <td className="px-2 py-2.5">
-                              <strong className="text-slate-900">{linha.descricao}</strong>
-                              {confusa ? (
-                                <p className="mt-1 text-xs text-amber-800">
-                                  Quantidade em {linha.unidade_medida} e embalagem {linha.embalagem} se misturam.
-                                  Se a intenção é o pacote, use un.
-                                </p>
-                              ) : null}
-                            </td>
-                            <td className="px-2 py-2.5">
-                              {podeEditarItens ? (
-                                <input
-                                  value={edicaoLinha[`${linha.id}:embalagem`] ?? (linha.embalagem || '')}
-                                  onChange={(e) => setEdicaoLinha((mapa) => ({
-                                    ...mapa,
-                                    [`${linha.id}:embalagem`]: e.target.value,
-                                  }))}
-                                  onBlur={(e) => gravarCampoLinha(linha, 'embalagem', e.target.value)}
-                                  onKeyDown={(e) => {
-                                    if (e.key === 'Enter') e.currentTarget.blur();
-                                  }}
-                                  placeholder="Ex.: 500 g"
-                                  className="w-full min-w-[7rem] rounded-xl border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-slate-400"
-                                  aria-label={`Embalagem de ${linha.descricao}`}
-                                />
-                              ) : (linha.embalagem || '—')}
-                            </td>
-                            <td className="px-2 py-2.5">
-                              {podeEditarItens ? (
-                                <input
-                                  value={edicaoLinha[`${linha.id}:marca_preferencial`] ?? (linha.marca_preferencial || '')}
-                                  onChange={(e) => setEdicaoLinha((mapa) => ({
-                                    ...mapa,
-                                    [`${linha.id}:marca_preferencial`]: e.target.value,
-                                  }))}
-                                  onBlur={(e) => gravarCampoLinha(linha, 'marca_preferencial', e.target.value)}
-                                  onKeyDown={(e) => {
-                                    if (e.key === 'Enter') e.currentTarget.blur();
-                                  }}
-                                  placeholder="Marca"
-                                  className="w-full min-w-[7rem] rounded-xl border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-slate-400"
-                                  aria-label={`Marca de ${linha.descricao}`}
-                                />
-                              ) : (linha.marca_preferencial || '—')}
-                            </td>
-                            {podeEditarItens ? (
-                              <td className="px-2 py-2.5 text-right">
-                                <div className="flex flex-wrap justify-end gap-2">
-                                  {confusa ? (
-                                    <button
-                                      type="button"
-                                      className="text-xs font-semibold text-amber-800 underline"
-                                      onClick={() => corrigirUnidadeItem(linha.id)}
-                                    >
-                                      Usar un
-                                    </button>
-                                  ) : null}
-                                  <button
-                                    type="button"
-                                    className="text-xs font-semibold text-slate-600 underline"
-                                    onClick={() => retirarItem(linha.id)}
-                                  >
-                                    Retirar
-                                  </button>
-                                </div>
-                              </td>
-                            ) : null}
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-              {perguntaCadastro ? (
-                <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-3 py-3">
-                  <p className="text-sm text-amber-950">
-                    A {ROTULO_CAMPO_PEDIDO[perguntaCadastro.campo]} de <strong>{perguntaCadastro.descricao}</strong> neste pedido ficou
-                    {' '}
-                    <strong>{perguntaCadastro.valor}</strong>
-                    .
-                    {perguntaCadastro.cadastroAtual
-                      ? ` No cadastro está "${perguntaCadastro.cadastroAtual}".`
-                      : ` No cadastro ainda não há ${ROTULO_CAMPO_PEDIDO[perguntaCadastro.campo]}.`}
-                    {' '}
-                    Atualizar o cadastro para os próximos pedidos?
-                  </p>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    <PremiumButton type="button" variant="secondary" onClick={() => setPerguntaCadastro(null)}>
-                      Só neste pedido
-                    </PremiumButton>
-                    <PremiumButton type="button" onClick={atualizarCampoCadastro}>
-                      Sim, atualizar cadastro
-                    </PremiumButton>
-                  </div>
-                </div>
-              ) : null}
-              <p className="mb-3 text-xs text-slate-500">
-                {podeEditarItens
-                  ? 'Itens editáveis até o e-mail de compra ao fornecedor. Alterações ficam no histórico; confira se precisa reenviar cotação.'
-                  : 'Itens bloqueados após o envio do pedido de compra ao fornecedor.'}
-                {' '}
-                Embalagem e marca podem valer só nesta compra ou atualizar o cadastro.
-              </p>
               {podeEditarItens && (
-                <form className="grid gap-2 md:grid-cols-8" onSubmit={incluirItem}>
-                  <ComprasItemTypeahead
-                    className="md:col-span-4"
-                    itens={itensConsumo}
-                    value={item.descricao}
-                    required
-                    placeholder="Digite o item — os resultados aparecem na hora"
-                    onChange={(valor) => setItem((a) => ({ ...a, descricao: valor, catalogo_item_id: '' }))}
-                    onEscolher={(escolhido) => setItem((a) => (escolhido ? {
-                      ...a,
-                      catalogo_item_id: escolhido.id,
-                      descricao: escolhido.descricao,
-                      unidade_medida: unidadeParaPedido(escolhido),
-                      embalagem: escolhido.embalagem || '',
-                      marca_preferencial: escolhido.marca_preferencial || '',
-                      categoria_id: escolhido.categoria_id || '',
-                    } : { ...a, catalogo_item_id: '' }))}
-                  />
+                <form className="mb-4 grid gap-2 md:grid-cols-8" onSubmit={incluirItem}>
+                  <label className="md:col-span-4">
+                    <span className="mb-1 block text-xs font-semibold text-slate-600">Novo item</span>
+                    <ComprasItemTypeahead
+                      className="w-full"
+                      itens={itensBuscaPedido}
+                      value={item.descricao}
+                      required
+                      placeholder={
+                        buscaRestritaCategoria
+                          ? `Buscar em «${rotuloSplit}»`
+                          : 'Digite o item — os resultados aparecem na hora'
+                      }
+                      onChange={(valor) => setItem((a) => ({ ...a, descricao: valor, catalogo_item_id: '' }))}
+                      onEscolher={(escolhido) => setItem((a) => (escolhido ? {
+                        ...a,
+                        catalogo_item_id: escolhido.id,
+                        descricao: escolhido.descricao,
+                        unidade_medida: unidadeParaPedido(escolhido),
+                        embalagem: escolhido.embalagem || '',
+                        marca_preferencial: escolhido.marca_preferencial || '',
+                        categoria_id: escolhido.categoria_id || '',
+                      } : { ...a, catalogo_item_id: '' }))}
+                    />
+                  </label>
                   <label className="md:col-span-1">
                     <span className="mb-1 block text-xs font-semibold text-slate-600">Qtd</span>
                     <input
@@ -650,12 +596,17 @@ export default function ComprasPedido() {
                   <div className="flex items-end md:col-span-2">
                     <PremiumButton type="submit" className="w-full">Incluir item</PremiumButton>
                   </div>
+                  {buscaRestritaCategoria ? (
+                    <p className="md:col-span-8 text-xs text-slate-500">
+                      Este pedido é só de «{rotuloSplit}». Itens de outra categoria ficam no pedido do mesmo grupo.
+                    </p>
+                  ) : null}
                   {item.catalogo_item_id ? (
                     <p className="md:col-span-8 text-xs text-slate-500">
                       Neste pedido: {item.quantidade || 1} {item.unidade_medida || 'un'} de {item.descricao}
                       {item.embalagem ? ` (cada volume: ${item.embalagem})` : ''}.
                     </p>
-                  ) : semCadastro && sede ? (
+                  ) : semCadastro && podeCadastrarMestre ? (
                     <div className="md:col-span-8 space-y-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-3">
                       <label className="flex items-start gap-2 text-sm text-amber-950">
                         <input
@@ -710,21 +661,180 @@ export default function ComprasPedido() {
                   ) : (
                     <p className="md:col-span-8 text-xs text-slate-500">
                       Comece a digitar: o cadastro sugere na hora.
-                      {sede
+                      {podeCadastrarMestre
                         ? ' Se não existir, dá para cadastrar agora.'
-                        : ' Se não existir, inclua avulso — a Sede cadastra no catálogo.'}
+                        : ' Se não existir, inclua avulso — a Sede ou ADM Pedidos cadastram no catálogo.'}
                     </p>
                   )}
                 </form>
+              )}
+
+              {perguntaCadastro ? (
+                <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-3 py-3">
+                  <p className="text-sm text-amber-950">
+                    A {ROTULO_CAMPO_PEDIDO[perguntaCadastro.campo]} de <strong>{perguntaCadastro.descricao}</strong> neste pedido ficou
+                    {' '}
+                    <strong>{perguntaCadastro.valor}</strong>
+                    .
+                    {perguntaCadastro.cadastroAtual
+                      ? ` No cadastro está "${perguntaCadastro.cadastroAtual}".`
+                      : ` No cadastro ainda não há ${ROTULO_CAMPO_PEDIDO[perguntaCadastro.campo]}.`}
+                    {' '}
+                    Atualizar o cadastro para os próximos pedidos?
+                  </p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <PremiumButton type="button" variant="secondary" onClick={() => setPerguntaCadastro(null)}>
+                      Só neste pedido
+                    </PremiumButton>
+                    <PremiumButton type="button" onClick={atualizarCampoCadastro}>
+                      Sim, atualizar cadastro
+                    </PremiumButton>
+                  </div>
+                </div>
+              ) : null}
+
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <p className="text-xs text-slate-500">
+                  {ehRascunho && podeEditarItens
+                    ? 'Monte a lista abaixo. No rascunho as inclusões não entram na timeline — use Salvar e, quando estiver pronto, Enviar pedido.'
+                    : podeEditarItens
+                      ? 'Itens editáveis até o e-mail de compra ao fornecedor. Alterações após o envio ficam no histórico.'
+                      : 'Itens bloqueados após o envio do pedido de compra ao fornecedor.'}
+                </p>
+                {ehRascunho && podeEditarItens ? (
+                  <PremiumButton
+                    type="button"
+                    variant="secondary"
+                    onClick={() => agir(
+                      () => comprasSalvarItens(pedido.id, payloadDasLinhas(pedido.itens)),
+                      'Rascunho salvo.',
+                    )}
+                  >
+                    Salvar rascunho
+                  </PremiumButton>
+                ) : null}
+              </div>
+
+              {(pedido.itens || []).length === 0 ? (
+                <p className="text-sm text-slate-500">Nenhum item neste pedido.</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="min-w-full text-sm">
+                    <thead>
+                      <tr className="text-left text-xs uppercase tracking-wide text-slate-500">
+                        <th className="px-2 py-2">Qtd neste pedido</th>
+                        <th className="px-2 py-2">Unidade</th>
+                        <th className="px-2 py-2">Item</th>
+                        <th className="px-2 py-2">Embalagem</th>
+                        <th className="px-2 py-2">Marca</th>
+                        {podeEditarItens ? <th className="px-2 py-2" /> : null}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(pedido.itens || []).map((linha) => {
+                        const confusa = podeEditarItens && pedidoItemUnidadeConfusa(linha);
+                        return (
+                          <tr key={linha.id} className="border-t border-slate-100 align-top">
+                            <td className="px-2 py-2.5 font-medium text-slate-900">{linha.quantidade}</td>
+                            <td className="px-2 py-2.5">{linha.unidade_medida || 'un'}</td>
+                            <td className="px-2 py-2.5">
+                              <strong className="text-slate-900">{linha.descricao}</strong>
+                              {confusa ? (
+                                <p className="mt-1 text-xs text-amber-800">
+                                  Quantidade em {linha.unidade_medida} e embalagem {linha.embalagem} se misturam.
+                                  Se a intenção é o pacote, use un.
+                                </p>
+                              ) : null}
+                            </td>
+                            <td className="px-2 py-2.5">
+                              {podeEditarItens ? (
+                                <input
+                                  value={edicaoLinha[`${linha.id}:embalagem`] ?? (linha.embalagem || '')}
+                                  onChange={(e) => setEdicaoLinha((mapa) => ({
+                                    ...mapa,
+                                    [`${linha.id}:embalagem`]: e.target.value,
+                                  }))}
+                                  onBlur={(e) => gravarCampoLinha(linha, 'embalagem', e.target.value)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') e.currentTarget.blur();
+                                  }}
+                                  placeholder="Ex.: 500 g"
+                                  className="w-full min-w-[7rem] rounded-xl border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-slate-400"
+                                  aria-label={`Embalagem de ${linha.descricao}`}
+                                />
+                              ) : (
+                                linha.embalagem || '—'
+                              )}
+                            </td>
+                            <td className="px-2 py-2.5">
+                              {podeEditarItens ? (
+                                <input
+                                  value={edicaoLinha[`${linha.id}:marca_preferencial`] ?? (linha.marca_preferencial || '')}
+                                  onChange={(e) => setEdicaoLinha((mapa) => ({
+                                    ...mapa,
+                                    [`${linha.id}:marca_preferencial`]: e.target.value,
+                                  }))}
+                                  onBlur={(e) => gravarCampoLinha(linha, 'marca_preferencial', e.target.value)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') e.currentTarget.blur();
+                                  }}
+                                  placeholder="Opcional"
+                                  className="w-full min-w-[7rem] rounded-xl border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-slate-400"
+                                  aria-label={`Marca de ${linha.descricao}`}
+                                />
+                              ) : (
+                                linha.marca_preferencial || '—'
+                              )}
+                            </td>
+                            {podeEditarItens ? (
+                              <td className="px-2 py-2.5 text-right">
+                                <div className="flex flex-col items-end gap-1">
+                                  {confusa ? (
+                                    <button
+                                      type="button"
+                                      className="text-xs font-semibold text-amber-800 underline"
+                                      onClick={() => corrigirUnidadeItem(linha.id)}
+                                    >
+                                      Usar un
+                                    </button>
+                                  ) : null}
+                                  <button
+                                    type="button"
+                                    className="text-xs font-semibold text-slate-600 underline"
+                                    onClick={() => retirarItem(linha.id)}
+                                  >
+                                    Retirar
+                                  </button>
+                                </div>
+                              </td>
+                            ) : null}
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               )}
               </div>
             </SectionCard>
 
             <SectionCard title="Cotações e orçamentos">
-              <p className="mb-3 text-xs text-slate-500">
-                Dois passos distintos: (1) pedir cotação por e-mail aos fornecedores;
-                (2) registrar o orçamento que voltou (valor + PDF). Imobilizado: a unidade anexa os orçamentos.
+              <p className="mb-2 text-sm font-semibold text-slate-800">
+                Orçamentos anexados: {pedido.qtd_orcamentos ?? (pedido.cotacoes || []).length}
               </p>
+              {sede && pedido.tipo === 'consumo' ? (
+                <p className="mb-3 text-xs text-slate-500">
+                  Pedir cotação por e-mail e registrar o orçamento que voltou (valor + PDF) são passos distintos.
+                </p>
+              ) : cotacaoProjeto && !sede ? (
+                <p className="mb-3 text-xs text-slate-500">
+                  Peça cotação por e-mail (caixa do projeto) e anexe os orçamentos recebidos (valor + PDF).
+                </p>
+              ) : !sede && pedido.tipo === 'consumo' ? (
+                <p className="mb-3 text-xs text-slate-500">
+                  A Sede lança as cotações deste pedido. Aqui você acompanha quantos orçamentos já foram anexados.
+                </p>
+              ) : null}
 
               {podePedirCotacaoEmail && (
                 <div className="mb-4 rounded-xl border border-violet-100 bg-violet-50/60 p-3">
@@ -732,6 +842,22 @@ export default function ComprasPedido() {
                   <p className="mt-1 text-xs text-slate-600">
                     Selecione os fornecedores (recomendado 3 ou mais). Cada um recebe um e-mail só com o endereço dele no campo Para — nunca vê os demais.
                   </p>
+                  {cotacaoProjeto ? (
+                    pedido.email_adm_compras ? (
+                      <p className="mt-2 text-xs text-violet-900">
+                        Remetente (caixa do projeto):{' '}
+                        <span className="font-semibold">{pedido.email_adm_compras}</span>
+                      </p>
+                    ) : (
+                      <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-2 py-1.5 text-xs text-amber-900">
+                        Cadastre o e-mail administrativo (Compras) em Organização → projeto antes de enviar o pedido de orçamento.
+                      </p>
+                    )
+                  ) : (
+                    <p className="mt-2 text-xs text-violet-900">
+                      Remetente: caixa da Sede (Compras / suprimentos).
+                    </p>
+                  )}
                   <ul className="mt-3 max-h-48 space-y-1.5 overflow-y-auto text-sm">
                     {fornecedores.map((f) => {
                       const email = (f.email || f.email_empresa || '').trim();
@@ -763,7 +889,10 @@ export default function ComprasPedido() {
                   </ul>
                   <div className="mt-3 flex flex-wrap items-center gap-2">
                     <PremiumButton
-                      disabled={fornecedoresCotacaoIds.length < 1}
+                      disabled={
+                        fornecedoresCotacaoIds.length < 1
+                        || (cotacaoProjeto && !pedido.email_adm_compras)
+                      }
                       onClick={async () => {
                         setErro('');
                         setOk('');
@@ -779,7 +908,8 @@ export default function ComprasPedido() {
                           }
 
                           const nomesOk = enviados.map((e) => e.nome).filter(Boolean);
-                          let textoAlerta = `Cotações enviadas com sucesso para:\n\n${nomesOk.map((n) => `• ${n}`).join('\n')}`;
+                          const de = res.remetente ? `\n\nRemetente: ${res.remetente}` : '';
+                          let textoAlerta = `Cotações enviadas com sucesso para:\n\n${nomesOk.map((n) => `• ${n}`).join('\n')}${de}`;
                           if (falhas.length) {
                             const nomesFail = falhas.map((f) => `${f.nome}${f.erro ? ` (${f.erro})` : ''}`);
                             textoAlerta += `\n\nNão enviadas:\n${nomesFail.map((n) => `• ${n}`).join('\n')}`;
@@ -808,12 +938,18 @@ export default function ComprasPedido() {
                 </div>
               )}
 
-              <p className="mb-2 text-sm font-semibold text-slate-800">
-                {podePedirCotacaoEmail ? '2. Registrar orçamentos recebidos' : 'Orçamentos lançados'}
-              </p>
-              <p className="mb-2 text-xs text-slate-500">
-                Aqui você registra o valor e o PDF que o fornecedor devolveu — não é o envio do pedido de cotação.
-              </p>
+              {(sede || cotacaoProjeto) ? (
+                <p className="mb-2 text-sm font-semibold text-slate-800">
+                  {podePedirCotacaoEmail ? '2. Registrar orçamentos recebidos' : 'Orçamentos lançados'}
+                </p>
+              ) : (
+                <p className="mb-2 text-sm font-semibold text-slate-800">Orçamentos recebidos</p>
+              )}
+              {sede && pedido.tipo === 'consumo' ? (
+                <p className="mb-2 text-xs text-slate-500">
+                  Registre o valor e o PDF devolvido pelo fornecedor (não é o e-mail de pedido de cotação).
+                </p>
+              ) : null}
               <ul className="mb-3 space-y-2 text-sm">
                 {(pedido.cotacoes || []).map((c) => (
                   <li key={c.id} className="rounded-xl border border-slate-100 px-3 py-2">
@@ -828,7 +964,7 @@ export default function ComprasPedido() {
                             Escolher
                           </PremiumButton>
                         )}
-                        {!terminal && (
+                        {!terminal && podeSubstituirOrcamento && (
                           <PremiumButton
                             variant="secondary"
                             onClick={async () => {
@@ -852,7 +988,7 @@ export default function ComprasPedido() {
                           {anexo.nome_arquivo}
                         </button>
                       ))}
-                      {!terminal && (
+                      {!terminal && (sede || cotacaoProjeto) && (
                         <label className="cursor-pointer text-xs font-semibold text-slate-600">
                           + Anexar PDF
                           <input
@@ -1023,15 +1159,39 @@ export default function ComprasPedido() {
                 {(pedido.eventos || []).length === 0 && (
                   <li className="text-slate-500">Nenhum evento registrado ainda.</li>
                 )}
-                {(pedido.eventos || []).map((ev) => (
-                  <li key={ev.id} className="rounded-lg border border-slate-100 px-3 py-2">
-                    <p className="text-xs font-semibold uppercase text-slate-500">
-                      {ROTULO_EVENTO[ev.tipo] || ev.tipo}
-                      {ev.criado_em ? ` · ${formatarDataBr(ev.criado_em)}` : ''}
-                    </p>
-                    {ev.texto && <p className="mt-1 text-slate-800">{ev.texto}</p>}
-                  </li>
-                ))}
+                {(pedido.eventos || []).map((ev) => {
+                  const pendente = Boolean(ev.aguardando_confirmacao);
+                  const podeOk = pendente && ev.usuario_id && ev.usuario_id !== usuarioId;
+                  return (
+                    <li
+                      key={ev.id}
+                      className={`rounded-lg border px-3 py-2 ${
+                        pendente
+                          ? 'border-amber-300 bg-amber-50'
+                          : 'border-slate-100 bg-white'
+                      }`}
+                    >
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <div className="min-w-0 flex-1">
+                          <p className={`text-xs font-semibold uppercase ${pendente ? 'text-amber-800' : 'text-slate-500'}`}>
+                            {ROTULO_EVENTO[ev.tipo] || ev.tipo}
+                            {ev.criado_em ? ` · ${formatarDataBr(ev.criado_em)}` : ''}
+                            {pendente ? ' · aguardando ok' : ''}
+                          </p>
+                          {ev.texto && <p className={`mt-1 ${pendente ? 'text-amber-950' : 'text-slate-800'}`}>{ev.texto}</p>}
+                        </div>
+                        {podeOk && (
+                          <PremiumButton
+                            variant="secondary"
+                            onClick={() => agir(() => comprasConfirmarEvento(pedido.id, ev.id), 'Confirmado.')}
+                          >
+                            Ok
+                          </PremiumButton>
+                        )}
+                      </div>
+                    </li>
+                  );
+                })}
               </ul>
             </SectionCard>
 
@@ -1166,9 +1326,23 @@ export default function ComprasPedido() {
 
             <SectionCard title="Fluxo">
               <div className="flex flex-wrap gap-2">
-                {pedido.status === 'rascunho' && (
-                  <PremiumButton onClick={() => agir(() => comprasSubmeter(pedido.id))}>
-                    Enviar pedido
+                {(pedido.status === 'rascunho'
+                  || (cotacaoProjeto && ['em_cotacao', 'aguardando_cotacao'].includes(pedido.status))) && (
+                  <PremiumButton
+                    onClick={() => agir(async () => {
+                      const resp = await comprasSubmeter(pedido.id);
+                      if (resp?.dividido && Array.isArray(resp.pedidos) && resp.pedidos.length > 1) {
+                        const nomes = resp.pedidos
+                          .map((p) => p.categoria_split_nome || 'categoria')
+                          .join(', ');
+                        setOk(`Pedido dividido em ${resp.pedidos.length} por categoria: ${nomes}.`);
+                        if (resp.pedido?.id && resp.pedido.id !== pedido.id) {
+                          navigate(`/compras/pedidos/${resp.pedido.id}`);
+                        }
+                      }
+                    })}
+                  >
+                    {cotacaoProjeto ? 'Enviar à Sede' : 'Enviar pedido'}
                   </PremiumButton>
                 )}
                 {pedido.status === 'aguardando_aprovacao_unidade' && unidade && !pedidoSede && (
@@ -1177,11 +1351,11 @@ export default function ComprasPedido() {
                   </PremiumButton>
                 )}
                 {pedido.status === 'aguardando_aprovacao_sede' && sede && (
-                  <PremiumButton onClick={() => agir(() => comprasAprovarSede(pedido.id))}>
-                    Aprovar na Sede
+                  <PremiumButton onClick={() => agir(() => comprasAprovarSede(pedido.id), 'Sede aprovou / assinou.')}>
+                    {cotacaoProjeto ? 'Aprovar e assinar (Sede)' : 'Aprovar na Sede'}
                   </PremiumButton>
                 )}
-                {pedido.status === 'aprovado' && sede && (
+                {pedido.status === 'aprovado' && (sede || (cotacaoProjeto && unidade && !pedidoSede)) && (
                   <>
                     <PremiumButton onClick={() => agir(() => comprasGerarPedidoCompra(pedido.id), 'Pedido gerado.')}>
                       Gerar pedido de compra
@@ -1191,7 +1365,8 @@ export default function ComprasPedido() {
                     </PremiumButton>
                   </>
                 )}
-                {['aprovado', 'enviado_fornecedor'].includes(pedido.status) && sede && (
+                {['aprovado', 'enviado_fornecedor'].includes(pedido.status)
+                  && (sede || (cotacaoProjeto && unidade && !pedidoSede)) && (
                   <PremiumButton
                     variant="secondary"
                     onClick={() => agir(() => comprasEnviarEmailFornecedor(pedido.id), 'E-mail do pedido de compra processado (veja timeline).')}

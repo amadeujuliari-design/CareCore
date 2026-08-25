@@ -4,6 +4,12 @@ import { CampoSelect, CampoTexto } from './UsuariosCampos';
 import { EmptyState, PremiumBadge, PremiumButton, SectionCard } from './PremiumUI';
 import { comprasSalvarCategoria, comprasSalvarFonte } from '../services/comprasService';
 import { conflitosNomeCadastro } from '../utils/comprasCategoriaUtils';
+import {
+  ROTULO_SEGMENTO_CATALOGO,
+  SEGMENTO_CONSUMO,
+  SEGMENTOS_CATALOGO,
+  rotuloSegmentoCatalogo,
+} from '../utils/comprasPedidoTipos';
 
 const FONTES_TIPO_OPCOES = [
   { value: 'convenio', label: 'Convênio' },
@@ -13,6 +19,11 @@ const FONTES_TIPO_OPCOES = [
   { value: 'doacao', label: 'Doação' },
   { value: 'outros', label: 'Outros' },
 ];
+
+const SEGMENTO_OPCOES = SEGMENTOS_CATALOGO.map((value) => ({
+  value,
+  label: ROTULO_SEGMENTO_CATALOGO[value],
+}));
 
 function rotuloTipoFonte(tipo) {
   return FONTES_TIPO_OPCOES.find((item) => item.value === tipo)?.label || tipo || '—';
@@ -27,8 +38,10 @@ function ListaNomes({
   tipo,
   podeEditar,
   onSalvar,
+  onAtualizarSegmento,
 }) {
   const [nome, setNome] = useState('');
+  const [segmento, setSegmento] = useState(SEGMENTO_CONSUMO);
   const [tipoFonte, setTipoFonte] = useState('outros');
   const [vigenciaInicio, setVigenciaInicio] = useState('');
   const [vigenciaFim, setVigenciaFim] = useState('');
@@ -44,12 +57,20 @@ function ListaNomes({
     if (!valor || semelhantes.length) return;
     setSalvando(true);
     try {
-      await onSalvar(
-        tipo === 'fonte'
-          ? { nome: valor, tipo: tipoFonte, vigencia_inicio: vigenciaInicio || null, vigencia_fim: vigenciaFim || null }
-          : valor,
-      );
+      if (tipo === 'fonte') {
+        await onSalvar({
+          nome: valor,
+          tipo: tipoFonte,
+          vigencia_inicio: vigenciaInicio || null,
+          vigencia_fim: vigenciaFim || null,
+        });
+      } else if (tipo === 'categoria') {
+        await onSalvar({ nome: valor, segmento });
+      } else {
+        await onSalvar(valor);
+      }
       setNome('');
+      setSegmento(SEGMENTO_CONSUMO);
       setTipoFonte('outros');
       setVigenciaInicio('');
       setVigenciaFim('');
@@ -73,6 +94,16 @@ function ListaNomes({
                   placeholder="Digite para ver se já existe"
                 />
               </div>
+              {tipo === 'categoria' ? (
+                <div className="sm:w-56">
+                  <CampoSelect
+                    label="Uso no pedido"
+                    value={segmento}
+                    onChange={setSegmento}
+                    options={SEGMENTO_OPCOES}
+                  />
+                </div>
+              ) : null}
               {tipo === 'fonte' ? (
                 <div className="sm:w-56">
                   <CampoSelect
@@ -120,6 +151,7 @@ function ListaNomes({
               <thead>
                 <tr className="text-left text-xs uppercase tracking-wide text-slate-500">
                   <th className="px-2 py-2">Nome</th>
+                  {tipo === 'categoria' ? <th className="px-2 py-2">Uso no pedido</th> : null}
                   {tipo === 'fonte' ? <th className="px-2 py-2">Tipo</th> : null}
                   {tipo === 'fonte' ? <th className="px-2 py-2">Vigência</th> : null}
                   <th className="px-2 py-2">{colunaUso}</th>
@@ -130,6 +162,23 @@ function ListaNomes({
                 {itens.map((item) => (
                   <tr key={item.id} className="border-t border-slate-100">
                     <td className="px-2 py-2.5 font-medium text-slate-900">{item.nome}</td>
+                    {tipo === 'categoria' ? (
+                      <td className="px-2 py-2.5">
+                        {podeEditar && onAtualizarSegmento ? (
+                          <select
+                            className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm"
+                            value={item.segmento || SEGMENTO_CONSUMO}
+                            onChange={(e) => onAtualizarSegmento(item, e.target.value)}
+                          >
+                            {SEGMENTO_OPCOES.map((op) => (
+                              <option key={op.value} value={op.value}>{op.label}</option>
+                            ))}
+                          </select>
+                        ) : (
+                          rotuloSegmentoCatalogo(item.segmento)
+                        )}
+                      </td>
+                    ) : null}
                     {tipo === 'fonte' ? (
                       <td className="px-2 py-2.5">{rotuloTipoFonte(item.tipo)}</td>
                     ) : null}
@@ -161,6 +210,7 @@ export default function ComprasCategoriasFontes({
   categorias = [],
   fontes = [],
   podeEditar = false,
+  mostrarFontes = true,
   onRecarregar,
   onMensagem,
 }) {
@@ -173,13 +223,24 @@ export default function ComprasCategoriasFontes({
     [fontes],
   );
 
-  const salvarCategoria = async (nome) => {
+  const salvarCategoria = async (payload) => {
     try {
-      await comprasSalvarCategoria({ nome });
+      const corpo = typeof payload === 'string' ? { nome: payload } : payload;
+      await comprasSalvarCategoria(corpo);
       onMensagem?.({ ok: 'Categoria cadastrada.' });
       await onRecarregar?.();
     } catch (err) {
       onMensagem?.({ erro: err.response?.data?.detail || 'Não foi possível cadastrar a categoria.' });
+    }
+  };
+
+  const atualizarSegmento = async (item, segmento) => {
+    try {
+      await comprasSalvarCategoria({ nome: item.nome, segmento, ativo: item.ativo !== false }, item.id);
+      onMensagem?.({ ok: `Categoria «${item.nome}» → ${rotuloSegmentoCatalogo(segmento)}.` });
+      await onRecarregar?.();
+    } catch (err) {
+      onMensagem?.({ erro: err.response?.data?.detail || 'Não foi possível atualizar o uso da categoria.' });
     }
   };
 
@@ -197,25 +258,28 @@ export default function ComprasCategoriasFontes({
   return (
     <div className="space-y-4">
       <ListaNomes
-        titulo="Categorias dos itens"
-        ajuda="A lista abaixo é a mesma usada nos itens de consumo. Antes de criar outra, confira se o produto já se encaixa em uma existente — nomes parecidos (Higiene / Higiene e limpeza) geram filtro duplicado."
+        titulo="Categorias do catálogo"
+        ajuda="Cada categoria tem um uso no pedido: Consumo (janela), Manutenção, Bem/imobilizado ou Serviço. No pedido, a busca só mostra itens do mesmo uso. Carne e Peixe devem ser categorias próprias (uso Consumo) para a janela separar certo."
         itens={categoriasLista}
         colunaUso="Itens"
         campoNovo="Nova categoria"
         tipo="categoria"
         podeEditar={podeEditar}
         onSalvar={salvarCategoria}
+        onAtualizarSegmento={atualizarSegmento}
       />
-      <ListaNomes
-        titulo="Fontes de recurso"
-        ajuda="Fonte é a origem do dinheiro do pedido (convênio, emenda, recurso próprio). Não vem da planilha de itens."
-        itens={fontesLista}
-        colunaUso="Pedidos"
-        campoNovo="Nova fonte"
-        tipo="fonte"
-        podeEditar={podeEditar}
-        onSalvar={salvarFonte}
-      />
+      {mostrarFontes ? (
+        <ListaNomes
+          titulo="Fontes de recurso"
+          ajuda="Fonte é a origem do dinheiro do pedido (convênio, emenda, recurso próprio). Não vem da planilha de itens."
+          itens={fontesLista}
+          colunaUso="Pedidos"
+          campoNovo="Nova fonte"
+          tipo="fonte"
+          podeEditar={podeEditar}
+          onSalvar={salvarFonte}
+        />
+      ) : null}
     </div>
   );
 }

@@ -9,7 +9,27 @@ from typing import Optional
 
 TIPO_CONSUMO = "consumo"
 TIPO_IMOBILIZADO = "imobilizado"
-TIPOS_PEDIDO = (TIPO_CONSUMO, TIPO_IMOBILIZADO)
+TIPO_MANUTENCAO = "manutencao"
+TIPO_SERVICO = "servico"
+TIPOS_PEDIDO = (TIPO_CONSUMO, TIPO_IMOBILIZADO, TIPO_MANUTENCAO, TIPO_SERVICO)
+
+# Cotação conduzida pelo projeto (ADM Pedidos): bem, manutenção, serviço.
+TIPOS_COTACAO_PROJETO = frozenset({TIPO_IMOBILIZADO, TIPO_MANUTENCAO, TIPO_SERVICO})
+
+URGENCIA_NORMAL = "normal"
+URGENCIA_URGENTE = "urgente"
+URGENCIAS_PEDIDO = (URGENCIA_NORMAL, URGENCIA_URGENTE)
+
+MANUTENCAO_CORRETIVA = "corretiva"
+MANUTENCAO_PREVENTIVA = "preventiva"
+TIPOS_MANUTENCAO = (MANUTENCAO_CORRETIVA, MANUTENCAO_PREVENTIVA)
+
+ROTULO_TIPO_PEDIDO = {
+    TIPO_CONSUMO: "Consumo",
+    TIPO_IMOBILIZADO: "Bem / imobilizado",
+    TIPO_MANUTENCAO: "Manutenção",
+    TIPO_SERVICO: "Prestação de serviço",
+}
 
 STATUS_RASCUNHO = "rascunho"
 STATUS_AGUARDANDO_COTACAO = "aguardando_cotacao"
@@ -44,6 +64,7 @@ TIPO_EVENTO_ANEXO = "anexo"
 TIPO_EVENTO_EMAIL = "email"
 TIPO_EVENTO_ITENS = "itens"
 TIPO_EVENTO_ITENS_OK = "itens_ok"
+TIPO_EVENTO_OK = "ok"
 
 TIPOS_EVENTO_PEDIDO = {
     TIPO_EVENTO_PARECER,
@@ -54,7 +75,11 @@ TIPOS_EVENTO_PEDIDO = {
     TIPO_EVENTO_EMAIL,
     TIPO_EVENTO_ITENS,
     TIPO_EVENTO_ITENS_OK,
+    TIPO_EVENTO_OK,
 }
+
+# Eventos que pedem confirmação (Ok) da outra parte na timeline.
+TIPOS_EVENTO_AGUARDAM_OK = frozenset({TIPO_EVENTO_ITENS, TIPO_EVENTO_ANEXO})
 
 # Itens editáveis até o e-mail de pedido de compra ao fornecedor.
 STATUS_PEDIDO_ITENS_EDITAVEIS = frozenset(
@@ -153,6 +178,98 @@ CATEGORIAS_PADRAO = (
     "Infraestrutura",
     "Outros",
 )
+
+SEGMENTO_CONSUMO = "consumo"
+SEGMENTO_MANUTENCAO = "manutencao"
+SEGMENTO_IMOBILIZADO = "imobilizado"
+SEGMENTO_SERVICO = "servico"
+
+SEGMENTOS_CATALOGO = (
+    SEGMENTO_CONSUMO,
+    SEGMENTO_MANUTENCAO,
+    SEGMENTO_IMOBILIZADO,
+    SEGMENTO_SERVICO,
+)
+
+ROTULO_SEGMENTO_CATALOGO = {
+    SEGMENTO_CONSUMO: "Consumo (janela)",
+    SEGMENTO_MANUTENCAO: "Manutenção",
+    SEGMENTO_IMOBILIZADO: "Bem / imobilizado",
+    SEGMENTO_SERVICO: "Prestação de serviço",
+}
+
+
+def normalizar_segmento_catalogo(valor: Optional[str]) -> str:
+    chave = _norm_tipo_texto(valor).replace(" ", "_")
+    if chave == "manutencao" or chave.startswith("manuten"):
+        return SEGMENTO_MANUTENCAO
+    if chave in {"imobilizado", "bem", "bem_imobilizado"} or "imobil" in chave:
+        return SEGMENTO_IMOBILIZADO
+    if chave in {"servico", "prestacao_de_servico", "prestacao"} or "servic" in chave:
+        return SEGMENTO_SERVICO
+    return SEGMENTO_CONSUMO
+
+
+def inferir_segmento_por_nome_categoria(nome: Optional[str]) -> str:
+    n = _norm_tipo_texto(nome)
+    if "manuten" in n or "infraestrutura" in n:
+        return SEGMENTO_MANUTENCAO
+    if "imobil" in n or "patrimon" in n:
+        return SEGMENTO_IMOBILIZADO
+    if "servic" in n:
+        return SEGMENTO_SERVICO
+    return SEGMENTO_CONSUMO
+
+
+def segmento_do_tipo_pedido(tipo: Optional[str]) -> Optional[str]:
+    """Segmento de catálogo esperado no pedido. Serviço: None (sem catálogo de produto)."""
+    t = (tipo or "").strip().lower()
+    if t == TIPO_CONSUMO:
+        return SEGMENTO_CONSUMO
+    if t == TIPO_MANUTENCAO:
+        return SEGMENTO_MANUTENCAO
+    if t == TIPO_IMOBILIZADO:
+        return SEGMENTO_IMOBILIZADO
+    if t == TIPO_SERVICO:
+        return None
+    return SEGMENTO_CONSUMO
+
+
+def rotulo_segmento_catalogo(segmento: Optional[str]) -> str:
+    chave = normalizar_segmento_catalogo(segmento)
+    return ROTULO_SEGMENTO_CATALOGO.get(chave, chave)
+
+
+COMPETENCIA_SEDE = "sede"
+COMPETENCIA_PROJETO = "projeto"
+
+COMPETENCIAS_ORCAMENTO = (COMPETENCIA_SEDE, COMPETENCIA_PROJETO)
+
+ROTULO_COMPETENCIA_ORCAMENTO = {
+    COMPETENCIA_SEDE: "Sede (orçado pela Sede)",
+    COMPETENCIA_PROJETO: "Projeto (orçado pelo projeto)",
+}
+
+
+def normalizar_competencia_orcamento(valor: Optional[str]) -> str:
+    chave = _norm_tipo_texto(valor)
+    if chave in {"projeto", "unidade", "projeto_orcado"}:
+        return COMPETENCIA_PROJETO
+    return COMPETENCIA_SEDE
+
+
+def competencia_padrao_do_segmento(segmento: Optional[str]) -> str:
+    seg = normalizar_segmento_catalogo(segmento)
+    if seg in {SEGMENTO_MANUTENCAO, SEGMENTO_IMOBILIZADO, SEGMENTO_SERVICO}:
+        return COMPETENCIA_PROJETO
+    return COMPETENCIA_SEDE
+
+
+def rotulo_competencia_orcamento(valor: Optional[str]) -> str:
+    return ROTULO_COMPETENCIA_ORCAMENTO.get(
+        normalizar_competencia_orcamento(valor),
+        ROTULO_COMPETENCIA_ORCAMENTO[COMPETENCIA_SEDE],
+    )
 
 FONTES_PADRAO = (
     "Convênio",
@@ -459,6 +576,63 @@ def usuario_e_sede_compras(*, perfil: str, is_manutencao: bool = False) -> bool:
     return is_manutencao or _perfil_adm_compras(perfil) == PERFIL_ADM_COMPRAS
 
 
+def usuario_pode_cadastrar_mestre_compras(*, perfil: str, is_manutencao: bool = False) -> bool:
+    """Sede (ADM Global Compras) ou ADM Pedidos podem cadastrar itens/fornecedores."""
+    if is_manutencao or _perfil_adm_compras(perfil) == PERFIL_ADM_COMPRAS:
+        return True
+    return (perfil or "").strip() == PERFIL_ADM_PEDIDOS
+
+
+def chave_split_categoria_pedido(
+    nome_categoria: Optional[str],
+    categoria_id: Optional[str] = None,
+    descricao_item: Optional[str] = None,
+) -> tuple[str, str]:
+    """
+    Agrupa itens no envio do pedido de consumo.
+    Carne e Peixe ficam separados de Alimentação; demais categorias pelo próprio id/nome.
+
+    Observação: a separação Carne/Peixe depende da *categoria* do cadastro
+    (nome contendo carne/peixe), não do texto do item — cortes como «Acem»
+    só vão ao pedido de Carne se estiverem na categoria Carne.
+    """
+    del descricao_item  # mantido na assinatura por compatibilidade das chamadas
+    n = _norm_tipo_texto(nome_categoria)
+    if "carne" in n:
+        return "carne", "Carne"
+    if "peixe" in n:
+        return "peixe", "Peixe"
+    if "aliment" in n:
+        return "alimentacao", "Alimentação"
+    cid = (categoria_id or "").strip()
+    rotulo = (nome_categoria or "").strip() or "Sem categoria"
+    if cid:
+        return f"cat:{cid}", rotulo
+    return f"nome:{_norm_tipo_texto(rotulo) or 'sem'}", rotulo
+
+
+def formatar_grupo_codigo(seq: int, dia) -> str:
+    """Código curto do lote/envio: 1-24/08/2026 (1º grupo do projeto naquele dia)."""
+    from datetime import date as date_cls
+
+    if not isinstance(dia, date_cls):
+        dia = dia.date() if hasattr(dia, "date") else dia
+    return f"{int(seq)}-{dia.strftime('%d/%m/%Y')}"
+
+
+def sequencia_grupo_codigo(codigo: Optional[str], dia_fmt: str) -> Optional[int]:
+    """Extrai o N de 'N-DD/MM/YYYY' quando a data bate; senão None."""
+    texto = (codigo or "").strip()
+    if not texto or "-" not in texto:
+        return None
+    seq_txt, _, resto = texto.partition("-")
+    if resto != dia_fmt:
+        return None
+    if not seq_txt.isdigit():
+        return None
+    return int(seq_txt)
+
+
 def _norm_tipo_texto(valor: Optional[str]) -> str:
     bruto = unicodedata.normalize("NFKD", (valor or "").strip().lower())
     return "".join(ch for ch in bruto if not unicodedata.combining(ch))
@@ -560,16 +734,22 @@ def normalizar_tipo_fonte(valor: Optional[str], *, nome: Optional[str] = None) -
 
 
 def exige_tres_cotacoes(tipo: str) -> bool:
-    return (tipo or "").strip().lower() == TIPO_IMOBILIZADO
+    return tipo_eh_cotacao_projeto(tipo)
+
+
+def tipo_eh_cotacao_projeto(tipo: Optional[str]) -> bool:
+    return (tipo or "").strip().lower() in TIPOS_COTACAO_PROJETO
+
+
+def rotulo_tipo_pedido(tipo: Optional[str]) -> str:
+    chave = (tipo or "").strip().lower()
+    return ROTULO_TIPO_PEDIDO.get(chave, chave or "Pedido")
 
 
 def pedido_pronto_para_aprovacao_unidade(tipo: str, qtd_cotacoes: int, tem_escolhida: bool) -> bool:
-    tipo_n = (tipo or "").strip().lower()
     if not tem_escolhida or qtd_cotacoes < 1:
         return False
-    if tipo_n == TIPO_IMOBILIZADO:
-        return qtd_cotacoes >= 1
-    return qtd_cotacoes >= 1
+    return True
 
 
 def aviso_cotacoes_insuficientes(qtd_cotacoes: int) -> Optional[str]:

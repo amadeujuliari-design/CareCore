@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { CalendarRange, Landmark, Package, ShoppingCart, Truck } from 'lucide-react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { CalendarRange, Landmark, ListChecks, Package, ShoppingCart, Tags, Truck } from 'lucide-react';
 
 import ComprasCategoriasFontes from './components/ComprasCategoriasFontes';
 import ComprasFornecedoresCadastro from './components/ComprasFornecedoresCadastro';
-import ComprasItemTypeahead from './components/ComprasItemTypeahead';
 import ComprasItensConsumoCadastro from './components/ComprasItensConsumoCadastro';
 import ComprasJanelaCalendario from './components/ComprasJanelaCalendario';
 import ComprasPatrimonioCadastro from './components/ComprasPatrimonioCadastro';
@@ -39,8 +38,8 @@ import {
   competenciaAtual,
   moneyCentavos,
 } from './services/comprasService';
-import { usuarioEhAdmCompras, usuarioEhManutencao } from './utils/rbacUtils';
-import { unidadeParaPedido } from './utils/comprasItensConsumoUtils';
+import { usuarioEhAdmCompras, usuarioEhAdmPedidos, usuarioEhManutencao } from './utils/rbacUtils';
+import { BOTOES_NOVO_PEDIDO, rotuloTipoPedido } from './utils/comprasPedidoTipos';
 
 const STATUS_LABEL = {
   rascunho: 'Rascunho',
@@ -62,25 +61,13 @@ function usuarioSessao() {
   }
 }
 
-function pedidoNovoVazio(sede) {
-  return {
-    tipo: 'consumo',
-    descricao: '',
-    quantidade: '1',
-    unidade_medida: '',
-    embalagem: '',
-    marca_preferencial: '',
-    categoria_id: '',
-    catalogo_item_id: '',
-    destino: sede ? 'sede' : 'projeto',
-    instituicao_id: '',
-  };
-}
-
 export default function Compras() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const usuario = useMemo(() => usuarioSessao(), []);
   const sede = usuarioEhAdmCompras(usuario) || usuarioEhManutencao(usuario);
+  const admPedidos = usuarioEhAdmPedidos(usuario);
+  const podeCadastrarMestre = sede || admPedidos;
   const [aba, setAba] = useState('pedidos');
   const [abaCadastro, setAbaCadastro] = useState('fornecedores');
   const [acesso, setAcesso] = useState(null);
@@ -101,7 +88,6 @@ export default function Compras() {
   const [patrimonio, setPatrimonio] = useState([]);
   const [economia, setEconomia] = useState(null);
   const [competencia, setCompetencia] = useState(competenciaAtual());
-  const [novo, setNovo] = useState(() => pedidoNovoVazio(sede));
   const [salvandoJanela, setSalvandoJanela] = useState(false);
 
   const carregar = useCallback(async () => {
@@ -149,59 +135,45 @@ export default function Compras() {
         setEconomia(e);
       } else {
         setPatrimonio(await comprasPatrimonio());
+        if (podeCadastrarMestre) {
+          const [f, u] = await Promise.all([comprasFornecedores(), comprasUnidades()]);
+          setFornecedores(f);
+          setUnidades(u);
+        }
       }
     } catch (err) {
       setErro(err.response?.data?.detail || err.message || 'Não foi possível carregar Compras.');
     } finally {
       setCarregando(false);
     }
-  }, [competencia, sede]);
+  }, [competencia, podeCadastrarMestre, sede]);
 
   useEffect(() => {
     carregar();
   }, [carregar]);
 
-  const criarPedido = async (e) => {
-    e.preventDefault();
-    setErro('');
-    setOk('');
-    try {
-      const escopoUnidade = sede && novo.destino === 'sede' ? 'sede' : 'projeto';
-      const instituicaoId = escopoUnidade === 'projeto'
-        ? (sede ? (novo.instituicao_id || null) : null)
-        : null;
-      if (sede && escopoUnidade === 'projeto' && !instituicaoId) {
-        setErro('Selecione a unidade do pedido ou escolha Sede (matriz).');
-        return;
+  useEffect(() => {
+    const abaParam = (searchParams.get('aba') || '').trim().toLowerCase();
+    if (abaParam === 'fornecedores' || abaParam === 'itens' || abaParam === 'categorias') {
+      if (sede) {
+        setAba('cadastros');
+        setAbaCadastro(abaParam === 'categorias' ? 'categorias' : abaParam);
+      } else if (podeCadastrarMestre) {
+        setAba(abaParam);
       }
-      const criado = await comprasCriarPedido({
-        tipo: novo.tipo,
-        competencia,
-        escopo_unidade: escopoUnidade,
-        instituicao_id: instituicaoId,
-        itens: novo.descricao.trim()
-          ? [{
-            descricao: novo.descricao.trim(),
-            quantidade: Number(novo.quantidade || 1),
-            unidade_medida: novo.unidade_medida || null,
-            embalagem: (novo.embalagem || '').trim() || null,
-            marca_preferencial: novo.marca_preferencial || null,
-            categoria_id: novo.categoria_id || null,
-            catalogo_item_id: novo.catalogo_item_id || null,
-          }]
-          : [],
-      });
-      setOk('Pedido criado. Complete os itens e envie.');
-      setNovo(pedidoNovoVazio(sede));
-      navigate(`/compras/pedidos/${criado.id}`);
-    } catch (err) {
-      setErro(err.response?.data?.detail || 'Não foi possível criar o pedido.');
     }
-  };
+  }, [podeCadastrarMestre, searchParams, sede]);
 
   const abas = [
     { id: 'pedidos', label: 'Pedidos', icon: ShoppingCart },
     { id: 'janela', label: 'Janela mensal', icon: CalendarRange },
+    ...(podeCadastrarMestre && !sede
+      ? [
+        { id: 'fornecedores', label: 'Fornecedores', icon: Truck },
+        { id: 'itens', label: 'Catálogo de itens', icon: ListChecks },
+        { id: 'categorias', label: 'Categorias', icon: Tags },
+      ]
+      : []),
     ...(sede ? [{ id: 'cadastros', label: 'Cadastros', icon: Truck }] : []),
     { id: 'patrimonio', label: 'Patrimônio', icon: Package },
     ...(sede ? [{ id: 'economia', label: 'Economia', icon: Landmark }] : []),
@@ -289,123 +261,21 @@ export default function Compras() {
                 </FilterPanel>
 
                 <SectionCard title="Novo pedido">
-                  <form onSubmit={criarPedido} className="grid gap-3 md:grid-cols-8">
-                    {sede && (
-                      <>
-                        <label className="md:col-span-4">
-                          <span className="mb-1 block text-xs font-semibold text-slate-600">Destino</span>
-                          <select
-                            value={novo.destino}
-                            onChange={(e) => setNovo((atual) => ({
-                              ...atual,
-                              destino: e.target.value,
-                              instituicao_id: e.target.value === 'sede' ? '' : atual.instituicao_id,
-                            }))}
-                            className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
-                          >
-                            <option value="sede">Sede (matriz / organização)</option>
-                            <option value="projeto">Unidade / projeto</option>
-                          </select>
-                        </label>
-                        {novo.destino === 'projeto' && (
-                          <label className="md:col-span-4">
-                            <span className="mb-1 block text-xs font-semibold text-slate-600">Unidade</span>
-                            <select
-                              value={novo.instituicao_id}
-                              onChange={(e) => setNovo((atual) => ({ ...atual, instituicao_id: e.target.value }))}
-                              className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
-                              required
-                            >
-                              <option value="">Selecione a unidade…</option>
-                              {unidades.map((u) => (
-                                <option key={u.id} value={u.id}>{u.nome}</option>
-                              ))}
-                            </select>
-                          </label>
-                        )}
-                      </>
-                    )}
-                    <label className="md:col-span-2">
-                      <span className="mb-1 block text-xs font-semibold text-slate-600">Tipo</span>
-                      <select
-                        value={novo.tipo}
-                        onChange={(e) => setNovo((atual) => ({ ...atual, tipo: e.target.value }))}
-                        className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
-                      >
-                        <option value="consumo">Consumo (janela mensal)</option>
-                        <option value="imobilizado">Imobilizado / bem</option>
-                      </select>
-                    </label>
-                    {novo.tipo === 'consumo' ? (
-                      <div className="md:col-span-3">
-                        <span className="mb-1 block text-xs font-semibold text-slate-600">Item</span>
-                        <ComprasItemTypeahead
-                          className="w-full"
-                          itens={itensConsumo}
-                          value={novo.descricao}
-                          placeholder="Digite o item — os resultados aparecem na hora"
-                          onChange={(valor) => setNovo((atual) => ({
-                            ...atual,
-                            descricao: valor,
-                            catalogo_item_id: '',
-                          }))}
-                          onEscolher={(item) => setNovo((atual) => (item ? {
-                            ...atual,
-                            catalogo_item_id: item.id,
-                            descricao: item.descricao,
-                            unidade_medida: unidadeParaPedido(item),
-                            embalagem: item.embalagem || '',
-                            marca_preferencial: item.marca_preferencial || '',
-                            categoria_id: item.categoria_id || '',
-                          } : { ...atual, catalogo_item_id: '' }))}
-                        />
-                      </div>
-                    ) : (
-                      <label className="md:col-span-3">
-                        <span className="mb-1 block text-xs font-semibold text-slate-600">Primeiro item</span>
-                        <input
-                          value={novo.descricao}
-                          onChange={(e) => setNovo((atual) => ({ ...atual, descricao: e.target.value }))}
-                          placeholder="Descrição (opcional)"
-                          className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
-                        />
-                      </label>
-                    )}
-                    <label className="md:col-span-1">
-                      <span className="mb-1 block text-xs font-semibold text-slate-600">Qtd</span>
-                      <input
-                        value={novo.quantidade}
-                        onChange={(e) => setNovo((atual) => ({ ...atual, quantidade: e.target.value }))}
-                        className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
-                        placeholder="1"
-                        inputMode="decimal"
-                      />
-                    </label>
-                    <label className="md:col-span-1">
-                      <span className="mb-1 block text-xs font-semibold text-slate-600">Unidade</span>
-                      <input
-                        value={novo.unidade_medida}
-                        onChange={(e) => setNovo((atual) => ({ ...atual, unidade_medida: e.target.value }))}
-                        className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
-                        placeholder="un"
-                      />
-                    </label>
-                    <div className="flex items-end md:col-span-2">
-                      <PremiumButton type="submit" className="w-full">Criar rascunho</PremiumButton>
-                    </div>
-                    {novo.tipo === 'consumo' && (novo.embalagem || novo.marca_preferencial) ? (
-                      <p className="md:col-span-8 text-xs text-slate-500">
-                        Neste pedido: {novo.quantidade || 1} {novo.unidade_medida || 'un'} de {novo.descricao}
-                        {novo.embalagem ? ` (cada volume: ${novo.embalagem})` : ''}
-                        {novo.marca_preferencial ? ` · ${novo.marca_preferencial}` : ''}.
-                      </p>
-                    ) : null}
-                  </form>
-                  <p className="mt-2 text-xs text-slate-500">
-                    Quantidade = volumes neste pedido. Unidade = como se conta (un, pct). Depois dá para incluir mais itens no rascunho.
-                    Consumo: prepare o envio no calendário da janela, nos dias em verde. Imobilizado não depende da janela e entra no patrimônio após o recebimento.
-                    {sede ? ' Pedidos da Sede aparecem nos relatórios como linha própria (como na NFP), sem cadastro de projeto fictício.' : null}
+                  <p className="mb-3 text-sm text-slate-600">
+                    Escolha o tipo — cada um abre a tela certa (consumo na janela; bem, manutenção e serviço com cotação pelo projeto).
                   </p>
+                  <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                    {BOTOES_NOVO_PEDIDO.map((botao) => (
+                      <Link
+                        key={botao.tipo}
+                        to={`/compras/novo/${botao.tipo}`}
+                        className="flex min-h-[7.5rem] flex-col rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:border-slate-400 hover:shadow"
+                      >
+                        <span className="text-sm font-black text-slate-900">{botao.titulo}</span>
+                        <span className="mt-2 text-xs font-medium leading-snug text-slate-500">{botao.descricao}</span>
+                      </Link>
+                    ))}
+                  </div>
                 </SectionCard>
 
                 <SectionCard title="Pedidos">
@@ -420,8 +290,11 @@ export default function Compras() {
                           <tr className="text-left text-xs uppercase text-slate-500">
                             <th className="py-2">Unidade</th>
                             <th>Tipo</th>
+                            <th>Grupo</th>
+                            <th>Objeto / categoria</th>
                             <th>Envio previsto</th>
                             <th>Status</th>
+                            {!sede ? <th>Orçamentos</th> : null}
                             <th>Atualizado</th>
                             <th />
                           </tr>
@@ -430,7 +303,11 @@ export default function Compras() {
                           {pedidos.map((pedido) => (
                             <tr key={pedido.id} className="border-t border-slate-100">
                               <td className="py-2">{pedido.instituicao_nome || pedido.instituicao_id}</td>
-                              <td>{pedido.tipo}</td>
+                              <td>{pedido.tipo_rotulo || rotuloTipoPedido(pedido.tipo)}</td>
+                              <td className="whitespace-nowrap font-semibold tabular-nums text-slate-800">
+                                {pedido.grupo_codigo || '—'}
+                              </td>
+                              <td>{pedido.titulo || pedido.categoria_split_nome || '—'}</td>
                               <td>
                                 {pedido.data_envio_prevista
                                   ? `${pedido.data_envio_prevista.slice(8, 10)}/${pedido.data_envio_prevista.slice(5, 7)}`
@@ -438,6 +315,7 @@ export default function Compras() {
                                 {pedido.envio_automatico ? ' · auto' : ''}
                               </td>
                               <td>{STATUS_LABEL[pedido.status] || pedido.status}</td>
+                              {!sede ? <td>{pedido.qtd_orcamentos ?? 0}</td> : null}
                               <td>{pedido.atualizado_em || '—'}</td>
                               <td>
                                 <Link className="font-semibold text-slate-800 underline" to={`/compras/pedidos/${pedido.id}`}>
@@ -535,12 +413,59 @@ export default function Compras() {
               />
             )}
 
+            {aba === 'fornecedores' && podeCadastrarMestre && !sede && (
+              <ComprasFornecedoresCadastro
+                fornecedores={fornecedores}
+                categorias={categorias}
+                sede={false}
+                onRecarregar={carregar}
+                onMensagem={({ ok: msgOk, erro: msgErro }) => {
+                  if (msgOk) setOk(msgOk);
+                  if (msgErro) setErro(msgErro);
+                }}
+              />
+            )}
+
+            {aba === 'itens' && podeCadastrarMestre && !sede && (
+              <ComprasItensConsumoCadastro
+                itens={itensConsumo}
+                categorias={categorias}
+                podeEditar
+                sede={false}
+                onRecarregar={carregar}
+                onMensagem={({ ok: msgOk, erro: msgErro }) => {
+                  if (msgOk) setOk(msgOk);
+                  if (msgErro) setErro(msgErro);
+                }}
+              />
+            )}
+
+            {aba === 'categorias' && podeCadastrarMestre && !sede && (
+              <ComprasCategoriasFontes
+                categorias={categorias}
+                fontes={fontes}
+                podeEditar
+                mostrarFontes={false}
+                onRecarregar={carregar}
+                onMensagem={({ ok: msgOk, erro: msgErro }) => {
+                  if (msgOk) {
+                    setOk(msgOk);
+                    setErro('');
+                  }
+                  if (msgErro) {
+                    setErro(msgErro);
+                    setOk('');
+                  }
+                }}
+              />
+            )}
+
             {aba === 'cadastros' && sede && (
               <div className="space-y-4">
                 <div className="flex flex-wrap gap-2">
                   {[
                     { id: 'fornecedores', label: 'Fornecedores' },
-                    { id: 'itens', label: 'Itens de consumo' },
+                    { id: 'itens', label: 'Catálogo de itens' },
                     { id: 'categorias', label: 'Categorias e fontes' },
                   ].map((item) => (
                     <button
@@ -562,6 +487,7 @@ export default function Compras() {
                   <ComprasFornecedoresCadastro
                     fornecedores={fornecedores}
                     categorias={categorias}
+                    sede={sede}
                     onRecarregar={carregar}
                     onMensagem={({ ok: msgOk, erro: msgErro }) => {
                       if (msgOk) setOk(msgOk);

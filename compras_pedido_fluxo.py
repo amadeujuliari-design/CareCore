@@ -29,6 +29,7 @@ from compras_regras import (
     STATUS_ENVIADO,
     STATUS_RECEBIDO,
     STATUS_REPROVADO,
+    STATUS_RASCUNHO,
     STATUS_TERMINAIS_PEDIDO,
     TIPO_CONSUMO,
     TIPO_ANEXO_NF_PDF,
@@ -42,17 +43,21 @@ from compras_regras import (
     TIPO_EVENTO_ITENS_OK,
     TIPO_EVENTO_NEGATIVA,
     TIPO_EVENTO_OBSERVACAO,
+    TIPO_EVENTO_OK,
     TIPO_EVENTO_PARECER,
     TIPO_EVENTO_STATUS,
     TIPO_IMOBILIZADO,
     TIPOS_ANEXO_PEDIDO,
+    TIPOS_EVENTO_AGUARDAM_OK,
     TIPOS_EVENTO_PEDIDO,
     aviso_cotacoes_insuficientes,
     data_operacional,
     pedido_escopo_sede,
     pedido_itens_podem_editar,
     pedido_rascunho_pode_excluir,
+    tipo_eh_cotacao_projeto,
     usuario_e_sede_compras,
+    usuario_pode_pedir,
 )
 from compras_upload_utils import remover_arquivo_compras, salvar_arquivo_compras
 from email_utils import enviar_email_smtp_com_anexo
@@ -147,9 +152,12 @@ async def registrar_evento_pedido(
     anexo_id: Optional[str] = None,
     status_anterior: Optional[str] = None,
     status_novo: Optional[str] = None,
+    aguardando_confirmacao: Optional[bool] = None,
 ) -> ComprasPedidoEventoDB:
     if tipo not in TIPOS_EVENTO_PEDIDO:
         raise ValueError(f"Tipo de evento inválido: {tipo}")
+    if aguardando_confirmacao is None:
+        aguardando_confirmacao = tipo in TIPOS_EVENTO_AGUARDAM_OK
     evento = ComprasPedidoEventoDB(
         pedido_id=pedido_id,
         tipo=tipo,
@@ -159,6 +167,7 @@ async def registrar_evento_pedido(
         anexo_id=anexo_id,
         status_anterior=status_anterior,
         status_novo=status_novo,
+        aguardando_confirmacao=bool(aguardando_confirmacao),
     )
     db.add(evento)
     return evento
@@ -206,7 +215,7 @@ async def _eventos_pedido(db: AsyncSession, pedido_id: str) -> list[ComprasPedid
             await db.execute(
                 select(ComprasPedidoEventoDB)
                 .where(ComprasPedidoEventoDB.pedido_id == pedido_id)
-                .order_by(ComprasPedidoEventoDB.criado_em.asc())
+                .order_by(ComprasPedidoEventoDB.criado_em.desc())
             )
         ).scalars().all()
     )
@@ -253,6 +262,9 @@ def _serializar_evento(evento: ComprasPedidoEventoDB) -> dict:
         "anexo_id": evento.anexo_id,
         "status_anterior": evento.status_anterior,
         "status_novo": evento.status_novo,
+        "aguardando_confirmacao": bool(getattr(evento, "aguardando_confirmacao", False)),
+        "confirmado_em": _iso(getattr(evento, "confirmado_em", None)),
+        "confirmado_por_id": getattr(evento, "confirmado_por_id", None),
         "criado_em": _iso(evento.criado_em),
     }
 
@@ -278,13 +290,13 @@ async def extras_serializacao_pedido(db: AsyncSession, pedido: ComprasPedidoDB) 
     )
     fechado_por = pedido.reprovado_por_id or pedido.cancelado_por_id
     eventos_itens = [e for e in eventos if e.tipo == TIPO_EVENTO_ITENS]
-    ultimo_itens = eventos_itens[-1] if eventos_itens else None
+    ultimo_itens = eventos_itens[0] if eventos_itens else None  # timeline já vem do mais recente
     tem_cotacao = bool(cotacoes)
     aviso_alteracao = None
     precisa_revisar = False
     if ultimo_itens and pedido_itens_podem_editar(pedido.status) and pedido.status != "rascunho":
         # Pendente enquanto o último evento relevante for alteração de itens (não o OK).
-        for ev in reversed(eventos):
+        for ev in eventos:
             if ev.tipo == TIPO_EVENTO_ITENS_OK:
                 break
             if ev.tipo == TIPO_EVENTO_ITENS:
@@ -312,6 +324,7 @@ async def extras_serializacao_pedido(db: AsyncSession, pedido: ComprasPedidoDB) 
         ).scalars().all()
     )
     fornecedores_solicitacao = _fornecedores_solicitacao_dos_eventos(eventos, fornecedores_org)
+    qtd_orcamentos = len([c for c in cotacoes if getattr(c, "ativa", True)])
 
     return {
         "anexos": [_serializar_anexo(a) for a in anexos],
@@ -321,6 +334,8 @@ async def extras_serializacao_pedido(db: AsyncSession, pedido: ComprasPedidoDB) 
         "aviso_alteracao_itens": aviso_alteracao,
         "precisa_revisar_cotacao": precisa_revisar,
         "pode_editar_itens": pedido_itens_podem_editar(pedido.status),
+        "qtd_orcamentos": qtd_orcamentos,
+        "pode_substituir_orcamento": False,  # preenchido em serializar_pedido com perfil
         "fornecedores_solicitacao": fornecedores_solicitacao,
         "motivo_reprovacao": pedido.motivo_reprovacao,
         "motivo_cancelamento": pedido.motivo_cancelamento,
@@ -422,13 +437,58 @@ async def upload_anexo_pedido(
         db,
         pedido_id=pedido.id,
         tipo=TIPO_EVENTO_ANEXO,
-        texto=f"Anexo {tipo}: {nome_original}",
+        texto=f"Arquivo anexado com sucesso ({tipo}: {nome_original}). Aguardando ok.",
         usuario_id=_uid(usuario),
         anexo_id=anexo.id,
         cotacao_id=cotacao_id,
     )
     pedido.atualizado_em = agora_operacional_naive()
     return anexo
+
+
+async def confirmar_evento_pedido(
+    db: AsyncSession,
+    usuario: dict,
+    pedido: ComprasPedidoDB,
+    evento_id: str,
+) -> ComprasPedidoEventoDB:
+    """Confirma (Ok) um evento pendente na timeline — a outra parte reconhece a alteração."""
+    if pedido.status in STATUS_TERMINAIS_PEDIDO:
+        raise HTTPException(status_code=400, detail="Processo encerrado.")
+    evento = (
+        await db.execute(
+            select(ComprasPedidoEventoDB).where(
+                ComprasPedidoEventoDB.id == evento_id,
+                ComprasPedidoEventoDB.pedido_id == pedido.id,
+            )
+        )
+    ).scalar_one_or_none()
+    if not evento:
+        raise HTTPException(status_code=404, detail="Evento não encontrado.")
+    if not getattr(evento, "aguardando_confirmacao", False):
+        raise HTTPException(status_code=400, detail="Este evento não aguarda confirmação.")
+    uid = _uid(usuario)
+    if evento.usuario_id and evento.usuario_id == uid:
+        raise HTTPException(
+            status_code=400,
+            detail="Quem registrou a alteração não confirma o próprio Ok — a outra parte deve confirmar.",
+        )
+    evento.aguardando_confirmacao = False
+    evento.confirmado_em = agora_operacional_naive()
+    evento.confirmado_por_id = uid
+    nome = (
+        (usuario.get("nome") or usuario.get("nome_completo") or usuario.get("email") or "Usuário")
+    ).strip()
+    await registrar_evento_pedido(
+        db,
+        pedido_id=pedido.id,
+        tipo=TIPO_EVENTO_OK if evento.tipo != TIPO_EVENTO_ITENS else TIPO_EVENTO_ITENS_OK,
+        texto=f"{nome}: confirmou o registro na timeline.",
+        usuario_id=uid,
+        aguardando_confirmacao=False,
+    )
+    pedido.atualizado_em = agora_operacional_naive()
+    return evento
 
 
 async def registrar_comunicacao_pedido(
@@ -580,6 +640,7 @@ async def _dados_instituicao(db: AsyncSession, pedido: ComprasPedidoDB) -> Optio
         "relatorio_telefone": getattr(inst, "relatorio_telefone", None) or getattr(inst, "telefone", None),
         "relatorio_email": getattr(inst, "relatorio_email", None) or getattr(inst, "email", None),
         "relatorio_site": getattr(inst, "relatorio_site", None),
+        "email_adm_compras": getattr(inst, "email_adm_compras", None),
     }
 
 
@@ -816,6 +877,7 @@ async def enviar_email_fornecedor(
         anexo_bytes=bytes_arquivo,
         anexo_content_type=content_type or getattr(anexo, "content_type", None) or "application/pdf",
         perfil="compras",
+        mailbox=(inst or {}).get("email_adm_compras") if tipo_eh_cotacao_projeto(pedido.tipo) else None,
     )
     texto_evento = f"E-mail enviado para {email_dest}." if resultado.enviado else f"Falha no e-mail: {resultado.erro}"
     await registrar_evento_pedido(
@@ -880,26 +942,69 @@ async def enviar_solicitacao_cotacao_fornecedores(
 ) -> dict:
     """Envia pedido de cotação por e-mail: um To por fornecedor (nunca lista no mesmo e-mail)."""
     perfil = str(usuario.get("perfil_acesso") or usuario.get("perfil") or "")
-    if not usuario_e_sede_compras(
+    sede = usuario_e_sede_compras(
         perfil=perfil,
         is_manutencao=bool(usuario.get("is_manutencao")),
-    ):
-        raise HTTPException(status_code=403, detail="Pedido de cotação é enviado pela Sede (ADM Compras).")
-    if pedido.tipo != TIPO_CONSUMO:
-        raise HTTPException(status_code=400, detail="Pedido de cotação por e-mail é para consumo (Sede).")
+    )
+    cotacao_projeto = tipo_eh_cotacao_projeto(pedido.tipo)
+    pode_projeto = usuario_pode_pedir(
+        perfil=perfil,
+        compras_modulo_ativo=bool(usuario.get("compras_modulo_ativo")),
+        is_manutencao=bool(usuario.get("is_manutencao")),
+        org_compras_ativo=True,
+    )
+
+    if cotacao_projeto:
+        if not sede and not pode_projeto:
+            raise HTTPException(status_code=403, detail="Sem permissão para pedir cotação deste pedido.")
+    elif not sede:
+        raise HTTPException(status_code=403, detail="Pedido de cotação de consumo é enviado pela Sede (ADM Compras).")
+    elif pedido.tipo != TIPO_CONSUMO:
+        raise HTTPException(status_code=400, detail="Pedido de cotação por e-mail da Sede é para consumo.")
+
     if pedido.status in STATUS_TERMINAIS_PEDIDO:
         raise HTTPException(status_code=400, detail="Pedido encerrado não aceita nova solicitação de cotação.")
-    if pedido.status not in {
+
+    status_ok_consumo = {
         STATUS_AGUARDANDO_COTACAO,
         STATUS_EM_COTACAO,
         STATUS_AGUARDANDO_UNIDADE,
         STATUS_AGUARDANDO_SEDE,
         STATUS_APROVADO,
-    }:
+    }
+    status_ok_projeto = {
+        STATUS_RASCUNHO,
+        STATUS_AGUARDANDO_COTACAO,
+        STATUS_EM_COTACAO,
+        STATUS_AGUARDANDO_UNIDADE,
+        STATUS_AGUARDANDO_SEDE,
+    }
+    if cotacao_projeto:
+        if pedido.status not in status_ok_projeto:
+            raise HTTPException(
+                status_code=400,
+                detail="Status do pedido não permite solicitar cotação por e-mail.",
+            )
+    elif pedido.status not in status_ok_consumo:
         raise HTTPException(
             status_code=400,
             detail="Status do pedido não permite solicitar cotação por e-mail.",
         )
+
+    mailbox_projeto = None
+    if cotacao_projeto and pedido.instituicao_id:
+        inst_row = (
+            await db.execute(select(InstituicaoDB).where(InstituicaoDB.id == pedido.instituicao_id))
+        ).scalar_one_or_none()
+        mailbox_projeto = (getattr(inst_row, "email_adm_compras", None) or "").strip() or None
+        if not mailbox_projeto:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Cadastre o e-mail administrativo (Compras) no projeto antes de enviar "
+                    "o pedido de orçamento."
+                ),
+            )
 
     ids = []
     vistos = set()
@@ -987,6 +1092,7 @@ async def enviar_solicitacao_cotacao_fornecedores(
             anexo_bytes=anexo_bytes,
             anexo_content_type="application/pdf",
             perfil="compras",
+            mailbox=mailbox_projeto,
         )
         if resultado.enviado:
             texto_evento = f"Pedido de cotação enviado para {forn.nome} <{email_dest}> [id:{forn.id}]."
@@ -1010,7 +1116,18 @@ async def enviar_solicitacao_cotacao_fornecedores(
         )
 
     status_anterior = pedido.status
-    if pedido.status == STATUS_AGUARDANDO_COTACAO and enviados:
+    if cotacao_projeto and pedido.status == STATUS_RASCUNHO and enviados:
+        pedido.status = STATUS_EM_COTACAO
+        await registrar_evento_pedido(
+            db,
+            pedido_id=pedido.id,
+            tipo=TIPO_EVENTO_STATUS,
+            texto="Status atualizado após pedido de cotação por e-mail.",
+            usuario_id=_uid(usuario),
+            status_anterior=status_anterior,
+            status_novo=STATUS_EM_COTACAO,
+        )
+    elif pedido.status == STATUS_AGUARDANDO_COTACAO and enviados:
         pedido.status = STATUS_EM_COTACAO
         await registrar_evento_pedido(
             db,
@@ -1023,11 +1140,14 @@ async def enviar_solicitacao_cotacao_fornecedores(
         )
     pedido.atualizado_em = agora_operacional_naive()
 
+    from email_utils import mailbox_graph_compras
+
     return {
         "enviados": enviados,
         "falhas": falhas,
         "total_enviados": len(enviados),
         "total_falhas": len(falhas),
+        "remetente": mailbox_graph_compras(mailbox_projeto),
     }
 
 
@@ -1218,6 +1338,14 @@ async def desativar_cotacao(
     cotacao_id: str,
     motivo: Optional[str] = None,
 ) -> None:
+    if not usuario_e_sede_compras(
+        perfil=(usuario.get("perfil_acesso") or usuario.get("perfil") or ""),
+        is_manutencao=bool(usuario.get("is_manutencao")),
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail="Somente a Sede (ADM Compras) pode substituir orçamentos.",
+        )
     if pedido.status in STATUS_TERMINAIS_PEDIDO:
         raise HTTPException(status_code=400, detail="Processo encerrado.")
     cotacao = (
@@ -1253,5 +1381,6 @@ async def desativar_cotacao(
         texto=f"{cotacao.fornecedor_nome}: {texto}",
         usuario_id=_uid(usuario),
         cotacao_id=cotacao.id,
+        aguardando_confirmacao=False,
     )
     pedido.atualizado_em = agora_operacional_naive()

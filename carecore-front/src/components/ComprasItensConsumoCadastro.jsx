@@ -11,6 +11,16 @@ import {
 } from '../utils/comprasItensConsumoExportPrint';
 import { filtrarItensConsumo, digitarQuantidadeEmbalagem, sanitizarUnidadeMedida, UNIDADES_MEDIDA_ITEM } from '../utils/comprasItensConsumoUtils';
 import { rotuloCategoria } from '../utils/comprasCategoriaUtils';
+import {
+  COMPETENCIA_SEDE,
+  COMPETENCIAS_ORCAMENTO,
+  ROTULO_COMPETENCIA_ORCAMENTO,
+  ROTULO_SEGMENTO_CATALOGO,
+  SEGMENTOS_CATALOGO,
+  competenciaPadraoDoSegmento,
+  rotuloCompetenciaOrcamento,
+  rotuloSegmentoCatalogo,
+} from '../utils/comprasPedidoTipos';
 
 const ITENS_POR_PAGINA = 40;
 
@@ -18,6 +28,7 @@ const ITEM_VAZIO = {
   id: '',
   descricao: '',
   categoria_id: '',
+  competencia_orcamento: COMPETENCIA_SEDE,
   unidade_medida: '',
   embalagem: '',
   marca_preferencial: '',
@@ -39,6 +50,8 @@ export default function ComprasItensConsumoCadastro({
 }) {
   const [busca, setBusca] = useState('');
   const [filtroCategoria, setFiltroCategoria] = useState('');
+  const [filtroSegmento, setFiltroSegmento] = useState('');
+  const [filtroCompetencia, setFiltroCompetencia] = useState('');
   const [filtroStatus, setFiltroStatus] = useState('ativo');
   const [pagina, setPagina] = useState(1);
   const [form, setForm] = useState(ITEM_VAZIO);
@@ -46,18 +59,31 @@ export default function ComprasItensConsumoCadastro({
   const [ficha, setFicha] = useState(null);
   const [salvando, setSalvando] = useState(false);
 
+  const categoriasFiltradas = useMemo(() => {
+    if (!filtroSegmento) return categorias;
+    return categorias.filter((c) => (c.segmento || 'consumo') === filtroSegmento);
+  }, [categorias, filtroSegmento]);
+
   const listaFiltrada = useMemo(
     () => filtrarItensConsumo(itens, {
       busca,
       categoriaId: filtroCategoria,
+      segmento: filtroSegmento,
+      competencia: filtroCompetencia,
       status: filtroStatus,
     }),
-    [itens, busca, filtroCategoria, filtroStatus],
+    [itens, busca, filtroCategoria, filtroSegmento, filtroCompetencia, filtroStatus],
   );
 
   useEffect(() => {
     setPagina(1);
-  }, [busca, filtroCategoria, filtroStatus]);
+  }, [busca, filtroCategoria, filtroSegmento, filtroCompetencia, filtroStatus]);
+
+  useEffect(() => {
+    if (filtroCategoria && !categoriasFiltradas.some((c) => c.id === filtroCategoria)) {
+      setFiltroCategoria('');
+    }
+  }, [categoriasFiltradas, filtroCategoria]);
 
   useEffect(() => {
     if (!ficha && !formAberto) return undefined;
@@ -85,6 +111,7 @@ export default function ComprasItensConsumoCadastro({
       id: item.id,
       descricao: item.descricao || '',
       categoria_id: item.categoria_id || '',
+      competencia_orcamento: item.competencia_orcamento || COMPETENCIA_SEDE,
       unidade_medida: sanitizarUnidadeMedida(item.unidade_medida),
       embalagem: item.embalagem || '',
       marca_preferencial: item.marca_preferencial || '',
@@ -106,6 +133,7 @@ export default function ComprasItensConsumoCadastro({
       await comprasSalvarItemConsumo({
         descricao: form.descricao.trim(),
         categoria_id: form.categoria_id || null,
+        competencia_orcamento: form.competencia_orcamento || COMPETENCIA_SEDE,
         unidade_medida: sanitizarUnidadeMedida(form.unidade_medida) || null,
         embalagem: form.embalagem.trim() || null,
         marca_preferencial: form.marca_preferencial.trim() || null,
@@ -131,6 +159,8 @@ export default function ComprasItensConsumoCadastro({
       itens: listaFiltrada,
       filtros: {
         Busca: busca,
+        Uso: filtroSegmento ? rotuloSegmentoCatalogo(filtroSegmento) : '',
+        Competência: filtroCompetencia ? rotuloCompetenciaOrcamento(filtroCompetencia) : '',
         Categoria: categorias.find((c) => c.id === filtroCategoria)?.nome,
         Status: filtroStatus,
       },
@@ -144,6 +174,8 @@ export default function ComprasItensConsumoCadastro({
       sede,
       filtros: {
         Busca: busca,
+        Uso: filtroSegmento ? rotuloSegmentoCatalogo(filtroSegmento) : '',
+        Competência: filtroCompetencia ? rotuloCompetenciaOrcamento(filtroCompetencia) : '',
         Categoria: categorias.find((c) => c.id === filtroCategoria)?.nome,
         Status: filtroStatus,
       },
@@ -154,7 +186,7 @@ export default function ComprasItensConsumoCadastro({
   return (
     <>
       <SectionCard
-        title="Itens de consumo"
+        title="Catálogo de itens"
         subtitle={`${listaFiltrada.length} de ${itens.length} itens`}
         actions={(
           <div className="flex flex-wrap gap-2">
@@ -183,7 +215,7 @@ export default function ComprasItensConsumoCadastro({
         )}
       >
         <div className="px-5 py-4">
-          <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
             <div className="sm:col-span-2">
               <span className="mb-1 block text-xs font-semibold text-slate-600">Busca</span>
               <div className="relative">
@@ -197,6 +229,32 @@ export default function ComprasItensConsumoCadastro({
               </div>
             </div>
             <label>
+              <span className="mb-1 block text-xs font-semibold text-slate-600">Uso no pedido</span>
+              <select
+                value={filtroSegmento}
+                onChange={(e) => setFiltroSegmento(e.target.value)}
+                className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400"
+              >
+                <option value="">Todos</option>
+                {SEGMENTOS_CATALOGO.map((seg) => (
+                  <option key={seg} value={seg}>{ROTULO_SEGMENTO_CATALOGO[seg]}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span className="mb-1 block text-xs font-semibold text-slate-600">Competência</span>
+              <select
+                value={filtroCompetencia}
+                onChange={(e) => setFiltroCompetencia(e.target.value)}
+                className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400"
+              >
+                <option value="">Todas</option>
+                {COMPETENCIAS_ORCAMENTO.map((comp) => (
+                  <option key={comp} value={comp}>{ROTULO_COMPETENCIA_ORCAMENTO[comp]}</option>
+                ))}
+              </select>
+            </label>
+            <label>
               <span className="mb-1 block text-xs font-semibold text-slate-600">Categoria</span>
               <select
                 value={filtroCategoria}
@@ -204,7 +262,7 @@ export default function ComprasItensConsumoCadastro({
                 className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400"
               >
                 <option value="">Todas</option>
-                {categorias.map((cat) => (
+                {categoriasFiltradas.map((cat) => (
                   <option key={cat.id} value={cat.id}>{rotuloCategoria(cat)}</option>
                 ))}
               </select>
@@ -227,8 +285,8 @@ export default function ComprasItensConsumoCadastro({
             <EmptyState
               title="Nenhum item cadastrado"
               subtitle={podeEditar
-                ? 'Cadastre o primeiro item de consumo.'
-                : 'Peça à Sede para cadastrar os itens de consumo.'}
+                ? 'Cadastre o primeiro item do catálogo.'
+                : 'Peça à Sede ou ao ADM Pedidos para cadastrar itens.'}
             />
           ) : listaFiltrada.length === 0 ? (
             <EmptyState title="Nenhum resultado" subtitle="Ajuste a busca ou os filtros." />
@@ -238,6 +296,8 @@ export default function ComprasItensConsumoCadastro({
                 <thead>
                   <tr className="text-left text-xs uppercase tracking-wide text-slate-500">
                     <th className="px-2 py-2">Item</th>
+                    <th className="px-2 py-2">Uso</th>
+                    <th className="px-2 py-2">Competência</th>
                     <th className="px-2 py-2">Categoria</th>
                     <th className="px-2 py-2">Unidade</th>
                     <th className="px-2 py-2">Embalagem</th>
@@ -254,6 +314,8 @@ export default function ComprasItensConsumoCadastro({
                           <strong className="text-slate-900 hover:text-violet-700">{item.descricao}</strong>
                         </button>
                       </td>
+                      <td className="px-2 py-2.5">{rotuloSegmentoCatalogo(item.segmento)}</td>
+                      <td className="px-2 py-2.5">{rotuloCompetenciaOrcamento(item.competencia_orcamento)}</td>
                       <td className="px-2 py-2.5">{item.categoria_nome || '—'}</td>
                       <td className="px-2 py-2.5">{item.unidade_medida || '—'}</td>
                       <td className="px-2 py-2.5">{item.embalagem || '—'}</td>
@@ -360,9 +422,28 @@ export default function ComprasItensConsumoCadastro({
               <CampoSelect
                 label="Categoria"
                 value={form.categoria_id}
-                onChange={(valor) => setForm((atual) => ({ ...atual, categoria_id: valor }))}
-                options={categorias.map((cat) => ({ value: cat.id, label: rotuloCategoria(cat) }))}
+                onChange={(valor) => {
+                  const cat = categorias.find((c) => c.id === valor);
+                  setForm((atual) => ({
+                    ...atual,
+                    categoria_id: valor,
+                    competencia_orcamento: competenciaPadraoDoSegmento(cat?.segmento),
+                  }));
+                }}
+                options={categorias.map((cat) => ({
+                  value: cat.id,
+                  label: `${rotuloCategoria(cat)} · ${rotuloSegmentoCatalogo(cat.segmento)}`,
+                }))}
                 placeholder="Selecione"
+              />
+              <CampoSelect
+                label="Competência de orçamento"
+                value={form.competencia_orcamento || COMPETENCIA_SEDE}
+                onChange={(valor) => setForm((atual) => ({ ...atual, competencia_orcamento: valor }))}
+                options={COMPETENCIAS_ORCAMENTO.map((comp) => ({
+                  value: comp,
+                  label: ROTULO_COMPETENCIA_ORCAMENTO[comp],
+                }))}
               />
               <div className="grid gap-3 md:grid-cols-2">
                 <CampoSelect

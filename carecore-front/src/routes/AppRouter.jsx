@@ -56,6 +56,7 @@ const RelatorioNfpRateioDetalhado = lazy(() => import('../RelatorioNfpRateioDeta
 const RelatorioNfpCupons = lazy(() => import('../RelatorioNfpCupons'));
 const Compras = lazy(() => import('../Compras'));
 const ComprasPedido = lazy(() => import('../ComprasPedido'));
+const ComprasPedidoNovo = lazy(() => import('../ComprasPedidoNovo'));
 
 function RotasAplicacao() {
   return (
@@ -327,6 +328,15 @@ function RotasAplicacao() {
           element={
             <ProtectedRoute>
               <Compras />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/compras/novo/:tipo"
+          element={
+            <ProtectedRoute>
+              <ComprasPedidoNovo />
             </ProtectedRoute>
           }
         />
