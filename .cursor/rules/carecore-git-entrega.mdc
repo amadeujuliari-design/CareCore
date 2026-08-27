@@ -32,13 +32,14 @@ Depois do `git push` em entrega (**commitar e subir** / **subir** / **publicar**
 
 1. Acompanhar o workflow **Quality** (`.github/workflows/quality.yml`) no commit/SHA enviado — preferir `gh run list` / `gh run watch` / `gh run view --log-failed`, ou API do GitHub se `gh` nao estiver disponivel.
 2. Esperar conclusao dos jobs (backend + frontend). **So considerar a etapa de CI ok quando estiver verde (success).**
-3. Se ficar **vermelho**:
+3. **Nao travar o chat** com poll longo enquanto o CI roda — ver regra `carecore-resposta-rapida.mdc` (avisar status e retomar ao concluir).
+4. Se ficar **vermelho**:
    - Diagnosticar a falha (log do job).
    - Corrigir no codigo **sem esperar o usuario verificar**.
    - Rodar de novo a checagem local pertinente.
    - Commitar a correcao (mensagem clara, ex. "fix: CI Quality …") e dar push.
    - Reacompanhar o CI ate ficar verde (ou ate bloquear por causa externa: secret, cota, outage — ai avisar o usuario).
-4. Narrar na entrega: CI Quality verde (ou em correcao / bloqueio).
+5. Narrar na entrega: CI Quality verde (ou em correcao / bloqueio).
 
 **Nao marcar entrega como fechada / "subido" com CI vermelho ou ainda rodando**, salvo bloqueio externo explicito.
 

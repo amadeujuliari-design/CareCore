@@ -1,0 +1,29 @@
+---
+description: Nao travar o chat do Cursor com polls longos (CI, deploy, jobs)
+alwaysApply: true
+---
+
+# Resposta rapida — nao segurar o turno
+
+Acompanhar CI, `fly deploy`, builds e jobs e **obrigatorio** quando a entrega exige — mas **nao** deixar o usuario minutos sem resposta enquanto o agente fica em loop de poll.
+
+## Proibido
+
+- Segurar o turno com `AwaitShell` / sleep / poll repetido por varios minutos so para “esperar acabar”.
+- Continuar polling depois que o processo **ja terminou** (o usuario fica esperando a resposta do agente sem necessidade).
+- Tratar “acompanhar CI ate verde” como desculpa para silenciar o chat 10–15 min.
+
+## Certo
+
+1. Disparar o job (push, `fly deploy`, etc.).
+2. Fazer **no maximo 1–2 checagens curtas** no mesmo turno se o resultado ja veio.
+3. Se ainda estiver rodando: **responder na hora** com status (“CI em andamento, ~1–2 min; aviso quando fechar” / “deploy subindo…”).
+4. So voltar a checar quando:
+   - chegar notificacao de fim do job em background, ou
+   - o usuario perguntar, ou
+   - for o proximo passo natural sem bloquear minutos a fio.
+5. Quando concluir (verde/vermelho/health): narrar o resultado **na primeira oportunidade**, sem espera artificial.
+
+## Entrega (CI / Fly)
+
+A regra `carecore-git-entrega.mdc` continua valendo: entrega so fecha com CI verde (e health se houver Fly). A diferenca e **como** acompanhar — em ciclos curtos com o usuario informado, nao com o chat congelado.
