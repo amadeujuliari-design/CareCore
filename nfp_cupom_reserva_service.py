@@ -79,10 +79,8 @@ async def reservar_lote_cupons(
     agora = agora_operacional_naive()
     chaves: list[str] = []
     restantes = qtd
-    # Busca extra: pode haver pendentes invalidos no meio da fila FIFO.
-    for _ in range(5):
-        if restantes <= 0:
-            break
+    # Busca em rodadas: pode haver pendentes invalidos no meio da fila FIFO.
+    while restantes > 0:
         stmt = (
             select(NfpCupomLidoDB)
             .where(
@@ -90,7 +88,7 @@ async def reservar_lote_cupons(
                 NfpCupomLidoDB.status == STATUS_PENDENTE,
             )
             .order_by(NfpCupomLidoDB.lido_em.asc())
-            .limit(min(restantes + 30, TAMANHO_LOTE_PADRAO * 2))
+            .limit(min(max(restantes * 2, restantes + 30), TAMANHO_LOTE_PADRAO * 3))
         )
         conn = await db.connection()
         if getattr(conn.dialect, "name", "") == "postgresql":
@@ -100,6 +98,8 @@ async def reservar_lote_cupons(
         if not rows:
             break
 
+        validos_nesta_rodada = 0
+        invalidos_nesta_rodada = 0
         for row in rows:
             if restantes <= 0:
                 break
@@ -111,6 +111,7 @@ async def reservar_lote_cupons(
                 row.reservado_por = None
                 row.atualizado_em = agora
                 row.mensagem = mensagem_chave_invalida(motivo_chave)
+                invalidos_nesta_rodada += 1
                 continue
 
             row.status = STATUS_RESERVADO
@@ -121,6 +122,16 @@ async def reservar_lote_cupons(
             row.mensagem = f"Reservado para envio SEFAZ (lote {lote_id[:8]}…)."
             chaves.append(row.chave)
             restantes -= 1
+            validos_nesta_rodada += 1
+
+        # Garante que erro/reservado ja gravados nao voltem na proxima SELECT.
+        await db.flush()
+        if validos_nesta_rodada == 0 and invalidos_nesta_rodada == 0:
+            break
+        if validos_nesta_rodada == 0 and invalidos_nesta_rodada > 0:
+            continue
+        if restantes <= 0:
+            break
 
     await db.commit()
     if not chaves:

@@ -14,9 +14,17 @@ from nfp_cupom_reserva_service import (
     liberar_lote,
     reservar_lote_cupons,
 )
+from nfp_cupom_utils import digito_verificador_chave_nfe
 from time_operacional import agora_operacional_naive
 
 ORG = "org-reserva-test"
+
+
+def _chave_valida(i: int) -> str:
+    """Gera chave de 44 digitos estruturalmente valida e unica."""
+    base43 = f"3526084750841116949565109{i:09d}1{i:08d}"
+    assert len(base43) == 43
+    return base43 + digito_verificador_chave_nfe(base43)
 
 
 async def _prep():
@@ -31,7 +39,7 @@ async def _prep():
             session.add(
                 NfpCupomLidoDB(
                     organizacao_id=ORG,
-                    chave=f"3526084750841116949565109000270187116030{i:04d}"[:44].ljust(44, "0"),
+                    chave=_chave_valida(i),
                     captador="SEDE AEB",
                     status=STATUS_PENDENTE,
                     lido_em=agora,
