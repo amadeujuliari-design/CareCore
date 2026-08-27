@@ -6,10 +6,12 @@ from nfp_cupom_utils import (
     cupom_fora_prazo_leitura,
     data_limite_cadastro_sefaz,
     data_limite_leitura_carecore,
+    digito_verificador_chave_nfe,
     extrair_chave_de_leitura,
     montar_url_consulta_sp,
     parsear_leitura_cupom,
     qr_indica_cpf_destinatario,
+    validar_chave_acesso_nfe,
 )
 
 
@@ -114,3 +116,28 @@ def test_html_complementos_valor_e_data():
     extra = analisar_html_complementos(html)
     assert extra["valor_centavos"] == 123456
     assert extra["data_emissao"] == "2026-08-01"
+
+
+def test_validar_chave_acesso_ok():
+    chave = "35260847508411169495651090002701871160307536"
+    ok, motivo = validar_chave_acesso_nfe(chave)
+    assert ok is True
+    assert motivo == ""
+    assert digito_verificador_chave_nfe(chave[:43]) == chave[43]
+
+
+def test_validar_chave_corrompida_modelo_e_mes():
+    # Caso real preso em reservado (modelo 51, AAMM 3526 → mes 26).
+    chave = "35352607281466770001516500100000197392435549"
+    ok, motivo = validar_chave_acesso_nfe(chave)
+    assert ok is False
+    assert "invalida" in motivo.lower()
+
+
+def test_validar_chave_dv_errado():
+    base = "3526084750841116949565109000270187116030753"
+    chave = base + ("0" if digito_verificador_chave_nfe(base) != "0" else "1")
+    ok, motivo = validar_chave_acesso_nfe(chave)
+    assert ok is False
+    assert "verificador" in motivo.lower()
+

@@ -12,10 +12,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import AsyncSessionLocal
 from models import NfpCupomLidoDB
+from nfp_cupom_utils import mensagem_chave_invalida, validar_chave_acesso_nfe
 from time_operacional import agora_operacional_naive
 
 STATUS_PENDENTE = "pendente"
 STATUS_RESERVADO = "reservado"
+STATUS_ERRO = "erro"
 TAMANHO_LOTE_PADRAO = 100
 TTL_RESERVA_MINUTOS = 45
 
@@ -66,40 +68,63 @@ async def reservar_lote_cupons(
     usuario_id: Optional[str],
     tamanho: int = TAMANHO_LOTE_PADRAO,
 ) -> dict[str, Any]:
-    """Reserva ate `tamanho` pendentes (FIFO). Retorna lote_id + chaves."""
+    """Reserva ate `tamanho` pendentes (FIFO). Retorna lote_id + chaves.
+
+    Chaves estruturalmente invalidas sao marcadas como erro e nao entram no lote.
+    """
     qtd = max(1, min(int(tamanho or TAMANHO_LOTE_PADRAO), TAMANHO_LOTE_PADRAO))
     await liberar_reservas_expiradas(db, organizacao_id)
-
-    stmt = (
-        select(NfpCupomLidoDB)
-        .where(
-            NfpCupomLidoDB.organizacao_id == organizacao_id,
-            NfpCupomLidoDB.status == STATUS_PENDENTE,
-        )
-        .order_by(NfpCupomLidoDB.lido_em.asc())
-        .limit(qtd)
-    )
-    conn = await db.connection()
-    if getattr(conn.dialect, "name", "") == "postgresql":
-        stmt = stmt.with_for_update(skip_locked=True)
-
-    rows = (await db.execute(stmt)).scalars().all()
-
-    if not rows:
-        return {"lote_id": None, "chaves": [], "qtd": 0}
 
     lote_id = str(uuid.uuid4())
     agora = agora_operacional_naive()
     chaves: list[str] = []
-    for row in rows:
-        row.status = STATUS_RESERVADO
-        row.lote_id = lote_id
-        row.reservado_em = agora
-        row.reservado_por = usuario_id or None
-        row.atualizado_em = agora
-        row.mensagem = f"Reservado para envio SEFAZ (lote {lote_id[:8]}…)."
-        chaves.append(row.chave)
+    restantes = qtd
+    # Busca extra: pode haver pendentes invalidos no meio da fila FIFO.
+    for _ in range(5):
+        if restantes <= 0:
+            break
+        stmt = (
+            select(NfpCupomLidoDB)
+            .where(
+                NfpCupomLidoDB.organizacao_id == organizacao_id,
+                NfpCupomLidoDB.status == STATUS_PENDENTE,
+            )
+            .order_by(NfpCupomLidoDB.lido_em.asc())
+            .limit(min(restantes + 30, TAMANHO_LOTE_PADRAO * 2))
+        )
+        conn = await db.connection()
+        if getattr(conn.dialect, "name", "") == "postgresql":
+            stmt = stmt.with_for_update(skip_locked=True)
+
+        rows = (await db.execute(stmt)).scalars().all()
+        if not rows:
+            break
+
+        for row in rows:
+            if restantes <= 0:
+                break
+            ok_chave, motivo_chave = validar_chave_acesso_nfe(row.chave or "")
+            if not ok_chave:
+                row.status = STATUS_ERRO
+                row.lote_id = None
+                row.reservado_em = None
+                row.reservado_por = None
+                row.atualizado_em = agora
+                row.mensagem = mensagem_chave_invalida(motivo_chave)
+                continue
+
+            row.status = STATUS_RESERVADO
+            row.lote_id = lote_id
+            row.reservado_em = agora
+            row.reservado_por = usuario_id or None
+            row.atualizado_em = agora
+            row.mensagem = f"Reservado para envio SEFAZ (lote {lote_id[:8]}…)."
+            chaves.append(row.chave)
+            restantes -= 1
+
     await db.commit()
+    if not chaves:
+        return {"lote_id": None, "chaves": [], "qtd": 0}
     return {"lote_id": lote_id, "chaves": chaves, "qtd": len(chaves)}
 
 
@@ -185,7 +210,13 @@ async def aplicar_resultados_envio(
             continue
         status_cc = (item.get("status_carecore") or "").strip().lower()
         tipo = (item.get("tipo") or "").strip().lower()
-        if status_cc not in {"enviado", "erro", "pendente", "rejeitado_prazo"}:
+        ok_chave, motivo_chave = validar_chave_acesso_nfe(chave)
+        if not ok_chave:
+            status_cc = "erro"
+            if not (item.get("mensagem") or "").strip():
+                item = dict(item)
+                item["mensagem"] = mensagem_chave_invalida(motivo_chave)
+        elif status_cc not in {"enviado", "erro", "pendente", "rejeitado_prazo"}:
             if tipo in {"sucesso", "ja_existe"}:
                 status_cc = "enviado"
             elif tipo == "erro":
@@ -202,8 +233,13 @@ async def aplicar_resultados_envio(
         ).scalar_one_or_none()
         if not row:
             continue
+        # Nao reabrir fila com pendente se a chave e estruturalmente invalida.
+        if not ok_chave:
+            status_cc = "erro"
         row.status = status_cc
         row.mensagem = (item.get("mensagem") or row.mensagem or "")[:2000] or row.mensagem
+        if not ok_chave and not (row.mensagem or "").strip():
+            row.mensagem = mensagem_chave_invalida(motivo_chave)
         row.atualizado_em = agora
         if status_cc == "enviado":
             row.enviado_em = agora

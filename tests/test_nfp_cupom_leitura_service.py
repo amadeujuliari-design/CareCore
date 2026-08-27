@@ -19,7 +19,8 @@ from nfp_cupom_leitura_service import (
 from nfp_cupom_utils import ResultadoChaveCupom
 
 CHAVE_OK = "35260847508411169495651090002701871160307536"
-CHAVE_CPF = "35260847508411169495651090002701871160307537"
+# Mesmo padrao estrutural, DV valido e distinta da CHAVE_OK (para QR com CPF).
+CHAVE_CPF = "35260847508411169495651090002701871160307544"
 ORG = "org-nfp-leitura-test"
 
 
@@ -194,8 +195,8 @@ def test_leitura_rapida_rejeita_prazo_imediatamente():
     async def caso():
         engine, factory = await _preparar()
         try:
-            # AAMM 2401 → emissao 2024-01; limite leitura 2024-03-21
-            chave_antiga = "35240147508411169495651090002701871160307536"
+            # AAMM 2401 → emissao 2024-01; limite leitura 2024-03-21 (DV recalculado).
+            chave_antiga = "35240147508411169495651090002701871160307537"
             async with factory() as session:
                 with patch("nfp_cupom_leitura_service.agendar_checagem_sefaz") as mock_agendar:
                     with patch(
@@ -224,8 +225,8 @@ def test_leitura_ainda_aceita_no_dia_da_folga():
     async def caso():
         engine, factory = await _preparar()
         try:
-            # Emissao 2026-07 → SEFAZ 2026-09-20; leitura ate 2026-09-21
-            chave = "35260747508411169495651090002701871160307536"
+            # Emissao 2026-07 → SEFAZ 2026-09-20; leitura ate 2026-09-21 (DV recalculado).
+            chave = "35260747508411169495651090002701871160307532"
             async with factory() as session:
                 with patch("nfp_cupom_leitura_service.agendar_checagem_sefaz") as mock_agendar:
                     with patch(
@@ -255,7 +256,7 @@ def test_leitura_aceita_mes_retrasado_antes_do_dia_20():
     async def caso():
         engine, factory = await _preparar()
         try:
-            chave = "35260647508411169495651090002701871160307536"
+            chave = "35260647508411169495651090002701871160307539"
             async with factory() as session:
                 with patch("nfp_cupom_leitura_service.agendar_checagem_sefaz") as mock_agendar:
                     with patch(

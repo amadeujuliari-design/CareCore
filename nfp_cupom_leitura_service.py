@@ -2,10 +2,11 @@
 
 Fluxo:
   1) Extrai chave localmente e grava rapido (status=checando).
-  2) Fora do prazo NFP (janela de 2 meses ate dia 20, com folga de 1 dia): rejeitado_prazo.
-  3) Consulta SEFAZ em paralelo (fila com limite de concorrencia).
-  4) Atualiza para pendente (elegivel ao robo) ou rejeitado_cpf.
-  5) QR que ja indica CPF: rejeitado_cpf na hora, sem HTTP.
+  2) Chave estruturalmente invalida (modelo/mes/DV): erro — fora da fila.
+  3) Fora do prazo NFP (janela de 2 meses ate dia 20, com folga de 1 dia): rejeitado_prazo.
+  4) Consulta SEFAZ em paralelo (fila com limite de concorrencia).
+  5) Atualiza para pendente (elegivel ao robo) ou rejeitado_cpf.
+  6) QR que ja indica CPF: rejeitado_cpf na hora, sem HTTP.
 """
 
 from __future__ import annotations
@@ -23,9 +24,11 @@ from nfp_cupom_utils import (
     consultar_elegibilidade_cupom,
     cupom_fora_prazo_leitura,
     extrair_chave_de_leitura,
+    mensagem_chave_invalida,
     mensagem_rejeicao_prazo,
     parsear_leitura_cupom,
     qr_indica_cpf_destinatario,
+    validar_chave_acesso_nfe,
 )
 from time_operacional import agora_operacional_naive
 
@@ -115,6 +118,22 @@ async def registrar_leitura_rapida(
         )
         _aplicar_meta(row, meta)
         return row
+
+    ok_chave, motivo_chave = validar_chave_acesso_nfe(chave)
+    if not ok_chave:
+        row = _base_row(
+            status=STATUS_ERRO,
+            consumidor_identificado=None,
+            mensagem=mensagem_chave_invalida(motivo_chave),
+        )
+        db.add(row)
+        await db.commit()
+        await db.refresh(row)
+        return {
+            "ok": True,
+            "checagem": "imediata_chave_invalida",
+            "cupom": row,
+        }
 
     # Prazo antes de CPF: cupom vencido nao entra na fila (folga 1 dia vs SEFAZ).
     if cupom_fora_prazo_leitura(data_ref, hoje=hoje):

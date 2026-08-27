@@ -56,12 +56,63 @@ from preencher_sem_enviar import (  # noqa: E402
     preencher_chave,
 )
 from retorno_nfp import resultado_operacional_ok  # noqa: E402
+from validar_chave_acesso import validar_chave_acesso_nfe  # noqa: E402
 
 STOP_FLAG = Path(__file__).resolve().parent / "_capturas" / "fila_parar.flag"
 
 
 def _parada_solicitada() -> bool:
     return STOP_FLAG.is_file()
+
+
+def _gravar_resultado_lote(
+    out_dir: Path,
+    *,
+    resultados: list[dict],
+    fila_total: int,
+    ok_count: int,
+    ja_existe_count: int,
+    erro_count: int,
+    parado_pelo_usuario: bool,
+    motivo_interrupcao: str,
+    lote_origem: str = "",
+) -> Path:
+    """Sempre grava JSON do lote (mesmo parcial) para o orquestrador nao reusar lote antigo."""
+    out_dir.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    out_json = out_dir / f"fila_resultado_{stamp}.json"
+    motivo = (motivo_interrupcao or "").strip()
+    if not motivo:
+        if len(resultados) >= fila_total and fila_total > 0:
+            motivo = "lote_completo"
+        else:
+            motivo = "lote_parcial"
+    payload = {
+        "gerado_em": stamp,
+        "lote_origem": lote_origem or "",
+        "resumo": {
+            "total": len(resultados),
+            "fila_total": fila_total,
+            "ok_operacional": ok_count,
+            "ja_existe": ja_existe_count,
+            "erro": erro_count,
+            "parado_pelo_usuario": parado_pelo_usuario,
+            "motivo_interrupcao": motivo,
+        },
+        "itens": resultados,
+    }
+    out_json.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    print(
+        f"\nConcluido: ok={ok_count} (ja_existe={ja_existe_count}) "
+        f"erro={erro_count} / processados={len(resultados)}/{fila_total}"
+        f" motivo={motivo}"
+        + (" (parado)" if parado_pelo_usuario else "")
+    )
+    print(f"Log: {out_json}")
+    return out_json
 
 
 async def fechar_popup_doacao_automatica(page) -> None:
@@ -208,6 +259,7 @@ async def rodar(args: argparse.Namespace) -> int:
     resultados: list[dict] = []
     out_dir = Path(__file__).resolve().parent / "_capturas"
     out_dir.mkdir(exist_ok=True)
+    lote_origem = Path(args.json).name if args.json else ""
     # Limpa flag antiga para nao abortar logo no inicio
     try:
         STOP_FLAG.unlink(missing_ok=True)
@@ -216,217 +268,261 @@ async def rodar(args: argparse.Namespace) -> int:
 
     parado_pelo_usuario = False
     motivo_interrupcao = ""
+    ok_count = 0
+    ja_existe_count = 0
+    erro_count = 0
+    codigo_saida = 0
+    gravou_resultado = False
+
     async with async_playwright() as p:
         browser, page, usar_cdp = await conectar_navegador(p, args)
         if page is None:
-            return 1
-
-        print(
-            "Rotina inicial: posicionando Cadastro de Notas (representante) + AEB..."
-        )
-        estado0 = await _posicionar_tela(page, rotulo="inicio")
-        if estado0 == "sessao_caiu":
-            print("ERRO: sessao NFP caiu (login). Autentique manualmente e rode de novo.")
-            return 1
-        if estado0 == "bloqueio_sefaz":
+            motivo_interrupcao = "falha_conectar"
+            codigo_saida = 1
+        else:
             print(
-                "ERRO: SEFAZ mostrou bloqueio de doacao de *consumidor*. "
-                "Feche o modal, va em Entidades → Cadastramento de Cupons e rode de novo."
+                "Rotina inicial: posicionando Cadastro de Notas (representante) + AEB..."
             )
-            return 1
-        if estado0 == "parada_usuario":
-            print("Parada solicitada antes de iniciar.")
-            return 0
-        if estado0 != "ok":
-            print(
-                "ERRO: nao consegui posicionar Cadastro de Notas com AEB. "
-                "Confirme login na NFP (Bem-vindo) e tente de novo."
-            )
-            return 1
-        print("Rotina inicial ok — iniciando envios (Salvar Nota).")
-
-        ok_count = 0
-        ja_existe_count = 0
-        erro_count = 0
-
-        for i, item in enumerate(fila, start=1):
-            if _parada_solicitada():
-                print("Parada solicitada pelo CareCore — encerrando apos o item atual.")
-                parado_pelo_usuario = True
-                motivo_interrupcao = "parada_usuario"
-                break
-
-            if usar_cdp and browser.contexts:
-                page = await escolher_pagina(browser.contexts[0])
-
-            estado = await _posicionar_tela(page, rotulo=f"item {i}")
-            if estado == "parada_usuario":
-                parado_pelo_usuario = True
-                motivo_interrupcao = "parada_usuario"
-                break
-            if estado == "sessao_caiu":
+            estado0 = await _posicionar_tela(page, rotulo="inicio")
+            if estado0 == "sessao_caiu":
+                print("ERRO: sessao NFP caiu (login). Autentique manualmente e rode de novo.")
                 motivo_interrupcao = "sessao_caiu"
-                print("Sessao caiu — interrompendo (login manual).")
-                break
-            if estado == "bloqueio_sefaz":
-                motivo_interrupcao = "bloqueio_sefaz"
-                print("Bloqueio SEFAZ — interrompendo (nao retomar menu/Nova Doacao).")
-                break
-            if estado != "ok":
-                motivo_interrupcao = "falha_tela"
+                codigo_saida = 1
+            elif estado0 == "bloqueio_sefaz":
                 print(
-                    "Falha ao recuperar Cadastro de Notas/AEB — interrompendo. "
-                    f"Retome com --inicio {i - 1 + int(args.inicio)}"
+                    "ERRO: SEFAZ mostrou bloqueio de doacao de *consumidor*. "
+                    "Feche o modal, va em Entidades → Cadastramento de Cupons e rode de novo."
                 )
-                break
+                motivo_interrupcao = "bloqueio_sefaz"
+                codigo_saida = 1
+            elif estado0 == "parada_usuario":
+                print("Parada solicitada antes de iniciar.")
+                parado_pelo_usuario = True
+                motivo_interrupcao = "parada_usuario"
+                codigo_saida = 0
+            elif estado0 != "ok":
+                print(
+                    "ERRO: nao consegui posicionar Cadastro de Notas com AEB. "
+                    "Confirme login na NFP (Bem-vindo) e tente de novo."
+                )
+                motivo_interrupcao = "falha_tela"
+                codigo_saida = 1
+            else:
+                print("Rotina inicial ok — iniciando envios (Salvar Nota).")
 
-            chave = item["chave"]
-            print(f"\n[{i}/{len(fila)}] {chave}")
-            if not await preencher_chave(page, chave):
-                print("Campo chave sumiu — tentando recuperar tela e repetir uma vez...")
-                estado_r = await _posicionar_tela(page, rotulo="retry preencher")
-                if estado_r == "bloqueio_sefaz":
-                    motivo_interrupcao = "bloqueio_sefaz"
-                    print("Bloqueio SEFAZ no retry — parando.")
-                    break
-                if estado_r == "ok" and await preencher_chave(page, chave):
-                    pass
-                else:
-                    print("Falha ao preencher — interrompendo.")
-                    motivo_interrupcao = "falha_preencher"
-                    return 1
+                for i, item in enumerate(fila, start=1):
+                    if _parada_solicitada():
+                        print("Parada solicitada pelo CareCore — encerrando apos o item atual.")
+                        parado_pelo_usuario = True
+                        motivo_interrupcao = "parada_usuario"
+                        break
 
-            # Snapshot antes do Salvar: sucesso fica inline e nao some sozinho.
-            try:
-                texto_antes = await coletar_texto_retorno(page)
-            except Exception:
-                texto_antes = ""
+                    if usar_cdp and browser.contexts:
+                        page = await escolher_pagina(browser.contexts[0])
 
-            if not await clicar_registrar(page):
-                print("Salvar Nota falhou — tentando recuperar tela e repetir uma vez...")
-                estado_r = await _posicionar_tela(page, rotulo="retry salvar")
-                if estado_r == "bloqueio_sefaz":
-                    motivo_interrupcao = "bloqueio_sefaz"
-                    print("Bloqueio SEFAZ no retry — parando.")
-                    break
-                if estado_r == "ok":
+                    estado = await _posicionar_tela(page, rotulo=f"item {i}")
+                    if estado == "parada_usuario":
+                        parado_pelo_usuario = True
+                        motivo_interrupcao = "parada_usuario"
+                        break
+                    if estado == "sessao_caiu":
+                        motivo_interrupcao = "sessao_caiu"
+                        print("Sessao caiu — interrompendo (login manual).")
+                        break
+                    if estado == "bloqueio_sefaz":
+                        motivo_interrupcao = "bloqueio_sefaz"
+                        print("Bloqueio SEFAZ — interrompendo (nao retomar menu/Nova Doacao).")
+                        break
+                    if estado != "ok":
+                        motivo_interrupcao = "falha_tela"
+                        codigo_saida = 1
+                        print(
+                            "Falha ao recuperar Cadastro de Notas/AEB — interrompendo. "
+                            f"Retome com --inicio {i - 1 + int(args.inicio)}"
+                        )
+                        break
+
+                    chave = item["chave"]
+                    print(f"\n[{i}/{len(fila)}] {chave}")
+                    ok_chave, motivo_chave = validar_chave_acesso_nfe(chave)
+                    if not ok_chave:
+                        msg = (
+                            (motivo_chave or "Chave estruturalmente invalida.")
+                            + " Removida da fila de envio SEFAZ."
+                        )
+                        print(f"  → {msg}")
+                        resultados.append(
+                            {
+                                "chave": chave,
+                                "tipo": "erro",
+                                "status_carecore": "erro",
+                                "mensagem": msg[:2000],
+                                "trecho": "",
+                            }
+                        )
+                        try:
+                            registrar_item(
+                                tipo="erro",
+                                status_carecore="erro",
+                                mensagem=msg,
+                                chave=chave,
+                            )
+                        except Exception:
+                            pass
+                        erro_count += 1
+                        # Nao para a sessao: grava erro e segue as demais chaves.
+                        if i < len(fila):
+                            await page.wait_for_timeout(int(args.pausa * 1000))
+                        continue
+
                     if not await preencher_chave(page, chave):
-                        print("Falha ao preencher apos recuperacao — interrompendo.")
-                        motivo_interrupcao = "falha_preencher"
-                        return 1
+                        print("Campo chave sumiu — tentando recuperar tela e repetir uma vez...")
+                        estado_r = await _posicionar_tela(page, rotulo="retry preencher")
+                        if estado_r == "bloqueio_sefaz":
+                            motivo_interrupcao = "bloqueio_sefaz"
+                            print("Bloqueio SEFAZ no retry — parando.")
+                            break
+                        if estado_r == "ok" and await preencher_chave(page, chave):
+                            pass
+                        else:
+                            print("Falha ao preencher — interrompendo.")
+                            motivo_interrupcao = "falha_preencher"
+                            codigo_saida = 1
+                            break
+
+                    # Snapshot antes do Salvar: sucesso fica inline e nao some sozinho.
                     try:
                         texto_antes = await coletar_texto_retorno(page)
                     except Exception:
                         texto_antes = ""
+
                     if not await clicar_registrar(page):
-                        print("Falha ao clicar Salvar Nota — interrompendo.")
-                        motivo_interrupcao = "falha_registrar"
-                        return 1
-                else:
-                    print("Falha ao clicar Salvar Nota — interrompendo.")
-                    motivo_interrupcao = "falha_registrar"
-                    return 1
+                        print("Salvar Nota falhou — tentando recuperar tela e repetir uma vez...")
+                        estado_r = await _posicionar_tela(page, rotulo="retry salvar")
+                        if estado_r == "bloqueio_sefaz":
+                            motivo_interrupcao = "bloqueio_sefaz"
+                            print("Bloqueio SEFAZ no retry — parando.")
+                            break
+                        if estado_r == "ok":
+                            if not await preencher_chave(page, chave):
+                                print("Falha ao preencher apos recuperacao — interrompendo.")
+                                motivo_interrupcao = "falha_preencher"
+                                codigo_saida = 1
+                                break
+                            try:
+                                texto_antes = await coletar_texto_retorno(page)
+                            except Exception:
+                                texto_antes = ""
+                            if not await clicar_registrar(page):
+                                print("Falha ao clicar Salvar Nota — interrompendo.")
+                                motivo_interrupcao = "falha_registrar"
+                                codigo_saida = 1
+                                break
+                        else:
+                            print("Falha ao clicar Salvar Nota — interrompendo.")
+                            motivo_interrupcao = "falha_registrar"
+                            codigo_saida = 1
+                            break
 
-            cls = await processar_retorno(page, texto_antes=texto_antes)
-            print(
-                f"Resultado: {cls.tipo} | CareCore->{cls.status_carecore} | {cls.mensagem}"
+                    cls = await processar_retorno(page, texto_antes=texto_antes)
+                    print(
+                        f"Resultado: {cls.tipo} | CareCore->{cls.status_carecore} | {cls.mensagem}"
+                    )
+                    if cls.trecho and cls.trecho != cls.mensagem:
+                        print(f"  trecho: {cls.trecho[:180]}")
+
+                    resultados.append(
+                        {
+                            "chave": chave,
+                            "tipo": cls.tipo,
+                            "status_carecore": cls.status_carecore,
+                            "mensagem": cls.mensagem,
+                            "trecho": cls.trecho,
+                        }
+                    )
+                    try:
+                        registrar_item(
+                            tipo=cls.tipo,
+                            status_carecore=cls.status_carecore,
+                            mensagem=cls.mensagem,
+                            chave=chave,
+                        )
+                    except Exception:
+                        pass
+
+                    if cls.tipo == "sessao_caiu":
+                        motivo_interrupcao = "sessao_caiu"
+                        print(
+                            "Sessao caiu. Refaca login e rode de novo com --inicio",
+                            i - 1 + int(args.inicio),
+                        )
+                        break
+
+                    if cls.tipo == "bloqueio_sefaz":
+                        motivo_interrupcao = "bloqueio_sefaz"
+                        print(
+                            "Bloqueio SEFAZ — encerrando fila. "
+                            "Nao vou clicar Ok nem reabrir Nova Doacao."
+                        )
+                        break
+
+                    if resultado_operacional_ok(cls):
+                        ok_count += 1
+                        if cls.tipo == "ja_existe":
+                            ja_existe_count += 1
+                            print("  → tratado como ja resolvido; seguindo para a proxima.")
+                    elif cls.tipo == "erro":
+                        erro_count += 1
+                        if args.parar_em_erro:
+                            motivo_interrupcao = "parar_em_erro"
+                            print("Parando por --parar-em-erro.")
+                            break
+                    else:
+                        # inconclusivo: segue, mas nao conta como ok
+                        print("  → inconclusivo; segue (revise o log depois).")
+
+                    if _parada_solicitada():
+                        print("Parada solicitada pelo CareCore — encerrando.")
+                        parado_pelo_usuario = True
+                        motivo_interrupcao = "parada_usuario"
+                        break
+
+                    if i < len(fila):
+                        await page.wait_for_timeout(int(args.pausa * 1000))
+
+        # Sempre grava — inclusive lote parcial / falha no meio — para sincronizar CareCore.
+        try:
+            _gravar_resultado_lote(
+                out_dir,
+                resultados=resultados,
+                fila_total=len(fila),
+                ok_count=ok_count,
+                ja_existe_count=ja_existe_count,
+                erro_count=erro_count,
+                parado_pelo_usuario=parado_pelo_usuario,
+                motivo_interrupcao=motivo_interrupcao,
+                lote_origem=lote_origem,
             )
-            if cls.trecho and cls.trecho != cls.mensagem:
-                print(f"  trecho: {cls.trecho[:180]}")
+            gravou_resultado = True
+        except Exception as exc:
+            print(f"ERRO ao gravar fila_resultado: {exc}", file=sys.stderr)
 
-            resultados.append(
-                {
-                    "chave": chave,
-                    "tipo": cls.tipo,
-                    "status_carecore": cls.status_carecore,
-                    "mensagem": cls.mensagem,
-                    "trecho": cls.trecho,
-                }
+    if not gravou_resultado:
+        try:
+            _gravar_resultado_lote(
+                out_dir,
+                resultados=resultados,
+                fila_total=len(fila),
+                ok_count=ok_count,
+                ja_existe_count=ja_existe_count,
+                erro_count=erro_count,
+                parado_pelo_usuario=parado_pelo_usuario,
+                motivo_interrupcao=motivo_interrupcao or "falha_sem_gravacao",
+                lote_origem=lote_origem,
             )
-            try:
-                registrar_item(
-                    tipo=cls.tipo,
-                    status_carecore=cls.status_carecore,
-                    mensagem=cls.mensagem,
-                    chave=chave,
-                )
-            except Exception:
-                pass
+        except Exception as exc:
+            print(f"ERRO ao gravar fila_resultado (fallback): {exc}", file=sys.stderr)
 
-            if cls.tipo == "sessao_caiu":
-                motivo_interrupcao = "sessao_caiu"
-                print(
-                    "Sessao caiu. Refaca login e rode de novo com --inicio",
-                    i - 1 + int(args.inicio),
-                )
-                break
-
-            if cls.tipo == "bloqueio_sefaz":
-                motivo_interrupcao = "bloqueio_sefaz"
-                print(
-                    "Bloqueio SEFAZ — encerrando fila. "
-                    "Nao vou clicar Ok nem reabrir Nova Doacao."
-                )
-                break
-
-            if resultado_operacional_ok(cls):
-                ok_count += 1
-                if cls.tipo == "ja_existe":
-                    ja_existe_count += 1
-                    print("  → tratado como ja resolvido; seguindo para a proxima.")
-            elif cls.tipo == "erro":
-                erro_count += 1
-                if args.parar_em_erro:
-                    motivo_interrupcao = "parar_em_erro"
-                    print("Parando por --parar-em-erro.")
-                    break
-            else:
-                # inconclusivo: segue, mas nao conta como ok
-                print("  → inconclusivo; segue (revise o log depois).")
-
-            if _parada_solicitada():
-                print("Parada solicitada pelo CareCore — encerrando.")
-                parado_pelo_usuario = True
-                motivo_interrupcao = "parada_usuario"
-                break
-
-            if i < len(fila):
-                await page.wait_for_timeout(int(args.pausa * 1000))
-
-        if not motivo_interrupcao and len(resultados) >= len(fila):
-            motivo_interrupcao = "lote_completo"
-        elif not motivo_interrupcao:
-            motivo_interrupcao = "lote_parcial"
-
-        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        out_json = out_dir / f"fila_resultado_{stamp}.json"
-        out_json.write_text(
-            json.dumps(
-                {
-                    "gerado_em": stamp,
-                    "resumo": {
-                        "total": len(resultados),
-                        "fila_total": len(fila),
-                        "ok_operacional": ok_count,
-                        "ja_existe": ja_existe_count,
-                        "erro": erro_count,
-                        "parado_pelo_usuario": parado_pelo_usuario,
-                        "motivo_interrupcao": motivo_interrupcao,
-                    },
-                    "itens": resultados,
-                },
-                ensure_ascii=False,
-                indent=2,
-            ),
-            encoding="utf-8",
-        )
-        print(
-            f"\nConcluido: ok={ok_count} (ja_existe={ja_existe_count}) "
-            f"erro={erro_count} / processados={len(resultados)}/{len(fila)}"
-            f" motivo={motivo_interrupcao}"
-            + (" (parado)" if parado_pelo_usuario else "")
-        )
-        print(f"Log: {out_json}")
     try:
         marcar_fim(mensagem=f"Fim do lote — motivo={motivo_interrupcao or 'ok'}")
     except Exception:
@@ -435,7 +531,7 @@ async def rodar(args: argparse.Namespace) -> int:
         STOP_FLAG.unlink(missing_ok=True)
     except OSError:
         pass
-    return 0
+    return codigo_saida
 
 
 def main() -> int:

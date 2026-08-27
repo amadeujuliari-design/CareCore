@@ -1389,6 +1389,10 @@ async def atualizar_status_cupom(
     row.atualizado_em = agora_operacional_naive()
     if novo == "enviado":
         row.enviado_em = agora_operacional_naive()
+    if novo != "reservado":
+        row.lote_id = None
+        row.reservado_em = None
+        row.reservado_por = None
     await db.commit()
     await db.refresh(row)
     return _serializar_cupom_lido(row)

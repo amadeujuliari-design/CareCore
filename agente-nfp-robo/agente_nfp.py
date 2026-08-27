@@ -220,6 +220,24 @@ def rodar_enviar_fila(*, cdp: str, caminho_json: Path) -> list[dict]:
             "Reinstale o CareCore-Agente-NFP.exe (versão nova) ou copie a pasta robo/ "
             "para AppData\\Local\\CareCorePlus\\agente-nfp-robo\\robo\\"
         )
+
+    capturas = ROBO_DIR / "_capturas"
+    capturas.mkdir(parents=True, exist_ok=True)
+    existentes = {p.resolve() for p in capturas.glob("fila_resultado_*.json")}
+    iniciado_em = time.time()
+
+    chaves_lote: set[str] = set()
+    try:
+        bruto = json.loads(caminho_json.read_text(encoding="utf-8"))
+        if isinstance(bruto, list):
+            for row in bruto:
+                if isinstance(row, dict) and row.get("chave"):
+                    chaves_lote.add(str(row["chave"]).strip())
+                elif isinstance(row, str) and row.strip():
+                    chaves_lote.add(row.strip())
+    except Exception:
+        chaves_lote = set()
+
     cmd = [
         sys.executable,
         str(ENVIAR_FILA),
@@ -247,19 +265,66 @@ def rodar_enviar_fila(*, cdp: str, caminho_json: Path) -> list[dict]:
     if proc.returncode != 0 and proc.stderr:
         print(proc.stderr[-2000:], file=sys.stderr)
 
-    capturas = ROBO_DIR / "_capturas"
-    logs = (
-        sorted(capturas.glob("fila_resultado_*.json"), key=lambda p: p.stat().st_mtime)
-        if capturas.is_dir()
-        else []
-    )
-    if not logs:
+    # Somente resultado NOVO deste lote — nunca reusar JSON de lote anterior (bug do limite 500).
+    candidatas: list[Path] = []
+    for p in capturas.glob("fila_resultado_*.json"):
+        try:
+            st = p.stat()
+        except OSError:
+            continue
+        if p.resolve() in existentes:
+            continue
+        if st.st_mtime + 1.0 < iniciado_em:
+            continue
+        candidatas.append(p)
+
+    if not candidatas:
+        # Fallback: arquivo com mtime apos o inicio (mesmo se ja existia na lista por race).
+        for p in capturas.glob("fila_resultado_*.json"):
+            try:
+                if p.stat().st_mtime + 0.5 >= iniciado_em:
+                    candidatas.append(p)
+            except OSError:
+                continue
+
+    if not candidatas:
+        print(
+            f"[{_agora()}] Aviso: robo nao gerou fila_resultado novo para "
+            f"{caminho_json.name} — nao reuso lote anterior (0 itens neste lote)."
+        )
         return []
+
+    log = max(candidatas, key=lambda p: p.stat().st_mtime)
     try:
-        payload = json.loads(logs[-1].read_text(encoding="utf-8"))
-        return list(payload.get("itens") or [])
-    except Exception:
+        payload = json.loads(log.read_text(encoding="utf-8"))
+        itens = list(payload.get("itens") or [])
+    except Exception as exc:
+        print(f"[{_agora()}] Aviso: falha ao ler {log.name}: {exc}")
         return []
+
+    if chaves_lote:
+        filtrados = [
+            it
+            for it in itens
+            if isinstance(it, dict) and str(it.get("chave") or "").strip() in chaves_lote
+        ]
+        if len(filtrados) < len(itens):
+            print(
+                f"[{_agora()}] Aviso: {len(itens) - len(filtrados)} item(ns) do resultado "
+                f"fora do lote {caminho_json.name} — ignorados."
+            )
+        itens = filtrados
+
+    motivo = ""
+    try:
+        motivo = str((payload.get("resumo") or {}).get("motivo_interrupcao") or "")
+    except Exception:
+        motivo = ""
+    print(
+        f"[{_agora()}] Resultado lote: {log.name} itens={len(itens)}"
+        + (f" motivo={motivo}" if motivo else "")
+    )
+    return itens
 
 
 def processar_sessao(
