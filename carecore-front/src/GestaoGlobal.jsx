@@ -23,6 +23,7 @@ import {
   salvarIdentidadeRelatoriosOrganizacao,
 } from './services/relatoriosService';
 import { imprimirRelatorio } from './utils/imprimirRelatorio';
+import { rotaInicialPosLogin } from './utils/rbacUtils';
 
 const secoes = [
   { id: 'visao', label: 'Visão Geral', icon: LayoutDashboard },
@@ -666,7 +667,7 @@ export default function GestaoGlobal() {
       }
 
       login({ token, usuario });
-      navigate('/dashboard');
+      navigate(rotaInicialPosLogin(usuario));
     } catch (error) {
       setErro(error.response?.data?.detail || 'Não foi possível entrar neste projeto.');
     } finally {

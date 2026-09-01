@@ -37,7 +37,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 from database import get_db
-from models import InstituicaoDB, UsuarioDB
+from models import InstituicaoDB, OrganizacaoDB, UsuarioDB
 
 
 # =====================================================================
@@ -590,8 +590,15 @@ async def get_usuario_logado(
     )
     instituicao_id = usuario.instituicao_id
     organizacao_id = getattr(usuario, "organizacao_id", None)
+    organizacao_tipo_pacote = payload.get("organizacao_tipo_pacote") or "assistencial"
+    projeto_nome = payload.get("projeto_nome")
+    organizacao_nome = payload.get("organizacao_nome")
 
     if usuario_eh_manutencao(usuario):
+        org_token = payload.get("organizacao_id")
+        if org_token:
+            organizacao_id = org_token
+
         instituicao_token = payload.get("instituicao_id")
         if instituicao_token:
             resultado_projeto = await db.execute(
@@ -601,6 +608,20 @@ async def get_usuario_logado(
             if projeto_token:
                 instituicao_id = projeto_token.id
                 organizacao_id = getattr(projeto_token, "organizacao_id", organizacao_id)
+                projeto_nome = projeto_token.nome_fantasia
+
+        if organizacao_id and not payload.get("organizacao_tipo_pacote"):
+            resultado_org = await db.execute(
+                select(OrganizacaoDB).where(OrganizacaoDB.id == organizacao_id)
+            )
+            org_db = resultado_org.scalar_one_or_none()
+            if org_db:
+                from organizacao_pacote import normalizar_tipo_pacote
+
+                organizacao_tipo_pacote = normalizar_tipo_pacote(
+                    getattr(org_db, "tipo_pacote", None)
+                )
+                organizacao_nome = org_db.nome
 
     elif bool(getattr(usuario, "is_global", False)):
         instituicao_token = payload.get("instituicao_id")
@@ -623,6 +644,9 @@ async def get_usuario_logado(
         "email": usuario.email,
         "instituicao_id": instituicao_id,
         "organizacao_id": organizacao_id,
+        "organizacao_tipo_pacote": organizacao_tipo_pacote,
+        "organizacao_nome": organizacao_nome,
+        "projeto_nome": projeto_nome,
         "perfil_acesso": perfil_acesso,
         "is_master": bool(getattr(usuario, "is_master", False)),
         "is_global": bool(getattr(usuario, "is_global", False)),

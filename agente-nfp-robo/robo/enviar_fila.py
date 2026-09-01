@@ -58,6 +58,25 @@ from preencher_sem_enviar import (  # noqa: E402
 from retorno_nfp import resultado_operacional_ok  # noqa: E402
 from validar_chave_acesso import validar_chave_acesso_nfe  # noqa: E402
 
+try:
+    from captura_tela_sefaz import captura_tela_habilitada, gravar_captura_sefaz  # noqa: E402
+    from ler_formulario_sefaz import (  # noqa: E402
+        aguardar_e_ler_formulario_sefaz,
+        captura_metadados_habilitada,
+    )
+except ImportError:
+    async def gravar_captura_sefaz(*_a, **_k):  # type: ignore[misc]
+        return None
+
+    def captura_tela_habilitada() -> bool:
+        return False
+
+    async def aguardar_e_ler_formulario_sefaz(*_a, **_k):  # type: ignore[misc]
+        return {}
+
+    def captura_metadados_habilitada() -> bool:
+        return False
+
 STOP_FLAG = Path(__file__).resolve().parent / "_capturas" / "fila_parar.flag"
 
 
@@ -390,6 +409,18 @@ async def rodar(args: argparse.Namespace) -> int:
                             codigo_saida = 1
                             break
 
+                    meta_sefaz: dict = {}
+                    if captura_metadados_habilitada():
+                        try:
+                            meta_sefaz = await aguardar_e_ler_formulario_sefaz(page)
+                        except Exception:
+                            meta_sefaz = {}
+
+                    if captura_tela_habilitada():
+                        await gravar_captura_sefaz(
+                            page, etapa="01_apos_chave", chave=chave, meta=meta_sefaz
+                        )
+
                     # Snapshot antes do Salvar: sucesso fica inline e nao some sozinho.
                     try:
                         texto_antes = await coletar_texto_retorno(page)
@@ -425,6 +456,13 @@ async def rodar(args: argparse.Namespace) -> int:
                             break
 
                     cls = await processar_retorno(page, texto_antes=texto_antes)
+                    if captura_tela_habilitada():
+                        await gravar_captura_sefaz(
+                            page,
+                            etapa="02_apos_retorno",
+                            chave=chave,
+                            meta={**meta_sefaz, "tipo_retorno": cls.tipo, "mensagem": cls.mensagem},
+                        )
                     print(
                         f"Resultado: {cls.tipo} | CareCore->{cls.status_carecore} | {cls.mensagem}"
                     )
@@ -438,6 +476,8 @@ async def rodar(args: argparse.Namespace) -> int:
                             "status_carecore": cls.status_carecore,
                             "mensagem": cls.mensagem,
                             "trecho": cls.trecho,
+                            "tipo_retorno_sefaz": cls.tipo,
+                            **meta_sefaz,
                         }
                     )
                     try:

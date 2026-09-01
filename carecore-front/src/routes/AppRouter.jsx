@@ -49,6 +49,7 @@ const NfpDoadores = lazy(() => import('../NfpDoadores'));
 const NfpCnpjs = lazy(() => import('../NfpCnpjs'));
 const NfpLeituraCupons = lazy(() => import('../NfpLeituraCupons'));
 const NfpEnvioSefaz = lazy(() => import('../NfpEnvioSefaz'));
+const NfpConferenciaSefaz = lazy(() => import('../NfpConferenciaSefaz'));
 const NfpMetas = lazy(() => import('../NfpMetas'));
 const NfpRelatorios = lazy(() => import('../NfpRelatorios'));
 const RelatorioNfpRateioConsolidado = lazy(() => import('../RelatorioNfpRateioConsolidado'));
@@ -58,6 +59,16 @@ const Compras = lazy(() => import('../Compras'));
 const ComprasPedido = lazy(() => import('../ComprasPedido'));
 const ComprasPedidoNovo = lazy(() => import('../ComprasPedidoNovo'));
 const ComprasAguardandoAssinatura = lazy(() => import('../ComprasAguardandoAssinatura'));
+const FinanceDashboard = lazy(() => import('../financeiro/FinanceDashboardPro'));
+const FinanceContas = lazy(() => import('../financeiro/FinanceContasPro'));
+const FinanceExtrato = lazy(() => import('../financeiro/FinanceExtratoPro'));
+const FinancePayables = lazy(() => import('../financeiro/FinancePayablesPro'));
+const FinanceInvoices = lazy(() => import('../financeiro/FinanceInvoicesPro'));
+const FinanceNotasConferencia = lazy(() => import('../financeiro/FinanceNotasConferencia'));
+const FinanceWhatsapp = lazy(() => import('../financeiro/FinanceWhatsappPro'));
+const FinanceCards = lazy(() => import('../financeiro/FinanceCardsPro'));
+const FinanceInvestments = lazy(() => import('../financeiro/FinanceInvestmentsPro'));
+const FinanceSettings = lazy(() => import('../financeiro/FinanceSettingsPro'));
 
 function RotasAplicacao() {
   return (
@@ -72,6 +83,101 @@ function RotasAplicacao() {
           element={
             <ProtectedRoute>
               <Dashboard />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/financeiro"
+          element={<Navigate to="/financeiro/dashboard" replace />}
+        />
+
+        <Route
+          path="/financeiro/dashboard"
+          element={
+            <ProtectedRoute>
+              <FinanceDashboard />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/financeiro/contas"
+          element={
+            <ProtectedRoute>
+              <FinanceContas />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/financeiro/extrato"
+          element={
+            <ProtectedRoute>
+              <FinanceExtrato />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/financeiro/pagar-receber"
+          element={
+            <ProtectedRoute>
+              <FinancePayables />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/financeiro/notas/conferencia-nfse"
+          element={
+            <ProtectedRoute>
+              <FinanceNotasConferencia />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/financeiro/notas"
+          element={
+            <ProtectedRoute>
+              <FinanceInvoices />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/financeiro/whatsapp"
+          element={
+            <ProtectedRoute>
+              <FinanceWhatsapp />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/financeiro/cartoes"
+          element={
+            <ProtectedRoute>
+              <FinanceCards />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/financeiro/investimentos"
+          element={
+            <ProtectedRoute>
+              <FinanceInvestments />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/financeiro/configuracoes"
+          element={
+            <ProtectedRoute>
+              <FinanceSettings />
             </ProtectedRoute>
           }
         />
@@ -410,6 +516,15 @@ function RotasAplicacao() {
           element={
             <ProtectedRoute perfis={PERFIS_NFP_ENVIO_SEFAZ}>
               <NfpEnvioSefaz />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/nfp/conferencia-sefaz"
+          element={
+            <ProtectedRoute perfis={PERFIS_NFP_GESTAO}>
+              <NfpConferenciaSefaz />
             </ProtectedRoute>
           }
         />

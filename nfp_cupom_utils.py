@@ -510,6 +510,51 @@ def cupom_fora_prazo_leitura(
     return dia > data_limite_leitura_carecore(ano, mes, folga_dias=folga_dias)
 
 
+def ultimo_dia_util_antes_do_dia(ano: int, mes: int, dia: int = 20) -> date:
+    """Ultimo dia util estritamente antes do dia `dia` do mes (fim de semana recua)."""
+    candidato = date(ano, mes, dia) - timedelta(days=1)
+    while candidato.weekday() >= 5:
+        candidato -= timedelta(days=1)
+    return candidato
+
+
+def refs_emissao_vencendo_no_mes(ano_limite: int, mes_limite: int) -> list[str]:
+    """Ref AAAA-MM cuja janela SEFAZ fecha no dia 20 de ano_limite/mes_limite."""
+    ano_em, mes_em = _somar_meses(ano_limite, mes_limite, -MESES_JANELA_CADASTRO_NFP)
+    return [f"{ano_em:04d}-{mes_em:02d}"]
+
+
+def janela_aviso_conferencia_sefaz(hoje: Optional[date] = None) -> dict[str, object]:
+    """Banner/wizard: ultimo dia util antes do 20 ate o proprio dia 20 (calendario)."""
+    if hoje is None:
+        try:
+            from time_operacional import agora_operacional_naive
+
+            hoje = agora_operacional_naive().date()
+        except Exception:
+            hoje = date.today()
+    ano = hoje.year
+    mes = hoje.month
+    inicio = ultimo_dia_util_antes_do_dia(ano, mes, 20)
+    fim = date(ano, mes, 20)
+    ativo = inicio <= hoje <= fim
+    prazo_sefaz = fim.isoformat()
+    return {
+        "ativo": ativo,
+        "hoje": hoje.isoformat(),
+        "inicio_aviso": inicio.isoformat(),
+        "fim_janela": prazo_sefaz,
+        "dia_conferencia": inicio.isoformat(),
+        "refs_emissao_prioridade": refs_emissao_vencendo_no_mes(ano, mes),
+        "mensagem": (
+            f"Conferencia NFP: prazo SEFAZ ate {fim.strftime('%d/%m/%Y')}. "
+            f"Execute o batimento Pedidos x cupons antes do envio em massa."
+            if ativo
+            else ""
+        ),
+    }
+
+
 def mensagem_rejeicao_prazo(data_emissao_ref: Optional[str]) -> str:
     ym = parse_ano_mes_emissao_ref(data_emissao_ref)
     if not ym:

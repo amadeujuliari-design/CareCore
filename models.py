@@ -27,6 +27,8 @@ class OrganizacaoDB(Base):
     cidade = Column(String, nullable=True)
     uf = Column(String, nullable=True)
     is_active = Column(Boolean, default=True)
+    # assistencial (padrão) | financeiro_pessoal
+    tipo_pacote = Column(String, default="assistencial", nullable=False)
     compras_ativo = Column(Boolean, default=False, nullable=False)
     criado_em = Column(DateTime, default=datetime.datetime.utcnow)
     # Identidade visual/documental dos relatórios da organização (sede)
@@ -1894,6 +1896,13 @@ class NfpCupomLidoDB(Base):
     numero_nf = Column(String, nullable=True)
     tipo_emissao = Column(String, nullable=True)
     valor_centavos = Column(Integer, nullable=True)
+    # Metadados lidos no formulario SEFAZ apos informar a chave (robô).
+    numero_nota_sefaz = Column(String, nullable=True)
+    valor_sefaz_centavos = Column(Integer, nullable=True)
+    cnpj_sefaz = Column(String, nullable=True)
+    data_nota_sefaz = Column(String, nullable=True)
+    tipo_retorno_sefaz = Column(String, nullable=True)
+    sefaz_registrado_em = Column(DateTime, nullable=True)
     qr_versao = Column(String, nullable=True)
     tp_ambiente = Column(String, nullable=True)
     tp_id_dest = Column(String, nullable=True)
@@ -2313,4 +2322,100 @@ class ComprasPatrimonioDB(Base):
     escopo_unidade = Column(String, nullable=False, default="projeto")
     criado_em = Column(DateTime, default=agora_operacional_naive)
     atualizado_em = Column(DateTime, default=agora_operacional_naive, onupdate=agora_operacional_naive)
+
+
+class UsuarioOrganizacaoAcessoDB(Base):
+    """Lista explícita de orgs para Manutenção2; vazio = Manutenção vê todas."""
+    __tablename__ = "usuario_organizacao_acesso"
+    __table_args__ = (
+        UniqueConstraint(
+            "usuario_id",
+            "organizacao_id",
+            name="uq_usuario_organizacao_acesso",
+        ),
+    )
+
+    id = Column(String, primary_key=True, default=get_uuid)
+    usuario_id = Column(String, ForeignKey("usuarios.id"), nullable=False, index=True)
+    organizacao_id = Column(String, ForeignKey("organizacoes.id"), nullable=False, index=True)
+    criado_em = Column(DateTime, default=agora_operacional_naive)
+
+
+class FinanceiroContaDB(Base):
+    __tablename__ = "financeiro_contas"
+    __table_args__ = (
+        Index("ix_financeiro_contas_org", "organizacao_id"),
+    )
+
+    id = Column(String, primary_key=True, default=get_uuid)
+    organizacao_id = Column(String, ForeignKey("organizacoes.id"), nullable=False)
+    nome = Column(String, nullable=False)
+    tipo = Column(String, nullable=False, default="corrente")
+    saldo = Column(Float, nullable=False, default=0.0)
+    rende = Column(Boolean, default=False, nullable=False)
+    criado_em = Column(DateTime, default=agora_operacional_naive)
+
+
+class FinanceiroTransacaoDB(Base):
+    __tablename__ = "financeiro_transacoes"
+    __table_args__ = (
+        Index("ix_financeiro_transacoes_org_data", "organizacao_id", "data"),
+    )
+
+    id = Column(String, primary_key=True, default=get_uuid)
+    organizacao_id = Column(String, ForeignKey("organizacoes.id"), nullable=False)
+    conta_id = Column(String, ForeignKey("financeiro_contas.id"), nullable=True)
+    cartao_id = Column(String, nullable=True)
+    descricao = Column(String, nullable=False)
+    valor = Column(Float, nullable=False)
+    tipo = Column(String, nullable=False)
+    categoria = Column(String, nullable=True)
+    data = Column(Date, nullable=False)
+    pago = Column(Boolean, default=True, nullable=False)
+    origem_arquivo = Column(String, nullable=True)
+    parcela_atual = Column(Integer, nullable=True)
+    parcelas_total = Column(Integer, nullable=True)
+    projetado = Column(Boolean, default=False, nullable=False)
+    mes_fatura = Column(String, nullable=True)
+    pagamento_vinculado_id = Column(String, nullable=True)
+    ciclo_whatsapp = Column(String, nullable=True)
+    responsavel = Column(String, nullable=True)
+    url_nota = Column(String, nullable=True)
+    criado_em = Column(DateTime, default=agora_operacional_naive)
+
+
+class FinanceiroInvestimentoDB(Base):
+    __tablename__ = "financeiro_investimentos"
+    __table_args__ = (
+        Index("ix_financeiro_investimentos_org", "organizacao_id"),
+    )
+
+    id = Column(String, primary_key=True, default=get_uuid)
+    organizacao_id = Column(String, ForeignKey("organizacoes.id"), nullable=False)
+    nome = Column(String, nullable=False)
+    tipo = Column(String, nullable=True)
+    valor = Column(Float, nullable=False, default=0.0)
+    taxa = Column(Float, nullable=False, default=0.0)
+    data_inicio = Column(Date, nullable=True)
+    data_liquidez = Column(Date, nullable=True)
+    status = Column(String, nullable=False, default="active")
+    moeda = Column(String, nullable=False, default="BRL")
+    ir = Column(Float, nullable=True)
+    cdi = Column(Boolean, default=False, nullable=False)
+    cdi_percentual = Column(Float, nullable=True)
+    liquidez = Column(String, nullable=True)
+    criado_em = Column(DateTime, default=agora_operacional_naive)
+
+
+class FinanceiroRegraCategoriaDB(Base):
+    __tablename__ = "financeiro_regras_categoria"
+    __table_args__ = (
+        Index("ix_financeiro_regras_org", "organizacao_id"),
+    )
+
+    id = Column(String, primary_key=True, default=get_uuid)
+    organizacao_id = Column(String, ForeignKey("organizacoes.id"), nullable=False)
+    palavra_chave = Column(String, nullable=False)
+    categoria = Column(String, nullable=False)
+    criado_em = Column(DateTime, default=agora_operacional_naive)
 

@@ -20,7 +20,29 @@ from typing import Any, Optional
 from zoneinfo import ZoneInfo
 
 ROOT_DIR = Path(__file__).resolve().parent
-ROBO_DIR = ROOT_DIR / "scripts" / "nfp_robo"
+
+
+def _resolver_robo_dir() -> Path:
+    """Prefer agente-nfp-robo (oficial); fallback legado scripts/nfp_robo."""
+    agente = ROOT_DIR / "agente-nfp-robo" / "robo"
+    legado = ROOT_DIR / "scripts" / "nfp_robo"
+    if (agente / "enviar_fila.py").is_file():
+        return agente
+    if (legado / "enviar_fila.py").is_file():
+        return legado
+    return agente
+
+
+def _robo_cwd(robo_dir: Path) -> Path:
+    """Diretorio de trabalho do subprocesso (agente-nfp-robo ou raiz do repo)."""
+    pai = robo_dir.parent
+    if (pai / "agente_nfp.py").is_file():
+        return pai
+    return ROOT_DIR
+
+
+ROBO_DIR = _resolver_robo_dir()
+ROBO_CWD = _robo_cwd(ROBO_DIR)
 ENVIAR_FILA = ROBO_DIR / "enviar_fila.py"
 FUSO = ZoneInfo("America/Sao_Paulo")
 CDP_PADRAO = os.getenv("CARECORE_NFP_CDP", "http://127.0.0.1:9222").rstrip("/")
@@ -581,9 +603,13 @@ def _rodar_um_lote_robo(
 
     env = os.environ.copy()
     env["PYTHONIOENCODING"] = "utf-8"
+    flag = (os.getenv("CARECORE_NFP_CAPTURAR_METADADOS") or "1").strip().lower()
+    env["CARECORE_NFP_CAPTURAR_METADADOS"] = "0" if flag in {"0", "false", "off", "nao", "não"} else "1"
+    flag_tela = (os.getenv("CARECORE_NFP_CAPTURA_TELA") or "1").strip().lower()
+    env["CARECORE_NFP_CAPTURA_TELA"] = "0" if flag_tela in {"0", "false", "off", "nao", "não"} else "1"
     proc = subprocess.Popen(
         cmd,
-        cwd=str(ROOT_DIR),
+        cwd=str(ROBO_CWD),
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,

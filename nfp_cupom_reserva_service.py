@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import uuid
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Any, Optional
 
 from sqlalchemy import select, update
@@ -12,7 +12,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import AsyncSessionLocal
 from models import NfpCupomLidoDB
+from nfp_conferencia_sefaz_service import parse_sefaz_registrado_em
 from nfp_cupom_utils import mensagem_chave_invalida, validar_chave_acesso_nfe
+from nfp_utils import limpar_nota
 from time_operacional import agora_operacional_naive
 
 STATUS_PENDENTE = "pendente"
@@ -251,6 +253,36 @@ async def aplicar_resultados_envio(
         row.mensagem = (item.get("mensagem") or row.mensagem or "")[:2000] or row.mensagem
         if not ok_chave and not (row.mensagem or "").strip():
             row.mensagem = mensagem_chave_invalida(motivo_chave)
+        tipo_sefaz = (item.get("tipo") or item.get("tipo_retorno_sefaz") or "").strip().lower()
+        if tipo_sefaz:
+            row.tipo_retorno_sefaz = tipo_sefaz[:40]
+        numero_sefaz = limpar_nota(str(item.get("numero_nota_sefaz") or ""))
+        if numero_sefaz:
+            row.numero_nota_sefaz = numero_sefaz
+        cnpj_sefaz = "".join(ch for ch in str(item.get("cnpj_sefaz") or "") if ch.isdigit())
+        if len(cnpj_sefaz) >= 11:
+            row.cnpj_sefaz = cnpj_sefaz
+        data_nota = (item.get("data_nota_sefaz") or "").strip()
+        if data_nota:
+            row.data_nota_sefaz = data_nota[:10]
+        try:
+            v_sefaz = item.get("valor_sefaz_centavos")
+            if v_sefaz is not None and str(v_sefaz).strip() != "":
+                row.valor_sefaz_centavos = int(v_sefaz)
+        except (TypeError, ValueError):
+            pass
+        reg_em = item.get("sefaz_registrado_em")
+        if reg_em:
+            if isinstance(reg_em, datetime):
+                row.sefaz_registrado_em = reg_em
+            else:
+                parsed = parse_sefaz_registrado_em(str(reg_em))
+                if parsed:
+                    row.sefaz_registrado_em = parsed
+        elif item.get("mensagem"):
+            parsed = parse_sefaz_registrado_em(str(item.get("mensagem") or ""))
+            if parsed:
+                row.sefaz_registrado_em = parsed
         row.atualizado_em = agora
         if status_cc == "enviado":
             row.enviado_em = agora

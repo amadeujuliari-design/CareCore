@@ -21,6 +21,9 @@ import {
 } from '../utils/rbacUtils';
 import { decodificarPayloadJwt } from '../utils/jwtUtils';
 import {
+  enriquecerUsuarioSessaoComPacote,
+} from '../utils/orgPacoteUtils.js';
+import {
   manutencaoProgramadaAtiva,
   usuarioPodeAcessarDuranteManutencao,
 } from '../config/manutencao';
@@ -85,7 +88,10 @@ export function AuthProvider({ children }) {
           return;
         }
 
-        const usuarioParseado = JSON.parse(usuarioRaw);
+        const usuarioParseado = enriquecerUsuarioSessaoComPacote(
+          JSON.parse(usuarioRaw),
+          token,
+        );
 
         if (
           manutencaoProgramadaAtiva()
@@ -112,8 +118,9 @@ export function AuthProvider({ children }) {
   }, []);
 
   const login = ({ token, usuario }) => {
-    salvarSessaoLocal(token, usuario);
-    setUsuario(usuario);
+    const usuarioEnriquecido = enriquecerUsuarioSessaoComPacote(usuario, token);
+    salvarSessaoLocal(token, usuarioEnriquecido);
+    setUsuario(usuarioEnriquecido);
   };
 
   const logout = () => {

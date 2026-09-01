@@ -1,6 +1,7 @@
 import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 
 import ChatFlutuante from '../components/ChatFlutuante';
+import BannerConferenciaNfpPrazo from '../components/BannerConferenciaNfpPrazo';
 import { useAuth } from '../context/AuthContext';
 import {
   manutencaoProgramadaAtiva,
@@ -21,8 +22,13 @@ import {
   usuarioEhAdmPedidos,
   usuarioEhAdmProducao,
   usuarioEhOficineiro,
+  usuarioPodeGestaoNfp,
   usuarioPodeVerCompras,
 } from '../utils/rbacUtils';
+import {
+  rotaEhFinanceiro,
+  usuarioOrganizacaoFinanceira,
+} from '../utils/orgPacoteUtils';
 
 const PERFIS_LEGADOS = {
   Gestao: 'Gestor',
@@ -66,6 +72,17 @@ export default function ProtectedRoute({
 
   if (!usuario) {
     return <Navigate to="/" replace />;
+  }
+
+  const orgFinanceira = usuarioOrganizacaoFinanceira(usuario);
+  const rotaOrganizacao = pathname === '/organizacao';
+
+  if (orgFinanceira && !rotaEhFinanceiro(pathname) && !rotaOrganizacao) {
+    return <Navigate to="/financeiro/dashboard" replace />;
+  }
+
+  if (!orgFinanceira && rotaEhFinanceiro(pathname)) {
+    return <Navigate to={rotaInicialPosLogin(usuario)} replace />;
   }
 
   if (
@@ -159,7 +176,14 @@ export default function ProtectedRoute({
 
   return (
     <div className="carecore-premium-frame">
-      {children}
+      <div className="flex min-h-0 w-full flex-col overflow-hidden">
+        {usuarioPodeGestaoNfp(usuario) && (
+          <div className="shrink-0 px-4 pt-3 md:px-6">
+            <BannerConferenciaNfpPrazo usuario={usuario} />
+          </div>
+        )}
+        {children}
+      </div>
       <ChatFlutuante />
     </div>
   );

@@ -19,6 +19,12 @@ from models import (
     NfpDoadorDB,
     NfpRateioDB,
 )
+from nfp_conferencia_sefaz_service import (
+    batimento_pedidos_upload,
+    obter_aviso_conferencia,
+    reenfileirar_cupons_conferencia,
+    resumo_conferencia,
+)
 from nfp_cupom_leitura_service import agendar_checagem_sefaz, registrar_leitura_rapida
 from nfp_cupom_relatorio_service import relatorio_cupons
 from nfp_metas_service import (
@@ -1223,6 +1229,16 @@ def _serializar_cupom_lido(row: NfpCupomLidoDB) -> dict:
         "modelo": getattr(row, "modelo", None),
         "serie": getattr(row, "serie", None),
         "numero_nf": getattr(row, "numero_nf", None),
+        "numero_nota_sefaz": getattr(row, "numero_nota_sefaz", None),
+        "valor_sefaz_centavos": getattr(row, "valor_sefaz_centavos", None),
+        "cnpj_sefaz": getattr(row, "cnpj_sefaz", None),
+        "data_nota_sefaz": getattr(row, "data_nota_sefaz", None),
+        "tipo_retorno_sefaz": getattr(row, "tipo_retorno_sefaz", None),
+        "sefaz_registrado_em": (
+            row.sefaz_registrado_em.isoformat(sep=" ", timespec="seconds")
+            if getattr(row, "sefaz_registrado_em", None)
+            else None
+        ),
         "tipo_emissao": getattr(row, "tipo_emissao", None),
         "valor_centavos": getattr(row, "valor_centavos", None),
         "qr_versao": getattr(row, "qr_versao", None),
@@ -1601,6 +1617,74 @@ async def envio_sefaz_agente_liberar_expirados(
     org = _organizacao_id(usuario_atual)
     n = await liberar_reservas_expiradas(db, org)
     return {"ok": True, "liberados": n}
+
+
+@router.get("/conferencia-sefaz/aviso")
+async def conferencia_sefaz_aviso(
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    _exigir_nfp_gestao(usuario_atual)
+    return await obter_aviso_conferencia(db, _organizacao_id(usuario_atual))
+
+
+@router.get("/conferencia-sefaz/resumo")
+async def conferencia_sefaz_resumo(
+    data_inicio: Optional[str] = Query(None),
+    data_fim: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    _exigir_nfp_gestao(usuario_atual)
+    return await resumo_conferencia(
+        db,
+        _organizacao_id(usuario_atual),
+        data_inicio=data_inicio,
+        data_fim=data_fim,
+    )
+
+
+@router.post("/conferencia-sefaz/batimento")
+async def conferencia_sefaz_batimento(
+    arquivo: UploadFile = File(...),
+    data_inicio: Optional[str] = Form(None),
+    data_fim: Optional[str] = Form(None),
+    status_cupom: str = Form("enviado"),
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    _exigir_nfp_gestao(usuario_atual)
+    nome = (arquivo.filename or "").lower()
+    if not nome.endswith((".csv", ".txt")):
+        raise HTTPException(status_code=400, detail="Envie o export Pedidos SEFAZ em CSV.")
+    conteudo = await arquivo.read()
+    if not conteudo:
+        raise HTTPException(status_code=400, detail="Arquivo vazio.")
+    return await batimento_pedidos_upload(
+        db,
+        _organizacao_id(usuario_atual),
+        conteudo_csv=conteudo,
+        status_cupom=(status_cupom or "enviado").strip().lower(),
+        data_inicio=data_inicio,
+        data_fim=data_fim,
+    )
+
+
+@router.post("/conferencia-sefaz/reenfileirar")
+async def conferencia_sefaz_reenfileirar(
+    payload: dict,
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    _exigir_nfp_escrita_gestao(usuario_atual)
+    chaves = payload.get("chaves") or []
+    if not isinstance(chaves, list) or not chaves:
+        raise HTTPException(status_code=400, detail="Informe chaves para reenfileirar.")
+    return await reenfileirar_cupons_conferencia(
+        db,
+        _organizacao_id(usuario_atual),
+        chaves=[str(c) for c in chaves],
+    )
 
 
 @router.get("/metas/competencias")

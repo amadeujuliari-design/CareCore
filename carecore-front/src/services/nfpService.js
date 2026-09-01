@@ -206,6 +206,28 @@ export async function nfpEnvioSefazParar() {
   return data;
 }
 
+export async function nfpConferenciaAviso() {
+  const { data } = await api.get('/api/nfp/conferencia-sefaz/aviso');
+  return data;
+}
+
+export async function nfpConferenciaResumo(params = {}) {
+  const { data } = await api.get('/api/nfp/conferencia-sefaz/resumo', { params });
+  return data;
+}
+
+export async function nfpConferenciaBatimento(formData) {
+  const { data } = await api.post('/api/nfp/conferencia-sefaz/batimento', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+  return data;
+}
+
+export async function nfpConferenciaReenfileirar(payload) {
+  const { data } = await api.post('/api/nfp/conferencia-sefaz/reenfileirar', payload);
+  return data;
+}
+
 export async function nfpObterMetas(competencia, params = {}) {
   const { data } = await api.get(`/api/nfp/metas/${competencia}`, { params });
   return data;

@@ -108,7 +108,18 @@ class OrganizacaoCreate(OrganizacaoBase):
 class OrganizacaoResponse(OrganizacaoBase):
     id: str
     is_active: bool = True
+    tipo_pacote: str = "assistencial"
     criado_em: Optional[datetime] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class OrganizacaoDisponivelItem(BaseModel):
+    id: str
+    nome: str
+    tipo_pacote: str = "assistencial"
+    is_active: bool = True
+    projetos_ativos: int = 0
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -885,6 +896,7 @@ class UsuarioSessaoResponse(BaseModel):
     email: str
     instituicao_id: Optional[str] = None
     organizacao_id: Optional[str] = None
+    organizacao_tipo_pacote: str = "assistencial"
     projeto_nome: Optional[str] = None
     organizacao_nome: Optional[str] = None
     nfp_captador_vinculo: Optional[str] = None

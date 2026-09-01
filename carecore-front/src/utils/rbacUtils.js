@@ -1,3 +1,5 @@
+import { usuarioOrganizacaoFinanceira } from './orgPacoteUtils.js';
+
 const PERFIS_GESTAO = ['Gestor', 'Gestao', 'Gestão', 'Gerente'];
 const PERFIS_TECNICOS = ['Técnico', 'Tecnico'];
 export const PERFIL_OFICINEIRO = 'Oficineiro(a)';
@@ -197,6 +199,9 @@ export function usuarioPodeEditarNfp(usuario) {
 }
 
 export function rotaInicialPosLogin(usuario) {
+  if (usuarioOrganizacaoFinanceira(usuario)) {
+    return '/financeiro/dashboard';
+  }
   if (usuarioEhAdmProducao(usuario)) {
     return '/nfp/leitura-cupons';
   }

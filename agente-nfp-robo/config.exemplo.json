@@ -4,5 +4,7 @@
   "senha": "ALTERE_AQUI",
   "nome_maquina": "SEDE-PC1",
   "cdp": "http://127.0.0.1:9222",
-  "tamanho_lote": 100
+  "tamanho_lote": 100,
+  "capturar_metadados_sefaz": true,
+  "captura_tela_sefaz": true
 }

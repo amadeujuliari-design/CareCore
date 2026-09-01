@@ -7,6 +7,7 @@ import {
   CalendarRange,
   ChartNoAxesColumnIncreasing,
   ChevronDown,
+  ClipboardCheck,
   ClipboardList,
   CreditCard,
   FileBarChart,
@@ -41,6 +42,8 @@ import { acompanhamentoAtivo, moduloAtivo } from './config/configOperacionalDefa
 import { useConfigOperacional } from './hooks/useConfigOperacional';
 import { usuarioEhAdmCompras, usuarioEhAdmGlobal, usuarioEhAdmPedidos, usuarioEhAdmProducao, usuarioEhOficineiro, normalizarPerfilRbac, usuarioPodeVerCompras, usuarioPodeAcessarModuloOperacional, PERFIL_ADM_COMPRAS, PERFIL_ADM_GLOBAL, PERFIL_ADM_PRODUCAO } from './utils/rbacUtils';
 import { decodificarPayloadJwt } from './utils/jwtUtils';
+import { usuarioOrganizacaoFinanceira } from './utils/orgPacoteUtils';
+import FinanceSidebar from './components/FinanceSidebar';
 import {
   DIREITOS_RESERVADOS_TITULO,
   obterUrlDireitosReservados,
@@ -547,6 +550,12 @@ export default function Sidebar() {
               perfis: ['Global', PERFIL_ADM_GLOBAL, 'Manutenção'],
             },
             {
+              path: '/nfp/conferencia-sefaz',
+              icon: ClipboardCheck,
+              label: 'Conferência pré-prazo',
+              perfis: ['Global', PERFIL_ADM_GLOBAL, 'Manutenção'],
+            },
+            {
               path: '/usuarios',
               icon: UserRoundCog,
               label: 'Usuários ADM NFP',
@@ -601,7 +610,7 @@ export default function Sidebar() {
         {
           path: '/organizacao',
           icon: PanelsTopLeft,
-          label: 'Projetos',
+          label: 'ONGs/Projetos',
           perfis: ['Gestor', 'Global'],
           globalOnly: true
         },
@@ -988,6 +997,10 @@ export default function Sidebar() {
       </div>
     ))
   );
+
+  if (usuarioOrganizacaoFinanceira(usuarioSessao, token)) {
+    return <FinanceSidebar />;
+  }
 
   return (
     <>

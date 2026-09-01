@@ -46,6 +46,9 @@ from routers import conviventes
 from routers import avisos
 from routers import arquivos
 from routers import organizacoes
+from routers import financeiro_pessoal
+from routers import financeiro_pro_compat
+from routers import financeiro_nfse_conferencia
 from routers import historico_legado
 from routers import chat
 from routers import rotina_operacional
@@ -941,6 +944,9 @@ app.include_router(conviventes.router)
 app.include_router(rotina_operacional.router)
 app.include_router(avisos.router)
 app.include_router(organizacoes.router)
+app.include_router(financeiro_pessoal.router)
+app.include_router(financeiro_pro_compat.router)
+app.include_router(financeiro_nfse_conferencia.router)
 app.include_router(historico_legado.router)
 app.include_router(chat.router)
 app.include_router(suporte.router)

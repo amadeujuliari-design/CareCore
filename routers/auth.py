@@ -323,10 +323,27 @@ def montar_payload_token(
     projeto: InstituicaoDB | None = None,
     organizacao: OrganizacaoDB | None = None,
 ) -> dict:
+    from organizacao_pacote import normalizar_tipo_pacote
+
     perfil_acesso = normalizar_perfil_acesso(
         getattr(usuario, "perfil_acesso", None)
     )
     manutencao = usuario_eh_manutencao(usuario)
+
+    org_id = None
+    if organizacao is not None:
+        org_id = organizacao.id
+    elif projeto is not None and getattr(projeto, "organizacao_id", None):
+        org_id = projeto.organizacao_id
+    else:
+        org_id = getattr(usuario, "organizacao_id", None)
+
+    tipo_pacote = "assistencial"
+    if organizacao is not None:
+        tipo_pacote = normalizar_tipo_pacote(getattr(organizacao, "tipo_pacote", None))
+    org_nome = getattr(organizacao, "nome", None) if organizacao else None
+
+    instituicao_id = getattr(projeto, "id", None) or usuario.instituicao_id
 
     return {
         "sub": usuario.id,
@@ -334,10 +351,11 @@ def montar_payload_token(
         "usuario_id": usuario.id,
         "nome": nome_manutencao_configurado() if manutencao else usuario.nome,
         "email": usuario.email,
-        "instituicao_id": usuario.instituicao_id,
-        "organizacao_id": getattr(usuario, "organizacao_id", None),
+        "instituicao_id": instituicao_id,
+        "organizacao_id": org_id,
+        "organizacao_tipo_pacote": tipo_pacote,
         "projeto_nome": getattr(projeto, "nome_fantasia", None),
-        "organizacao_nome": getattr(organizacao, "nome", None),
+        "organizacao_nome": org_nome,
         "perfil_acesso": perfil_acesso,
         "is_master": bool(getattr(usuario, "is_master", False)),
         "is_global": bool(getattr(usuario, "is_global", False)),

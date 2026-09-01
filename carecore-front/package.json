@@ -18,11 +18,15 @@
     "axios": "^1.16.1",
     "html5-qrcode": "^2.3.8",
     "lucide-react": "^1.16.0",
+    "pdfjs-dist": "^6.2.108",
     "react": "^19.2.6",
     "react-barcode": "^1.6.1",
     "react-dom": "^19.2.6",
     "react-qr-code": "^2.0.21",
-    "react-router-dom": "^7.15.0"
+    "react-router-dom": "^7.15.0",
+    "recharts": "^3.10.1",
+    "tailwind-merge": "^3.6.0",
+    "zustand": "^5.0.15"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
@@ -37,6 +41,7 @@
     "globals": "^17.6.0",
     "postcss": "^8.5.14",
     "tailwindcss": "^3.4.19",
+    "typescript": "^7.0.2",
     "vite": "^8.0.12"
   }
 }

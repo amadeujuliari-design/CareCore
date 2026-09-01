@@ -36,8 +36,15 @@ from schemas import (
     IdentidadeRelatorioUpdate,
     InstituicaoCreate,
     InstituicaoResponse,
+    OrganizacaoDisponivelItem,
     OrganizacaoResponse,
     Token,
+)
+from routers.auth import montar_payload_token
+from organizacao_acesso_service import (
+    listar_organizacoes_acessiveis,
+    obter_projeto_padrao_organizacao,
+    usuario_pode_acessar_organizacao,
 )
 from security import (
     criar_access_token,
@@ -234,23 +241,32 @@ async def obter_organizacao_para_cadastro(
     return organizacao
 
 
-def montar_payload_token(usuario: UsuarioDB, projeto: InstituicaoDB | None = None) -> dict:
-    perfil_acesso = normalizar_perfil_acesso(getattr(usuario, "perfil_acesso", None))
+async def _montar_resposta_token_selecao(
+    db: AsyncSession,
+    usuario: UsuarioDB,
+    projeto: InstituicaoDB,
+) -> dict:
+    organizacao = None
+    org_id = getattr(projeto, "organizacao_id", None)
+    if org_id:
+        resultado_org = await db.execute(
+            select(OrganizacaoDB).where(OrganizacaoDB.id == org_id)
+        )
+        organizacao = resultado_org.scalar_one_or_none()
+
+    payload = montar_payload_token(usuario, projeto, organizacao)
+    token = criar_access_token(
+        data=payload,
+        expires_delta=timedelta(hours=12),
+    )
 
     return {
-        "sub": usuario.id,
-        "id": usuario.id,
-        "usuario_id": usuario.id,
-        "nome": usuario.nome,
-        "email": usuario.email,
-        "instituicao_id": getattr(projeto, "id", None) or usuario.instituicao_id,
-        "organizacao_id": getattr(usuario, "organizacao_id", None),
-        "projeto_nome": getattr(projeto, "nome_fantasia", None),
-        "perfil_acesso": perfil_acesso,
-        "is_master": bool(getattr(usuario, "is_master", False)),
-        "is_global": bool(getattr(usuario, "is_global", False)),
-        "is_manutencao": usuario_eh_manutencao(usuario),
-        "ativo": bool(getattr(usuario, "ativo", True)),
+        "access_token": token,
+        "token_type": "bearer",
+        "usuario": {
+            **payload,
+            "avatar_url": getattr(usuario, "avatar_url", None),
+        },
     }
 
 
@@ -1014,6 +1030,82 @@ async def criar_projeto_organizacao(
     return projeto
 
 
+@router.get("/organizacoes/disponiveis", response_model=list[OrganizacaoDisponivelItem])
+async def listar_organizacoes_disponiveis_manutencao(
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    if not usuario_eh_manutencao(usuario_atual):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Somente Manutenção pode listar organizações disponíveis.",
+        )
+
+    itens = await listar_organizacoes_acessiveis(
+        db,
+        usuario_id=usuario_atual["id"],
+        is_manutencao=True,
+    )
+    return itens
+
+
+@router.post("/organizacoes/{organizacao_id}/selecionar", response_model=Token)
+async def selecionar_organizacao_manutencao(
+    organizacao_id: str,
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    if not usuario_eh_manutencao(usuario_atual):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Somente Manutenção pode trocar de organização.",
+        )
+
+    pode = await usuario_pode_acessar_organizacao(
+        db,
+        usuario_id=usuario_atual["id"],
+        organizacao_id=organizacao_id,
+        is_manutencao=True,
+    )
+    if not pode:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Sem permissão para esta organização.",
+        )
+
+    resultado_org = await db.execute(
+        select(OrganizacaoDB).where(OrganizacaoDB.id == organizacao_id)
+    )
+    organizacao = resultado_org.scalar_one_or_none()
+    if not organizacao or not organizacao.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Organização não encontrada ou inativa.",
+        )
+
+    projeto = await obter_projeto_padrao_organizacao(db, organizacao_id)
+    if not projeto:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Organização sem projeto ativo. Cadastre um projeto antes de entrar.",
+        )
+
+    resultado_usuario = await db.execute(
+        select(UsuarioDB).where(
+            UsuarioDB.id == usuario_atual["id"],
+            UsuarioDB.is_global == True,  # noqa: E712
+        )
+    )
+    usuario = resultado_usuario.scalar_one_or_none()
+    if not usuario:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Usuário de manutenção não autorizado.",
+        )
+
+    return await _montar_resposta_token_selecao(db, usuario, projeto)
+
+
 @router.post("/projetos/{projeto_id}/selecionar", response_model=Token)
 async def selecionar_projeto_organizacao(
     projeto_id: str,
@@ -1050,19 +1142,7 @@ async def selecionar_projeto_organizacao(
                 detail="Usuário de manutenção não autorizado.",
             )
 
-        token = criar_access_token(
-            data=montar_payload_token(usuario, projeto),
-            expires_delta=timedelta(hours=12),
-        )
-
-        return {
-            "access_token": token,
-            "token_type": "bearer",
-            "usuario": {
-                **montar_payload_token(usuario, projeto),
-                "avatar_url": getattr(usuario, "avatar_url", None),
-            },
-        }
+        return await _montar_resposta_token_selecao(db, usuario, projeto)
 
     resultado_projeto = await db.execute(
         select(InstituicaoDB).where(
@@ -1093,16 +1173,4 @@ async def selecionar_projeto_organizacao(
             detail="Usuário global não autorizado para esta organização.",
         )
 
-    token = criar_access_token(
-        data=montar_payload_token(usuario, projeto),
-        expires_delta=timedelta(hours=12),
-    )
-
-    return {
-        "access_token": token,
-        "token_type": "bearer",
-        "usuario": {
-            **montar_payload_token(usuario, projeto),
-            "avatar_url": getattr(usuario, "avatar_url", None),
-        },
-    }
+    return await _montar_resposta_token_selecao(db, usuario, projeto)

@@ -5,6 +5,8 @@ import { AppShell, MainShell, PageHeader, ScrollArea } from './components/Premiu
 import api from './services/api';
 import { consultarCep } from './services/cepService';
 import { useAuth } from './context/AuthContext';
+import { rotaInicialPosLogin, usuarioEhManutencao } from './utils/rbacUtils';
+import { rotuloTipoPacote, ROTULO_MENU_ORGS_PROJETOS } from './utils/orgPacoteUtils';
 import {
   cepValido,
   emailValido,
@@ -250,11 +252,14 @@ function FormularioContato({
 
 export default function Organizacao() {
   const navigate = useNavigate();
-  const { login } = useAuth();
+  const { login, usuario } = useAuth();
   const [projetos, setProjetos] = useState([]);
+  const [organizacoes, setOrganizacoes] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadingOrganizacoes, setLoadingOrganizacoes] = useState(false);
   const [salvando, setSalvando] = useState(false);
   const [selecionandoProjetoId, setSelecionandoProjetoId] = useState('');
+  const [selecionandoOrganizacaoId, setSelecionandoOrganizacaoId] = useState('');
   const [erro, setErro] = useState('');
   const [sucesso, setSucesso] = useState('');
   const [buscandoCep, setBuscandoCep] = useState(false);
@@ -289,9 +294,28 @@ export default function Organizacao() {
     }
   };
 
+  const carregarOrganizacoes = async () => {
+    if (!usuarioEhManutencao(usuario || usuarioSessao)) {
+      return;
+    }
+
+    setLoadingOrganizacoes(true);
+    try {
+      const response = await api.get('/api/organizacao/organizacoes/disponiveis');
+      setOrganizacoes(response.data || []);
+    } catch (error) {
+      setErro(error.response?.data?.detail || 'Não foi possível carregar as organizações.');
+    } finally {
+      setLoadingOrganizacoes(false);
+    }
+  };
+
   useEffect(() => {
     carregarProjetos();
-  }, []);
+    if (usuarioEhManutencao(usuario)) {
+      carregarOrganizacoes();
+    }
+  }, [usuario]);
 
   const atualizarCampo = (campo, valor) => {
     setForm((prev) => ({ ...prev, [campo]: valor }));
@@ -470,11 +494,34 @@ export default function Organizacao() {
       }
 
       login({ token, usuario });
-      navigate('/dashboard');
+      navigate(rotaInicialPosLogin(usuario));
     } catch (error) {
       setErro(error.response?.data?.detail || 'Não foi possível entrar neste projeto.');
     } finally {
       setSelecionandoProjetoId('');
+    }
+  };
+
+  const selecionarOrganizacao = async (organizacaoId) => {
+    setErro('');
+    setSucesso('');
+    setSelecionandoOrganizacaoId(organizacaoId);
+
+    try {
+      const response = await api.post(`/api/organizacao/organizacoes/${organizacaoId}/selecionar`);
+      const token = response.data?.access_token;
+      const usuarioResposta = response.data?.usuario;
+
+      if (!token || !usuarioResposta) {
+        throw new Error('Resposta inválida ao selecionar organização.');
+      }
+
+      login({ token, usuario: usuarioResposta });
+      navigate(rotaInicialPosLogin(usuarioResposta));
+    } catch (error) {
+      setErro(error.response?.data?.detail || 'Não foi possível entrar nesta organização.');
+    } finally {
+      setSelecionandoOrganizacaoId('');
     }
   };
 
@@ -575,12 +622,49 @@ export default function Organizacao() {
       <MainShell>
         <PageHeader
           eyebrow="Organização"
-          title="Projetos da Organização"
-          subtitle="Cadastre projetos e atualize telefone, e-mail e endereço da organização ou do projeto."
+          title={usuarioEhManutencao(usuario || usuarioSessao) ? ROTULO_MENU_ORGS_PROJETOS : 'Projetos da Organização'}
+          subtitle="Selecione a ONG, entre no projeto e atualize contato/endereço quando necessário."
           icon="◇"
         />
 
         <ScrollArea className="pb-24">
+          {usuarioEhManutencao(usuario || usuarioSessao) ? (
+            <section className="mx-auto mb-6 w-full min-w-0 max-w-6xl rounded-3xl border border-violet-100 bg-violet-50/70 p-5 shadow-sm">
+              <h2 className="text-lg font-black text-violet-950">ONGs disponíveis</h2>
+              <p className="mt-1 text-sm text-violet-800">
+                Manutenção alterna entre ONGs assistenciais e Finanças sem sair do sistema.
+              </p>
+
+              {loadingOrganizacoes ? (
+                <p className="mt-4 text-sm text-violet-700">Carregando organizações...</p>
+              ) : (
+                <ul className="mt-4 grid gap-3 md:grid-cols-2">
+                  {organizacoes.map((org) => (
+                    <li
+                      key={org.id}
+                      className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white bg-white/90 px-4 py-3"
+                    >
+                      <div className="min-w-0">
+                        <p className="truncate font-black text-gray-900">{org.nome}</p>
+                        <p className="text-xs font-bold uppercase tracking-wide text-violet-700">
+                          {rotuloTipoPacote(org.tipo_pacote)} · {org.projetos_ativos} projeto(s)
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        disabled={selecionandoOrganizacaoId === org.id}
+                        onClick={() => selecionarOrganizacao(org.id)}
+                        className="rounded-xl bg-violet-700 px-4 py-2 text-xs font-black text-white disabled:opacity-60"
+                      >
+                        {selecionandoOrganizacaoId === org.id ? 'Entrando...' : 'Entrar'}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+          ) : null}
+
           <div className="mx-auto grid w-full min-w-0 max-w-6xl gap-6 lg:grid-cols-[1fr_420px]">
             <section className="min-w-0 rounded-3xl border border-gray-100 bg-white p-4 shadow-sm sm:p-5">
               <h2 className="text-lg font-black text-gray-900">Projetos cadastrados</h2>
