@@ -46,12 +46,12 @@ def upgrade() -> None:
             ),
         )
         op.create_index(
-            "ix_usuario_organizacao_acesso_usuario",
+            "ix_usuario_organizacao_acesso_usuario_id",
             "usuario_organizacao_acesso",
             ["usuario_id"],
         )
         op.create_index(
-            "ix_usuario_organizacao_acesso_org",
+            "ix_usuario_organizacao_acesso_organizacao_id",
             "usuario_organizacao_acesso",
             ["organizacao_id"],
         )
