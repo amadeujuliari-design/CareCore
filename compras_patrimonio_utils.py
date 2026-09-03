@@ -121,3 +121,188 @@ def normalizar_origem(valor: Optional[str], *, forma: Optional[str] = None) -> s
     if valor or forma:
         return PATRIMONIO_ORIGEM_OUTROS
     return PATRIMONIO_ORIGEM_INVENTARIO
+
+
+# Chave lógica → palavras-chave na descrição (ordem: mais específica primeiro).
+_REGRAS_CATEGORIA_PATRIMONIO: tuple[tuple[str, tuple[str, ...]], ...] = (
+    (
+        "eletronicos",
+        (
+            "NOTEBOOK",
+            "NETBOOK",
+            "COMPUTADOR",
+            "MONITOR",
+            "IMPRESSORA",
+            " CPU",
+            "TABLET",
+            "PROJETOR",
+            "DATA SHOW",
+            "DATASHOW",
+            "SWITCH",
+            "ROTEADOR",
+            "NOBREAK",
+            "TECLADO",
+            "MOUSE",
+            "CAMERA",
+            "CELULAR",
+            "SMARTPHONE",
+            "PABX",
+            "TELEFONE",
+            "TELEVISAO",
+            "TELEVIS",
+            " SMART ",
+            " UHD ",
+            "RELOGIO DE PONTO",
+            "TELAO",
+            "CAIXA AMPLIFICADA",
+            "AMPLIFICAD",
+            "APARELHO DE SOM",
+            "CAIXA DE SOM",
+            "CAIXAS DE SOM",
+        ),
+    ),
+    (
+        "eletrodomesticos",
+        (
+            "GELADEIRA",
+            "MICROONDAS",
+            "MICRO ONDAS",
+            "FOGAO",
+            "LAVADEIRA",
+            "TANQUINHO",
+            "FREEZER",
+            "BEBEDOURO",
+            "AR CONDICIONADO",
+            "VENTILADOR",
+            "AQUECEDOR",
+            "LIQUIDIFICADOR",
+            "CAFETEIRA",
+            "FRITADERA",
+            "FORNO",
+            "BATEDEIRA",
+            "ESPREMEDOR",
+            "SECADORA",
+            "PURIFICADOR",
+            "CLIMATIZADOR",
+        ),
+    ),
+    (
+        "moveis",
+        (
+            "MESA",
+            "MESINHA",
+            "CADEIRA",
+            "ARMARIO",
+            "ESTANTE",
+            "BERCO",
+            "ESCRIVANINHA",
+            "GAVETEIRO",
+            "GAVETER",
+            "SOFA",
+            "BANCO",
+            "PRATELEIRA",
+            "MURAL",
+            "PAINEL",
+            "RACK",
+            "GUARDA",
+            "ARQUIVO",
+            "ESTACAO",
+            "ESTACOES",
+            "BANQUETA",
+            "ESPELHO",
+            "BALCAO",
+            "APARADOR",
+            "QUADRO",
+            "POLTRONA",
+            "COFRE",
+            "BIRO",
+            "CRIADO",
+            "ROUPEIRO",
+            "CABIDEIRO",
+            "CRISTALEIRA",
+            "SAPATEIRA",
+            "CAMA",
+        ),
+    ),
+    (
+        "equipamentos",
+        (
+            "EQUIP",
+            "MAQUINA",
+            "BOMBA",
+            "FERRAMENTA",
+            "SERRA",
+            "FURADEIRA",
+            "ESMERIL",
+            "COMPRESSOR",
+            "BALANCA",
+            "EXTINTOR",
+            "CADEIRA DE RODAS",
+            "CARRINHO",
+            "MACA",
+            "OXIMETRO",
+            "ESTETOSCOPIO",
+            "ASPIRADOR",
+            "CORTADOR",
+            "GERADOR",
+            "CILINDRO",
+            "TRIPE",
+            "SUPORTE SORO",
+        ),
+    ),
+)
+
+_CHAVE_POR_NOME_CATEGORIA: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("eletronicos", ("ELETRONIC", "INFORMAT", " TI", "/ TI")),
+    ("eletrodomesticos", ("ELETRODOM",)),
+    ("moveis", ("MOVEIS", "MÓVEIS")),
+    ("equipamentos", ("EQUIPAMENT",)),
+    ("bem", ("BEM", "IMOBILIZ")),
+)
+
+
+def chave_categoria_patrimonio_por_descricao(descricao: Optional[str]) -> str:
+    """Retorna chave lógica: eletronicos|eletrodomesticos|moveis|equipamentos|bem."""
+    texto = f" {_norm(descricao)} "
+    for chave, palavras in _REGRAS_CATEGORIA_PATRIMONIO:
+        for palavra in palavras:
+            alvo = _norm(palavra)
+            if alvo and alvo in texto:
+                return chave
+    return "bem"
+
+
+def _chave_de_nome_categoria(nome: Optional[str]) -> Optional[str]:
+    n = f" {_norm(nome)} "
+    for chave, marcas in _CHAVE_POR_NOME_CATEGORIA:
+        if any(marca in n for marca in marcas):
+            return chave
+    return None
+
+
+def resolver_categoria_patrimonio_id(
+    descricao: Optional[str],
+    categorias_imobilizado: list[dict],
+) -> Optional[str]:
+    """
+    Escolhe o id da categoria imobilizado pela descrição.
+    categorias_imobilizado: [{'id': ..., 'nome': ...}, ...]
+    """
+    if not categorias_imobilizado:
+        return None
+    por_chave: dict[str, str] = {}
+    fallback_id = None
+    for cat in categorias_imobilizado:
+        cid = (cat.get("id") or "").strip()
+        nome = cat.get("nome") or ""
+        if not cid:
+            continue
+        chave = _chave_de_nome_categoria(nome)
+        if chave == "bem" and fallback_id is None:
+            fallback_id = cid
+        if chave and chave not in por_chave:
+            por_chave[chave] = cid
+        if fallback_id is None:
+            fallback_id = cid
+    desejada = chave_categoria_patrimonio_por_descricao(descricao)
+    return por_chave.get(desejada) or fallback_id

@@ -3,7 +3,7 @@ import { useMemo, useState } from 'react';
 import { CampoSelect, CampoTexto } from './UsuariosCampos';
 import { EmptyState, PremiumBadge, PremiumButton, SectionCard } from './PremiumUI';
 import { comprasSalvarCategoria, comprasSalvarFonte } from '../services/comprasService';
-import { conflitosNomeCadastro } from '../utils/comprasCategoriaUtils';
+import { conflitosNomeCadastro, rotuloUsoCategoria } from '../utils/comprasCategoriaUtils';
 import {
   ROTULO_SEGMENTO_CATALOGO,
   SEGMENTO_CONSUMO,
@@ -55,25 +55,40 @@ function ListaNomes({
     evento.preventDefault();
     const valor = nome.trim();
     if (!valor || semelhantes.length) return;
+    // Limpa antes do recarregar da lista — senão o nome novo já entra em
+    // `itens` com o campo ainda preenchido e dispara aviso falso de duplicata.
+    const snapshot = {
+      nome: valor,
+      segmento,
+      tipoFonte,
+      vigenciaInicio,
+      vigenciaFim,
+    };
+    setNome('');
+    setSegmento(SEGMENTO_CONSUMO);
+    setTipoFonte('outros');
+    setVigenciaInicio('');
+    setVigenciaFim('');
     setSalvando(true);
     try {
       if (tipo === 'fonte') {
         await onSalvar({
           nome: valor,
-          tipo: tipoFonte,
-          vigencia_inicio: vigenciaInicio || null,
-          vigencia_fim: vigenciaFim || null,
+          tipo: snapshot.tipoFonte,
+          vigencia_inicio: snapshot.vigenciaInicio || null,
+          vigencia_fim: snapshot.vigenciaFim || null,
         });
       } else if (tipo === 'categoria') {
-        await onSalvar({ nome: valor, segmento });
+        await onSalvar({ nome: valor, segmento: snapshot.segmento });
       } else {
         await onSalvar(valor);
       }
-      setNome('');
-      setSegmento(SEGMENTO_CONSUMO);
-      setTipoFonte('outros');
-      setVigenciaInicio('');
-      setVigenciaFim('');
+    } catch {
+      setNome(snapshot.nome);
+      setSegmento(snapshot.segmento);
+      setTipoFonte(snapshot.tipoFonte);
+      setVigenciaInicio(snapshot.vigenciaInicio);
+      setVigenciaFim(snapshot.vigenciaFim);
     } finally {
       setSalvando(false);
     }
@@ -187,7 +202,9 @@ function ListaNomes({
                         {[item.vigencia_inicio, item.vigencia_fim].filter(Boolean).join(' a ') || '—'}
                       </td>
                     ) : null}
-                    <td className="px-2 py-2.5">{Number(item.qtd_uso) || 0}</td>
+                    <td className="px-2 py-2.5">
+                      {tipo === 'categoria' ? rotuloUsoCategoria(item) : (Number(item.qtd_uso) || 0)}
+                    </td>
                     <td className="px-2 py-2.5">
                       {item.ativo === false
                         ? <PremiumBadge variant="warning">Inativo</PremiumBadge>
@@ -215,7 +232,12 @@ export default function ComprasCategoriasFontes({
   onMensagem,
 }) {
   const categoriasLista = useMemo(
-    () => categorias.map((item) => ({ ...item, qtd_uso: item.qtd_itens })),
+    () => categorias.map((item) => ({
+      ...item,
+      qtd_uso: Number(item.qtd_itens) || 0,
+      qtd_itens_consumo: Number(item.qtd_itens_consumo) || 0,
+      qtd_bens: Number(item.qtd_bens) || 0,
+    })),
     [categorias],
   );
   const fontesLista = useMemo(
@@ -231,6 +253,7 @@ export default function ComprasCategoriasFontes({
       await onRecarregar?.();
     } catch (err) {
       onMensagem?.({ erro: err.response?.data?.detail || 'Não foi possível cadastrar a categoria.' });
+      throw err;
     }
   };
 
@@ -252,6 +275,7 @@ export default function ComprasCategoriasFontes({
       await onRecarregar?.();
     } catch (err) {
       onMensagem?.({ erro: err.response?.data?.detail || 'Não foi possível cadastrar a fonte.' });
+      throw err;
     }
   };
 
@@ -261,7 +285,7 @@ export default function ComprasCategoriasFontes({
         titulo="Categorias do catálogo"
         ajuda="Cada categoria tem um uso no pedido: Consumo (janela), Manutenção, Bem/imobilizado ou Serviço. No pedido, a busca só mostra itens do mesmo uso. Carne e Peixe devem ser categorias próprias (uso Consumo) para a janela separar certo."
         itens={categoriasLista}
-        colunaUso="Itens"
+        colunaUso="Uso"
         campoNovo="Nova categoria"
         tipo="categoria"
         podeEditar={podeEditar}

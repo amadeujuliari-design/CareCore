@@ -12,6 +12,7 @@ import {
   reaisParaCentavos,
   rotuloOpcao,
 } from '../utils/comprasPatrimonioUtils';
+import { SEGMENTO_IMOBILIZADO, normalizarSegmentoCatalogo } from '../utils/comprasPedidoTipos';
 
 const ITENS_POR_PAGINA = 40;
 
@@ -72,6 +73,13 @@ export default function ComprasPatrimonioCadastro({
   const unidadesProjeto = useMemo(
     () => unidades.filter((unidade) => !unidadeEhSede(unidade)),
     [unidades],
+  );
+
+  const categoriasPatrimonio = useMemo(
+    () => categorias.filter(
+      (cat) => normalizarSegmentoCatalogo(cat.segmento) === SEGMENTO_IMOBILIZADO,
+    ),
+    [categorias],
   );
 
   const listaFiltrada = useMemo(() => {
@@ -387,7 +395,7 @@ export default function ComprasPatrimonioCadastro({
           salvando={salvando}
           sede={sede}
           unidades={unidadesProjeto}
-          categorias={categorias}
+          categorias={categoriasPatrimonio}
           onAtualizar={atualizar}
           onSalvar={salvar}
           onCancelar={fecharForm}

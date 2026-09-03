@@ -35,6 +35,7 @@ from compras_regras import (
     PATRIMONIO_ORIGEM_COMPRA,
     PATRIMONIO_SITUACAO_BOM,
     SEGMENTO_CONSUMO,
+    SEGMENTO_IMOBILIZADO,
     STATUS_AGUARDANDO_COTACAO,
     STATUS_AGUARDANDO_SEDE,
     STATUS_AGUARDANDO_UNIDADE,
@@ -2115,8 +2116,9 @@ async def importar_fornecedores_planilha(
     }
 
 
-async def _contagem_itens_por_categoria(db: AsyncSession, organizacao_id: str) -> dict[str, int]:
-    rows = (
+async def _contagem_uso_por_categoria(db: AsyncSession, organizacao_id: str) -> dict[str, dict[str, int]]:
+    """Conta uso da categoria no catálogo de consumo e no patrimônio."""
+    consumo_rows = (
         await db.execute(
             select(ComprasItemConsumoDB.categoria_id, func.count())
             .where(
@@ -2126,7 +2128,35 @@ async def _contagem_itens_por_categoria(db: AsyncSession, organizacao_id: str) -
             .group_by(ComprasItemConsumoDB.categoria_id)
         )
     ).all()
-    return {row[0]: int(row[1]) for row in rows}
+    bens_rows = (
+        await db.execute(
+            select(ComprasPatrimonioDB.categoria_id, func.count())
+            .where(
+                ComprasPatrimonioDB.organizacao_id == organizacao_id,
+                ComprasPatrimonioDB.categoria_id.is_not(None),
+            )
+            .group_by(ComprasPatrimonioDB.categoria_id)
+        )
+    ).all()
+    saida: dict[str, dict[str, int]] = {}
+    for cat_id, qtd in consumo_rows:
+        if not cat_id:
+            continue
+        saida.setdefault(cat_id, {"consumo": 0, "bens": 0})["consumo"] = int(qtd)
+    for cat_id, qtd in bens_rows:
+        if not cat_id:
+            continue
+        saida.setdefault(cat_id, {"consumo": 0, "bens": 0})["bens"] = int(qtd)
+    return saida
+
+
+async def _contagem_itens_por_categoria(db: AsyncSession, organizacao_id: str) -> dict[str, int]:
+    """Total (consumo + bens) por categoria — compatível com usos antigos."""
+    uso = await _contagem_uso_por_categoria(db, organizacao_id)
+    return {
+        cat_id: int(vals.get("consumo", 0)) + int(vals.get("bens", 0))
+        for cat_id, vals in uso.items()
+    }
 
 
 async def listar_categorias(db: AsyncSession, usuario: dict) -> list[dict]:
@@ -2138,18 +2168,25 @@ async def listar_categorias(db: AsyncSession, usuario: dict) -> list[dict]:
             .order_by(ComprasCategoriaDB.nome.asc())
         )
     ).scalars().all()
-    contagem = await _contagem_itens_por_categoria(db, org_id)
-    saida = [
-        {
-            "id": r.id,
-            "nome": r.nome,
-            "segmento": normalizar_segmento_catalogo(getattr(r, "segmento", None) or SEGMENTO_CONSUMO),
-            "ativo": bool(r.ativo),
-            "qtd_itens": contagem.get(r.id, 0),
-            "ordem": int(getattr(r, "ordem", 0) or 0),
-        }
-        for r in rows
-    ]
+    uso = await _contagem_uso_por_categoria(db, org_id)
+    saida = []
+    for r in rows:
+        qtd_consumo = int((uso.get(r.id) or {}).get("consumo", 0))
+        qtd_bens = int((uso.get(r.id) or {}).get("bens", 0))
+        saida.append(
+            {
+                "id": r.id,
+                "nome": r.nome,
+                "segmento": normalizar_segmento_catalogo(
+                    getattr(r, "segmento", None) or SEGMENTO_CONSUMO
+                ),
+                "ativo": bool(r.ativo),
+                "qtd_itens_consumo": qtd_consumo,
+                "qtd_bens": qtd_bens,
+                "qtd_itens": qtd_consumo + qtd_bens,
+                "ordem": int(getattr(r, "ordem", 0) or 0),
+            }
+        )
     saida.sort(key=lambda item: (item["ordem"], -item["qtd_itens"], (item["nome"] or "").lower()))
     return saida
 
@@ -2765,7 +2802,24 @@ async def salvar_patrimonio(
     item.motivo_baixa = (payload.get("motivo_baixa") or "").strip() or None
     item.data_baixa = parse_data_aquisicao(payload.get("data_baixa"))
     item.observacao = (payload.get("observacao") or "").strip() or None
-    item.categoria_id = (payload.get("categoria_id") or "").strip() or None
+    categoria_id = (payload.get("categoria_id") or "").strip() or None
+    if categoria_id:
+        cat = (
+            await db.execute(
+                select(ComprasCategoriaDB).where(
+                    ComprasCategoriaDB.id == categoria_id,
+                    ComprasCategoriaDB.organizacao_id == _org_id(usuario),
+                )
+            )
+        ).scalar_one_or_none()
+        if not cat:
+            raise HTTPException(status_code=400, detail="Categoria inválida.")
+        if normalizar_segmento_catalogo(getattr(cat, "segmento", None)) != SEGMENTO_IMOBILIZADO:
+            raise HTTPException(
+                status_code=400,
+                detail="No patrimônio use apenas categorias de Bem / imobilizado.",
+            )
+    item.categoria_id = categoria_id
     if "valor_centavos" in payload and payload.get("valor_centavos") is not None:
         item.valor_centavos = int(payload["valor_centavos"])
     elif payload.get("valor_reais") not in (None, ""):

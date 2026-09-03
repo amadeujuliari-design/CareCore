@@ -79,3 +79,14 @@ export function rotuloCategoria(cat) {
   const qtd = Number(cat?.qtd_itens) || 0;
   return `${nome} (${qtd})`;
 }
+
+export function rotuloUsoCategoria(cat) {
+  const consumo = Number(cat?.qtd_itens_consumo ?? 0) || 0;
+  const bens = Number(cat?.qtd_bens ?? 0) || 0;
+  const total = Number(cat?.qtd_itens ?? (consumo + bens)) || 0;
+  if (!total) return '0';
+  if (consumo && bens) return `${total} (${consumo} consumo · ${bens} bens)`;
+  if (bens && !consumo) return `${bens} bens`;
+  if (consumo && !bens) return String(consumo);
+  return String(total);
+}

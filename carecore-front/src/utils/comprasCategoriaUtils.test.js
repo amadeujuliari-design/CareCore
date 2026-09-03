@@ -6,6 +6,7 @@ import {
   nomesCadastroSemelhantes,
   nomesSaoSemelhantes,
   rotuloCategoria,
+  rotuloUsoCategoria,
 } from './comprasCategoriaUtils.js';
 
 const EXISTENTES = [
@@ -37,5 +38,15 @@ describe('comprasCategoriaUtils', () => {
 
   it('mostra a quantidade de itens no rótulo', () => {
     assert.equal(rotuloCategoria({ nome: 'Alimentação', qtd_itens: 80 }), 'Alimentação (80)');
+  });
+
+  it('detalha uso de consumo e bens', () => {
+    assert.equal(rotuloUsoCategoria({ qtd_itens: 0 }), '0');
+    assert.equal(rotuloUsoCategoria({ qtd_itens: 28, qtd_itens_consumo: 28, qtd_bens: 0 }), '28');
+    assert.equal(rotuloUsoCategoria({ qtd_itens: 1380, qtd_itens_consumo: 0, qtd_bens: 1380 }), '1380 bens');
+    assert.equal(
+      rotuloUsoCategoria({ qtd_itens: 10, qtd_itens_consumo: 2, qtd_bens: 8 }),
+      '10 (2 consumo · 8 bens)',
+    );
   });
 });
