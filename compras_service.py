@@ -55,6 +55,7 @@ from compras_regras import (
     TIPO_CONSUMO,
     TIPO_EVENTO_ITENS,
     TIPO_EVENTO_STATUS,
+    TIPO_HORTIFRUTI,
     TIPO_IMOBILIZADO,
     TIPO_MANUTENCAO,
     TIPO_SERVICO,
@@ -94,6 +95,9 @@ from compras_regras import (
     status_janela,
     sugerir_janela_competencia,
     tipo_eh_cotacao_projeto,
+    tipo_eh_cotacao_sede,
+    tipo_exige_janela,
+    tipo_pula_aprovacao_sede,
     unidade_medida_para_pedido,
     usuario_e_sede_compras,
     usuario_pode_aprovar_sede,
@@ -393,6 +397,8 @@ async def serializar_pedido(
         "tipo": pedido.tipo,
         "tipo_rotulo": rotulo_tipo_pedido(pedido.tipo),
         "cotacao_projeto": tipo_eh_cotacao_projeto(pedido.tipo),
+        "cotacao_sede": tipo_eh_cotacao_sede(pedido.tipo),
+        "pula_aprovacao_sede": tipo_pula_aprovacao_sede(pedido.tipo),
         "competencia": pedido.competencia,
         "status": pedido.status,
         "fonte_recurso_id": pedido.fonte_recurso_id,
@@ -613,7 +619,7 @@ async def exigir_janela_consumo(
     data_prevista: Optional[date] = None,
     para_rascunho: bool = False,
 ) -> None:
-    if (tipo or "").strip().lower() != TIPO_CONSUMO:
+    if not tipo_exige_janela(tipo):
         return
     janela = await _janela_da_competencia(db, organizacao_id, competencia)
     liberacao = False
@@ -710,7 +716,7 @@ async def criar_pedido(
     if tipo not in TIPOS_PEDIDO:
         raise HTTPException(
             status_code=400,
-            detail="Tipo inválido. Use consumo, imobilizado, manutencao ou servico.",
+            detail="Tipo inválido. Use consumo, hortifruti, imobilizado, manutencao ou servico.",
         )
 
     try:
@@ -1349,14 +1355,14 @@ async def escolher_cotacao(
         raise HTTPException(status_code=404, detail="Cotação não encontrada.")
 
     unidade_projeto = tipo_eh_cotacao_projeto(pedido.tipo) and not _sede(usuario)
-    unidade_consumo = pedido.tipo == TIPO_CONSUMO and not _sede(usuario)
-    if not _sede(usuario) and not unidade_projeto and not unidade_consumo:
+    unidade_cotacao_sede = tipo_eh_cotacao_sede(pedido.tipo) and not _sede(usuario)
+    if not _sede(usuario) and not unidade_projeto and not unidade_cotacao_sede:
         raise HTTPException(status_code=403, detail="Sem permissão para escolher esta cotação.")
 
     for cotacao in cotacoes:
         cotacao.escolhida = cotacao.id == cotacao_id
 
-    if pedido.tipo == TIPO_CONSUMO and pedido.status in {
+    if tipo_eh_cotacao_sede(pedido.tipo) and pedido.status in {
         STATUS_AGUARDANDO_COTACAO,
         STATUS_EM_COTACAO,
     }:
@@ -1391,12 +1397,20 @@ async def aprovar_unidade(db: AsyncSession, usuario: dict, pedido: ComprasPedido
         raise HTTPException(status_code=400, detail="Cotação escolhida ainda não está completa.")
     pedido.aprovado_unidade_por_id = _uid(usuario)
     pedido.aprovado_unidade_em = agora_operacional_naive()
-    pedido.status = STATUS_AGUARDANDO_SEDE
+    if tipo_pula_aprovacao_sede(pedido.tipo):
+        pedido.status = STATUS_APROVADO
+    else:
+        pedido.status = STATUS_AGUARDANDO_SEDE
     pedido.atualizado_em = agora_operacional_naive()
     return pedido
 
 
 async def aprovar_sede(db: AsyncSession, usuario: dict, pedido: ComprasPedidoDB) -> ComprasPedidoDB:
+    if tipo_pula_aprovacao_sede(pedido.tipo):
+        raise HTTPException(
+            status_code=400,
+            detail="Pedido de hortifruti não passa por aprovação da Sede — só a unidade aprova.",
+        )
     if not usuario_pode_aprovar_sede(
         perfil=_perfil(usuario),
         is_manutencao=bool(usuario.get("is_manutencao")),
@@ -1428,14 +1442,13 @@ async def enviar_fornecedor(db: AsyncSession, usuario: dict, pedido: ComprasPedi
     else:
         exigir_sede(usuario)
     if pedido.status != STATUS_APROVADO:
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                "Envio ao fornecedor só após assinatura/aprovação da Sede."
-                if tipo_eh_cotacao_projeto(pedido.tipo)
-                else "Envio ao fornecedor só após as duas aprovações."
-            ),
-        )
+        if tipo_eh_cotacao_projeto(pedido.tipo):
+            detalhe = "Envio ao fornecedor só após assinatura/aprovação da Sede."
+        elif tipo_pula_aprovacao_sede(pedido.tipo):
+            detalhe = "Envio ao fornecedor só após a aprovação da unidade."
+        else:
+            detalhe = "Envio ao fornecedor só após as duas aprovações."
+        raise HTTPException(status_code=400, detail=detalhe)
     await gerar_pedido_compra(db, usuario, pedido)
     pedido.status = STATUS_ENVIADO
     pedido.enviado_em = agora_operacional_naive()

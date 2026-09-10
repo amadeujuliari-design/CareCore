@@ -1995,7 +1995,7 @@ class ComprasCategoriaDB(Base):
     id = Column(String, primary_key=True, default=get_uuid)
     organizacao_id = Column(String, ForeignKey("organizacoes.id"), nullable=False)
     nome = Column(String, nullable=False)
-    # consumo | manutencao | imobilizado | servico — define em qual tipo de pedido o item aparece
+    # consumo | manutencao | imobilizado | servico | hortifruti — define em qual tipo de pedido o item aparece
     segmento = Column(String, nullable=False, default="consumo")
     ativo = Column(Boolean, default=True, nullable=False)
     ordem = Column(Integer, nullable=False, default=0)

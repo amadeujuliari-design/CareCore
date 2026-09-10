@@ -11,10 +11,19 @@ TIPO_CONSUMO = "consumo"
 TIPO_IMOBILIZADO = "imobilizado"
 TIPO_MANUTENCAO = "manutencao"
 TIPO_SERVICO = "servico"
-TIPOS_PEDIDO = (TIPO_CONSUMO, TIPO_IMOBILIZADO, TIPO_MANUTENCAO, TIPO_SERVICO)
+TIPO_HORTIFRUTI = "hortifruti"
+TIPOS_PEDIDO = (
+    TIPO_CONSUMO,
+    TIPO_IMOBILIZADO,
+    TIPO_MANUTENCAO,
+    TIPO_SERVICO,
+    TIPO_HORTIFRUTI,
+)
 
 # Cotação conduzida pelo projeto (ADM Pedidos): bem, manutenção, serviço.
 TIPOS_COTACAO_PROJETO = frozenset({TIPO_IMOBILIZADO, TIPO_MANUTENCAO, TIPO_SERVICO})
+# Cotação conduzida pela Sede (ADM Compras): consumo (janela) e hortifruti (sem janela).
+TIPOS_COTACAO_SEDE = frozenset({TIPO_CONSUMO, TIPO_HORTIFRUTI})
 
 URGENCIA_NORMAL = "normal"
 URGENCIA_URGENTE = "urgente"
@@ -29,6 +38,7 @@ ROTULO_TIPO_PEDIDO = {
     TIPO_IMOBILIZADO: "Bem / imobilizado",
     TIPO_MANUTENCAO: "Manutenção",
     TIPO_SERVICO: "Prestação de serviço",
+    TIPO_HORTIFRUTI: "Hortifruti",
 }
 
 STATUS_RASCUNHO = "rascunho"
@@ -169,6 +179,7 @@ CATEGORIAS_PADRAO = (
     "Alimentação",
     "Carne",
     "Peixe",
+    "Hortifruti",
     "Higiene e limpeza",
     "Higiene pessoal",
     "EPI",
@@ -185,12 +196,14 @@ SEGMENTO_CONSUMO = "consumo"
 SEGMENTO_MANUTENCAO = "manutencao"
 SEGMENTO_IMOBILIZADO = "imobilizado"
 SEGMENTO_SERVICO = "servico"
+SEGMENTO_HORTIFRUTI = "hortifruti"
 
 SEGMENTOS_CATALOGO = (
     SEGMENTO_CONSUMO,
     SEGMENTO_MANUTENCAO,
     SEGMENTO_IMOBILIZADO,
     SEGMENTO_SERVICO,
+    SEGMENTO_HORTIFRUTI,
 )
 
 ROTULO_SEGMENTO_CATALOGO = {
@@ -198,6 +211,7 @@ ROTULO_SEGMENTO_CATALOGO = {
     SEGMENTO_MANUTENCAO: "Manutenção",
     SEGMENTO_IMOBILIZADO: "Bem / imobilizado",
     SEGMENTO_SERVICO: "Prestação de serviço",
+    SEGMENTO_HORTIFRUTI: "Hortifruti (sem janela)",
 }
 
 
@@ -209,11 +223,15 @@ def normalizar_segmento_catalogo(valor: Optional[str]) -> str:
         return SEGMENTO_IMOBILIZADO
     if chave in {"servico", "prestacao_de_servico", "prestacao"} or "servic" in chave:
         return SEGMENTO_SERVICO
+    if chave in {"hortifruti", "horti"} or "hortifruti" in chave or chave.startswith("horti"):
+        return SEGMENTO_HORTIFRUTI
     return SEGMENTO_CONSUMO
 
 
 def inferir_segmento_por_nome_categoria(nome: Optional[str]) -> str:
     n = _norm_tipo_texto(nome)
+    if "hortifruti" in n or n.startswith("horti"):
+        return SEGMENTO_HORTIFRUTI
     if "manuten" in n or "infraestrutura" in n:
         return SEGMENTO_MANUTENCAO
     if "imobil" in n or "patrimon" in n:
@@ -232,6 +250,8 @@ def segmento_do_tipo_pedido(tipo: Optional[str]) -> Optional[str]:
         return SEGMENTO_MANUTENCAO
     if t == TIPO_IMOBILIZADO:
         return SEGMENTO_IMOBILIZADO
+    if t == TIPO_HORTIFRUTI:
+        return SEGMENTO_HORTIFRUTI
     if t == TIPO_SERVICO:
         return None
     return SEGMENTO_CONSUMO
@@ -736,11 +756,24 @@ def normalizar_tipo_fonte(valor: Optional[str], *, nome: Optional[str] = None) -
 
 
 def exige_tres_cotacoes(tipo: str) -> bool:
+    # Hortifruti e consumo: aviso de 3 orçamentos, sem bloqueio (ver aviso_cotacoes_insuficientes).
     return tipo_eh_cotacao_projeto(tipo)
 
 
 def tipo_eh_cotacao_projeto(tipo: Optional[str]) -> bool:
     return (tipo or "").strip().lower() in TIPOS_COTACAO_PROJETO
+
+
+def tipo_eh_cotacao_sede(tipo: Optional[str]) -> bool:
+    return (tipo or "").strip().lower() in TIPOS_COTACAO_SEDE
+
+
+def tipo_exige_janela(tipo: Optional[str]) -> bool:
+    return (tipo or "").strip().lower() == TIPO_CONSUMO
+
+
+def tipo_pula_aprovacao_sede(tipo: Optional[str]) -> bool:
+    return (tipo or "").strip().lower() == TIPO_HORTIFRUTI
 
 
 def rotulo_tipo_pedido(tipo: Optional[str]) -> str:

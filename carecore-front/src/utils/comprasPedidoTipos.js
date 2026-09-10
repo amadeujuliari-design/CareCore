@@ -4,11 +4,13 @@ export const TIPO_CONSUMO = 'consumo';
 export const TIPO_IMOBILIZADO = 'imobilizado';
 export const TIPO_MANUTENCAO = 'manutencao';
 export const TIPO_SERVICO = 'servico';
+export const TIPO_HORTIFRUTI = 'hortifruti';
 
 export const SEGMENTO_CONSUMO = 'consumo';
 export const SEGMENTO_MANUTENCAO = 'manutencao';
 export const SEGMENTO_IMOBILIZADO = 'imobilizado';
 export const SEGMENTO_SERVICO = 'servico';
+export const SEGMENTO_HORTIFRUTI = 'hortifruti';
 
 export const COMPETENCIA_SEDE = 'sede';
 export const COMPETENCIA_PROJETO = 'projeto';
@@ -25,6 +27,7 @@ export const SEGMENTOS_CATALOGO = [
   SEGMENTO_MANUTENCAO,
   SEGMENTO_IMOBILIZADO,
   SEGMENTO_SERVICO,
+  SEGMENTO_HORTIFRUTI,
 ];
 
 export const ROTULO_SEGMENTO_CATALOGO = {
@@ -32,6 +35,7 @@ export const ROTULO_SEGMENTO_CATALOGO = {
   [SEGMENTO_MANUTENCAO]: 'Manutenção',
   [SEGMENTO_IMOBILIZADO]: 'Bem / imobilizado',
   [SEGMENTO_SERVICO]: 'Prestação de serviço',
+  [SEGMENTO_HORTIFRUTI]: 'Hortifruti (sem janela)',
 };
 
 export const TIPOS_COTACAO_PROJETO = new Set([
@@ -40,15 +44,33 @@ export const TIPOS_COTACAO_PROJETO = new Set([
   TIPO_SERVICO,
 ]);
 
+export const TIPOS_COTACAO_SEDE = new Set([
+  TIPO_CONSUMO,
+  TIPO_HORTIFRUTI,
+]);
+
 export const ROTULO_TIPO_PEDIDO = {
   [TIPO_CONSUMO]: 'Consumo',
   [TIPO_IMOBILIZADO]: 'Bem / imobilizado',
   [TIPO_MANUTENCAO]: 'Manutenção',
   [TIPO_SERVICO]: 'Prestação de serviço',
+  [TIPO_HORTIFRUTI]: 'Hortifruti',
 };
 
 export function tipoEhCotacaoProjeto(tipo) {
   return TIPOS_COTACAO_PROJETO.has(String(tipo || '').trim().toLowerCase());
+}
+
+export function tipoEhCotacaoSede(tipo) {
+  return TIPOS_COTACAO_SEDE.has(String(tipo || '').trim().toLowerCase());
+}
+
+export function tipoExigeJanela(tipo) {
+  return String(tipo || '').trim().toLowerCase() === TIPO_CONSUMO;
+}
+
+export function tipoPulaAprovacaoSede(tipo) {
+  return String(tipo || '').trim().toLowerCase() === TIPO_HORTIFRUTI;
 }
 
 export function rotuloTipoPedido(tipo) {
@@ -66,6 +88,9 @@ export function normalizarSegmentoCatalogo(valor) {
   if (chave === 'manutencao' || chave.startsWith('manuten')) return SEGMENTO_MANUTENCAO;
   if (chave === 'imobilizado' || chave.includes('imobil')) return SEGMENTO_IMOBILIZADO;
   if (chave === 'servico' || chave.includes('servic')) return SEGMENTO_SERVICO;
+  if (chave === 'hortifruti' || chave.startsWith('horti') || chave.includes('hortifruti')) {
+    return SEGMENTO_HORTIFRUTI;
+  }
   return SEGMENTO_CONSUMO;
 }
 
@@ -99,6 +124,7 @@ export function segmentoDoTipoPedido(tipo) {
   if (t === TIPO_CONSUMO) return SEGMENTO_CONSUMO;
   if (t === TIPO_MANUTENCAO) return SEGMENTO_MANUTENCAO;
   if (t === TIPO_IMOBILIZADO) return SEGMENTO_IMOBILIZADO;
+  if (t === TIPO_HORTIFRUTI) return SEGMENTO_HORTIFRUTI;
   if (t === TIPO_SERVICO) return null;
   return SEGMENTO_CONSUMO;
 }
@@ -112,6 +138,7 @@ export function segmentoFornecedorDoTipoPedido(tipo) {
   if (t === TIPO_MANUTENCAO) return SEGMENTO_MANUTENCAO;
   if (t === TIPO_IMOBILIZADO) return SEGMENTO_IMOBILIZADO;
   if (t === TIPO_SERVICO) return SEGMENTO_SERVICO;
+  if (t === TIPO_HORTIFRUTI) return SEGMENTO_HORTIFRUTI;
   return SEGMENTO_CONSUMO;
 }
 
@@ -206,6 +233,11 @@ export const BOTOES_NOVO_PEDIDO = [
     tipo: TIPO_CONSUMO,
     titulo: 'Itens de consumo',
     descricao: 'Pedido da janela mensal. A Sede pede os orçamentos.',
+  },
+  {
+    tipo: TIPO_HORTIFRUTI,
+    titulo: 'Hortifruti',
+    descricao: 'Frutas, legumes e verduras a qualquer momento. A Sede cota; só o projeto aprova.',
   },
   {
     tipo: TIPO_IMOBILIZADO,

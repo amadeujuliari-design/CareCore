@@ -9,6 +9,9 @@ import {
   itensConsumoDoSplitPedido,
   segmentoFornecedorDoTipoPedido,
   sugerirFornecedoresBusca,
+  tipoEhCotacaoSede,
+  tipoExigeJanela,
+  tipoPulaAprovacaoSede,
 } from './comprasPedidoTipos.js';
 
 describe('chaveSplitCategoriaPedido', () => {
@@ -141,6 +144,13 @@ describe('fornecedoresParaCotacaoPedido', () => {
   it('mapeia tipo serviço para segmento serviço', () => {
     assert.equal(segmentoFornecedorDoTipoPedido('servico'), 'servico');
     assert.equal(segmentoFornecedorDoTipoPedido('consumo'), 'consumo');
+  });
+
+  it('hortifruti é cotação da Sede e filtra segmento próprio', () => {
+    assert.equal(tipoEhCotacaoSede('hortifruti'), true);
+    assert.equal(tipoPulaAprovacaoSede('hortifruti'), true);
+    assert.equal(tipoExigeJanela('hortifruti'), false);
+    assert.equal(segmentoFornecedorDoTipoPedido('hortifruti'), 'hortifruti');
   });
 });
 

@@ -88,6 +88,7 @@ minuta_contrato_carecore_aeb*
 !/scripts/baixar_snapshot_online.py
 !/scripts/sanitizar_data_inativacao_ativos.py
 !/scripts/sanitizar_fornecedores_contato.py
+!/scripts/seed_itens_hortifruti.py
 !/scripts/reenfileirar_nfp_prazo.py
 !/scripts/dev_local.py
 !/scripts/dev_local.json

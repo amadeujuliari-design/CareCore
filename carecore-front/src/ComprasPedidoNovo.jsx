@@ -21,6 +21,7 @@ import ComprasItemTypeahead from './components/ComprasItemTypeahead';
 import {
   BOTOES_NOVO_PEDIDO,
   TIPO_CONSUMO,
+  TIPO_HORTIFRUTI,
   TIPO_IMOBILIZADO,
   TIPO_MANUTENCAO,
   TIPO_SERVICO,
@@ -101,7 +102,7 @@ export default function ComprasPedidoNovo() {
         if (!alive) return;
         setFontes(Array.isArray(f) ? f : (f?.itens || []));
         setUnidades(Array.isArray(u) ? u : (u?.itens || []));
-        if (tipo === TIPO_CONSUMO || tipo === TIPO_MANUTENCAO || tipo === TIPO_IMOBILIZADO) {
+        if (tipo === TIPO_CONSUMO || tipo === TIPO_HORTIFRUTI || tipo === TIPO_MANUTENCAO || tipo === TIPO_IMOBILIZADO) {
           const itens = await comprasItensConsumo();
           if (alive) setItensConsumo(Array.isArray(itens) ? itens : (itens?.itens || []));
         }

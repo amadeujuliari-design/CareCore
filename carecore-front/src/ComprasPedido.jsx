@@ -61,6 +61,9 @@ import {
   segmentoFornecedorDoTipoPedido,
   sugerirFornecedoresBusca,
   tipoEhCotacaoProjeto,
+  tipoEhCotacaoSede,
+  tipoExigeJanela,
+  tipoPulaAprovacaoSede,
 } from './utils/comprasPedidoTipos';
 
 const STATUS_LABEL = {
@@ -229,15 +232,17 @@ export default function ComprasPedido() {
   const podeEditarItens = Boolean(pedido.pode_editar_itens);
   const podeSubstituirOrcamento = Boolean(pedido.pode_substituir_orcamento) || sede;
   const cotacaoProjeto = tipoEhCotacaoProjeto(pedido.tipo);
+  const cotacaoSede = tipoEhCotacaoSede(pedido.tipo);
+  const pulaAprovacaoSede = tipoPulaAprovacaoSede(pedido.tipo) || Boolean(pedido.pula_aprovacao_sede);
   const segmentoCotacao = segmentoFornecedorDoTipoPedido(pedido.tipo);
-  const podeEscolherCotacaoConsumo = pedido.tipo === 'consumo' && unidade && !pedidoSede
+  const podeEscolherCotacaoConsumo = cotacaoSede && unidade && !pedidoSede
     && ['em_cotacao', 'aguardando_aprovacao_unidade'].includes(pedido.status);
   const podeEscolherCotacaoImobilizado = cotacaoProjeto && unidade && !pedidoSede
     && ['rascunho', 'em_cotacao', 'aguardando_cotacao'].includes(pedido.status);
-  const podeLancarCotacao = (sede && pedido.tipo === 'consumo' && !terminal)
+  const podeLancarCotacao = (sede && cotacaoSede && !terminal)
     || (unidade && cotacaoProjeto && ['rascunho', 'em_cotacao', 'aguardando_cotacao'].includes(pedido.status));
   const podePedirCotacaoEmail = (
-    (sede && pedido.tipo === 'consumo'
+    (sede && cotacaoSede
       && ['aguardando_cotacao', 'em_cotacao', 'aguardando_aprovacao_unidade', 'aguardando_aprovacao_sede', 'aprovado'].includes(pedido.status))
     || (unidade && cotacaoProjeto
       && ['rascunho', 'em_cotacao', 'aguardando_cotacao'].includes(pedido.status))
@@ -861,7 +866,7 @@ export default function ComprasPedido() {
               <p className="mb-2 text-sm font-semibold text-slate-800">
                 Orçamentos anexados: {pedido.qtd_orcamentos ?? (pedido.cotacoes || []).length}
               </p>
-              {sede && pedido.tipo === 'consumo' ? (
+              {sede && cotacaoSede ? (
                 <p className="mb-3 text-xs text-slate-500">
                   Pedir cotação por e-mail e registrar o orçamento que voltou (valor + PDF) são passos distintos.
                 </p>
@@ -869,7 +874,7 @@ export default function ComprasPedido() {
                 <p className="mb-3 text-xs text-slate-500">
                   Peça cotação por e-mail (caixa do projeto) e anexe os orçamentos recebidos (valor + PDF).
                 </p>
-              ) : !sede && pedido.tipo === 'consumo' ? (
+              ) : !sede && cotacaoSede ? (
                 <p className="mb-3 text-xs text-slate-500">
                   A Sede lança as cotações deste pedido. Aqui você acompanha quantos orçamentos já foram anexados.
                 </p>
@@ -1039,7 +1044,7 @@ export default function ComprasPedido() {
               ) : (
                 <p className="mb-2 text-sm font-semibold text-slate-800">Orçamentos recebidos</p>
               )}
-              {sede && pedido.tipo === 'consumo' ? (
+              {sede && cotacaoSede ? (
                 <p className="mb-2 text-xs text-slate-500">
                   Registre o valor e o PDF devolvido pelo fornecedor (não é o e-mail de pedido de cotação).
                 </p>
@@ -1332,7 +1337,7 @@ export default function ComprasPedido() {
               </SectionCard>
             )}
 
-            {pedido.tipo === 'consumo' && pedido.status === 'rascunho' && (
+            {tipoExigeJanela(pedido.tipo) && pedido.status === 'rascunho' && (
               <SectionCard
                 title="Envio na janela"
                 subtitle={pedido.data_envio_prevista
@@ -1476,7 +1481,7 @@ export default function ComprasPedido() {
                     Aprovar na unidade
                   </PremiumButton>
                 )}
-                {pedido.status === 'aguardando_aprovacao_sede' && sede && (
+                {pedido.status === 'aguardando_aprovacao_sede' && sede && !pulaAprovacaoSede && (
                   cotacaoProjeto ? (
                     <PremiumButton
                       onClick={() => agir(

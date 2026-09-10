@@ -382,3 +382,27 @@ def test_unidade_medida_para_pedido_por_fator():
     assert unidade_medida_para_pedido("kg", fator_embalagem=1) == "kg"
     assert unidade_medida_para_pedido("kg", embalagem="") == "kg"
     assert unidade_medida_para_pedido("pct", embalagem="PCT 1Kg") == "pct"
+
+
+def test_hortifruti_segmento_e_fluxo():
+    from compras_regras import (
+        SEGMENTO_HORTIFRUTI,
+        TIPO_HORTIFRUTI,
+        exige_tres_cotacoes,
+        inferir_segmento_por_nome_categoria,
+        normalizar_segmento_catalogo,
+        segmento_do_tipo_pedido,
+        tipo_eh_cotacao_projeto,
+        tipo_eh_cotacao_sede,
+        tipo_exige_janela,
+        tipo_pula_aprovacao_sede,
+    )
+
+    assert normalizar_segmento_catalogo("hortifruti") == SEGMENTO_HORTIFRUTI
+    assert inferir_segmento_por_nome_categoria("Hortifruti") == SEGMENTO_HORTIFRUTI
+    assert segmento_do_tipo_pedido(TIPO_HORTIFRUTI) == SEGMENTO_HORTIFRUTI
+    assert tipo_eh_cotacao_sede(TIPO_HORTIFRUTI)
+    assert not tipo_eh_cotacao_projeto(TIPO_HORTIFRUTI)
+    assert not tipo_exige_janela(TIPO_HORTIFRUTI)
+    assert tipo_pula_aprovacao_sede(TIPO_HORTIFRUTI)
+    assert not exige_tres_cotacoes(TIPO_HORTIFRUTI)

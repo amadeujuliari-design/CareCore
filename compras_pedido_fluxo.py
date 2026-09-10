@@ -61,6 +61,7 @@ from compras_regras import (
     pedido_itens_podem_editar,
     pedido_rascunho_pode_excluir,
     tipo_eh_cotacao_projeto,
+    tipo_eh_cotacao_sede,
     usuario_e_sede_compras,
     usuario_pode_aprovar_sede,
     usuario_pode_pedir,
@@ -969,9 +970,9 @@ async def enviar_solicitacao_cotacao_fornecedores(
         if not sede and not pode_projeto:
             raise HTTPException(status_code=403, detail="Sem permissão para pedir cotação deste pedido.")
     elif not sede:
-        raise HTTPException(status_code=403, detail="Pedido de cotação de consumo é enviado pela Sede (ADM Compras).")
-    elif pedido.tipo != TIPO_CONSUMO:
-        raise HTTPException(status_code=400, detail="Pedido de cotação por e-mail da Sede é para consumo.")
+        raise HTTPException(status_code=403, detail="Pedido de cotação de consumo/hortifruti é enviado pela Sede (ADM Compras).")
+    elif not tipo_eh_cotacao_sede(pedido.tipo):
+        raise HTTPException(status_code=400, detail="Pedido de cotação por e-mail da Sede é para consumo ou hortifruti.")
 
     if pedido.status in STATUS_TERMINAIS_PEDIDO:
         raise HTTPException(status_code=400, detail="Pedido encerrado não aceita nova solicitação de cotação.")
