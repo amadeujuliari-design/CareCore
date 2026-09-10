@@ -126,14 +126,19 @@ export function removerCamposVazios(objeto) {
   return limpo;
 }
 
-export function obterMensagemErro(error) {
-  const data = error?.response?.data;
-
-  if (!data) {
+export function obterMensagemErro(error, fallback = 'Erro ao processar solicitação.') {
+  // Erros sem response (rede, sessão expirada no interceptor, timeout)
+  if (!error?.response) {
+    const msg = String(error?.message || '').trim();
+    if (msg && !/^request failed with status code \d+/i.test(msg)) {
+      return msg;
+    }
     return 'Não foi possível se conectar ao servidor.';
   }
 
-  if (Array.isArray(data.erros) && data.erros.length > 0) {
+  const data = error.response.data;
+
+  if (Array.isArray(data?.erros) && data.erros.length > 0) {
     return data.erros
       .map((item) => {
         const campo = item?.campo
@@ -146,11 +151,15 @@ export function obterMensagemErro(error) {
       .join('\n');
   }
 
-  if (typeof data.detail === 'string' && data.detail !== 'Erro de validação.') {
+  if (typeof data?.detail === 'string' && data.detail !== 'Erro de validação.') {
     return data.detail;
   }
 
-  if (Array.isArray(data.detail) && data.detail.length > 0) {
+  if (data?.detail && typeof data.detail === 'object' && data.detail.mensagem) {
+    return data.detail.mensagem;
+  }
+
+  if (Array.isArray(data?.detail) && data.detail.length > 0) {
     return data.detail
       .map((item) => {
         const campo = Array.isArray(item?.loc)
@@ -164,7 +173,11 @@ export function obterMensagemErro(error) {
       .join('\n');
   }
 
-  return data.detail || 'Erro ao processar solicitação.';
+  if (typeof data?.detail === 'string') {
+    return data.detail;
+  }
+
+  return fallback;
 }
 
 export function cpfValido(valor) {

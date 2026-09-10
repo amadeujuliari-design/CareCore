@@ -15,7 +15,7 @@ import {
 } from '../utils/comprasTelefoneUtils';
 import { formatarCNPJ, mensagemErroCnpjDigitado } from '../utils/nfpCadastroUtils';
 import { aplicarConsultaCnpjNoFornecedor, textoAvisoConsultaCnpj } from '../utils/nfpConsultaCnpjUtils';
-import { emailValido, formatarCEP, limparMascara } from '../utils/usuariosUtils';
+import { emailValido, formatarCEP, limparMascara, cepValido, obterMensagemErro } from '../utils/usuariosUtils';
 
 const FORNECEDOR_VAZIO = {
   id: '',
@@ -42,6 +42,11 @@ const FORNECEDOR_VAZIO = {
   ativo: true,
   bloqueado: false,
 };
+
+/** Campos de texto do form: API pode devolver null. */
+function textoForm(valor) {
+  return String(valor ?? '').trim();
+}
 
 function statusFornecedor(fornecedor) {
   if (fornecedor.bloqueado) return <PremiumBadge variant="danger">Bloqueado</PremiumBadge>;
@@ -173,20 +178,31 @@ export default function ComprasFornecedoresCadastro({
     setFicha(null);
     setForm({
       ...FORNECEDOR_VAZIO,
-      ...fornecedor,
+      id: fornecedor.id || '',
+      nome: textoForm(fornecedor.nome),
       categoria_id: fornecedor.categoria_id || '',
       categoria_ids: Array.isArray(fornecedor.categoria_ids)
         ? [...fornecedor.categoria_ids]
         : (fornecedor.categoria_id ? [fornecedor.categoria_id] : []),
       prazo_entrega_dias: fornecedor.prazo_entrega_dias != null ? String(fornecedor.prazo_entrega_dias) : '',
       cnpj: fornecedor.cnpj ? formatarCNPJ(fornecedor.cnpj) : '',
-      cep: fornecedor.cep ? formatarCEP(fornecedor.cep) : '',
-      uf: fornecedor.uf || 'SP',
+      segmento: textoForm(fornecedor.segmento),
+      contato: textoForm(fornecedor.contato),
       telefone: fornecedor.telefone ? formatarTelefoneCompras(fornecedor.telefone) : '',
-      ativo: fornecedor.ativo !== false,
-      bloqueado: Boolean(fornecedor.bloqueado),
+      email: textoForm(fornecedor.email),
+      email_empresa: textoForm(fornecedor.email_empresa),
+      cep: fornecedor.cep ? formatarCEP(fornecedor.cep) : '',
+      logradouro: textoForm(fornecedor.logradouro),
+      numero: textoForm(fornecedor.numero),
+      complemento: textoForm(fornecedor.complemento),
+      bairro: textoForm(fornecedor.bairro),
+      cidade: textoForm(fornecedor.cidade),
+      uf: textoForm(fornecedor.uf) || 'SP',
       atende_geral: fornecedor.atende_geral !== false,
       projeto_ids: Array.isArray(fornecedor.projeto_ids) ? [...fornecedor.projeto_ids] : [],
+      observacao: textoForm(fornecedor.observacao),
+      ativo: fornecedor.ativo !== false,
+      bloqueado: Boolean(fornecedor.bloqueado),
     });
     setErros({});
     setAvisoConsultaCnpj('');
@@ -204,7 +220,7 @@ export default function ComprasFornecedoresCadastro({
 
   const validar = useCallback(() => {
     const novos = {};
-    if (!form.nome.trim()) novos.nome = 'Informe o nome do fornecedor.';
+    if (!textoForm(form.nome)) novos.nome = 'Informe o nome do fornecedor.';
     if (form.cnpj) {
       const mensagemCnpj = mensagemErroCnpjDigitado(form.cnpj);
       if (mensagemCnpj) novos.cnpj = mensagemCnpj;
@@ -212,6 +228,7 @@ export default function ComprasFornecedoresCadastro({
     if (form.email && !emailValido(form.email)) novos.email = 'E-mail inválido.';
     if (form.email_empresa && !emailValido(form.email_empresa)) novos.email_empresa = 'E-mail da empresa inválido.';
     if (form.telefone && !telefoneComprasValido(form.telefone)) novos.telefone = 'Telefone inválido.';
+    if (form.cep && !cepValido(form.cep)) novos.cep = 'CEP inválido.';
     if (!form.atende_geral && form.projeto_ids.length === 0) {
       novos.projeto_ids = 'Selecione ao menos um projeto ou marque GERAL.';
     }
@@ -220,28 +237,28 @@ export default function ComprasFornecedoresCadastro({
   }, [form]);
 
   const montarPayload = useCallback(() => ({
-    nome: form.nome.trim(),
+    nome: textoForm(form.nome),
     categoria_id: form.categoria_id || null,
     categoria_ids: [...new Set([form.categoria_id, ...(form.categoria_ids || [])].filter(Boolean))],
     prazo_entrega_dias: form.prazo_entrega_dias === '' || form.prazo_entrega_dias == null
       ? null
       : Number(form.prazo_entrega_dias),
     cnpj: form.cnpj ? limparMascara(form.cnpj) : null,
-    segmento: form.segmento.trim() || null,
-    contato: form.contato.trim() || null,
+    segmento: textoForm(form.segmento) || null,
+    contato: textoForm(form.contato) || null,
     telefone: form.telefone ? normalizarTelefoneComprasParaSalvar(form.telefone) : null,
-    email: form.email.trim() || null,
-    email_empresa: form.email_empresa.trim() || null,
+    email: textoForm(form.email) || null,
+    email_empresa: textoForm(form.email_empresa) || null,
     cep: form.cep ? limparMascara(form.cep) : null,
-    logradouro: form.logradouro.trim() || null,
-    numero: form.numero.trim() || null,
-    complemento: form.complemento.trim() || null,
-    bairro: form.bairro.trim() || null,
-    cidade: form.cidade.trim() || null,
-    uf: form.uf.trim().toUpperCase() || null,
+    logradouro: textoForm(form.logradouro) || null,
+    numero: textoForm(form.numero) || null,
+    complemento: textoForm(form.complemento) || null,
+    bairro: textoForm(form.bairro) || null,
+    cidade: textoForm(form.cidade) || null,
+    uf: textoForm(form.uf).toUpperCase() || null,
     atende_geral: Boolean(form.atende_geral),
-    projeto_ids: form.atende_geral ? [] : [...form.projeto_ids],
-    observacao: form.observacao.trim() || null,
+    projeto_ids: form.atende_geral ? [] : [...(form.projeto_ids || [])],
+    observacao: textoForm(form.observacao) || null,
     ativo: Boolean(form.ativo),
     bloqueado: Boolean(form.bloqueado),
   }), [form]);
@@ -257,7 +274,7 @@ export default function ComprasFornecedoresCadastro({
       await onRecarregar?.();
     } catch (error) {
       onMensagem?.({
-        erro: error.response?.data?.detail || 'Não foi possível salvar o fornecedor.',
+        erro: obterMensagemErro(error, 'Não foi possível salvar o fornecedor.'),
       });
     } finally {
       setSalvando(false);

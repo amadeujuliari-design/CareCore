@@ -1,8 +1,10 @@
+import { useFecharSoNoBackdrop } from '../hooks/useFecharSoNoBackdrop';
 import NfpEnderecoFields from './nfp/NfpEnderecoFields';
 import { CampoSelect, CampoTexto } from './UsuariosCampos';
 import { PremiumButton } from './PremiumUI';
 import { formatarTelefoneInputCompras, telefoneComprasValido } from '../utils/comprasTelefoneUtils';
 import { rotuloCategoria } from '../utils/comprasCategoriaUtils';
+import { emailValido } from '../utils/usuariosUtils';
 
 export default function ModalFormFornecedor({
   form,
@@ -24,6 +26,7 @@ export default function ModalFormFornecedor({
 }) {
   const editando = Boolean(form?.id);
   const opcoesCategoria = categorias.map((c) => ({ value: c.id, label: rotuloCategoria(c) }));
+  const { onMouseDownBackdrop, onClickBackdrop } = useFecharSoNoBackdrop(onCancelar);
 
   return (
     <div
@@ -31,7 +34,8 @@ export default function ModalFormFornecedor({
       role="dialog"
       aria-modal="true"
       aria-labelledby="form-fornecedor-titulo"
-      onClick={onCancelar}
+      onMouseDown={onMouseDownBackdrop}
+      onClick={onClickBackdrop}
     >
       <form
         className="flex max-h-[92vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl bg-white shadow-xl"
@@ -184,6 +188,11 @@ export default function ModalFormFornecedor({
                 label="E-mail do representante"
                 value={form.email}
                 onChange={(valor) => onAtualizar('email', valor)}
+                onBlur={() => {
+                  if (form.email && !emailValido(form.email)) {
+                    onErroChange('email', 'E-mail inválido.');
+                  }
+                }}
                 type="email"
                 erro={erros.email}
               />
@@ -191,6 +200,11 @@ export default function ModalFormFornecedor({
                 label="E-mail da empresa"
                 value={form.email_empresa}
                 onChange={(valor) => onAtualizar('email_empresa', valor)}
+                onBlur={() => {
+                  if (form.email_empresa && !emailValido(form.email_empresa)) {
+                    onErroChange('email_empresa', 'E-mail da empresa inválido.');
+                  }
+                }}
                 type="email"
                 erro={erros.email_empresa}
               />

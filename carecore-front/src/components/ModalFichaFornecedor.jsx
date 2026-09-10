@@ -1,3 +1,4 @@
+import { useFecharSoNoBackdrop } from '../hooks/useFecharSoNoBackdrop';
 import { PremiumBadge, PremiumButton } from './PremiumUI';
 import { formatarEnderecoFornecedor, rotuloProjetosFornecedor } from '../utils/comprasFornecedorUtils';
 import { formatarTelefoneCompras } from '../utils/comprasTelefoneUtils';
@@ -26,6 +27,7 @@ export default function ModalFichaFornecedor({
   onFechar,
   onEditar,
 }) {
+  const { onMouseDownBackdrop, onClickBackdrop } = useFecharSoNoBackdrop(onFechar);
   if (!fornecedor) return null;
 
   const endereco = formatarEnderecoFornecedor(fornecedor);
@@ -36,7 +38,8 @@ export default function ModalFichaFornecedor({
       role="dialog"
       aria-modal="true"
       aria-labelledby="ficha-fornecedor-titulo"
-      onClick={onFechar}
+      onMouseDown={onMouseDownBackdrop}
+      onClick={onClickBackdrop}
     >
       <div
         className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white p-5 shadow-xl"

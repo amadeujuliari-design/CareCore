@@ -77,9 +77,10 @@ api.interceptors.request.use(
     if (token && sessaoExpiradaPorInatividade()) {
       limparSessaoLocal();
       redirecionarLoginSeNecessario();
-
       return Promise.reject(
-        new Error('Sessão expirada por inatividade. Faça login novamente.')
+        Object.assign(new Error('Sessão expirada por inatividade. Faça login novamente.'), {
+          code: 'SESSION_INACTIVE',
+        })
       );
     }
 

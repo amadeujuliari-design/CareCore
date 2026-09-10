@@ -10,6 +10,7 @@ import {
   SEGMENTOS_CATALOGO,
   rotuloSegmentoCatalogo,
 } from '../utils/comprasPedidoTipos';
+import { obterMensagemErro } from '../utils/usuariosUtils';
 
 const FONTES_TIPO_OPCOES = [
   { value: 'convenio', label: 'Convênio' },
@@ -252,7 +253,7 @@ export default function ComprasCategoriasFontes({
       onMensagem?.({ ok: 'Categoria cadastrada.' });
       await onRecarregar?.();
     } catch (err) {
-      onMensagem?.({ erro: err.response?.data?.detail || 'Não foi possível cadastrar a categoria.' });
+      onMensagem?.({ erro: obterMensagemErro(err, 'Não foi possível cadastrar a categoria.') });
       throw err;
     }
   };
@@ -263,7 +264,7 @@ export default function ComprasCategoriasFontes({
       onMensagem?.({ ok: `Categoria «${item.nome}» → ${rotuloSegmentoCatalogo(segmento)}.` });
       await onRecarregar?.();
     } catch (err) {
-      onMensagem?.({ erro: err.response?.data?.detail || 'Não foi possível atualizar o uso da categoria.' });
+      onMensagem?.({ erro: obterMensagemErro(err, 'Não foi possível atualizar o uso da categoria.') });
     }
   };
 
@@ -274,7 +275,7 @@ export default function ComprasCategoriasFontes({
       onMensagem?.({ ok: 'Fonte cadastrada.' });
       await onRecarregar?.();
     } catch (err) {
-      onMensagem?.({ erro: err.response?.data?.detail || 'Não foi possível cadastrar a fonte.' });
+      onMensagem?.({ erro: obterMensagemErro(err, 'Não foi possível cadastrar a fonte.') });
       throw err;
     }
   };

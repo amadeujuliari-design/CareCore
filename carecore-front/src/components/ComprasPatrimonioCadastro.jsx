@@ -13,6 +13,7 @@ import {
   rotuloOpcao,
 } from '../utils/comprasPatrimonioUtils';
 import { SEGMENTO_IMOBILIZADO, normalizarSegmentoCatalogo } from '../utils/comprasPedidoTipos';
+import { obterMensagemErro } from '../utils/usuariosUtils';
 
 const ITENS_POR_PAGINA = 40;
 
@@ -195,7 +196,7 @@ export default function ComprasPatrimonioCadastro({
       await onRecarregar?.();
     } catch (error) {
       onMensagem?.({
-        erro: error.response?.data?.detail || 'Não foi possível salvar o bem.',
+        erro: obterMensagemErro(error, 'Não foi possível salvar o bem.'),
       });
     } finally {
       setSalvando(false);

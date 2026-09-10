@@ -44,9 +44,17 @@ def conta_para_finance_pro(conta: FinanceiroContaDB) -> dict:
     }
 
 
+def _id_opcional(registro: dict) -> str | None:
+    """ID vem no update; no create o router gera UUID se vier None."""
+    bruto = registro.get("id")
+    if bruto is None or bruto == "":
+        return None
+    return str(bruto)
+
+
 def conta_de_finance_pro(org_id: str, registro: dict) -> FinanceiroContaDB:
     return FinanceiroContaDB(
-        id=str(registro["id"]),
+        id=_id_opcional(registro),
         organizacao_id=org_id,
         nome=str(registro.get("name") or registro.get("nome") or "Conta"),
         tipo=str(registro.get("type") or "checking"),
@@ -82,8 +90,11 @@ def transacao_para_finance_pro(tx: FinanceiroTransacaoDB) -> dict:
 
 
 def transacao_de_finance_pro(org_id: str, registro: dict) -> FinanceiroTransacaoDB:
+    data = _parse_date(registro.get("date") or registro.get("data"))
+    if data is None:
+        raise ValueError("Transação sem data válida (campo date).")
     return FinanceiroTransacaoDB(
-        id=str(registro["id"]),
+        id=_id_opcional(registro),
         organizacao_id=org_id,
         conta_id=registro.get("account_id") or registro.get("conta_id"),
         cartao_id=registro.get("card_id") or registro.get("cartao_id"),
@@ -91,7 +102,7 @@ def transacao_de_finance_pro(org_id: str, registro: dict) -> FinanceiroTransacao
         valor=float(registro.get("amount") or registro.get("valor") or 0),
         tipo=str(registro.get("type") or registro.get("tipo") or "expense"),
         categoria=registro.get("category") or registro.get("categoria"),
-        data=_parse_date(registro.get("date") or registro.get("data")),
+        data=data,
         pago=bool(registro.get("is_paid") if "is_paid" in registro else registro.get("pago", True)),
         origem_arquivo=registro.get("origin_file") or registro.get("origem_arquivo"),
         parcela_atual=registro.get("current_installment") or registro.get("parcela_atual"),
@@ -128,7 +139,7 @@ def investimento_para_finance_pro(item: FinanceiroInvestimentoDB) -> dict:
 
 def investimento_de_finance_pro(org_id: str, registro: dict) -> FinanceiroInvestimentoDB:
     return FinanceiroInvestimentoDB(
-        id=str(registro["id"]),
+        id=_id_opcional(registro),
         organizacao_id=org_id,
         nome=str(registro.get("name") or registro.get("nome") or ""),
         tipo=registro.get("type") or registro.get("tipo"),
@@ -158,7 +169,7 @@ def regra_para_finance_pro(regra: FinanceiroRegraCategoriaDB) -> dict:
 
 def regra_de_finance_pro(org_id: str, registro: dict) -> FinanceiroRegraCategoriaDB:
     return FinanceiroRegraCategoriaDB(
-        id=str(registro["id"]),
+        id=_id_opcional(registro),
         organizacao_id=org_id,
         palavra_chave=str(registro.get("keyword") or registro.get("palavra_chave") or ""),
         categoria=str(registro.get("category") or registro.get("categoria") or ""),

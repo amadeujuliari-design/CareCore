@@ -1,22 +1,10 @@
-import React, { useState, useRef, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Upload, CheckCircle, AlertCircle, ArrowUpDown, ArrowUp, ArrowDown, Trash2, CheckSquare } from 'lucide-react';
 import type { Transaction } from '../types'; 
 import { useFinanceStore } from '../store/useFinanceStore'; 
 import { useAuth } from '../contexts/AuthContext';
 import { formatCurrency } from '../utils/formatters';
-
-const parseNumber = (s: any): number => {
-    if (!s) return 0;
-    if (typeof s === 'number') return s;
-    let c = s.toString().trim().replace(/[R$\s"US]/g, '');
-    if (c.includes(',') && !c.includes('.')) return parseFloat(c.replace(',', '.'));
-    if (c.includes('.') && c.includes(',')) {
-        return c.indexOf('.') < c.indexOf(',') 
-            ? parseFloat(c.replace(/\./g, '').replace(',', '.')) 
-            : parseFloat(c.replace(/,/g, ''));
-    }
-    return parseFloat(c);
-};
+import { parseWhatsappChatImport, summarizeWhatsappCycle } from '../utils/whatsappChatParser.js';
 
 const displayDate = (dateIso: string) => {
     if (!dateIso) return '-';
@@ -40,21 +28,19 @@ export function WhatsappPageDesktop() {
 
   useEffect(() => { fetchTransactions(); }, [fetchTransactions]);
 
-  // --- NOVA LÓGICA DO BOTÃO FECHAR CICLO ---
   const handleCycleClose = async () => {
-    // 1. Filtra itens elegíveis (Abertos + Não Projeção + Data Corte)
     const openTransactions = whatsappTransactions.filter(t => 
         !t.is_paid && 
         t.date <= cutoffDate && 
         !t.is_projected 
     );
+    const cicloResumo = summarizeWhatsappCycle(whatsappTransactions, cutoffDate);
 
     if (openTransactions.length === 0) {
         setFeedback({ type: 'info', msg: 'Nenhuma pendência real encontrada para conciliar.' });
         return;
     }
 
-    // 2. Calcula Dívidas
     const getOwner = (t: Transaction) => {
         if (t.responsible) return t.responsible.toUpperCase();
         return t.category ? t.category.toUpperCase() : '';
@@ -68,9 +54,7 @@ export function WhatsappPageDesktop() {
         .filter(t => { const o = getOwner(t); return o.includes('CLAUDIO') || o.includes('CLÁUDIO'); })
         .reduce((acc, t) => acc + t.amount, 0);
 
-    // Net Balance: Léo - Claudio
-    // Se Positivo: Léo deve pagar (Income para o sistema/casa).
-    // Se Negativo: Claudio deve pagar (Expense).
+    // Net: Léo - Claudio. Positivo => Léo deve pagar (income no extrato).
     const targetNetBalance = leoDebt - claudioDebt;
     const netAbs = Math.abs(targetNetBalance);
     const direction = targetNetBalance > 0 ? "Léo deve pagar" : "Claudio deve pagar";
@@ -78,7 +62,9 @@ export function WhatsappPageDesktop() {
     const msg = `
       CONFIRMAÇÃO DE FECHAMENTO
       -------------------------
-      Itens no Ciclo: ${openTransactions.length}
+      Histórico importado: ${cicloResumo.totalHistorico}
+      Itens no ciclo (reais até o corte): ${cicloResumo.itensNoCiclo}
+      Parcelas projetadas abertas (fora do ciclo): ${cicloResumo.parcelasProjetadasAbertas}
       
       Dívida Léo: ${formatCurrency(leoDebt)}
       Dívida Claudio: ${formatCurrency(claudioDebt)}
@@ -86,8 +72,9 @@ export function WhatsappPageDesktop() {
       RESULTADO FINAL: ${direction} ${formatCurrency(netAbs)}
       
       Ao confirmar:
-      1. Todos os ${openTransactions.length} itens serão marcados como PAGOS.
+      1. Os ${openTransactions.length} itens reais do ciclo serão marcados como PAGOS.
       2. Será criado um lançamento REAL de ${formatCurrency(netAbs)} no extrato.
+      3. Parcelas projetadas permanecem abertas para o próximo ciclo.
       
       Deseja proceder?
     `;
@@ -128,7 +115,6 @@ export function WhatsappPageDesktop() {
     }
   };
 
-  // --- LÓGICA ORIGINAL DE IMPORTAÇÃO (TXT) RESTAURADA ---
   const processFileContent = async (fileContent: string) => {
     if (!user) return;
     try {
@@ -140,73 +126,7 @@ export function WhatsappPageDesktop() {
           await Promise.all(futureProjections.map(t => removeTransaction(t.id)));
       }
 
-      const content = fileContent.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-      const lowerContent = content.toLowerCase();
-      let splitIndex = -1;
-      const variations = ["zerado nessa data", "zerado nesta data"];
-      
-      for (const v of variations) {
-          const idx = lowerContent.lastIndexOf(v);
-          if (idx > splitIndex) splitIndex = idx;
-      }
-
-      const processingContent = splitIndex !== -1 
-          ? content.substring(content.indexOf('\n', splitIndex) + 1) 
-          : content;
-
-      const lines = processingContent.split('\n');
-      let currentBatch: any[] = [];
-      let lastValidDate: Date | null = null;
-      
-      const dateRegex = /\[?(\d{2})\/(\d{2})\/(\d{4})\]?/;
-      const transRegex = /(L[ée]o|Cl[aá]udio|Claydio|Renato|Eu|Voc[êe])\s+deve\s+(?:(\d+)[xX]\s*)?(?:R\$)?\s*([\d\.,]+)\s*(.*)/i;
-
-      lines.forEach((line) => {
-        if (!line.trim()) return;
-
-        const dateMatch = line.match(dateRegex);
-        if (dateMatch) {
-            lastValidDate = new Date(parseInt(dateMatch[3]), parseInt(dateMatch[2]) - 1, parseInt(dateMatch[1]));
-        }
-
-        if (lastValidDate && line.toLowerCase().includes('deve')) {
-            const match = line.match(transRegex);
-            if (match) {
-                const rawName = match[1];
-                const installmentsStr = match[2];
-                const amount = parseNumber(match[3]);
-                const desc = match[4].trim();
-
-                let responsibleName = 'Desconhecido';
-                if (/L[ée]o|Eu/i.test(rawName)) responsibleName = 'Léo';
-                else if (/Cl[aá]udio|Claydio|Renato|Voc[êe]/i.test(rawName)) responsibleName = 'Claudio';
-
-                const totalInstallments = installmentsStr ? parseInt(installmentsStr) : 1;
-                const singleAmount = amount; 
-
-                for (let i = 0; i < totalInstallments; i++) {
-                    const installmentDate = new Date(lastValidDate);
-                    installmentDate.setMonth(installmentDate.getMonth() + i);
-                    
-                    const isProjected = i > 0;
-
-                    currentBatch.push({
-                        user_id: user.id,
-                        description: desc + (totalInstallments > 1 ? ` (${i+1}/${totalInstallments})` : ''),
-                        amount: singleAmount,
-                        type: 'expense',
-                        category: 'Outros',
-                        responsible: responsibleName,
-                        date: installmentDate.toISOString().split('T')[0],
-                        is_paid: false,
-                        origin_file: 'WHATSAPP_IMPORT',
-                        is_projected: isProjected, 
-                        whatsapp_cycle_key: `${installmentDate.getFullYear()}-${String(installmentDate.getMonth() + 1).padStart(2, '0')}`
-                    });
-                }
-            }
-        }
-      });
+      const currentBatch = parseWhatsappChatImport(fileContent, { userId: user.id });
 
       const existingSignatures = new Set(transactions
           .filter(t => t.origin_file === 'WHATSAPP_IMPORT')
@@ -220,7 +140,12 @@ export function WhatsappPageDesktop() {
       if (uniqueItems.length > 0) {
           await addTransactions(uniqueItems);
           await fetchTransactions();
-          setFeedback({ type: 'success', msg: `${uniqueItems.length} lançamentos importados!` });
+          const projetadas = uniqueItems.filter((t) => t.is_projected).length;
+          const reais = uniqueItems.length - projetadas;
+          setFeedback({
+            type: 'success',
+            msg: `${uniqueItems.length} lançamentos importados (${reais} reais, ${projetadas} projeções).`,
+          });
       } else {
           setFeedback({ type: 'info', msg: 'Nenhum lançamento novo identificado.' });
       }
@@ -315,7 +240,12 @@ export function WhatsappPageDesktop() {
         <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
             <h3 className="font-bold text-slate-700">Histórico</h3>
             <div className="flex gap-4 items-center">
-                 <span className="text-xs font-normal text-gray-500">{whatsappTransactions.length} itens</span>
+                 <span className="text-xs font-normal text-gray-500">
+                   {whatsappTransactions.length} itens
+                   {whatsappTransactions.some((t) => t.is_projected && !t.is_paid)
+                     ? ` · ${whatsappTransactions.filter((t) => t.is_projected && !t.is_paid).length} projeções abertas`
+                     : ''}
+                 </span>
                  {whatsappTransactions.length > 0 && <button onClick={handleBulkDelete} className="text-red-500 hover:text-red-700 text-xs font-bold flex items-center gap-1"><Trash2 size={12} /> Limpar Tudo</button>}
             </div>
         </div>

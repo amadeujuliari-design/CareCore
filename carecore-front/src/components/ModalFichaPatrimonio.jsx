@@ -1,3 +1,4 @@
+import { useFecharSoNoBackdrop } from '../hooks/useFecharSoNoBackdrop';
 import { PremiumBadge, PremiumButton } from './PremiumUI';
 import {
   PATRIMONIO_ORIGEM,
@@ -26,6 +27,7 @@ function badgeSituacao(situacao) {
 }
 
 export default function ModalFichaPatrimonio({ item, onFechar, onEditar }) {
+  const { onMouseDownBackdrop, onClickBackdrop } = useFecharSoNoBackdrop(onFechar);
   if (!item) return null;
   const dataBr = (iso) => {
     if (!iso) return '';
@@ -39,7 +41,8 @@ export default function ModalFichaPatrimonio({ item, onFechar, onEditar }) {
       role="dialog"
       aria-modal="true"
       aria-labelledby="ficha-patrimonio-titulo"
-      onClick={onFechar}
+      onMouseDown={onMouseDownBackdrop}
+      onClick={onClickBackdrop}
     >
       <div
         className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white p-5 shadow-xl"

@@ -1,3 +1,4 @@
+import { useFecharSoNoBackdrop } from '../hooks/useFecharSoNoBackdrop';
 import { PremiumBadge, PremiumButton } from './PremiumUI';
 import {
   rotuloCompetenciaOrcamento,
@@ -15,6 +16,7 @@ function ItemFicha({ label, valor, className = '' }) {
 }
 
 export default function ModalFichaItemConsumo({ item, onFechar, onEditar }) {
+  const { onMouseDownBackdrop, onClickBackdrop } = useFecharSoNoBackdrop(onFechar);
   if (!item) return null;
 
   return (
@@ -23,7 +25,8 @@ export default function ModalFichaItemConsumo({ item, onFechar, onEditar }) {
       role="dialog"
       aria-modal="true"
       aria-labelledby="ficha-item-consumo-titulo"
-      onClick={onFechar}
+      onMouseDown={onMouseDownBackdrop}
+      onClick={onClickBackdrop}
     >
       <div
         className="max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-2xl bg-white p-5 shadow-xl"

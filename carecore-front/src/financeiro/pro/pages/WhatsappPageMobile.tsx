@@ -1,22 +1,10 @@
-import React, { useState, useRef, useMemo, useEffect } from 'react';
-import { Upload, CheckCircle, AlertCircle, ArrowUp, ArrowDown, Trash2, CheckSquare } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Upload, CheckSquare } from 'lucide-react';
 import type { Transaction } from '../types'; 
 import { useFinanceStore } from '../store/useFinanceStore'; 
 import { useAuth } from '../contexts/AuthContext';
 import { formatCurrency, formatDateBR } from '../utils/formatters';
-
-const parseNumber = (s: any): number => {
-    if (!s) return 0;
-    if (typeof s === 'number') return s;
-    let c = s.toString().trim().replace(/[R$\s"US]/g, '');
-    if (c.includes(',') && !c.includes('.')) return parseFloat(c.replace(',', '.'));
-    if (c.includes('.') && c.includes(',')) {
-        return c.indexOf('.') < c.indexOf(',') 
-            ? parseFloat(c.replace(/\./g, '').replace(',', '.')) 
-            : parseFloat(c.replace(/,/g, ''));
-    }
-    return parseFloat(c);
-};
+import { parseWhatsappChatImport, summarizeWhatsappCycle } from '../utils/whatsappChatParser.js';
 
 export function WhatsappPageMobile() {
   const { transactions, addTransactions, addTransaction, removeTransaction, updateTransaction, fetchTransactions } = useFinanceStore();
@@ -30,13 +18,13 @@ export function WhatsappPageMobile() {
 
   useEffect(() => { fetchTransactions(); }, [fetchTransactions]);
 
-  // --- NOVA LÓGICA DE FECHAMENTO (MOBILE) ---
   const handleCycleClose = async () => {
     const openTransactions = whatsappTransactions.filter(t => 
         !t.is_paid && 
         t.date <= cutoffDate && 
         !t.is_projected 
     );
+    const cicloResumo = summarizeWhatsappCycle(whatsappTransactions, cutoffDate);
 
     if (openTransactions.length === 0) { alert('Sem pendências reais.'); return; }
 
@@ -55,6 +43,10 @@ export function WhatsappPageMobile() {
     const msg = `
       FECHAMENTO
       ----------
+      Histórico: ${cicloResumo.totalHistorico}
+      No ciclo: ${cicloResumo.itensNoCiclo}
+      Projeções fora: ${cicloResumo.parcelasProjetadasAbertas}
+
       Dívida Léo: ${formatCurrency(leoDebt)}
       Dívida Claudio: ${formatCurrency(claudioDebt)}
       
@@ -96,72 +88,15 @@ export function WhatsappPageMobile() {
       const futureProjections = transactions.filter(t => t.origin_file === 'WHATSAPP_IMPORT' && t.is_projected === true && t.is_paid === false);
       if (futureProjections.length > 0) await Promise.all(futureProjections.map(t => removeTransaction(t.id)));
 
-      const content = fileContent.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-      const lowerContent = content.toLowerCase();
-      let splitIndex = -1;
-      const variations = ["zerado nessa data", "zerado nesta data"];
-      for (const v of variations) {
-          const idx = lowerContent.lastIndexOf(v);
-          if (idx > splitIndex) splitIndex = idx;
-      }
-      const processingContent = splitIndex !== -1 ? content.substring(content.indexOf('\n', splitIndex) + 1) : content;
-
-      const lines = processingContent.split('\n');
-      let currentBatch: any[] = [];
-      let lastValidDate: Date | null = null;
-      
-      const dateRegex = /\[?(\d{2})\/(\d{2})\/(\d{4})\]?/;
-      const transRegex = /(L[ée]o|Cl[aá]udio|Claydio|Renato|Eu|Voc[êe])\s+deve\s+(?:(\d+)[xX]\s*)?(?:R\$)?\s*([\d\.,]+)\s*(.*)/i;
-
-      lines.forEach((line) => {
-        if (!line.trim()) return;
-        const dateMatch = line.match(dateRegex);
-        if (dateMatch) lastValidDate = new Date(parseInt(dateMatch[3]), parseInt(dateMatch[2]) - 1, parseInt(dateMatch[1]));
-
-        if (lastValidDate && line.toLowerCase().includes('deve')) {
-            const match = line.match(transRegex);
-            if (match) {
-                const rawName = match[1];
-                const installmentsStr = match[2];
-                const amount = parseNumber(match[3]);
-                const desc = match[4].trim();
-                
-                let responsibleName = 'Desconhecido';
-                if (/L[ée]o|Eu/i.test(rawName)) responsibleName = 'Léo';
-                else if (/Cl[aá]udio|Claydio|Renato|Voc[êe]/i.test(rawName)) responsibleName = 'Claudio';
-
-                const totalInstallments = installmentsStr ? parseInt(installmentsStr) : 1;
-                const singleAmount = amount; 
-
-                for (let i = 0; i < totalInstallments; i++) {
-                    const installmentDate = new Date(lastValidDate);
-                    installmentDate.setMonth(installmentDate.getMonth() + i);
-                    const isProjected = i > 0;
-                    currentBatch.push({
-                        user_id: user.id,
-                        description: desc + (totalInstallments > 1 ? ` (${i+1}/${totalInstallments})` : ''),
-                        amount: singleAmount,
-                        type: 'expense',
-                        category: 'Outros',
-                        responsible: responsibleName,
-                        date: installmentDate.toISOString().split('T')[0],
-                        is_paid: false,
-                        origin_file: 'WHATSAPP_IMPORT',
-                        is_projected: isProjected, 
-                        whatsapp_cycle_key: `${installmentDate.getFullYear()}-${String(installmentDate.getMonth() + 1).padStart(2, '0')}`
-                    });
-                }
-            }
-        }
-      });
-
+      const currentBatch = parseWhatsappChatImport(fileContent, { userId: user.id });
       const existingSignatures = new Set(transactions.filter(t => t.origin_file === 'WHATSAPP_IMPORT').map(t => `${t.date}-${t.amount.toFixed(2)}-${t.description.trim().toLowerCase()}`));
       const uniqueItems = currentBatch.filter(t => !existingSignatures.has(`${t.date}-${t.amount.toFixed(2)}-${t.description.trim().toLowerCase()}`));
 
       if (uniqueItems.length > 0) {
           await addTransactions(uniqueItems);
           await fetchTransactions();
-          setFeedback({ type: 'success', msg: `${uniqueItems.length} importados.` });
+          const projetadas = uniqueItems.filter((t) => t.is_projected).length;
+          setFeedback({ type: 'success', msg: `${uniqueItems.length} importados (${uniqueItems.length - projetadas} reais, ${projetadas} projeções).` });
       } else {
           setFeedback({ type: 'info', msg: 'Sem novos dados.' });
       }
@@ -212,7 +147,7 @@ export function WhatsappPageMobile() {
              <div key={t.id} className="bg-white p-3 rounded-lg border border-slate-100 shadow-sm flex justify-between items-start">
                  <div>
                     <p className="text-sm font-bold text-slate-700">{t.description}</p>
-                    <p className="text-xs text-slate-400">{formatDateBR(t.date)} • {t.responsible}</p>
+                    <p className="text-xs text-slate-400">{formatDateBR(t.date)} • {t.responsible}{t.is_projected ? ' • projeção' : ''}</p>
                  </div>
                  <div className="text-right">
                     <p className="font-mono font-bold text-slate-700">{formatCurrency(t.amount)}</p>

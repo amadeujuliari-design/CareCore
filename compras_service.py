@@ -19,6 +19,11 @@ from compras_categoria_utils import (
 )
 from compras_itens_consumo_utils import chave_item_consumo, embalagem_efetiva_pedido, limpar_item_consumo, sanitizar_unidade_medida
 from compras_fornecedor_projetos_utils import montar_rotulo_projetos
+from compras_fornecedor_contato_utils import (
+    cep_fornecedor_valido,
+    email_fornecedor_valido,
+    sanitizar_campos_contato_fornecedor,
+)
 from compras_telefone_utils import formatar_telefone_compras, sanitizar_telefone_compras
 from compras_patrimonio_utils import (
     normalizar_origem,
@@ -1864,6 +1869,7 @@ async def _sync_categorias_fornecedor(
     categoria_ids: list[str],
     org_id: str,
 ) -> None:
+    """Substitui os vínculos de categoria pelo conjunto informado (já filtrado pelo caller)."""
     limpos: list[str] = []
     visto: set[str] = set()
     for cid in categoria_ids:
@@ -1872,10 +1878,6 @@ async def _sync_categorias_fornecedor(
             continue
         visto.add(token)
         limpos.append(token)
-    principal = (fornecedor.categoria_id or "").strip()
-    if principal and principal not in visto:
-        limpos.insert(0, principal)
-        visto.add(principal)
     if limpos:
         validos = {
             row[0]
@@ -1987,7 +1989,8 @@ async def salvar_fornecedor(db: AsyncSession, usuario: dict, payload: dict, forn
         if not fornecedor:
             raise HTTPException(status_code=404, detail="Fornecedor não encontrado.")
     else:
-        fornecedor = ComprasFornecedorDB(organizacao_id=_org_id(usuario))
+        # UUID antecipado: vínculos projeto/categoria precisam do id antes do flush.
+        fornecedor = ComprasFornecedorDB(id=get_uuid(), organizacao_id=_org_id(usuario))
         db.add(fornecedor)
     fornecedor.nome = nome
     ids_cat = payload.get("categoria_ids")
@@ -1995,7 +1998,7 @@ async def salvar_fornecedor(db: AsyncSession, usuario: dict, payload: dict, forn
         ids_cat = [p.strip() for p in ids_cat.split(",") if p.strip()]
     if ids_cat is None:
         ids_cat = [payload.get("categoria_id")] if payload.get("categoria_id") else []
-    fornecedor.categoria_id = payload.get("categoria_id") or (ids_cat[0] if ids_cat else None)
+    # categoria_id só após validar na sync (evita FK inválida no flush intermediário)
     prazo = payload.get("prazo_entrega_dias")
     if prazo in (None, ""):
         fornecedor.prazo_entrega_dias = None
@@ -2009,8 +2012,26 @@ async def salvar_fornecedor(db: AsyncSession, usuario: dict, payload: dict, forn
         fornecedor.prazo_entrega_dias = dias
     fornecedor.cnpj = payload.get("cnpj") or None
     fornecedor.segmento = payload.get("segmento") or None
-    fornecedor.contato = payload.get("contato") or None
-    telefone_bruto = payload.get("telefone")
+    contato_sanitizado, _ = sanitizar_campos_contato_fornecedor({
+        "contato": payload.get("contato"),
+        "telefone": payload.get("telefone"),
+        "email": payload.get("email"),
+        "email_empresa": payload.get("email_empresa"),
+        "cep": payload.get("cep"),
+        "logradouro": payload.get("logradouro"),
+        "numero": payload.get("numero"),
+        "bairro": payload.get("bairro"),
+        "cidade": payload.get("cidade"),
+        "observacao": payload.get("observacao") or fornecedor.observacao,
+    })
+    if contato_sanitizado.get("email") and not email_fornecedor_valido(contato_sanitizado["email"]):
+        raise HTTPException(status_code=400, detail="E-mail do representante inválido.")
+    if contato_sanitizado.get("email_empresa") and not email_fornecedor_valido(contato_sanitizado["email_empresa"]):
+        raise HTTPException(status_code=400, detail="E-mail da empresa inválido.")
+    if contato_sanitizado.get("cep") and not cep_fornecedor_valido(contato_sanitizado["cep"]):
+        raise HTTPException(status_code=400, detail="CEP inválido.")
+    fornecedor.contato = contato_sanitizado.get("contato") or None
+    telefone_bruto = contato_sanitizado.get("telefone")
     if telefone_bruto and str(telefone_bruto).strip():
         tel_principal, tel_extras = sanitizar_telefone_compras(telefone_bruto)
         if not tel_principal:
@@ -2021,23 +2042,31 @@ async def salvar_fornecedor(db: AsyncSession, usuario: dict, payload: dict, forn
         fornecedor.telefone = tel_principal
         if tel_extras:
             extras_txt = " / ".join(formatar_telefone_compras(t) for t in tel_extras)
-            obs_atual = fornecedor.observacao or payload.get("observacao") or ""
+            obs_atual = contato_sanitizado.get("observacao") or ""
             if extras_txt not in obs_atual:
                 obs_nova = f"{obs_atual} | Tel. adicional: {extras_txt}".strip(" |")
-                fornecedor.observacao = obs_nova
-                payload["observacao"] = obs_nova
+                contato_sanitizado["observacao"] = obs_nova
     else:
         fornecedor.telefone = None
-    fornecedor.email = payload.get("email") or None
-    fornecedor.email_empresa = payload.get("email_empresa") or None
-    fornecedor.cep = re.sub(r"\D", "", payload.get("cep") or "") or None
-    fornecedor.logradouro = (payload.get("logradouro") or "").strip() or None
-    fornecedor.numero = (payload.get("numero") or "").strip() or None
+    fornecedor.email = contato_sanitizado.get("email") or None
+    fornecedor.email_empresa = contato_sanitizado.get("email_empresa") or None
+    fornecedor.cep = re.sub(r"\D", "", contato_sanitizado.get("cep") or "") or None
+    fornecedor.logradouro = (contato_sanitizado.get("logradouro") or "").strip() or None
+    fornecedor.numero = (contato_sanitizado.get("numero") or "").strip() or None
     fornecedor.complemento = (payload.get("complemento") or "").strip() or None
-    fornecedor.bairro = (payload.get("bairro") or "").strip() or None
-    fornecedor.cidade = (payload.get("cidade") or "").strip() or None
+    fornecedor.bairro = (contato_sanitizado.get("bairro") or "").strip() or None
+    fornecedor.cidade = (contato_sanitizado.get("cidade") or "").strip() or None
     uf = (payload.get("uf") or "").strip().upper()
     fornecedor.uf = uf or None
+    if "ativo" in payload:
+        fornecedor.ativo = bool(payload["ativo"])
+    if "bloqueado" in payload:
+        fornecedor.bloqueado = bool(payload["bloqueado"])
+    fornecedor.observacao = contato_sanitizado.get("observacao") or None
+
+    # Garante INSERT do fornecedor antes dos vínculos (FK no Postgres).
+    await db.flush()
+
     if "atende_geral" in payload or "projeto_ids" in payload:
         atende_geral = bool(payload.get("atende_geral", True))
         projeto_ids = payload.get("projeto_ids") or []
@@ -2052,12 +2081,7 @@ async def salvar_fornecedor(db: AsyncSession, usuario: dict, payload: dict, forn
         )
     elif payload.get("projetos_atendidos") is not None and not fornecedor_id:
         fornecedor.projetos_atendidos = payload.get("projetos_atendidos") or None
-    if "ativo" in payload:
-        fornecedor.ativo = bool(payload["ativo"])
-    if "bloqueado" in payload:
-        fornecedor.bloqueado = bool(payload["bloqueado"])
-    fornecedor.observacao = payload.get("observacao") or None
-    await db.flush()
+
     await _sync_categorias_fornecedor(db, fornecedor, list(ids_cat or []), _org_id(usuario))
     fornecedor.atualizado_em = agora_operacional_naive()
     return fornecedor

@@ -112,7 +112,10 @@ async def criar_pro(
     for item in registros:
         if not isinstance(item, dict):
             raise HTTPException(status_code=400, detail="Payload inválido.")
-        entidade = _instanciar(tabela, org_id, item)
+        try:
+            entidade = _instanciar(tabela, org_id, item)
+        except (ValueError, TypeError, KeyError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         if not getattr(entidade, "id", None):
             entidade.id = str(uuid.uuid4())
         db.add(entidade)

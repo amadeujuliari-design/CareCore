@@ -21,6 +21,7 @@ import {
   rotuloCompetenciaOrcamento,
   rotuloSegmentoCatalogo,
 } from '../utils/comprasPedidoTipos';
+import { obterMensagemErro } from '../utils/usuariosUtils';
 
 /** Página menor para caber melhor na tela e permitir navegar listas médias. */
 const ITENS_POR_PAGINA = 25;
@@ -172,7 +173,7 @@ export default function ComprasItensConsumoCadastro({
       onMensagem?.({ ok: form.id ? 'Item atualizado.' : 'Item cadastrado.' });
       await onRecarregar?.();
     } catch (err) {
-      onMensagem?.({ erro: err.response?.data?.detail || 'Não foi possível salvar o item.' });
+      onMensagem?.({ erro: obterMensagemErro(err, 'Não foi possível salvar o item.') });
     } finally {
       setSalvando(false);
     }

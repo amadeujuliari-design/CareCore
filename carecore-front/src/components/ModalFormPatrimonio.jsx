@@ -1,3 +1,4 @@
+import { useFecharSoNoBackdrop } from '../hooks/useFecharSoNoBackdrop';
 import { CampoSelect, CampoTexto } from './UsuariosCampos';
 import { PremiumButton } from './PremiumUI';
 import { rotuloCategoria } from '../utils/comprasCategoriaUtils';
@@ -20,6 +21,7 @@ export default function ModalFormPatrimonio({
 }) {
   const editando = Boolean(form?.id);
   const opcoesUnidade = unidades.map((u) => ({ value: u.id, label: u.nome }));
+  const { onMouseDownBackdrop, onClickBackdrop } = useFecharSoNoBackdrop(onCancelar);
 
   return (
     <div
@@ -27,7 +29,8 @@ export default function ModalFormPatrimonio({
       role="dialog"
       aria-modal="true"
       aria-labelledby="form-patrimonio-titulo"
-      onClick={onCancelar}
+      onMouseDown={onMouseDownBackdrop}
+      onClick={onClickBackdrop}
     >
       <form
         className="flex max-h-[92vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl bg-white shadow-xl"
