@@ -21,9 +21,12 @@ def _sem_acento(texto: str) -> str:
 
 
 def chave_item_consumo(texto: str) -> str:
+    """Chave de deduplicação: ignora embalagem/unidade, mas preserva números da descrição.
+
+    Assim 'Luminária 21 Cm' e 'Luminária 28 Cm' não colidem, nem 'Álcool 70' com 'Álcool 92'.
+    """
     t = _sem_acento(texto).upper()
     t = re.sub(r"[^A-Z0-9]+", " ", t)
-    t = re.sub(r"\d+", " ", t)
     tokens = [tok for tok in t.split() if tok not in PACK_WORDS]
     chave = " ".join(tokens).strip()
     if chave:

@@ -10,13 +10,23 @@ from compras_itens_consumo_utils import (
 )
 
 
-def test_chave_ignora_quantidade_e_embalagem():
-    assert chave_item_consumo("Álcool 70% 12 un") == "ALCOOL"
-    assert chave_item_consumo("Arroz tipo 1 fardo") == "ARROZ"
+def test_chave_preserva_medida_e_ignora_embalagem():
+    assert chave_item_consumo("Álcool 70% 12 un") == "ALCOOL 70 12"
+    # "tipo" entra em PACK_WORDS (embalagem/rotulo genérico).
+    assert chave_item_consumo("Arroz tipo 1 fardo") == "ARROZ 1"
+    assert chave_item_consumo("Luminária Sobrepor Quadrada 21 Cm") == (
+        "LUMINARIA SOBREPOR QUADRADA 21 CM"
+    )
+    assert chave_item_consumo("Luminária Sobrepor Quadrada 28 Cm") == (
+        "LUMINARIA SOBREPOR QUADRADA 28 CM"
+    )
+    assert chave_item_consumo("Luminária Sobrepor Quadrada 21 Cm") != (
+        chave_item_consumo("Luminária Sobrepor Quadrada 28 Cm")
+    )
 
 
 def test_chave_vazia_usa_fallback():
-    assert chave_item_consumo("12 un") == "12 UN"
+    assert chave_item_consumo("12 un") == "12"
 
 
 def test_filtrar_mostra_ao_digitar():

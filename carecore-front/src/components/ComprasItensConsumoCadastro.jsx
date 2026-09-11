@@ -4,6 +4,7 @@ import { Eye, Pencil, Plus, RefreshCw, Search, X } from 'lucide-react';
 import ModalFichaItemConsumo from './ModalFichaItemConsumo';
 import { CampoSelect, CampoTexto } from './UsuariosCampos';
 import { EmptyState, PremiumBadge, PremiumButton, ReportActionButton, SectionCard } from './PremiumUI';
+import { useFecharSoNoBackdrop } from '../hooks/useFecharSoNoBackdrop';
 import { comprasSalvarItemConsumo } from '../services/comprasService';
 import {
   exportarItensConsumo,
@@ -61,6 +62,7 @@ export default function ComprasItensConsumoCadastro({
   const [ficha, setFicha] = useState(null);
   const [salvando, setSalvando] = useState(false);
   const tabelaTopoRef = useRef(null);
+  const { onMouseDownBackdrop, onClickBackdrop } = useFecharSoNoBackdrop(() => setFormAberto(false));
 
   const categoriasFiltradas = useMemo(() => {
     if (!filtroSegmento) return categorias;
@@ -457,7 +459,8 @@ export default function ComprasItensConsumoCadastro({
           role="dialog"
           aria-modal="true"
           aria-labelledby="form-item-consumo-titulo"
-          onClick={() => setFormAberto(false)}
+          onMouseDown={onMouseDownBackdrop}
+          onClick={onClickBackdrop}
         >
           <form
             className="flex w-full max-w-xl flex-col overflow-hidden rounded-2xl bg-white shadow-xl"
