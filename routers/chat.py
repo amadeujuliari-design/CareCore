@@ -24,6 +24,7 @@ from security import (
     PERFIL_GESTOR,
     PERFIL_GLOBAL,
     PERFIL_MANUTENCAO,
+    PERFIS_ADM_COMPRAS_SEDE,
     get_usuario_logado,
     normalizar_perfil_acesso,
     usuario_eh_adm_compras,
@@ -83,7 +84,7 @@ def origem_pode_listar_destino(origem, destino) -> bool:
         return perfil_destino in {
             PERFIL_ADM_GLOBAL,
             PERFIL_ADM_PRODUCAO,
-            PERFIL_ADM_COMPRAS,
+            *PERFIS_ADM_COMPRAS_SEDE,
             PERFIL_ADM_PEDIDOS,
             PERFIL_GESTOR,
             PERFIL_MANUTENCAO,
@@ -94,7 +95,7 @@ def origem_pode_listar_destino(origem, destino) -> bool:
             perfil_destino in {
                 PERFIL_ADM_GLOBAL,
                 PERFIL_ADM_PRODUCAO,
-                PERFIL_ADM_COMPRAS,
+                *PERFIS_ADM_COMPRAS_SEDE,
                 PERFIL_ADM_PEDIDOS,
                 PERFIL_MANUTENCAO,
             }
@@ -107,7 +108,7 @@ def origem_pode_listar_destino(origem, destino) -> bool:
     if _instituicao_de(destino) == _instituicao_de(origem):
         return True
     return (
-        perfil_destino in {PERFIL_ADM_GLOBAL, PERFIL_ADM_COMPRAS, PERFIL_MANUTENCAO}
+        perfil_destino in {PERFIL_ADM_GLOBAL, *PERFIS_ADM_COMPRAS_SEDE, PERFIL_MANUTENCAO}
         or _eh_global_chat(destino)
     )
 

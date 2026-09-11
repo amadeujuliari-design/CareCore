@@ -355,7 +355,7 @@ export default function ComprasPedidoNovo() {
             ) : null}
 
             {tipo === TIPO_MANUTENCAO ? (
-              <SectionCard title="Manutenção">
+              <SectionCard title="Itens de manutenção">
                 <div className="space-y-3">
                   <label>
                     <span className="mb-1 block text-xs font-semibold text-slate-600">Patrimônio (opcional)</span>

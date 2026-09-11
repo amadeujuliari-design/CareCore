@@ -40,7 +40,7 @@ import { carecoreVersaoRotulo } from './config/versao';
 import { MENU_ACOMPANHAMENTOS, MENU_CONVIVENTES } from './config/acompanhamentosConfig';
 import { acompanhamentoAtivo, moduloAtivo } from './config/configOperacionalDefaults';
 import { useConfigOperacional } from './hooks/useConfigOperacional';
-import { usuarioEhAdmCompras, usuarioEhAdmGlobal, usuarioEhAdmPedidos, usuarioEhAdmProducao, usuarioEhOficineiro, normalizarPerfilRbac, usuarioPodeVerCompras, usuarioPodeAcessarModuloOperacional, PERFIL_ADM_COMPRAS, PERFIL_ADM_GLOBAL, PERFIL_ADM_PRODUCAO } from './utils/rbacUtils';
+import { usuarioEhAdmCompras, usuarioEhAdmGlobal, usuarioEhAdmPedidos, usuarioEhAdmProducao, usuarioEhOficineiro, normalizarPerfilRbac, usuarioPodeVerCompras, usuarioPodeAcessarModuloOperacional, PERFIS_ADM_COMPRAS_SEDE, PERFIL_ADM_GLOBAL, PERFIL_ADM_PRODUCAO } from './utils/rbacUtils';
 import { decodificarPayloadJwt } from './utils/jwtUtils';
 import { usuarioOrganizacaoFinanceira } from './utils/orgPacoteUtils';
 import FinanceSidebar from './components/FinanceSidebar';
@@ -447,7 +447,7 @@ export default function Sidebar() {
           path: '/usuarios',
           icon: UserRoundCog,
           label: 'Usuários',
-          perfis: ['Gestor', 'Global', PERFIL_ADM_GLOBAL, PERFIL_ADM_COMPRAS]
+          perfis: ['Gestor', 'Global', PERFIL_ADM_GLOBAL, ...PERFIS_ADM_COMPRAS_SEDE]
         },
         {
           path: '/suporte',
@@ -476,7 +476,7 @@ export default function Sidebar() {
               icon: FilePenLine,
               label: 'Aguardando assinatura',
               feature: 'compras',
-              perfis: [PERFIL_ADM_COMPRAS, 'Manutenção'],
+              perfis: [...PERFIS_ADM_COMPRAS_SEDE, 'Manutenção'],
             },
             {
               path: '/compras?aba=itens',
@@ -501,7 +501,7 @@ export default function Sidebar() {
               icon: UserRoundCog,
               label: 'Usuários ADM Global Compras',
               feature: 'compras',
-              perfis: ['Global', PERFIL_ADM_COMPRAS, 'Manutenção'],
+              perfis: ['Global', ...PERFIS_ADM_COMPRAS_SEDE, 'Manutenção'],
             },
           ],
         },

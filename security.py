@@ -71,7 +71,9 @@ PERFIL_GESTOR = "Gestor"
 PERFIL_GLOBAL = "Global"
 PERFIL_ADM_GLOBAL = "ADM Global NFP"
 PERFIL_ADM_PRODUCAO = "ADM Produção NFP"
-PERFIL_ADM_COMPRAS = "ADM Global Compras"
+PERFIL_ADM_COMPRAS = "ADM Global Compras"  # legado (transição)
+PERFIL_ADM_COMPRAS_SUPRIMENTOS = "ADM Global Compras Suprimentos"
+PERFIL_ADM_COMPRAS_INFRAESTRUTURA = "ADM Global Compras Infraestrutura"
 PERFIL_ADM_PEDIDOS = "ADM Pedidos"
 PERFIL_MANUTENCAO = "Manutenção"
 PERFIL_TECNICO = "Técnico"
@@ -86,6 +88,8 @@ PERFIS_ACESSO_VALIDOS = {
     PERFIL_ADM_GLOBAL,
     PERFIL_ADM_PRODUCAO,
     PERFIL_ADM_COMPRAS,
+    PERFIL_ADM_COMPRAS_SUPRIMENTOS,
+    PERFIL_ADM_COMPRAS_INFRAESTRUTURA,
     PERFIL_ADM_PEDIDOS,
     PERFIL_MANUTENCAO,
     PERFIL_TECNICO,
@@ -100,6 +104,8 @@ PERFIS_EXCLUIDOS_LISTA_PROJETO = {
     PERFIL_MANUTENCAO,
     PERFIL_ADM_GLOBAL,
     PERFIL_ADM_COMPRAS,
+    PERFIL_ADM_COMPRAS_SUPRIMENTOS,
+    PERFIL_ADM_COMPRAS_INFRAESTRUTURA,
 }
 
 PERFIS_ADM_NFP_ORG = {
@@ -109,7 +115,15 @@ PERFIS_ADM_NFP_ORG = {
 
 PERFIS_ADM_COMPRAS_ORG = {
     PERFIL_ADM_COMPRAS,
+    PERFIL_ADM_COMPRAS_SUPRIMENTOS,
+    PERFIL_ADM_COMPRAS_INFRAESTRUTURA,
     PERFIL_ADM_PEDIDOS,
+}
+
+PERFIS_ADM_COMPRAS_SEDE = {
+    PERFIL_ADM_COMPRAS,
+    PERFIL_ADM_COMPRAS_SUPRIMENTOS,
+    PERFIL_ADM_COMPRAS_INFRAESTRUTURA,
 }
 
 PERFIS_LEGADOS_MAPEAMENTO = {
@@ -130,6 +144,10 @@ PERFIS_LEGADOS_MAPEAMENTO = {
     "Adm Compras": PERFIL_ADM_COMPRAS,
     "ADMCompras": PERFIL_ADM_COMPRAS,
     "ADM Compras": PERFIL_ADM_COMPRAS,
+    "Adm Compras Suprimentos": PERFIL_ADM_COMPRAS_SUPRIMENTOS,
+    "ADM Compras Suprimentos": PERFIL_ADM_COMPRAS_SUPRIMENTOS,
+    "Adm Compras Infraestrutura": PERFIL_ADM_COMPRAS_INFRAESTRUTURA,
+    "ADM Compras Infraestrutura": PERFIL_ADM_COMPRAS_INFRAESTRUTURA,
     "Adm Pedidos": PERFIL_ADM_PEDIDOS,
     "ADMPedidos": PERFIL_ADM_PEDIDOS,
 }
@@ -279,7 +297,27 @@ def usuario_eh_adm_compras(usuario: dict | UsuarioDB | None) -> bool:
         perfil = normalizar_perfil_acesso(usuario.get("perfil_acesso"))
     else:
         perfil = normalizar_perfil_acesso(getattr(usuario, "perfil_acesso", None))
-    return perfil == PERFIL_ADM_COMPRAS
+    return perfil in PERFIS_ADM_COMPRAS_SEDE
+
+
+def usuario_eh_adm_compras_suprimentos(usuario: dict | UsuarioDB | None) -> bool:
+    if not usuario or usuario_eh_manutencao(usuario):
+        return False
+    if isinstance(usuario, dict):
+        perfil = normalizar_perfil_acesso(usuario.get("perfil_acesso"))
+    else:
+        perfil = normalizar_perfil_acesso(getattr(usuario, "perfil_acesso", None))
+    return perfil == PERFIL_ADM_COMPRAS_SUPRIMENTOS
+
+
+def usuario_eh_adm_compras_infraestrutura(usuario: dict | UsuarioDB | None) -> bool:
+    if not usuario or usuario_eh_manutencao(usuario):
+        return False
+    if isinstance(usuario, dict):
+        perfil = normalizar_perfil_acesso(usuario.get("perfil_acesso"))
+    else:
+        perfil = normalizar_perfil_acesso(getattr(usuario, "perfil_acesso", None))
+    return perfil == PERFIL_ADM_COMPRAS_INFRAESTRUTURA
 
 
 def usuario_eh_adm_pedidos(usuario: dict | UsuarioDB | None) -> bool:

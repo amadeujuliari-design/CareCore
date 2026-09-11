@@ -52,10 +52,13 @@ import {
 } from './utils/usuariosUtils';
 import { decodificarPayloadJwt } from './utils/jwtUtils';
 import {
-  PERFIL_ADM_COMPRAS,
+  PERFIL_ADM_COMPRAS_INFRAESTRUTURA,
+  PERFIL_ADM_COMPRAS_SUPRIMENTOS,
   PERFIL_ADM_GLOBAL,
   PERFIL_ADM_PEDIDOS,
   PERFIL_ADM_PRODUCAO,
+  PERFIS_ADM_COMPRAS_SEDE,
+  usuarioEhAdmCompras,
   usuarioPodeGerenciarAdmGlobalOrg,
 } from './utils/rbacUtils';
 import { comprasUnidades } from './services/comprasService';
@@ -230,10 +233,20 @@ export default function Usuarios() {
   const perfisOrgDisponiveis = useMemo(() => {
     const perfil = usuarioAuth?.perfil_acesso || '';
     if (usuarioAuth?.is_manutencao || usuarioAuth?.is_global || perfil === 'Global') {
-      return [PERFIL_ADM_GLOBAL, PERFIL_ADM_PRODUCAO, PERFIL_ADM_COMPRAS, PERFIL_ADM_PEDIDOS];
+      return [
+        PERFIL_ADM_GLOBAL,
+        PERFIL_ADM_PRODUCAO,
+        PERFIL_ADM_COMPRAS_SUPRIMENTOS,
+        PERFIL_ADM_COMPRAS_INFRAESTRUTURA,
+        PERFIL_ADM_PEDIDOS,
+      ];
     }
-    if (perfil === PERFIL_ADM_COMPRAS) {
-      return [PERFIL_ADM_COMPRAS, PERFIL_ADM_PEDIDOS];
+    if (PERFIS_ADM_COMPRAS_SEDE.includes(perfil) || usuarioEhAdmCompras(usuarioAuth)) {
+      return [
+        PERFIL_ADM_COMPRAS_SUPRIMENTOS,
+        PERFIL_ADM_COMPRAS_INFRAESTRUTURA,
+        PERFIL_ADM_PEDIDOS,
+      ];
     }
     return [PERFIL_ADM_GLOBAL, PERFIL_ADM_PRODUCAO];
   }, [usuarioAuth]);
@@ -241,7 +254,7 @@ export default function Usuarios() {
     (perfil) => perfil === PERFIL_ADM_GLOBAL || perfil === PERFIL_ADM_PRODUCAO,
   );
   const temComprasOrg = perfisOrgDisponiveis.some(
-    (perfil) => perfil === PERFIL_ADM_COMPRAS || perfil === PERFIL_ADM_PEDIDOS,
+    (perfil) => PERFIS_ADM_COMPRAS_SEDE.includes(perfil) || perfil === PERFIL_ADM_PEDIDOS,
   );
   const rotuloAbaOrg = temNfpOrg && temComprasOrg
     ? 'Usuários da organização (NFP e Compras)'
@@ -419,15 +432,21 @@ export default function Usuarios() {
     const perfilInicial = escopoLista === 'organizacao'
       ? (perfisOrgDisponiveis[0] || PERFIL_ADM_PRODUCAO)
       : 'Consulta';
-    const cargoOrg = perfilInicial === PERFIL_ADM_COMPRAS
-      ? PERFIL_ADM_COMPRAS
-      : perfilInicial === PERFIL_ADM_PEDIDOS
-        ? PERFIL_ADM_PEDIDOS
-        : perfilInicial === PERFIL_ADM_GLOBAL
-          ? PERFIL_ADM_GLOBAL
-          : PERFIL_ADM_PRODUCAO;
-    const setorOrg = perfilInicial === PERFIL_ADM_COMPRAS || perfilInicial === PERFIL_ADM_PEDIDOS
-      ? (perfilInicial === PERFIL_ADM_PEDIDOS ? 'Compras – Unidade' : 'Compras – Sede')
+    const cargoOrg = perfilInicial === PERFIL_ADM_COMPRAS_SUPRIMENTOS
+      ? 'ADM Compras Suprimentos'
+      : perfilInicial === PERFIL_ADM_COMPRAS_INFRAESTRUTURA
+        ? 'ADM Compras Infraestrutura'
+        : perfilInicial === PERFIL_ADM_PEDIDOS
+          ? PERFIL_ADM_PEDIDOS
+          : perfilInicial === PERFIL_ADM_GLOBAL
+            ? PERFIL_ADM_GLOBAL
+            : PERFIL_ADM_PRODUCAO;
+    const setorOrg = PERFIS_ADM_COMPRAS_SEDE.includes(perfilInicial) || perfilInicial === PERFIL_ADM_PEDIDOS
+      ? (perfilInicial === PERFIL_ADM_PEDIDOS
+        ? 'Compras – Unidade'
+        : perfilInicial === PERFIL_ADM_COMPRAS_INFRAESTRUTURA
+          ? 'Compras – Sede Infraestrutura'
+          : 'Compras – Sede Suprimentos')
       : 'NFP – Créditos';
     setForm({
       ...FORM_INICIAL,
@@ -1103,7 +1122,7 @@ export default function Usuarios() {
             )}
             {temComprasOrg && (
               <>
-                ADM Global Compras atua na Sede do módulo Compras. ADM Pedidos fica ligado a um projeto e é administrado também pelo gestor da unidade. ADM Global NFP não cria esses perfis.
+                ADM Global Compras Suprimentos e Infraestrutura atuam na Sede do módulo Compras (cada um no seu escopo). ADM Pedidos fica ligado a um projeto e é administrado também pelo gestor da unidade. ADM Global NFP não cria esses perfis.
               </>
             )}
           </div>
@@ -1111,7 +1130,7 @@ export default function Usuarios() {
 
         {escopoLista === 'projeto' && (
           <div className="mb-4 rounded-xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm text-slate-700">
-            ADM Produção NFP deste projeto ({nomeProjetoAtual || 'projeto atual'}) aparece aqui para o gestor administrar. ADM Pedidos da unidade também. ADM Global NFP e ADM Global Compras continuam apenas na aba Usuários da organização.
+            ADM Produção NFP deste projeto ({nomeProjetoAtual || 'projeto atual'}) aparece aqui para o gestor administrar. ADM Pedidos da unidade também. ADM Global NFP e ADM Global Compras (Suprimentos/Infraestrutura) continuam apenas na aba Usuários da organização.
           </div>
         )}
 

@@ -167,8 +167,12 @@ def test_periodo_janela_nao_inverte_nem_muda_de_mes():
 def test_rbac_visibilidade():
     assert usuario_ve_modulo_compras(perfil="ADM Global Compras", compras_modulo_ativo=False, org_compras_ativo=False)
     assert usuario_ve_modulo_compras(perfil="ADM Compras", compras_modulo_ativo=False, org_compras_ativo=False)
+    assert usuario_ve_modulo_compras(perfil="ADM Global Compras Suprimentos", compras_modulo_ativo=False, org_compras_ativo=False)
+    assert usuario_ve_modulo_compras(perfil="ADM Global Compras Infraestrutura", compras_modulo_ativo=False, org_compras_ativo=False)
     assert usuario_e_sede_compras(perfil="ADM Global Compras")
     assert usuario_e_sede_compras(perfil="ADM Compras")
+    assert usuario_e_sede_compras(perfil="ADM Global Compras Suprimentos")
+    assert usuario_e_sede_compras(perfil="ADM Global Compras Infraestrutura")
     assert usuario_pode_aprovar_sede(perfil="ADM Global Compras")
     assert not usuario_e_sede_compras(perfil="ADM Pedidos")
     assert not usuario_ve_modulo_compras(perfil="ADM Pedidos", compras_modulo_ativo=False, org_compras_ativo=False)
@@ -198,14 +202,16 @@ def test_tres_cotacoes_imobilizado():
 
 
 def test_tipos_cotacao_projeto():
-    from compras_regras import exige_tres_cotacoes, rotulo_tipo_pedido, tipo_eh_cotacao_projeto
+    from compras_regras import exige_tres_cotacoes, rotulo_tipo_pedido, tipo_eh_cotacao_projeto, tipo_eh_cotacao_sede
 
     assert tipo_eh_cotacao_projeto("imobilizado")
-    assert tipo_eh_cotacao_projeto("manutencao")
     assert tipo_eh_cotacao_projeto("servico")
+    assert not tipo_eh_cotacao_projeto("manutencao")
     assert not tipo_eh_cotacao_projeto("consumo")
+    assert tipo_eh_cotacao_sede("manutencao")
     assert exige_tres_cotacoes("servico")
-    assert rotulo_tipo_pedido("manutencao") == "Manutenção"
+    assert not exige_tres_cotacoes("manutencao")
+    assert rotulo_tipo_pedido("manutencao") == "Itens de manutenção"
     assert pedido_pronto_para_aprovacao_unidade("consumo", 1, True)
     assert not pedido_pronto_para_aprovacao_unidade("consumo", 1, False)
     assert aviso_cotacoes_insuficientes(2)
@@ -312,7 +318,7 @@ def test_competencia_orcamento():
 
     assert normalizar_competencia_orcamento("projeto") == COMPETENCIA_PROJETO
     assert normalizar_competencia_orcamento("sede") == COMPETENCIA_SEDE
-    assert competencia_padrao_do_segmento("manutencao") == COMPETENCIA_PROJETO
+    assert competencia_padrao_do_segmento("manutencao") == COMPETENCIA_SEDE
     assert competencia_padrao_do_segmento("consumo") == COMPETENCIA_SEDE
 
 

@@ -35,10 +35,13 @@ from schemas import (
 )
 from security import (
     PERFIL_ADM_COMPRAS,
+    PERFIL_ADM_COMPRAS_INFRAESTRUTURA,
+    PERFIL_ADM_COMPRAS_SUPRIMENTOS,
     PERFIL_ADM_GLOBAL,
     PERFIL_ADM_PEDIDOS,
     PERFIL_ADM_PRODUCAO,
     PERFIS_ADM_COMPRAS_ORG,
+    PERFIS_ADM_COMPRAS_SEDE,
     PERFIS_ADM_NFP_ORG,
     get_usuario_logado,
     gerar_hash_senha,
@@ -68,6 +71,8 @@ PERFIS_ACESSO_VALIDOS = {
     PERFIL_ADM_GLOBAL,
     PERFIL_ADM_PRODUCAO,
     PERFIL_ADM_COMPRAS,
+    PERFIL_ADM_COMPRAS_SUPRIMENTOS,
+    PERFIL_ADM_COMPRAS_INFRAESTRUTURA,
     PERFIL_ADM_PEDIDOS,
     "Manutenção",
     "Técnico",
@@ -94,6 +99,10 @@ PERFIS_LEGADOS_MAPEAMENTO = {
     "Adm Compras": PERFIL_ADM_COMPRAS,
     "ADMCompras": PERFIL_ADM_COMPRAS,
     "ADM Compras": PERFIL_ADM_COMPRAS,
+    "Adm Compras Suprimentos": PERFIL_ADM_COMPRAS_SUPRIMENTOS,
+    "ADM Compras Suprimentos": PERFIL_ADM_COMPRAS_SUPRIMENTOS,
+    "Adm Compras Infraestrutura": PERFIL_ADM_COMPRAS_INFRAESTRUTURA,
+    "ADM Compras Infraestrutura": PERFIL_ADM_COMPRAS_INFRAESTRUTURA,
     "Adm Pedidos": PERFIL_ADM_PEDIDOS,
     "ADMPedidos": PERFIL_ADM_PEDIDOS,
 }
@@ -209,7 +218,11 @@ async def resolver_instituicao_adm_pedidos(
 
 
 def cargo_setor_adm_org(perfil: str, payload) -> tuple[str, str]:
-    if perfil == PERFIL_ADM_COMPRAS:
+    if perfil in PERFIS_ADM_COMPRAS_SEDE:
+        if perfil == PERFIL_ADM_COMPRAS_SUPRIMENTOS:
+            return (payload.cargo or "ADM Compras Suprimentos", payload.setor or "Compras – Sede Suprimentos")
+        if perfil == PERFIL_ADM_COMPRAS_INFRAESTRUTURA:
+            return (payload.cargo or "ADM Compras Infraestrutura", payload.setor or "Compras – Sede Infraestrutura")
         return (payload.cargo or "ADM Compras", payload.setor or "Compras – Sede")
     if perfil == PERFIL_ADM_PEDIDOS:
         return (payload.cargo or "ADM Pedidos", payload.setor or "Compras – Unidade")
@@ -609,6 +622,8 @@ async def listar_usuarios(
         UsuarioDB.perfil_acesso != "Manutenção",
         UsuarioDB.perfil_acesso != PERFIL_ADM_GLOBAL,
         UsuarioDB.perfil_acesso != PERFIL_ADM_COMPRAS,
+        UsuarioDB.perfil_acesso != PERFIL_ADM_COMPRAS_SUPRIMENTOS,
+        UsuarioDB.perfil_acesso != PERFIL_ADM_COMPRAS_INFRAESTRUTURA,
         UsuarioDB.perfil_acesso != PERFIL_ADM_PRODUCAO,
     ]
 
@@ -991,7 +1006,7 @@ async def criar_usuario(
     usuario_atual: dict = Depends(exigir_gestor_ou_global),
 ):
     perfil_normalizado = normalizar_perfil_acesso(payload.perfil_acesso)
-    if perfil_normalizado in {PERFIL_ADM_GLOBAL, PERFIL_ADM_COMPRAS}:
+    if perfil_normalizado in {PERFIL_ADM_GLOBAL, *PERFIS_ADM_COMPRAS_SEDE}:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Crie usuários ADM Global e ADM Compras na aba Usuários da organização.",
@@ -1130,7 +1145,7 @@ async def editar_usuario(
     perfil_final = normalizar_perfil_acesso(
         dados.get("perfil_acesso") or usuario.perfil_acesso
     )
-    if perfil_final in {PERFIL_ADM_GLOBAL, PERFIL_ADM_COMPRAS}:
+    if perfil_final in {PERFIL_ADM_GLOBAL, *PERFIS_ADM_COMPRAS_SEDE}:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Usuários ADM Global e ADM Compras são gerenciados na aba Usuários da organização.",

@@ -20,10 +20,14 @@ TIPOS_PEDIDO = (
     TIPO_HORTIFRUTI,
 )
 
-# Cotação conduzida pelo projeto (ADM Pedidos): bem, manutenção, serviço.
-TIPOS_COTACAO_PROJETO = frozenset({TIPO_IMOBILIZADO, TIPO_MANUTENCAO, TIPO_SERVICO})
-# Cotação conduzida pela Sede (ADM Compras): consumo (janela) e hortifruti (sem janela).
-TIPOS_COTACAO_SEDE = frozenset({TIPO_CONSUMO, TIPO_HORTIFRUTI})
+# Cotação conduzida pelo projeto (ADM Pedidos): bem e prestação de serviço.
+TIPOS_COTACAO_PROJETO = frozenset({TIPO_IMOBILIZADO, TIPO_SERVICO})
+# Cotação conduzida pela Sede (Suprimentos): consumo, hortifruti e itens de manutenção.
+TIPOS_COTACAO_SEDE = frozenset({TIPO_CONSUMO, TIPO_HORTIFRUTI, TIPO_MANUTENCAO})
+
+# Visão por classe de ADM Global Compras na Sede.
+TIPOS_VISAO_SUPRIMENTOS = frozenset({TIPO_CONSUMO, TIPO_HORTIFRUTI, TIPO_MANUTENCAO})
+TIPOS_VISAO_INFRAESTRUTURA = frozenset({TIPO_IMOBILIZADO, TIPO_SERVICO})
 
 URGENCIA_NORMAL = "normal"
 URGENCIA_URGENTE = "urgente"
@@ -36,7 +40,7 @@ TIPOS_MANUTENCAO = (MANUTENCAO_CORRETIVA, MANUTENCAO_PREVENTIVA)
 ROTULO_TIPO_PEDIDO = {
     TIPO_CONSUMO: "Consumo",
     TIPO_IMOBILIZADO: "Bem / imobilizado",
-    TIPO_MANUTENCAO: "Manutenção",
+    TIPO_MANUTENCAO: "Itens de manutenção",
     TIPO_SERVICO: "Prestação de serviço",
     TIPO_HORTIFRUTI: "Hortifruti",
 }
@@ -172,8 +176,16 @@ ESCOPO_SEDE = "sede"
 ESCOPOS_UNIDADE = (ESCOPO_PROJETO, ESCOPO_SEDE)
 
 PERFIS_PROJETO_ELEGIVEIS = frozenset({"Gestor", "Técnico", "Administrativo"})
-PERFIL_ADM_COMPRAS = "ADM Global Compras"
+PERFIL_ADM_COMPRAS = "ADM Global Compras"  # legado (transição)
+PERFIL_ADM_COMPRAS_SUPRIMENTOS = "ADM Global Compras Suprimentos"
+PERFIL_ADM_COMPRAS_INFRAESTRUTURA = "ADM Global Compras Infraestrutura"
 PERFIL_ADM_PEDIDOS = "ADM Pedidos"
+
+PERFIS_ADM_COMPRAS_SEDE = frozenset({
+    PERFIL_ADM_COMPRAS,
+    PERFIL_ADM_COMPRAS_SUPRIMENTOS,
+    PERFIL_ADM_COMPRAS_INFRAESTRUTURA,
+})
 
 CATEGORIAS_PADRAO = (
     "Alimentação",
@@ -208,7 +220,7 @@ SEGMENTOS_CATALOGO = (
 
 ROTULO_SEGMENTO_CATALOGO = {
     SEGMENTO_CONSUMO: "Consumo (janela)",
-    SEGMENTO_MANUTENCAO: "Manutenção",
+    SEGMENTO_MANUTENCAO: "Itens de manutenção",
     SEGMENTO_IMOBILIZADO: "Bem / imobilizado",
     SEGMENTO_SERVICO: "Prestação de serviço",
     SEGMENTO_HORTIFRUTI: "Hortifruti (sem janela)",
@@ -282,7 +294,7 @@ def normalizar_competencia_orcamento(valor: Optional[str]) -> str:
 
 def competencia_padrao_do_segmento(segmento: Optional[str]) -> str:
     seg = normalizar_segmento_catalogo(segmento)
-    if seg in {SEGMENTO_MANUTENCAO, SEGMENTO_IMOBILIZADO, SEGMENTO_SERVICO}:
+    if seg in {SEGMENTO_IMOBILIZADO, SEGMENTO_SERVICO}:
         return COMPETENCIA_PROJETO
     return COMPETENCIA_SEDE
 
@@ -529,8 +541,26 @@ def pode_enviar_consumo(
 
 def _perfil_adm_compras(perfil: str) -> str:
     texto = (perfil or "").strip()
-    if texto in {"ADM Compras", "Adm Compras", "ADMCompras"}:
+    if texto in {
+        "ADM Compras",
+        "Adm Compras",
+        "ADMCompras",
+        PERFIL_ADM_COMPRAS,
+    }:
         return PERFIL_ADM_COMPRAS
+    if texto in {
+        PERFIL_ADM_COMPRAS_SUPRIMENTOS,
+        "ADM Compras Suprimentos",
+        "Adm Compras Suprimentos",
+    }:
+        return PERFIL_ADM_COMPRAS_SUPRIMENTOS
+    if texto in {
+        PERFIL_ADM_COMPRAS_INFRAESTRUTURA,
+        "ADM Compras Infraestrutura",
+        "Adm Compras Infraestrutura",
+        "ADM Global Compras Infra",
+    }:
+        return PERFIL_ADM_COMPRAS_INFRAESTRUTURA
     return texto
 
 
@@ -544,8 +574,8 @@ def usuario_ve_modulo_compras(
     if is_manutencao:
         return True
     perfil_n = _perfil_adm_compras(perfil)
-    # ADM Compras entra mesmo com o SaaS desligado — é quem liga o módulo da org.
-    if perfil_n == PERFIL_ADM_COMPRAS:
+    # ADM Compras (classes da Sede) entra mesmo com o SaaS desligado — é quem liga o módulo da org.
+    if perfil_n in PERFIS_ADM_COMPRAS_SEDE:
         return True
     if not org_compras_ativo:
         return False
@@ -591,16 +621,42 @@ def usuario_pode_aprovar_unidade(
 
 
 def usuario_pode_aprovar_sede(*, perfil: str, is_manutencao: bool = False) -> bool:
-    return is_manutencao or _perfil_adm_compras(perfil) == PERFIL_ADM_COMPRAS
+    return is_manutencao or _perfil_adm_compras(perfil) in PERFIS_ADM_COMPRAS_SEDE
 
 
 def usuario_e_sede_compras(*, perfil: str, is_manutencao: bool = False) -> bool:
-    return is_manutencao or _perfil_adm_compras(perfil) == PERFIL_ADM_COMPRAS
+    return is_manutencao or _perfil_adm_compras(perfil) in PERFIS_ADM_COMPRAS_SEDE
+
+
+def tipos_visiveis_adm_compras(*, perfil: str, is_manutencao: bool = False) -> Optional[frozenset]:
+    """Tipos que a classe da Sede enxerga. None = todos (Manutenção ops ou legado)."""
+    if is_manutencao:
+        return None
+    perfil_n = _perfil_adm_compras(perfil)
+    if perfil_n == PERFIL_ADM_COMPRAS_SUPRIMENTOS:
+        return TIPOS_VISAO_SUPRIMENTOS
+    if perfil_n == PERFIL_ADM_COMPRAS_INFRAESTRUTURA:
+        return TIPOS_VISAO_INFRAESTRUTURA
+    if perfil_n == PERFIL_ADM_COMPRAS:
+        return None
+    return frozenset()
+
+
+def usuario_sede_pode_ver_tipo(
+    *,
+    perfil: str,
+    tipo: Optional[str],
+    is_manutencao: bool = False,
+) -> bool:
+    tipos = tipos_visiveis_adm_compras(perfil=perfil, is_manutencao=is_manutencao)
+    if tipos is None:
+        return True
+    return (tipo or "").strip().lower() in tipos
 
 
 def usuario_pode_cadastrar_mestre_compras(*, perfil: str, is_manutencao: bool = False) -> bool:
-    """Sede (ADM Global Compras) ou ADM Pedidos podem cadastrar itens/fornecedores."""
-    if is_manutencao or _perfil_adm_compras(perfil) == PERFIL_ADM_COMPRAS:
+    """Sede (ADM Global Compras / classes) ou ADM Pedidos podem cadastrar itens/fornecedores."""
+    if is_manutencao or _perfil_adm_compras(perfil) in PERFIS_ADM_COMPRAS_SEDE:
         return True
     return (perfil or "").strip() == PERFIL_ADM_PEDIDOS
 

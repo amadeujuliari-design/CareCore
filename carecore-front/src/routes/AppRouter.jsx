@@ -4,7 +4,7 @@ import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import AusenciaJustificadaAlerta from '../components/AusenciaJustificadaAlerta';
 import AlertaPresencaOperacional from '../components/AlertaPresencaOperacional';
 import ProtectedRoute from './ProtectedRoute';
-import { PERFIS_MODULO_ATIVIDADES, PERFIS_NFP_ENVIO_SEFAZ, PERFIS_NFP_GESTAO, PERFIS_NFP_LEITURA_CUPONS, PERFIL_ADM_COMPRAS, PERFIL_ADM_GLOBAL } from '../utils/rbacUtils';
+import { PERFIS_MODULO_ATIVIDADES, PERFIS_NFP_ENVIO_SEFAZ, PERFIS_NFP_GESTAO, PERFIS_NFP_LEITURA_CUPONS, PERFIS_ADM_COMPRAS_SEDE, PERFIL_ADM_GLOBAL } from '../utils/rbacUtils';
 import { deveExibirManutencaoProgramada } from '../config/manutencao';
 
 const Login = lazy(() => import('../Login'));
@@ -424,7 +424,7 @@ function RotasAplicacao() {
         <Route
           path="/usuarios"
           element={
-            <ProtectedRoute perfis={['Gestor', 'Global', PERFIL_ADM_GLOBAL, PERFIL_ADM_COMPRAS]}>
+            <ProtectedRoute perfis={['Gestor', 'Global', PERFIL_ADM_GLOBAL, ...PERFIS_ADM_COMPRAS_SEDE]}>
               <Usuarios />
             </ProtectedRoute>
           }
@@ -442,7 +442,7 @@ function RotasAplicacao() {
         <Route
           path="/compras/aguardando-assinatura"
           element={
-            <ProtectedRoute perfis={[PERFIL_ADM_COMPRAS, 'Manutenção']}>
+            <ProtectedRoute perfis={[...PERFIS_ADM_COMPRAS_SEDE, 'Manutenção']}>
               <ComprasAguardandoAssinatura />
             </ProtectedRoute>
           }

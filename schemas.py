@@ -314,6 +314,8 @@ PERFIS_ACESSO_VALIDOS = {
     "ADM Global NFP",
     "ADM Produção NFP",
     "ADM Global Compras",
+    "ADM Global Compras Suprimentos",
+    "ADM Global Compras Infraestrutura",
     "ADM Pedidos",
     "Manutenção",
     "Técnico",
@@ -340,6 +342,10 @@ MAPEAMENTO_PERFIS_LEGADOS = {
     "Adm Compras": "ADM Global Compras",
     "ADMCompras": "ADM Global Compras",
     "ADM Compras": "ADM Global Compras",
+    "Adm Compras Suprimentos": "ADM Global Compras Suprimentos",
+    "ADM Compras Suprimentos": "ADM Global Compras Suprimentos",
+    "Adm Compras Infraestrutura": "ADM Global Compras Infraestrutura",
+    "ADM Compras Infraestrutura": "ADM Global Compras Infraestrutura",
     "Adm Pedidos": "ADM Pedidos",
     "ADMPedidos": "ADM Pedidos",
 }
@@ -575,7 +581,7 @@ def normalizar_perfil_acesso(valor: Optional[str]) -> str:
     if perfil not in PERFIS_ACESSO_VALIDOS:
         raise ValueError(
             "Perfil de acesso inválido. "
-            "Use: Gestor, Global, ADM Global NFP, ADM Produção NFP, ADM Global Compras, ADM Pedidos, Manutenção, Técnico, Orientador, Administrativo, Consulta ou Oficineiro(a)."
+            "Use: Gestor, Global, ADM Global NFP, ADM Produção NFP, ADM Global Compras Suprimentos, ADM Global Compras Infraestrutura, ADM Pedidos, Manutenção, Técnico, Orientador, Administrativo, Consulta ou Oficineiro(a)."
         )
 
     return perfil

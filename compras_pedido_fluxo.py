@@ -65,6 +65,7 @@ from compras_regras import (
     usuario_e_sede_compras,
     usuario_pode_aprovar_sede,
     usuario_pode_pedir,
+    usuario_sede_pode_ver_tipo,
 )
 from compras_upload_utils import remover_arquivo_compras, salvar_arquivo_compras
 from email_utils import enviar_email_smtp_com_anexo
@@ -1409,10 +1410,16 @@ async def assinar_orcamento_e_aprovar_sede(
         is_manutencao=bool(usuario.get("is_manutencao")),
     ):
         raise HTTPException(status_code=403, detail="Somente ADM Compras aprova na Sede.")
+    if not usuario_sede_pode_ver_tipo(
+        perfil=str(usuario.get("perfil_acesso") or usuario.get("perfil") or ""),
+        tipo=pedido.tipo,
+        is_manutencao=bool(usuario.get("is_manutencao")),
+    ):
+        raise HTTPException(status_code=403, detail="Pedido fora do escopo da sua classe de Compras.")
     if not tipo_eh_cotacao_projeto(pedido.tipo):
         raise HTTPException(
             status_code=400,
-            detail="Assinatura de orçamento vale para bem, manutenção ou prestação de serviço.",
+            detail="Assinatura de orçamento vale para bem / imobilizado ou prestação de serviço.",
         )
     if pedido.status != STATUS_AGUARDANDO_SEDE:
         raise HTTPException(status_code=400, detail="Pedido não está aguardando aprovação da Sede.")

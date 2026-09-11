@@ -6,7 +6,15 @@ export const PERFIL_OFICINEIRO = 'Oficineiro(a)';
 export const PERFIL_ADM_GLOBAL = 'ADM Global NFP';
 export const PERFIL_ADM_PRODUCAO = 'ADM Produção NFP';
 export const PERFIL_ADM_COMPRAS = 'ADM Global Compras';
+export const PERFIL_ADM_COMPRAS_SUPRIMENTOS = 'ADM Global Compras Suprimentos';
+export const PERFIL_ADM_COMPRAS_INFRAESTRUTURA = 'ADM Global Compras Infraestrutura';
 export const PERFIL_ADM_PEDIDOS = 'ADM Pedidos';
+
+export const PERFIS_ADM_COMPRAS_SEDE = [
+  PERFIL_ADM_COMPRAS,
+  PERFIL_ADM_COMPRAS_SUPRIMENTOS,
+  PERFIL_ADM_COMPRAS_INFRAESTRUTURA,
+];
 export const PERFIS_MODULO_NFP = ['Global', PERFIL_ADM_GLOBAL, PERFIL_ADM_PRODUCAO, 'Manutenção'];
 export const PERFIS_NFP_GESTAO = ['Global', PERFIL_ADM_GLOBAL, 'Manutenção'];
 export const PERFIS_NFP_LEITURA_CUPONS = ['Global', PERFIL_ADM_GLOBAL, PERFIL_ADM_PRODUCAO, 'Manutenção'];
@@ -39,6 +47,10 @@ export function normalizarPerfilRbac(perfil) {
     'Adm Compras': PERFIL_ADM_COMPRAS,
     ADMCompras: PERFIL_ADM_COMPRAS,
     'ADM Compras': PERFIL_ADM_COMPRAS,
+    'Adm Compras Suprimentos': PERFIL_ADM_COMPRAS_SUPRIMENTOS,
+    'ADM Compras Suprimentos': PERFIL_ADM_COMPRAS_SUPRIMENTOS,
+    'Adm Compras Infraestrutura': PERFIL_ADM_COMPRAS_INFRAESTRUTURA,
+    'ADM Compras Infraestrutura': PERFIL_ADM_COMPRAS_INFRAESTRUTURA,
     'Adm Pedidos': PERFIL_ADM_PEDIDOS,
     ADMPedidos: PERFIL_ADM_PEDIDOS,
   };
@@ -98,7 +110,17 @@ export function usuarioEhAdmNfpOrg(usuario) {
 
 export function usuarioEhAdmCompras(usuario) {
   if (!usuario || usuarioEhManutencao(usuario)) return false;
-  return normalizarPerfilRbac(usuario.perfil_acesso) === PERFIL_ADM_COMPRAS;
+  return PERFIS_ADM_COMPRAS_SEDE.includes(normalizarPerfilRbac(usuario.perfil_acesso));
+}
+
+export function usuarioEhAdmComprasSuprimentos(usuario) {
+  if (!usuario || usuarioEhManutencao(usuario)) return false;
+  return normalizarPerfilRbac(usuario.perfil_acesso) === PERFIL_ADM_COMPRAS_SUPRIMENTOS;
+}
+
+export function usuarioEhAdmComprasInfraestrutura(usuario) {
+  if (!usuario || usuarioEhManutencao(usuario)) return false;
+  return normalizarPerfilRbac(usuario.perfil_acesso) === PERFIL_ADM_COMPRAS_INFRAESTRUTURA;
 }
 
 export function usuarioEhAdmPedidos(usuario) {
@@ -321,5 +343,5 @@ export function usuarioPodeGerenciarAdmGlobalOrg(usuario) {
   return usuarioEhManutencao(usuario) || usuario.is_global === true
     || perfil === 'Global'
     || perfil === PERFIL_ADM_GLOBAL
-    || perfil === PERFIL_ADM_COMPRAS;
+    || PERFIS_ADM_COMPRAS_SEDE.includes(perfil);
 }

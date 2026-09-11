@@ -22,6 +22,8 @@ export function BadgePerfil({ perfil }) {
     'ADM Global NFP': 'border-teal-200 bg-teal-50 text-teal-700',
     'ADM Produção NFP': 'border-cyan-200 bg-cyan-50 text-cyan-800',
     'ADM Global Compras': 'border-orange-200 bg-orange-50 text-orange-800',
+    'ADM Global Compras Suprimentos': 'border-orange-200 bg-orange-50 text-orange-800',
+    'ADM Global Compras Infraestrutura': 'border-amber-200 bg-amber-50 text-amber-900',
     'ADM Pedidos': 'border-amber-200 bg-amber-50 text-amber-800',
     'ADM Global': 'border-teal-200 bg-teal-50 text-teal-700',
     'ADM Produção': 'border-cyan-200 bg-cyan-50 text-cyan-800',

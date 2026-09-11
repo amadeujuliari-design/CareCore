@@ -32,7 +32,7 @@ export const SEGMENTOS_CATALOGO = [
 
 export const ROTULO_SEGMENTO_CATALOGO = {
   [SEGMENTO_CONSUMO]: 'Consumo (janela)',
-  [SEGMENTO_MANUTENCAO]: 'Manutenção',
+  [SEGMENTO_MANUTENCAO]: 'Itens de manutenção',
   [SEGMENTO_IMOBILIZADO]: 'Bem / imobilizado',
   [SEGMENTO_SERVICO]: 'Prestação de serviço',
   [SEGMENTO_HORTIFRUTI]: 'Hortifruti (sem janela)',
@@ -40,19 +40,30 @@ export const ROTULO_SEGMENTO_CATALOGO = {
 
 export const TIPOS_COTACAO_PROJETO = new Set([
   TIPO_IMOBILIZADO,
-  TIPO_MANUTENCAO,
   TIPO_SERVICO,
 ]);
 
 export const TIPOS_COTACAO_SEDE = new Set([
   TIPO_CONSUMO,
   TIPO_HORTIFRUTI,
+  TIPO_MANUTENCAO,
+]);
+
+export const TIPOS_VISAO_SUPRIMENTOS = new Set([
+  TIPO_CONSUMO,
+  TIPO_HORTIFRUTI,
+  TIPO_MANUTENCAO,
+]);
+
+export const TIPOS_VISAO_INFRAESTRUTURA = new Set([
+  TIPO_IMOBILIZADO,
+  TIPO_SERVICO,
 ]);
 
 export const ROTULO_TIPO_PEDIDO = {
   [TIPO_CONSUMO]: 'Consumo',
   [TIPO_IMOBILIZADO]: 'Bem / imobilizado',
-  [TIPO_MANUTENCAO]: 'Manutenção',
+  [TIPO_MANUTENCAO]: 'Itens de manutenção',
   [TIPO_SERVICO]: 'Prestação de serviço',
   [TIPO_HORTIFRUTI]: 'Hortifruti',
 };
@@ -112,7 +123,7 @@ export function rotuloCompetenciaOrcamento(valor) {
 
 export function competenciaPadraoDoSegmento(segmento) {
   const seg = normalizarSegmentoCatalogo(segmento);
-  if (seg === SEGMENTO_MANUTENCAO || seg === SEGMENTO_IMOBILIZADO || seg === SEGMENTO_SERVICO) {
+  if (seg === SEGMENTO_IMOBILIZADO || seg === SEGMENTO_SERVICO) {
     return COMPETENCIA_PROJETO;
   }
   return COMPETENCIA_SEDE;
@@ -232,27 +243,27 @@ export const BOTOES_NOVO_PEDIDO = [
   {
     tipo: TIPO_CONSUMO,
     titulo: 'Itens de consumo',
-    descricao: 'Pedido da janela mensal. A Sede pede os orçamentos.',
+    descricao: 'Pedido da janela mensal. A Sede Suprimentos pede os orçamentos.',
   },
   {
     tipo: TIPO_HORTIFRUTI,
     titulo: 'Hortifruti',
-    descricao: 'Frutas, legumes e verduras a qualquer momento. A Sede cota; só o projeto aprova.',
+    descricao: 'Frutas, legumes e verduras a qualquer momento. A Sede Suprimentos cota; só o projeto aprova.',
   },
   {
     tipo: TIPO_IMOBILIZADO,
     titulo: 'Bem / imobilizado',
-    descricao: 'Compra de bem. O projeto pede orçamento e envia à Sede.',
+    descricao: 'Compra de bem. O projeto cota; a Sede Infraestrutura acompanha.',
   },
   {
     tipo: TIPO_MANUTENCAO,
-    titulo: 'Manutenção',
-    descricao: 'Reparos e manutenção. O projeto conduz a cotação.',
+    titulo: 'Itens de manutenção',
+    descricao: 'Reparos e manutenção. A Sede Suprimentos conduz a cotação.',
   },
   {
     tipo: TIPO_SERVICO,
     titulo: 'Prestação de serviço',
-    descricao: 'Serviços. O projeto conduz a cotação.',
+    descricao: 'Serviços. O projeto cota; a Sede Infraestrutura acompanha.',
   },
 ];
 

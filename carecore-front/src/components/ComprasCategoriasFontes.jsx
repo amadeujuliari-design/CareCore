@@ -284,7 +284,7 @@ export default function ComprasCategoriasFontes({
     <div className="space-y-4">
       <ListaNomes
         titulo="Categorias do catálogo"
-        ajuda="Cada categoria tem um uso no pedido: Consumo (janela), Manutenção, Bem/imobilizado ou Serviço. No pedido, a busca só mostra itens do mesmo uso. Carne e Peixe devem ser categorias próprias (uso Consumo) para a janela separar certo."
+        ajuda="Cada categoria tem um uso no pedido: Consumo (janela), Itens de manutenção, Bem/imobilizado ou Serviço. No pedido, a busca só mostra itens do mesmo uso. Carne e Peixe devem ser categorias próprias (uso Consumo) para a janela separar certo."
         itens={categoriasLista}
         colunaUso="Uso"
         campoNovo="Nova categoria"

@@ -104,7 +104,9 @@ from compras_regras import (
     usuario_pode_aprovar_unidade,
     usuario_pode_cadastrar_mestre_compras,
     usuario_pode_pedir,
+    usuario_sede_pode_ver_tipo,
     usuario_ve_modulo_compras,
+    tipos_visiveis_adm_compras,
     validar_periodo_janela,
 )
 from compras_pedido_fluxo import (
@@ -664,6 +666,12 @@ async def obter_pedido(
             raise HTTPException(status_code=403, detail="Pedido da Sede (organização).")
         if pedido.instituicao_id != usuario.get("instituicao_id"):
             raise HTTPException(status_code=403, detail="Pedido de outra unidade.")
+    elif not usuario_sede_pode_ver_tipo(
+        perfil=_perfil(usuario),
+        tipo=pedido.tipo,
+        is_manutencao=bool(usuario.get("is_manutencao")),
+    ):
+        raise HTTPException(status_code=403, detail="Pedido fora do escopo da sua classe de Compras.")
     return pedido
 
 
@@ -679,9 +687,15 @@ async def listar_pedidos(
     if not _sede(usuario):
         filtros.append(ComprasPedidoDB.instituicao_id == usuario.get("instituicao_id"))
     else:
-        # ADM Global Compras: não lista rascunhos (só após envio pelo projeto).
+        # ADM Global Compras (classes): não lista rascunhos (só após envio pelo projeto).
         if not status_filtro:
             filtros.append(ComprasPedidoDB.status != STATUS_RASCUNHO)
+        tipos_visao = tipos_visiveis_adm_compras(
+            perfil=_perfil(usuario),
+            is_manutencao=bool(usuario.get("is_manutencao")),
+        )
+        if tipos_visao is not None:
+            filtros.append(ComprasPedidoDB.tipo.in_(tuple(tipos_visao)))
     if competencia:
         filtros.append(ComprasPedidoDB.competencia == normalizar_competencia(competencia))
     if status_filtro:
