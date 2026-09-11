@@ -405,6 +405,13 @@ HTML = r"""<!DOCTYPE html>
         showMsg('Faça login acima com e-mail e senha do CareCore para ver a fila e enviar.', 'info');
       } else if (state.erro_api) {
         showMsg(state.erro_api, 'err');
+      } else {
+        // Falha de rede pontual (ex.: WinError 10054) nao deve ficar vermelha apos a fila voltar.
+        const el = $('msg');
+        if (el && el.classList.contains('err')) {
+          el.className = 'msg';
+          el.textContent = '';
+        }
       }
     }
 

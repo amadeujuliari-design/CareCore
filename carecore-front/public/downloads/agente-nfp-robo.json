@@ -1,9 +1,9 @@
 ﻿{
     "arquivo":  "agente-nfp-robo.zip",
-    "versao_app":  "1.4.73",
-    "gerado_em":  "2026-08-17 10:22:19",
+    "versao_app":  "1.6.87",
+    "gerado_em":  "2026-09-11 11:01:57",
     "fuso":  "America/Sao_Paulo",
-    "tamanho_bytes":  17329455,
+    "tamanho_bytes":  17335575,
     "instrucoes":  [
                        "Baixe o ZIP. Se o Windows avisar que pode nao ser seguro: OK; botao direito no ZIP -\u003e Propriedades -\u003e Desbloquear -\u003e Aplicar. Se pedir Executar mesmo assim, pode seguir (agente oficial CareCore).",
                        "Descompacte e rode instalar.bat. Nao precisa instalar Python - o ZIP ja traz o Python do agente. E preciso ter Google Chrome.",
