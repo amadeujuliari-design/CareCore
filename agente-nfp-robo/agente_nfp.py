@@ -213,7 +213,13 @@ def parada_solicitada() -> bool:
     return STOP_FLAG.is_file()
 
 
-def rodar_enviar_fila(*, cdp: str, caminho_json: Path, capturar_metadados: bool = True) -> list[dict]:
+def rodar_enviar_fila(
+    *,
+    cdp: str,
+    caminho_json: Path,
+    capturar_metadados: bool = True,
+    captura_tela: bool = True,
+) -> list[dict]:
     if not ENVIAR_FILA.is_file():
         raise RuntimeError(
             "Script do robô ausente: "
@@ -251,7 +257,6 @@ def rodar_enviar_fila(*, cdp: str, caminho_json: Path, capturar_metadados: bool 
     env = os.environ.copy()
     env["PYTHONIOENCODING"] = "utf-8"
     env["CARECORE_NFP_CAPTURAR_METADADOS"] = "1" if capturar_metadados else "0"
-    captura_tela = cfg.get("captura_tela_sefaz", True)
     env["CARECORE_NFP_CAPTURA_TELA"] = "1" if captura_tela else "0"
     print(f"[{_agora()}] Robo: {caminho_json.name} ({cdp})")
     proc = subprocess.run(
@@ -421,6 +426,7 @@ def processar_sessao(
                 cdp=cdp,
                 caminho_json=caminho_json,
                 capturar_metadados=bool(cfg.get("capturar_metadados_sefaz", True)),
+                captura_tela=bool(cfg.get("captura_tela_sefaz", True)),
             )
             if itens:
                 sync = api.aplicar_resultados(itens)
