@@ -104,6 +104,10 @@ export default function NfpLeituraCupons() {
   const [totalLista, setTotalLista] = useState(0);
   const [pagina, setPagina] = useState(1);
   const [filtroStatus, setFiltroStatus] = useState('');
+  const [filtroCaptadorLista, setFiltroCaptadorLista] = useState('');
+  const [filtroUsuario, setFiltroUsuario] = useState('');
+  const [opcoesLeitores, setOpcoesLeitores] = useState([]);
+  const [opcoesCaptadorLista, setOpcoesCaptadorLista] = useState([]);
   const [loadingLista, setLoadingLista] = useState(true);
   const [processando, setProcessando] = useState(false);
   const [cameraAtiva, setCameraAtiva] = useState(!somenteLeitura);
@@ -116,6 +120,8 @@ export default function NfpLeituraCupons() {
   const captadorRef = useRef(captador);
   const paginaRef = useRef(1);
   const filtroStatusRef = useRef('');
+  const filtroCaptadorListaRef = useRef('');
+  const filtroUsuarioRef = useRef('');
   const cameraRootRef = useRef(null);
   const leitorRef = useRef(null);
   const processarLeituraRef = useRef(null);
@@ -132,23 +138,41 @@ export default function NfpLeituraCupons() {
   useEffect(() => {
     filtroStatusRef.current = filtroStatus;
   }, [filtroStatus]);
+  useEffect(() => {
+    filtroCaptadorListaRef.current = filtroCaptadorLista;
+  }, [filtroCaptadorLista]);
+  useEffect(() => {
+    filtroUsuarioRef.current = filtroUsuario;
+  }, [filtroUsuario]);
 
   const carregarLista = useCallback(async ({
     silencioso = false,
     paginaAlvo = null,
     statusAlvo = null,
+    captadorAlvo = null,
+    usuarioAlvo = null,
   } = {}) => {
     if (!silencioso) setLoadingLista(true);
     const paginaUsar = paginaAlvo ?? paginaRef.current;
     const statusUsar = statusAlvo !== null ? statusAlvo : filtroStatusRef.current;
+    const captadorUsar = captadorAlvo !== null ? captadorAlvo : filtroCaptadorListaRef.current;
+    const usuarioUsar = usuarioAlvo !== null ? usuarioAlvo : filtroUsuarioRef.current;
     try {
       const data = await nfpListarCupons({
         limite: PAGE_SIZE,
         offset: (paginaUsar - 1) * PAGE_SIZE,
         status: statusUsar || undefined,
+        captador: captadorUsar || undefined,
+        lido_por_usuario_id: usuarioUsar || undefined,
       });
       setItens(Array.isArray(data?.itens) ? data.itens : []);
       setTotalLista(Number(data?.paginacao?.total ?? data?.total ?? 0));
+      if (paginaUsar === 1) {
+        if (Array.isArray(data?.leitores)) setOpcoesLeitores(data.leitores);
+        if (Array.isArray(data?.captadores) && data.captadores.length) {
+          setOpcoesCaptadorLista(data.captadores);
+        }
+      }
       if (paginaAlvo != null) setPagina(paginaAlvo);
     } catch (error) {
       if (!silencioso) {
@@ -563,6 +587,44 @@ export default function NfpLeituraCupons() {
                         <option value="rejeitado_prazo">Rejeitado prazo</option>
                       </select>
                     </label>
+                    <label className="text-xs text-slate-600">
+                      Projeto
+                      <select
+                        value={filtroCaptadorLista}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          setFiltroCaptadorLista(v);
+                          carregarLista({ paginaAlvo: 1, captadorAlvo: v });
+                        }}
+                        className="ml-2 max-w-[11rem] rounded-lg border border-slate-200 px-2 py-1 text-sm"
+                      >
+                        <option value="">Todos</option>
+                        {(opcoesCaptadorLista.length ? opcoesCaptadorLista : opcoesCaptador).map((op) => (
+                          <option key={op.value || op.label} value={op.value}>
+                            {op.label || op.value}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="text-xs text-slate-600">
+                      Usuário
+                      <select
+                        value={filtroUsuario}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          setFiltroUsuario(v);
+                          carregarLista({ paginaAlvo: 1, usuarioAlvo: v });
+                        }}
+                        className="ml-2 max-w-[12rem] rounded-lg border border-slate-200 px-2 py-1 text-sm"
+                      >
+                        <option value="">Todos</option>
+                        {opcoesLeitores.map((op) => (
+                          <option key={op.id} value={op.id}>
+                            {op.nome || op.id}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
                     <button
                       type="button"
                       className="shrink-0 text-sm text-slate-600 underline"
@@ -570,6 +632,8 @@ export default function NfpLeituraCupons() {
                         try {
                           const data = await nfpListarCupons({
                             status: 'pendente',
+                            captador: filtroCaptadorLista || undefined,
+                            lido_por_usuario_id: filtroUsuario || undefined,
                             limite: 200,
                             offset: 0,
                           });
@@ -642,6 +706,11 @@ export default function NfpLeituraCupons() {
                                 {chaveCurta(item.chave)}
                               </span>
                               <span className="ml-2 text-slate-500">{item.captador}</span>
+                              {item.lido_por_nome ? (
+                                <span className="ml-2 text-xs font-medium text-slate-600">
+                                  · {item.lido_por_nome}
+                                </span>
+                              ) : null}
                               {detalheLeituraCupom(item) ? (
                                 <div className="mt-0.5 break-words text-xs text-slate-500">{detalheLeituraCupom(item)}</div>
                               ) : null}

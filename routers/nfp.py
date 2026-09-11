@@ -18,6 +18,7 @@ from models import (
     NfpCupomLidoDB,
     NfpDoadorDB,
     NfpRateioDB,
+    UsuarioDB,
 )
 from nfp_conferencia_sefaz_service import (
     batimento_pedidos_upload,
@@ -1215,7 +1216,7 @@ async def get_relatorio_cupons(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
-def _serializar_cupom_lido(row: NfpCupomLidoDB) -> dict:
+def _serializar_cupom_lido(row: NfpCupomLidoDB, *, lido_por_nome: Optional[str] = None) -> dict:
     return {
         "id": row.id,
         "chave": row.chave,
@@ -1246,15 +1247,28 @@ def _serializar_cupom_lido(row: NfpCupomLidoDB) -> dict:
         "tp_id_dest": getattr(row, "tp_id_dest", None),
         "mensagem": row.mensagem,
         "url_consulta": row.url_consulta,
+        "lido_por_usuario_id": getattr(row, "lido_por_usuario_id", None),
+        "lido_por_nome": lido_por_nome,
         "lido_em": row.lido_em.isoformat(sep=" ", timespec="seconds") if row.lido_em else None,
         "enviado_em": row.enviado_em.isoformat(sep=" ", timespec="seconds") if row.enviado_em else None,
     }
+
+
+async def _mapa_nomes_usuarios(db: AsyncSession, usuario_ids: list[str]) -> dict[str, str]:
+    ids = [uid for uid in {str(u).strip() for u in usuario_ids if u} if uid]
+    if not ids:
+        return {}
+    rows = (
+        await db.execute(select(UsuarioDB.id, UsuarioDB.nome).where(UsuarioDB.id.in_(ids)))
+    ).all()
+    return {str(uid): (nome or "").strip() for uid, nome in rows if uid}
 
 
 @router.get("/cupons")
 async def listar_cupons_lidos(
     status: Optional[str] = Query(None),
     captador: Optional[str] = Query(None),
+    lido_por_usuario_id: Optional[str] = Query(None, description="Filtra pelo usuário que leu o cupom"),
     busca: Optional[str] = Query(None),
     limite: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
@@ -1281,6 +1295,9 @@ async def listar_cupons_lidos(
         filtros.append(NfpCupomLidoDB.status == status.strip().lower())
     if captador:
         filtros.append(NfpCupomLidoDB.captador == normalizar_agente_captacao(captador))
+    leitor_id = (lido_por_usuario_id or "").strip()
+    if leitor_id:
+        filtros.append(NfpCupomLidoDB.lido_por_usuario_id == leitor_id)
     if busca and str(busca).strip():
         termo = f"%{str(busca).strip()}%"
         filtros.append(
@@ -1301,9 +1318,62 @@ async def listar_cupons_lidos(
         .limit(limite)
     )
     rows = (await db.execute(q)).scalars().all()
+    nomes = await _mapa_nomes_usuarios(
+        db,
+        [getattr(r, "lido_por_usuario_id", None) for r in rows],
+    )
+
+    leitores = []
+    captadores = []
+    if offset == 0:
+        leitores_rows = (
+            await db.execute(
+                select(UsuarioDB.id, UsuarioDB.nome)
+                .join(NfpCupomLidoDB, NfpCupomLidoDB.lido_por_usuario_id == UsuarioDB.id)
+                .where(
+                    NfpCupomLidoDB.organizacao_id == org,
+                    NfpCupomLidoDB.lido_por_usuario_id.is_not(None),
+                )
+                .distinct()
+                .order_by(UsuarioDB.nome)
+                .limit(200)
+            )
+        ).all()
+        leitores = [
+            {"id": str(uid), "nome": (nome or "").strip() or str(uid)}
+            for uid, nome in leitores_rows
+            if uid
+        ]
+        captadores_rows = (
+            await db.execute(
+                select(NfpCupomLidoDB.captador)
+                .where(
+                    NfpCupomLidoDB.organizacao_id == org,
+                    NfpCupomLidoDB.captador.is_not(None),
+                    NfpCupomLidoDB.captador != "",
+                )
+                .distinct()
+                .order_by(NfpCupomLidoDB.captador)
+                .limit(200)
+            )
+        ).scalars().all()
+        captadores = [
+            {"value": str(c).strip(), "label": str(c).strip()}
+            for c in captadores_rows
+            if c and str(c).strip()
+        ]
+
     return {
-        "itens": [_serializar_cupom_lido(r) for r in rows],
+        "itens": [
+            _serializar_cupom_lido(
+                r,
+                lido_por_nome=nomes.get(str(getattr(r, "lido_por_usuario_id", None) or "")) or None,
+            )
+            for r in rows
+        ],
         "total": total,
+        "leitores": leitores,
+        "captadores": captadores,
         "paginacao": {
             "offset": offset,
             "limite": limite,
