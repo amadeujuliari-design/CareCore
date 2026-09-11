@@ -244,6 +244,9 @@ def inferir_segmento_por_nome_categoria(nome: Optional[str]) -> str:
     n = _norm_tipo_texto(nome)
     if "hortifruti" in n or n.startswith("horti"):
         return SEGMENTO_HORTIFRUTI
+    # EPI = equipamentos de proteção — pedidos de itens de manutenção (Sede).
+    if n == "epi" or n.startswith("epi ") or " epi " in f" {n} " or n.endswith(" epi"):
+        return SEGMENTO_MANUTENCAO
     if "manuten" in n or "infraestrutura" in n:
         return SEGMENTO_MANUTENCAO
     if "imobil" in n or "patrimon" in n:

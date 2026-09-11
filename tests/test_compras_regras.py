@@ -332,6 +332,7 @@ def test_segmento_catalogo():
 
     assert inferir_segmento_por_nome_categoria("Manutenção") == SEGMENTO_MANUTENCAO
     assert inferir_segmento_por_nome_categoria("Infraestrutura") == SEGMENTO_MANUTENCAO
+    assert inferir_segmento_por_nome_categoria("EPI") == SEGMENTO_MANUTENCAO
     assert inferir_segmento_por_nome_categoria("Alimentação") == SEGMENTO_CONSUMO
     assert segmento_do_tipo_pedido("consumo") == SEGMENTO_CONSUMO
     assert segmento_do_tipo_pedido("manutencao") == SEGMENTO_MANUTENCAO

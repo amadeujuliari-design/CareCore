@@ -737,19 +737,26 @@ export default function Sidebar() {
       return item.path === '/nfp' || item.path === '/nfp/leitura-cupons';
     }
     if (ehAdmPedidos) {
-      return Boolean(
+      const pathCompras = Boolean(
         item.path === '/compras'
         || item.path?.startsWith('/compras/')
         || item.path?.startsWith('/compras?')
       );
+      if (!pathCompras) return false;
+      // Respeita restrição explícita (ex.: "Aguardando assinatura" só Sede).
+      if (item.perfis?.length && !item.perfis.includes(perfilNormalizado)) return false;
+      return true;
     }
     if (ehAdmCompras) {
-      return Boolean(
+      const pathOk = Boolean(
         item.path === '/compras'
         || item.path?.startsWith('/compras/')
         || item.path?.startsWith('/compras?')
         || item.path === '/usuarios'
       );
+      if (!pathOk) return false;
+      if (item.perfis?.length && !item.perfis.includes(perfilNormalizado)) return false;
+      return true;
     }
     if (ehAdmGlobal) {
       return Boolean(
