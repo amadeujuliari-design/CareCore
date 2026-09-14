@@ -59,8 +59,12 @@ def validar_upload_compras(file: UploadFile) -> tuple[str, str]:
             detail="Formato não permitido. Use PDF, XML ou imagem (JPG/PNG).",
         )
     content_type = (file.content_type or "application/octet-stream").split(";", 1)[0].strip().lower()
-    if content_type not in CONTENT_TYPES_PERMITIDOS:
-        raise HTTPException(status_code=400, detail="Tipo de arquivo não permitido.")
+    # Extensão válida prevalece: browsers/Windows às vezes mandam MIME atípico (ex.: text/plain em XML).
+    if content_type and content_type not in CONTENT_TYPES_PERMITIDOS:
+        if ext in {".pdf", ".xml", ".jpg", ".jpeg", ".png", ".webp", ".html", ".htm"}:
+            pass
+        else:
+            raise HTTPException(status_code=400, detail="Tipo de arquivo não permitido.")
     return nome, ext
 
 

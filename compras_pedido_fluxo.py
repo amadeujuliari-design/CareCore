@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from compras_itens_consumo_utils import embalagem_efetiva_pedido
 from compras_nf_xml_utils import extrair_campos_nf_xml
 from compras_assinatura_pdf import carimbar_assinatura_no_rodape_pdf
+from compras_patrimonio_utils import reais_para_centavos
 from compras_pedido_pdf import (
     montar_pdf_pedido_compra,
     montar_pdf_solicitacao_cotacao,
@@ -428,13 +429,15 @@ async def upload_anexo_pedido(
     tipo: str,
     cotacao_id: Optional[str] = None,
     substituir_anexo_id: Optional[str] = None,
+    conteudo: Optional[bytes] = None,
 ) -> ComprasPedidoAnexoDB:
     if pedido.status in STATUS_TERMINAIS_PEDIDO:
         raise HTTPException(status_code=400, detail="Processo encerrado não aceita novos anexos.")
     if tipo not in TIPOS_ANEXO_PEDIDO:
         raise HTTPException(status_code=400, detail="Tipo de anexo inválido.")
 
-    conteudo = await file.read()
+    if conteudo is None:
+        conteudo = await file.read()
     caminho, nome_original, tamanho, content_type = await salvar_arquivo_compras(
         organizacao_id=pedido.organizacao_id,
         pedido_id=pedido.id,
@@ -1365,18 +1368,32 @@ async def registrar_nota_fiscal(
         "observacao": (payload.get("observacao") or "").strip() or None,
         "origem_dados": "manual",
     }
-    if payload.get("valor_centavos") is not None:
-        campos["valor_centavos"] = int(payload["valor_centavos"])
-    elif payload.get("valor_reais") is not None:
-        campos["valor_centavos"] = int(round(float(payload["valor_reais"]) * 100))
+    if payload.get("valor_centavos") is not None and str(payload.get("valor_centavos")).strip() != "":
+        try:
+            campos["valor_centavos"] = int(payload["valor_centavos"])
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail="Valor da NF inválido.") from exc
+    elif payload.get("valor_reais") not in (None, ""):
+        centavos = reais_para_centavos(payload.get("valor_reais"))
+        if centavos is None:
+            raise HTTPException(
+                status_code=400,
+                detail="Valor da NF inválido. Use formato como 400,00 ou 400.00.",
+            )
+        campos["valor_centavos"] = centavos
     if payload.get("data_emissao"):
-        campos["data_emissao"] = date.fromisoformat(str(payload["data_emissao"])[:10])
+        try:
+            campos["data_emissao"] = date.fromisoformat(str(payload["data_emissao"])[:10])
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="Data de emissão da NF inválida.") from exc
 
     tipo_anexo = TIPO_ANEXO_NF_PDF
     anexo = None
     if file and file.filename:
         ext = os.path.splitext(file.filename)[1].lower()
         raw = await file.read()
+        if not raw:
+            raise HTTPException(status_code=400, detail="Arquivo da NF está vazio.")
         if ext == ".xml":
             tipo_anexo = TIPO_ANEXO_NF_XML
             try:
@@ -1398,9 +1415,8 @@ async def registrar_nota_fiscal(
                 campos["origem_dados"] = "xml"
             except ValueError as exc:
                 raise HTTPException(status_code=400, detail=str(exc)) from exc
-        await file.seek(0)
         anexo = await upload_anexo_pedido(
-            db, usuario, pedido, file=file, tipo=tipo_anexo,
+            db, usuario, pedido, file=file, tipo=tipo_anexo, conteudo=raw,
         )
 
     nota = ComprasPedidoNotaFiscalDB(

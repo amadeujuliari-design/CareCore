@@ -225,7 +225,11 @@ export default function ComprasPedido() {
       await carregar();
       return true;
     } catch (err) {
-      setErro(err.response?.data?.detail || err.message || 'Não foi possível concluir a ação.');
+      const detail = err.response?.data?.detail;
+      const mensagem = typeof detail === 'string'
+        ? detail
+        : (detail?.message || err.message || 'Não foi possível concluir a ação.');
+      setErro(mensagem);
       return false;
     }
   };
@@ -1489,11 +1493,24 @@ export default function ComprasPedido() {
                   className="grid gap-2 md:grid-cols-3"
                   onSubmit={async (e) => {
                     e.preventDefault();
+                    if (!arqNf) {
+                      setErro('Selecione o arquivo da NF (PDF, XML ou imagem).');
+                      return;
+                    }
                     const fd = new FormData();
                     Object.entries(nfForm).forEach(([chave, valor]) => {
-                      if (valor) fd.append(chave, valor);
+                      if (!valor || chave === 'valor_reais') return;
+                      fd.append(chave, valor);
                     });
-                    if (arqNf) fd.append('arquivo', arqNf);
+                    if (nfForm.valor_reais) {
+                      const centavos = reaisParaCentavos(nfForm.valor_reais);
+                      if (centavos == null) {
+                        setErro('Valor da NF inválido. Use formato como 400,00.');
+                        return;
+                      }
+                      fd.append('valor_reais', String(centavos / 100));
+                    }
+                    fd.append('arquivo', arqNf);
                     await agir(() => comprasRegistrarNotaFiscal(pedido.id, fd), 'Nota fiscal registrada.');
                     setNfForm({ tipo_nf: 'produto', numero: '', serie: '', valor_reais: '', observacao: '' });
                     setArqNf(null);

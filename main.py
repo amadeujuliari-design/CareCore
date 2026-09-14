@@ -2,10 +2,11 @@
 # ARQUIVO: main.py
 # =====================================================================
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from fastapi.exceptions import RequestValidationError
+from starlette.exceptions import HTTPException as StarletteHTTPException
 import asyncio
 import contextlib
 import logging
@@ -849,6 +850,12 @@ async def cors_seguro_carecore(request: Request, call_next):
     else:
         try:
             response = await call_next(request)
+        except (HTTPException, StarletteHTTPException) as exc:
+            # BaseHTTPMiddleware pode engolir handlers do FastAPI; devolve o detail real.
+            response = JSONResponse(
+                status_code=exc.status_code,
+                content={"detail": exc.detail},
+            )
         except Exception:
             logger.exception(
                 "Erro inesperado antes da aplicação dos headers CORS",
