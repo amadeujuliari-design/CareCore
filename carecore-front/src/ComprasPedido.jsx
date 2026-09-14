@@ -157,29 +157,43 @@ export default function ComprasPedido() {
   });
   const [arqNf, setArqNf] = useState(null);
 
-  const carregar = useCallback(async () => {
-    setErro('');
+  const carregar = useCallback(async ({ silencioso = false } = {}) => {
+    if (!silencioso) setErro('');
     try {
       const dados = await comprasObterPedido(pedidoId);
       setPedido(dados);
-      const [catalogo, cats, fornecs] = await Promise.all([
-        comprasItensConsumo({ ativos: true }),
-        comprasCategorias(),
-        (sede || tipoEhCotacaoProjeto(dados.tipo))
-          ? comprasFornecedores({ ativos: true })
-          : Promise.resolve(null),
-      ]);
-      setItensConsumo(catalogo);
-      setCategorias(cats);
-      if (Array.isArray(fornecs)) setFornecedores(fornecs);
+      if (!silencioso) {
+        const [catalogo, cats, fornecs] = await Promise.all([
+          comprasItensConsumo({ ativos: true }),
+          comprasCategorias(),
+          (sede || tipoEhCotacaoProjeto(dados.tipo))
+            ? comprasFornecedores({ ativos: true })
+            : Promise.resolve(null),
+        ]);
+        setItensConsumo(catalogo);
+        setCategorias(cats);
+        if (Array.isArray(fornecs)) setFornecedores(fornecs);
+      }
     } catch (err) {
-      setErro(err.response?.data?.detail || 'Pedido não encontrado.');
+      if (!silencioso) {
+        setErro(err.response?.data?.detail || 'Pedido não encontrado.');
+      }
     }
   }, [pedidoId, sede]);
 
   useEffect(() => {
     carregar();
   }, [carregar]);
+
+  // Autocheque leve a cada 30s (status/anexos/timeline) sem recarregar catálogos.
+  useEffect(() => {
+    if (!pedidoId) return undefined;
+    const id = window.setInterval(() => {
+      if (document.visibilityState === 'hidden') return;
+      carregar({ silencioso: true });
+    }, 30_000);
+    return () => window.clearInterval(id);
+  }, [carregar, pedidoId]);
 
   const fornecedoresCotacao = useMemo(
     () => fornecedoresParaCotacaoPedido(fornecedores, categorias, pedido?.tipo),
@@ -511,6 +525,35 @@ export default function ComprasPedido() {
             )}
             {ok && (
               <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">{ok}</div>
+            )}
+            {Boolean((pedido.anexos || []).some((a) => a.tipo === 'orcamento_assinado')) && (
+              <div className="rounded-xl border-2 border-emerald-400 bg-emerald-50 px-4 py-3 shadow-sm">
+                <p className="text-sm font-bold uppercase tracking-wide text-emerald-900">
+                  Orçamento assinado pela Sede
+                </p>
+                <p className="mt-1 text-sm text-emerald-800">
+                  A Sede escolheu o orçamento vencedor e carimbou a assinatura digital no PDF.
+                  Baixe o arquivo marcado como
+                  {' '}
+                  <span className="font-semibold">Assinado</span>
+                  {' '}
+                  abaixo e envie ao fornecedor com o pedido de compra.
+                </p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {(pedido.anexos || [])
+                    .filter((a) => a.tipo === 'orcamento_assinado')
+                    .map((anexo) => (
+                      <button
+                        key={anexo.id}
+                        type="button"
+                        className="rounded-lg bg-emerald-700 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-800"
+                        onClick={() => comprasBaixarAnexo(pedido.id, anexo.id, anexo.nome_arquivo).catch(() => setErro('Não foi possível abrir o orçamento assinado.'))}
+                      >
+                        Baixar PDF assinado
+                      </button>
+                    ))}
+                </div>
+              </div>
             )}
             {cotacaoProjeto ? (
               <div className="flex flex-wrap gap-2 rounded-2xl border border-slate-100 bg-white p-3">
@@ -1088,10 +1131,14 @@ export default function ComprasPedido() {
                         <button
                           key={anexo.id}
                           type="button"
-                          className="text-xs font-semibold text-violet-700 underline"
+                          className={
+                            anexo.tipo === 'orcamento_assinado'
+                              ? 'rounded-md border border-emerald-300 bg-emerald-100 px-2 py-1 text-xs font-bold text-emerald-900 underline'
+                              : 'text-xs font-semibold text-violet-700 underline'
+                          }
                           onClick={() => comprasBaixarAnexo(pedido.id, anexo.id, anexo.nome_arquivo).catch(() => setErro('Não foi possível abrir o orçamento.'))}
                         >
-                          {anexo.tipo === 'orcamento_assinado' ? 'Assinado: ' : ''}
+                          {anexo.tipo === 'orcamento_assinado' ? '✓ Assinado — ' : ''}
                           {anexo.nome_arquivo}
                         </button>
                       ))}

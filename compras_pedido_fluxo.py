@@ -15,11 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from compras_itens_consumo_utils import embalagem_efetiva_pedido
 from compras_nf_xml_utils import extrair_campos_nf_xml
-from compras_assinatura_pdf import (
-    mesclar_orcamento_com_assinatura_pdf,
-    montar_folha_ato_assinatura_sede,
-    valor_centavos_para_texto,
-)
+from compras_assinatura_pdf import carimbar_assinatura_no_rodape_pdf
 from compras_pedido_pdf import (
     montar_pdf_pedido_compra,
     montar_pdf_solicitacao_cotacao,
@@ -1605,17 +1601,8 @@ async def assinar_orcamento_e_aprovar_sede(
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Não foi possível ler os PDFs: {exc}") from exc
 
-    capa = montar_folha_ato_assinatura_sede(
-        numero_pedido=numero,
-        assinante_nome=assinante,
-        assinado_em_texto=assinado_em_texto,
-        fornecedor_nome=escolhida.fornecedor_nome,
-        valor_texto=valor_centavos_para_texto(escolhida.valor_centavos),
-        arquivo_orcamento=orcamento_original.nome_arquivo,
-    )
     try:
-        pdf_bytes = mesclar_orcamento_com_assinatura_pdf(
-            capa_bytes=capa,
+        pdf_bytes = carimbar_assinatura_no_rodape_pdf(
             orcamento_bytes=orc_bytes,
             assinatura_bytes=assinatura_bytes,
         )
@@ -1674,7 +1661,7 @@ async def assinar_orcamento_e_aprovar_sede(
         tipo=TIPO_EVENTO_STATUS,
         texto=(
             f"ATO DE ASSINATURA: {assinante} assinou o orçamento de {escolhida.fornecedor_nome} "
-            f"em {assinado_em_texto}, aplicando o arquivo «{rotulo_assinatura}» sobre o PDF "
+            f"em {assinado_em_texto}, carimbando «{rotulo_assinatura}» no rodapé do PDF "
             f"«{orcamento_original.nome_arquivo}». Pedido aprovado na Sede."
         ),
         usuario_id=_uid(usuario),

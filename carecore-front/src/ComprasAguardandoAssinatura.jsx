@@ -89,6 +89,15 @@ export default function ComprasAguardandoAssinatura() {
     carregar();
   }, [carregar]);
 
+  useEffect(() => {
+    if (!sede) return undefined;
+    const id = window.setInterval(() => {
+      if (document.visibilityState === 'hidden') return;
+      carregar();
+    }, 30_000);
+    return () => window.clearInterval(id);
+  }, [carregar, sede]);
+
   if (!sede) {
     return (
       <AppShell>

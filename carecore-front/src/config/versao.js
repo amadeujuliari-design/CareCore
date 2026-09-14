@@ -1,5 +1,5 @@
 /** Versão exibida no sidebar — incrementar em entregas visíveis ao usuário. */
-export const CARECORE_VERSAO = '1.6.92';
+export const CARECORE_VERSAO = '1.6.93';
 
 export function carecoreVersaoRotulo() {
   return `v${CARECORE_VERSAO}`;
