@@ -22,6 +22,7 @@ from compras_pedido_fluxo import (
     registrar_comunicacao_pedido,
     registrar_nota_fiscal,
     reabrir_pedido,
+    remover_anexo_pedido,
     reprovar_pedido,
     upload_anexo_pedido,
 )
@@ -1084,6 +1085,21 @@ async def get_anexo_arquivo(
         media_type=content_type or anexo.content_type or "application/octet-stream",
         headers={"Content-Disposition": f'inline; filename="{anexo.nome_arquivo}"'},
     )
+
+
+@router.post("/pedidos/{pedido_id}/anexos/{anexo_id}/remover")
+async def post_remover_anexo(
+    pedido_id: str,
+    anexo_id: str,
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    """Remove PDF de orçamento anexado (projeto em cotação ou Sede)."""
+    await _ctx(db, usuario_atual)
+    pedido = await obter_pedido(db, usuario_atual, pedido_id)
+    await remover_anexo_pedido(db, usuario_atual, pedido, anexo_id)
+    await db.commit()
+    return await serializar_pedido(db, pedido, incluir_detalhe=True, usuario=usuario_atual)
 
 
 @router.post("/pedidos/{pedido_id}/notas-fiscais")

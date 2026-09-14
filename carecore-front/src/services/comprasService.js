@@ -248,6 +248,11 @@ export async function comprasDesativarCotacao(pedidoId, cotacaoId, motivo) {
   return data;
 }
 
+export async function comprasRemoverAnexo(pedidoId, anexoId) {
+  const { data } = await api.post(`/api/compras/pedidos/${pedidoId}/anexos/${anexoId}/remover`);
+  return data;
+}
+
 export function urlAnexoPedido(pedidoId, anexoId) {
   return `${api.defaults.baseURL}/api/compras/pedidos/${pedidoId}/anexos/${anexoId}/arquivo`;
 }

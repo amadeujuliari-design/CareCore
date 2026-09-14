@@ -539,7 +539,16 @@ async def serializar_pedido(
     ):
         pode_itens = False
     payload["pode_editar_itens"] = pode_itens
-    payload["pode_substituir_orcamento"] = bool(usuario and _sede(usuario))
+    # Sede sempre; projeto só enquanto o pedido ainda está em fase de cotação.
+    pode_substituir = bool(usuario and _sede(usuario))
+    if (
+        not pode_substituir
+        and usuario
+        and tipo_eh_cotacao_projeto(pedido.tipo)
+        and pedido.status in {STATUS_RASCUNHO, STATUS_AGUARDANDO_COTACAO, STATUS_EM_COTACAO}
+    ):
+        pode_substituir = True
+    payload["pode_substituir_orcamento"] = pode_substituir
     return payload
 
 

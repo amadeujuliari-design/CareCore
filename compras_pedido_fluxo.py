@@ -1467,6 +1467,68 @@ async def encerrar_pedido(
     return pedido
 
 
+async def remover_anexo_pedido(
+    db: AsyncSession,
+    usuario: dict,
+    pedido: ComprasPedidoDB,
+    anexo_id: str,
+) -> None:
+    """Remove (desativa) um anexo de orçamento — projeto ou Sede, antes do processo fechar."""
+    if pedido.status in STATUS_TERMINAIS_PEDIDO:
+        raise HTTPException(status_code=400, detail="Processo encerrado não permite remover anexos.")
+    sede = usuario_e_sede_compras(
+        perfil=(usuario.get("perfil_acesso") or usuario.get("perfil") or ""),
+        is_manutencao=bool(usuario.get("is_manutencao")),
+    )
+    statuses_projeto = {
+        STATUS_RASCUNHO,
+        STATUS_AGUARDANDO_COTACAO,
+        STATUS_EM_COTACAO,
+    }
+    if not sede and pedido.status not in statuses_projeto:
+        raise HTTPException(
+            status_code=400,
+            detail="Só é possível remover orçamentos anexados enquanto o pedido está em cotação.",
+        )
+    if sede and pedido.status not in {
+        *statuses_projeto,
+        STATUS_AGUARDANDO_UNIDADE,
+        STATUS_AGUARDANDO_SEDE,
+        STATUS_APROVADO,
+    }:
+        raise HTTPException(status_code=400, detail="Não é possível remover anexo neste status.")
+
+    anexo = (
+        await db.execute(
+            select(ComprasPedidoAnexoDB).where(
+                ComprasPedidoAnexoDB.id == anexo_id,
+                ComprasPedidoAnexoDB.pedido_id == pedido.id,
+                ComprasPedidoAnexoDB.ativo.is_(True),
+            )
+        )
+    ).scalar_one_or_none()
+    if not anexo:
+        raise HTTPException(status_code=404, detail="Anexo não encontrado.")
+    if anexo.tipo not in {TIPO_ANEXO_ORCAMENTO, TIPO_ANEXO_RESPOSTA_FORNECEDOR}:
+        raise HTTPException(
+            status_code=400,
+            detail="Este tipo de anexo não pode ser removido por aqui (orçamento assinado pela Sede fica bloqueado).",
+        )
+
+    anexo.ativo = False
+    remover_arquivo_compras(anexo.caminho_arquivo)
+    await registrar_evento_pedido(
+        db,
+        pedido_id=pedido.id,
+        tipo=TIPO_EVENTO_OBSERVACAO,
+        texto=f"Anexo removido ({anexo.tipo}: {anexo.nome_arquivo}).",
+        usuario_id=_uid(usuario),
+        cotacao_id=anexo.cotacao_id,
+        aguardando_confirmacao=False,
+    )
+    pedido.atualizado_em = agora_operacional_naive()
+
+
 async def desativar_cotacao(
     db: AsyncSession,
     usuario: dict,
@@ -1474,13 +1536,21 @@ async def desativar_cotacao(
     cotacao_id: str,
     motivo: Optional[str] = None,
 ) -> None:
-    if not usuario_e_sede_compras(
+    sede = usuario_e_sede_compras(
         perfil=(usuario.get("perfil_acesso") or usuario.get("perfil") or ""),
         is_manutencao=bool(usuario.get("is_manutencao")),
+    )
+    statuses_projeto = {
+        STATUS_RASCUNHO,
+        STATUS_AGUARDANDO_COTACAO,
+        STATUS_EM_COTACAO,
+    }
+    if not sede and not (
+        tipo_eh_cotacao_projeto(pedido.tipo) and pedido.status in statuses_projeto
     ):
         raise HTTPException(
             status_code=403,
-            detail="Somente a Sede (ADM Compras) pode substituir orçamentos.",
+            detail="Somente a Sede (ADM Compras) ou o projeto (em cotação) podem remover orçamentos.",
         )
     if pedido.status in STATUS_TERMINAIS_PEDIDO:
         raise HTTPException(status_code=400, detail="Processo encerrado.")
@@ -1509,7 +1579,7 @@ async def desativar_cotacao(
     for anexo in anexos:
         anexo.ativo = False
         remover_arquivo_compras(anexo.caminho_arquivo)
-    texto = (motivo or "Cotação substituída/desativada.").strip()
+    texto = (motivo or "Cotação removida/desativada.").strip()
     await registrar_evento_pedido(
         db,
         pedido_id=pedido.id,

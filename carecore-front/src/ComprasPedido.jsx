@@ -38,6 +38,7 @@ import {
   comprasReceber,
   comprasReabrir,
   comprasRegistrarNotaFiscal,
+  comprasRemoverAnexo,
   comprasRevogarEscolhaCotacao,
   comprasReprovar,
   comprasSalvarItemConsumo,
@@ -245,9 +246,10 @@ export default function ComprasPedido() {
   const terminal = ['recebido', 'cancelado', 'reprovado'].includes(pedido.status);
   const ehRascunho = pedido.status === 'rascunho';
   const podeEditarItens = Boolean(pedido.pode_editar_itens);
-  const podeSubstituirOrcamento = Boolean(pedido.pode_substituir_orcamento) || sede;
   const cotacaoProjeto = tipoEhCotacaoProjeto(pedido.tipo);
   const cotacaoSede = tipoEhCotacaoSede(pedido.tipo);
+  const podeRemoverOrcamento = Boolean(pedido.pode_substituir_orcamento)
+    || (unidade && cotacaoProjeto && ['rascunho', 'em_cotacao', 'aguardando_cotacao'].includes(pedido.status));
   const pulaAprovacaoSede = tipoPulaAprovacaoSede(pedido.tipo) || Boolean(pedido.pula_aprovacao_sede);
   const segmentoCotacao = segmentoFornecedorDoTipoPedido(pedido.tipo);
   const podeEscolherCotacao = sede
@@ -1113,34 +1115,49 @@ export default function ComprasPedido() {
                             Revogar escolha
                           </PremiumButton>
                         )}
-                        {!terminal && podeSubstituirOrcamento && (
+                        {!terminal && podeRemoverOrcamento && (
                           <PremiumButton
                             variant="secondary"
                             onClick={async () => {
-                              const motivo = promptMotivo('Motivo da substituição (opcional):') ?? '';
-                              await agir(() => comprasDesativarCotacao(pedido.id, c.id, motivo || null));
+                              if (!window.confirm(`Remover o orçamento de ${c.fornecedor_nome}? Os PDFs anexados também serão removidos.`)) return;
+                              const motivo = promptMotivo('Motivo da remoção (opcional):') ?? '';
+                              await agir(() => comprasDesativarCotacao(pedido.id, c.id, motivo || null), 'Orçamento removido.');
                             }}
                           >
-                            Substituir
+                            Remover
                           </PremiumButton>
                         )}
                       </div>
                     </div>
-                    <div className="mt-2 flex flex-wrap gap-2">
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
                       {anexosDaCotacao(pedido.anexos, c.id).map((anexo) => (
-                        <button
-                          key={anexo.id}
-                          type="button"
-                          className={
-                            anexo.tipo === 'orcamento_assinado'
-                              ? 'rounded-md border border-emerald-300 bg-emerald-100 px-2 py-1 text-xs font-bold text-emerald-900 underline'
-                              : 'text-xs font-semibold text-violet-700 underline'
-                          }
-                          onClick={() => comprasBaixarAnexo(pedido.id, anexo.id, anexo.nome_arquivo).catch(() => setErro('Não foi possível abrir o orçamento.'))}
-                        >
-                          {anexo.tipo === 'orcamento_assinado' ? '✓ Assinado — ' : ''}
-                          {anexo.nome_arquivo}
-                        </button>
+                        <span key={anexo.id} className="inline-flex items-center gap-1">
+                          <button
+                            type="button"
+                            className={
+                              anexo.tipo === 'orcamento_assinado'
+                                ? 'rounded-md border border-emerald-300 bg-emerald-100 px-2 py-1 text-xs font-bold text-emerald-900 underline'
+                                : 'text-xs font-semibold text-violet-700 underline'
+                            }
+                            onClick={() => comprasBaixarAnexo(pedido.id, anexo.id, anexo.nome_arquivo).catch(() => setErro('Não foi possível abrir o orçamento.'))}
+                          >
+                            {anexo.tipo === 'orcamento_assinado' ? '✓ Assinado — ' : ''}
+                            {anexo.nome_arquivo}
+                          </button>
+                          {!terminal && podeRemoverOrcamento && anexo.tipo !== 'orcamento_assinado' && (
+                            <button
+                              type="button"
+                              className="rounded px-1 text-xs font-bold text-rose-700 hover:bg-rose-50"
+                              title="Remover este PDF"
+                              onClick={async () => {
+                                if (!window.confirm(`Remover o arquivo ${anexo.nome_arquivo}?`)) return;
+                                await agir(() => comprasRemoverAnexo(pedido.id, anexo.id), 'Anexo removido.');
+                              }}
+                            >
+                              ×
+                            </button>
+                          )}
+                        </span>
                       ))}
                       {!terminal && (sede || cotacaoProjeto) && (
                         <label className="cursor-pointer text-xs font-semibold text-slate-600">
