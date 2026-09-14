@@ -132,6 +132,15 @@ def _graph_obter_token(tenant_id: str, client_id: str, client_secret: str) -> st
     return token
 
 
+def _monta_anexo_graph(*, nome: str, conteudo: bytes, content_type: str) -> dict:
+    return {
+        "@odata.type": "#microsoft.graph.fileAttachment",
+        "name": nome,
+        "contentType": content_type or "application/octet-stream",
+        "contentBytes": base64.b64encode(conteudo or b"").decode("ascii"),
+    }
+
+
 def enviar_email_graph_com_anexo(
     *,
     assunto: str,
@@ -141,6 +150,7 @@ def enviar_email_graph_com_anexo(
     anexo_bytes: bytes,
     anexo_content_type: str = "application/pdf",
     mailbox: str | None = None,
+    anexos_extras: list[tuple[str, bytes, str]] | None = None,
 ) -> ResultadoEnvioEmail:
     """Envia e-mail via Microsoft Graph (app Entra + Mail.Send), sem SMTP AUTH."""
     _carregar_env_email_local()
@@ -159,19 +169,29 @@ def enviar_email_graph_com_anexo(
 
     caixa = (mailbox or "").strip() or cred["mailbox"]
     cc = (cred["copia"] or "").strip()
+    anexos_payload = [
+        _monta_anexo_graph(
+            nome=anexo_nome,
+            conteudo=anexo_bytes,
+            content_type=anexo_content_type or "application/octet-stream",
+        )
+    ]
+    for nome_extra, bytes_extra, tipo_extra in anexos_extras or []:
+        if not nome_extra or bytes_extra is None:
+            continue
+        anexos_payload.append(
+            _monta_anexo_graph(
+                nome=nome_extra,
+                conteudo=bytes_extra,
+                content_type=tipo_extra or "application/octet-stream",
+            )
+        )
     payload: dict = {
         "message": {
             "subject": assunto,
             "body": {"contentType": "Text", "content": corpo},
             "toRecipients": [{"emailAddress": {"address": destinatario}}],
-            "attachments": [
-                {
-                    "@odata.type": "#microsoft.graph.fileAttachment",
-                    "name": anexo_nome,
-                    "contentType": anexo_content_type or "application/octet-stream",
-                    "contentBytes": base64.b64encode(anexo_bytes or b"").decode("ascii"),
-                }
-            ],
+            "attachments": anexos_payload,
         },
         "saveToSentItems": True,
     }
@@ -265,6 +285,7 @@ def enviar_email_smtp_com_anexo(
     anexo_content_type: str = "application/pdf",
     perfil: str = "compras",
     mailbox: str | None = None,
+    anexos_extras: list[tuple[str, bytes, str]] | None = None,
 ) -> ResultadoEnvioEmail:
     """Envia e-mail com anexo. Compras: Graph (preferencial) ou SMTP M365; suporte permanece no SMTP CareCore."""
     _carregar_env_email_local()
@@ -282,6 +303,7 @@ def enviar_email_smtp_com_anexo(
             anexo_bytes=anexo_bytes,
             anexo_content_type=anexo_content_type,
             mailbox=mailbox,
+            anexos_extras=anexos_extras,
         )
 
     cred = _credenciais_smtp(perfil=perfil)
@@ -317,6 +339,15 @@ def enviar_email_smtp_com_anexo(
         conteudo=anexo_bytes,
         content_type=anexo_content_type,
     )
+    for nome_extra, bytes_extra, tipo_extra in anexos_extras or []:
+        if not nome_extra or bytes_extra is None:
+            continue
+        _anexar_arquivo(
+            mensagem,
+            nome=nome_extra,
+            conteudo=bytes_extra,
+            content_type=tipo_extra or "application/octet-stream",
+        )
 
     try:
         with smtplib.SMTP(host, porta, timeout=20) as servidor:

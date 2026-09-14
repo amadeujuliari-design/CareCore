@@ -997,14 +997,60 @@ async def enviar_email_fornecedor(
         raise HTTPException(status_code=400, detail="Fornecedor escolhido não tem e-mail cadastrado.")
 
     bytes_arquivo, content_type = ler_bytes_anexo(anexo.caminho_arquivo)
+    anexos_extras: list[tuple[str, bytes, str]] = []
+    orcamento_assinado = None
+    if escolhida:
+        orcamento_assinado = (
+            await db.execute(
+                select(ComprasPedidoAnexoDB).where(
+                    ComprasPedidoAnexoDB.pedido_id == pedido.id,
+                    ComprasPedidoAnexoDB.cotacao_id == escolhida.id,
+                    ComprasPedidoAnexoDB.tipo == TIPO_ANEXO_ORCAMENTO_ASSINADO,
+                    ComprasPedidoAnexoDB.ativo.is_(True),
+                ).order_by(ComprasPedidoAnexoDB.criado_em.desc())
+            )
+        ).scalars().first()
+    if not orcamento_assinado:
+        orcamento_assinado = (
+            await db.execute(
+                select(ComprasPedidoAnexoDB).where(
+                    ComprasPedidoAnexoDB.pedido_id == pedido.id,
+                    ComprasPedidoAnexoDB.tipo == TIPO_ANEXO_ORCAMENTO_ASSINADO,
+                    ComprasPedidoAnexoDB.ativo.is_(True),
+                ).order_by(ComprasPedidoAnexoDB.criado_em.desc())
+            )
+        ).scalars().first()
+    if orcamento_assinado:
+        try:
+            bytes_assinado, tipo_assinado = ler_bytes_anexo(orcamento_assinado.caminho_arquivo)
+            anexos_extras.append(
+                (
+                    orcamento_assinado.nome_arquivo or "orcamento-assinado-sede.pdf",
+                    bytes_assinado,
+                    tipo_assinado
+                    or getattr(orcamento_assinado, "content_type", None)
+                    or "application/pdf",
+                )
+            )
+        except Exception:  # noqa: BLE001 — pedido de compra segue mesmo se o assinado falhar
+            orcamento_assinado = None
+
     inst = await _dados_instituicao(db, pedido)
     projeto = (inst or {}).get("nome") or "projeto"
     assunto = f"Pedido de compra CareCore · {projeto} · {pedido.competencia}"
-    corpo = (
-        f"Segue em anexo o pedido de compra do {projeto}.\n\n"
-        f"Endereço de entrega conforme documento anexo.\n\n"
-        f"— CareCore+ / Compras"
-    )
+    if anexos_extras:
+        corpo = (
+            f"Segue em anexo o pedido de compra do {projeto} e o orçamento "
+            f"aprovado/assinado pela Sede (AEB).\n\n"
+            f"Endereço de entrega conforme documento do pedido.\n\n"
+            f"— CareCore+ / Compras"
+        )
+    else:
+        corpo = (
+            f"Segue em anexo o pedido de compra do {projeto}.\n\n"
+            f"Endereço de entrega conforme documento anexo.\n\n"
+            f"— CareCore+ / Compras"
+        )
     resultado = enviar_email_smtp_com_anexo(
         assunto=assunto,
         corpo=corpo,
@@ -1014,8 +1060,13 @@ async def enviar_email_fornecedor(
         anexo_content_type=content_type or getattr(anexo, "content_type", None) or "application/pdf",
         perfil="compras",
         mailbox=(inst or {}).get("email_adm_compras") if tipo_eh_cotacao_projeto(pedido.tipo) else None,
+        anexos_extras=anexos_extras or None,
     )
-    texto_evento = f"E-mail enviado para {email_dest}." if resultado.enviado else f"Falha no e-mail: {resultado.erro}"
+    if resultado.enviado:
+        extras = f" + orçamento assinado ({orcamento_assinado.nome_arquivo})." if orcamento_assinado else "."
+        texto_evento = f"E-mail enviado para {email_dest}{extras}"
+    else:
+        texto_evento = f"Falha no e-mail: {resultado.erro}"
     await registrar_evento_pedido(
         db,
         pedido_id=pedido.id,
@@ -1024,7 +1075,12 @@ async def enviar_email_fornecedor(
         usuario_id=_uid(usuario),
         anexo_id=anexo.id,
     )
-    return {"enviado": resultado.enviado, "erro": resultado.erro, "destinatario": email_dest}
+    return {
+        "enviado": resultado.enviado,
+        "erro": resultado.erro,
+        "destinatario": email_dest,
+        "orcamento_assinado_anexado": bool(orcamento_assinado and resultado.enviado),
+    }
 
 
 def _email_destino_fornecedor(fornecedor: ComprasFornecedorDB) -> str:

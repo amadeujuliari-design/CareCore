@@ -535,11 +535,12 @@ export default function ComprasPedido() {
                 </p>
                 <p className="mt-1 text-sm text-emerald-800">
                   A Sede escolheu o orçamento vencedor e carimbou a assinatura digital no PDF.
-                  Baixe o arquivo marcado como
+                  Esse arquivo também vai anexado automaticamente no e-mail do pedido de compra ao fornecedor.
+                  Você ainda pode baixar o PDF marcado como
                   {' '}
                   <span className="font-semibold">Assinado</span>
                   {' '}
-                  abaixo e envie ao fornecedor com o pedido de compra.
+                  abaixo.
                 </p>
                 <div className="mt-2 flex flex-wrap gap-2">
                   {(pedido.anexos || [])
@@ -1380,7 +1381,11 @@ export default function ComprasPedido() {
             {emailPedidoCompraEnviado && pedidoCompra && (
               <SectionCard title="Pedido de compra enviado">
                 <p className="mb-3 text-sm text-emerald-800">
-                  E-mail enviado com sucesso ao fornecedor. Você pode baixar o PDF e, se precisar, reenviar.
+                  E-mail enviado com sucesso ao fornecedor (pedido de compra
+                  {(pedido.anexos || []).some((a) => a.tipo === 'orcamento_assinado')
+                    ? ' + orçamento assinado pela Sede'
+                    : ''}
+                  ). Você pode baixar o PDF e, se precisar, reenviar.
                 </p>
                 <div className="flex flex-wrap gap-2">
                   <PremiumButton
@@ -1398,7 +1403,13 @@ export default function ComprasPedido() {
                           if (!res?.enviado) {
                             throw new Error(res?.erro || 'Falha no e-mail ao fornecedor.');
                           }
-                          window.alert(`Pedido de compra reenviado com sucesso para:\n\n${res.destinatario || 'fornecedor'}`);
+                          window.alert(
+                            `Pedido de compra reenviado com sucesso para:\n\n${res.destinatario || 'fornecedor'}${
+                              res.orcamento_assinado_anexado
+                                ? '\n\nO orçamento assinado pela Sede também foi anexado.'
+                                : ''
+                            }`,
+                          );
                         }, 'E-mail reenviado com sucesso.');
                         if (!okEnvio) return;
                       }}
@@ -1623,7 +1634,11 @@ export default function ComprasPedido() {
                           throw new Error(res?.erro || 'Falha no e-mail ao fornecedor.');
                         }
                         window.alert(
-                          `Pedido de compra enviado com sucesso para:\n\n${res.destinatario || 'fornecedor'}\n\nAgora você pode baixar o PDF.`,
+                          `Pedido de compra enviado com sucesso para:\n\n${res.destinatario || 'fornecedor'}${
+                            res.orcamento_assinado_anexado
+                              ? '\n\nO orçamento assinado pela Sede também foi anexado.'
+                              : ''
+                          }\n\nAgora você pode baixar o PDF.`,
                         );
                       }, 'Pedido de compra enviado com sucesso ao fornecedor.');
                       if (!okEnvio) return;

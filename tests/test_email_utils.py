@@ -196,3 +196,38 @@ def test_compras_prefere_graph_quando_configurado(monkeypatch):
     assert resultado.enviado
     assert any("login.microsoftonline.com" in u for u in chamadas)
     assert any("sendMail" in u for u in chamadas)
+
+
+def test_compras_graph_anexa_orcamento_assinado_extra(monkeypatch):
+    monkeypatch.setattr(email_utils, "_carregar_env_email_local", lambda: None)
+    monkeypatch.setenv("CARECORE_GRAPH_TENANT_ID", "tenant-id")
+    monkeypatch.setenv("CARECORE_GRAPH_CLIENT_ID", "client-id")
+    monkeypatch.setenv("CARECORE_GRAPH_CLIENT_SECRET", "secret")
+    monkeypatch.setenv("CARECORE_GRAPH_MAILBOX", "suprimentos@aeb-brasil.org.br")
+
+    def urlopen_fake(req, timeout=0):
+        url = getattr(req, "full_url", None) or req.get_full_url()
+        if "oauth2" in url:
+            return _RespFake(200, json.dumps({"access_token": "tok"}).encode())
+        payload = json.loads(req.data.decode())
+        anexos = payload["message"]["attachments"]
+        assert len(anexos) == 2
+        assert anexos[0]["name"] == "pedido-compra.pdf"
+        assert anexos[1]["name"] == "orcamento-assinado.pdf"
+        assert base64.b64decode(anexos[1]["contentBytes"]) == b"%PDF-assinado"
+        return _RespFake(202, b"")
+
+    monkeypatch.setattr(email_utils.urllib.request, "urlopen", urlopen_fake)
+
+    resultado = email_utils.enviar_email_smtp_com_anexo(
+        assunto="Pedido",
+        corpo="Anexos",
+        para="fornecedor@example.com",
+        anexo_nome="pedido-compra.pdf",
+        anexo_bytes=b"%PDF-pedido",
+        anexo_content_type="application/pdf",
+        perfil="compras",
+        anexos_extras=[("orcamento-assinado.pdf", b"%PDF-assinado", "application/pdf")],
+    )
+
+    assert resultado.enviado
