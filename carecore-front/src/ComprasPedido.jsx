@@ -1177,18 +1177,23 @@ export default function ComprasPedido() {
                       return;
                     }
                     await agir(async () => {
+                      const idsAntes = new Set((pedido.cotacoes || []).map((c) => c.id));
                       const dados = await comprasCotacao(pedido.id, {
                         fornecedor_id: cotacao.fornecedor_id || null,
                         fornecedor_nome: cotacao.fornecedor_nome || null,
                         valor_centavos: centavos,
                       });
-                      const nova = (dados.cotacoes || []).slice(-1)[0];
-                      if (arqCotacao && nova?.id) {
+                      // Não usar slice(-1): cotacoes vêm ordenadas por valor, não por criação.
+                      const novaId = dados.cotacao_criada_id
+                        || (dados.cotacoes || []).find((c) => !idsAntes.has(c.id))?.id;
+                      if (arqCotacao && novaId) {
                         const fd = new FormData();
                         fd.append('tipo', 'orcamento');
-                        fd.append('cotacao_id', nova.id);
+                        fd.append('cotacao_id', novaId);
                         fd.append('arquivo', arqCotacao);
                         await comprasAnexarArquivo(pedido.id, fd);
+                      } else if (arqCotacao && !novaId) {
+                        throw new Error('Orçamento registrado, mas não foi possível vincular o PDF ao fornecedor.');
                       }
                     }, 'Orçamento registrado.');
                     setCotacao({ fornecedor_id: '', valor_reais: '', fornecedor_nome: '' });

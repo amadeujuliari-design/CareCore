@@ -739,9 +739,13 @@ async def post_cotacao(
 ):
     await _ctx(db, usuario_atual)
     pedido = await obter_pedido(db, usuario_atual, pedido_id)
-    await registrar_cotacao(db, usuario_atual, pedido, payload.model_dump())
+    cotacao = await registrar_cotacao(db, usuario_atual, pedido, payload.model_dump())
+    await db.flush()
+    cotacao_criada_id = cotacao.id
     await db.commit()
-    return await serializar_pedido(db, pedido, incluir_detalhe=True, usuario=usuario_atual)
+    serializado = await serializar_pedido(db, pedido, incluir_detalhe=True, usuario=usuario_atual)
+    serializado["cotacao_criada_id"] = cotacao_criada_id
+    return serializado
 
 
 @router.post("/pedidos/{pedido_id}/cotacoes/{cotacao_id}/escolher")
