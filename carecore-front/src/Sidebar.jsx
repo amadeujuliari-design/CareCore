@@ -128,6 +128,7 @@ export default function Sidebar() {
   const [historicoLegadoApiAtivo, setHistoricoLegadoApiAtivo] = useState(false);
   const [cobrancasClienteVisivel, setCobrancasClienteVisivel] = useState(false);
   const [comprasModuloVisivel, setComprasModuloVisivel] = useState(false);
+  const [filaAssinaturaPendentes, setFilaAssinaturaPendentes] = useState(0);
   const [modalSenhaAberto, setModalSenhaAberto] = useState(false);
   const [modalPasskeysAberto, setModalPasskeysAberto] = useState(false);
   const [senhaAtual, setSenhaAtual] = useState('');
@@ -248,10 +249,22 @@ export default function Sidebar() {
         if (ativo) setComprasModuloVisivel(false);
       });
 
+    if (ehAdmCompras || isManutencao) {
+      api.get(`${API_ROOT}/compras/fila-assinatura/resumo`)
+        .then((response) => {
+          if (ativo) setFilaAssinaturaPendentes(Number(response.data?.pendentes) || 0);
+        })
+        .catch(() => {
+          if (ativo) setFilaAssinaturaPendentes(0);
+        });
+    } else {
+      setFilaAssinaturaPendentes(0);
+    }
+
     return () => {
       ativo = false;
     };
-  }, [token, usuarioSessao?.id, usuarioSessao?.perfil_acesso]);
+  }, [token, usuarioSessao?.id, usuarioSessao?.perfil_acesso, ehAdmCompras, isManutencao]);
 
   const menuGroups = [
     {
@@ -475,6 +488,10 @@ export default function Sidebar() {
               path: '/compras/aguardando-assinatura',
               icon: FilePenLine,
               label: 'Aguardando assinatura',
+              labelTitle: filaAssinaturaPendentes > 0
+                ? `${filaAssinaturaPendentes} pedido(s) aguardando escolha e assinatura`
+                : 'Aguardando assinatura',
+              badgeCount: filaAssinaturaPendentes,
               feature: 'compras',
               perfis: [...PERFIS_ADM_COMPRAS_SEDE, 'Manutenção'],
             },
@@ -840,6 +857,11 @@ export default function Sidebar() {
         title={tituloCompleto}
       >
         {child.label}
+        {Number(child.badgeCount) > 0 ? (
+          <span className="ml-1 inline-flex min-w-[1.25rem] items-center justify-center rounded-full bg-amber-500 px-1.5 text-[10px] font-bold text-white">
+            {child.badgeCount}
+          </span>
+        ) : null}
       </span>
     );
   };

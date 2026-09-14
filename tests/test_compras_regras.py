@@ -308,6 +308,19 @@ def test_chave_split_categoria_pedido():
     ) == ("alimentacao", "Alimentação")
 
 
+def test_aviso_envio_sem_tres_orcamentos():
+    from compras_regras import (
+        MIN_COTACOES_RECOMENDADAS,
+        aviso_pedido_sem_tres_orcamentos_para_sede,
+        mensagem_confirmacao_envio_sem_tres,
+    )
+
+    assert MIN_COTACOES_RECOMENDADAS == 3
+    assert aviso_pedido_sem_tres_orcamentos_para_sede(3) is None
+    assert "apenas 1" in (aviso_pedido_sem_tres_orcamentos_para_sede(1) or "")
+    assert "Deseja enviar mesmo assim" in mensagem_confirmacao_envio_sem_tres(2)
+
+
 def test_competencia_orcamento():
     from compras_regras import (
         COMPETENCIA_PROJETO,

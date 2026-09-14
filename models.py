@@ -124,6 +124,9 @@ class UsuarioDB(Base):
     telefone = Column(String, nullable=True)
 
     avatar_url = Column(String, nullable=True)
+    # PDF de assinatura digital reutilizável (ADM Compras / aprovação de orçamentos).
+    assinatura_digital_caminho = Column(String, nullable=True)
+    assinatura_digital_nome = Column(String, nullable=True)
 
     senha_hash = Column(String, nullable=False)
     token_version = Column(Integer, default=0, nullable=False)

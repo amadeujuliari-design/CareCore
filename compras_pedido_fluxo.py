@@ -15,13 +15,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from compras_itens_consumo_utils import embalagem_efetiva_pedido
 from compras_nf_xml_utils import extrair_campos_nf_xml
+from compras_assinatura_pdf import (
+    mesclar_orcamento_com_assinatura_pdf,
+    montar_folha_ato_assinatura_sede,
+    valor_centavos_para_texto,
+)
 from compras_pedido_pdf import (
-    montar_pdf_aprovacao_orcamento_sede,
     montar_pdf_pedido_compra,
     montar_pdf_solicitacao_cotacao,
 )
 from compras_regras import (
     ESCOPO_PROJETO,
+    MIN_COTACOES_RECOMENDADAS,
     PATRIMONIO_ORIGEM_COMPRA,
     PATRIMONIO_SITUACAO_BOM,
     STATUS_AGUARDANDO_COTACAO,
@@ -56,6 +61,7 @@ from compras_regras import (
     TIPOS_EVENTO_AGUARDAM_OK,
     TIPOS_EVENTO_PEDIDO,
     aviso_cotacoes_insuficientes,
+    aviso_pedido_sem_tres_orcamentos_para_sede,
     data_operacional,
     pedido_escopo_sede,
     pedido_itens_podem_editar,
@@ -188,6 +194,20 @@ async def _cotacoes_ativas(db: AsyncSession, pedido_id: str) -> list[ComprasCota
         )
     ).scalars().all()
     return [c for c in rows if getattr(c, "ativa", True)]
+
+
+async def contar_orcamentos_com_anexo(db: AsyncSession, pedido_id: str) -> int:
+    """Quantidade de cotações ativas que já têm ao menos um PDF de orçamento."""
+    cotacoes = await _cotacoes_ativas(db, pedido_id)
+    if not cotacoes:
+        return 0
+    anexos = await _anexos_pedido(db, pedido_id)
+    com_pdf = {
+        a.cotacao_id
+        for a in anexos
+        if a.cotacao_id and a.tipo == TIPO_ANEXO_ORCAMENTO
+    }
+    return sum(1 for c in cotacoes if c.id in com_pdf)
 
 
 async def _anexos_pedido(db: AsyncSession, pedido_id: str) -> list[ComprasPedidoAnexoDB]:
@@ -333,6 +353,11 @@ async def extras_serializacao_pedido(db: AsyncSession, pedido: ComprasPedidoDB) 
     )
     fornecedores_solicitacao = _fornecedores_solicitacao_dos_eventos(eventos, fornecedores_org)
     qtd_orcamentos = len([c for c in cotacoes if getattr(c, "ativa", True)])
+    orcamentos_com_anexo = len({
+        a.cotacao_id
+        for a in anexos
+        if a.cotacao_id and a.tipo == TIPO_ANEXO_ORCAMENTO
+    } & {c.id for c in cotacoes if getattr(c, "ativa", True)})
     email_pedido_ok = any(
         e.tipo == TIPO_EVENTO_EMAIL and (e.texto or "").startswith("E-mail enviado para")
         for e in eventos
@@ -347,6 +372,13 @@ async def extras_serializacao_pedido(db: AsyncSession, pedido: ComprasPedidoDB) 
         "precisa_revisar_cotacao": precisa_revisar,
         "pode_editar_itens": pedido_itens_podem_editar(pedido.status),
         "qtd_orcamentos": qtd_orcamentos,
+        "orcamentos_com_anexo": orcamentos_com_anexo,
+        "min_orcamentos_recomendados": MIN_COTACOES_RECOMENDADAS,
+        "aviso_sede_sem_tres_orcamentos": (
+            aviso_pedido_sem_tres_orcamentos_para_sede(orcamentos_com_anexo)
+            if pedido.status == STATUS_AGUARDANDO_SEDE
+            else None
+        ),
         "pode_substituir_orcamento": False,  # preenchido em serializar_pedido com perfil
         "fornecedores_solicitacao": fornecedores_solicitacao,
         "motivo_reprovacao": pedido.motivo_reprovacao,
@@ -456,7 +488,102 @@ async def upload_anexo_pedido(
         cotacao_id=cotacao_id,
     )
     pedido.atualizado_em = agora_operacional_naive()
+
+    # Com 3 orçamentos anexados (cotação do projeto), envia automaticamente à Sede.
+    if (
+        tipo == TIPO_ANEXO_ORCAMENTO
+        and tipo_eh_cotacao_projeto(pedido.tipo)
+        and pedido.status in {STATUS_RASCUNHO, STATUS_EM_COTACAO, STATUS_AGUARDANDO_COTACAO}
+    ):
+        qtd = await contar_orcamentos_com_anexo(db, pedido.id)
+        if qtd >= MIN_COTACOES_RECOMENDADAS:
+            await enviar_cotacao_projeto_para_sede(
+                db,
+                usuario,
+                pedido,
+                automatico=True,
+                confirmar_sem_tres_orcamentos=True,
+            )
+
     return anexo
+
+
+async def enviar_cotacao_projeto_para_sede(
+    db: AsyncSession,
+    usuario: dict,
+    pedido: ComprasPedidoDB,
+    *,
+    automatico: bool = False,
+    confirmar_sem_tres_orcamentos: bool = False,
+) -> ComprasPedidoDB:
+    """Projeto envia à Sede para escolha/assinatura (sem exigir orçamento escolhido)."""
+    if not tipo_eh_cotacao_projeto(pedido.tipo):
+        raise HTTPException(status_code=400, detail="Envio à Sede para assinatura vale para cotação do projeto.")
+    if pedido.status not in {STATUS_RASCUNHO, STATUS_EM_COTACAO, STATUS_AGUARDANDO_COTACAO}:
+        raise HTTPException(
+            status_code=400,
+            detail="Este pedido não pode ser enviado à Sede neste status.",
+        )
+    itens_proj = list(
+        (
+            await db.execute(
+                select(ComprasPedidoItemDB).where(ComprasPedidoItemDB.pedido_id == pedido.id)
+            )
+        ).scalars().all()
+    )
+    if not itens_proj:
+        raise HTTPException(status_code=400, detail="Inclua ao menos um item antes de enviar.")
+
+    qtd_com_anexo = await contar_orcamentos_com_anexo(db, pedido.id)
+    if qtd_com_anexo < 1:
+        raise HTTPException(
+            status_code=400,
+            detail="Anexe ao menos um orçamento (PDF) antes de enviar à Sede.",
+        )
+    if qtd_com_anexo < MIN_COTACOES_RECOMENDADAS and not confirmar_sem_tres_orcamentos:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "orcamentos_insuficientes",
+                "message": (
+                    f"Você ainda não anexou os {MIN_COTACOES_RECOMENDADAS} orçamentos "
+                    f"(há {qtd_com_anexo}). É importante que {MIN_COTACOES_RECOMENDADAS} "
+                    "orçamentos sejam anexados antes do envio para o parecer da Sede. "
+                    "Deseja enviar mesmo assim?"
+                ),
+                "orcamentos_com_anexo": qtd_com_anexo,
+                "min_recomendado": MIN_COTACOES_RECOMENDADAS,
+            },
+        )
+
+    status_anterior = pedido.status
+    pedido.aprovado_unidade_por_id = _uid(usuario)
+    pedido.aprovado_unidade_em = agora_operacional_naive()
+    pedido.status = STATUS_AGUARDANDO_SEDE
+    pedido.submetido_em = agora_operacional_naive()
+    pedido.atualizado_em = agora_operacional_naive()
+    if automatico:
+        texto = (
+            f"Pedido enviado automaticamente à Sede para escolha e assinatura "
+            f"({qtd_com_anexo} orçamentos anexados)."
+        )
+    elif qtd_com_anexo < MIN_COTACOES_RECOMENDADAS:
+        texto = (
+            f"Pedido enviado à Sede para assinatura sem os {MIN_COTACOES_RECOMENDADAS} "
+            f"orçamentos (apenas {qtd_com_anexo}). Projeto confirmou o envio antecipado."
+        )
+    else:
+        texto = "Pedido enviado à Sede para escolha do orçamento e assinatura."
+    await registrar_evento_pedido(
+        db,
+        pedido_id=pedido.id,
+        tipo=TIPO_EVENTO_STATUS,
+        texto=texto,
+        usuario_id=_uid(usuario),
+        status_anterior=status_anterior,
+        status_novo=pedido.status,
+    )
+    return pedido
 
 
 async def confirmar_evento_pedido(
@@ -1404,7 +1531,7 @@ async def assinar_orcamento_e_aprovar_sede(
     usuario: dict,
     pedido: ComprasPedidoDB,
 ) -> ComprasPedidoDB:
-    """Assina o orçamento vencedor (folha digitalizada) e aprova na Sede — só cotação do projeto."""
+    """Ato explícito: mescla orçamento vencedor + PDF de assinatura do aprovador e aprova."""
     if not usuario_pode_aprovar_sede(
         perfil=str(usuario.get("perfil_acesso") or usuario.get("perfil") or ""),
         is_manutencao=bool(usuario.get("is_manutencao")),
@@ -1416,11 +1543,6 @@ async def assinar_orcamento_e_aprovar_sede(
         is_manutencao=bool(usuario.get("is_manutencao")),
     ):
         raise HTTPException(status_code=403, detail="Pedido fora do escopo da sua classe de Compras.")
-    if not tipo_eh_cotacao_projeto(pedido.tipo):
-        raise HTTPException(
-            status_code=400,
-            detail="Assinatura de orçamento vale para bem / imobilizado ou prestação de serviço.",
-        )
     if pedido.status != STATUS_AGUARDANDO_SEDE:
         raise HTTPException(status_code=400, detail="Pedido não está aguardando aprovação da Sede.")
     if not pedido.aprovado_unidade_em and not pedido_escopo_sede(getattr(pedido, "escopo_unidade", None)):
@@ -1429,10 +1551,29 @@ async def assinar_orcamento_e_aprovar_sede(
             detail="O projeto precisa enviar o pedido à Sede antes da assinatura.",
         )
 
+    from models import UsuarioDB
+
+    user_row = (
+        await db.execute(select(UsuarioDB).where(UsuarioDB.id == _uid(usuario)))
+    ).scalar_one_or_none()
+    caminho_assinatura = getattr(user_row, "assinatura_digital_caminho", None) if user_row else None
+    nome_assinatura = getattr(user_row, "assinatura_digital_nome", None) if user_row else None
+    if not caminho_assinatura:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Cadastre o PDF da sua assinatura digital antes de assinar "
+                "(menu Aguardando assinatura → Assinatura digital)."
+            ),
+        )
+
     cotacoes = await _cotacoes_ativas(db, pedido.id)
     escolhida = next((c for c in cotacoes if c.escolhida), None)
     if not escolhida:
-        raise HTTPException(status_code=400, detail="Não há orçamento vencedor escolhido.")
+        raise HTTPException(
+            status_code=400,
+            detail="Escolha o orçamento vencedor nesta fila antes de assinar.",
+        )
 
     anexos_orc = (
         await db.execute(
@@ -1456,33 +1597,31 @@ async def assinar_orcamento_e_aprovar_sede(
         (usuario.get("nome") or usuario.get("nome_completo") or usuario.get("email") or "ADM Compras")
     ).strip()
     assinado_em_texto = agora.strftime("%d/%m/%Y %H:%M")
-
-    org = (
-        await db.execute(select(OrganizacaoDB).where(OrganizacaoDB.id == pedido.organizacao_id))
-    ).scalar_one_or_none()
-    inst = await _dados_instituicao(db, pedido)
-    identidade = await _identidade_relatorio_pedido(db, pedido, org)
-    logo_bytes = _logo_bytes_relatorio(identidade.get("relatorio_logo_url"))
     numero = pedido.id.split("-")[0].upper()[:8]
-    pdf_bytes = montar_pdf_aprovacao_orcamento_sede(
-        pedido={
-            "competencia": pedido.competencia,
-            "tipo": pedido.tipo,
-            "instituicao_nome": (inst or {}).get("nome"),
-        },
-        instituicao=inst,
-        organizacao_nome=org.nome if org else "AEB",
-        cotacao_escolhida={
-            "fornecedor_nome": escolhida.fornecedor_nome,
-            "valor_centavos": escolhida.valor_centavos,
-        },
+
+    try:
+        orc_bytes, _ = ler_bytes_anexo(orcamento_original.caminho_arquivo)
+        assinatura_bytes, _ = ler_bytes_anexo(caminho_assinatura)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Não foi possível ler os PDFs: {exc}") from exc
+
+    capa = montar_folha_ato_assinatura_sede(
         numero_pedido=numero,
         assinante_nome=assinante,
         assinado_em_texto=assinado_em_texto,
-        arquivo_orcamento_original=orcamento_original.nome_arquivo,
-        identidade=identidade,
-        logo_bytes=logo_bytes,
+        fornecedor_nome=escolhida.fornecedor_nome,
+        valor_texto=valor_centavos_para_texto(escolhida.valor_centavos),
+        arquivo_orcamento=orcamento_original.nome_arquivo,
     )
+    try:
+        pdf_bytes = mesclar_orcamento_com_assinatura_pdf(
+            capa_bytes=capa,
+            orcamento_bytes=orc_bytes,
+            assinatura_bytes=assinatura_bytes,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Falha ao montar o PDF assinado: {exc}") from exc
+
     nome_arquivo = f"orcamento-assinado-sede-{numero}.pdf"
 
     class _ArquivoGerado:
@@ -1528,13 +1667,15 @@ async def assinar_orcamento_e_aprovar_sede(
     pedido.status = STATUS_APROVADO
     pedido.atualizado_em = agora
 
+    rotulo_assinatura = nome_assinatura or "PDF de assinatura digital"
     await registrar_evento_pedido(
         db,
         pedido_id=pedido.id,
         tipo=TIPO_EVENTO_STATUS,
         texto=(
-            f"Orçamento de {escolhida.fornecedor_nome} assinado digitalmente pela Sede "
-            f"({assinante}) e pedido aprovado."
+            f"ATO DE ASSINATURA: {assinante} assinou o orçamento de {escolhida.fornecedor_nome} "
+            f"em {assinado_em_texto}, aplicando o arquivo «{rotulo_assinatura}» sobre o PDF "
+            f"«{orcamento_original.nome_arquivo}». Pedido aprovado na Sede."
         ),
         usuario_id=_uid(usuario),
         anexo_id=anexo.id,
@@ -1546,7 +1687,10 @@ async def assinar_orcamento_e_aprovar_sede(
         db,
         pedido_id=pedido.id,
         tipo=TIPO_EVENTO_ANEXO,
-        texto=f"Orçamento assinado (Sede): {nome_original}. Disponível para o projeto.",
+        texto=(
+            f"Orçamento assinado (Sede): {nome_original}. "
+            "Disponível para o projeto enviar ao fornecedor com o pedido de compra."
+        ),
         usuario_id=_uid(usuario),
         anexo_id=anexo.id,
         cotacao_id=escolhida.id,

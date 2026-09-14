@@ -38,6 +38,7 @@ import {
   comprasReceber,
   comprasReabrir,
   comprasRegistrarNotaFiscal,
+  comprasRevogarEscolhaCotacao,
   comprasReprovar,
   comprasSalvarItemConsumo,
   comprasSalvarItens,
@@ -235,10 +236,8 @@ export default function ComprasPedido() {
   const cotacaoSede = tipoEhCotacaoSede(pedido.tipo);
   const pulaAprovacaoSede = tipoPulaAprovacaoSede(pedido.tipo) || Boolean(pedido.pula_aprovacao_sede);
   const segmentoCotacao = segmentoFornecedorDoTipoPedido(pedido.tipo);
-  const podeEscolherCotacaoConsumo = cotacaoSede && unidade && !pedidoSede
-    && ['em_cotacao', 'aguardando_aprovacao_unidade'].includes(pedido.status);
-  const podeEscolherCotacaoImobilizado = cotacaoProjeto && unidade && !pedidoSede
-    && ['rascunho', 'em_cotacao', 'aguardando_cotacao'].includes(pedido.status);
+  const podeEscolherCotacao = sede
+    && ['aguardando_aprovacao_sede', 'em_cotacao', 'aguardando_cotacao', 'aguardando_aprovacao_unidade'].includes(pedido.status);
   const podeLancarCotacao = (sede && cotacaoSede && !terminal)
     || (unidade && cotacaoProjeto && ['rascunho', 'em_cotacao', 'aguardando_cotacao'].includes(pedido.status));
   const podePedirCotacaoEmail = (
@@ -1058,9 +1057,17 @@ export default function ComprasPedido() {
                         {c.escolhida ? ' · escolhida' : ''}
                       </span>
                       <div className="flex flex-wrap gap-2">
-                        {(podeEscolherCotacaoConsumo || podeEscolherCotacaoImobilizado) && !c.escolhida && (
+                        {(podeEscolherCotacao) && !c.escolhida && (
                           <PremiumButton onClick={() => agir(() => comprasEscolherCotacao(pedido.id, c.id))}>
                             Escolher
+                          </PremiumButton>
+                        )}
+                        {podeEscolherCotacao && c.escolhida && (
+                          <PremiumButton
+                            variant="secondary"
+                            onClick={() => agir(() => comprasRevogarEscolhaCotacao(pedido.id), 'Escolha revogada.')}
+                          >
+                            Revogar escolha
                           </PremiumButton>
                         )}
                         {!terminal && podeSubstituirOrcamento && (
@@ -1455,23 +1462,59 @@ export default function ComprasPedido() {
               </SectionCard>
             )}
 
+            {pedido.aviso_sede_sem_tres_orcamentos && sede && (
+              <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                {pedido.aviso_sede_sem_tres_orcamentos}
+              </div>
+            )}
+
             <SectionCard title="Fluxo">
               <div className="flex flex-wrap gap-2">
                 {(pedido.status === 'rascunho'
                   || (cotacaoProjeto && ['em_cotacao', 'aguardando_cotacao'].includes(pedido.status))) && (
                   <PremiumButton
-                    onClick={() => agir(async () => {
-                      const resp = await comprasSubmeter(pedido.id);
-                      if (resp?.dividido && Array.isArray(resp.pedidos) && resp.pedidos.length > 1) {
-                        const nomes = resp.pedidos
-                          .map((p) => p.categoria_split_nome || 'categoria')
-                          .join(', ');
-                        setOk(`Pedido dividido em ${resp.pedidos.length} por categoria: ${nomes}.`);
-                        if (resp.pedido?.id && resp.pedido.id !== pedido.id) {
-                          navigate(`/compras/pedidos/${resp.pedido.id}`);
+                    onClick={async () => {
+                      setErro('');
+                      setOk('');
+                      const tentar = async (confirmar) => comprasSubmeter(pedido.id, {
+                        confirmarSemTresOrcamentos: confirmar,
+                      });
+                      try {
+                        let resp;
+                        try {
+                          resp = await tentar(false);
+                        } catch (err) {
+                          const detail = err.response?.data?.detail;
+                          if (err.response?.status === 409 && detail?.code === 'orcamentos_insuficientes') {
+                            if (!window.confirm(detail.message)) return;
+                            resp = await tentar(true);
+                          } else {
+                            throw err;
+                          }
                         }
+                        setOk(cotacaoProjeto
+                          ? 'Pedido enviado à Sede para escolha e assinatura.'
+                          : 'Pedido enviado.');
+                        if (resp?.dividido && Array.isArray(resp.pedidos) && resp.pedidos.length > 1) {
+                          const nomes = resp.pedidos
+                            .map((p) => p.categoria_split_nome || 'categoria')
+                            .join(', ');
+                          setOk(`Pedido dividido em ${resp.pedidos.length} por categoria: ${nomes}.`);
+                          if (resp.pedido?.id && resp.pedido.id !== pedido.id) {
+                            navigate(`/compras/pedidos/${resp.pedido.id}`);
+                            return;
+                          }
+                        }
+                        await carregar();
+                      } catch (err) {
+                        const detail = err.response?.data?.detail;
+                        setErro(
+                          (typeof detail === 'string' ? detail : detail?.message)
+                          || err.message
+                          || 'Não foi possível enviar.',
+                        );
                       }
-                    })}
+                    }}
                   >
                     {cotacaoProjeto ? 'Enviar à Sede' : 'Enviar pedido'}
                   </PremiumButton>

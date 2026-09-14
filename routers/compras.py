@@ -51,6 +51,7 @@ from compras_service import (
     receber_pedido,
     registrar_cotacao,
     relatorio_economia,
+    revogar_escolha_cotacao,
     salvar_categoria,
     salvar_fonte,
     salvar_fornecedor,
@@ -73,8 +74,12 @@ from compras_service import (
     _serializar_fornecedor,
 )
 from compras_regras import (
+    STATUS_AGUARDANDO_SEDE,
+    TIPOS_COTACAO_PROJETO,
     usuario_e_sede_compras,
+    usuario_pode_aprovar_sede,
     usuario_pode_cadastrar_mestre_compras,
+    usuario_sede_pode_ver_tipo,
     usuario_ve_modulo_compras,
 )
 from database import get_db
@@ -701,12 +706,18 @@ async def put_itens(
 @router.post("/pedidos/{pedido_id}/submeter")
 async def post_submeter(
     pedido_id: str,
+    confirmar_sem_tres_orcamentos: bool = Query(False),
     db: AsyncSession = Depends(get_db),
     usuario_atual: dict = Depends(get_usuario_logado),
 ):
     await _ctx(db, usuario_atual)
     pedido = await obter_pedido(db, usuario_atual, pedido_id)
-    pedidos = await submeter_pedido(db, usuario_atual, pedido)
+    pedidos = await submeter_pedido(
+        db,
+        usuario_atual,
+        pedido,
+        confirmar_sem_tres_orcamentos=confirmar_sem_tres_orcamentos,
+    )
     await db.commit()
     serializados = [
         await serializar_pedido(db, p, incluir_detalhe=True, usuario=usuario_atual)
@@ -745,6 +756,103 @@ async def post_escolher(
     await escolher_cotacao(db, usuario_atual, pedido, cotacao_id)
     await db.commit()
     return await serializar_pedido(db, pedido, incluir_detalhe=True, usuario=usuario_atual)
+
+
+@router.post("/pedidos/{pedido_id}/cotacoes/revogar-escolha")
+async def post_revogar_escolha(
+    pedido_id: str,
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    await _ctx(db, usuario_atual)
+    pedido = await obter_pedido(db, usuario_atual, pedido_id)
+    await revogar_escolha_cotacao(db, usuario_atual, pedido)
+    await db.commit()
+    return await serializar_pedido(db, pedido, incluir_detalhe=True, usuario=usuario_atual)
+
+
+@router.get("/fila-assinatura/resumo")
+async def get_fila_assinatura_resumo(
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    """Contagem de pedidos aguardando escolha/assinatura da Sede (badge do menu)."""
+    await _ctx(db, usuario_atual)
+    if not usuario_pode_aprovar_sede(
+        perfil=str(usuario_atual.get("perfil_acesso") or ""),
+        is_manutencao=bool(usuario_atual.get("is_manutencao")),
+    ):
+        return {"pendentes": 0}
+    lista = await listar_pedidos(db, usuario_atual, status_filtro=STATUS_AGUARDANDO_SEDE)
+    pendentes = 0
+    for p in lista or []:
+        tipo = (p.get("tipo") if isinstance(p, dict) else "") or ""
+        if tipo in TIPOS_COTACAO_PROJETO:
+            pendentes += 1
+    return {"pendentes": pendentes}
+
+
+@router.get("/assinatura-digital")
+async def get_assinatura_digital(
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    await _ctx(db, usuario_atual)
+    from models import UsuarioDB
+    from sqlalchemy import select
+
+    row = (
+        await db.execute(select(UsuarioDB).where(UsuarioDB.id == usuario_atual.get("id")))
+    ).scalar_one_or_none()
+    if not row:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado.")
+    return {
+        "cadastrada": bool(getattr(row, "assinatura_digital_caminho", None)),
+        "nome_arquivo": getattr(row, "assinatura_digital_nome", None),
+    }
+
+
+@router.post("/assinatura-digital")
+async def post_assinatura_digital(
+    arquivo: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    """Cadastra/atualiza o PDF de assinatura digital do usuário da Sede."""
+    await _ctx(db, usuario_atual)
+    if not usuario_pode_aprovar_sede(
+        perfil=str(usuario_atual.get("perfil_acesso") or ""),
+        is_manutencao=bool(usuario_atual.get("is_manutencao")),
+    ):
+        raise HTTPException(status_code=403, detail="Somente ADM Compras cadastra assinatura digital.")
+    from models import UsuarioDB
+    from sqlalchemy import select
+    from compras_upload_utils import salvar_arquivo_compras, remover_arquivo_compras
+
+    nome = (arquivo.filename or "").lower()
+    if not nome.endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="Envie um arquivo PDF da assinatura.")
+    conteudo = await arquivo.read()
+    if not conteudo:
+        raise HTTPException(status_code=400, detail="Arquivo vazio.")
+    row = (
+        await db.execute(select(UsuarioDB).where(UsuarioDB.id == usuario_atual.get("id")))
+    ).scalar_one_or_none()
+    if not row:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado.")
+    caminho_antigo = getattr(row, "assinatura_digital_caminho", None)
+    caminho, nome_original, _tam, _ct = await salvar_arquivo_compras(
+        organizacao_id=usuario_atual.get("organizacao_id") or row.organizacao_id,
+        pedido_id=f"assinatura-{row.id}",
+        file=arquivo,
+        conteudo=conteudo,
+    )
+    row.assinatura_digital_caminho = caminho
+    row.assinatura_digital_nome = nome_original
+    if caminho_antigo and caminho_antigo != caminho:
+        remover_arquivo_compras(caminho_antigo)
+    await db.commit()
+    return {"cadastrada": True, "nome_arquivo": nome_original}
 
 
 @router.post("/pedidos/{pedido_id}/aprovar-unidade")

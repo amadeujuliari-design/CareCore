@@ -853,6 +853,23 @@ def aviso_cotacoes_insuficientes(qtd_cotacoes: int) -> Optional[str]:
     return f"Ainda faltam {faltam} orçamento(s). O ideal são {MIN_COTACOES_RECOMENDADAS} cotações, mas o processo pode continuar."
 
 
+def mensagem_confirmacao_envio_sem_tres(qtd_com_anexo: int) -> str:
+    return (
+        f"Você ainda não anexou os {MIN_COTACOES_RECOMENDADAS} orçamentos "
+        f"(há {qtd_com_anexo}). É importante que {MIN_COTACOES_RECOMENDADAS} orçamentos "
+        "sejam anexados antes do envio para o parecer da Sede. Deseja enviar mesmo assim?"
+    )
+
+
+def aviso_pedido_sem_tres_orcamentos_para_sede(qtd_com_anexo: int) -> Optional[str]:
+    if qtd_com_anexo >= MIN_COTACOES_RECOMENDADAS:
+        return None
+    return (
+        f"Atenção: este pedido chegou à Sede com apenas {qtd_com_anexo} orçamento(s) "
+        f"anexado(s). O recomendado são {MIN_COTACOES_RECOMENDADAS}."
+    )
+
+
 def pedido_escopo_sede(escopo_unidade: Optional[str]) -> bool:
     return (escopo_unidade or ESCOPO_PROJETO).strip().lower() == ESCOPO_SEDE
 

@@ -111,8 +111,10 @@ export async function comprasSalvarItens(id, itens) {
   return data;
 }
 
-export async function comprasSubmeter(id) {
-  const { data } = await api.post(`/api/compras/pedidos/${id}/submeter`);
+export async function comprasSubmeter(id, { confirmarSemTresOrcamentos = false } = {}) {
+  const { data } = await api.post(`/api/compras/pedidos/${id}/submeter`, null, {
+    params: confirmarSemTresOrcamentos ? { confirmar_sem_tres_orcamentos: true } : undefined,
+  });
   return data;
 }
 
@@ -123,6 +125,30 @@ export async function comprasCotacao(id, payload) {
 
 export async function comprasEscolherCotacao(pedidoId, cotacaoId) {
   const { data } = await api.post(`/api/compras/pedidos/${pedidoId}/cotacoes/${cotacaoId}/escolher`);
+  return data;
+}
+
+export async function comprasRevogarEscolhaCotacao(pedidoId) {
+  const { data } = await api.post(`/api/compras/pedidos/${pedidoId}/cotacoes/revogar-escolha`);
+  return data;
+}
+
+export async function comprasFilaAssinaturaResumo() {
+  const { data } = await api.get('/api/compras/fila-assinatura/resumo');
+  return data;
+}
+
+export async function comprasAssinaturaDigitalStatus() {
+  const { data } = await api.get('/api/compras/assinatura-digital');
+  return data;
+}
+
+export async function comprasUploadAssinaturaDigital(file) {
+  const fd = new FormData();
+  fd.append('arquivo', file);
+  const { data } = await api.post('/api/compras/assinatura-digital', fd, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
   return data;
 }
 

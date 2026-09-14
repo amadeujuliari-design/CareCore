@@ -54,6 +54,7 @@ from compras_regras import (
     STATUS_TERMINAIS_PEDIDO,
     TIPO_CONSUMO,
     TIPO_EVENTO_ITENS,
+    TIPO_EVENTO_OBSERVACAO,
     TIPO_EVENTO_STATUS,
     TIPO_HORTIFRUTI,
     TIPO_IMOBILIZADO,
@@ -112,6 +113,7 @@ from compras_regras import (
 from compras_pedido_fluxo import (
     desativar_cotacao,
     encerrar_pedido,
+    enviar_cotacao_projeto_para_sede,
     enviar_email_fornecedor,
     extras_serializacao_pedido,
     gerar_pedido_compra,
@@ -1060,45 +1062,17 @@ async def submeter_pedido(
     db: AsyncSession,
     usuario: dict,
     pedido: ComprasPedidoDB,
+    *,
+    confirmar_sem_tres_orcamentos: bool = False,
 ) -> list[ComprasPedidoDB]:
     """Envia o rascunho. Em consumo, parte por categoria (Carne/Alimentação separados)."""
     if tipo_eh_cotacao_projeto(pedido.tipo):
-        if pedido.status not in {STATUS_RASCUNHO, STATUS_EM_COTACAO, STATUS_AGUARDANDO_COTACAO}:
-            raise HTTPException(
-                status_code=400,
-                detail="Este pedido não pode ser enviado à Sede neste status.",
-            )
-        itens_proj = list(
-            (
-                await db.execute(
-                    select(ComprasPedidoItemDB).where(ComprasPedidoItemDB.pedido_id == pedido.id)
-                )
-            ).scalars().all()
-        )
-        if not itens_proj:
-            raise HTTPException(status_code=400, detail="Inclua ao menos um item antes de enviar.")
-        cotacoes = [c for c in await _cotacoes_do_pedido(db, pedido.id) if getattr(c, "ativa", True)]
-        escolhida = any(c.escolhida for c in cotacoes)
-        if not pedido_pronto_para_aprovacao_unidade(pedido.tipo, len(cotacoes), escolhida):
-            raise HTTPException(
-                status_code=400,
-                detail="Escolha o orçamento vencedor antes de enviar à Sede.",
-            )
-        status_anterior = pedido.status
-        # Envio à Sede = aprovação do projeto (não passa por aguardando_unidade).
-        pedido.aprovado_unidade_por_id = _uid(usuario)
-        pedido.aprovado_unidade_em = agora_operacional_naive()
-        pedido.status = STATUS_AGUARDANDO_SEDE
-        pedido.submetido_em = agora_operacional_naive()
-        pedido.atualizado_em = agora_operacional_naive()
-        await registrar_evento_pedido(
+        await enviar_cotacao_projeto_para_sede(
             db,
-            pedido_id=pedido.id,
-            tipo=TIPO_EVENTO_STATUS,
-            texto="Pedido enviado à Sede para assinatura.",
-            usuario_id=_uid(usuario),
-            status_anterior=status_anterior,
-            status_novo=pedido.status,
+            usuario,
+            pedido,
+            automatico=False,
+            confirmar_sem_tres_orcamentos=confirmar_sem_tres_orcamentos,
         )
         return [pedido]
 
@@ -1363,27 +1337,95 @@ async def escolher_cotacao(
     pedido: ComprasPedidoDB,
     cotacao_id: str,
 ) -> ComprasPedidoDB:
+    """Somente a Sede escolhe o orçamento vencedor (pode trocar/revogar depois)."""
+    if not usuario_pode_aprovar_sede(
+        perfil=_perfil(usuario),
+        is_manutencao=bool(usuario.get("is_manutencao")),
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail="Somente a Sede (ADM Compras) escolhe o orçamento vencedor.",
+        )
+    if not usuario_sede_pode_ver_tipo(
+        perfil=_perfil(usuario),
+        tipo=pedido.tipo,
+        is_manutencao=bool(usuario.get("is_manutencao")),
+    ):
+        raise HTTPException(status_code=403, detail="Pedido fora do escopo da sua classe de Compras.")
+    if pedido.status not in {
+        STATUS_AGUARDANDO_SEDE,
+        STATUS_EM_COTACAO,
+        STATUS_AGUARDANDO_COTACAO,
+        STATUS_AGUARDANDO_UNIDADE,
+    }:
+        raise HTTPException(
+            status_code=400,
+            detail="Não é possível escolher orçamento neste status do pedido.",
+        )
+
     cotacoes = [c for c in await _cotacoes_do_pedido(db, pedido.id) if getattr(c, "ativa", True)]
     alvo = next((c for c in cotacoes if c.id == cotacao_id), None)
     if not alvo:
         raise HTTPException(status_code=404, detail="Cotação não encontrada.")
 
-    unidade_projeto = tipo_eh_cotacao_projeto(pedido.tipo) and not _sede(usuario)
-    unidade_cotacao_sede = tipo_eh_cotacao_sede(pedido.tipo) and not _sede(usuario)
-    if not _sede(usuario) and not unidade_projeto and not unidade_cotacao_sede:
-        raise HTTPException(status_code=403, detail="Sem permissão para escolher esta cotação.")
-
+    anterior = next((c for c in cotacoes if c.escolhida), None)
     for cotacao in cotacoes:
         cotacao.escolhida = cotacao.id == cotacao_id
+
+    if anterior and anterior.id != alvo.id:
+        texto = (
+            f"Sede revogou a escolha de {anterior.fornecedor_nome} e escolheu "
+            f"{alvo.fornecedor_nome} (R$ {alvo.valor_centavos / 100:.2f}) como orçamento vencedor."
+        )
+    else:
+        texto = (
+            f"Sede escolheu o orçamento vencedor: {alvo.fornecedor_nome} "
+            f"(R$ {alvo.valor_centavos / 100:.2f})."
+        )
+    await registrar_evento_pedido(
+        db,
+        pedido_id=pedido.id,
+        tipo=TIPO_EVENTO_OBSERVACAO,
+        texto=texto,
+        usuario_id=_uid(usuario),
+        cotacao_id=alvo.id,
+    )
 
     if tipo_eh_cotacao_sede(pedido.tipo) and pedido.status in {
         STATUS_AGUARDANDO_COTACAO,
         STATUS_EM_COTACAO,
     }:
-        if pedido_pronto_para_aprovacao_unidade(pedido.tipo, len(cotacoes), True):
-            pedido.status = (
-                STATUS_AGUARDANDO_SEDE if _pedido_escopo_sede(pedido) else STATUS_AGUARDANDO_UNIDADE
-            )
+        pedido.status = STATUS_AGUARDANDO_SEDE
+    pedido.atualizado_em = agora_operacional_naive()
+    return pedido
+
+
+async def revogar_escolha_cotacao(
+    db: AsyncSession,
+    usuario: dict,
+    pedido: ComprasPedidoDB,
+) -> ComprasPedidoDB:
+    if not usuario_pode_aprovar_sede(
+        perfil=_perfil(usuario),
+        is_manutencao=bool(usuario.get("is_manutencao")),
+    ):
+        raise HTTPException(status_code=403, detail="Somente a Sede pode revogar a escolha.")
+    if pedido.status != STATUS_AGUARDANDO_SEDE:
+        raise HTTPException(status_code=400, detail="Só é possível revogar enquanto aguarda assinatura da Sede.")
+    cotacoes = [c for c in await _cotacoes_do_pedido(db, pedido.id) if getattr(c, "ativa", True)]
+    anterior = next((c for c in cotacoes if c.escolhida), None)
+    if not anterior:
+        raise HTTPException(status_code=400, detail="Não há orçamento escolhido para revogar.")
+    for cotacao in cotacoes:
+        cotacao.escolhida = False
+    await registrar_evento_pedido(
+        db,
+        pedido_id=pedido.id,
+        tipo=TIPO_EVENTO_OBSERVACAO,
+        texto=f"Sede revogou a escolha do orçamento ({anterior.fornecedor_nome}). Escolha outro para assinar.",
+        usuario_id=_uid(usuario),
+        cotacao_id=anterior.id,
+    )
     pedido.atualizado_em = agora_operacional_naive()
     return pedido
 
