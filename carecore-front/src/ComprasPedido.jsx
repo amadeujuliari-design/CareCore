@@ -1457,31 +1457,62 @@ export default function ComprasPedido() {
             )}
 
             {(pedido.notas_fiscais || []).length > 0 && (
-              <SectionCard title="Notas fiscais">
-                <ul className="space-y-2 text-sm">
-                  {pedido.notas_fiscais.map((nf) => (
-                    <li key={nf.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-100 px-3 py-2">
-                      <span>
-                        {nf.tipo_nf} · NF {nf.numero || '—'}
-                        {nf.valor_centavos != null ? ` · ${moneyCentavos(nf.valor_centavos)}` : ''}
-                        {nf.origem_dados === 'xml' ? ' · XML' : ''}
-                      </span>
-                      {nf.anexo_id && (
-                        <button
-                          type="button"
-                          className="text-xs font-semibold text-violet-700 underline"
-                          onClick={() => {
-                            const anexo = (pedido.anexos || []).find((a) => a.id === nf.anexo_id);
-                            comprasBaixarAnexo(pedido.id, nf.anexo_id, anexo?.nome_arquivo);
-                          }}
-                        >
-                          Ver arquivo
-                        </button>
-                      )}
-                    </li>
-                  ))}
+              <div className="rounded-xl border-2 border-sky-400 bg-sky-50 px-4 py-3 shadow-sm">
+                <p className="text-sm font-bold uppercase tracking-wide text-sky-900">
+                  Notas fiscais anexadas
+                </p>
+                <p className="mt-1 text-sm text-sky-800">
+                  {(pedido.notas_fiscais || []).length === 1
+                    ? 'Há 1 nota fiscal neste pedido. Use o botão para baixar o arquivo.'
+                    : `Há ${(pedido.notas_fiscais || []).length} notas fiscais neste pedido. Use os botões para baixar os arquivos.`}
+                </p>
+                <ul className="mt-3 space-y-2">
+                  {pedido.notas_fiscais.map((nf) => {
+                    const anexo = (pedido.anexos || []).find((a) => a.id === nf.anexo_id);
+                    const rotuloTipo = nf.tipo_nf === 'servico'
+                      ? 'Serviço'
+                      : nf.tipo_nf === 'outro'
+                        ? 'Outro'
+                        : 'Produto';
+                    return (
+                      <li
+                        key={nf.id}
+                        className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-sky-200 bg-white px-3 py-2.5"
+                      >
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold text-slate-900">
+                            {rotuloTipo}
+                            {' · '}
+                            NF {nf.numero || 'sem número'}
+                            {nf.valor_centavos != null ? ` · ${moneyCentavos(nf.valor_centavos)}` : ''}
+                          </p>
+                          <p className="truncate text-xs text-slate-500">
+                            {anexo?.nome_arquivo
+                              || (nf.origem_dados === 'xml' ? 'Arquivo XML' : 'Arquivo anexado')}
+                            {nf.origem_dados === 'xml' ? ' · importado do XML' : ''}
+                          </p>
+                        </div>
+                        {nf.anexo_id ? (
+                          <button
+                            type="button"
+                            className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-sky-700 px-3 py-2 text-xs font-bold text-white hover:bg-sky-800"
+                            onClick={() => comprasBaixarAnexo(
+                              pedido.id,
+                              nf.anexo_id,
+                              anexo?.nome_arquivo || `nota-fiscal-${nf.numero || nf.id}.pdf`,
+                            ).catch(() => setErro('Não foi possível abrir o arquivo da NF.'))}
+                          >
+                            <FileText size={14} />
+                            Baixar NF
+                          </button>
+                        ) : (
+                          <span className="text-xs font-medium text-slate-400">Sem arquivo</span>
+                        )}
+                      </li>
+                    );
+                  })}
                 </ul>
-              </SectionCard>
+              </div>
             )}
 
             {podeEncerrar && (
