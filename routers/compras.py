@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -182,6 +182,15 @@ class ReprovarIn(BaseModel):
 
 class DesativarCotacaoIn(BaseModel):
     motivo: Optional[str] = None
+
+
+class AssinarOrcamentoSedeIn(BaseModel):
+    """Posição da assinatura em pontos PDF (origem inferior esquerdo). Todos opcionais = rodapé."""
+    page: Optional[int] = Field(default=None, ge=0, description="Índice da página (0 = primeira)")
+    x: Optional[float] = None
+    y: Optional[float] = None
+    width: Optional[float] = Field(default=None, gt=0)
+    height: Optional[float] = Field(default=None, gt=0)
 
 
 class SolicitacaoCotacaoIn(BaseModel):
@@ -639,6 +648,7 @@ async def put_fornecedor(
 async def get_pedidos(
     competencia: Optional[str] = Query(default=None),
     status: Optional[str] = Query(default=None, alias="status_pedido"),
+    status_grupo: Optional[str] = Query(default=None),
     tipo: Optional[str] = Query(default=None),
     db: AsyncSession = Depends(get_db),
     usuario_atual: dict = Depends(get_usuario_logado),
@@ -646,7 +656,12 @@ async def get_pedidos(
     await _ctx(db, usuario_atual)
     return {
         "itens": await listar_pedidos(
-            db, usuario_atual, competencia=competencia, status_filtro=status, tipo=tipo
+            db,
+            usuario_atual,
+            competencia=competencia,
+            status_filtro=status,
+            status_grupo=status_grupo,
+            tipo=tipo,
         )
     }
 
@@ -817,6 +832,30 @@ async def get_assinatura_digital(
     }
 
 
+@router.get("/assinatura-digital/arquivo")
+async def get_assinatura_digital_arquivo(
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    """Baixa o PDF de assinatura do usuário logado (para prévia no posicionamento)."""
+    await _ctx(db, usuario_atual)
+    from models import UsuarioDB
+    from sqlalchemy import select
+
+    row = (
+        await db.execute(select(UsuarioDB).where(UsuarioDB.id == usuario_atual.get("id")))
+    ).scalar_one_or_none()
+    if not row or not getattr(row, "assinatura_digital_caminho", None):
+        raise HTTPException(status_code=404, detail="Assinatura digital não cadastrada.")
+    conteudo, content_type = ler_bytes_anexo(row.assinatura_digital_caminho)
+    nome = getattr(row, "assinatura_digital_nome", None) or "assinatura.pdf"
+    return Response(
+        content=conteudo,
+        media_type=content_type or "application/pdf",
+        headers={"Content-Disposition": f'inline; filename="{nome}"'},
+    )
+
+
 @router.post("/assinatura-digital")
 async def post_assinatura_digital(
     arquivo: UploadFile = File(...),
@@ -889,13 +928,24 @@ async def post_aprovar_sede(
 @router.post("/pedidos/{pedido_id}/assinar-orcamento-sede")
 async def post_assinar_orcamento_sede(
     pedido_id: str,
+    payload: Optional[AssinarOrcamentoSedeIn] = Body(default=None),
     db: AsyncSession = Depends(get_db),
     usuario_atual: dict = Depends(get_usuario_logado),
 ):
-    """Assina o orçamento vencedor (folha digitalizada) e aprova — cotação do projeto."""
+    """Assina o orçamento vencedor (posição opcional) e aprova — cotação do projeto."""
     await _ctx(db, usuario_atual)
     pedido = await obter_pedido(db, usuario_atual, pedido_id)
-    await assinar_orcamento_e_aprovar_sede(db, usuario_atual, pedido)
+    dados = payload or AssinarOrcamentoSedeIn()
+    await assinar_orcamento_e_aprovar_sede(
+        db,
+        usuario_atual,
+        pedido,
+        page_index=dados.page,
+        x=dados.x,
+        y=dados.y,
+        width=dados.width,
+        height=dados.height,
+    )
     await db.commit()
     return await serializar_pedido(db, pedido, incluir_detalhe=True, usuario=usuario_atual)
 

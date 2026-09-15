@@ -692,6 +692,7 @@ async def listar_pedidos(
     *,
     competencia: Optional[str] = None,
     status_filtro: Optional[str] = None,
+    status_grupo: Optional[str] = None,
     tipo: Optional[str] = None,
 ) -> list[dict]:
     filtros = [ComprasPedidoDB.organizacao_id == _org_id(usuario)]
@@ -711,6 +712,12 @@ async def listar_pedidos(
         filtros.append(ComprasPedidoDB.competencia == normalizar_competencia(competencia))
     if status_filtro:
         filtros.append(ComprasPedidoDB.status == status_filtro)
+    else:
+        grupo = (status_grupo or "").strip().lower()
+        if grupo in {"terminais", "concluidos", "encerrados"}:
+            filtros.append(ComprasPedidoDB.status.in_(tuple(STATUS_TERMINAIS_PEDIDO)))
+        elif grupo in {"abertos", "andamento", "em_andamento"}:
+            filtros.append(ComprasPedidoDB.status.notin_(tuple(STATUS_TERMINAIS_PEDIDO)))
     if tipo:
         filtros.append(ComprasPedidoDB.tipo == tipo.strip().lower())
 

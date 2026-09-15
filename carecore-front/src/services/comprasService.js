@@ -162,9 +162,37 @@ export async function comprasAprovarSede(id) {
   return data;
 }
 
-export async function comprasAssinarOrcamentoSede(id) {
-  const { data } = await api.post(`/api/compras/pedidos/${id}/assinar-orcamento-sede`);
+export async function comprasAssinarOrcamentoSede(id, posicao = null) {
+  const body = posicao && posicao.width != null
+    ? {
+      page: posicao.page ?? 0,
+      x: posicao.x,
+      y: posicao.y,
+      width: posicao.width,
+      height: posicao.height,
+    }
+    : {};
+  const { data } = await api.post(`/api/compras/pedidos/${id}/assinar-orcamento-sede`, body);
   return data;
+}
+
+export async function comprasBlobAnexo(pedidoId, anexoId) {
+  const token = localStorage.getItem('@CareCore:token') || localStorage.getItem('token');
+  const resposta = await fetch(urlAnexoPedido(pedidoId, anexoId), {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (!resposta.ok) throw new Error('Não foi possível abrir o arquivo.');
+  return resposta.blob();
+}
+
+export async function comprasBlobAssinaturaDigital() {
+  const token = localStorage.getItem('@CareCore:token') || localStorage.getItem('token');
+  const base = api.defaults.baseURL || '';
+  const resposta = await fetch(`${base}/api/compras/assinatura-digital/arquivo`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (!resposta.ok) throw new Error('Não foi possível abrir a assinatura digital.');
+  return resposta.blob();
 }
 
 export async function comprasEnviar(id) {

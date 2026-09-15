@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from compras_itens_consumo_utils import embalagem_efetiva_pedido
 from compras_nf_xml_utils import extrair_campos_nf_xml
-from compras_assinatura_pdf import carimbar_assinatura_no_rodape_pdf
+from compras_assinatura_pdf import carimbar_assinatura_pdf
 from compras_patrimonio_utils import reais_para_centavos
 from compras_pedido_pdf import (
     montar_pdf_pedido_compra,
@@ -1668,8 +1668,14 @@ async def assinar_orcamento_e_aprovar_sede(
     db: AsyncSession,
     usuario: dict,
     pedido: ComprasPedidoDB,
+    *,
+    page_index: Optional[int] = None,
+    x: Optional[float] = None,
+    y: Optional[float] = None,
+    width: Optional[float] = None,
+    height: Optional[float] = None,
 ) -> ComprasPedidoDB:
-    """Ato explícito: mescla orçamento vencedor + PDF de assinatura do aprovador e aprova."""
+    """Ato explícito: carimba assinatura no orçamento (posição opcional) e aprova."""
     if not usuario_pode_aprovar_sede(
         perfil=str(usuario.get("perfil_acesso") or usuario.get("perfil") or ""),
         is_manutencao=bool(usuario.get("is_manutencao")),
@@ -1744,10 +1750,17 @@ async def assinar_orcamento_e_aprovar_sede(
         raise HTTPException(status_code=400, detail=f"Não foi possível ler os PDFs: {exc}") from exc
 
     try:
-        pdf_bytes = carimbar_assinatura_no_rodape_pdf(
+        pdf_bytes = carimbar_assinatura_pdf(
             orcamento_bytes=orc_bytes,
             assinatura_bytes=assinatura_bytes,
+            page_index=page_index,
+            x=x,
+            y=y,
+            width=width,
+            height=height,
         )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Falha ao montar o PDF assinado: {exc}") from exc
 

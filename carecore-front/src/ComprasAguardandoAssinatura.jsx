@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { FilePenLine } from 'lucide-react';
 
 import Sidebar from './Sidebar';
+import ModalPosicionarAssinaturaOrcamento from './components/ModalPosicionarAssinaturaOrcamento';
 import {
   AppShell,
   EmptyState,
@@ -52,6 +53,7 @@ export default function ComprasAguardandoAssinatura() {
   const [assinandoId, setAssinandoId] = useState('');
   const [acaoId, setAcaoId] = useState('');
   const [assinatura, setAssinatura] = useState({ cadastrada: false, nome_arquivo: null });
+  const [modalAssinatura, setModalAssinatura] = useState(null);
 
   const carregar = useCallback(async () => {
     setErro('');
@@ -317,32 +319,27 @@ export default function ComprasAguardandoAssinatura() {
                                 || !assinatura.cadastrada
                                 || anexosOrcamento(pedido, escolhida?.id).filter((a) => a.tipo === 'orcamento').length === 0
                               }
-                              onClick={async () => {
+                              onClick={() => {
                                 if (!assinatura.cadastrada) {
                                   setErro('Cadastre o PDF da sua assinatura digital antes de assinar.');
                                   return;
                                 }
-                                if (!window.confirm(
-                                  `Confirma o ATO DE ASSINATURA?\n\n`
-                                  + `Orçamento: ${escolhida.fornecedor_nome}\n`
-                                  + `Será gerado o PDF com: capa do ato + orçamento + seu arquivo «${assinatura.nome_arquivo}».\n\n`
-                                  + 'O pedido volta ao projeto após a assinatura.',
-                                )) return;
+                                const anexoOrc = anexosOrcamento(pedido, escolhida.id)
+                                  .find((a) => a.tipo === 'orcamento');
+                                if (!anexoOrc) {
+                                  setErro('Anexe o PDF do orçamento vencedor antes de assinar.');
+                                  return;
+                                }
                                 setErro('');
                                 setOk('');
-                                setAssinandoId(pedido.id);
-                                try {
-                                  await comprasAssinarOrcamentoSede(pedido.id);
-                                  setOk('Orçamento assinado com o seu PDF. Pedido aprovado — o projeto já pode seguir.');
-                                  await carregar();
-                                } catch (err) {
-                                  setErro(err.response?.data?.detail || err.message || 'Falha na assinatura.');
-                                } finally {
-                                  setAssinandoId('');
-                                }
+                                setModalAssinatura({
+                                  pedidoId: pedido.id,
+                                  anexoOrcamentoId: anexoOrc.id,
+                                  fornecedorNome: escolhida.fornecedor_nome || '',
+                                });
                               }}
                             >
-                              {assinandoId === pedido.id ? 'Assinando…' : 'Assinar com meu PDF'}
+                              {assinandoId === pedido.id ? 'Assinando…' : 'Posicionar e assinar'}
                             </PremiumButton>
                           </div>
                         </div>
@@ -360,6 +357,28 @@ export default function ComprasAguardandoAssinatura() {
           </div>
         </ScrollArea>
       </MainShell>
+      <ModalPosicionarAssinaturaOrcamento
+        aberto={Boolean(modalAssinatura)}
+        pedidoId={modalAssinatura?.pedidoId}
+        anexoOrcamentoId={modalAssinatura?.anexoOrcamentoId}
+        fornecedorNome={modalAssinatura?.fornecedorNome || ''}
+        onFechar={() => {
+          if (assinandoId) return;
+          setModalAssinatura(null);
+        }}
+        onConfirmar={async (posicao) => {
+          if (!modalAssinatura?.pedidoId) return;
+          setAssinandoId(modalAssinatura.pedidoId);
+          try {
+            await comprasAssinarOrcamentoSede(modalAssinatura.pedidoId, posicao);
+            setModalAssinatura(null);
+            setOk('Orçamento assinado no local escolhido. Pedido aprovado — o projeto já pode seguir.');
+            await carregar();
+          } finally {
+            setAssinandoId('');
+          }
+        }}
+      />
     </AppShell>
   );
 }

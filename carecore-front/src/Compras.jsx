@@ -49,8 +49,9 @@ const STATUS_LABEL = {
   aguardando_aprovacao_sede: 'Aguardando Sede',
   aprovado: 'Aprovado',
   enviado_fornecedor: 'Enviado ao fornecedor',
-  recebido: 'Recebido',
+  recebido: 'Encerrado',
   cancelado: 'Cancelado',
+  reprovado: 'Reprovado',
 };
 
 function usuarioSessao() {
@@ -89,6 +90,8 @@ export default function Compras() {
   const [economia, setEconomia] = useState(null);
   const [competencia, setCompetencia] = useState(competenciaAtual());
   const [salvandoJanela, setSalvandoJanela] = useState(false);
+  const visaoConcluidos = (searchParams.get('visao') || '').trim().toLowerCase() === 'concluidos';
+  const statusGrupoPedidos = visaoConcluidos ? 'terminais' : 'abertos';
 
   const carregar = useCallback(async () => {
     setErro('');
@@ -110,7 +113,7 @@ export default function Compras() {
         return;
       }
       const [lista, cats, fonts, catalogo] = await Promise.all([
-        comprasPedidos({ competencia }),
+        comprasPedidos({ competencia, status_grupo: statusGrupoPedidos }),
         comprasCategorias(),
         comprasFontes(),
         comprasItensConsumo(),
@@ -146,7 +149,7 @@ export default function Compras() {
     } finally {
       setCarregando(false);
     }
-  }, [competencia, podeCadastrarMestre, sede]);
+  }, [competencia, podeCadastrarMestre, sede, statusGrupoPedidos]);
 
   useEffect(() => {
     carregar();
@@ -170,6 +173,7 @@ export default function Compras() {
 
   useEffect(() => {
     const abaParam = (searchParams.get('aba') || '').trim().toLowerCase();
+    const visaoParam = (searchParams.get('visao') || '').trim().toLowerCase();
     if (abaParam === 'fornecedores' || abaParam === 'itens' || abaParam === 'categorias') {
       if (sede) {
         setAba('cadastros');
@@ -177,6 +181,8 @@ export default function Compras() {
       } else if (podeCadastrarMestre) {
         setAba(abaParam);
       }
+    } else if (visaoParam === 'concluidos' || !abaParam) {
+      setAba('pedidos');
     }
   }, [podeCadastrarMestre, searchParams, sede]);
 
@@ -201,8 +207,12 @@ export default function Compras() {
       <MainShell>
         <PageHeader
           eyebrow="Organização"
-          title="Compras"
-          subtitle="Solicitação, cotação, dupla aprovação, pedido ao fornecedor e conferência na unidade."
+          title={visaoConcluidos ? 'Pedidos concluídos' : 'Compras'}
+          subtitle={
+            visaoConcluidos
+              ? 'Pedidos encerrados, cancelados ou reprovados — histórico separado dos pedidos em andamento.'
+              : 'Solicitação, cotação, dupla aprovação, pedido ao fornecedor e conferência na unidade.'
+          }
           icon={<ShoppingCart className="h-5 w-5" />}
         />
         <ScrollArea>
@@ -247,6 +257,7 @@ export default function Compras() {
 
             {acesso?.compras_ativo && (
               <>
+            {!visaoConcluidos && (
             <div className="flex flex-wrap gap-2">
               {abas.map((item) => (
                 <button
@@ -264,10 +275,18 @@ export default function Compras() {
                 </button>
               ))}
             </div>
+            )}
 
             {aba === 'pedidos' && (
               <>
-                <FilterPanel title="Filtros" subtitle="Competência operacional (AAAA-MM)">
+                <FilterPanel
+                  title="Filtros"
+                  subtitle={
+                    visaoConcluidos
+                      ? 'Competência operacional (AAAA-MM) — só pedidos encerrados/cancelados/reprovados'
+                      : 'Competência operacional (AAAA-MM) — pedidos em andamento'
+                  }
+                >
                   <input
                     type="month"
                     value={competencia}
@@ -276,6 +295,7 @@ export default function Compras() {
                   />
                 </FilterPanel>
 
+                {!visaoConcluidos && (
                 <SectionCard title="Novo pedido">
                   <p className="mb-3 text-sm text-slate-600">
                     Escolha o tipo — cada um abre a tela certa (consumo na janela; bem, manutenção e serviço com cotação pelo projeto).
@@ -293,12 +313,19 @@ export default function Compras() {
                     ))}
                   </div>
                 </SectionCard>
+                )}
 
-                <SectionCard title="Pedidos">
+                <SectionCard title={visaoConcluidos ? 'Pedidos concluídos' : 'Pedidos em andamento'}>
                   {carregando ? (
                     <p className="text-sm text-slate-500">Carregando…</p>
                   ) : pedidos.length === 0 ? (
-                    <EmptyState title="Nenhum pedido nesta competência" />
+                    <EmptyState
+                      title={
+                        visaoConcluidos
+                          ? 'Nenhum pedido concluído nesta competência'
+                          : 'Nenhum pedido em andamento nesta competência'
+                      }
+                    />
                   ) : (
                     <div className="overflow-x-auto">
                       <table className="min-w-full text-sm">

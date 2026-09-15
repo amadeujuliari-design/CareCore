@@ -29,6 +29,7 @@ import {
   UserRoundCog,
   WashingMachine,
   FilePenLine,
+  Archive,
 } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import logoCarecore from './assets/logo.PNG';
@@ -485,6 +486,12 @@ export default function Sidebar() {
               feature: 'compras',
             },
             {
+              path: '/compras?visao=concluidos',
+              icon: Archive,
+              label: 'Pedidos concluídos',
+              feature: 'compras',
+            },
+            {
               path: '/compras/aguardando-assinatura',
               icon: FilePenLine,
               label: 'Aguardando assinatura',
@@ -733,6 +740,13 @@ export default function Sidebar() {
     const [pathnameAlvo, queryAlvo = ''] = String(path || '').split('?');
     if (queryAlvo) {
       return location.pathname === pathnameAlvo && location.search.replace(/^\?/, '') === queryAlvo;
+    }
+
+    // /compras sem query = só a lista operacional (não itens/cadastros/concluídos).
+    if (pathnameAlvo === '/compras') {
+      const q = location.search.replace(/^\?/, '');
+      if (q.includes('aba=') || q.includes('visao=')) return false;
+      return location.pathname === '/compras';
     }
 
     return (

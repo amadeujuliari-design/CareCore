@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { FileText, Mail, Search, ShoppingCart } from 'lucide-react';
 
 import ComprasItemTypeahead from './components/ComprasItemTypeahead';
+import ModalPosicionarAssinaturaOrcamento from './components/ModalPosicionarAssinaturaOrcamento';
 import Sidebar from './Sidebar';
 import { CampoSelect, CampoTexto } from './components/UsuariosCampos';
 import {
@@ -157,6 +158,7 @@ export default function ComprasPedido() {
     tipo_nf: 'produto', numero: '', serie: '', valor_reais: '', observacao: '',
   });
   const [arqNf, setArqNf] = useState(null);
+  const [modalAssinatura, setModalAssinatura] = useState(null);
 
   const carregar = useCallback(async ({ silencioso = false } = {}) => {
     if (!silencioso) setErro('');
@@ -1655,12 +1657,28 @@ export default function ComprasPedido() {
                 {pedido.status === 'aguardando_aprovacao_sede' && sede && !pulaAprovacaoSede && (
                   cotacaoProjeto ? (
                     <PremiumButton
-                      onClick={() => agir(
-                        () => comprasAssinarOrcamentoSede(pedido.id),
-                        'Orçamento assinado digitalmente e pedido aprovado na Sede.',
-                      )}
+                      onClick={() => {
+                        const escolhida = (pedido.cotacoes || []).find((c) => c.escolhida);
+                        if (!escolhida) {
+                          setErro('Escolha o orçamento vencedor antes de assinar.');
+                          return;
+                        }
+                        const anexoOrc = (pedido.anexos || []).find(
+                          (a) => a.cotacao_id === escolhida.id && a.tipo === 'orcamento',
+                        );
+                        if (!anexoOrc) {
+                          setErro('Anexe o PDF do orçamento vencedor antes de assinar.');
+                          return;
+                        }
+                        setErro('');
+                        setModalAssinatura({
+                          pedidoId: pedido.id,
+                          anexoOrcamentoId: anexoOrc.id,
+                          fornecedorNome: escolhida.fornecedor_nome || '',
+                        });
+                      }}
                     >
-                      Assinar orçamento e aprovar (Sede)
+                      Posicionar assinatura e aprovar (Sede)
                     </PremiumButton>
                   ) : (
                     <PremiumButton onClick={() => agir(() => comprasAprovarSede(pedido.id), 'Sede aprovou.')}>
@@ -1754,6 +1772,24 @@ export default function ComprasPedido() {
           </div>
         </ScrollArea>
       </MainShell>
+      <ModalPosicionarAssinaturaOrcamento
+        aberto={Boolean(modalAssinatura)}
+        pedidoId={modalAssinatura?.pedidoId}
+        anexoOrcamentoId={modalAssinatura?.anexoOrcamentoId}
+        fornecedorNome={modalAssinatura?.fornecedorNome || ''}
+        onFechar={() => setModalAssinatura(null)}
+        onConfirmar={async (posicao) => {
+          if (!modalAssinatura?.pedidoId) return;
+          const okAssinatura = await agir(
+            () => comprasAssinarOrcamentoSede(modalAssinatura.pedidoId, posicao),
+            'Orçamento assinado no local escolhido e pedido aprovado na Sede.',
+          );
+          if (!okAssinatura) {
+            throw new Error('Não foi possível assinar o orçamento.');
+          }
+          setModalAssinatura(null);
+        }}
+      />
     </AppShell>
   );
 }
