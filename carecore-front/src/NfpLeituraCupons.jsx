@@ -722,7 +722,11 @@ export default function NfpLeituraCupons() {
                               >
                                 {rotuloStatusCupom(item.status)}
                               </span>
-                              <div className="mt-0.5 text-xs">{item.lido_em || '—'}</div>
+                              <div className="mt-0.5 text-xs">
+                                {filtroStatus === 'enviado'
+                                  ? (item.enviado_em || item.lido_em || '—')
+                                  : (item.lido_em || '—')}
+                              </div>
                             </div>
                           </li>
                         );
