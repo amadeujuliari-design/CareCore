@@ -50,7 +50,7 @@ import {
   comprasSubmeter,
   moneyCentavos,
 } from './services/comprasService';
-import { usuarioEhAdmCompras, usuarioEhAdmPedidos, usuarioEhManutencao } from './utils/rbacUtils';
+import { usuarioEhAdmCompras, usuarioEhAdmPedidos, usuarioEhManutencao, usuarioPodeEnviarEmailCompras } from './utils/rbacUtils';
 import { formatarDataBr } from './utils/comprasJanelaUtils';
 import { rotuloCategoria } from './utils/comprasCategoriaUtils';
 import { itemConsumoPeloDetalheErro, pedidoItemUnidadeConfusa, sugerirItensConsumo, unidadeParaPedido } from './utils/comprasItensConsumoUtils';
@@ -135,6 +135,7 @@ export default function ComprasPedido() {
   const usuario = useMemo(() => usuarioSessao(), []);
   const usuarioId = usuario.id || usuario.usuario_id;
   const sede = usuarioEhAdmCompras(usuario) || usuarioEhManutencao(usuario);
+  const podeDispararEmailCompras = usuarioPodeEnviarEmailCompras(usuario);
   const admPedidos = usuarioEhAdmPedidos(usuario);
   const podeCadastrarMestre = sede || admPedidos;
   const unidade = admPedidos
@@ -269,7 +270,7 @@ export default function ComprasPedido() {
     && ['aguardando_aprovacao_sede', 'em_cotacao', 'aguardando_cotacao', 'aguardando_aprovacao_unidade'].includes(pedido.status);
   const podeLancarCotacao = (sede && cotacaoSede && !terminal)
     || (unidade && cotacaoProjeto && ['rascunho', 'em_cotacao', 'aguardando_cotacao'].includes(pedido.status));
-  const podePedirCotacaoEmail = (
+  const podePedirCotacaoEmail = podeDispararEmailCompras && (
     (sede && cotacaoSede
       && ['aguardando_cotacao', 'em_cotacao', 'aguardando_aprovacao_unidade', 'aguardando_aprovacao_sede', 'aprovado'].includes(pedido.status))
     || (unidade && cotacaoProjeto
@@ -279,7 +280,8 @@ export default function ComprasPedido() {
   const podeReabrir = pedido.pode_reabrir && pedido.fechado_por_id === usuarioId;
   const pedidoCompra = (pedido.anexos || []).find((a) => a.tipo === 'pedido_compra');
   const emailPedidoCompraEnviado = Boolean(pedido.email_pedido_compra_enviado);
-  const podeEnviarPedidoCompra = ['aprovado', 'enviado_fornecedor'].includes(pedido.status)
+  const podeEnviarPedidoCompra = podeDispararEmailCompras
+    && ['aprovado', 'enviado_fornecedor'].includes(pedido.status)
     && (sede || (cotacaoProjeto && unidade && !pedidoSede));
   const fornecedoresSolicitacao = (pedido.fornecedores_solicitacao || []).filter((f) => f.id);
   const idsSolicitacao = new Set(fornecedoresSolicitacao.map((f) => f.id));

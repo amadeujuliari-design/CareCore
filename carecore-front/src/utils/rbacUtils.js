@@ -123,6 +123,12 @@ export function usuarioEhAdmComprasInfraestrutura(usuario) {
   return normalizarPerfilRbac(usuario.perfil_acesso) === PERFIL_ADM_COMPRAS_INFRAESTRUTURA;
 }
 
+export function usuarioPodeEnviarEmailCompras(usuario) {
+  if (!usuario) return false;
+  if (usuarioEhManutencao(usuario)) return true;
+  return !usuarioEhAdmComprasInfraestrutura(usuario);
+}
+
 export function usuarioEhAdmPedidos(usuario) {
   if (!usuario || usuarioEhManutencao(usuario)) return false;
   return normalizarPerfilRbac(usuario.perfil_acesso) === PERFIL_ADM_PEDIDOS;

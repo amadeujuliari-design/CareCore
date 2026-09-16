@@ -641,6 +641,13 @@ def perfil_adm_compras_sede(usuario) -> str | None:
     return None
 
 
+def usuario_pode_enviar_email_compras(*, perfil: str, is_manutencao: bool = False) -> bool:
+    """Infraestrutura aprova orçamento na Sede; não dispara e-mail ao fornecedor."""
+    if is_manutencao:
+        return True
+    return _perfil_adm_compras(perfil) != PERFIL_ADM_COMPRAS_INFRAESTRUTURA
+
+
 def usuario_e_sede_compras(*, perfil: str, is_manutencao: bool = False) -> bool:
     return is_manutencao or _perfil_adm_compras(perfil) in PERFIS_ADM_COMPRAS_SEDE
 

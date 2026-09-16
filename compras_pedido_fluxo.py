@@ -73,6 +73,7 @@ from compras_regras import (
     tipo_eh_cotacao_sede,
     usuario_e_sede_compras,
     usuario_pode_aprovar_sede,
+    usuario_pode_enviar_email_compras,
     usuario_pode_pedir,
     usuario_sede_pode_ver_tipo,
 )
@@ -104,6 +105,20 @@ _PADRAO_SOLICITACAO_COTACAO = re.compile(
     r"Pedido de cotação enviado para\s+(.+?)\s+<([^>]+)>(?:\s*\[id:([^\]]+)\])?",
     re.IGNORECASE,
 )
+
+MENSAGEM_INFRA_SEM_EMAIL = (
+    "O perfil de Infraestrutura aprova o orçamento na Sede; "
+    "o envio de e-mail ao fornecedor fica com o projeto."
+)
+
+
+def _exigir_envio_email_compras(usuario: dict) -> None:
+    perfil = str(usuario.get("perfil_acesso") or usuario.get("perfil") or "")
+    if not usuario_pode_enviar_email_compras(
+        perfil=perfil,
+        is_manutencao=bool(usuario.get("is_manutencao")),
+    ):
+        raise HTTPException(status_code=403, detail=MENSAGEM_INFRA_SEM_EMAIL)
 
 
 def _fornecedores_solicitacao_dos_eventos(
@@ -1010,6 +1025,7 @@ async def rascunho_email_compras(
     pedido: ComprasPedidoDB,
     tipo: str,
 ) -> dict:
+    _exigir_envio_email_compras(usuario)
     tipo_n = (tipo or "").strip().lower()
     if tipo_n not in {"cotacao", "pedido_compra"}:
         raise HTTPException(status_code=400, detail="Tipo de rascunho inválido.")
@@ -1038,6 +1054,7 @@ async def enviar_email_fornecedor(
     pedido: ComprasPedidoDB,
     corpo: str | None = None,
 ) -> dict:
+    _exigir_envio_email_compras(usuario)
     if not pedido.pedido_compra_anexo_id:
         await gerar_pedido_compra(db, usuario, pedido)
     anexo = (
@@ -1178,6 +1195,7 @@ async def enviar_solicitacao_cotacao_fornecedores(
     corpo: str | None = None,
 ) -> dict:
     """Envia pedido de cotação por e-mail: um To por fornecedor (nunca lista no mesmo e-mail)."""
+    _exigir_envio_email_compras(usuario)
     perfil = str(usuario.get("perfil_acesso") or usuario.get("perfil") or "")
     sede = usuario_e_sede_compras(
         perfil=perfil,

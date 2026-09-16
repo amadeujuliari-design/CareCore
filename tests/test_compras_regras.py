@@ -20,6 +20,7 @@ from compras_regras import (
     usuario_e_sede_compras,
     usuario_pode_aprovar_sede,
     usuario_pode_aprovar_unidade,
+    usuario_pode_enviar_email_compras,
     usuario_pode_pedir,
     usuario_ve_modulo_compras,
 )
@@ -426,3 +427,17 @@ def test_hortifruti_segmento_e_fluxo():
     assert not tipo_exige_janela(TIPO_HORTIFRUTI)
     assert tipo_pula_aprovacao_sede(TIPO_HORTIFRUTI)
     assert not exige_tres_cotacoes(TIPO_HORTIFRUTI)
+
+
+def test_infraestrutura_nao_envia_email_fornecedor():
+    from compras_regras import PERFIL_ADM_COMPRAS_INFRAESTRUTURA, PERFIL_ADM_COMPRAS_SUPRIMENTOS
+
+    assert usuario_pode_enviar_email_compras(
+        perfil=PERFIL_ADM_COMPRAS_INFRAESTRUTURA,
+    ) is False
+    assert usuario_pode_enviar_email_compras(
+        perfil=PERFIL_ADM_COMPRAS_INFRAESTRUTURA,
+        is_manutencao=True,
+    ) is True
+    assert usuario_pode_enviar_email_compras(perfil=PERFIL_ADM_COMPRAS_SUPRIMENTOS) is True
+    assert usuario_pode_enviar_email_compras(perfil="Gestor") is True

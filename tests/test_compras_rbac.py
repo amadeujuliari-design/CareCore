@@ -22,3 +22,10 @@ def test_classes_adm_compras():
     assert usuario_eh_adm_compras_infraestrutura({"perfil_acesso": PERFIL_ADM_COMPRAS_INFRAESTRUTURA}) is True
     assert usuario_eh_adm_compras_suprimentos({"perfil_acesso": PERFIL_ADM_COMPRAS_INFRAESTRUTURA}) is False
     assert PERFIL_ADM_COMPRAS == "ADM Global Compras"
+
+
+def test_infraestrutura_nao_dispara_email():
+    from compras_regras import usuario_pode_enviar_email_compras
+
+    assert usuario_pode_enviar_email_compras(perfil=PERFIL_ADM_COMPRAS_INFRAESTRUTURA) is False
+    assert usuario_pode_enviar_email_compras(perfil=PERFIL_ADM_COMPRAS_SUPRIMENTOS) is True
