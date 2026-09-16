@@ -16,6 +16,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from compras_itens_consumo_utils import embalagem_efetiva_pedido
 from compras_nf_xml_utils import extrair_campos_nf_xml
 from compras_assinatura_pdf import carimbar_assinatura_pdf
+from compras_emails import (
+    corpo_padrao_pedido_compra,
+    corpo_padrao_solicitacao_cotacao,
+    metadados_assinatura,
+    preparar_envio_email_compras,
+)
 from compras_patrimonio_utils import reais_para_centavos
 from compras_pedido_pdf import (
     montar_pdf_pedido_compra,
@@ -969,10 +975,68 @@ async def gerar_pedido_compra(
     return anexo
 
 
+async def _orcamento_assinado_pedido(
+    db: AsyncSession,
+    pedido: ComprasPedidoDB,
+    escolhida: Optional[ComprasCotacaoDB] = None,
+) -> Optional[ComprasPedidoAnexoDB]:
+    if escolhida:
+        achado = (
+            await db.execute(
+                select(ComprasPedidoAnexoDB).where(
+                    ComprasPedidoAnexoDB.pedido_id == pedido.id,
+                    ComprasPedidoAnexoDB.cotacao_id == escolhida.id,
+                    ComprasPedidoAnexoDB.tipo == TIPO_ANEXO_ORCAMENTO_ASSINADO,
+                    ComprasPedidoAnexoDB.ativo.is_(True),
+                ).order_by(ComprasPedidoAnexoDB.criado_em.desc())
+            )
+        ).scalars().first()
+        if achado:
+            return achado
+    return (
+        await db.execute(
+            select(ComprasPedidoAnexoDB).where(
+                ComprasPedidoAnexoDB.pedido_id == pedido.id,
+                ComprasPedidoAnexoDB.tipo == TIPO_ANEXO_ORCAMENTO_ASSINADO,
+                ComprasPedidoAnexoDB.ativo.is_(True),
+            ).order_by(ComprasPedidoAnexoDB.criado_em.desc())
+        )
+    ).scalars().first()
+
+
+async def rascunho_email_compras(
+    db: AsyncSession,
+    usuario: dict,
+    pedido: ComprasPedidoDB,
+    tipo: str,
+) -> dict:
+    tipo_n = (tipo or "").strip().lower()
+    if tipo_n not in {"cotacao", "pedido_compra"}:
+        raise HTTPException(status_code=400, detail="Tipo de rascunho inválido.")
+    inst = await _dados_instituicao(db, pedido)
+    projeto = (inst or {}).get("nome") or "projeto"
+    if tipo_n == "cotacao":
+        assunto = f"Solicitação de cotação CareCore · {projeto} · {pedido.competencia}"
+        corpo = corpo_padrao_solicitacao_cotacao(projeto=projeto, competencia=pedido.competencia)
+    else:
+        cotacoes = await _cotacoes_ativas(db, pedido.id)
+        escolhida = next((c for c in cotacoes if c.escolhida), None)
+        assinado = await _orcamento_assinado_pedido(db, pedido, escolhida)
+        assunto = f"Pedido de compra CareCore · {projeto} · {pedido.competencia}"
+        corpo = corpo_padrao_pedido_compra(projeto=projeto, com_orcamento_assinado=bool(assinado))
+    return {
+        "tipo": tipo_n,
+        "assunto": assunto,
+        "corpo": corpo,
+        "assinatura": metadados_assinatura(usuario),
+    }
+
+
 async def enviar_email_fornecedor(
     db: AsyncSession,
     usuario: dict,
     pedido: ComprasPedidoDB,
+    corpo: str | None = None,
 ) -> dict:
     if not pedido.pedido_compra_anexo_id:
         await gerar_pedido_compra(db, usuario, pedido)
@@ -1001,28 +1065,7 @@ async def enviar_email_fornecedor(
 
     bytes_arquivo, content_type = ler_bytes_anexo(anexo.caminho_arquivo)
     anexos_extras: list[tuple[str, bytes, str]] = []
-    orcamento_assinado = None
-    if escolhida:
-        orcamento_assinado = (
-            await db.execute(
-                select(ComprasPedidoAnexoDB).where(
-                    ComprasPedidoAnexoDB.pedido_id == pedido.id,
-                    ComprasPedidoAnexoDB.cotacao_id == escolhida.id,
-                    ComprasPedidoAnexoDB.tipo == TIPO_ANEXO_ORCAMENTO_ASSINADO,
-                    ComprasPedidoAnexoDB.ativo.is_(True),
-                ).order_by(ComprasPedidoAnexoDB.criado_em.desc())
-            )
-        ).scalars().first()
-    if not orcamento_assinado:
-        orcamento_assinado = (
-            await db.execute(
-                select(ComprasPedidoAnexoDB).where(
-                    ComprasPedidoAnexoDB.pedido_id == pedido.id,
-                    ComprasPedidoAnexoDB.tipo == TIPO_ANEXO_ORCAMENTO_ASSINADO,
-                    ComprasPedidoAnexoDB.ativo.is_(True),
-                ).order_by(ComprasPedidoAnexoDB.criado_em.desc())
-            )
-        ).scalars().first()
+    orcamento_assinado = await _orcamento_assinado_pedido(db, pedido, escolhida)
     if orcamento_assinado:
         try:
             bytes_assinado, tipo_assinado = ler_bytes_anexo(orcamento_assinado.caminho_arquivo)
@@ -1041,22 +1084,18 @@ async def enviar_email_fornecedor(
     inst = await _dados_instituicao(db, pedido)
     projeto = (inst or {}).get("nome") or "projeto"
     assunto = f"Pedido de compra CareCore · {projeto} · {pedido.competencia}"
-    if anexos_extras:
-        corpo = (
-            f"Segue em anexo o pedido de compra do {projeto} e o orçamento "
-            f"aprovado/assinado pela Sede (AEB).\n\n"
-            f"Endereço de entrega conforme documento do pedido.\n\n"
-            f"— CareCore+ / Compras"
-        )
-    else:
-        corpo = (
-            f"Segue em anexo o pedido de compra do {projeto}.\n\n"
-            f"Endereço de entrega conforme documento anexo.\n\n"
-            f"— CareCore+ / Compras"
-        )
+    padrao = corpo_padrao_pedido_compra(
+        projeto=projeto,
+        com_orcamento_assinado=bool(anexos_extras),
+    )
+    corpo_texto, corpo_html, imagens_inline = preparar_envio_email_compras(
+        usuario=usuario,
+        corpo=corpo,
+        padrao=padrao,
+    )
     resultado = enviar_email_smtp_com_anexo(
         assunto=assunto,
-        corpo=corpo,
+        corpo=corpo_texto,
         para=email_dest,
         anexo_nome=anexo.nome_arquivo,
         anexo_bytes=bytes_arquivo,
@@ -1064,6 +1103,8 @@ async def enviar_email_fornecedor(
         perfil="compras",
         mailbox=(inst or {}).get("email_adm_compras") if tipo_eh_cotacao_projeto(pedido.tipo) else None,
         anexos_extras=anexos_extras or None,
+        corpo_html=corpo_html,
+        imagens_inline=imagens_inline or None,
     )
     if resultado.enviado:
         extras = f" + orçamento assinado ({orcamento_assinado.nome_arquivo})." if orcamento_assinado else "."
@@ -1134,6 +1175,7 @@ async def enviar_solicitacao_cotacao_fornecedores(
     usuario: dict,
     pedido: ComprasPedidoDB,
     fornecedor_ids: list[str],
+    corpo: str | None = None,
 ) -> dict:
     """Envia pedido de cotação por e-mail: um To por fornecedor (nunca lista no mesmo e-mail)."""
     perfil = str(usuario.get("perfil_acesso") or usuario.get("perfil") or "")
@@ -1265,6 +1307,12 @@ async def enviar_solicitacao_cotacao_fornecedores(
     anexo_nome = f"solicitacao-cotacao-{numero}.pdf"
     projeto = (inst or {}).get("nome") or "projeto"
     assunto = f"Solicitação de cotação CareCore · {projeto} · {pedido.competencia}"
+    padrao = corpo_padrao_solicitacao_cotacao(projeto=projeto, competencia=pedido.competencia)
+    corpo_texto, corpo_html, imagens_inline = preparar_envio_email_compras(
+        usuario=usuario,
+        corpo=corpo,
+        padrao=padrao,
+    )
 
     enviados: list[dict] = []
     falhas: list[dict] = []
@@ -1272,22 +1320,17 @@ async def enviar_solicitacao_cotacao_fornecedores(
     ordenados = [mapa[fid] for fid in ids]
     for forn in ordenados:
         email_dest = _email_destino_fornecedor(forn)
-        corpo = (
-            f"Prezado(a),\n\n"
-            f"Solicitamos cotação para o projeto {projeto} (competência {pedido.competencia}).\n"
-            f"Segue em anexo a lista de itens em PDF.\n\n"
-            f"Responda a este e-mail com o orçamento em PDF.\n\n"
-            f"— CareCore+ / Compras AEB"
-        )
         resultado = enviar_email_smtp_com_anexo(
             assunto=assunto,
-            corpo=corpo,
+            corpo=corpo_texto,
             para=email_dest,
             anexo_nome=anexo_nome,
             anexo_bytes=anexo_bytes,
             anexo_content_type="application/pdf",
             perfil="compras",
             mailbox=mailbox_projeto,
+            corpo_html=corpo_html,
+            imagens_inline=imagens_inline or None,
         )
         if resultado.enviado:
             texto_evento = f"Pedido de cotação enviado para {forn.nome} <{email_dest}> [id:{forn.id}]."

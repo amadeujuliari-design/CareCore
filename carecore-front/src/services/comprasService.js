@@ -259,14 +259,22 @@ export async function comprasGerarPedidoCompra(id) {
   return data;
 }
 
-export async function comprasEnviarEmailFornecedor(id) {
-  const { data } = await api.post(`/api/compras/pedidos/${id}/enviar-email`);
+export async function comprasEnviarEmailFornecedor(id, corpo) {
+  const payload = corpo != null ? { corpo } : {};
+  const { data } = await api.post(`/api/compras/pedidos/${id}/enviar-email`, payload);
   return data;
 }
 
-export async function comprasSolicitarCotacao(id, fornecedorIds) {
-  const { data } = await api.post(`/api/compras/pedidos/${id}/solicitar-cotacao`, {
-    fornecedor_ids: fornecedorIds,
+export async function comprasSolicitarCotacao(id, fornecedorIds, corpo) {
+  const payload = { fornecedor_ids: fornecedorIds };
+  if (corpo != null) payload.corpo = corpo;
+  const { data } = await api.post(`/api/compras/pedidos/${id}/solicitar-cotacao`, payload);
+  return data;
+}
+
+export async function comprasRascunhoEmail(id, tipo) {
+  const { data } = await api.get(`/api/compras/pedidos/${id}/rascunho-email`, {
+    params: { tipo },
   });
   return data;
 }

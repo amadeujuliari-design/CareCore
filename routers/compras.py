@@ -24,6 +24,7 @@ from compras_pedido_fluxo import (
     reabrir_pedido,
     remover_anexo_pedido,
     reprovar_pedido,
+    rascunho_email_compras,
     upload_anexo_pedido,
 )
 from compras_service import (
@@ -195,6 +196,11 @@ class AssinarOrcamentoSedeIn(BaseModel):
 
 class SolicitacaoCotacaoIn(BaseModel):
     fornecedor_ids: list[str] = Field(default_factory=list, min_length=1)
+    corpo: Optional[str] = Field(default=None, max_length=8000)
+
+
+class EnviarEmailComprasIn(BaseModel):
+    corpo: Optional[str] = Field(default=None, max_length=8000)
 
 
 class JanelaIn(BaseModel):
@@ -1199,15 +1205,33 @@ async def post_gerar_pedido_compra(
     return await serializar_pedido(db, pedido, incluir_detalhe=True, usuario=usuario_atual)
 
 
-@router.post("/pedidos/{pedido_id}/enviar-email")
-async def post_enviar_email(
+@router.get("/pedidos/{pedido_id}/rascunho-email")
+async def get_rascunho_email(
     pedido_id: str,
+    tipo: str = Query("cotacao"),
     db: AsyncSession = Depends(get_db),
     usuario_atual: dict = Depends(get_usuario_logado),
 ):
     await _ctx(db, usuario_atual)
     pedido = await obter_pedido(db, usuario_atual, pedido_id)
-    resultado = await enviar_email_fornecedor(db, usuario_atual, pedido)
+    return await rascunho_email_compras(db, usuario_atual, pedido, tipo)
+
+
+@router.post("/pedidos/{pedido_id}/enviar-email")
+async def post_enviar_email(
+    pedido_id: str,
+    payload: Optional[EnviarEmailComprasIn] = Body(default=None),
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    await _ctx(db, usuario_atual)
+    pedido = await obter_pedido(db, usuario_atual, pedido_id)
+    resultado = await enviar_email_fornecedor(
+        db,
+        usuario_atual,
+        pedido,
+        corpo=payload.corpo if payload else None,
+    )
     await db.commit()
     return resultado
 
@@ -1223,7 +1247,7 @@ async def post_solicitar_cotacao(
     await _ctx(db, usuario_atual)
     pedido = await obter_pedido(db, usuario_atual, pedido_id)
     resultado = await enviar_solicitacao_cotacao_fornecedores(
-        db, usuario_atual, pedido, payload.fornecedor_ids,
+        db, usuario_atual, pedido, payload.fornecedor_ids, corpo=payload.corpo,
     )
     await db.commit()
     detalhe = await serializar_pedido(db, pedido, incluir_detalhe=True, usuario=usuario_atual)

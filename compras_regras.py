@@ -627,6 +627,20 @@ def usuario_pode_aprovar_sede(*, perfil: str, is_manutencao: bool = False) -> bo
     return is_manutencao or _perfil_adm_compras(perfil) in PERFIS_ADM_COMPRAS_SEDE
 
 
+def perfil_adm_compras_sede(usuario) -> str | None:
+    """'infraestrutura' (Robson) ou 'suprimentos' (Isabella); None para projeto/legado."""
+    if isinstance(usuario, dict):
+        perfil = str(usuario.get("perfil_acesso") or usuario.get("perfil") or "")
+    else:
+        perfil = str(getattr(usuario, "perfil_acesso", "") or "")
+    perfil_n = _perfil_adm_compras(perfil)
+    if perfil_n == PERFIL_ADM_COMPRAS_INFRAESTRUTURA:
+        return "infraestrutura"
+    if perfil_n == PERFIL_ADM_COMPRAS_SUPRIMENTOS:
+        return "suprimentos"
+    return None
+
+
 def usuario_e_sede_compras(*, perfil: str, is_manutencao: bool = False) -> bool:
     return is_manutencao or _perfil_adm_compras(perfil) in PERFIS_ADM_COMPRAS_SEDE
 

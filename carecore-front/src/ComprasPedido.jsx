@@ -4,6 +4,7 @@ import { FileText, Mail, Search, ShoppingCart } from 'lucide-react';
 
 import ComprasItemTypeahead from './components/ComprasItemTypeahead';
 import ModalPosicionarAssinaturaOrcamento from './components/ModalPosicionarAssinaturaOrcamento';
+import ModalRevisarEmailCompras from './components/ModalRevisarEmailCompras';
 import Sidebar from './Sidebar';
 import { CampoSelect, CampoTexto } from './components/UsuariosCampos';
 import {
@@ -40,6 +41,7 @@ import {
   comprasReabrir,
   comprasRegistrarNotaFiscal,
   comprasRemoverAnexo,
+  comprasRascunhoEmail,
   comprasRevogarEscolhaCotacao,
   comprasReprovar,
   comprasSalvarItemConsumo,
@@ -159,6 +161,11 @@ export default function ComprasPedido() {
   });
   const [arqNf, setArqNf] = useState(null);
   const [modalAssinatura, setModalAssinatura] = useState(null);
+  const [modalEmail, setModalEmail] = useState(null);
+  const [rascunhoEmail, setRascunhoEmail] = useState({
+    assunto: '', corpo: '', aviso: '', carregando: false, erro: '',
+  });
+  const [enviandoEmail, setEnviandoEmail] = useState(false);
 
   const carregar = useCallback(async ({ silencioso = false } = {}) => {
     if (!silencioso) setErro('');
@@ -289,6 +296,106 @@ export default function ComprasPedido() {
     const valor = window.prompt(titulo);
     if (!valor?.trim()) return null;
     return valor.trim();
+  };
+
+  const fecharModalEmail = () => {
+    if (enviandoEmail) return;
+    setModalEmail(null);
+    setRascunhoEmail({ assunto: '', corpo: '', aviso: '', carregando: false, erro: '' });
+  };
+
+  const abrirModalEmail = async (modo) => {
+    setErro('');
+    setOk('');
+    setModalEmail({ modo });
+    setRascunhoEmail({ assunto: '', corpo: '', aviso: '', carregando: true, erro: '' });
+    try {
+      const tipo = modo === 'cotacao' ? 'cotacao' : 'pedido_compra';
+      const data = await comprasRascunhoEmail(pedido.id, tipo);
+      setRascunhoEmail({
+        assunto: data.assunto || '',
+        corpo: data.corpo || '',
+        aviso: data.assinatura?.aviso || '',
+        carregando: false,
+        erro: '',
+      });
+    } catch (err) {
+      setRascunhoEmail({
+        assunto: '',
+        corpo: '',
+        aviso: '',
+        carregando: false,
+        erro: err.response?.data?.detail || err.message || 'Não foi possível carregar o texto do e-mail.',
+      });
+    }
+  };
+
+  const confirmarEnvioEmail = async () => {
+    if (!modalEmail?.modo || enviandoEmail) return;
+    const corpo = String(rascunhoEmail.corpo || '').trim();
+    if (!corpo) {
+      setRascunhoEmail((prev) => ({ ...prev, erro: 'Informe o texto do e-mail.' }));
+      return;
+    }
+    setEnviandoEmail(true);
+    setRascunhoEmail((prev) => ({ ...prev, erro: '' }));
+    try {
+      if (modalEmail.modo === 'cotacao') {
+        const res = await comprasSolicitarCotacao(pedido.id, fornecedoresCotacaoIds, corpo);
+        const enviados = res.enviados || [];
+        const falhas = res.falhas || [];
+        if (res.pedido) setPedido(res.pedido);
+        setFornecedoresCotacaoIds([]);
+        setBuscaFornecedorCotacao('');
+        if (!enviados.length) {
+          throw new Error(falhas[0]?.erro || 'Nenhum e-mail enviado.');
+        }
+        const nomesOk = enviados.map((e) => e.nome).filter(Boolean);
+        const de = res.remetente ? `\n\nRemetente: ${res.remetente}` : '';
+        let textoAlerta = `Cotações enviadas com sucesso para:\n\n${nomesOk.map((n) => `• ${n}`).join('\n')}${de}`;
+        if (falhas.length) {
+          const nomesFail = falhas.map((f) => `${f.nome}${f.erro ? ` (${f.erro})` : ''}`);
+          textoAlerta += `\n\nNão enviadas:\n${nomesFail.map((n) => `• ${n}`).join('\n')}`;
+        }
+        window.alert(textoAlerta);
+        setOk(
+          falhas.length
+            ? `Cotações enviadas para ${nomesOk.join(', ')}. Algumas falharam — veja o aviso.`
+            : `Cotações enviadas com sucesso para: ${nomesOk.join(', ')}.`,
+        );
+      } else {
+        if (modalEmail.modo === 'pedido_compra' && pedido.status === 'aprovado') {
+          await comprasEnviar(pedido.id);
+        } else if (modalEmail.modo === 'pedido_compra' && !pedidoCompra) {
+          await comprasGerarPedidoCompra(pedido.id);
+        }
+        const res = await comprasEnviarEmailFornecedor(pedido.id, corpo);
+        if (!res?.enviado) {
+          throw new Error(res?.erro || 'Falha no e-mail ao fornecedor.');
+        }
+        const reenvio = modalEmail.modo === 'reenvio';
+        window.alert(
+          `Pedido de compra ${reenvio ? 'reenviado' : 'enviado'} com sucesso para:\n\n${res.destinatario || 'fornecedor'}${
+            res.orcamento_assinado_anexado
+              ? '\n\nO orçamento assinado pela Sede também foi anexado.'
+              : ''
+          }${reenvio ? '' : '\n\nAgora você pode baixar o PDF.'}`,
+        );
+        setOk(reenvio ? 'E-mail reenviado com sucesso.' : 'Pedido de compra enviado com sucesso ao fornecedor.');
+      }
+      setModalEmail(null);
+      setRascunhoEmail({ assunto: '', corpo: '', aviso: '', carregando: false, erro: '' });
+      await carregar();
+    } catch (err) {
+      const detail = err.response?.data?.detail;
+      const mensagem = typeof detail === 'string'
+        ? detail
+        : (detail?.message || err.message || 'Não foi possível enviar o e-mail.');
+      setRascunhoEmail((prev) => ({ ...prev, erro: mensagem }));
+      setErro(mensagem);
+    } finally {
+      setEnviandoEmail(false);
+    }
   };
 
   const itemAvulso = Boolean(item.descricao.trim()) && !item.catalogo_item_id;
@@ -1039,38 +1146,10 @@ export default function ComprasPedido() {
                         fornecedoresCotacaoIds.length < 1
                         || (cotacaoProjeto && !pedido.email_adm_compras)
                       }
-                      onClick={async () => {
+                      onClick={() => {
                         setErro('');
                         setOk('');
-                        try {
-                          const res = await comprasSolicitarCotacao(pedido.id, fornecedoresCotacaoIds);
-                          const enviados = res.enviados || [];
-                          const falhas = res.falhas || [];
-                          if (res.pedido) setPedido(res.pedido);
-                          setFornecedoresCotacaoIds([]);
-                          setBuscaFornecedorCotacao('');
-
-                          if (!enviados.length) {
-                            throw new Error(falhas[0]?.erro || 'Nenhum e-mail enviado.');
-                          }
-
-                          const nomesOk = enviados.map((e) => e.nome).filter(Boolean);
-                          const de = res.remetente ? `\n\nRemetente: ${res.remetente}` : '';
-                          let textoAlerta = `Cotações enviadas com sucesso para:\n\n${nomesOk.map((n) => `• ${n}`).join('\n')}${de}`;
-                          if (falhas.length) {
-                            const nomesFail = falhas.map((f) => `${f.nome}${f.erro ? ` (${f.erro})` : ''}`);
-                            textoAlerta += `\n\nNão enviadas:\n${nomesFail.map((n) => `• ${n}`).join('\n')}`;
-                          }
-                          window.alert(textoAlerta);
-                          setOk(
-                            falhas.length
-                              ? `Cotações enviadas para ${nomesOk.join(', ')}. Algumas falharam — veja o aviso.`
-                              : `Cotações enviadas com sucesso para: ${nomesOk.join(', ')}.`,
-                          );
-                          await carregar();
-                        } catch (err) {
-                          setErro(err.response?.data?.detail || err.message || 'Não foi possível enviar as cotações.');
-                        }
+                        abrirModalEmail('cotacao');
                       }}
                     >
                       <span className="inline-flex items-center gap-1.5">
@@ -1079,7 +1158,7 @@ export default function ComprasPedido() {
                       </span>
                     </PremiumButton>
                     <span className="text-xs text-slate-500">
-                      {fornecedoresCotacaoIds.length} selecionado(s)
+                      {fornecedoresCotacaoIds.length} selecionado(s). O texto do e-mail abre para revisão antes do envio.
                       {buscaFornecedorCotacao.trim()
                         ? ` · ${fornecedoresCotacaoFiltrados.length} na busca`
                         : ` · ${fornecedoresCotacao.length} elegível(is)`}
@@ -1403,22 +1482,7 @@ export default function ComprasPedido() {
                   {podeEnviarPedidoCompra && (
                     <PremiumButton
                       variant="secondary"
-                      onClick={async () => {
-                        const okEnvio = await agir(async () => {
-                          const res = await comprasEnviarEmailFornecedor(pedido.id);
-                          if (!res?.enviado) {
-                            throw new Error(res?.erro || 'Falha no e-mail ao fornecedor.');
-                          }
-                          window.alert(
-                            `Pedido de compra reenviado com sucesso para:\n\n${res.destinatario || 'fornecedor'}${
-                              res.orcamento_assinado_anexado
-                                ? '\n\nO orçamento assinado pela Sede também foi anexado.'
-                                : ''
-                            }`,
-                          );
-                        }, 'E-mail reenviado com sucesso.');
-                        if (!okEnvio) return;
-                      }}
+                      onClick={() => abrirModalEmail('reenvio')}
                     >
                       <span className="inline-flex items-center gap-1.5">
                         <Mail size={16} />
@@ -1688,27 +1752,7 @@ export default function ComprasPedido() {
                 )}
                 {podeEnviarPedidoCompra && !emailPedidoCompraEnviado && (
                   <PremiumButton
-                    onClick={async () => {
-                      const okEnvio = await agir(async () => {
-                        if (pedido.status === 'aprovado') {
-                          await comprasEnviar(pedido.id);
-                        } else if (!pedidoCompra) {
-                          await comprasGerarPedidoCompra(pedido.id);
-                        }
-                        const res = await comprasEnviarEmailFornecedor(pedido.id);
-                        if (!res?.enviado) {
-                          throw new Error(res?.erro || 'Falha no e-mail ao fornecedor.');
-                        }
-                        window.alert(
-                          `Pedido de compra enviado com sucesso para:\n\n${res.destinatario || 'fornecedor'}${
-                            res.orcamento_assinado_anexado
-                              ? '\n\nO orçamento assinado pela Sede também foi anexado.'
-                              : ''
-                          }\n\nAgora você pode baixar o PDF.`,
-                        );
-                      }, 'Pedido de compra enviado com sucesso ao fornecedor.');
-                      if (!okEnvio) return;
-                    }}
+                    onClick={() => abrirModalEmail('pedido_compra')}
                   >
                     <span className="inline-flex items-center gap-1.5">
                       <Mail size={16} />
@@ -1772,6 +1816,25 @@ export default function ComprasPedido() {
           </div>
         </ScrollArea>
       </MainShell>
+      <ModalRevisarEmailCompras
+        aberto={Boolean(modalEmail)}
+        titulo={
+          modalEmail?.modo === 'cotacao'
+            ? 'Revisar pedido de cotação'
+            : modalEmail?.modo === 'reenvio'
+              ? 'Revisar reenvio ao fornecedor'
+              : 'Revisar pedido de compra'
+        }
+        assunto={rascunhoEmail.assunto}
+        corpo={rascunhoEmail.corpo}
+        avisoAssinatura={rascunhoEmail.aviso}
+        carregando={rascunhoEmail.carregando}
+        enviando={enviandoEmail}
+        erro={rascunhoEmail.erro}
+        onCorpoChange={(valor) => setRascunhoEmail((prev) => ({ ...prev, corpo: valor }))}
+        onCancelar={fecharModalEmail}
+        onConfirmar={confirmarEnvioEmail}
+      />
       <ModalPosicionarAssinaturaOrcamento
         aberto={Boolean(modalAssinatura)}
         pedidoId={modalAssinatura?.pedidoId}

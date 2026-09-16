@@ -231,3 +231,47 @@ def test_compras_graph_anexa_orcamento_assinado_extra(monkeypatch):
     )
 
     assert resultado.enviado
+
+
+def test_compras_graph_html_com_assinatura_inline(monkeypatch):
+    monkeypatch.setattr(email_utils, "_carregar_env_email_local", lambda: None)
+    monkeypatch.setenv("CARECORE_GRAPH_TENANT_ID", "tenant-id")
+    monkeypatch.setenv("CARECORE_GRAPH_CLIENT_ID", "client-id")
+    monkeypatch.setenv("CARECORE_GRAPH_CLIENT_SECRET", "secret")
+    monkeypatch.setenv("CARECORE_GRAPH_MAILBOX", "suprimentos@aeb-brasil.org.br")
+
+    def urlopen_fake(req, timeout=0):
+        url = getattr(req, "full_url", None) or req.get_full_url()
+        if "oauth2" in url:
+            return _RespFake(200, json.dumps({"access_token": "tok"}).encode())
+        payload = json.loads(req.data.decode())
+        body = payload["message"]["body"]
+        assert body["contentType"] == "HTML"
+        assert "cid:assinatura-aeb" in body["content"]
+        anexos = payload["message"]["attachments"]
+        assert len(anexos) == 2
+        assert anexos[0]["name"] == "cotacao.pdf"
+        assert anexos[1]["isInline"] is True
+        assert anexos[1]["contentId"] == "assinatura-aeb"
+        return _RespFake(202, b"")
+
+    monkeypatch.setattr(email_utils.urllib.request, "urlopen", urlopen_fake)
+
+    resultado = email_utils.enviar_email_smtp_com_anexo(
+        assunto="Cotação",
+        corpo="Texto simples",
+        para="fornecedor@example.com",
+        anexo_nome="cotacao.pdf",
+        anexo_bytes=b"%PDF",
+        anexo_content_type="application/pdf",
+        perfil="compras",
+        corpo_html='<div>Texto<br><img src="cid:assinatura-aeb"/></div>',
+        imagens_inline=[{
+            "cid": "assinatura-aeb",
+            "nome": "isabella.jpg",
+            "bytes": b"\xff\xd8\xfffake",
+            "content_type": "image/jpeg",
+        }],
+    )
+
+    assert resultado.enviado

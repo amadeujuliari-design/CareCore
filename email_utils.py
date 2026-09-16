@@ -132,13 +132,62 @@ def _graph_obter_token(tenant_id: str, client_id: str, client_secret: str) -> st
     return token
 
 
-def _monta_anexo_graph(*, nome: str, conteudo: bytes, content_type: str) -> dict:
-    return {
+def _monta_anexo_graph(
+    *,
+    nome: str,
+    conteudo: bytes,
+    content_type: str,
+    is_inline: bool = False,
+    content_id: str | None = None,
+) -> dict:
+    anexo = {
         "@odata.type": "#microsoft.graph.fileAttachment",
         "name": nome,
         "contentType": content_type or "application/octet-stream",
         "contentBytes": base64.b64encode(conteudo or b"").decode("ascii"),
     }
+    if is_inline and content_id:
+        anexo["isInline"] = True
+        anexo["contentId"] = content_id
+    return anexo
+
+
+def _corpo_mensagem_graph(*, corpo: str, corpo_html: str | None) -> dict:
+    if (corpo_html or "").strip():
+        return {"contentType": "HTML", "content": corpo_html}
+    return {"contentType": "Text", "content": corpo or ""}
+
+
+def _aplicar_corpo_email(
+    mensagem: EmailMessage,
+    *,
+    corpo: str,
+    corpo_html: str | None = None,
+    imagens_inline: list[dict] | None = None,
+) -> None:
+    mensagem.set_content(corpo or "")
+    html = (corpo_html or "").strip()
+    if not html:
+        return
+    mensagem.add_alternative(html, subtype="html")
+    if not imagens_inline:
+        return
+    html_part = mensagem.get_payload()[-1]
+    for img in imagens_inline:
+        cid = (img.get("cid") or "").strip()
+        dados = img.get("bytes")
+        if not cid or dados is None:
+            continue
+        tipo = (img.get("content_type") or "image/jpeg").split("/", 1)
+        maintype = tipo[0] if tipo else "image"
+        subtype = tipo[1] if len(tipo) > 1 else "jpeg"
+        html_part.add_related(
+            dados,
+            maintype=maintype,
+            subtype=subtype,
+            cid=cid,
+            filename=img.get("nome") or f"{cid}.jpg",
+        )
 
 
 def enviar_email_graph_com_anexo(
@@ -151,6 +200,8 @@ def enviar_email_graph_com_anexo(
     anexo_content_type: str = "application/pdf",
     mailbox: str | None = None,
     anexos_extras: list[tuple[str, bytes, str]] | None = None,
+    corpo_html: str | None = None,
+    imagens_inline: list[dict] | None = None,
 ) -> ResultadoEnvioEmail:
     """Envia e-mail via Microsoft Graph (app Entra + Mail.Send), sem SMTP AUTH."""
     _carregar_env_email_local()
@@ -186,10 +237,24 @@ def enviar_email_graph_com_anexo(
                 content_type=tipo_extra or "application/octet-stream",
             )
         )
+    for img in imagens_inline or []:
+        cid = (img.get("cid") or "").strip()
+        dados = img.get("bytes")
+        if not cid or dados is None:
+            continue
+        anexos_payload.append(
+            _monta_anexo_graph(
+                nome=img.get("nome") or f"{cid}.jpg",
+                conteudo=dados,
+                content_type=img.get("content_type") or "image/jpeg",
+                is_inline=True,
+                content_id=cid,
+            )
+        )
     payload: dict = {
         "message": {
             "subject": assunto,
-            "body": {"contentType": "Text", "content": corpo},
+            "body": _corpo_mensagem_graph(corpo=corpo, corpo_html=corpo_html),
             "toRecipients": [{"emailAddress": {"address": destinatario}}],
             "attachments": anexos_payload,
         },
@@ -286,6 +351,8 @@ def enviar_email_smtp_com_anexo(
     perfil: str = "compras",
     mailbox: str | None = None,
     anexos_extras: list[tuple[str, bytes, str]] | None = None,
+    corpo_html: str | None = None,
+    imagens_inline: list[dict] | None = None,
 ) -> ResultadoEnvioEmail:
     """Envia e-mail com anexo. Compras: Graph (preferencial) ou SMTP M365; suporte permanece no SMTP CareCore."""
     _carregar_env_email_local()
@@ -304,6 +371,8 @@ def enviar_email_smtp_com_anexo(
             anexo_content_type=anexo_content_type,
             mailbox=mailbox,
             anexos_extras=anexos_extras,
+            corpo_html=corpo_html,
+            imagens_inline=imagens_inline,
         )
 
     cred = _credenciais_smtp(perfil=perfil)
@@ -332,7 +401,12 @@ def enviar_email_smtp_com_anexo(
         mensagem["Cc"] = copia
     if responder_para:
         mensagem["Reply-To"] = responder_para
-    mensagem.set_content(corpo)
+    _aplicar_corpo_email(
+        mensagem,
+        corpo=corpo,
+        corpo_html=corpo_html,
+        imagens_inline=imagens_inline,
+    )
     _anexar_arquivo(
         mensagem,
         nome=anexo_nome,
