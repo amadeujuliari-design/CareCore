@@ -414,6 +414,22 @@ export default function ComprasPedidoNovo() {
               </SectionCard>
             ) : null}
 
+            <SectionCard
+              title="Observação do pedido"
+              subtitle="Opcional. Em consumo, o texto segue para todos os pedidos quando a Sede divide por categoria."
+            >
+              <label>
+                <span className="mb-1 block text-xs font-semibold text-slate-600">Observação</span>
+                <textarea
+                  className={inputClass}
+                  rows={3}
+                  value={form.observacao}
+                  onChange={(e) => atualizar('observacao', e.target.value)}
+                  placeholder="Ex.: entregar pela manhã; preferência de marca; restrição de fornecedor…"
+                />
+              </label>
+            </SectionCard>
+
             <SectionCard title={tipo === TIPO_SERVICO ? 'Itens (opcional agora)' : 'Itens'}>
               <div className="space-y-3">
                 {linhas.map((linha, idx) => (

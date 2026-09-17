@@ -52,6 +52,7 @@ import {
 } from './services/comprasService';
 import { usuarioEhAdmCompras, usuarioEhAdmPedidos, usuarioEhManutencao, usuarioPodeEnviarEmailCompras } from './utils/rbacUtils';
 import { formatarDataBr } from './utils/comprasJanelaUtils';
+import { formatarDataHoraBr } from './utils/dataBrasilUtils';
 import { rotuloCategoria } from './utils/comprasCategoriaUtils';
 import { itemConsumoPeloDetalheErro, pedidoItemUnidadeConfusa, sugerirItensConsumo, unidadeParaPedido } from './utils/comprasItensConsumoUtils';
 import { centavosParaInput, reaisParaCentavos } from './utils/comprasPatrimonioUtils';
@@ -167,12 +168,16 @@ export default function ComprasPedido() {
     assunto: '', corpo: '', aviso: '', carregando: false, erro: '',
   });
   const [enviandoEmail, setEnviandoEmail] = useState(false);
+  const [obsPedido, setObsPedido] = useState('');
 
   const carregar = useCallback(async ({ silencioso = false } = {}) => {
     if (!silencioso) setErro('');
     try {
       const dados = await comprasObterPedido(pedidoId);
       setPedido(dados);
+      if (!silencioso) {
+        setObsPedido(dados?.observacao || '');
+      }
       if (!silencioso) {
         const [catalogo, cats, fornecs] = await Promise.all([
           comprasItensConsumo({ ativos: true }),
@@ -709,6 +714,45 @@ export default function ComprasPedido() {
                   ) : null}
                 </dl>
               </SectionCard>
+            ) : null}
+            {(ehRascunho || Boolean((pedido.observacao || '').trim())) ? (
+              <div className="rounded-xl border-2 border-amber-300 bg-amber-50 px-4 py-3 shadow-sm">
+                <p className="text-sm font-bold uppercase tracking-wide text-amber-950">
+                  Observação do pedido
+                </p>
+                <p className="mt-0.5 text-xs text-amber-800">
+                  {pedido.categoria_split_nome
+                    ? 'Texto do projeto; repetido em todos os pedidos deste grupo (por categoria).'
+                    : 'Visível para a Sede em todo o grupo quando o pedido for dividido por categoria.'}
+                </p>
+                {ehRascunho ? (
+                  <div className="mt-3 space-y-2">
+                    <textarea
+                      className="w-full rounded-xl border border-amber-200 bg-white px-3 py-2 text-sm text-slate-900"
+                      rows={3}
+                      value={obsPedido}
+                      onChange={(e) => setObsPedido(e.target.value)}
+                      placeholder="Ex.: entregar pela manhã; preferência de marca; restrição de fornecedor…"
+                    />
+                    <PremiumButton
+                      type="button"
+                      variant="secondary"
+                      onClick={() => agir(
+                        () => comprasAtualizarRascunho(pedido.id, {
+                          observacao: obsPedido.trim() || null,
+                        }),
+                        'Observação salva.',
+                      )}
+                    >
+                      Salvar observação
+                    </PremiumButton>
+                  </div>
+                ) : (
+                  <p className="mt-2 whitespace-pre-wrap text-sm font-medium text-amber-950">
+                    {pedido.observacao}
+                  </p>
+                )}
+              </div>
             ) : null}
             {desfazerItens && podeEditarItens && (
               <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700">
@@ -1445,7 +1489,7 @@ export default function ComprasPedido() {
                         <div className="min-w-0 flex-1">
                           <p className={`text-xs font-semibold uppercase ${pendente ? 'text-amber-800' : 'text-slate-500'}`}>
                             {ROTULO_EVENTO[ev.tipo] || ev.tipo}
-                            {ev.criado_em ? ` · ${formatarDataBr(ev.criado_em)}` : ''}
+                            {ev.criado_em ? ` · ${formatarDataHoraBr(ev.criado_em)}` : ''}
                             {pendente ? ' · aguardando ok' : ''}
                           </p>
                           {ev.texto && <p className={`mt-1 ${pendente ? 'text-amber-950' : 'text-slate-800'}`}>{ev.texto}</p>}

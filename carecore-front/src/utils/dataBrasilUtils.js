@@ -30,6 +30,37 @@ export function formatarDataBr(iso) {
   return texto;
 }
 
+/**
+ * Data e hora operacionais (America/Sao_Paulo) a partir de datetime naive da API.
+ * Aceita `AAAA-MM-DDTHH:MM:SS` ou `AAAA-MM-DD HH:MM:SS` sem converter fuso.
+ */
+export function formatarDataHoraBr(valor) {
+  if (!valor) return '';
+  const texto = String(valor).trim();
+  const m = texto.match(
+    /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2}))?)?/,
+  );
+  if (m) {
+    const [, ano, mes, dia, hora, minuto] = m;
+    const data = `${dia}/${mes}/${ano}`;
+    if (hora != null && minuto != null) {
+      return `${data} ${hora}:${minuto}`;
+    }
+    return data;
+  }
+  try {
+    return new Date(texto).toLocaleString('pt-BR', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  } catch {
+    return texto;
+  }
+}
+
 export function parseDataIso(valor) {
   if (!valor) return null;
   const texto = String(valor).trim().slice(0, 10);

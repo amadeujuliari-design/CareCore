@@ -1239,13 +1239,23 @@ async def atualizar_rascunho(
     if pedido.status != STATUS_RASCUNHO:
         raise HTTPException(status_code=400, detail="Só o rascunho pode ser ajustado aqui.")
 
+    if "observacao" in payload:
+        pedido.observacao = (payload.get("observacao") or "").strip() or None
+
     if tipo_eh_cotacao_projeto(pedido.tipo):
         _aplicar_cabecalho_cotacao_projeto(pedido, payload, obrigatorio=False)
         pedido.atualizado_em = agora_operacional_naive()
         return pedido
 
     if pedido.tipo != TIPO_CONSUMO:
-        raise HTTPException(status_code=400, detail="Envio automático vale só para pedido de consumo.")
+        extras = [chave for chave in payload if chave != "observacao"]
+        if extras:
+            raise HTTPException(
+                status_code=400,
+                detail="Envio automático vale só para pedido de consumo.",
+            )
+        pedido.atualizado_em = agora_operacional_naive()
+        return pedido
 
     if "data_envio_prevista" in payload and payload.get("data_envio_prevista"):
         try:
