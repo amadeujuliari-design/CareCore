@@ -8,6 +8,8 @@ from compras_regras import perfil_adm_compras_sede
 
 CORPO_EMAIL_MAX = 8000
 CID_ASSINATURA = "assinatura-aeb"
+# Largura exibida no cliente de e-mail (Outlook/Gmail). Reduzida ~20% após feedback da Sede.
+LARGURA_IMG_ASSINATURA = 416
 
 CHAVE_ROBSON = "robson"
 CHAVE_ISABELLA = "isabella"
@@ -168,7 +170,7 @@ def montar_corpo_html(texto: str, usuario) -> str:
         assinatura = (
             '<div style="margin-top:18px;padding-top:10px;border-top:1px solid #e2e8f0">'
             f'<img src="cid:{CID_ASSINATURA}" alt="Assinatura {html.escape(meta["nome"])}" '
-            'width="520" style="max-width:100%;height:auto;border:0;display:block"/>'
+            f'width="{LARGURA_IMG_ASSINATURA}" style="max-width:100%;height:auto;border:0;display:block"/>'
             "</div>"
         )
     else:

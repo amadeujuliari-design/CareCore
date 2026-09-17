@@ -1,5 +1,6 @@
 from compras_emails import (
     CID_ASSINATURA,
+    LARGURA_IMG_ASSINATURA,
     chave_assinatura_usuario,
     corpo_padrao_pedido_compra,
     corpo_padrao_solicitacao_cotacao,
@@ -25,6 +26,7 @@ def test_assinatura_robson_infraestrutura():
         padrao="padrao",
     )
     assert f'cid:{CID_ASSINATURA}' in html
+    assert f'width="{LARGURA_IMG_ASSINATURA}"' in html
     assert "Robson" in html
     assert len(imagens) == 1
     assert imagens[0]["cid"] == CID_ASSINATURA
