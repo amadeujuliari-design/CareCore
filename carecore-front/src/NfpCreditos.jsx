@@ -421,6 +421,7 @@ export default function NfpCreditos() {
                       ['Créditos SEFAZ', resumo?.sefaz_creditos],
                       ['Doações auto', resumo?.doacoes_automaticas],
                       ['Lançamentos doadores diretos', resumo?.batimentos],
+                      ['Valor doadores diretos AEB', money(resumo?.doador_automatico_total)],
                       ['Total créditos', money(resumo?.total_creditos)],
                       ['Total AEB na competência', money(resumo?.aeb_total_competencia ?? resumo?.total_aeb)],
                     ].map(([label, valor]) => (
