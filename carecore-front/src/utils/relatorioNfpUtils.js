@@ -1,3 +1,10 @@
+function formatarCnpjExportacao(valor) {
+  const digitos = String(valor || '').replace(/\D/g, '').slice(0, 14);
+  if (digitos.length !== 14) return digitos;
+  return digitos
+    .replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5');
+}
+
 export const NFP_RELATORIOS_CATALOGO = [
   {
     id: 'cupons-fila',
@@ -114,7 +121,7 @@ function numeroExportacao(valor) {
 
 export function montarExportacaoRateioDetalhado(relatorio) {
   return (relatorio?.linhas || []).map((item) => ({
-    CNPJ: item.cnpj || '',
+    CNPJ: item.cnpj ? formatarCnpjExportacao(item.cnpj) : '',
     Loja: item.loja || '',
     Captador: item.captador || '',
     Origem: rotuloOrigemRateio(item.origem),
@@ -134,7 +141,7 @@ export function montarExportacaoRateioDetalhado(relatorio) {
 /** Linhas numéricas para XLSX com fórmulas de total. */
 export function montarExportacaoRateioDetalhadoXlsx(relatorio) {
   return (relatorio?.linhas || []).map((item) => ({
-    CNPJ: item.cnpj || '',
+    CNPJ: item.cnpj ? formatarCnpjExportacao(item.cnpj) : '',
     Loja: item.loja || '',
     Captador: item.captador || '',
     Origem: rotuloOrigemRateio(item.origem),
@@ -277,7 +284,7 @@ export function montarExportacaoCuponsDetalhe(relatorio) {
     Chave: item.chave || '',
     Captador: item.captador || '',
     Status: rotuloStatusCupomRelatorio(item.status),
-    'CNPJ emitente': item.cnpj_emitente || '',
+    'CNPJ emitente': item.cnpj_emitente ? formatarCnpjExportacao(item.cnpj_emitente) : '',
     Modelo: item.modelo || '',
     Série: item.serie || '',
     Número: item.numero_nf || '',

@@ -151,6 +151,14 @@ def limpar_documento(valor) -> str:
     return so_digitos(valor)
 
 
+def formatar_cnpj(valor) -> str:
+    """Máscara 00.000.000/0000-00 a partir só dos dígitos (texto seguro para Excel)."""
+    digitos = limpar_documento(valor)
+    if len(digitos) != 14:
+        return digitos
+    return f"{digitos[:2]}.{digitos[2:5]}.{digitos[5:8]}/{digitos[8:12]}-{digitos[12:]}"
+
+
 # INTEGER do Postgres; nº de cadastro NFP é sequencial pequeno.
 _MAX_NUMERO_CADASTRO_BUSCA = 2_147_483_647
 

@@ -94,7 +94,14 @@ describe('exportarRelatorioXlsx', () => {
       ],
     });
     assert.equal(dados[0]['Retorno CPF'], 108.48);
+    assert.equal(dados[0].CNPJ, '1');
     assert.equal(dados[1].Fonte, 'Doador AEB');
+    assert.equal(
+      montarExportacaoRateioDetalhadoXlsx({
+        linhas: [{ cnpj: '11222333000181', retorno: 1 }],
+      })[0].CNPJ,
+      '11.222.333/0001-81',
+    );
 
     const bloco = montarBlocoTotaisRateioDetalhadoXlsx({
       colunas: COLUNAS_RATEIO_DETALHADO,

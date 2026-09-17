@@ -55,7 +55,7 @@ from nfp_service import (
     proximo_numero_cadastro_cpf_captado,
     proximo_numero_cadastro_doador,
     relatorio_rateio_consolidado,
-    exportar_relatorio_rateio_detalhado_csv,
+    exportar_relatorio_rateio_detalhado_xlsx,
     relatorio_rateio_detalhado,
     listar_origens_rateio,
     resumo_dashboard,
@@ -1153,10 +1153,10 @@ async def exportar_relatorio_rateio_detalhado(
     db: AsyncSession = Depends(get_db),
     usuario_atual: dict = Depends(get_usuario_logado),
 ):
-    """Exporta o filtro completo em CSV (abre no Excel). Adequado a volumes grandes."""
+    """Exporta o filtro completo em XLSX (CNPJ como texto formatado). Adequado a volumes grandes."""
     _exigir_nfp_gestao(usuario_atual)
     try:
-        nome, conteudo = await exportar_relatorio_rateio_detalhado_csv(
+        nome, conteudo = await exportar_relatorio_rateio_detalhado_xlsx(
             db,
             _organizacao_id(usuario_atual),
             competencia=competencia,
@@ -1170,7 +1170,7 @@ async def exportar_relatorio_rateio_detalhado(
 
     return Response(
         content=conteudo,
-        media_type="text/csv; charset=utf-8",
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={
             "Content-Disposition": f'attachment; filename="{nome}"',
             "Cache-Control": "no-store",

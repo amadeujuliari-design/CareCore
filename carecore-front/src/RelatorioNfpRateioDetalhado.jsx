@@ -211,8 +211,10 @@ export default function RelatorioNfpRateioDetalhado() {
     setErro('');
     try {
       const response = await nfpExportarRateioDetalhado(paramsBase);
-      const blob = new Blob([response.data], { type: 'text/csv;charset=utf-8' });
-      const nome = `nfp_rateio_detalhado_${competencia}_${porNota ? 'por_nota' : 'agrupado'}.csv`;
+      const blob = new Blob([response.data], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      });
+      const nome = `nfp_rateio_detalhado_${competencia}_${porNota ? 'por_nota' : 'agrupado'}.xlsx`;
       baixarBlob(blob, nome);
     } catch (error) {
       setErro(await detalheErroExportacao(error));
@@ -227,7 +229,7 @@ export default function RelatorioNfpRateioDetalhado() {
       setErro(
         `Impressão limitada a ${LIMITE_IMPRESSAO.toLocaleString('pt-BR')} linhas. `
         + `Este filtro tem ${totalRegistros.toLocaleString('pt-BR')}. `
-        + 'Refine agente/origem/busca ou use Exportar planilha (CSV abre no Excel).',
+        + 'Refine agente/origem/busca ou use Exportar planilha (XLSX).',
       );
       return;
     }
@@ -280,7 +282,7 @@ export default function RelatorioNfpRateioDetalhado() {
         <PageHeader
           eyebrow="NFP – Relatórios"
           title="Rateio detalhado"
-          subtitle="Agrupado ou sem agrupar, com paginação. Exportar gera CSV completo no servidor (abre no Excel)."
+          subtitle="Agrupado ou sem agrupar, com paginação. Exportar gera XLSX completo no servidor (CNPJ como texto)."
           icon={<FileBarChart className="h-5 w-5" />}
           backTo="/nfp/relatorios"
           backLabel="Voltar aos relatórios"
@@ -390,7 +392,7 @@ export default function RelatorioNfpRateioDetalhado() {
                 em
                 {' '}
                 {PAGE_SIZE}
-                . Exportar planilha gera CSV completo no servidor (abre no Excel).
+                . Exportar planilha gera XLSX completo no servidor (CNPJ formatado como texto).
                 Impressão só até
                 {' '}
                 {LIMITE_IMPRESSAO.toLocaleString('pt-BR')}
@@ -424,7 +426,7 @@ export default function RelatorioNfpRateioDetalhado() {
                 {' '}
                 registros). Totais de retirada do dashboard são completos.
                 {' '}
-                Exportar planilha baixa o filtro inteiro em CSV (Excel).
+                Exportar planilha baixa o filtro inteiro em XLSX.
               </div>
               <div className="mb-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
                 {cardsRetirada.map(([label, valor]) => (

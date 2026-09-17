@@ -10,6 +10,7 @@ from collections import defaultdict
 from typing import Any, BinaryIO, Iterable, Optional, Sequence, Union
 
 from openpyxl import Workbook, load_workbook
+from openpyxl.cell.cell import WriteOnlyCell
 from sqlalchemy import delete, func, insert, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -37,6 +38,7 @@ from nfp_utils import (
     competencia_valida,
     cpf_valido,
     decidir_origem_rateio_credito,
+    formatar_cnpj,
     limpar_documento,
     limpar_nota,
     nome_eh_generico,
@@ -1780,6 +1782,13 @@ async def resumo_dashboard(
     }
 
 
+def _celula_texto_xlsx(ws, valor: Any) -> WriteOnlyCell:
+    """Texto explícito no Excel (evita CNPJ virar número/notação científica)."""
+    cell = WriteOnlyCell(ws, value="" if valor is None else str(valor))
+    cell.number_format = "@"
+    return cell
+
+
 def exportar_rateio_xlsx(linhas: list[NfpRateioDB]) -> bytes:
     wb = Workbook()
     ws = wb.active
@@ -1790,13 +1799,17 @@ def exportar_rateio_xlsx(linhas: list[NfpRateioDB]) -> bytes:
             "retorno", "valor_diego", "valor_aeb", "final", "competencia",
         ]
     )
-    for r in linhas:
-        ws.append(
-            [
-                r.cnpj, r.loja, r.captador, r.origem, r.qtd,
-                r.retorno, r.valor_diego, r.valor_aeb, r.final, r.competencia,
-            ]
-        )
+    for idx, r in enumerate(linhas, start=2):
+        ws.cell(row=idx, column=1, value=formatar_cnpj(r.cnpj) or "").number_format = "@"
+        ws.cell(row=idx, column=2, value=r.loja)
+        ws.cell(row=idx, column=3, value=r.captador)
+        ws.cell(row=idx, column=4, value=r.origem)
+        ws.cell(row=idx, column=5, value=r.qtd)
+        ws.cell(row=idx, column=6, value=r.retorno)
+        ws.cell(row=idx, column=7, value=r.valor_diego)
+        ws.cell(row=idx, column=8, value=r.valor_aeb)
+        ws.cell(row=idx, column=9, value=r.final)
+        ws.cell(row=idx, column=10, value=r.competencia)
     buf = io.BytesIO()
     wb.save(buf)
     return buf.getvalue()
@@ -2338,7 +2351,7 @@ async def relatorio_rateio_detalhado(
     }
 
 
-async def exportar_relatorio_rateio_detalhado_csv(
+async def exportar_relatorio_rateio_detalhado_xlsx(
     db: AsyncSession,
     organizacao_id: str,
     competencia: str,
@@ -2348,8 +2361,8 @@ async def exportar_relatorio_rateio_detalhado_csv(
     modo: str = "agrupado",
 ) -> tuple[str, bytes]:
     """
-    Monta CSV (separador ;) com BOM UTF-8 para abrir no Excel.
-    Gera o arquivo completo ainda com a sessao do banco aberta (volumes grandes).
+    Monta XLSX completo com a sessao do banco aberta (volumes grandes).
+    CNPJ vai como texto formatado para o Excel nao corromper.
     """
     if not competencia_valida(competencia):
         raise ValueError("Competencia invalida. Use YYYY-MM.")
@@ -2376,31 +2389,43 @@ async def exportar_relatorio_rateio_detalhado_csv(
     modo_rotulo = "Sem agrupar (cada lancamento)" if modo_n == "por_nota" else "Agrupado por CNPJ"
     nome = (
         f"nfp_rateio_detalhado_{competencia}_"
-        f"{'por_nota' if modo_n == 'por_nota' else 'agrupado'}.csv"
+        f"{'por_nota' if modo_n == 'por_nota' else 'agrupado'}.xlsx"
     )
 
-    out = io.StringIO()
-    out.write("\ufeff")
-    out.write("NFP - Rateio detalhado\n")
-    out.write(f"Competencia;{_csv_celula(competencia)}\n")
-    out.write(f"Agente;{_csv_celula(agente_sel or 'Todos')}\n")
-    out.write(
-        f"Origem;{_csv_celula(_rotulo_origem_rateio(origem_sel) if origem_sel else 'Todas')}\n"
-    )
-    out.write(f"Busca;{_csv_celula(busca_txt or '—')}\n")
-    out.write(f"Exibicao;{_csv_celula(modo_rotulo)}\n")
-    out.write("\n")
-    out.write("Totais de retirada (dashboard)\n")
-    out.write(f"Bruto Lojas/CPFs;{float(dash.get('bruto_lojas_cpfs_agente') or 0):.2f}\n")
-    out.write(f"Bruto Lojas;{float(dash.get('bruto_lojas_somente') or 0):.2f}\n")
-    out.write(f"Bruto CPF;{float(dash.get('bruto_cpf_agente') or 0):.2f}\n")
-    out.write(f"{_csv_celula(rotulo_doador)};{float(dash.get('doador_aeb_loja_agente') or 0):.2f}\n")
-    out.write(f"{_csv_celula(rotulo_parte)};{float(dash.get('parte_agente') or 0):.2f}\n")
-    out.write(f"Parte AEB;{float(dash.get('parte_aeb_consolidada_agente') or 0):.2f}\n")
-    out.write("\n")
-    out.write(
-        "CNPJ;Loja;Captador;Origem;Fonte;Numero nota;Qtd;Retorno;"
-        "Retorno loja;Retorno CPF;Parte agente;Parte AEB;Final;Competencia\n"
+    wb = Workbook(write_only=True)
+    ws = wb.create_sheet("Rateio detalhado")
+    ws.append(["NFP - Rateio detalhado"])
+    ws.append(["Competencia", competencia])
+    ws.append(["Agente", agente_sel or "Todos"])
+    ws.append(["Origem", _rotulo_origem_rateio(origem_sel) if origem_sel else "Todas"])
+    ws.append(["Busca", busca_txt or "—"])
+    ws.append(["Exibicao", modo_rotulo])
+    ws.append([])
+    ws.append(["Totais de retirada (dashboard)"])
+    ws.append(["Bruto Lojas/CPFs", float(dash.get("bruto_lojas_cpfs_agente") or 0)])
+    ws.append(["Bruto Lojas", float(dash.get("bruto_lojas_somente") or 0)])
+    ws.append(["Bruto CPF", float(dash.get("bruto_cpf_agente") or 0)])
+    ws.append([rotulo_doador, float(dash.get("doador_aeb_loja_agente") or 0)])
+    ws.append([rotulo_parte, float(dash.get("parte_agente") or 0)])
+    ws.append(["Parte AEB", float(dash.get("parte_aeb_consolidada_agente") or 0)])
+    ws.append([])
+    ws.append(
+        [
+            "CNPJ",
+            "Loja",
+            "Captador",
+            "Origem",
+            "Fonte",
+            "Numero nota",
+            "Qtd",
+            "Retorno",
+            "Retorno loja",
+            "Retorno CPF",
+            "Parte agente",
+            "Parte AEB",
+            "Final",
+            "Competencia",
+        ]
     )
 
     total = 0
@@ -2421,32 +2446,38 @@ async def exportar_relatorio_rateio_detalhado_csv(
         valor_agente = item.get("valor_agente")
         if valor_agente is None:
             valor_agente = item.get("valor_diego")
-        out.write(
-            ";".join(
-                [
-                    _csv_celula(item.get("cnpj")),
-                    _csv_celula(item.get("loja")),
-                    _csv_celula(item.get("captador")),
-                    _csv_celula(_rotulo_origem_rateio(item.get("origem"))),
-                    _csv_celula(item.get("fonte") or ""),
-                    _csv_celula(item.get("numero_nota") or ""),
-                    _csv_celula(int(item.get("qtd") or 0)),
-                    f"{retorno:.2f}",
-                    f"{float(retorno_loja or 0):.2f}",
-                    f"{float(item.get('retorno_cpf') or 0):.2f}",
-                    f"{float(valor_agente or 0):.2f}",
-                    f"{float(item.get('valor_aeb') or 0):.2f}",
-                    f"{float(item.get('final') or 0):.2f}",
-                    _csv_celula(item.get("competencia") or competencia),
-                ]
-            )
-            + "\n"
+        ws.append(
+            [
+                _celula_texto_xlsx(ws, formatar_cnpj(item.get("cnpj"))),
+                item.get("loja") or "",
+                item.get("captador") or "",
+                _rotulo_origem_rateio(item.get("origem")),
+                item.get("fonte") or "",
+                _celula_texto_xlsx(ws, item.get("numero_nota") or ""),
+                int(item.get("qtd") or 0),
+                round(retorno, 2),
+                round(float(retorno_loja or 0), 2),
+                round(float(item.get("retorno_cpf") or 0), 2),
+                round(float(valor_agente or 0), 2),
+                round(float(item.get("valor_aeb") or 0), 2),
+                round(float(item.get("final") or 0), 2),
+                item.get("competencia") or competencia,
+            ]
         )
         if total % 5000 == 0:
             await asyncio.sleep(0)
 
-    out.write(f"\nTotal de linhas;{total}\n")
-    return nome, out.getvalue().encode("utf-8")
+    ws.append([])
+    ws.append(["Total de linhas", total])
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    return nome, buf.getvalue()
+
+
+# Compatibilidade com imports antigos (CSV corrompia CNPJ no Excel).
+async def exportar_relatorio_rateio_detalhado_csv(*args, **kwargs):
+    return await exportar_relatorio_rateio_detalhado_xlsx(*args, **kwargs)
 
 
 async def listar_origens_rateio(
