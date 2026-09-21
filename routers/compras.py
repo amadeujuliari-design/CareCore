@@ -19,6 +19,7 @@ from compras_pedido_fluxo import (
     enviar_solicitacao_cotacao_fornecedores,
     gerar_pedido_compra,
     ler_bytes_anexo,
+    liberar_cotacao_para_escolha,
     registrar_comunicacao_pedido,
     registrar_nota_fiscal,
     reabrir_pedido,
@@ -784,6 +785,20 @@ async def post_escolher(
     return await serializar_pedido(db, pedido, incluir_detalhe=True, usuario=usuario_atual)
 
 
+@router.post("/pedidos/{pedido_id}/liberar-escolha")
+async def post_liberar_escolha(
+    pedido_id: str,
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    """Sede libera escolha do vencedor com menos de 3 orçamentos anexados."""
+    await _ctx(db, usuario_atual)
+    pedido = await obter_pedido(db, usuario_atual, pedido_id)
+    await liberar_cotacao_para_escolha(db, usuario_atual, pedido)
+    await db.commit()
+    return await serializar_pedido(db, pedido, incluir_detalhe=True, usuario=usuario_atual)
+
+
 @router.post("/pedidos/{pedido_id}/cotacoes/revogar-escolha")
 async def post_revogar_escolha(
     pedido_id: str,
@@ -1123,6 +1138,7 @@ async def get_anexo_arquivo(
     pedido = await obter_pedido(db, usuario_atual, pedido_id)
     from models import ComprasPedidoAnexoDB
     from sqlalchemy import select
+    from urllib.parse import quote
 
     anexo = (
         await db.execute(
@@ -1136,10 +1152,25 @@ async def get_anexo_arquivo(
         from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="Anexo não encontrado.")
     conteudo, content_type = ler_bytes_anexo(anexo.caminho_arquivo)
+    media = content_type or anexo.content_type or "application/octet-stream"
+    nome = (anexo.nome_arquivo or "anexo").replace('"', "").strip() or "anexo"
+    # ASCII fallback + filename* evita o browser salvar o UUID do path.
+    nome_ascii = nome.encode("ascii", "ignore").decode("ascii").strip() or "anexo"
+    if "." not in nome_ascii and media == "application/pdf":
+        nome_ascii = f"{nome_ascii}.pdf"
+        if "." not in nome:
+            nome = f"{nome}.pdf"
+    disposition = (
+        f'inline; filename="{nome_ascii}"; '
+        f"filename*=UTF-8''{quote(nome)}"
+    )
     return Response(
         content=conteudo,
-        media_type=content_type or anexo.content_type or "application/octet-stream",
-        headers={"Content-Disposition": f'inline; filename="{anexo.nome_arquivo}"'},
+        media_type=media,
+        headers={
+            "Content-Disposition": disposition,
+            "Cache-Control": "private, no-store",
+        },
     )
 
 

@@ -177,12 +177,8 @@ export async function comprasAssinarOrcamentoSede(id, posicao = null) {
 }
 
 export async function comprasBlobAnexo(pedidoId, anexoId) {
-  const token = localStorage.getItem('@CareCore:token') || localStorage.getItem('token');
-  const resposta = await fetch(urlAnexoPedido(pedidoId, anexoId), {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-  });
-  if (!resposta.ok) throw new Error('Não foi possível abrir o arquivo.');
-  return resposta.blob();
+  const { blob } = await comprasAbrirAnexoBlob(pedidoId, anexoId);
+  return blob;
 }
 
 export async function comprasBlobAssinaturaDigital() {
@@ -293,19 +289,82 @@ export function urlAnexoPedido(pedidoId, anexoId) {
   return `${api.defaults.baseURL}/api/compras/pedidos/${pedidoId}/anexos/${anexoId}/arquivo`;
 }
 
+/** Abre o anexo em blob (pré-visualização). Não dispara download. */
+export async function comprasAbrirAnexoBlob(pedidoId, anexoId) {
+  const token = localStorage.getItem('@CareCore:token') || localStorage.getItem('token');
+  const resposta = await fetch(urlAnexoPedido(pedidoId, anexoId), {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (!resposta.ok) throw new Error('Não foi possível abrir o arquivo.');
+  const buffer = await resposta.arrayBuffer();
+  const headerTipo = (resposta.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
+  const contentType = _inferirContentTypeAnexo(buffer, headerTipo);
+  const blob = new Blob([buffer], { type: contentType });
+  return {
+    url: URL.createObjectURL(blob),
+    contentType,
+    blob,
+    tamanho: buffer.byteLength,
+  };
+}
+
 export async function comprasBaixarAnexo(pedidoId, anexoId, nomeArquivo) {
   const token = localStorage.getItem('@CareCore:token') || localStorage.getItem('token');
   const resposta = await fetch(urlAnexoPedido(pedidoId, anexoId), {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
   });
   if (!resposta.ok) throw new Error('Não foi possível abrir o arquivo.');
-  const blob = await resposta.blob();
+  const buffer = await resposta.arrayBuffer();
+  const headerTipo = (resposta.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
+  const contentType = _inferirContentTypeAnexo(buffer, headerTipo);
+  const blob = new Blob([buffer], { type: contentType });
+  const nome = _nomeArquivoDownload(nomeArquivo, contentType, anexoId);
   const link = document.createElement('a');
-  link.href = URL.createObjectURL(blob);
-  link.download = nomeArquivo || 'anexo';
-  link.target = '_blank';
+  const objectUrl = URL.createObjectURL(blob);
+  link.href = objectUrl;
+  link.download = nome;
+  link.rel = 'noopener';
+  document.body.appendChild(link);
   link.click();
-  URL.revokeObjectURL(link.href);
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(objectUrl), 1500);
+}
+
+function _inferirContentTypeAnexo(buffer, headerTipo) {
+  const bytes = new Uint8Array(buffer.slice(0, 12));
+  const asText = String.fromCharCode(...bytes.slice(0, 5));
+  if (asText.startsWith('%PDF')) return 'application/pdf';
+  if (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47) return 'image/png';
+  if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return 'image/jpeg';
+  if (asText.startsWith('GIF8')) return 'image/gif';
+  if (
+    headerTipo
+    && headerTipo !== 'application/octet-stream'
+    && headerTipo !== 'binary/octet-stream'
+  ) {
+    return headerTipo;
+  }
+  return headerTipo || 'application/octet-stream';
+}
+
+function _nomeArquivoDownload(nomeArquivo, contentType, anexoId) {
+  let nome = String(nomeArquivo || '').trim();
+  if (!nome || /^[0-9a-f-]{36}$/i.test(nome)) {
+    nome = contentType === 'application/pdf' ? 'anexo.pdf' : 'anexo';
+  }
+  if (contentType === 'application/pdf' && !/\.pdf$/i.test(nome)) {
+    nome = `${nome}.pdf`;
+  }
+  if (contentType.startsWith('image/') && !/\.(png|jpe?g|webp|gif)$/i.test(nome)) {
+    const ext = contentType.split('/')[1] || 'img';
+    nome = `${nome}.${ext === 'jpeg' ? 'jpg' : ext}`;
+  }
+  return nome || `anexo-${String(anexoId || 'arquivo').slice(0, 8)}`;
+}
+
+export async function comprasLiberarEscolha(pedidoId) {
+  const { data } = await api.post(`/api/compras/pedidos/${pedidoId}/liberar-escolha`);
+  return data;
 }
 
 export async function comprasPatrimonio() {

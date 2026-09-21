@@ -5,12 +5,14 @@ import { FileText, Mail, Search, ShoppingCart } from 'lucide-react';
 import ComprasItemTypeahead from './components/ComprasItemTypeahead';
 import ModalPosicionarAssinaturaOrcamento from './components/ModalPosicionarAssinaturaOrcamento';
 import ModalRevisarEmailCompras from './components/ModalRevisarEmailCompras';
+import ModalVisualizarAnexoCompras from './components/ModalVisualizarAnexoCompras';
 import Sidebar from './Sidebar';
 import { CampoSelect, CampoTexto } from './components/UsuariosCampos';
 import {
   AppShell,
   MainShell,
   PageHeader,
+  PremiumBadge,
   PremiumButton,
   ScrollArea,
   SectionCard,
@@ -36,6 +38,7 @@ import {
   comprasFornecedores,
   comprasGerarPedidoCompra,
   comprasItensConsumo,
+  comprasLiberarEscolha,
   comprasObterPedido,
   comprasReceber,
   comprasReabrir,
@@ -57,6 +60,11 @@ import { rotuloCategoria } from './utils/comprasCategoriaUtils';
 import { itemConsumoPeloDetalheErro, pedidoItemUnidadeConfusa, sugerirItensConsumo, unidadeParaPedido } from './utils/comprasItensConsumoUtils';
 import { centavosParaInput, reaisParaCentavos } from './utils/comprasPatrimonioUtils';
 import {
+  rotuloStatusPedidoLista,
+  statusMostraProgressoOrcamentos,
+  varianteBadgeStatusPedido,
+} from './utils/comprasPedidoStatus';
+import {
   STEPS_COTACAO_PROJETO,
   etapaCotacaoProjeto,
   fornecedorSemCategoria,
@@ -71,19 +79,6 @@ import {
   tipoExigeJanela,
   tipoPulaAprovacaoSede,
 } from './utils/comprasPedidoTipos';
-
-const STATUS_LABEL = {
-  rascunho: 'Rascunho',
-  aguardando_cotacao: 'Aguardando cotação',
-  em_cotacao: 'Em cotação',
-  aguardando_aprovacao_unidade: 'Aguardando unidade',
-  aguardando_aprovacao_sede: 'Aguardando Sede',
-  aprovado: 'Aprovado',
-  enviado_fornecedor: 'Enviado ao fornecedor',
-  recebido: 'Encerrado',
-  cancelado: 'Cancelado',
-  reprovado: 'Reprovado',
-};
 
 const ROTULO_EVENTO = {
   parecer: 'Parecer',
@@ -136,10 +131,12 @@ export default function ComprasPedido() {
   const usuario = useMemo(() => usuarioSessao(), []);
   const usuarioId = usuario.id || usuario.usuario_id;
   const sede = usuarioEhAdmCompras(usuario) || usuarioEhManutencao(usuario);
+  const manutencao = usuarioEhManutencao(usuario);
   const podeDispararEmailCompras = usuarioPodeEnviarEmailCompras(usuario);
   const admPedidos = usuarioEhAdmPedidos(usuario);
   const podeCadastrarMestre = sede || admPedidos;
   const unidade = admPedidos
+    || manutencao
     || ['Gestor', 'Técnico', 'Administrativo'].includes(usuario.perfil_acesso);
   const [pedido, setPedido] = useState(null);
   const [fornecedores, setFornecedores] = useState([]);
@@ -169,6 +166,7 @@ export default function ComprasPedido() {
   });
   const [enviandoEmail, setEnviandoEmail] = useState(false);
   const [obsPedido, setObsPedido] = useState('');
+  const [modalAnexo, setModalAnexo] = useState(null);
 
   const carregar = useCallback(async ({ silencioso = false } = {}) => {
     if (!silencioso) setErro('');
@@ -267,20 +265,33 @@ export default function ComprasPedido() {
   const podeEditarItens = Boolean(pedido.pode_editar_itens);
   const cotacaoProjeto = tipoEhCotacaoProjeto(pedido.tipo);
   const cotacaoSede = tipoEhCotacaoSede(pedido.tipo);
-  const podeRemoverOrcamento = Boolean(pedido.pode_substituir_orcamento)
-    || (unidade && cotacaoProjeto && ['rascunho', 'em_cotacao', 'aguardando_cotacao'].includes(pedido.status));
+  // Após envio ao fornecedor (ou encerrado), orçamentos ficam só leitura.
+  const orcamentosTravados = ['enviado_fornecedor', 'recebido', 'cancelado', 'reprovado'].includes(pedido.status);
+  const podeRemoverOrcamento = !orcamentosTravados && (
+    Boolean(pedido.pode_substituir_orcamento)
+    || (unidade && cotacaoProjeto && ['rascunho', 'em_cotacao', 'aguardando_cotacao'].includes(pedido.status))
+  );
   const pulaAprovacaoSede = tipoPulaAprovacaoSede(pedido.tipo) || Boolean(pedido.pula_aprovacao_sede);
   const segmentoCotacao = segmentoFornecedorDoTipoPedido(pedido.tipo);
-  const podeEscolherCotacao = sede
-    && ['aguardando_aprovacao_sede', 'em_cotacao', 'aguardando_cotacao', 'aguardando_aprovacao_unidade'].includes(pedido.status);
-  const podeLancarCotacao = (sede && cotacaoSede && !terminal)
-    || (unidade && cotacaoProjeto && ['rascunho', 'em_cotacao', 'aguardando_cotacao'].includes(pedido.status));
-  const podePedirCotacaoEmail = podeDispararEmailCompras && (
+  const podeEscolherCotacao = !orcamentosTravados
+    && sede
+    && ['aguardando_aprovacao_sede', 'em_cotacao', 'aguardando_cotacao', 'aguardando_escolha_orcamento', 'aguardando_aprovacao_unidade'].includes(pedido.status);
+  const podeLancarCotacao = !orcamentosTravados && (
+    (sede && cotacaoSede && !terminal)
+    || (unidade && cotacaoProjeto && ['rascunho', 'em_cotacao', 'aguardando_cotacao'].includes(pedido.status))
+  );
+  const podePedirCotacaoEmail = !orcamentosTravados && podeDispararEmailCompras && (
     (sede && cotacaoSede
-      && ['aguardando_cotacao', 'em_cotacao', 'aguardando_aprovacao_unidade', 'aguardando_aprovacao_sede', 'aprovado'].includes(pedido.status))
+      && ['aguardando_cotacao', 'em_cotacao', 'aguardando_escolha_orcamento', 'aguardando_aprovacao_unidade', 'aguardando_aprovacao_sede', 'aprovado'].includes(pedido.status))
     || (unidade && cotacaoProjeto
       && ['rascunho', 'em_cotacao', 'aguardando_cotacao'].includes(pedido.status))
   ) && !terminal;
+  const podeLiberarEscolha = !orcamentosTravados
+    && sede
+    && cotacaoSede
+    && ['aguardando_cotacao', 'em_cotacao'].includes(pedido.status)
+    && Number(pedido.orcamentos_com_anexo || 0) >= 1
+    && Number(pedido.orcamentos_com_anexo || 0) < Number(pedido.min_orcamentos_recomendados || 3);
   const podeEncerrar = pedido.status === 'enviado_fornecedor' && (sede || (unidade && !pedidoSede));
   const podeReabrir = pedido.pode_reabrir && pedido.fechado_por_id === usuarioId;
   const pedidoCompra = (pedido.anexos || []).find((a) => a.tipo === 'pedido_compra');
@@ -631,7 +642,7 @@ export default function ComprasPedido() {
             : `Pedido · ${rotuloTipoPedido(pedido.tipo)}${pedido.categoria_split_nome ? ` · ${pedido.categoria_split_nome}` : ''}${pedido.grupo_codigo ? ` · ${pedido.grupo_codigo}` : ''}`}
           subtitle={[
             rotuloTipoPedido(pedido.tipo),
-            STATUS_LABEL[pedido.status] || pedido.status,
+            rotuloStatusPedidoLista(pedido),
             pedido.competencia,
             typeof pedido.qtd_orcamentos === 'number'
               ? `${pedido.qtd_orcamentos} orçamento(s)`
@@ -642,6 +653,40 @@ export default function ComprasPedido() {
         />
         <ScrollArea>
           <div className="space-y-4 p-4 md:p-6">
+            <div className="flex flex-wrap items-center gap-2">
+              <PremiumBadge variant={varianteBadgeStatusPedido(pedido.status)}>
+                {rotuloStatusPedidoLista(pedido)}
+              </PremiumBadge>
+              {(pedido.cotacao_sede || pedido.cotacao_projeto) && statusMostraProgressoOrcamentos(pedido.status) ? (
+                <span className="text-xs font-semibold text-slate-500">
+                  Orçamentos com PDF: {pedido.orcamentos_com_anexo ?? 0}/{pedido.min_orcamentos_recomendados || 3}
+                </span>
+              ) : null}
+            </div>
+            {podeLiberarEscolha ? (
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border-2 border-sky-300 bg-sky-50 px-4 py-3">
+                <div className="min-w-0 flex-1 text-sm text-sky-950">
+                  <p className="font-bold">Liberar para escolha</p>
+                  <p className="mt-0.5 text-xs text-sky-800">
+                    Há {pedido.orcamentos_com_anexo} orçamento(s) anexado(s). O ideal são {pedido.min_orcamentos_recomendados || 3}.
+                    Se já bastam, libere para marcar o pedido como «Pronto para escolher».
+                  </p>
+                </div>
+                <PremiumButton
+                  type="button"
+                  onClick={() => {
+                    const min = pedido.min_orcamentos_recomendados || 3;
+                    const n = pedido.orcamentos_com_anexo || 0;
+                    if (!window.confirm(
+                      `Liberar escolha com ${n} orçamento(s)? O recomendado são ${min}.`,
+                    )) return;
+                    agir(() => comprasLiberarEscolha(pedido.id), 'Pedido pronto para escolher o orçamento.');
+                  }}
+                >
+                  Liberar para escolha
+                </PremiumButton>
+              </div>
+            ) : null}
             {erro && (
               <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{erro}</div>
             )}
@@ -656,7 +701,7 @@ export default function ComprasPedido() {
                 <p className="mt-1 text-sm text-emerald-800">
                   A Sede escolheu o orçamento vencedor e carimbou a assinatura digital no PDF.
                   Esse arquivo também vai anexado automaticamente no e-mail do pedido de compra ao fornecedor.
-                  Você ainda pode baixar o PDF marcado como
+                  Você pode visualizar o PDF marcado como
                   {' '}
                   <span className="font-semibold">Assinado</span>
                   {' '}
@@ -670,9 +715,9 @@ export default function ComprasPedido() {
                         key={anexo.id}
                         type="button"
                         className="rounded-lg bg-emerald-700 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-800"
-                        onClick={() => comprasBaixarAnexo(pedido.id, anexo.id, anexo.nome_arquivo).catch(() => setErro('Não foi possível abrir o orçamento assinado.'))}
+                        onClick={() => setModalAnexo(anexo)}
                       >
-                        Baixar PDF assinado
+                        Ver PDF assinado
                       </button>
                     ))}
                 </div>
@@ -1261,38 +1306,58 @@ export default function ComprasPedido() {
                         )}
                       </div>
                     </div>
-                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <div className="mt-2 space-y-2">
                       {anexosDaCotacao(pedido.anexos, c.id).map((anexo) => (
-                        <span key={anexo.id} className="inline-flex items-center gap-1">
-                          <button
-                            type="button"
-                            className={
-                              anexo.tipo === 'orcamento_assinado'
-                                ? 'rounded-md border border-emerald-300 bg-emerald-100 px-2 py-1 text-xs font-bold text-emerald-900 underline'
-                                : 'text-xs font-semibold text-violet-700 underline'
-                            }
-                            onClick={() => comprasBaixarAnexo(pedido.id, anexo.id, anexo.nome_arquivo).catch(() => setErro('Não foi possível abrir o orçamento.'))}
-                          >
+                        <div
+                          key={anexo.id}
+                          className={`flex flex-wrap items-center justify-between gap-2 rounded-lg border px-3 py-2 ${
+                            anexo.tipo === 'orcamento_assinado'
+                              ? 'border-emerald-200 bg-emerald-50'
+                              : 'border-slate-200 bg-white'
+                          }`}
+                        >
+                          <p className="min-w-0 truncate text-xs font-medium text-slate-800">
                             {anexo.tipo === 'orcamento_assinado' ? '✓ Assinado — ' : ''}
-                            {anexo.nome_arquivo}
-                          </button>
-                          {!terminal && podeRemoverOrcamento && anexo.tipo !== 'orcamento_assinado' && (
+                            {anexo.nome_arquivo || 'Arquivo'}
+                          </p>
+                          <div className="flex shrink-0 flex-wrap items-center gap-2">
                             <button
                               type="button"
-                              className="rounded px-1 text-xs font-bold text-rose-700 hover:bg-rose-50"
-                              title="Remover este PDF"
-                              onClick={async () => {
-                                if (!window.confirm(`Remover o arquivo ${anexo.nome_arquivo}?`)) return;
-                                await agir(() => comprasRemoverAnexo(pedido.id, anexo.id), 'Anexo removido.');
-                              }}
+                              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-bold text-slate-800 hover:bg-slate-50"
+                              onClick={() => setModalAnexo(anexo)}
                             >
-                              ×
+                              Visualizar
                             </button>
-                          )}
-                        </span>
+                            <button
+                              type="button"
+                              className="inline-flex items-center gap-1.5 rounded-lg bg-slate-800 px-3 py-1.5 text-xs font-bold text-white hover:bg-slate-900"
+                              onClick={() => comprasBaixarAnexo(
+                                pedido.id,
+                                anexo.id,
+                                anexo.nome_arquivo,
+                              ).catch(() => setErro('Não foi possível baixar o orçamento.'))}
+                            >
+                              <FileText size={14} />
+                              Baixar
+                            </button>
+                            {!terminal && podeRemoverOrcamento && anexo.tipo !== 'orcamento_assinado' && (
+                              <button
+                                type="button"
+                                className="rounded px-1.5 text-xs font-bold text-rose-700 hover:bg-rose-50"
+                                title="Remover este PDF"
+                                onClick={async () => {
+                                  if (!window.confirm(`Remover o arquivo ${anexo.nome_arquivo}?`)) return;
+                                  await agir(() => comprasRemoverAnexo(pedido.id, anexo.id), 'Anexo removido.');
+                                }}
+                              >
+                                ×
+                              </button>
+                            )}
+                          </div>
+                        </div>
                       ))}
-                      {!terminal && (sede || cotacaoProjeto) && (
-                        <label className="cursor-pointer text-xs font-semibold text-slate-600">
+                      {!terminal && podeRemoverOrcamento && (sede || cotacaoProjeto) && (
+                        <label className="inline-flex cursor-pointer text-xs font-semibold text-slate-600">
                           + Anexar PDF
                           <input
                             type="file"
@@ -1510,34 +1575,59 @@ export default function ComprasPedido() {
             </SectionCard>
 
             {emailPedidoCompraEnviado && pedidoCompra && (
-              <SectionCard title="Pedido de compra enviado">
-                <p className="mb-3 text-sm text-emerald-800">
+              <div className="rounded-xl border-2 border-emerald-400 bg-emerald-50 px-4 py-3 shadow-sm">
+                <p className="text-sm font-bold uppercase tracking-wide text-emerald-900">
+                  Pedido de compra enviado
+                </p>
+                <p className="mt-1 text-sm text-emerald-800">
                   E-mail enviado com sucesso ao fornecedor (pedido de compra
                   {(pedido.anexos || []).some((a) => a.tipo === 'orcamento_assinado')
                     ? ' + orçamento assinado pela Sede'
                     : ''}
-                  ). Você pode baixar o PDF e, se precisar, reenviar.
+                  ). Visualize ou baixe o PDF; se precisar, reenvie.
                 </p>
-                <div className="flex flex-wrap gap-2">
-                  <PremiumButton
-                    variant="secondary"
-                    onClick={() => comprasBaixarAnexo(pedido.id, pedidoCompra.id, pedidoCompra.nome_arquivo)}
-                  >
-                    Baixar PDF do pedido
-                  </PremiumButton>
-                  {podeEnviarPedidoCompra && (
-                    <PremiumButton
-                      variant="secondary"
-                      onClick={() => abrirModalEmail('reenvio')}
-                    >
-                      <span className="inline-flex items-center gap-1.5">
-                        <Mail size={16} />
-                        Reenviar e-mail ao fornecedor
-                      </span>
-                    </PremiumButton>
-                  )}
-                </div>
-              </SectionCard>
+                <ul className="mt-3 space-y-2">
+                  <li className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-emerald-200 bg-white px-3 py-2.5">
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-slate-900">PDF do pedido de compra</p>
+                      <p className="truncate text-xs text-slate-500">
+                        {pedidoCompra.nome_arquivo || 'pedido-compra.pdf'}
+                      </p>
+                    </div>
+                    <div className="flex shrink-0 flex-wrap gap-2">
+                      <button
+                        type="button"
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-300 bg-white px-3 py-2 text-xs font-bold text-emerald-800 hover:bg-emerald-50"
+                        onClick={() => setModalAnexo(pedidoCompra)}
+                      >
+                        Visualizar
+                      </button>
+                      <button
+                        type="button"
+                        className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-700 px-3 py-2 text-xs font-bold text-white hover:bg-emerald-800"
+                        onClick={() => comprasBaixarAnexo(
+                          pedido.id,
+                          pedidoCompra.id,
+                          pedidoCompra.nome_arquivo,
+                        ).catch(() => setErro('Não foi possível baixar o pedido de compra.'))}
+                      >
+                        <FileText size={14} />
+                        Baixar PDF
+                      </button>
+                      {podeEnviarPedidoCompra && (
+                        <button
+                          type="button"
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-300 bg-white px-3 py-2 text-xs font-bold text-emerald-800 hover:bg-emerald-50"
+                          onClick={() => abrirModalEmail('reenvio')}
+                        >
+                          <Mail size={14} />
+                          Reenviar e-mail
+                        </button>
+                      )}
+                    </div>
+                  </li>
+                </ul>
+              </div>
             )}
 
             {tipoExigeJanela(pedido.tipo) && pedido.status === 'rascunho' && (
@@ -1568,6 +1658,40 @@ export default function ComprasPedido() {
               </SectionCard>
             )}
 
+            {(pedido.anexos || []).some((a) => a.tipo === 'resposta_fornecedor') && (
+              <SectionCard title="Respostas do fornecedor">
+                <ul className="space-y-2">
+                  {(pedido.anexos || [])
+                    .filter((a) => a.tipo === 'resposta_fornecedor')
+                    .map((anexo) => (
+                      <li
+                        key={anexo.id}
+                        className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2"
+                      >
+                        <span className="truncate text-sm text-slate-800">{anexo.nome_arquivo || 'Arquivo'}</span>
+                        <div className="flex shrink-0 gap-2">
+                          <button
+                            type="button"
+                            className="text-xs font-bold text-slate-800 underline"
+                            onClick={() => setModalAnexo(anexo)}
+                          >
+                            Visualizar
+                          </button>
+                          <button
+                            type="button"
+                            className="text-xs font-semibold text-slate-600 underline"
+                            onClick={() => comprasBaixarAnexo(pedido.id, anexo.id, anexo.nome_arquivo)
+                              .catch(() => setErro('Não foi possível baixar o arquivo.'))}
+                          >
+                            Baixar
+                          </button>
+                        </div>
+                      </li>
+                    ))}
+                </ul>
+              </SectionCard>
+            )}
+
             {(pedido.notas_fiscais || []).length > 0 && (
               <div className="rounded-xl border-2 border-sky-400 bg-sky-50 px-4 py-3 shadow-sm">
                 <p className="text-sm font-bold uppercase tracking-wide text-sky-900">
@@ -1575,8 +1699,8 @@ export default function ComprasPedido() {
                 </p>
                 <p className="mt-1 text-sm text-sky-800">
                   {(pedido.notas_fiscais || []).length === 1
-                    ? 'Há 1 nota fiscal neste pedido. Use o botão para baixar o arquivo.'
-                    : `Há ${(pedido.notas_fiscais || []).length} notas fiscais neste pedido. Use os botões para baixar os arquivos.`}
+                    ? 'Há 1 nota fiscal neste pedido. Visualize ou baixe o arquivo.'
+                    : `Há ${(pedido.notas_fiscais || []).length} notas fiscais neste pedido. Visualize ou baixe os arquivos.`}
                 </p>
                 <ul className="mt-3 space-y-2">
                   {pedido.notas_fiscais.map((nf) => {
@@ -1604,14 +1728,36 @@ export default function ComprasPedido() {
                             {nf.origem_dados === 'xml' ? ' · importado do XML' : ''}
                           </p>
                         </div>
-                        {nf.anexo_id ? (
+                        {nf.anexo_id && anexo ? (
+                          <div className="flex shrink-0 flex-wrap gap-2">
+                            <button
+                              type="button"
+                              className="inline-flex items-center gap-1.5 rounded-lg border border-sky-300 bg-white px-3 py-2 text-xs font-bold text-sky-800 hover:bg-sky-50"
+                              onClick={() => setModalAnexo(anexo)}
+                            >
+                              Visualizar
+                            </button>
+                            <button
+                              type="button"
+                              className="inline-flex items-center gap-1.5 rounded-lg bg-sky-700 px-3 py-2 text-xs font-bold text-white hover:bg-sky-800"
+                              onClick={() => comprasBaixarAnexo(
+                                pedido.id,
+                                nf.anexo_id,
+                                anexo?.nome_arquivo || `nota-fiscal-${nf.numero || nf.id}.pdf`,
+                              ).catch(() => setErro('Não foi possível abrir o arquivo da NF.'))}
+                            >
+                              <FileText size={14} />
+                              Baixar NF
+                            </button>
+                          </div>
+                        ) : nf.anexo_id ? (
                           <button
                             type="button"
                             className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-sky-700 px-3 py-2 text-xs font-bold text-white hover:bg-sky-800"
                             onClick={() => comprasBaixarAnexo(
                               pedido.id,
                               nf.anexo_id,
-                              anexo?.nome_arquivo || `nota-fiscal-${nf.numero || nf.id}.pdf`,
+                              `nota-fiscal-${nf.numero || nf.id}.pdf`,
                             ).catch(() => setErro('Não foi possível abrir o arquivo da NF.'))}
                           >
                             <FileText size={14} />
@@ -1898,6 +2044,13 @@ export default function ComprasPedido() {
           }
           setModalAssinatura(null);
         }}
+      />
+      <ModalVisualizarAnexoCompras
+        aberto={Boolean(modalAnexo)}
+        pedidoId={pedido?.id}
+        anexo={modalAnexo}
+        onFechar={() => setModalAnexo(null)}
+        onErro={(msg) => setErro(msg)}
       />
     </AppShell>
   );

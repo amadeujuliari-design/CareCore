@@ -15,6 +15,7 @@ import {
   MainShell,
   PageHeader,
   PremiumButton,
+  PremiumBadge,
   ScrollArea,
   SectionCard,
 } from './components/PremiumUI';
@@ -40,19 +41,11 @@ import {
 } from './services/comprasService';
 import { usuarioEhAdmCompras, usuarioEhAdmPedidos, usuarioEhManutencao } from './utils/rbacUtils';
 import { BOTOES_NOVO_PEDIDO, rotuloTipoPedido } from './utils/comprasPedidoTipos';
-
-const STATUS_LABEL = {
-  rascunho: 'Rascunho',
-  aguardando_cotacao: 'Aguardando cotação',
-  em_cotacao: 'Em cotação',
-  aguardando_aprovacao_unidade: 'Aguardando unidade',
-  aguardando_aprovacao_sede: 'Aguardando Sede',
-  aprovado: 'Aprovado',
-  enviado_fornecedor: 'Enviado ao fornecedor',
-  recebido: 'Encerrado',
-  cancelado: 'Cancelado',
-  reprovado: 'Reprovado',
-};
+import {
+  progressoOrcamentosTexto,
+  rotuloStatusPedidoLista,
+  varianteBadgeStatusPedido,
+} from './utils/comprasPedidoStatus';
 
 function usuarioSessao() {
   try {
@@ -337,7 +330,7 @@ export default function Compras() {
                             <th>Objeto / categoria</th>
                             <th>Envio previsto</th>
                             <th>Status</th>
-                            {!sede ? <th>Orçamentos</th> : null}
+                            <th>Orçamentos</th>
                             <th>Atualizado</th>
                             <th />
                           </tr>
@@ -357,8 +350,16 @@ export default function Compras() {
                                   : '—'}
                                 {pedido.envio_automatico ? ' · auto' : ''}
                               </td>
-                              <td>{STATUS_LABEL[pedido.status] || pedido.status}</td>
-                              {!sede ? <td>{pedido.qtd_orcamentos ?? 0}</td> : null}
+                              <td>
+                                <PremiumBadge variant={varianteBadgeStatusPedido(pedido.status)}>
+                                  {rotuloStatusPedidoLista(pedido)}
+                                </PremiumBadge>
+                              </td>
+                              <td className="tabular-nums text-slate-700">
+                                {(pedido.cotacao_sede || pedido.cotacao_projeto)
+                                  ? (progressoOrcamentosTexto(pedido) || '—')
+                                  : (pedido.qtd_orcamentos ?? 0)}
+                              </td>
                               <td>{pedido.atualizado_em || '—'}</td>
                               <td>
                                 <Link className="font-semibold text-slate-800 underline" to={`/compras/pedidos/${pedido.id}`}>

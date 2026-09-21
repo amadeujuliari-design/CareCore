@@ -33,10 +33,12 @@ from compras_regras import (
     PATRIMONIO_ORIGEM_COMPRA,
     PATRIMONIO_SITUACAO_BOM,
     STATUS_AGUARDANDO_COTACAO,
+    STATUS_AGUARDANDO_ESCOLHA,
     STATUS_AGUARDANDO_SEDE,
     STATUS_AGUARDANDO_UNIDADE,
     STATUS_APROVADO,
     STATUS_CANCELADO,
+    STATUS_COTACAO_SEDE_COLETANDO,
     STATUS_EM_COTACAO,
     STATUS_ENVIADO,
     STATUS_RECEBIDO,
@@ -226,6 +228,74 @@ async def contar_orcamentos_com_anexo(db: AsyncSession, pedido_id: str) -> int:
         if a.cotacao_id and a.tipo == TIPO_ANEXO_ORCAMENTO
     }
     return sum(1 for c in cotacoes if c.id in com_pdf)
+
+
+async def _marcar_pronto_para_escolha_sede(
+    db: AsyncSession,
+    usuario: dict,
+    pedido: ComprasPedidoDB,
+    *,
+    motivo: str,
+) -> bool:
+    """Passa cotação da Sede de 'coletando' para 'pronto para escolher'. Retorna se mudou."""
+    if not tipo_eh_cotacao_sede(pedido.tipo):
+        return False
+    if pedido.status not in STATUS_COTACAO_SEDE_COLETANDO:
+        return False
+    anterior = pedido.status
+    pedido.status = STATUS_AGUARDANDO_ESCOLHA
+    pedido.atualizado_em = agora_operacional_naive()
+    await registrar_evento_pedido(
+        db,
+        pedido_id=pedido.id,
+        tipo=TIPO_EVENTO_STATUS,
+        texto=motivo,
+        usuario_id=_uid(usuario),
+        status_anterior=anterior,
+        status_novo=STATUS_AGUARDANDO_ESCOLHA,
+    )
+    return True
+
+
+async def liberar_cotacao_para_escolha(
+    db: AsyncSession,
+    usuario: dict,
+    pedido: ComprasPedidoDB,
+) -> ComprasPedidoDB:
+    """Sede libera a escolha do vencedor com menos de 3 orçamentos anexados."""
+    from compras_regras import usuario_pode_aprovar_sede
+
+    if not usuario_pode_aprovar_sede(
+        perfil=(usuario.get("perfil_acesso") or usuario.get("perfil") or ""),
+        is_manutencao=bool(usuario.get("is_manutencao")),
+    ):
+        raise HTTPException(status_code=403, detail="Somente a Sede libera a escolha do orçamento.")
+    if not tipo_eh_cotacao_sede(pedido.tipo):
+        raise HTTPException(
+            status_code=400,
+            detail="Liberar escolha vale para pedidos de cotação da Sede (consumo/hortifruti/manutenção).",
+        )
+    if pedido.status not in STATUS_COTACAO_SEDE_COLETANDO:
+        raise HTTPException(
+            status_code=400,
+            detail="Só é possível liberar enquanto o pedido está em cotação.",
+        )
+    qtd = await contar_orcamentos_com_anexo(db, pedido.id)
+    if qtd < 1:
+        raise HTTPException(
+            status_code=400,
+            detail="Anexe ao menos um orçamento antes de liberar a escolha.",
+        )
+    await _marcar_pronto_para_escolha_sede(
+        db,
+        usuario,
+        pedido,
+        motivo=(
+            f"Cotação liberada para escolha com {qtd} orçamento(s) anexado(s) "
+            f"(recomendado: {MIN_COTACOES_RECOMENDADAS})."
+        ),
+    )
+    return pedido
 
 
 async def _anexos_pedido(db: AsyncSession, pedido_id: str) -> list[ComprasPedidoAnexoDB]:
@@ -425,7 +495,7 @@ def ler_bytes_anexo(caminho: str) -> tuple[bytes, str]:
         bucket, rel = parsed
         try:
             arquivo = baixar_supabase_storage(bucket, rel)
-            return arquivo.conteudo, arquivo.content_type
+            return arquivo.conteudo, _content_type_anexo(arquivo.conteudo, getattr(arquivo, "content_type", None), rel)
         except StorageErro as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 
@@ -438,7 +508,38 @@ def ler_bytes_anexo(caminho: str) -> tuple[bytes, str]:
     base = Path(__file__).resolve().parent / "uploads" / rel
     if not base.is_file():
         raise HTTPException(status_code=404, detail="Arquivo não encontrado no servidor.")
-    return base.read_bytes(), "application/octet-stream"
+    conteudo = base.read_bytes()
+    return conteudo, _content_type_anexo(conteudo, None, base.name)
+
+
+def _content_type_anexo(conteudo: bytes, declarado: Optional[str], nome: Optional[str] = None) -> str:
+    """Evita application/octet-stream em PDF/imagem — senão o browser baixa blob com nome UUID e abre em branco."""
+    bruto = (declarado or "").split(";", 1)[0].strip().lower()
+    if bruto and bruto not in {"application/octet-stream", "binary/octet-stream"}:
+        return bruto
+    head = conteudo[:8] if conteudo else b""
+    if head.startswith(b"%PDF"):
+        return "application/pdf"
+    if head.startswith(b"\x89PNG"):
+        return "image/png"
+    if head[:3] == b"\xff\xd8\xff":
+        return "image/jpeg"
+    if head.startswith(b"GIF8"):
+        return "image/gif"
+    if head.startswith(b"RIFF") and conteudo[8:12] == b"WEBP":
+        return "image/webp"
+    nome_l = (nome or "").lower()
+    if nome_l.endswith(".pdf"):
+        return "application/pdf"
+    if nome_l.endswith(".png"):
+        return "image/png"
+    if nome_l.endswith((".jpg", ".jpeg")):
+        return "image/jpeg"
+    if nome_l.endswith(".webp"):
+        return "image/webp"
+    if nome_l.endswith(".xml"):
+        return "application/xml"
+    return bruto or "application/octet-stream"
 
 
 async def upload_anexo_pedido(
@@ -523,6 +624,23 @@ async def upload_anexo_pedido(
                 pedido,
                 automatico=True,
                 confirmar_sem_tres_orcamentos=True,
+            )
+
+    # Cotação da Sede: com 3 PDFs anexados, libera a fase de escolha do vencedor.
+    if (
+        tipo == TIPO_ANEXO_ORCAMENTO
+        and tipo_eh_cotacao_sede(pedido.tipo)
+        and pedido.status in STATUS_COTACAO_SEDE_COLETANDO
+    ):
+        qtd = await contar_orcamentos_com_anexo(db, pedido.id)
+        if qtd >= MIN_COTACOES_RECOMENDADAS:
+            await _marcar_pronto_para_escolha_sede(
+                db,
+                usuario,
+                pedido,
+                motivo=(
+                    f"Com {qtd} orçamentos anexados, pedido pronto para escolher o vencedor."
+                ),
             )
 
     return anexo
@@ -1617,6 +1735,7 @@ async def remover_anexo_pedido(
         STATUS_RASCUNHO,
         STATUS_AGUARDANDO_COTACAO,
         STATUS_EM_COTACAO,
+        STATUS_AGUARDANDO_ESCOLHA,
     }
     if not sede and pedido.status not in statuses_projeto:
         raise HTTPException(
@@ -1629,7 +1748,10 @@ async def remover_anexo_pedido(
         STATUS_AGUARDANDO_SEDE,
         STATUS_APROVADO,
     }:
-        raise HTTPException(status_code=400, detail="Não é possível remover anexo neste status.")
+        raise HTTPException(
+            status_code=400,
+            detail="Após o envio ao fornecedor não é possível remover anexos de orçamento.",
+        )
 
     anexo = (
         await db.execute(
@@ -1678,6 +1800,22 @@ async def desativar_cotacao(
         STATUS_AGUARDANDO_COTACAO,
         STATUS_EM_COTACAO,
     }
+    if pedido.status in STATUS_TERMINAIS_PEDIDO:
+        raise HTTPException(status_code=400, detail="Processo encerrado.")
+    statuses_ok_sede = {
+        STATUS_RASCUNHO,
+        STATUS_AGUARDANDO_COTACAO,
+        STATUS_EM_COTACAO,
+        STATUS_AGUARDANDO_ESCOLHA,
+        STATUS_AGUARDANDO_UNIDADE,
+        STATUS_AGUARDANDO_SEDE,
+        STATUS_APROVADO,
+    }
+    if sede and pedido.status not in statuses_ok_sede:
+        raise HTTPException(
+            status_code=400,
+            detail="Após o envio ao fornecedor não é possível remover orçamentos. Encerre o processo ou use comunicação na timeline.",
+        )
     if not sede and not (
         tipo_eh_cotacao_projeto(pedido.tipo) and pedido.status in statuses_projeto
     ):
@@ -1685,8 +1823,6 @@ async def desativar_cotacao(
             status_code=403,
             detail="Somente a Sede (ADM Compras) ou o projeto (em cotação) podem remover orçamentos.",
         )
-    if pedido.status in STATUS_TERMINAIS_PEDIDO:
-        raise HTTPException(status_code=400, detail="Processo encerrado.")
     cotacao = (
         await db.execute(
             select(ComprasCotacaoDB).where(

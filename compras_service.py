@@ -8,7 +8,7 @@ from collections import defaultdict
 from typing import Optional
 
 from fastapi import HTTPException, status
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from compras_categoria_utils import (
@@ -37,15 +37,18 @@ from compras_regras import (
     ESCOPO_PROJETO,
     ESCOPO_SEDE,
     FONTES_PADRAO,
+    MIN_COTACOES_RECOMENDADAS,
     PATRIMONIO_ORIGEM_COMPRA,
     PATRIMONIO_SITUACAO_BOM,
     SEGMENTO_CONSUMO,
     SEGMENTO_IMOBILIZADO,
     STATUS_AGUARDANDO_COTACAO,
+    STATUS_AGUARDANDO_ESCOLHA,
     STATUS_AGUARDANDO_SEDE,
     STATUS_AGUARDANDO_UNIDADE,
     STATUS_APROVADO,
     STATUS_CANCELADO,
+    STATUS_COTACAO_SEDE_COLETANDO,
     STATUS_EM_COTACAO,
     STATUS_ENVIADO,
     STATUS_RASCUNHO,
@@ -195,9 +198,11 @@ async def exigir_modulo(db: AsyncSession, usuario: dict, *, operacao: bool = Tru
 
 
 def _sede(usuario: dict) -> bool:
+    from security import usuario_eh_manutencao
+
     return usuario_e_sede_compras(
         perfil=_perfil(usuario),
-        is_manutencao=bool(usuario.get("is_manutencao")),
+        is_manutencao=usuario_eh_manutencao(usuario),
     )
 
 
@@ -444,6 +449,10 @@ async def serializar_pedido(
         )
     ).scalar_one()
     payload["qtd_orcamentos"] = int(qtd_orc or 0)
+    from compras_pedido_fluxo import contar_orcamentos_com_anexo
+
+    payload["orcamentos_com_anexo"] = await contar_orcamentos_com_anexo(db, pedido.id)
+    payload["min_orcamentos_recomendados"] = MIN_COTACOES_RECOMENDADAS
     if not incluir_detalhe:
         return payload
 
@@ -539,8 +548,18 @@ async def serializar_pedido(
     ):
         pode_itens = False
     payload["pode_editar_itens"] = pode_itens
-    # Sede sempre; projeto só enquanto o pedido ainda está em fase de cotação.
-    pode_substituir = bool(usuario and _sede(usuario))
+    # Sede: pode trocar orçamentos até aprovação; após envio ao fornecedor, trava.
+    # Projeto (cotação própria): só enquanto ainda cotando.
+    statuses_sede_ok = {
+        STATUS_RASCUNHO,
+        STATUS_AGUARDANDO_COTACAO,
+        STATUS_EM_COTACAO,
+        STATUS_AGUARDANDO_ESCOLHA,
+        STATUS_AGUARDANDO_UNIDADE,
+        STATUS_AGUARDANDO_SEDE,
+        STATUS_APROVADO,
+    }
+    pode_substituir = bool(usuario and _sede(usuario) and pedido.status in statuses_sede_ok)
     if (
         not pode_substituir
         and usuario
@@ -699,12 +718,21 @@ async def listar_pedidos(
     if not _sede(usuario):
         filtros.append(ComprasPedidoDB.instituicao_id == usuario.get("instituicao_id"))
     else:
-        # ADM Global Compras (classes): não lista rascunhos (só após envio pelo projeto).
-        if not status_filtro:
-            filtros.append(ComprasPedidoDB.status != STATUS_RASCUNHO)
+        # Sede: esconde rascunhos do projeto (só após envio).
+        # Manutenção vê todos; quem criou o rascunho na Sede também vê o próprio.
+        from security import usuario_eh_manutencao
+
+        eh_manut = usuario_eh_manutencao(usuario)
+        if not status_filtro and not eh_manut:
+            filtros.append(
+                or_(
+                    ComprasPedidoDB.status != STATUS_RASCUNHO,
+                    ComprasPedidoDB.criado_por_id == _uid(usuario),
+                )
+            )
         tipos_visao = tipos_visiveis_adm_compras(
             perfil=_perfil(usuario),
-            is_manutencao=bool(usuario.get("is_manutencao")),
+            is_manutencao=eh_manut,
         )
         if tipos_visao is not None:
             filtros.append(ComprasPedidoDB.tipo.in_(tuple(tipos_visao)))
@@ -1382,6 +1410,7 @@ async def escolher_cotacao(
         STATUS_AGUARDANDO_SEDE,
         STATUS_EM_COTACAO,
         STATUS_AGUARDANDO_COTACAO,
+        STATUS_AGUARDANDO_ESCOLHA,
         STATUS_AGUARDANDO_UNIDADE,
     }:
         raise HTTPException(
@@ -1420,8 +1449,13 @@ async def escolher_cotacao(
     if tipo_eh_cotacao_sede(pedido.tipo) and pedido.status in {
         STATUS_AGUARDANDO_COTACAO,
         STATUS_EM_COTACAO,
+        STATUS_AGUARDANDO_ESCOLHA,
     }:
-        pedido.status = STATUS_AGUARDANDO_SEDE
+        # Hortifruti: Sede escolhe o vencedor; aprovação só da unidade (pula Sede).
+        if tipo_pula_aprovacao_sede(pedido.tipo):
+            pedido.status = STATUS_AGUARDANDO_UNIDADE
+        else:
+            pedido.status = STATUS_AGUARDANDO_SEDE
     pedido.atualizado_em = agora_operacional_naive()
     return pedido
 
@@ -1436,8 +1470,16 @@ async def revogar_escolha_cotacao(
         is_manutencao=bool(usuario.get("is_manutencao")),
     ):
         raise HTTPException(status_code=403, detail="Somente a Sede pode revogar a escolha.")
-    if pedido.status != STATUS_AGUARDANDO_SEDE:
-        raise HTTPException(status_code=400, detail="Só é possível revogar enquanto aguarda assinatura da Sede.")
+    if pedido.status not in {STATUS_AGUARDANDO_SEDE, STATUS_AGUARDANDO_UNIDADE}:
+        raise HTTPException(
+            status_code=400,
+            detail="Só é possível revogar enquanto o pedido aguarda aprovação após a escolha.",
+        )
+    if pedido.status == STATUS_AGUARDANDO_UNIDADE and not tipo_pula_aprovacao_sede(pedido.tipo):
+        raise HTTPException(
+            status_code=400,
+            detail="Neste tipo de pedido a revogação só ocorre enquanto aguarda a Sede.",
+        )
     cotacoes = [c for c in await _cotacoes_do_pedido(db, pedido.id) if getattr(c, "ativa", True)]
     anterior = next((c for c in cotacoes if c.escolhida), None)
     if not anterior:
@@ -1448,10 +1490,15 @@ async def revogar_escolha_cotacao(
         db,
         pedido_id=pedido.id,
         tipo=TIPO_EVENTO_OBSERVACAO,
-        texto=f"Sede revogou a escolha do orçamento ({anterior.fornecedor_nome}). Escolha outro para assinar.",
+        texto=(
+            f"Sede revogou a escolha do orçamento ({anterior.fornecedor_nome}). "
+            "Escolha outro para seguir o fluxo."
+        ),
         usuario_id=_uid(usuario),
         cotacao_id=anterior.id,
     )
+    if tipo_eh_cotacao_sede(pedido.tipo):
+        pedido.status = STATUS_AGUARDANDO_ESCOLHA
     pedido.atualizado_em = agora_operacional_naive()
     return pedido
 

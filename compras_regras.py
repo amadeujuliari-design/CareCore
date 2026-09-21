@@ -48,6 +48,8 @@ ROTULO_TIPO_PEDIDO = {
 STATUS_RASCUNHO = "rascunho"
 STATUS_AGUARDANDO_COTACAO = "aguardando_cotacao"
 STATUS_EM_COTACAO = "em_cotacao"
+# Cotação da Sede: anexos suficientes (ou liberação manual) — falta escolher o vencedor.
+STATUS_AGUARDANDO_ESCOLHA = "aguardando_escolha_orcamento"
 STATUS_AGUARDANDO_UNIDADE = "aguardando_aprovacao_unidade"
 STATUS_AGUARDANDO_SEDE = "aguardando_aprovacao_sede"
 STATUS_APROVADO = "aprovado"
@@ -103,9 +105,18 @@ STATUS_PEDIDO_ITENS_EDITAVEIS = frozenset(
         STATUS_RASCUNHO,
         STATUS_AGUARDANDO_COTACAO,
         STATUS_EM_COTACAO,
+        STATUS_AGUARDANDO_ESCOLHA,
         STATUS_AGUARDANDO_UNIDADE,
         STATUS_AGUARDANDO_SEDE,
         STATUS_APROVADO,
+    }
+)
+
+# Status em que a Sede ainda coleta/anexa orçamentos (antes de escolher).
+STATUS_COTACAO_SEDE_COLETANDO = frozenset(
+    {
+        STATUS_AGUARDANDO_COTACAO,
+        STATUS_EM_COTACAO,
     }
 )
 
@@ -648,13 +659,24 @@ def usuario_pode_enviar_email_compras(*, perfil: str, is_manutencao: bool = Fals
     return _perfil_adm_compras(perfil) != PERFIL_ADM_COMPRAS_INFRAESTRUTURA
 
 
+def _perfil_eh_manutencao_ops(perfil: str) -> bool:
+    """Perfil operacional Manutenção (ops CareCore), independente da flag is_manutencao."""
+    bruto = (perfil or "").strip()
+    if not bruto:
+        return False
+    chave = _norm_tipo_texto(bruto)
+    return chave in {"manutencao", "manutenção"} or chave.startswith("manutenc")
+
+
 def usuario_e_sede_compras(*, perfil: str, is_manutencao: bool = False) -> bool:
-    return is_manutencao or _perfil_adm_compras(perfil) in PERFIS_ADM_COMPRAS_SEDE
+    if is_manutencao or _perfil_eh_manutencao_ops(perfil):
+        return True
+    return _perfil_adm_compras(perfil) in PERFIS_ADM_COMPRAS_SEDE
 
 
 def tipos_visiveis_adm_compras(*, perfil: str, is_manutencao: bool = False) -> Optional[frozenset]:
     """Tipos que a classe da Sede enxerga. None = todos (Manutenção ops ou legado)."""
-    if is_manutencao:
+    if is_manutencao or _perfil_eh_manutencao_ops(perfil):
         return None
     perfil_n = _perfil_adm_compras(perfil)
     if perfil_n == PERFIL_ADM_COMPRAS_SUPRIMENTOS:
