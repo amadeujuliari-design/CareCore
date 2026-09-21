@@ -1,6 +1,19 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { CalendarRange, Landmark, ListChecks, Package, ShoppingCart, Tags, Truck } from 'lucide-react';
+import {
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
+  CalendarRange,
+  ChevronDown,
+  ChevronRight,
+  Landmark,
+  ListChecks,
+  Package,
+  ShoppingCart,
+  Tags,
+  Truck,
+} from 'lucide-react';
 
 import ComprasCategoriasFontes from './components/ComprasCategoriasFontes';
 import ComprasFornecedoresCadastro from './components/ComprasFornecedoresCadastro';
@@ -55,6 +68,143 @@ function usuarioSessao() {
   }
 }
 
+const COLUNAS_ORDENACAO_PEDIDOS = [
+  { id: 'unidade', rotulo: 'Unidade' },
+  { id: 'tipo', rotulo: 'Tipo' },
+  { id: 'grupo', rotulo: 'Grupo' },
+  { id: 'categoria', rotulo: 'Objeto / categoria' },
+  { id: 'envio', rotulo: 'Envio previsto' },
+  { id: 'status', rotulo: 'Status' },
+  { id: 'orcamentos', rotulo: 'Orçamentos' },
+  { id: 'atualizado', rotulo: 'Atualizado' },
+];
+
+function valorOrdenacaoPedido(pedido, coluna) {
+  switch (coluna) {
+    case 'unidade':
+      return String(pedido.instituicao_nome || pedido.instituicao_id || '').trim();
+    case 'tipo':
+      return String(pedido.tipo_rotulo || rotuloTipoPedido(pedido.tipo) || pedido.tipo || '').trim();
+    case 'grupo':
+      return String(pedido.grupo_codigo || '').trim();
+    case 'categoria':
+      return String(pedido.titulo || pedido.categoria_split_nome || '').trim();
+    case 'envio':
+      return String(pedido.data_envio_prevista || '');
+    case 'status':
+      return String(rotuloStatusPedidoLista(pedido) || pedido.status || '').trim();
+    case 'orcamentos': {
+      if (pedido.cotacao_sede || pedido.cotacao_projeto) {
+        return Number(pedido.orcamentos_com_anexo ?? 0);
+      }
+      return Number(pedido.qtd_orcamentos ?? 0);
+    }
+    case 'atualizado':
+      return String(pedido.atualizado_em || '');
+    default:
+      return '';
+  }
+}
+
+function compararPedidosOrdenacao(a, b, coluna, direcao) {
+  const va = valorOrdenacaoPedido(a, coluna);
+  const vb = valorOrdenacaoPedido(b, coluna);
+  let cmp;
+  if (coluna === 'orcamentos') {
+    cmp = Number(va) - Number(vb);
+  } else if (coluna === 'envio' || coluna === 'atualizado') {
+    cmp = String(va).localeCompare(String(vb), 'pt-BR');
+  } else {
+    cmp = String(va).localeCompare(String(vb), 'pt-BR', { sensitivity: 'base', numeric: true });
+  }
+  if (cmp === 0) {
+    cmp = String(a.id || '').localeCompare(String(b.id || ''));
+  }
+  return direcao === 'asc' ? cmp : -cmp;
+}
+
+function chaveUnidadePedido(pedido) {
+  if (pedido.escopo_unidade === 'sede' && !pedido.instituicao_id) {
+    return 'sede';
+  }
+  return String(pedido.instituicao_id || pedido.instituicao_nome || 'sem-unidade');
+}
+
+function nomeUnidadePedido(pedido) {
+  if (pedido.escopo_unidade === 'sede' && !pedido.instituicao_id) {
+    return 'Sede';
+  }
+  return pedido.instituicao_nome || pedido.instituicao_id || 'Sem unidade';
+}
+
+function resumoStatusGrupo(itens) {
+  const contagem = new Map();
+  for (const p of itens) {
+    const rotulo = rotuloStatusPedidoLista(p) || p.status || '—';
+    contagem.set(rotulo, (contagem.get(rotulo) || 0) + 1);
+  }
+  return [...contagem.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([rotulo, qtd]) => (qtd > 1 ? `${qtd}× ${rotulo}` : rotulo))
+    .slice(0, 3)
+    .join(' · ');
+}
+
+function agruparPedidosPorUnidade(lista, ordem) {
+  const mapa = new Map();
+  for (const pedido of lista) {
+    const chave = chaveUnidadePedido(pedido);
+    if (!mapa.has(chave)) {
+      mapa.set(chave, {
+        chave,
+        nome: nomeUnidadePedido(pedido),
+        itens: [],
+      });
+    }
+    mapa.get(chave).itens.push(pedido);
+  }
+  const grupos = [...mapa.values()].map((g) => {
+    const atualizado = g.itens
+      .map((p) => p.atualizado_em || '')
+      .filter(Boolean)
+      .sort()
+      .at(-1) || '';
+    const tipos = [...new Set(g.itens.map((p) => p.tipo_rotulo || rotuloTipoPedido(p.tipo) || p.tipo).filter(Boolean))];
+    const orcamentos = g.itens.reduce((acc, p) => {
+      if (p.cotacao_sede || p.cotacao_projeto) return acc + Number(p.orcamentos_com_anexo ?? 0);
+      return acc + Number(p.qtd_orcamentos ?? 0);
+    }, 0);
+    return {
+      ...g,
+      qtd: g.itens.length,
+      tiposRotulo: tipos.length <= 2 ? tipos.join(', ') : `${tipos.length} tipos`,
+      statusResumo: resumoStatusGrupo(g.itens),
+      orcamentos,
+      atualizado,
+    };
+  });
+  const { coluna, direcao } = ordem;
+  grupos.sort((a, b) => {
+    let cmp;
+    if (coluna === 'unidade') {
+      cmp = a.nome.localeCompare(b.nome, 'pt-BR', { sensitivity: 'base' });
+    } else if (coluna === 'tipo') {
+      cmp = a.tiposRotulo.localeCompare(b.tiposRotulo, 'pt-BR', { sensitivity: 'base' });
+    } else if (coluna === 'status') {
+      cmp = a.statusResumo.localeCompare(b.statusResumo, 'pt-BR', { sensitivity: 'base' });
+    } else if (coluna === 'orcamentos') {
+      cmp = a.orcamentos - b.orcamentos;
+    } else if (coluna === 'atualizado') {
+      cmp = String(a.atualizado).localeCompare(String(b.atualizado), 'pt-BR');
+    } else {
+      cmp = a.nome.localeCompare(b.nome, 'pt-BR', { sensitivity: 'base' });
+    }
+    if (cmp === 0) cmp = a.chave.localeCompare(b.chave);
+    return direcao === 'asc' ? cmp : -cmp;
+  });
+  return grupos;
+}
+
 export default function Compras() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -83,8 +233,45 @@ export default function Compras() {
   const [economia, setEconomia] = useState(null);
   const [competencia, setCompetencia] = useState(competenciaAtual());
   const [salvandoJanela, setSalvandoJanela] = useState(false);
+  const [ordemPedidos, setOrdemPedidos] = useState({ coluna: 'atualizado', direcao: 'desc' });
+  const [agruparPorUnidade, setAgruparPorUnidade] = useState(false);
+  const [unidadeExpandida, setUnidadeExpandida] = useState(null);
   const visaoConcluidos = (searchParams.get('visao') || '').trim().toLowerCase() === 'concluidos';
   const statusGrupoPedidos = visaoConcluidos ? 'terminais' : 'abertos';
+
+  const pedidosOrdenados = useMemo(() => {
+    const lista = [...(pedidos || [])];
+    const { coluna, direcao } = ordemPedidos;
+    lista.sort((a, b) => compararPedidosOrdenacao(a, b, coluna, direcao));
+    return lista;
+  }, [pedidos, ordemPedidos]);
+
+  const gruposPorUnidade = useMemo(() => {
+    if (!agruparPorUnidade) return [];
+    return agruparPedidosPorUnidade(pedidosOrdenados, ordemPedidos);
+  }, [agruparPorUnidade, pedidosOrdenados, ordemPedidos]);
+
+  const alternarOrdenacao = (coluna) => {
+    setOrdemPedidos((atual) => {
+      if (atual.coluna === coluna) {
+        return { coluna, direcao: atual.direcao === 'asc' ? 'desc' : 'asc' };
+      }
+      const padraoDesc = coluna === 'atualizado' || coluna === 'envio' || coluna === 'orcamentos';
+      return { coluna, direcao: padraoDesc ? 'desc' : 'asc' };
+    });
+  };
+
+  const alternarAgrupamento = () => {
+    setAgruparPorUnidade((atual) => {
+      const proximo = !atual;
+      if (!proximo) setUnidadeExpandida(null);
+      return proximo;
+    });
+  };
+
+  const alternarExpansaoUnidade = (chave) => {
+    setUnidadeExpandida((atual) => (atual === chave ? null : chave));
+  };
 
   const carregar = useCallback(async () => {
     setErro('');
@@ -308,7 +495,24 @@ export default function Compras() {
                 </SectionCard>
                 )}
 
-                <SectionCard title={visaoConcluidos ? 'Pedidos concluídos' : 'Pedidos em andamento'}>
+                <SectionCard
+                  title={visaoConcluidos ? 'Pedidos concluídos' : 'Pedidos em andamento'}
+                  subtitle={
+                    agruparPorUnidade
+                      ? 'Agrupado por unidade — clique na linha para expandir os pedidos daquele projeto.'
+                      : undefined
+                  }
+                  actions={(
+                    <PremiumButton
+                      type="button"
+                      variant="secondary"
+                      onClick={alternarAgrupamento}
+                      disabled={carregando || pedidos.length === 0}
+                    >
+                      {agruparPorUnidade ? 'Desagrupar' : 'Agrupar por unidade'}
+                    </PremiumButton>
+                  )}
+                >
                   {carregando ? (
                     <p className="text-sm text-slate-500">Carregando…</p>
                   ) : pedidos.length === 0 ? (
@@ -324,50 +528,147 @@ export default function Compras() {
                       <table className="min-w-full text-sm">
                         <thead>
                           <tr className="text-left text-xs uppercase text-slate-500">
-                            <th className="py-2">Unidade</th>
-                            <th>Tipo</th>
-                            <th>Grupo</th>
-                            <th>Objeto / categoria</th>
-                            <th>Envio previsto</th>
-                            <th>Status</th>
-                            <th>Orçamentos</th>
-                            <th>Atualizado</th>
+                            {COLUNAS_ORDENACAO_PEDIDOS.map((col) => {
+                              const ativo = ordemPedidos.coluna === col.id;
+                              return (
+                                <th key={col.id} className={col.id === 'unidade' ? 'py-2' : undefined}>
+                                  <button
+                                    type="button"
+                                    onClick={() => alternarOrdenacao(col.id)}
+                                    className={`inline-flex items-center gap-1 rounded-md px-0.5 py-0.5 font-semibold uppercase tracking-wide transition hover:text-slate-800 ${
+                                      ativo ? 'text-slate-800' : 'text-slate-500'
+                                    }`}
+                                    title={`Ordenar por ${col.rotulo}`}
+                                  >
+                                    {col.rotulo}
+                                    {ativo ? (
+                                      ordemPedidos.direcao === 'asc' ? (
+                                        <ArrowUp className="h-3.5 w-3.5 text-slate-700" aria-hidden />
+                                      ) : (
+                                        <ArrowDown className="h-3.5 w-3.5 text-slate-700" aria-hidden />
+                                      )
+                                    ) : (
+                                      <ArrowUpDown className="h-3.5 w-3.5 text-slate-300" aria-hidden />
+                                    )}
+                                  </button>
+                                </th>
+                              );
+                            })}
                             <th />
                           </tr>
                         </thead>
                         <tbody>
-                          {pedidos.map((pedido) => (
-                            <tr key={pedido.id} className="border-t border-slate-100">
-                              <td className="py-2">{pedido.instituicao_nome || pedido.instituicao_id}</td>
-                              <td>{pedido.tipo_rotulo || rotuloTipoPedido(pedido.tipo)}</td>
-                              <td className="whitespace-nowrap font-semibold tabular-nums text-slate-800">
-                                {pedido.grupo_codigo || '—'}
-                              </td>
-                              <td>{pedido.titulo || pedido.categoria_split_nome || '—'}</td>
-                              <td>
-                                {pedido.data_envio_prevista
-                                  ? `${pedido.data_envio_prevista.slice(8, 10)}/${pedido.data_envio_prevista.slice(5, 7)}`
-                                  : '—'}
-                                {pedido.envio_automatico ? ' · auto' : ''}
-                              </td>
-                              <td>
-                                <PremiumBadge variant={varianteBadgeStatusPedido(pedido.status)}>
-                                  {rotuloStatusPedidoLista(pedido)}
-                                </PremiumBadge>
-                              </td>
-                              <td className="tabular-nums text-slate-700">
-                                {(pedido.cotacao_sede || pedido.cotacao_projeto)
-                                  ? (progressoOrcamentosTexto(pedido) || '—')
-                                  : (pedido.qtd_orcamentos ?? 0)}
-                              </td>
-                              <td>{pedido.atualizado_em || '—'}</td>
-                              <td>
-                                <Link className="font-semibold text-slate-800 underline" to={`/compras/pedidos/${pedido.id}`}>
-                                  Abrir
-                                </Link>
-                              </td>
-                            </tr>
-                          ))}
+                          {agruparPorUnidade
+                            ? gruposPorUnidade.map((grupo) => {
+                              const aberto = unidadeExpandida === grupo.chave;
+                              return (
+                                <Fragment key={grupo.chave}>
+                                  <tr
+                                    className="cursor-pointer border-t border-slate-200 bg-slate-50/80 hover:bg-slate-100/80"
+                                    onClick={() => alternarExpansaoUnidade(grupo.chave)}
+                                  >
+                                    <td className="py-2.5">
+                                      <span className="inline-flex items-center gap-1.5 font-semibold text-slate-900">
+                                        {aberto ? (
+                                          <ChevronDown className="h-4 w-4 shrink-0 text-slate-600" aria-hidden />
+                                        ) : (
+                                          <ChevronRight className="h-4 w-4 shrink-0 text-slate-500" aria-hidden />
+                                        )}
+                                        {grupo.nome}
+                                        <span className="rounded-full bg-slate-200 px-2 py-0.5 text-[11px] font-bold tabular-nums text-slate-700">
+                                          {grupo.qtd}
+                                          {grupo.qtd === 1 ? ' pedido' : ' pedidos'}
+                                        </span>
+                                      </span>
+                                    </td>
+                                    <td className="text-slate-700">{grupo.tiposRotulo || '—'}</td>
+                                    <td className="text-slate-500">—</td>
+                                    <td className="text-slate-500">—</td>
+                                    <td className="text-slate-500">—</td>
+                                    <td className="text-xs font-medium text-slate-700">{grupo.statusResumo || '—'}</td>
+                                    <td className="tabular-nums text-slate-700">{grupo.orcamentos}</td>
+                                    <td>{grupo.atualizado || '—'}</td>
+                                    <td className="text-xs font-semibold text-slate-600">
+                                      {aberto ? 'Recolher' : 'Expandir'}
+                                    </td>
+                                  </tr>
+                                  {aberto
+                                    ? grupo.itens.map((pedido) => (
+                                      <tr key={pedido.id} className="border-t border-slate-100 bg-white">
+                                        <td className="py-2 pl-8 text-slate-600">
+                                          <span className="text-xs text-slate-400">↳</span>
+                                          {' '}
+                                          {pedido.instituicao_nome || pedido.instituicao_id || grupo.nome}
+                                        </td>
+                                        <td>{pedido.tipo_rotulo || rotuloTipoPedido(pedido.tipo)}</td>
+                                        <td className="whitespace-nowrap font-semibold tabular-nums text-slate-800">
+                                          {pedido.grupo_codigo || '—'}
+                                        </td>
+                                        <td>{pedido.titulo || pedido.categoria_split_nome || '—'}</td>
+                                        <td>
+                                          {pedido.data_envio_prevista
+                                            ? `${pedido.data_envio_prevista.slice(8, 10)}/${pedido.data_envio_prevista.slice(5, 7)}`
+                                            : '—'}
+                                          {pedido.envio_automatico ? ' · auto' : ''}
+                                        </td>
+                                        <td>
+                                          <PremiumBadge variant={varianteBadgeStatusPedido(pedido.status)}>
+                                            {rotuloStatusPedidoLista(pedido)}
+                                          </PremiumBadge>
+                                        </td>
+                                        <td className="tabular-nums text-slate-700">
+                                          {(pedido.cotacao_sede || pedido.cotacao_projeto)
+                                            ? (progressoOrcamentosTexto(pedido) || '—')
+                                            : (pedido.qtd_orcamentos ?? 0)}
+                                        </td>
+                                        <td>{pedido.atualizado_em || '—'}</td>
+                                        <td>
+                                          <Link
+                                            className="font-semibold text-slate-800 underline"
+                                            to={`/compras/pedidos/${pedido.id}`}
+                                            onClick={(e) => e.stopPropagation()}
+                                          >
+                                            Abrir
+                                          </Link>
+                                        </td>
+                                      </tr>
+                                    ))
+                                    : null}
+                                </Fragment>
+                              );
+                            })
+                            : pedidosOrdenados.map((pedido) => (
+                              <tr key={pedido.id} className="border-t border-slate-100">
+                                <td className="py-2">{pedido.instituicao_nome || pedido.instituicao_id}</td>
+                                <td>{pedido.tipo_rotulo || rotuloTipoPedido(pedido.tipo)}</td>
+                                <td className="whitespace-nowrap font-semibold tabular-nums text-slate-800">
+                                  {pedido.grupo_codigo || '—'}
+                                </td>
+                                <td>{pedido.titulo || pedido.categoria_split_nome || '—'}</td>
+                                <td>
+                                  {pedido.data_envio_prevista
+                                    ? `${pedido.data_envio_prevista.slice(8, 10)}/${pedido.data_envio_prevista.slice(5, 7)}`
+                                    : '—'}
+                                  {pedido.envio_automatico ? ' · auto' : ''}
+                                </td>
+                                <td>
+                                  <PremiumBadge variant={varianteBadgeStatusPedido(pedido.status)}>
+                                    {rotuloStatusPedidoLista(pedido)}
+                                  </PremiumBadge>
+                                </td>
+                                <td className="tabular-nums text-slate-700">
+                                  {(pedido.cotacao_sede || pedido.cotacao_projeto)
+                                    ? (progressoOrcamentosTexto(pedido) || '—')
+                                    : (pedido.qtd_orcamentos ?? 0)}
+                                </td>
+                                <td>{pedido.atualizado_em || '—'}</td>
+                                <td>
+                                  <Link className="font-semibold text-slate-800 underline" to={`/compras/pedidos/${pedido.id}`}>
+                                    Abrir
+                                  </Link>
+                                </td>
+                              </tr>
+                            ))}
                         </tbody>
                       </table>
                     </div>
