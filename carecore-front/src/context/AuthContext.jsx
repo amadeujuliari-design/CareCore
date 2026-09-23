@@ -6,7 +6,7 @@ import {
   useState,
 } from 'react';
 
-import {
+import api, {
   limparSessaoLocal,
   salvarSessaoLocal,
 } from '../services/api';
@@ -68,12 +68,38 @@ function tokenExpirado(token) {
   }
 }
 
+/** Alinha flag de Compras da sessão com o banco (evita localStorage desatualizado). */
+async function sincronizarFlagsComprasSessao(usuarioBase) {
+  if (!usuarioBase) {
+    return usuarioBase;
+  }
+
+  try {
+    const { data } = await api.get('/api/compras/me/acesso');
+    if (!data || typeof data !== 'object') {
+      return usuarioBase;
+    }
+
+    const flag = data.compras_modulo_ativo === true;
+    if (usuarioBase.compras_modulo_ativo === flag) {
+      return usuarioBase;
+    }
+
+    return {
+      ...usuarioBase,
+      compras_modulo_ativo: flag,
+    };
+  } catch {
+    return usuarioBase;
+  }
+}
+
 export function AuthProvider({ children }) {
   const [usuario, setUsuario] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const carregarSessao = () => {
+    const carregarSessao = async () => {
       try {
         const { token, usuarioRaw } = obterSessaoLocal();
 
@@ -88,7 +114,7 @@ export function AuthProvider({ children }) {
           return;
         }
 
-        const usuarioParseado = enriquecerUsuarioSessaoComPacote(
+        let usuarioParseado = enriquecerUsuarioSessaoComPacote(
           JSON.parse(usuarioRaw),
           token,
         );
@@ -105,6 +131,8 @@ export function AuthProvider({ children }) {
         localStorage.setItem(STORAGE_TOKEN_KEY, token);
         localStorage.setItem(STORAGE_USER_KEY, JSON.stringify(usuarioParseado));
 
+        usuarioParseado = await sincronizarFlagsComprasSessao(usuarioParseado);
+        salvarSessaoLocal(token, usuarioParseado);
         setUsuario(usuarioParseado);
       } catch {
         limparSessaoLocal();
@@ -178,13 +206,27 @@ export function AuthProvider({ children }) {
       window.addEventListener(evento, registrarAtividade, { passive: true });
     });
 
-    const intervalo = window.setInterval(encerrarSeExpirada, 60000);
+    const intervalo = window.setInterval(() => {
+      encerrarSeExpirada();
+    }, 60000);
 
     const sincronizarEntreAbas = (event) => {
-      if (
-        event.key === '@CareCore:token' &&
-        !event.newValue
-      ) {
+      if (event.key !== STORAGE_TOKEN_KEY && event.key !== STORAGE_USER_KEY) {
+        return;
+      }
+
+      const { token, usuarioRaw } = obterSessaoLocal();
+
+      if (!token || !usuarioRaw || tokenExpirado(token)) {
+        setUsuario(null);
+        return;
+      }
+
+      try {
+        setUsuario(
+          enriquecerUsuarioSessaoComPacote(JSON.parse(usuarioRaw), token),
+        );
+      } catch {
         setUsuario(null);
       }
     };

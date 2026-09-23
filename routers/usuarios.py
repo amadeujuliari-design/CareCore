@@ -23,6 +23,10 @@ from nfp_vinculo_projeto import (
     vinculo_eh_sede,
     vinculo_pertence_ao_projeto,
 )
+from compras_regras import (
+    PERFIS_PROJETO_ELEGIVEIS,
+    compras_modulo_ativo_padrao,
+)
 from tenant_scope import obter_instituicao_escopo
 from schemas import (
     UsuarioCreate,
@@ -1053,8 +1057,12 @@ async def criar_usuario(
         setor = setor or "Compras – Unidade"
 
     compras_modulo_ativo = False
-    if perfil_normalizado in {"Gestor", "Técnico", "Administrativo"}:
-        compras_modulo_ativo = bool(getattr(payload, "compras_modulo_ativo", False))
+    if perfil_normalizado in PERFIS_PROJETO_ELEGIVEIS:
+        flag_payload = getattr(payload, "compras_modulo_ativo", None)
+        if flag_payload is None:
+            compras_modulo_ativo = compras_modulo_ativo_padrao(perfil_normalizado)
+        else:
+            compras_modulo_ativo = bool(flag_payload)
 
     novo_usuario = UsuarioDB(
         instituicao_id=instituicao_id,
@@ -1182,11 +1190,17 @@ async def editar_usuario(
     else:
         dados["nfp_captador_vinculo"] = None
 
+    perfil_anterior = normalizar_perfil_acesso(usuario.perfil_acesso)
     if "compras_modulo_ativo" in dados:
-        if perfil_final in {"Gestor", "Técnico", "Administrativo"}:
+        if perfil_final in PERFIS_PROJETO_ELEGIVEIS:
             dados["compras_modulo_ativo"] = bool(dados["compras_modulo_ativo"])
         else:
             dados["compras_modulo_ativo"] = False
+    elif perfil_final in PERFIS_PROJETO_ELEGIVEIS and perfil_anterior != perfil_final:
+        # Troca de perfil: aplica padrão (Gestor liga; Técnico/Admin desliga).
+        dados["compras_modulo_ativo"] = compras_modulo_ativo_padrao(perfil_final)
+    elif perfil_final not in PERFIS_PROJETO_ELEGIVEIS:
+        dados["compras_modulo_ativo"] = False
 
     if "email" in dados and dados["email"]:
         await verificar_email_unico(

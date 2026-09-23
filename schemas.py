@@ -616,7 +616,8 @@ class UsuarioBase(BaseModel):
     cargo: Optional[str] = None
     setor: Optional[str] = None
     nfp_captador_vinculo: Optional[str] = None
-    compras_modulo_ativo: bool = False
+    # None = aplicar padrão do perfil (Gestor=True; Técnico/Administrativo=False).
+    compras_modulo_ativo: Optional[bool] = None
     conselho_profissional: Optional[str] = None
     numero_conselho: Optional[str] = None
     carga_horaria: Optional[int] = None

@@ -187,6 +187,11 @@ ESCOPO_SEDE = "sede"
 ESCOPOS_UNIDADE = (ESCOPO_PROJETO, ESCOPO_SEDE)
 
 PERFIS_PROJETO_ELEGIVEIS = frozenset({"Gestor", "Técnico", "Administrativo"})
+
+
+def compras_modulo_ativo_padrao(perfil: str | None) -> bool:
+    """Gestor acumula Compras por padrão; Técnico/Administrativo entram opt-in."""
+    return (perfil or "").strip() == "Gestor"
 PERFIL_ADM_COMPRAS = "ADM Global Compras"  # legado (transição)
 PERFIL_ADM_COMPRAS_SUPRIMENTOS = "ADM Global Compras Suprimentos"
 PERFIL_ADM_COMPRAS_INFRAESTRUTURA = "ADM Global Compras Infraestrutura"

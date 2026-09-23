@@ -77,6 +77,14 @@ export const FORM_INICIAL = {
   observacoes_profissionais: '',
 };
 
+/** Perfis do projeto que podem acumular o módulo Compras via flag. */
+export const PERFIS_COMPRAS_MODULO_FLAG = ['Gestor', 'Técnico', 'Administrativo'];
+
+/** Gestor liga Compras por padrão; Técnico/Administrativo entram opt-in. */
+export function comprasModuloAtivoPadrao(perfil) {
+  return perfil === 'Gestor';
+}
+
 /** Captadores/unidades NFP (espelha CAPTADORES_PADRAO do backend). */
 export const NFP_CAPTADORES_VINCULO = [
   'SEDE AEB',

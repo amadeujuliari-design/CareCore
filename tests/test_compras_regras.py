@@ -4,6 +4,7 @@ import pytest
 
 from compras_regras import (
     aviso_cotacoes_insuficientes,
+    compras_modulo_ativo_padrao,
     detectar_semana_util,
     dias_liberados_janela,
     economia_centavos,
@@ -183,6 +184,14 @@ def test_rbac_visibilidade():
     assert not usuario_ve_modulo_compras(perfil="Orientador", compras_modulo_ativo=True)
     assert not usuario_ve_modulo_compras(perfil="Consulta", compras_modulo_ativo=True)
     assert usuario_ve_modulo_compras(perfil="Gestor", compras_modulo_ativo=False, is_manutencao=True)
+
+
+def test_compras_modulo_ativo_padrao_gestor():
+    assert compras_modulo_ativo_padrao("Gestor") is True
+    assert compras_modulo_ativo_padrao("Técnico") is False
+    assert compras_modulo_ativo_padrao("Administrativo") is False
+    assert compras_modulo_ativo_padrao("Consulta") is False
+    assert compras_modulo_ativo_padrao(None) is False
 
 
 def test_pedir_e_aprovar():

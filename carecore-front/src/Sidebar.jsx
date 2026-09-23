@@ -41,7 +41,7 @@ import { carecoreVersaoRotulo } from './config/versao';
 import { MENU_ACOMPANHAMENTOS, MENU_CONVIVENTES } from './config/acompanhamentosConfig';
 import { acompanhamentoAtivo, moduloAtivo } from './config/configOperacionalDefaults';
 import { useConfigOperacional } from './hooks/useConfigOperacional';
-import { usuarioEhAdmCompras, usuarioEhAdmGlobal, usuarioEhAdmPedidos, usuarioEhAdmProducao, usuarioEhOficineiro, normalizarPerfilRbac, usuarioPodeVerCompras, usuarioPodeAcessarModuloOperacional, PERFIS_ADM_COMPRAS_SEDE, PERFIL_ADM_GLOBAL, PERFIL_ADM_PRODUCAO } from './utils/rbacUtils';
+import { usuarioEhAdmCompras, usuarioEhAdmGlobal, usuarioEhAdmPedidos, usuarioEhAdmProducao, usuarioEhOficineiro, normalizarPerfilRbac, usuarioPodeVerCompras, usuarioPodeAcessarModuloOperacional, PERFIS_ADM_COMPRAS_SEDE, PERFIL_ADM_GLOBAL, PERFIL_ADM_PRODUCAO, PERFIL_ADM_PEDIDOS } from './utils/rbacUtils';
 import { decodificarPayloadJwt } from './utils/jwtUtils';
 import { usuarioOrganizacaoFinanceira } from './utils/orgPacoteUtils';
 import FinanceSidebar from './components/FinanceSidebar';
@@ -118,6 +118,67 @@ function senhaAtendePolitica(senha = '') {
 function extrairSlugAcompanhamento(path) {
   const match = String(path || '').match(/^\/conviventes\/acompanhamentos\/([^/]+)$/);
   return match ? match[1] : null;
+}
+
+const COMPRAS_CHILDREN_PROJETO = [
+  {
+    path: '/compras',
+    icon: ShoppingCart,
+    label: 'Pedidos e cotações',
+    feature: 'compras',
+  },
+  {
+    path: '/compras?visao=concluidos',
+    icon: Archive,
+    label: 'Pedidos concluídos',
+    feature: 'compras',
+  },
+  {
+    path: '/compras?aba=itens',
+    icon: ClipboardList,
+    label: 'Catálogo de itens',
+    feature: 'compras',
+  },
+  {
+    path: '/compras?aba=categorias',
+    icon: Tags,
+    label: 'Categorias',
+    feature: 'compras',
+  },
+  {
+    path: '/compras?aba=fornecedores',
+    icon: Truck,
+    label: 'Fornecedores',
+    feature: 'compras',
+  },
+];
+
+function montarComprasChildrenSede(filaAssinaturaPendentes) {
+  return [
+    COMPRAS_CHILDREN_PROJETO[0],
+    COMPRAS_CHILDREN_PROJETO[1],
+    {
+      path: '/compras/aguardando-assinatura',
+      icon: FilePenLine,
+      label: 'Aguardando assinatura',
+      labelTitle: filaAssinaturaPendentes > 0
+        ? `${filaAssinaturaPendentes} pedido(s) aguardando escolha e assinatura`
+        : 'Aguardando assinatura',
+      badgeCount: filaAssinaturaPendentes,
+      feature: 'compras',
+      perfis: [...PERFIS_ADM_COMPRAS_SEDE, 'Manutenção'],
+    },
+    COMPRAS_CHILDREN_PROJETO[2],
+    COMPRAS_CHILDREN_PROJETO[3],
+    COMPRAS_CHILDREN_PROJETO[4],
+    {
+      path: '/usuarios',
+      icon: UserRoundCog,
+      label: 'Usuários ADM Global Compras',
+      feature: 'compras',
+      perfis: ['Global', ...PERFIS_ADM_COMPRAS_SEDE, 'Manutenção'],
+    },
+  ];
 }
 
 export default function Sidebar() {
@@ -458,6 +519,14 @@ export default function Sidebar() {
           ]
         },
         {
+          path: '/compras',
+          icon: ShoppingCart,
+          label: 'Compras',
+          feature: 'compras',
+          escopoCompras: 'projeto',
+          children: COMPRAS_CHILDREN_PROJETO,
+        },
+        {
           path: '/usuarios',
           icon: UserRoundCog,
           label: 'Usuários',
@@ -478,56 +547,8 @@ export default function Sidebar() {
           icon: ShoppingCart,
           label: 'Compras',
           feature: 'compras',
-          children: [
-            {
-              path: '/compras',
-              icon: ShoppingCart,
-              label: 'Pedidos e cotações',
-              feature: 'compras',
-            },
-            {
-              path: '/compras?visao=concluidos',
-              icon: Archive,
-              label: 'Pedidos concluídos',
-              feature: 'compras',
-            },
-            {
-              path: '/compras/aguardando-assinatura',
-              icon: FilePenLine,
-              label: 'Aguardando assinatura',
-              labelTitle: filaAssinaturaPendentes > 0
-                ? `${filaAssinaturaPendentes} pedido(s) aguardando escolha e assinatura`
-                : 'Aguardando assinatura',
-              badgeCount: filaAssinaturaPendentes,
-              feature: 'compras',
-              perfis: [...PERFIS_ADM_COMPRAS_SEDE, 'Manutenção'],
-            },
-            {
-              path: '/compras?aba=itens',
-              icon: ClipboardList,
-              label: 'Catálogo de itens',
-              feature: 'compras',
-            },
-            {
-              path: '/compras?aba=categorias',
-              icon: Tags,
-              label: 'Categorias',
-              feature: 'compras',
-            },
-            {
-              path: '/compras?aba=fornecedores',
-              icon: Truck,
-              label: 'Fornecedores',
-              feature: 'compras',
-            },
-            {
-              path: '/usuarios',
-              icon: UserRoundCog,
-              label: 'Usuários ADM Global Compras',
-              feature: 'compras',
-              perfis: ['Global', ...PERFIS_ADM_COMPRAS_SEDE, 'Manutenção'],
-            },
-          ],
+          escopoCompras: 'sede',
+          children: montarComprasChildrenSede(filaAssinaturaPendentes),
         },
         {
           path: '/nfp',
@@ -774,6 +795,7 @@ export default function Sidebar() {
         || item.path?.startsWith('/compras?')
       );
       if (!pathCompras) return false;
+      if (item.escopoCompras === 'sede') return false;
       // Respeita restrição explícita (ex.: "Aguardando assinatura" só Sede).
       if (item.perfis?.length && !item.perfis.includes(perfilNormalizado)) return false;
       return true;
@@ -786,6 +808,7 @@ export default function Sidebar() {
         || item.path === '/usuarios'
       );
       if (!pathOk) return false;
+      if (item.escopoCompras === 'projeto') return false;
       if (item.perfis?.length && !item.perfis.includes(perfilNormalizado)) return false;
       return true;
     }
@@ -795,6 +818,20 @@ export default function Sidebar() {
         || item.path?.startsWith('/nfp/')
         || item.path === '/usuarios'
       );
+    }
+
+    if (item.escopoCompras === 'projeto') {
+      // Unidade: Gestor/Técnico/Administrativo (flag Compras). Manutenção/Sede ficam em Gestão Global.
+      if (isManutencao || ehAdmCompras) return false;
+      if (!['Gestor', 'Técnico', 'Administrativo', PERFIL_ADM_PEDIDOS].includes(perfilNormalizado)) {
+        return false;
+      }
+    }
+    if (item.escopoCompras === 'sede') {
+      // Sede/org: ADM Compras, Global e Manutenção — não o Gestor da unidade.
+      if (!isManutencao && !['Global', ...PERFIS_ADM_COMPRAS_SEDE].includes(perfilNormalizado)) {
+        return false;
+      }
     }
 
     const perfilPermitido = isManutencao

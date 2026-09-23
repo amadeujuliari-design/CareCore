@@ -31,7 +31,9 @@ import {
   NACIONALIDADES,
   NFP_CAPTADORES_VINCULO,
   PERFIS,
+  PERFIS_COMPRAS_MODULO_FLAG,
   UFS,
+  comprasModuloAtivoPadrao,
 } from './utils/usuariosConstantes';
 import { calcularIdade } from './utils/conviventesUtils';
 import {
@@ -539,10 +541,20 @@ export default function Usuarios() {
 
     if (errosCampo[campo]) limparErroCampo(campo);
 
-    setForm((atual) => ({
-      ...atual,
-      [campo]: valorFinal,
-    }));
+    setForm((atual) => {
+      const proximo = {
+        ...atual,
+        [campo]: valorFinal,
+      };
+      if (campo === 'perfil_acesso') {
+        if (PERFIS_COMPRAS_MODULO_FLAG.includes(valorFinal)) {
+          proximo.compras_modulo_ativo = comprasModuloAtivoPadrao(valorFinal);
+        } else {
+          proximo.compras_modulo_ativo = false;
+        }
+      }
+      return proximo;
+    });
   };
 
   const buscarEnderecoPorCEP = async (valor = form.cep) => {
@@ -1533,7 +1545,7 @@ export default function Usuarios() {
                     </div>
                   )}
 
-                  {escopoLista === 'projeto' && ['Gestor', 'Técnico', 'Administrativo'].includes(form.perfil_acesso) && (
+                  {escopoLista === 'projeto' && PERFIS_COMPRAS_MODULO_FLAG.includes(form.perfil_acesso) && (
                     <label className="md:col-span-2 flex items-start gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
                       <input
                         type="checkbox"
@@ -1542,8 +1554,10 @@ export default function Usuarios() {
                         className="mt-1"
                       />
                       <span>
-                        Liberar módulo Compras para este usuário.
-                        O Gestor pode marcar mesmo sem ter o módulo no próprio cadastro.
+                        Liberar módulo Compras para este usuário (acumula com os demais módulos do perfil).
+                        {form.perfil_acesso === 'Gestor'
+                          ? ' Gestores já vêm com esta opção marcada; desmarque se não quiser ver Compras.'
+                          : ' Técnico e Administrativo entram sem Compras; marque só quem precisa operar pedidos.'}
                       </span>
                     </label>
                   )}
