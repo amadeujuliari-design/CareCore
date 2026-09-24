@@ -346,7 +346,9 @@ export function gerarHtmlCarteirinhaUnitaria(
         <div class="full"><b>ENTRADA:</b> ${escaparHtml(d.entrada)}</div>
         <div class="full"><b>TÉCNICO:</b> ${escaparHtml(d.tecnico)}</div>
       </div>
-      ${carteirinhaOcultaAcomodacao(nomeProjeto) ? '' : `<div class="acom">
+      ${carteirinhaOcultaAcomodacao(nomeProjeto)
+        ? `<div class="acom" style="text-align:center;padding:8px 6px;"><div class="t1" style="margin:0;font-size:9px;letter-spacing:0.04em;">${escaparHtml(nomeProjeto)}</div></div>`
+        : `<div class="acom">
         <div class="t1">Acomodação Atual</div>
         <div class="t2">${escaparHtml(d.nomeAcomodacao)}</div>
         <div class="t3">Tipo: ${escaparHtml(d.tipoAcomodacao)}</div>

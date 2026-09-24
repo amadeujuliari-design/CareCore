@@ -224,7 +224,13 @@ export default function CarteirinhaCard({
             Tipo: {tipoAcomodacao}
           </p>
         </div>
-        ) : null}
+        ) : (
+          <div className="mb-2 rounded border border-blue-100 bg-blue-50/50 px-1.5 py-2 text-center">
+            <p className="text-[9px] font-black uppercase tracking-wide text-brand">
+              {nomeProjeto}
+            </p>
+          </div>
+        )}
 
         <div className="mt-auto w-full bg-white pt-1">
           <div className="text-center mb-1">
