@@ -207,6 +207,7 @@ class SolicitacaoCotacaoIn(BaseModel):
 
 class EnviarEmailComprasIn(BaseModel):
     corpo: Optional[str] = Field(default=None, max_length=8000)
+    fornecedor_id: Optional[str] = None
 
 
 class JanelaIn(BaseModel):
@@ -329,6 +330,7 @@ async def me_acesso(
         or bool(usuario_atual.get("is_global"))
         or (usuario_atual.get("perfil_acesso") == "Global"),
         "compras_modulo_ativo": bool(usuario_atual.get("compras_modulo_ativo")),
+        "nfp_modulo_ativo": bool(usuario_atual.get("nfp_modulo_ativo")),
         "perfil": usuario_atual.get("perfil_acesso"),
         "instituicao_id": usuario_atual.get("instituicao_id"),
     }
@@ -1317,6 +1319,7 @@ async def post_enviar_email(
         usuario_atual,
         pedido,
         corpo=payload.corpo if payload else None,
+        fornecedor_id=payload.fornecedor_id if payload else None,
     )
     await db.commit()
     return resultado

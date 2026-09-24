@@ -1,3 +1,5 @@
+import { moduloAtivo } from '../../config/configOperacionalDefaults';
+import { useConfigOperacional } from '../../hooks/useConfigOperacional';
 import AuthenticatedImage from '../AuthenticatedImage';
 import ProntuarioFamilia from './ProntuarioFamilia';
 import { EQUIPAMENTO_ANTERIOR_OUTROS } from '../../config/piaFichaConfig';
@@ -50,6 +52,8 @@ export default function ProntuarioPessoais({
   setFormData,
   setErrosValidacao,
 }) {
+  const { config } = useConfigOperacional();
+  const acomodacoesAtivas = moduloAtivo(config, 'acomodacoes');
   const situacaoTb = formData.tb_remanejamento_situacao || '';
   const modalidadeTbEsperada = situacaoTbParaModalidade(situacaoTb);
   const podeReservarFixo = Boolean(
@@ -367,6 +371,7 @@ export default function ProntuarioPessoais({
           </div>
         </div>
 
+        {acomodacoesAtivas ? (
         <div className="lg:col-span-3">
           <label className="block text-xs font-bold text-brand mb-1">
             {situacaoTb ? 'Alocação no quarto TB' : 'Alocação de Quarto / Cama'}
@@ -420,6 +425,7 @@ export default function ProntuarioPessoais({
             </p>
           )}
         </div>
+        ) : null}
       </div>
 
       <div className="rounded-xl border border-indigo-100 bg-indigo-50/60 p-4 space-y-4">

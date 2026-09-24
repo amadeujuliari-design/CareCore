@@ -17,7 +17,7 @@ export const PERFIS_ADM_COMPRAS_SEDE = [
 ];
 export const PERFIS_MODULO_NFP = ['Global', PERFIL_ADM_GLOBAL, PERFIL_ADM_PRODUCAO, 'Manutenção'];
 export const PERFIS_NFP_GESTAO = ['Global', PERFIL_ADM_GLOBAL, 'Manutenção'];
-export const PERFIS_NFP_LEITURA_CUPONS = ['Global', PERFIL_ADM_GLOBAL, PERFIL_ADM_PRODUCAO, 'Manutenção'];
+export const PERFIS_NFP_LEITURA_CUPONS = ['Global', PERFIL_ADM_GLOBAL, PERFIL_ADM_PRODUCAO, 'Gestor', 'Técnico', 'Administrativo', 'Manutenção'];
 export const PERFIS_NFP_ENVIO_SEFAZ = ['Global', PERFIL_ADM_GLOBAL, 'Manutenção'];
 export const PERFIS_NFP_OPERAR_ENVIO_SEFAZ = [PERFIL_ADM_GLOBAL, 'Manutenção'];
 
@@ -196,7 +196,12 @@ export function usuarioPodeAcessarNfp(usuario) {
   if (!usuario) return false;
   if (usuarioEhManutencao(usuario) || usuarioEhAdmNfpOrg(usuario)) return true;
   if (usuario.is_global === true) return true;
-  return normalizarPerfilRbac(usuario.perfil_acesso) === 'Global';
+  if (normalizarPerfilRbac(usuario.perfil_acesso) === 'Global') return true;
+  const perfil = normalizarPerfilRbac(usuario.perfil_acesso);
+  if (['Gestor', 'Técnico', 'Administrativo'].includes(perfil)) {
+    return usuario.nfp_modulo_ativo === true;
+  }
+  return false;
 }
 
 export function usuarioPodeGestaoNfp(usuario) {

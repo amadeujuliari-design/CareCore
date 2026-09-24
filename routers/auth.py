@@ -363,6 +363,7 @@ def montar_payload_token(
         "ativo": bool(getattr(usuario, "ativo", True)),
         "token_version": int(getattr(usuario, "token_version", 0) or 0),
         "compras_modulo_ativo": bool(getattr(usuario, "compras_modulo_ativo", False)),
+        "nfp_modulo_ativo": bool(getattr(usuario, "nfp_modulo_ativo", False)),
         "nfp_captador_vinculo": getattr(usuario, "nfp_captador_vinculo", None),
     }
 

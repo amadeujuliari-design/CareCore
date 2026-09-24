@@ -81,13 +81,15 @@ async function sincronizarFlagsComprasSessao(usuarioBase) {
     }
 
     const flag = data.compras_modulo_ativo === true;
-    if (usuarioBase.compras_modulo_ativo === flag) {
+    const flagNfp = data.nfp_modulo_ativo === true;
+    if (usuarioBase.compras_modulo_ativo === flag && usuarioBase.nfp_modulo_ativo === flagNfp) {
       return usuarioBase;
     }
 
     return {
       ...usuarioBase,
       compras_modulo_ativo: flag,
+      nfp_modulo_ativo: flagNfp,
     };
   } catch {
     return usuarioBase;

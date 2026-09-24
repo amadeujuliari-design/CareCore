@@ -906,6 +906,19 @@ def tipo_suprimentos_aprova_e_envia(tipo: Optional[str]) -> bool:
     return (tipo or "").strip().lower() == TIPO_HORTIFRUTI
 
 
+# Hortifruti pronto pelo projeto: Suprimentos envia com ou sem orçamento anexado.
+STATUS_HORTIFRUTI_ENVIO_SUPRIMENTOS = frozenset({
+    STATUS_AGUARDANDO_COTACAO,
+    STATUS_EM_COTACAO,
+    STATUS_AGUARDANDO_ESCOLHA,
+    STATUS_AGUARDANDO_SEDE,
+})
+
+
+def hortifruti_aguardando_envio_suprimentos(tipo: Optional[str], status: Optional[str]) -> bool:
+    return tipo_suprimentos_aprova_e_envia(tipo) and (status or "") in STATUS_HORTIFRUTI_ENVIO_SUPRIMENTOS
+
+
 def rotulo_tipo_pedido(tipo: Optional[str]) -> str:
     chave = (tipo or "").strip().lower()
     return ROTULO_TIPO_PEDIDO.get(chave, chave or "Pedido")

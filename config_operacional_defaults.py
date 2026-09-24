@@ -77,6 +77,12 @@ REFEICOES_PADRAO = [
     {"id": "lanche", "nome": "Lanche noturno", "inicio": "21:00", "fim": "22:30", "ativo": True},
 ]
 
+REFEICOES_CASA_PORTO = [
+    {"id": "cafe", "nome": "Café da manhã", "inicio": "06:55", "fim": "08:30", "ativo": True},
+    {"id": "almoco", "nome": "Almoço", "inicio": "11:50", "fim": "14:30", "ativo": True},
+    {"id": "lanche_tarde", "nome": "Lanche da tarde", "inicio": "15:00", "fim": "16:30", "ativo": True},
+]
+
 INTERACOES_ROTINA_PADRAO = [
     {"valor": "Banho", "label": "Banho", "grupo": "simples", "ativo": True},
     {
@@ -96,6 +102,23 @@ INTERACOES_ROTINA_PADRAO = [
         "tipo_entrega": "Entrega de Toalha",
     },
     {"valor": "Bagageiro", "label": "Bagageiro (entrada/saída)", "grupo": "par_bagageiro", "ativo": True},
+    {
+        "valor": "Bipar documentos guardados",
+        "label": "Documentos guardados",
+        "grupo": "observacao",
+        "ativo": True,
+    },
+    {
+        "valor": "Bipar documentos retirados",
+        "label": "Documentos retirados",
+        "grupo": "observacao",
+        "ativo": True,
+    },
+]
+
+INTERACOES_ROTINA_CASA_PORTO = [
+    {"valor": "Banho", "label": "Banho", "grupo": "simples", "ativo": True},
+    {"valor": "Lavanderia", "label": "Lavanderia", "grupo": "simples", "ativo": True},
     {
         "valor": "Bipar documentos guardados",
         "label": "Documentos guardados",

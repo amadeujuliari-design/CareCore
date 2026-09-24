@@ -33,7 +33,10 @@ def test_usuario_pode_acessar_nfp():
     assert usuario_pode_acessar_nfp({"perfil_acesso": "Global"}) is True
     assert usuario_pode_acessar_nfp({"perfil_acesso": "Manutenção"}) is True
     assert usuario_pode_acessar_nfp({"perfil_acesso": "Gestor"}) is False
+    assert usuario_pode_acessar_nfp({"perfil_acesso": "Gestor", "nfp_modulo_ativo": True}) is True
     assert usuario_pode_acessar_nfp({"perfil_acesso": "Técnico"}) is False
+    assert usuario_pode_acessar_nfp({"perfil_acesso": "Administrativo", "nfp_modulo_ativo": True}) is True
+    assert usuario_pode_gestao_nfp_completa({"perfil_acesso": "Gestor", "nfp_modulo_ativo": True}) is False
 
 
 def test_gestao_vs_leitura():

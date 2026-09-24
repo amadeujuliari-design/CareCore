@@ -10,9 +10,11 @@ from typing import Any, Optional
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from config_operacional_defaults import (
+    INTERACOES_ROTINA_CASA_PORTO,
     INTERACOES_ROTINA_PADRAO,
     MODULOS_PADRAO,
     PORTARIA_PADRAO,
+    REFEICOES_CASA_PORTO,
     REFEICOES_PADRAO,
     TERMO_BAGAGEIRO_COMPROMISSO_PADRAO,
     TERMO_BAGAGEIRO_ITENS_PADRAO,
@@ -148,6 +150,8 @@ class ModulosOperacionalConfig(BaseModel):
     transferencias: bool = True
     tuberculose: bool = True
     historico_legado: bool = False
+    acomodacoes: bool = True
+    pertences_recolhidos: bool = True
 
 
 class TermoCompromissoConfig(BaseModel):
@@ -195,8 +199,15 @@ def _parse_hora_str(valor: str) -> time:
     return time(hora, minuto)
 
 
-def montar_config_operacional_padrao(*, siat: bool = False) -> ConfigOperacionalProjeto:
-    modulos = MODULOS_SIAT if siat else MODULOS_PADRAO
+def montar_config_operacional_padrao(*, siat: bool = False, casa_porto: bool = False) -> ConfigOperacionalProjeto:
+    modulos = dict(MODULOS_SIAT if siat else MODULOS_PADRAO)
+    refeicoes = REFEICOES_PADRAO
+    interacoes = INTERACOES_ROTINA_PADRAO
+    if casa_porto:
+        refeicoes = REFEICOES_CASA_PORTO
+        interacoes = INTERACOES_ROTINA_CASA_PORTO
+        modulos["acomodacoes"] = False
+        modulos["pertences_recolhidos"] = False
     termo_compromisso_titulo = TERMO_COMPROMISSO_TITULO_SIAT if siat else TERMO_COMPROMISSO_TITULO_PADRAO
     termo_compromisso_texto = TERMO_COMPROMISSO_TEXTO_SIAT if siat else TERMO_COMPROMISSO_TEXTO_PADRAO
     termo_lgpd_texto = TERMO_LGPD_TEXTO_SIAT if siat else TERMO_LGPD_TEXTO_PADRAO
@@ -208,10 +219,10 @@ def montar_config_operacional_padrao(*, siat: bool = False) -> ConfigOperacional
     return ConfigOperacionalProjeto(
         refeicoes=RefeicoesOperacionalConfig(
             habilitadas=True,
-            itens=[RefeicaoOperacionalItem(**item) for item in REFEICOES_PADRAO],
+            itens=[RefeicaoOperacionalItem(**item) for item in refeicoes],
         ),
         portaria=PortariaOperacionalConfig(**PORTARIA_PADRAO),
-        interacoes_rotina=[InteracaoRotinaItem(**item) for item in INTERACOES_ROTINA_PADRAO],
+        interacoes_rotina=[InteracaoRotinaItem(**item) for item in interacoes],
         modulos=ModulosOperacionalConfig(**modulos),
         documentos=DocumentosOperacionalConfig(
             termo_compromisso=TermoCompromissoConfig(
@@ -243,8 +254,9 @@ def mesclar_config_operacional(
   stored: dict[str, Any] | str | None,
   *,
   siat: bool = False,
+  casa_porto: bool = False,
 ) -> ConfigOperacionalProjeto:
-    base = montar_config_operacional_padrao(siat=siat)
+    base = montar_config_operacional_padrao(siat=siat, casa_porto=casa_porto)
     if not stored:
         return base
 
@@ -266,7 +278,14 @@ def mesclar_config_operacional(
         else:
             merged[chave] = valor
 
-    return ConfigOperacionalProjeto.model_validate(merged)
+    config = ConfigOperacionalProjeto.model_validate(merged)
+    if not casa_porto:
+        return config
+    config.refeicoes.itens = [RefeicaoOperacionalItem(**item) for item in REFEICOES_CASA_PORTO]
+    config.interacoes_rotina = [InteracaoRotinaItem(**item) for item in INTERACOES_ROTINA_CASA_PORTO]
+    config.modulos.acomodacoes = False
+    config.modulos.pertences_recolhidos = False
+    return config
 
 
 def serializar_config_operacional(config: ConfigOperacionalProjeto) -> str:

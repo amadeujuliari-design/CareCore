@@ -74,6 +74,7 @@ from compras_regras import (
     dias_liberados_janela,
     economia_centavos,
     exige_tres_cotacoes,
+    hortifruti_aguardando_envio_suprimentos,
     formatar_grupo_codigo,
     competencia_padrao_do_segmento,
     inferir_fator_embalagem,
@@ -1563,7 +1564,9 @@ async def aprovar_sede(db: AsyncSession, usuario: dict, pedido: ComprasPedidoDB)
         is_manutencao=bool(usuario.get("is_manutencao")),
     ):
         raise HTTPException(status_code=403, detail="Somente ADM Compras aprova na Sede.")
-    if pedido.status != STATUS_AGUARDANDO_SEDE:
+    if pedido.status != STATUS_AGUARDANDO_SEDE and not hortifruti_aguardando_envio_suprimentos(
+        pedido.tipo, pedido.status,
+    ):
         raise HTTPException(status_code=400, detail="Pedido não está aguardando aprovação da Sede.")
     if sede_exige_aprovacao_previa_unidade(
         pedido.tipo,

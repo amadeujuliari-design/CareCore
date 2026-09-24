@@ -56,6 +56,8 @@ export const MODULOS_GENERICO = {
   transferencias: true,
   tuberculose: true,
   historico_legado: false,
+  acomodacoes: true,
+  pertences_recolhidos: true,
 };
 
 export const MODULOS_SIAT = {

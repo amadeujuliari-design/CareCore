@@ -67,6 +67,7 @@ export const FORM_INICIAL = {
   setor: '',
   nfp_captador_vinculo: '',
   compras_modulo_ativo: false,
+  nfp_modulo_ativo: false,
   instituicao_id: '',
   conselho_profissional: '',
   numero_conselho: '',

@@ -473,6 +473,7 @@ def aplicar_dados_usuario(
         "setor",
         "nfp_captador_vinculo",
         "compras_modulo_ativo",
+        "nfp_modulo_ativo",
         "instituicao_id",
         "conselho_profissional",
         "numero_conselho",
@@ -1064,6 +1065,11 @@ async def criar_usuario(
         else:
             compras_modulo_ativo = bool(flag_payload)
 
+    nfp_modulo_ativo = False
+    if perfil_normalizado in PERFIS_PROJETO_ELEGIVEIS:
+        flag_nfp = getattr(payload, "nfp_modulo_ativo", None)
+        nfp_modulo_ativo = bool(flag_nfp) if flag_nfp is not None else False
+
     novo_usuario = UsuarioDB(
         instituicao_id=instituicao_id,
         organizacao_id=organizacao_id,
@@ -1095,6 +1101,7 @@ async def criar_usuario(
         setor=setor,
         nfp_captador_vinculo=vinculo,
         compras_modulo_ativo=compras_modulo_ativo,
+        nfp_modulo_ativo=nfp_modulo_ativo,
         conselho_profissional=payload.conselho_profissional,
         numero_conselho=payload.numero_conselho,
         carga_horaria=payload.carga_horaria,
@@ -1201,6 +1208,14 @@ async def editar_usuario(
         dados["compras_modulo_ativo"] = compras_modulo_ativo_padrao(perfil_final)
     elif perfil_final not in PERFIS_PROJETO_ELEGIVEIS:
         dados["compras_modulo_ativo"] = False
+
+    if "nfp_modulo_ativo" in dados:
+        if perfil_final in PERFIS_PROJETO_ELEGIVEIS:
+            dados["nfp_modulo_ativo"] = bool(dados["nfp_modulo_ativo"])
+        else:
+            dados["nfp_modulo_ativo"] = False
+    elif perfil_final not in PERFIS_PROJETO_ELEGIVEIS:
+        dados["nfp_modulo_ativo"] = False
 
     if "email" in dados and dados["email"]:
         await verificar_email_unico(

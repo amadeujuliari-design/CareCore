@@ -265,8 +265,10 @@ export async function comprasGerarPedidoCompra(id) {
   return data;
 }
 
-export async function comprasEnviarEmailFornecedor(id, corpo) {
-  const payload = corpo != null ? { corpo } : {};
+export async function comprasEnviarEmailFornecedor(id, corpo, fornecedorId) {
+  const payload = {};
+  if (corpo != null) payload.corpo = corpo;
+  if (fornecedorId) payload.fornecedor_id = fornecedorId;
   const { data } = await api.post(`/api/compras/pedidos/${id}/enviar-email`, payload);
   return data;
 }

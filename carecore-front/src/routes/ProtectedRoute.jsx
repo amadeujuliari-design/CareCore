@@ -13,6 +13,7 @@ import {
   rotaEhLeituraCuponsNfp,
   rotaEhModuloAtividades,
   rotaEhModuloCompras,
+  rotaEhModuloNfp,
   rotaInicialPosLogin,
   rotaPermitidaAdmCompras,
   rotaPermitidaAdmGlobal,
@@ -24,6 +25,7 @@ import {
   usuarioEhOficineiro,
   usuarioPodeGestaoNfp,
   usuarioPodeVerCompras,
+  usuarioPodeAcessarNfp,
 } from '../utils/rbacUtils';
 import {
   rotaEhFinanceiro,
@@ -122,6 +124,28 @@ export default function ProtectedRoute({
 
   if (usuarioEhAdmGlobal(usuario) && !rotaPermitidaAdmGlobal(pathname)) {
     return <Navigate to="/nfp" replace />;
+  }
+
+  if (rotaEhModuloNfp(pathname) && !usuarioPodeAcessarNfp(usuario) && usuario.is_manutencao !== true) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
+        <div className="bg-white p-8 rounded-xl shadow-xl border border-red-100 max-w-md text-center">
+          <h1 className="text-xl font-bold text-red-600">
+            Acesso negado
+          </h1>
+          <p className="mt-3 text-sm text-gray-600">
+            Você não possui permissão para o módulo NFP.
+          </p>
+          <button
+            type="button"
+            onClick={() => navigate(rotaInicialPosLogin(usuario))}
+            className="mt-6 inline-flex items-center justify-center rounded-xl bg-brand px-5 py-2.5 text-sm font-bold text-white shadow-sm hover:bg-brandDark transition-colors"
+          >
+            Voltar
+          </button>
+        </div>
+      </div>
+    );
   }
 
   if (rotaEhModuloCompras(pathname) && !usuarioPodeVerCompras(usuario) && usuario.is_manutencao !== true) {

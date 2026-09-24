@@ -170,6 +170,7 @@ export default function ComprasPedido() {
   const [carimboNf, setCarimboNf] = useState(null);
   const [modalAssinatura, setModalAssinatura] = useState(null);
   const [modalEmail, setModalEmail] = useState(null);
+  const [fornecedorEnvioId, setFornecedorEnvioId] = useState('');
   const [rascunhoEmail, setRascunhoEmail] = useState({
     assunto: '', corpo: '', aviso: '', carregando: false, erro: '',
   });
@@ -406,7 +407,15 @@ export default function ComprasPedido() {
         } else if (modalEmail.modo === 'pedido_compra' && !pedidoCompra) {
           await comprasGerarPedidoCompra(pedido.id);
         }
-        const res = await comprasEnviarEmailFornecedor(pedido.id, corpo);
+        const semOrcamentoEscolhido = hortifrutiDireto && !(pedido.cotacoes || []).some((c) => c.escolhida);
+        if (semOrcamentoEscolhido && !fornecedorEnvioId) {
+          throw new Error('Escolha o fornecedor que vai receber o pedido.');
+        }
+        const res = await comprasEnviarEmailFornecedor(
+          pedido.id,
+          corpo,
+          semOrcamentoEscolhido ? fornecedorEnvioId : undefined,
+        );
         if (!res?.enviado) {
           throw new Error(res?.erro || 'Falha no e-mail ao fornecedor.');
         }
@@ -2044,7 +2053,12 @@ export default function ComprasPedido() {
                     Aprovar na unidade
                   </PremiumButton>
                 )}
-                {hortifrutiDireto && pedido.status === 'aguardando_aprovacao_sede' && sede && (
+                {hortifrutiDireto && sede && [
+                  'aguardando_cotacao',
+                  'em_cotacao',
+                  'aguardando_escolha_orcamento',
+                  'aguardando_aprovacao_sede',
+                ].includes(pedido.status) && (
                   <PremiumButton
                     onClick={async () => {
                       const ok = await agir(
@@ -2173,6 +2187,13 @@ export default function ComprasPedido() {
         onCorpoChange={(valor) => setRascunhoEmail((prev) => ({ ...prev, corpo: valor }))}
         onCancelar={fecharModalEmail}
         onConfirmar={confirmarEnvioEmail}
+        fornecedoresEnvio={
+          hortifrutiDireto && modalEmail?.modo === 'pedido_compra' && !(pedido.cotacoes || []).some((c) => c.escolhida)
+            ? fornecedoresCotacao
+            : null
+        }
+        fornecedorEnvioId={fornecedorEnvioId}
+        onFornecedorEnvioChange={setFornecedorEnvioId}
       />
       <ModalPosicionarTextoNf
         aberto={modalTextoNf}

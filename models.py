@@ -189,6 +189,9 @@ class UsuarioDB(Base):
     # Compras: Gestor/Técnico/Administrativo só veem o módulo se o Gestor ligar.
     compras_modulo_ativo = Column(Boolean, default=False, nullable=False)
 
+    # NFP: os mesmos perfis só veem o módulo se a flag estiver ligada. ADM Produção não depende dela.
+    nfp_modulo_ativo = Column(Boolean, default=False, nullable=False)
+
     conselho_profissional = Column(String, nullable=True)
 
     numero_conselho = Column(String, nullable=True)

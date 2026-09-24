@@ -512,6 +512,7 @@ export default function Usuarios() {
         setor: usuario.setor || '',
         nfp_captador_vinculo: usuario.nfp_captador_vinculo || '',
         compras_modulo_ativo: usuario.compras_modulo_ativo === true,
+        nfp_modulo_ativo: usuario.nfp_modulo_ativo === true,
         instituicao_id: usuario.instituicao_id || '',
         conselho_profissional: usuario.conselho_profissional || '',
         numero_conselho: usuario.numero_conselho || '',
@@ -551,6 +552,7 @@ export default function Usuarios() {
           proximo.compras_modulo_ativo = comprasModuloAtivoPadrao(valorFinal);
         } else {
           proximo.compras_modulo_ativo = false;
+          proximo.nfp_modulo_ativo = false;
         }
       }
       return proximo;
@@ -1558,6 +1560,21 @@ export default function Usuarios() {
                         {form.perfil_acesso === 'Gestor'
                           ? ' Gestores já vêm com esta opção marcada; desmarque se não quiser ver Compras.'
                           : ' Técnico e Administrativo entram sem Compras; marque só quem precisa operar pedidos.'}
+                      </span>
+                    </label>
+                  )}
+
+                  {escopoLista === 'projeto' && PERFIS_COMPRAS_MODULO_FLAG.includes(form.perfil_acesso) && (
+                    <label className="md:col-span-2 flex items-start gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={form.nfp_modulo_ativo === true}
+                        onChange={(e) => atualizarCampo('nfp_modulo_ativo', e.target.checked)}
+                        className="mt-1"
+                      />
+                      <span>
+                        Liberar módulo NFP para este usuário (acumula com os demais módulos do perfil).
+                        Entra desmarcado. O perfil ADM Produção NFP continua sendo o usuário só de NFP deste projeto.
                       </span>
                     </label>
                   )}

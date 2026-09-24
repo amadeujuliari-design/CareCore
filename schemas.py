@@ -618,6 +618,7 @@ class UsuarioBase(BaseModel):
     nfp_captador_vinculo: Optional[str] = None
     # None = aplicar padrão do perfil (Gestor=True; Técnico/Administrativo=False).
     compras_modulo_ativo: Optional[bool] = None
+    nfp_modulo_ativo: Optional[bool] = None
     conselho_profissional: Optional[str] = None
     numero_conselho: Optional[str] = None
     carga_horaria: Optional[int] = None
@@ -739,6 +740,7 @@ class UsuarioUpdate(BaseModel):
     setor: Optional[str] = None
     nfp_captador_vinculo: Optional[str] = None
     compras_modulo_ativo: Optional[bool] = None
+    nfp_modulo_ativo: Optional[bool] = None
     instituicao_id: Optional[str] = None
     conselho_profissional: Optional[str] = None
     numero_conselho: Optional[str] = None
@@ -890,6 +892,7 @@ class UsuarioResumoResponse(BaseModel):
     setor: Optional[str] = None
     nfp_captador_vinculo: Optional[str] = None
     compras_modulo_ativo: bool = False
+    nfp_modulo_ativo: bool = False
     instituicao_id: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
@@ -915,6 +918,7 @@ class UsuarioSessaoResponse(BaseModel):
     avatar_url: Optional[str] = None
     token_version: Optional[int] = None
     compras_modulo_ativo: bool = False
+    nfp_modulo_ativo: bool = False
 
     model_config = ConfigDict(from_attributes=True)
 

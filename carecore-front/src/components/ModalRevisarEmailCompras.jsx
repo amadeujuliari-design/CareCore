@@ -17,6 +17,9 @@ export default function ModalRevisarEmailCompras({
   onCorpoChange,
   onCancelar,
   onConfirmar,
+  fornecedoresEnvio = null,
+  fornecedorEnvioId = '',
+  onFornecedorEnvioChange,
 }) {
   const { onMouseDownBackdrop, onClickBackdrop } = useFecharSoNoBackdrop(onCancelar);
 
@@ -52,6 +55,27 @@ export default function ModalRevisarEmailCompras({
             <p className="text-sm text-slate-500">Carregando texto padrão…</p>
           ) : (
             <>
+              {Array.isArray(fornecedoresEnvio) ? (
+                <label className="mb-3 block text-xs font-semibold text-slate-600">
+                  Fornecedor
+                  <select
+                    value={fornecedorEnvioId}
+                    onChange={(e) => onFornecedorEnvioChange?.(e.target.value)}
+                    disabled={enviando}
+                    className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-normal text-slate-800 outline-none focus:border-slate-400"
+                  >
+                    <option value="">Selecione o fornecedor</option>
+                    {fornecedoresEnvio.map((f) => (
+                      <option key={f.id} value={f.id}>
+                        {f.nome}{(f.email || f.email_empresa) ? '' : ' (sem e-mail)'}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="mt-1 block font-normal text-slate-500">
+                    O pedido segue mesmo sem orçamento anexado.
+                  </span>
+                </label>
+              ) : null}
               <label className="mb-1 block text-xs font-semibold text-slate-600">
                 Texto do e-mail
               </label>

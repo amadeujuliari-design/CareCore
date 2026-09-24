@@ -336,10 +336,22 @@ def usuario_eh_adm_nfp_org(usuario: dict | UsuarioDB | None) -> bool:
     return usuario_eh_adm_global(usuario) or usuario_eh_adm_producao(usuario)
 
 
+def _nfp_modulo_ativo_no_perfil_projeto(usuario: dict | UsuarioDB) -> bool:
+    if isinstance(usuario, dict):
+        perfil = normalizar_perfil_acesso(usuario.get("perfil_acesso"))
+        ligado = usuario.get("nfp_modulo_ativo") is True
+    else:
+        perfil = normalizar_perfil_acesso(getattr(usuario, "perfil_acesso", None))
+        ligado = bool(getattr(usuario, "nfp_modulo_ativo", False))
+    return perfil in {"Gestor", "Técnico", "Administrativo"} and ligado
+
+
 def usuario_pode_acessar_nfp(usuario: dict | UsuarioDB | None) -> bool:
     if not usuario:
         return False
     if usuario_eh_manutencao(usuario) or usuario_eh_adm_nfp_org(usuario):
+        return True
+    if _nfp_modulo_ativo_no_perfil_projeto(usuario):
         return True
     if isinstance(usuario, dict):
         return bool(
@@ -693,6 +705,7 @@ async def get_usuario_logado(
         "token_version": int(getattr(usuario, "token_version", 0) or 0),
         "nfp_captador_vinculo": getattr(usuario, "nfp_captador_vinculo", None),
         "compras_modulo_ativo": bool(getattr(usuario, "compras_modulo_ativo", False)),
+        "nfp_modulo_ativo": bool(getattr(usuario, "nfp_modulo_ativo", False)),
     }
 
 

@@ -76,6 +76,7 @@ from compras_regras import (
     pedido_itens_podem_editar,
     pedido_rascunho_pode_excluir,
     tipo_eh_cotacao_projeto,
+    tipo_suprimentos_aprova_e_envia,
     tipo_eh_cotacao_sede,
     usuario_e_sede_compras,
     usuario_pode_aprovar_sede,
@@ -998,6 +999,8 @@ async def gerar_pedido_compra(
     db: AsyncSession,
     usuario: dict,
     pedido: ComprasPedidoDB,
+    *,
+    fornecedor_nome: Optional[str] = None,
 ) -> ComprasPedidoAnexoDB:
     if pedido.status not in {STATUS_APROVADO, STATUS_ENVIADO, STATUS_RECEBIDO}:
         raise HTTPException(status_code=400, detail="Gere o pedido de compra após as aprovações.")
@@ -1024,7 +1027,7 @@ async def gerar_pedido_compra(
         }
     cotacoes = await _cotacoes_ativas(db, pedido.id)
     escolhida = next((c for c in cotacoes if c.escolhida), None)
-    if not escolhida:
+    if not escolhida and not (tipo_suprimentos_aprova_e_envia(pedido.tipo) or fornecedor_nome):
         raise HTTPException(status_code=400, detail="Escolha uma cotação antes de gerar o pedido.")
 
     org = (
@@ -1059,8 +1062,8 @@ async def gerar_pedido_compra(
             for i in itens
         ],
         cotacao_escolhida={
-            "fornecedor_nome": escolhida.fornecedor_nome,
-            "valor_centavos": escolhida.valor_centavos,
+            "fornecedor_nome": (escolhida.fornecedor_nome if escolhida else None) or fornecedor_nome,
+            "valor_centavos": escolhida.valor_centavos if escolhida else None,
         },
         numero_pedido=numero,
         identidade=identidade,
@@ -1177,10 +1180,26 @@ async def enviar_email_fornecedor(
     usuario: dict,
     pedido: ComprasPedidoDB,
     corpo: str | None = None,
+    fornecedor_id: str | None = None,
 ) -> dict:
     _exigir_envio_email_compras(usuario)
-    if not pedido.pedido_compra_anexo_id:
-        await gerar_pedido_compra(db, usuario, pedido)
+    nome_envio = None
+    if fornecedor_id and tipo_suprimentos_aprova_e_envia(pedido.tipo):
+        forn_envio = (
+            await db.execute(
+                select(ComprasFornecedorDB).where(
+                    ComprasFornecedorDB.id == fornecedor_id,
+                    ComprasFornecedorDB.organizacao_id == pedido.organizacao_id,
+                )
+            )
+        ).scalar_one_or_none()
+        if not forn_envio or not forn_envio.ativo:
+            raise HTTPException(status_code=400, detail="Fornecedor inválido para o envio.")
+        nome_envio = forn_envio.nome
+    cotacoes_ativas = await _cotacoes_ativas(db, pedido.id)
+    tem_escolhida = any(c.escolhida for c in cotacoes_ativas)
+    if not pedido.pedido_compra_anexo_id or (nome_envio and not tem_escolhida):
+        await gerar_pedido_compra(db, usuario, pedido, fornecedor_nome=nome_envio)
     anexo = (
         await db.execute(
             select(ComprasPedidoAnexoDB).where(ComprasPedidoAnexoDB.id == pedido.pedido_compra_anexo_id)
@@ -1201,8 +1220,21 @@ async def enviar_email_fornecedor(
         if forn:
             email_dest = (forn.email or forn.email_empresa or "").strip()
 
+    if not email_dest and fornecedor_id and tipo_suprimentos_aprova_e_envia(pedido.tipo):
+        forn = (
+            await db.execute(
+                select(ComprasFornecedorDB).where(ComprasFornecedorDB.id == fornecedor_id)
+            )
+        ).scalar_one_or_none()
+        if forn:
+            email_dest = (forn.email or forn.email_empresa or "").strip()
     if not email_dest:
-        raise HTTPException(status_code=400, detail="Fornecedor escolhido não tem e-mail cadastrado.")
+        raise HTTPException(
+            status_code=400,
+            detail="Informe um fornecedor com e-mail para enviar o pedido."
+            if tipo_suprimentos_aprova_e_envia(pedido.tipo)
+            else "Fornecedor escolhido não tem e-mail cadastrado.",
+        )
 
     bytes_arquivo, content_type = ler_bytes_anexo(anexo.caminho_arquivo)
     anexos_extras: list[tuple[str, bytes, str]] = []

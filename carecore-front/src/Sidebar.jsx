@@ -41,7 +41,7 @@ import { carecoreVersaoRotulo } from './config/versao';
 import { MENU_ACOMPANHAMENTOS, MENU_CONVIVENTES } from './config/acompanhamentosConfig';
 import { acompanhamentoAtivo, moduloAtivo } from './config/configOperacionalDefaults';
 import { useConfigOperacional } from './hooks/useConfigOperacional';
-import { usuarioEhAdmCompras, usuarioEhAdmGlobal, usuarioEhAdmPedidos, usuarioEhAdmProducao, usuarioEhOficineiro, normalizarPerfilRbac, usuarioPodeVerCompras, usuarioPodeAcessarModuloOperacional, PERFIS_ADM_COMPRAS_SEDE, PERFIL_ADM_GLOBAL, PERFIL_ADM_PRODUCAO, PERFIL_ADM_PEDIDOS } from './utils/rbacUtils';
+import { usuarioEhAdmCompras, usuarioEhAdmGlobal, usuarioEhAdmPedidos, usuarioEhAdmProducao, usuarioEhOficineiro, normalizarPerfilRbac, usuarioPodeVerCompras, usuarioPodeAcessarNfp, usuarioPodeAcessarModuloOperacional, PERFIS_ADM_COMPRAS_SEDE, PERFIL_ADM_GLOBAL, PERFIL_ADM_PRODUCAO, PERFIL_ADM_PEDIDOS } from './utils/rbacUtils';
 import { decodificarPayloadJwt } from './utils/jwtUtils';
 import { usuarioOrganizacaoFinanceira } from './utils/orgPacoteUtils';
 import FinanceSidebar from './components/FinanceSidebar';
@@ -527,6 +527,12 @@ export default function Sidebar() {
           children: COMPRAS_CHILDREN_PROJETO,
         },
         {
+          path: '/nfp/leitura-cupons',
+          icon: Receipt,
+          label: 'NFP – Créditos',
+          escopoNfp: 'projeto',
+        },
+        {
           path: '/usuarios',
           icon: UserRoundCog,
           label: 'Usuários',
@@ -820,6 +826,13 @@ export default function Sidebar() {
       );
     }
 
+    if (item.escopoNfp === 'projeto') {
+      if (!['Gestor', 'Técnico', 'Administrativo'].includes(perfilNormalizado)) return false;
+      return usuarioPodeAcessarNfp({
+        perfil_acesso: perfilNormalizado,
+        nfp_modulo_ativo: usuarioSessao?.nfp_modulo_ativo,
+      });
+    }
     if (item.escopoCompras === 'projeto') {
       // Unidade: Gestor/Técnico/Administrativo (flag Compras). Manutenção/Sede ficam em Gestão Global.
       if (isManutencao || ehAdmCompras) return false;
@@ -839,6 +852,12 @@ export default function Sidebar() {
       || item.perfis.includes(perfilNormalizado);
     const globalPermitido = !item.globalOnly || isGlobal;
     if (item.path === '/convenio-sisa' && configOperacional && !moduloAtivo(configOperacional, 'sisa')) {
+      return false;
+    }
+    if (item.path === '/quartos' && configOperacional && !moduloAtivo(configOperacional, 'acomodacoes')) {
+      return false;
+    }
+    if (item.path === '/rotina/pertences-recolhidos' && configOperacional && !moduloAtivo(configOperacional, 'pertences_recolhidos')) {
       return false;
     }
     const featurePermitida =

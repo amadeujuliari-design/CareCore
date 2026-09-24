@@ -7,6 +7,7 @@ import unicodedata
 from models import InstituicaoDB
 
 _MARCADORES_SIAT = ("siat", "armenia")
+_MARCADORES_CASA_PORTO = ("casa porto",)
 
 
 def _normalizar_texto_busca(valor: str | None) -> str:
@@ -35,3 +36,19 @@ def projeto_usa_defaults_siat(projeto: InstituicaoDB | None) -> bool:
     )
     texto = _normalizar_texto_busca(referencias)
     return any(marcador in texto for marcador in _MARCADORES_SIAT)
+
+
+def projeto_e_casa_porto(projeto: InstituicaoDB | None) -> bool:
+    if not projeto:
+        return False
+    referencias = " ".join(
+        filter(
+            None,
+            [
+                projeto.nome_fantasia,
+                projeto.relatorio_nome_exibicao,
+            ],
+        )
+    )
+    texto = _normalizar_texto_busca(referencias)
+    return any(marcador in texto for marcador in _MARCADORES_CASA_PORTO)
