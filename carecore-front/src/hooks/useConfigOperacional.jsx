@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 
 import { buscarConfigOperacional } from '../services/configOperacionalService';
-import { montarConfigOperacionalPadrao } from '../config/configOperacionalDefaults';
+import { aplicarPresetCasaPorto, montarConfigOperacionalPadrao } from '../config/configOperacionalDefaults';
 import {
   obterUsuarioSessao,
   usuarioPodeAcessarModuloOperacional,
@@ -21,16 +21,17 @@ export function ConfigOperacionalProvider({ children }) {
 
   const recarregar = useCallback(async () => {
     const token = localStorage.getItem('@CareCore:token') || localStorage.getItem('token');
+    const usuario = obterUsuarioSessao();
+    const nomeProjeto = usuario?.projeto_nome || '';
     if (!token) {
-      setConfig(montarConfigOperacionalPadrao());
+      setConfig(aplicarPresetCasaPorto(montarConfigOperacionalPadrao(), nomeProjeto));
       setCarregando(false);
       setErro('');
       return;
     }
 
-    const usuario = obterUsuarioSessao();
     if (!usuarioPodeAcessarModuloOperacional(usuario)) {
-      setConfig(montarConfigOperacionalPadrao());
+      setConfig(aplicarPresetCasaPorto(montarConfigOperacionalPadrao(), nomeProjeto));
       setCarregando(false);
       setErro('');
       return;
@@ -40,9 +41,9 @@ export function ConfigOperacionalProvider({ children }) {
     setErro('');
     try {
       const dados = await buscarConfigOperacional();
-      setConfig(dados);
+      setConfig(aplicarPresetCasaPorto(dados, nomeProjeto));
     } catch (error) {
-      setConfig(montarConfigOperacionalPadrao());
+      setConfig(aplicarPresetCasaPorto(montarConfigOperacionalPadrao(), nomeProjeto));
       setErro('Não foi possível carregar a configuração operacional do projeto.');
       console.error(error);
     } finally {

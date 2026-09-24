@@ -45,4 +45,8 @@ async def salvar_config_operacional_instituicao(
     await db.commit()
     await db.refresh(projeto)
     perfil = perfil_defaults_projeto(projeto)
-    return mesclar_config_operacional(projeto.config_operacional_json, siat=perfil == "siat"), perfil
+    return mesclar_config_operacional(
+        projeto.config_operacional_json,
+        siat=perfil == "siat",
+        casa_porto=projeto_e_casa_porto(projeto),
+    ), perfil

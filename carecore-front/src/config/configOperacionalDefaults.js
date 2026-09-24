@@ -177,6 +177,43 @@ export function moduloAtivo(config, chave) {
   return modulos[chave] !== false;
 }
 
+export function projetoOcultaAcomodacoes(nome) {
+  const texto = String(nome || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ');
+  return texto.includes('casa porto');
+}
+
+const REFEICOES_CASA_PORTO = [
+  { id: 'cafe', nome: 'Café da manhã', inicio: '06:55', fim: '08:30', ativo: true },
+  { id: 'almoco', nome: 'Almoço', inicio: '11:50', fim: '14:30', ativo: true },
+  { id: 'lanche_tarde', nome: 'Lanche da tarde', inicio: '15:00', fim: '16:30', ativo: true },
+];
+
+const INTERACOES_CASA_PORTO = [
+  { valor: 'Banho', label: 'Banho', grupo: 'simples', ativo: true },
+  { valor: 'Lavanderia', label: 'Lavanderia', grupo: 'simples', ativo: true },
+  { valor: 'Bipar documentos guardados', label: 'Documentos guardados', grupo: 'observacao', ativo: true },
+  { valor: 'Bipar documentos retirados', label: 'Documentos retirados', grupo: 'observacao', ativo: true },
+];
+
+export function aplicarPresetCasaPorto(config, nomeProjeto) {
+  if (!projetoOcultaAcomodacoes(nomeProjeto)) return config;
+  const base = config || montarConfigOperacionalPadrao();
+  return {
+    ...base,
+    refeicoes: { habilitadas: true, itens: REFEICOES_CASA_PORTO.map((item) => ({ ...item })) },
+    interacoes_rotina: INTERACOES_CASA_PORTO.map((item) => ({ ...item })),
+    modulos: {
+      ...(base.modulos || {}),
+      acomodacoes: false,
+      pertences_recolhidos: false,
+    },
+  };
+}
+
 export const MAPA_SLUG_MODULO_ACOMPANHAMENTO = {
   transferencias: 'transferencias',
   'discussoes-hospitalares': 'discussoes_hospitalares',

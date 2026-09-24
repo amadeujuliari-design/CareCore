@@ -1,4 +1,5 @@
-import { moduloAtivo } from '../../config/configOperacionalDefaults';
+import { moduloAtivo, projetoOcultaAcomodacoes } from '../../config/configOperacionalDefaults';
+import { useAuth } from '../../context/AuthContext';
 import { useConfigOperacional } from '../../hooks/useConfigOperacional';
 import AuthenticatedImage from '../AuthenticatedImage';
 import ProntuarioFamilia from './ProntuarioFamilia';
@@ -53,7 +54,9 @@ export default function ProntuarioPessoais({
   setErrosValidacao,
 }) {
   const { config } = useConfigOperacional();
-  const acomodacoesAtivas = moduloAtivo(config, 'acomodacoes');
+  const { usuario } = useAuth();
+  const acomodacoesAtivas = !projetoOcultaAcomodacoes(usuario?.projeto_nome)
+    && moduloAtivo(config, 'acomodacoes');
   const situacaoTb = formData.tb_remanejamento_situacao || '';
   const modalidadeTbEsperada = situacaoTbParaModalidade(situacaoTb);
   const podeReservarFixo = Boolean(
