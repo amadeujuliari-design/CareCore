@@ -29,6 +29,6 @@ def test_status_aguardando_escolha_definido():
     assert MIN_COTACOES_RECOMENDADAS == 3
 
 
-def test_hortifruti_apos_escolha_vai_para_unidade():
-    assert status_apos_escolha_sede(TIPO_HORTIFRUTI) == STATUS_AGUARDANDO_UNIDADE
+def test_hortifruti_apos_escolha_vai_para_sede():
+    assert status_apos_escolha_sede(TIPO_HORTIFRUTI) == STATUS_AGUARDANDO_SEDE
     assert status_apos_escolha_sede(TIPO_CONSUMO) == STATUS_AGUARDANDO_SEDE

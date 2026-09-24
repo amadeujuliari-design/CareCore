@@ -26,7 +26,7 @@ function badgeSituacao(situacao) {
   return <PremiumBadge variant="success">Bom</PremiumBadge>;
 }
 
-export default function ModalFichaPatrimonio({ item, onFechar, onEditar }) {
+export default function ModalFichaPatrimonio({ item, onFechar, onEditar, onAnexar, onBaixar }) {
   const { onMouseDownBackdrop, onClickBackdrop } = useFecharSoNoBackdrop(onFechar);
   if (!item) return null;
   const dataBr = (iso) => {
@@ -81,13 +81,57 @@ export default function ModalFichaPatrimonio({ item, onFechar, onEditar }) {
           <ItemFicha label="Data da aquisição" valor={dataBr(item.data_aquisicao)} />
           <ItemFicha label="Documento" valor={item.documento_nf} />
           <ItemFicha
-            label="Valor"
+            label="Valor da aquisição"
             valor={item.valor_centavos != null ? moneyCentavos(item.valor_centavos) : ''}
+          />
+          <ItemFicha
+            label="Depreciação anual"
+            valor={item.depreciacao_anual_percentual != null ? `${item.depreciacao_anual_percentual}% a.a.` : ''}
+          />
+          <ItemFicha
+            label="Valor atual"
+            valor={item.valor_atual_centavos != null ? moneyCentavos(item.valor_atual_centavos) : ''}
           />
           <ItemFicha label="Forma da aquisição" valor={item.forma_aquisicao} />
           <ItemFicha label="Data da baixa" valor={dataBr(item.data_baixa)} />
           <ItemFicha label="Motivo da baixa" valor={item.motivo_baixa} />
           <ItemFicha label="Observações" valor={item.observacao} className="sm:col-span-2" />
+        </div>
+
+        <div className="mt-5 border-t border-slate-100 pt-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Arquivos da aquisição</p>
+          {(item.anexos || []).length ? (
+            <ul className="mt-2 space-y-1">
+              {item.anexos.map((anexo) => (
+                <li key={anexo.id} className="flex items-center justify-between gap-2 text-sm">
+                  <span className="truncate text-slate-800">{anexo.nome_arquivo || 'Arquivo'}</span>
+                  <button
+                    type="button"
+                    className="shrink-0 text-xs font-semibold text-sky-800 underline"
+                    onClick={() => onBaixar?.(anexo)}
+                  >
+                    Baixar
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-2 text-sm text-slate-500">Nenhum arquivo neste bem.</p>
+          )}
+          <label className="mt-3 block text-xs font-semibold text-slate-600">
+            Adicionar arquivos
+            <input
+              type="file"
+              multiple
+              className="mt-1 block w-full text-sm font-normal"
+              onChange={async (e) => {
+                const arquivos = Array.from(e.target.files || []);
+                e.target.value = '';
+                if (!arquivos.length) return;
+                await onAnexar?.(arquivos);
+              }}
+            />
+          </label>
         </div>
 
         <div className="mt-6 flex flex-wrap justify-end gap-2 border-t border-slate-100 pt-4">

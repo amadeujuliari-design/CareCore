@@ -1,6 +1,7 @@
 import { useFecharSoNoBackdrop } from '../hooks/useFecharSoNoBackdrop';
 import { CampoSelect, CampoTexto } from './UsuariosCampos';
 import { PremiumButton } from './PremiumUI';
+import { moneyCentavos } from '../services/comprasService';
 import { rotuloCategoria } from '../utils/comprasCategoriaUtils';
 import {
   PATRIMONIO_ORIGEM,
@@ -158,12 +159,30 @@ export default function ModalFormPatrimonio({
                 onChange={(valor) => onAtualizar('documento_nf', valor)}
               />
               <CampoTexto
-                label="Valor (R$)"
+                label="Valor da aquisição (R$)"
                 value={form.valor_reais}
                 onChange={(valor) => onAtualizar('valor_reais', valor)}
                 placeholder="0,00"
                 erro={erros.valor_reais}
               />
+              {form.id ? (
+                <>
+                  <div>
+                    <p className="mb-1 text-xs font-semibold text-slate-600">Depreciação anual</p>
+                    <p className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800">
+                      {form.depreciacao_anual_percentual != null
+                        ? `${form.depreciacao_anual_percentual}% a.a.`
+                        : 'Não informada na categoria'}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="mb-1 text-xs font-semibold text-slate-600">Valor atual</p>
+                    <p className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800">
+                      {form.valor_atual_centavos != null ? moneyCentavos(form.valor_atual_centavos) : '—'}
+                    </p>
+                  </div>
+                </>
+              ) : null}
               <CampoTexto
                 label="Forma da aquisição"
                 value={form.forma_aquisicao}

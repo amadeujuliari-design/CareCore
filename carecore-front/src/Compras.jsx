@@ -776,6 +776,7 @@ export default function Compras() {
                 itens={itensConsumo}
                 categorias={categorias}
                 podeEditar
+                abrirNovo={searchParams.get('novo') === '1'}
                 sede={false}
                 onRecarregar={carregar}
                 onMensagem={({ ok: msgOk, erro: msgErro }) => {
@@ -846,6 +847,7 @@ export default function Compras() {
                     itens={itensConsumo}
                     categorias={categorias}
                     podeEditar
+                    abrirNovo={searchParams.get('novo') === '1'}
                     sede={sede}
                     onRecarregar={carregar}
                     onMensagem={({ ok: msgOk, erro: msgErro }) => {

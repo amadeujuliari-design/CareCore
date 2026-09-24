@@ -31,6 +31,7 @@ from compras_patrimonio_utils import (
     normalizar_situacao,
     parse_data_aquisicao,
     reais_para_centavos,
+    valor_atual_depreciado_centavos,
 )
 from compras_regras import (
     CATEGORIAS_PADRAO,
@@ -99,6 +100,7 @@ from compras_regras import (
     status_janela,
     sugerir_janela_competencia,
     tipo_eh_cotacao_projeto,
+    sede_exige_aprovacao_previa_unidade,
     tipo_eh_cotacao_sede,
     tipo_exige_janela,
     tipo_pula_aprovacao_sede,
@@ -138,6 +140,7 @@ from models import (
     ComprasFornecedorProjetoDB,
     ComprasJanelaDB,
     ComprasJanelaLiberacaoDB,
+    ComprasPatrimonioAnexoDB,
     ComprasPatrimonioDB,
     ComprasPedidoDB,
     ComprasPedidoAnexoDB,
@@ -863,6 +866,11 @@ async def criar_pedido(
     await db.flush()
 
     linhas = [item for item in (payload.get("itens") or []) if (item.get("descricao") or "").strip()]
+    if any(not (item.get("catalogo_item_id") or "").strip() for item in linhas):
+        raise HTTPException(
+            status_code=400,
+            detail="Inclua o item no catálogo antes de colocá-lo no pedido.",
+        )
     catalogo = await _fator_catalogo_por_ids(
         db,
         [item.get("catalogo_item_id") for item in linhas],
@@ -975,6 +983,11 @@ async def substituir_itens(
         )
 
     linhas = [item for item in (itens or []) if (item.get("descricao") or "").strip()]
+    if any(not (item.get("catalogo_item_id") or "").strip() for item in linhas):
+        raise HTTPException(
+            status_code=400,
+            detail="Inclua o item no catálogo antes de colocá-lo no pedido.",
+        )
     if getattr(pedido, "grupo_split_id", None):
         chave_pedido, rotulo_pedido = chave_split_categoria_pedido(
             getattr(pedido, "categoria_split_nome", None),
@@ -1182,23 +1195,33 @@ async def submeter_pedido(
         p.grupo_codigo = grupo_codigo
         p.categoria_split_nome = rotulos[chave]
         p.categoria_split_id = cat_ids_grupo.get(chave)
-        p.status = STATUS_AGUARDANDO_COTACAO
+        status_envio = (
+            STATUS_AGUARDANDO_SEDE
+            if (p.tipo or "").strip().lower() == TIPO_HORTIFRUTI
+            else STATUS_AGUARDANDO_COTACAO
+        )
+        p.status = status_envio
         p.submetido_em = agora
         p.atualizado_em = agora
         for item in itens_grupo:
             item.pedido_id = p.id
+        texto_envio = (
+            f"Pedido enviado — categoria {rotulos[chave]} (grupo {grupo_codigo})."
+            if len(chaves) > 1
+            else f"Pedido enviado (grupo {grupo_codigo})."
+        )
+        if status_envio == STATUS_AGUARDANDO_SEDE:
+            texto_envio = (
+                "Pedido de hortifruti enviado. Suprimentos aprova e envia ao fornecedor."
+            )
         await registrar_evento_pedido(
             db,
             pedido_id=p.id,
             tipo=TIPO_EVENTO_STATUS,
-            texto=(
-                f"Pedido enviado — categoria {rotulos[chave]} (grupo {grupo_codigo})."
-                if len(chaves) > 1
-                else f"Pedido enviado (grupo {grupo_codigo})."
-            ),
+            texto=texto_envio,
             usuario_id=_uid(usuario),
             status_anterior=STATUS_RASCUNHO,
-            status_novo=STATUS_AGUARDANDO_COTACAO,
+            status_novo=status_envio,
         )
 
     if len(chaves) == 1:
@@ -1535,11 +1558,6 @@ async def aprovar_unidade(db: AsyncSession, usuario: dict, pedido: ComprasPedido
 
 
 async def aprovar_sede(db: AsyncSession, usuario: dict, pedido: ComprasPedidoDB) -> ComprasPedidoDB:
-    if tipo_pula_aprovacao_sede(pedido.tipo):
-        raise HTTPException(
-            status_code=400,
-            detail="Pedido de hortifruti não passa por aprovação da Sede — só a unidade aprova.",
-        )
     if not usuario_pode_aprovar_sede(
         perfil=_perfil(usuario),
         is_manutencao=bool(usuario.get("is_manutencao")),
@@ -1547,7 +1565,11 @@ async def aprovar_sede(db: AsyncSession, usuario: dict, pedido: ComprasPedidoDB)
         raise HTTPException(status_code=403, detail="Somente ADM Compras aprova na Sede.")
     if pedido.status != STATUS_AGUARDANDO_SEDE:
         raise HTTPException(status_code=400, detail="Pedido não está aguardando aprovação da Sede.")
-    if not _pedido_escopo_sede(pedido) and not pedido.aprovado_unidade_em:
+    if sede_exige_aprovacao_previa_unidade(
+        pedido.tipo,
+        escopo_sede=_pedido_escopo_sede(pedido),
+        aprovado_unidade=bool(pedido.aprovado_unidade_em),
+    ):
         raise HTTPException(status_code=400, detail="A unidade precisa aprovar antes da Sede.")
     pedido.aprovado_sede_por_id = _uid(usuario)
     pedido.aprovado_sede_em = agora_operacional_naive()
@@ -2351,6 +2373,7 @@ async def listar_categorias(db: AsyncSession, usuario: dict) -> list[dict]:
                 "qtd_bens": qtd_bens,
                 "qtd_itens": qtd_consumo + qtd_bens,
                 "ordem": int(getattr(r, "ordem", 0) or 0),
+                "depreciacao_anual_percentual": getattr(r, "depreciacao_anual_percentual", None),
             }
         )
     saida.sort(key=lambda item: (item["ordem"], -item["qtd_itens"], (item["nome"] or "").lower()))
@@ -2414,7 +2437,82 @@ async def salvar_categoria(db: AsyncSession, usuario: dict, payload: dict, categ
         row.segmento = inferir_segmento_por_nome_categoria(nome)
     if "ativo" in payload:
         row.ativo = bool(payload["ativo"])
+    if "depreciacao_anual_percentual" in payload:
+        bruto = payload.get("depreciacao_anual_percentual")
+        if bruto in (None, ""):
+            row.depreciacao_anual_percentual = None
+        else:
+            try:
+                percentual = float(bruto)
+            except (TypeError, ValueError) as exc:
+                raise HTTPException(status_code=400, detail="Depreciação anual inválida.") from exc
+            if percentual < 0 or percentual > 100:
+                raise HTTPException(status_code=400, detail="Depreciação anual deve ficar entre 0 e 100.")
+            row.depreciacao_anual_percentual = percentual
     return row
+
+
+async def excluir_categoria(db: AsyncSession, usuario: dict, categoria_id: str) -> None:
+    exigir_cadastro_mestre_compras(usuario)
+    org_id = _org_id(usuario)
+    row = (
+        await db.execute(
+            select(ComprasCategoriaDB).where(
+                ComprasCategoriaDB.id == categoria_id,
+                ComprasCategoriaDB.organizacao_id == org_id,
+            )
+        )
+    ).scalar_one_or_none()
+    if not row:
+        raise HTTPException(status_code=404, detail="Categoria não encontrada.")
+    uso_itens = (
+        await db.execute(
+            select(func.count()).select_from(ComprasItemConsumoDB).where(
+                ComprasItemConsumoDB.categoria_id == categoria_id
+            )
+        )
+    ).scalar_one()
+    uso_bens = (
+        await db.execute(
+            select(func.count()).select_from(ComprasPatrimonioDB).where(
+                ComprasPatrimonioDB.categoria_id == categoria_id
+            )
+        )
+    ).scalar_one()
+    if int(uso_itens or 0) or int(uso_bens or 0):
+        raise HTTPException(
+            status_code=400,
+            detail="Não é possível excluir: ainda há itens ou bens nesta categoria. Mova-os antes.",
+        )
+    await db.delete(row)
+
+
+async def excluir_item_consumo(db: AsyncSession, usuario: dict, item_id: str) -> None:
+    exigir_cadastro_mestre_compras(usuario)
+    org_id = _org_id(usuario)
+    row = (
+        await db.execute(
+            select(ComprasItemConsumoDB).where(
+                ComprasItemConsumoDB.id == item_id,
+                ComprasItemConsumoDB.organizacao_id == org_id,
+            )
+        )
+    ).scalar_one_or_none()
+    if not row:
+        raise HTTPException(status_code=404, detail="Item não encontrado.")
+    uso = (
+        await db.execute(
+            select(func.count()).select_from(ComprasPedidoItemDB).where(
+                ComprasPedidoItemDB.catalogo_item_id == item_id
+            )
+        )
+    ).scalar_one()
+    if int(uso or 0):
+        raise HTTPException(
+            status_code=400,
+            detail="Não é possível excluir: este item já entrou em algum pedido. Inative-o.",
+        )
+    await db.delete(row)
 
 
 def _serializar_item_consumo(row: ComprasItemConsumoDB, categorias: dict) -> dict:
@@ -2455,6 +2553,7 @@ async def _mapa_nomes_categoria(db: AsyncSession, organizacao_id: str) -> dict[s
                 ComprasCategoriaDB.id,
                 ComprasCategoriaDB.nome,
                 ComprasCategoriaDB.segmento,
+                ComprasCategoriaDB.depreciacao_anual_percentual,
             ).where(ComprasCategoriaDB.organizacao_id == organizacao_id)
         )
     ).all()
@@ -2462,6 +2561,7 @@ async def _mapa_nomes_categoria(db: AsyncSession, organizacao_id: str) -> dict[s
         row[0]: {
             "nome": row[1],
             "segmento": normalizar_segmento_catalogo(row[2] or SEGMENTO_CONSUMO),
+            "depreciacao_anual_percentual": row[3],
         }
         for row in rows
     }
@@ -2794,7 +2894,8 @@ async def listar_fontes(db: AsyncSession, usuario: dict) -> list[dict]:
         for r in rows
     ]
     saida.sort(key=lambda item: (-item["qtd_pedidos"], (item["nome"] or "").lower()))
-    return saida
+    from compras_regras import FONTES_TIPOS_PEDIDO
+    return [item for item in saida if item["tipo"] in FONTES_TIPOS_PEDIDO]
 
 
 async def salvar_fonte(db: AsyncSession, usuario: dict, payload: dict, fonte_id: Optional[str] = None):
@@ -2829,6 +2930,12 @@ async def salvar_fonte(db: AsyncSession, usuario: dict, payload: dict, fonte_id:
         db.add(row)
     row.nome = nome
     row.tipo = normalizar_tipo_fonte(payload.get("tipo"), nome=nome)
+    from compras_regras import FONTES_TIPOS_PEDIDO
+    if row.tipo not in FONTES_TIPOS_PEDIDO:
+        raise HTTPException(
+            status_code=400,
+            detail="A fonte da verba só pode ser Convênio ou Custo indireto.",
+        )
     row.vigencia_inicio = parse_data_aquisicao(payload.get("vigencia_inicio"))
     row.vigencia_fim = parse_data_aquisicao(payload.get("vigencia_fim"))
     if "ativo" in payload:
@@ -2850,7 +2957,32 @@ async def listar_patrimonio(db: AsyncSession, usuario: dict) -> list[dict]:
     nomes = await _nomes_instituicao(db, [r.instituicao_id for r in rows if r.instituicao_id])
     org_nome = await _nome_organizacao(db, _org_id(usuario))
     cats = await _mapa_nomes_categoria(db, _org_id(usuario))
-    return [_serializar_patrimonio(r, nomes, org_nome, cats) for r in rows]
+    anexos = await _anexos_patrimonio(db, [r.id for r in rows])
+    return [_serializar_patrimonio(r, nomes, org_nome, cats, anexos.get(r.id) or []) for r in rows]
+
+
+async def _anexos_patrimonio(db: AsyncSession, ids: list[str]) -> dict[str, list[dict]]:
+    if not ids:
+        return {}
+    rows = (
+        await db.execute(
+            select(ComprasPatrimonioAnexoDB).where(
+                ComprasPatrimonioAnexoDB.patrimonio_id.in_(ids),
+                ComprasPatrimonioAnexoDB.ativo.is_(True),
+            )
+        )
+    ).scalars().all()
+    saida: dict[str, list[dict]] = {}
+    for anexo in rows:
+        saida.setdefault(anexo.patrimonio_id, []).append(
+            {
+                "id": anexo.id,
+                "nome_arquivo": anexo.nome_arquivo,
+                "content_type": anexo.content_type,
+                "tamanho_bytes": anexo.tamanho_bytes,
+            }
+        )
+    return saida
 
 
 def _serializar_patrimonio(
@@ -2858,6 +2990,7 @@ def _serializar_patrimonio(
     nomes: dict[str, str],
     org_nome: Optional[str],
     categorias: Optional[dict] = None,
+    anexos: Optional[list] = None,
 ) -> dict:
     escopo = getattr(r, "escopo_unidade", ESCOPO_PROJETO) or ESCOPO_PROJETO
     inst_nome = rotulo_unidade_relatorio(
@@ -2874,6 +3007,13 @@ def _serializar_patrimonio(
     cat_id = getattr(r, "categoria_id", None)
     cat_meta = (categorias or {}).get(cat_id) if cat_id else None
     cat_nome = cat_meta.get("nome") if isinstance(cat_meta, dict) else cat_meta
+    percentual = cat_meta.get("depreciacao_anual_percentual") if isinstance(cat_meta, dict) else None
+    valor_atual = valor_atual_depreciado_centavos(
+        r.valor_centavos,
+        r.data_aquisicao,
+        percentual,
+        hoje=data_operacional(),
+    )
     return {
         "id": r.id,
         "instituicao_id": r.instituicao_id,
@@ -2887,6 +3027,9 @@ def _serializar_patrimonio(
         "propriedade": r.propriedade or "aeb",
         "documento_nf": r.documento_nf,
         "valor_centavos": r.valor_centavos,
+        "valor_atual_centavos": valor_atual,
+        "depreciacao_anual_percentual": percentual,
+        "anexos": anexos or [],
         "origem": r.origem or PATRIMONIO_ORIGEM_COMPRA,
         "forma_aquisicao": r.forma_aquisicao,
         "data_aquisicao": r.data_aquisicao.isoformat() if r.data_aquisicao else None,
@@ -2992,6 +3135,68 @@ async def salvar_patrimonio(
         item.valor_centavos = reais_para_centavos(payload.get("valor_reais"))
     item.atualizado_em = agora_operacional_naive()
     return item
+
+
+async def anexar_arquivo_patrimonio(db: AsyncSession, usuario: dict, patrimonio_id: str, file):
+    from compras_upload_utils import salvar_arquivo_compras
+
+    org_id = _org_id(usuario)
+    row = (
+        await db.execute(
+            select(ComprasPatrimonioDB).where(
+                ComprasPatrimonioDB.id == patrimonio_id,
+                ComprasPatrimonioDB.organizacao_id == org_id,
+            )
+        )
+    ).scalar_one_or_none()
+    if not row:
+        raise HTTPException(status_code=404, detail="Bem não encontrado.")
+    if not _sede(usuario) and row.instituicao_id != usuario.get("instituicao_id"):
+        raise HTTPException(status_code=403, detail="Sem acesso a este bem.")
+    conteudo = await file.read()
+    caminho, nome, tamanho, content_type = await salvar_arquivo_compras(
+        organizacao_id=org_id,
+        pedido_id=row.id,
+        file=file,
+        conteudo=conteudo,
+    )
+    anexo = ComprasPatrimonioAnexoDB(
+        patrimonio_id=row.id,
+        nome_arquivo=nome,
+        caminho_arquivo=caminho,
+        content_type=content_type,
+        tamanho_bytes=tamanho,
+        ativo=True,
+    )
+    db.add(anexo)
+    await db.flush()
+    return anexo
+
+
+async def obter_anexo_patrimonio(db: AsyncSession, usuario: dict, patrimonio_id: str, anexo_id: str):
+    org_id = _org_id(usuario)
+    row = (
+        await db.execute(
+            select(ComprasPatrimonioDB).where(
+                ComprasPatrimonioDB.id == patrimonio_id,
+                ComprasPatrimonioDB.organizacao_id == org_id,
+            )
+        )
+    ).scalar_one_or_none()
+    if not row:
+        raise HTTPException(status_code=404, detail="Bem não encontrado.")
+    anexo = (
+        await db.execute(
+            select(ComprasPatrimonioAnexoDB).where(
+                ComprasPatrimonioAnexoDB.id == anexo_id,
+                ComprasPatrimonioAnexoDB.patrimonio_id == patrimonio_id,
+                ComprasPatrimonioAnexoDB.ativo.is_(True),
+            )
+        )
+    ).scalar_one_or_none()
+    if not anexo:
+        raise HTTPException(status_code=404, detail="Arquivo não encontrado.")
+    return anexo
 
 
 async def relatorio_economia(

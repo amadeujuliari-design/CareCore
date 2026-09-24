@@ -8,6 +8,7 @@ export default function ComprasItemTypeahead({
   value = '',
   onChange,
   onEscolher,
+  onCadastrar,
   placeholder = 'Digite para buscar no cadastro',
   required = false,
   disabled = false,
@@ -35,11 +36,6 @@ export default function ComprasItemTypeahead({
 
   const escolher = (item) => {
     onEscolher?.(item);
-    setAberto(false);
-  };
-
-  const usarDigitado = () => {
-    onEscolher?.(null);
     setAberto(false);
   };
 
@@ -80,12 +76,21 @@ export default function ComprasItemTypeahead({
           className="absolute z-30 mt-1 max-h-64 w-full overflow-auto rounded-xl border border-slate-200 bg-white py-1 shadow-lg"
         >
           {sugestoes.length === 0 ? (
-            <li className="px-3 py-2 text-sm text-slate-500">
-              Nenhum item no cadastro. Inclua e cadastre agora, se for o caso.
+            <li className="px-3 py-2 text-sm text-slate-600">
+              Este item não está no catálogo. Cadastre-o aqui — o pedido continua aberto.
               {' '}
-              <button type="button" className="font-semibold text-slate-800 underline" onClick={usarDigitado}>
-                Usar o texto digitado
-              </button>
+              {typeof onCadastrar === 'function' ? (
+                <button
+                  type="button"
+                  className="font-semibold text-sky-800 underline"
+                  onClick={() => {
+                    onCadastrar(value.trim());
+                    setAberto(false);
+                  }}
+                >
+                  Cadastrar este item
+                </button>
+              ) : null}
             </li>
           ) : (
             sugestoes.map((item, idx) => (

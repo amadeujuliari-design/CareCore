@@ -2002,6 +2002,8 @@ class ComprasCategoriaDB(Base):
     segmento = Column(String, nullable=False, default="consumo")
     ativo = Column(Boolean, default=True, nullable=False)
     ordem = Column(Integer, nullable=False, default=0)
+    # Percentual anual usado no bem adquirido (valor atual = aquisição menos depreciação).
+    depreciacao_anual_percentual = Column(Float, nullable=True)
     criado_em = Column(DateTime, default=agora_operacional_naive)
 
 
@@ -2325,6 +2327,22 @@ class ComprasPatrimonioDB(Base):
     escopo_unidade = Column(String, nullable=False, default="projeto")
     criado_em = Column(DateTime, default=agora_operacional_naive)
     atualizado_em = Column(DateTime, default=agora_operacional_naive, onupdate=agora_operacional_naive)
+
+
+class ComprasPatrimonioAnexoDB(Base):
+    __tablename__ = "compras_patrimonio_anexos"
+    __table_args__ = (
+        Index("ix_compras_patrimonio_anexo_item", "patrimonio_id"),
+    )
+
+    id = Column(String, primary_key=True, default=get_uuid)
+    patrimonio_id = Column(String, ForeignKey("compras_patrimonio.id"), nullable=False)
+    nome_arquivo = Column(String, nullable=False)
+    caminho_arquivo = Column(String, nullable=False)
+    content_type = Column(String, nullable=True)
+    tamanho_bytes = Column(Integer, nullable=True)
+    ativo = Column(Boolean, default=True, nullable=False)
+    criado_em = Column(DateTime, default=agora_operacional_naive)
 
 
 class UsuarioOrganizacaoAcessoDB(Base):

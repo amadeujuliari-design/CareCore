@@ -258,3 +258,58 @@ def mesclar_orcamento_com_assinatura_pdf(
         orcamento_bytes=orcamento_bytes,
         assinatura_bytes=assinatura_bytes,
     )
+
+
+def carimbar_texto_pdf(
+    *,
+    pdf_bytes: bytes,
+    texto: str,
+    page_index: int = 0,
+    x: float = 36.0,
+    y: float = 36.0,
+    width: float = 240.0,
+    height: float = 48.0,
+) -> bytes:
+    """Grava o texto complementar dentro do PDF da NF, na caixa escolhida."""
+    from pypdf import PdfReader, PdfWriter
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.platypus import Frame, Paragraph
+    from reportlab.pdfgen import canvas as pdf_canvas
+
+    conteudo = (texto or "").strip()
+    if not conteudo:
+        return pdf_bytes
+    leitor = PdfReader(io.BytesIO(pdf_bytes))
+    if not leitor.pages:
+        raise ValueError("O PDF da NF não tem páginas.")
+    indice = max(0, min(int(page_index or 0), len(leitor.pages) - 1))
+    pagina = leitor.pages[indice]
+    caixa = pagina.mediabox
+    page_w = float(caixa.width)
+    page_h = float(caixa.height)
+    desenho_w = max(24.0, min(float(width), page_w))
+    desenho_h = max(12.0, min(float(height), page_h))
+    tx = max(0.0, min(float(x), page_w - desenho_w))
+    ty = max(0.0, min(float(y), page_h - desenho_h))
+
+    buf = io.BytesIO()
+    folha = pdf_canvas.Canvas(buf, pagesize=(page_w, page_h))
+    estilo = ParagraphStyle(
+        "nf_complemento",
+        fontName="Helvetica",
+        fontSize=8 if desenho_h < 22 else 9,
+        leading=10,
+        textColor="#111111",
+    )
+    html = conteudo.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\n", "<br/>")
+    quadro = Frame(tx, ty, desenho_w, desenho_h, showBoundary=0, leftPadding=2, rightPadding=2, topPadding=1, bottomPadding=1)
+    quadro.addFromList([Paragraph(html, estilo)], folha)
+    folha.save()
+    overlay = PdfReader(io.BytesIO(buf.getvalue()))
+    pagina.merge_page(overlay.pages[0])
+    escritor = PdfWriter()
+    for pagina_atual in leitor.pages:
+        escritor.add_page(pagina_atual)
+    saida = io.BytesIO()
+    escritor.write(saida)
+    return saida.getvalue()

@@ -22,6 +22,7 @@ from compras_pedido_fluxo import (
     liberar_cotacao_para_escolha,
     registrar_comunicacao_pedido,
     registrar_nota_fiscal,
+    remover_nota_fiscal,
     reabrir_pedido,
     remover_anexo_pedido,
     reprovar_pedido,
@@ -44,7 +45,9 @@ from compras_service import (
     listar_fornecedores,
     listar_itens_consumo,
     listar_janelas,
+    anexar_arquivo_patrimonio,
     listar_patrimonio,
+    obter_anexo_patrimonio,
     listar_pedidos,
     listar_unidades,
     liberar_unidade_janela,
@@ -55,6 +58,8 @@ from compras_service import (
     registrar_cotacao,
     relatorio_economia,
     revogar_escolha_cotacao,
+    excluir_categoria,
+    excluir_item_consumo,
     salvar_categoria,
     salvar_fonte,
     salvar_fornecedor,
@@ -228,6 +233,7 @@ class NomeCadastroIn(BaseModel):
 
 class CategoriaIn(NomeCadastroIn):
     segmento: Optional[str] = "consumo"
+    depreciacao_anual_percentual: Optional[float] = None
 
 
 class FonteIn(NomeCadastroIn):
@@ -467,7 +473,20 @@ async def put_categoria(
         "nome": row.nome,
         "segmento": getattr(row, "segmento", None) or "consumo",
         "ativo": row.ativo,
+        "depreciacao_anual_percentual": getattr(row, "depreciacao_anual_percentual", None),
     }
+
+
+@router.delete("/categorias/{categoria_id}")
+async def delete_categoria(
+    categoria_id: str,
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    await _ctx(db, usuario_atual)
+    await excluir_categoria(db, usuario_atual, categoria_id)
+    await db.commit()
+    return {"ok": True}
 
 
 class ItemConsumoIn(BaseModel):
@@ -544,6 +563,18 @@ async def put_item_consumo(
     await db.commit()
     await db.refresh(row)
     return await _resposta_item_consumo(db, usuario_atual, row)
+
+
+@router.delete("/itens-consumo/{item_id}")
+async def delete_item_consumo(
+    item_id: str,
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    await _ctx(db, usuario_atual)
+    await excluir_item_consumo(db, usuario_atual, item_id)
+    await db.commit()
+    return {"ok": True}
 
 
 @router.post("/itens-consumo/importar")
@@ -1201,6 +1232,11 @@ async def post_nota_fiscal(
     data_emissao: Optional[str] = Form(default=None),
     valor_reais: Optional[str] = Form(default=None),
     observacao: Optional[str] = Form(default=None),
+    carimbo_pagina: Optional[int] = Form(default=0),
+    carimbo_x: Optional[float] = Form(default=None),
+    carimbo_y: Optional[float] = Form(default=None),
+    carimbo_w: Optional[float] = Form(default=None),
+    carimbo_h: Optional[float] = Form(default=None),
     arquivo: Optional[UploadFile] = File(default=None),
     db: AsyncSession = Depends(get_db),
     usuario_atual: dict = Depends(get_usuario_logado),
@@ -1217,8 +1253,27 @@ async def post_nota_fiscal(
         "data_emissao": data_emissao,
         "valor_reais": valor_reais,
         "observacao": observacao,
+        "carimbo_pagina": carimbo_pagina,
+        "carimbo_x": carimbo_x,
+        "carimbo_y": carimbo_y,
+        "carimbo_w": carimbo_w,
+        "carimbo_h": carimbo_h,
     }
     await registrar_nota_fiscal(db, usuario_atual, pedido, file=arquivo, conteudo_xml=None, payload=payload)
+    await db.commit()
+    return await serializar_pedido(db, pedido, incluir_detalhe=True, usuario=usuario_atual)
+
+
+@router.post("/pedidos/{pedido_id}/notas-fiscais/{nota_id}/remover")
+async def post_remover_nota_fiscal(
+    pedido_id: str,
+    nota_id: str,
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    await _ctx(db, usuario_atual)
+    pedido = await obter_pedido(db, usuario_atual, pedido_id)
+    await remover_nota_fiscal(db, usuario_atual, pedido, nota_id)
     await db.commit()
     return await serializar_pedido(db, pedido, incluir_detalhe=True, usuario=usuario_atual)
 
@@ -1340,6 +1395,37 @@ async def put_patrimonio(
     await db.commit()
     await db.refresh(row)
     return await _resposta_patrimonio(db, usuario_atual, row)
+
+
+@router.post("/patrimonio/{item_id}/anexos")
+async def post_patrimonio_anexo(
+    item_id: str,
+    arquivo: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    await _ctx(db, usuario_atual)
+    await anexar_arquivo_patrimonio(db, usuario_atual, item_id, arquivo)
+    await db.commit()
+    itens = await listar_patrimonio(db, usuario_atual)
+    return {"itens": itens}
+
+
+@router.get("/patrimonio/{item_id}/anexos/{anexo_id}/arquivo")
+async def get_patrimonio_anexo(
+    item_id: str,
+    anexo_id: str,
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    await _ctx(db, usuario_atual)
+    anexo = await obter_anexo_patrimonio(db, usuario_atual, item_id, anexo_id)
+    conteudo, content_type = ler_bytes_anexo(anexo.caminho_arquivo)
+    return Response(
+        content=conteudo,
+        media_type=content_type or anexo.content_type or "application/octet-stream",
+        headers={"Content-Disposition": f'inline; filename="{anexo.nome_arquivo}"'},
+    )
 
 
 @router.get("/economia")

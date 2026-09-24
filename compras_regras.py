@@ -64,6 +64,8 @@ TIPO_ANEXO_NF_XML = "nf_xml"
 TIPO_ANEXO_NF_PDF = "nf_pdf"
 TIPO_ANEXO_RESPOSTA_FORNECEDOR = "resposta_fornecedor"
 TIPO_ANEXO_ORCAMENTO_ASSINADO = "orcamento_assinado"
+TIPO_ANEXO_ESPELHO = "espelho_compra"
+TIPO_ANEXO_AQUISICAO = "aquisicao_bem"
 
 TIPOS_ANEXO_PEDIDO = {
     TIPO_ANEXO_ORCAMENTO,
@@ -72,6 +74,8 @@ TIPOS_ANEXO_PEDIDO = {
     TIPO_ANEXO_NF_PDF,
     TIPO_ANEXO_RESPOSTA_FORNECEDOR,
     TIPO_ANEXO_ORCAMENTO_ASSINADO,
+    TIPO_ANEXO_ESPELHO,
+    TIPO_ANEXO_AQUISICAO,
 }
 
 TIPO_EVENTO_PARECER = "parecer"
@@ -208,8 +212,7 @@ CATEGORIAS_PADRAO = (
     "Carne",
     "Peixe",
     "Hortifruti",
-    "Higiene e limpeza",
-    "Higiene pessoal",
+    "Higiene",
     "EPI",
     "Pedagógico",
     "Escritório",
@@ -326,11 +329,11 @@ def rotulo_competencia_orcamento(valor: Optional[str]) -> str:
 
 FONTES_PADRAO = (
     "Convênio",
-    "Emenda parlamentar",
     "Custo indireto",
-    "Recurso próprio",
-    "Doação",
-    "Outros",
+)
+FONTES_TIPOS_PEDIDO = (
+    "convenio",
+    "custo_indireto",
 )
 
 FONTE_TIPO_CONVENIO = "convenio"
@@ -875,11 +878,31 @@ def tipo_eh_cotacao_sede(tipo: Optional[str]) -> bool:
     return (tipo or "").strip().lower() in TIPOS_COTACAO_SEDE
 
 
+def sede_exige_aprovacao_previa_unidade(
+    tipo: Optional[str],
+    *,
+    escopo_sede: bool,
+    aprovado_unidade: bool,
+) -> bool:
+    """Cotação da Sede (consumo/hortifruti/manutenção) não passa pela unidade."""
+    if escopo_sede or aprovado_unidade:
+        return False
+    if tipo_eh_cotacao_sede(tipo):
+        return False
+    return True
+
+
 def tipo_exige_janela(tipo: Optional[str]) -> bool:
     return (tipo or "").strip().lower() == TIPO_CONSUMO
 
 
 def tipo_pula_aprovacao_sede(tipo: Optional[str]) -> bool:
+    # Hortifruti não pula a Sede: Suprimentos aprova e envia o pedido de compra.
+    return False
+
+
+def tipo_suprimentos_aprova_e_envia(tipo: Optional[str]) -> bool:
+    """Projeto só monta o pedido; Suprimentos aprova e envia ao fornecedor."""
     return (tipo or "").strip().lower() == TIPO_HORTIFRUTI
 
 

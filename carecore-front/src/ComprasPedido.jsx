@@ -3,11 +3,12 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { FileText, Mail, Search, ShoppingCart } from 'lucide-react';
 
 import ComprasItemTypeahead from './components/ComprasItemTypeahead';
+import ModalFormItemConsumo from './components/ModalFormItemConsumo';
 import ModalPosicionarAssinaturaOrcamento from './components/ModalPosicionarAssinaturaOrcamento';
+import ModalPosicionarTextoNf from './components/ModalPosicionarTextoNf';
 import ModalRevisarEmailCompras from './components/ModalRevisarEmailCompras';
 import ModalVisualizarAnexoCompras from './components/ModalVisualizarAnexoCompras';
 import Sidebar from './Sidebar';
-import { CampoSelect, CampoTexto } from './components/UsuariosCampos';
 import {
   AppShell,
   MainShell,
@@ -43,6 +44,7 @@ import {
   comprasReceber,
   comprasReabrir,
   comprasRegistrarNotaFiscal,
+  comprasRemoverNotaFiscal,
   comprasRemoverAnexo,
   comprasRascunhoEmail,
   comprasRevogarEscolhaCotacao,
@@ -56,7 +58,6 @@ import {
 import { usuarioEhAdmCompras, usuarioEhAdmPedidos, usuarioEhManutencao, usuarioPodeEnviarEmailCompras } from './utils/rbacUtils';
 import { formatarDataBr } from './utils/comprasJanelaUtils';
 import { formatarDataHoraBr } from './utils/dataBrasilUtils';
-import { rotuloCategoria } from './utils/comprasCategoriaUtils';
 import { itemConsumoPeloDetalheErro, pedidoItemUnidadeConfusa, sugerirItensConsumo, unidadeParaPedido } from './utils/comprasItensConsumoUtils';
 import { centavosParaInput, reaisParaCentavos } from './utils/comprasPatrimonioUtils';
 import {
@@ -70,14 +71,19 @@ import {
   fornecedorSemCategoria,
   fornecedoresParaCotacaoPedido,
   itensConsumoDoSplitPedido,
+  SEGMENTO_SERVICO,
+  TIPO_SERVICO,
+  competenciaPadraoDoSegmento,
   rotuloSegmentoCatalogo,
   rotuloTipoPedido,
+  segmentoDoTipoPedido,
   segmentoFornecedorDoTipoPedido,
   sugerirFornecedoresBusca,
   tipoEhCotacaoProjeto,
   tipoEhCotacaoSede,
   tipoExigeJanela,
   tipoPulaAprovacaoSede,
+  tipoSuprimentosAprovaEEnvia,
 } from './utils/comprasPedidoTipos';
 
 const ROTULO_EVENTO = {
@@ -145,12 +151,13 @@ export default function ComprasPedido() {
   const [erro, setErro] = useState('');
   const [ok, setOk] = useState('');
   const [item, setItem] = useState(ITEM_VAZIO);
+  const [modalNovoItem, setModalNovoItem] = useState(null);
   const [cadastrarNoCatalogo, setCadastrarNoCatalogo] = useState(true);
   const [edicaoLinha, setEdicaoLinha] = useState({});
   const [perguntaCadastro, setPerguntaCadastro] = useState(null);
   const [desfazerItens, setDesfazerItens] = useState(null);
   const [cotacao, setCotacao] = useState({ fornecedor_id: '', valor_reais: '', fornecedor_nome: '' });
-  const [arqCotacao, setArqCotacao] = useState(null);
+  const [arqsCotacao, setArqsCotacao] = useState([]);
   const [fornecedoresCotacaoIds, setFornecedoresCotacaoIds] = useState([]);
   const [buscaFornecedorCotacao, setBuscaFornecedorCotacao] = useState('');
   const [buscaFornecedorLancamento, setBuscaFornecedorLancamento] = useState('');
@@ -159,6 +166,8 @@ export default function ComprasPedido() {
     tipo_nf: 'produto', numero: '', serie: '', valor_reais: '', observacao: '',
   });
   const [arqNf, setArqNf] = useState(null);
+  const [modalTextoNf, setModalTextoNf] = useState(false);
+  const [carimboNf, setCarimboNf] = useState(null);
   const [modalAssinatura, setModalAssinatura] = useState(null);
   const [modalEmail, setModalEmail] = useState(null);
   const [rascunhoEmail, setRascunhoEmail] = useState({
@@ -197,6 +206,15 @@ export default function ComprasPedido() {
 
   useEffect(() => {
     carregar();
+  }, [carregar]);
+
+  useEffect(() => {
+    const aoAtualizarCatalogo = (evento) => {
+      if (evento.key !== 'compras-catalogo-atualizado') return;
+      carregar();
+    };
+    window.addEventListener('storage', aoAtualizarCatalogo);
+    return () => window.removeEventListener('storage', aoAtualizarCatalogo);
   }, [carregar]);
 
   // Autocheque leve a cada 30s (status/anexos/timeline) sem recarregar catálogos.
@@ -264,7 +282,8 @@ export default function ComprasPedido() {
   const ehRascunho = pedido.status === 'rascunho';
   const podeEditarItens = Boolean(pedido.pode_editar_itens);
   const cotacaoProjeto = tipoEhCotacaoProjeto(pedido.tipo);
-  const cotacaoSede = tipoEhCotacaoSede(pedido.tipo);
+  const hortifrutiDireto = tipoSuprimentosAprovaEEnvia(pedido.tipo);
+  const cotacaoSede = tipoEhCotacaoSede(pedido.tipo) && !hortifrutiDireto;
   // Após envio ao fornecedor (ou encerrado), orçamentos ficam só leitura.
   const orcamentosTravados = ['enviado_fornecedor', 'recebido', 'cancelado', 'reprovado'].includes(pedido.status);
   const podeRemoverOrcamento = !orcamentosTravados && (
@@ -419,7 +438,6 @@ export default function ComprasPedido() {
   const itemAvulso = Boolean(item.descricao.trim()) && !item.catalogo_item_id;
   const itensBuscaPedido = itensConsumoDoSplitPedido(itensConsumo, pedido);
   const sugestoesItem = sugerirItensConsumo(itensBuscaPedido, item.descricao);
-  const semCadastro = itemAvulso && sugestoesItem.length === 0;
   const rotuloSplit = pedido.categoria_split_nome || '';
   const buscaRestritaCategoria = Boolean(pedido.grupo_split_id && rotuloSplit);
 
@@ -545,6 +563,11 @@ export default function ComprasPedido() {
     evento.preventDefault();
     const descricao = item.descricao.trim();
     if (!descricao) return;
+    if (!item.catalogo_item_id) {
+      setErro('Este item não está no catálogo. Cadastre-o na lista de itens e volte a este pedido — o que já foi digitado continua aqui.');
+      setOk('');
+      return;
+    }
 
     let catalogo = {
       catalogo_item_id: item.catalogo_item_id || null,
@@ -857,6 +880,7 @@ export default function ComprasPedido() {
                           : 'Digite o item — os resultados aparecem na hora'
                       }
                       onChange={(valor) => setItem((a) => ({ ...a, descricao: valor, catalogo_item_id: '' }))}
+                      onCadastrar={(texto) => setModalNovoItem({ descricao: texto })}
                       onEscolher={(escolhido) => setItem((a) => (escolhido ? {
                         ...a,
                         catalogo_item_id: escolhido.id,
@@ -899,53 +923,16 @@ export default function ComprasPedido() {
                       Neste pedido: {item.quantidade || 1} {item.unidade_medida || 'un'} de {item.descricao}
                       {item.embalagem ? ` (cada volume: ${item.embalagem})` : ''}.
                     </p>
-                  ) : semCadastro && podeCadastrarMestre ? (
-                    <div className="md:col-span-8 space-y-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-3">
-                      <label className="flex items-start gap-2 text-sm text-amber-950">
-                        <input
-                          type="checkbox"
-                          className="mt-0.5"
-                          checked={cadastrarNoCatalogo}
-                          onChange={(e) => setCadastrarNoCatalogo(e.target.checked)}
-                        />
-                        <span>
-                          Este item ainda não está no cadastro. Cadastrar agora para aparecer na busca dos próximos pedidos.
-                        </span>
-                      </label>
-                      {cadastrarNoCatalogo ? (
-                        <>
-                          <div className="grid gap-2 md:grid-cols-2">
-                            <CampoSelect
-                              label="Categoria"
-                              value={item.categoria_id}
-                              onChange={(valor) => setItem((a) => ({ ...a, categoria_id: valor }))}
-                              options={categorias.map((cat) => ({ value: cat.id, label: rotuloCategoria(cat) }))}
-                              placeholder="Selecione a existente"
-                              required
-                            />
-                            <CampoTexto
-                              label="Embalagem"
-                              value={item.embalagem}
-                              onChange={(valor) => setItem((a) => ({ ...a, embalagem: valor }))}
-                              placeholder="500 g, PCT 2 kg…"
-                            />
-                            <CampoTexto
-                              label="Marca preferencial"
-                              value={item.marca_preferencial}
-                              onChange={(valor) => setItem((a) => ({ ...a, marca_preferencial: valor }))}
-                              className="md:col-span-2"
-                            />
-                          </div>
-                          <p className="text-xs text-amber-900">
-                            Quantidade = quantos volumes neste pedido. Unidade = como se conta (un, pct).
-                            Embalagem = o tamanho de cada volume (ex.: 500 g). Pacote de 500 g não é “1 kg”.
-                          </p>
-                        </>
-                      ) : (
-                        <p className="text-xs text-amber-900">
-                          Sem cadastro, o texto fica avulso só neste pedido.
-                        </p>
-                      )}
+                  ) : itemAvulso ? (
+                    <div className="md:col-span-8 rounded-xl border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-950">
+                      <p>Este item não está no catálogo. Cadastre-o aqui — o pedido continua aberto.</p>
+                      <button
+                        type="button"
+                        className="mt-2 text-sm font-semibold text-sky-800 underline"
+                        onClick={() => setModalNovoItem({ descricao: item.descricao.trim() })}
+                      >
+                        Cadastrar este item
+                      </button>
                     </div>
                   ) : itemAvulso && sugestoesItem.length > 0 ? (
                     <p className="md:col-span-8 text-xs text-slate-500">
@@ -1267,9 +1254,13 @@ export default function ComprasPedido() {
               )}
               {sede && cotacaoSede ? (
                 <p className="mb-2 text-xs text-slate-500">
-                  Registre o valor e o PDF devolvido pelo fornecedor (não é o e-mail de pedido de cotação).
+                  Registre o valor e os PDFs devolvidos. Pode anexar quantos arquivos forem, do mesmo fornecedor ou de vários, neste pedido.
                 </p>
-              ) : null}
+              ) : (
+                <p className="mb-2 text-xs text-slate-500">
+                  Pode anexar quantos orçamentos forem, de um ou de todos os fornecedores.
+                </p>
+              )}
               <ul className="mb-3 space-y-2 text-sm">
                 {(pedido.cotacoes || []).map((c) => (
                   <li key={c.id} className="rounded-xl border border-slate-100 px-3 py-2">
@@ -1358,20 +1349,25 @@ export default function ComprasPedido() {
                       ))}
                       {!terminal && podeRemoverOrcamento && (sede || cotacaoProjeto) && (
                         <label className="inline-flex cursor-pointer text-xs font-semibold text-slate-600">
-                          + Anexar PDF
+                          + Anexar PDFs
                           <input
                             type="file"
                             accept=".pdf,.jpg,.jpeg,.png,.webp"
+                            multiple
                             className="hidden"
                             onChange={async (e) => {
-                              const file = e.target.files?.[0];
-                              if (!file) return;
-                              const fd = new FormData();
-                              fd.append('tipo', 'orcamento');
-                              fd.append('cotacao_id', c.id);
-                              fd.append('arquivo', file);
-                              await agir(() => comprasAnexarArquivo(pedido.id, fd), 'Orçamento anexado.');
+                              const files = Array.from(e.target.files || []);
                               e.target.value = '';
+                              if (!files.length) return;
+                              await agir(async () => {
+                                for (const file of files) {
+                                  const fd = new FormData();
+                                  fd.append('tipo', 'orcamento');
+                                  fd.append('cotacao_id', c.id);
+                                  fd.append('arquivo', file);
+                                  await comprasAnexarArquivo(pedido.id, fd);
+                                }
+                              }, files.length === 1 ? 'Orçamento anexado.' : `${files.length} orçamentos anexados.`);
                             }}
                           />
                         </label>
@@ -1397,21 +1393,23 @@ export default function ComprasPedido() {
                         fornecedor_nome: cotacao.fornecedor_nome || null,
                         valor_centavos: centavos,
                       });
-                      // Não usar slice(-1): cotacoes vêm ordenadas por valor, não por criação.
                       const novaId = dados.cotacao_criada_id
                         || (dados.cotacoes || []).find((c) => !idsAntes.has(c.id))?.id;
-                      if (arqCotacao && novaId) {
+                      if (arqsCotacao.length && !novaId) {
+                        throw new Error('Orçamento registrado, mas não foi possível vincular os arquivos ao fornecedor.');
+                      }
+                      for (const file of arqsCotacao) {
                         const fd = new FormData();
                         fd.append('tipo', 'orcamento');
                         fd.append('cotacao_id', novaId);
-                        fd.append('arquivo', arqCotacao);
+                        fd.append('arquivo', file);
                         await comprasAnexarArquivo(pedido.id, fd);
-                      } else if (arqCotacao && !novaId) {
-                        throw new Error('Orçamento registrado, mas não foi possível vincular o PDF ao fornecedor.');
                       }
-                    }, 'Orçamento registrado.');
+                    }, arqsCotacao.length > 1
+                      ? `Orçamento registrado com ${arqsCotacao.length} arquivos.`
+                      : 'Orçamento registrado.');
                     setCotacao({ fornecedor_id: '', valor_reais: '', fornecedor_nome: '' });
-                    setArqCotacao(null);
+                    setArqsCotacao([]);
                   }}
                 >
                   <input
@@ -1467,7 +1465,8 @@ export default function ComprasPedido() {
                   <input
                     type="file"
                     accept=".pdf,.jpg,.jpeg,.png,.webp"
-                    onChange={(e) => setArqCotacao(e.target.files?.[0] || null)}
+                    multiple
+                    onChange={(e) => setArqsCotacao(Array.from(e.target.files || []))}
                     className="text-xs"
                   />
                   <PremiumButton type="submit" className="md:col-span-5 md:max-w-xs">
@@ -1749,6 +1748,18 @@ export default function ComprasPedido() {
                               <FileText size={14} />
                               Baixar NF
                             </button>
+                            {podeEncerrar ? (
+                              <button
+                                type="button"
+                                className="inline-flex items-center rounded-lg border border-rose-200 px-3 py-2 text-xs font-bold text-rose-700"
+                                onClick={() => {
+                                  if (!window.confirm('Excluir esta NF para anexar outra com o texto novo?')) return;
+                                  agir(() => comprasRemoverNotaFiscal(pedido.id, nf.id), 'Nota fiscal removida.');
+                                }}
+                              >
+                                Excluir arquivo
+                              </button>
+                            ) : null}
                           </div>
                         ) : nf.anexo_id ? (
                           <button
@@ -1771,6 +1782,28 @@ export default function ComprasPedido() {
                   })}
                 </ul>
               </div>
+            )}
+
+            {hortifrutiDireto && sede && pedido.status === 'enviado_fornecedor' && (
+              <SectionCard title="Espelho da compra">
+                <p className="mb-3 text-xs text-slate-500">
+                  Anexe o espelho enviado pelo fornecedor. O projeto só volta para incluir a nota fiscal e encerrar.
+                </p>
+                <input
+                  type="file"
+                  accept=".pdf,.jpg,.jpeg,.png"
+                  className="text-xs"
+                  onChange={async (e) => {
+                    const arquivo = e.target.files?.[0];
+                    e.target.value = '';
+                    if (!arquivo) return;
+                    const fd = new FormData();
+                    fd.append('tipo', 'espelho_compra');
+                    fd.append('arquivo', arquivo);
+                    await agir(() => comprasAnexarArquivo(pedido.id, fd), 'Espelho da compra anexado.');
+                  }}
+                />
+              </SectionCard>
             )}
 
             {podeEncerrar && (
@@ -1799,10 +1832,18 @@ export default function ComprasPedido() {
                       }
                       fd.append('valor_reais', String(centavos / 100));
                     }
+                    if (carimboNf) {
+                      fd.append('carimbo_pagina', String(carimboNf.page ?? 0));
+                      fd.append('carimbo_x', String(carimboNf.x));
+                      fd.append('carimbo_y', String(carimboNf.y));
+                      fd.append('carimbo_w', String(carimboNf.width));
+                      fd.append('carimbo_h', String(carimboNf.height));
+                    }
                     fd.append('arquivo', arqNf);
                     await agir(() => comprasRegistrarNotaFiscal(pedido.id, fd), 'Nota fiscal registrada.');
                     setNfForm({ tipo_nf: 'produto', numero: '', serie: '', valor_reais: '', observacao: '' });
                     setArqNf(null);
+                    setCarimboNf(null);
                   }}
                 >
                   <select
@@ -1826,14 +1867,107 @@ export default function ComprasPedido() {
                     placeholder="Valor R$ (manual se PDF)"
                     className="rounded-xl border border-slate-200 px-3 py-2 text-sm"
                   />
+                  <label className="md:col-span-3 text-xs font-semibold text-slate-600">
+                    Insira as informações complementares de pagamento para a impressão da NF
+                    <textarea
+                      value={nfForm.observacao}
+                      readOnly={(pedido.notas_fiscais || []).some((nf) => nf.anexo_id)}
+                      onClick={() => {
+                        if ((pedido.notas_fiscais || []).some((nf) => nf.anexo_id)) {
+                          window.alert(
+                            'Para alterar o texto, exclua o arquivo anexado, importe um novo arquivo e escreva a observação de novo.',
+                          );
+                        }
+                      }}
+                      onChange={(e) => setNfForm((a) => ({ ...a, observacao: e.target.value }))}
+                      rows={2}
+                      className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm font-normal"
+                    />
+                  </label>
                   <input
                     type="file"
-                    accept=".pdf,.xml,.jpg,.jpeg,.png"
-                    onChange={(e) => setArqNf(e.target.files?.[0] || null)}
+                    accept=".pdf,.xml,.jpg,.jpeg,.png,application/pdf"
+                    onChange={(e) => {
+                      const arquivo = e.target.files?.[0] || null;
+                      const ehPdf = arquivo && (/\.pdf$/i.test(arquivo.name) || arquivo.type === 'application/pdf');
+                      if (ehPdf) {
+                        if (!(nfForm.observacao || '').trim()) {
+                          e.target.value = '';
+                          setArqNf(null);
+                          setCarimboNf(null);
+                          window.alert('Escreva as informações complementares de pagamento antes de escolher o arquivo da NF.');
+                          return;
+                        }
+                        setErro('');
+                        setArqNf(arquivo);
+                        setModalTextoNf(true);
+                        return;
+                      }
+                      setArqNf(arquivo);
+                      setCarimboNf(null);
+                    }}
                     className="text-xs md:col-span-2"
                   />
+                  {arqNf ? (
+                    <p className="text-xs text-slate-600 md:col-span-3">
+                      Arquivo escolhido: {arqNf.name}
+                      {carimboNf ? ' · texto posicionado' : ''}
+                    </p>
+                  ) : null}
                   <PremiumButton type="submit">Anexar NF</PremiumButton>
                 </form>
+                {pedido.tipo === 'imobilizado' ? (
+                  <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
+                    <p className="text-xs font-semibold text-slate-700">
+                      Arquivos da aquisição do bem
+                    </p>
+                    <p className="mt-1 text-xs text-slate-500">
+                      Anexe quantos arquivos forem necessários, junto da nota. Ao encerrar, eles passam a fazer parte do bem.
+                    </p>
+                    <input
+                      type="file"
+                      multiple
+                      className="mt-2 block text-xs"
+                      onChange={async (e) => {
+                        const arquivos = Array.from(e.target.files || []);
+                        e.target.value = '';
+                        for (const arquivo of arquivos) {
+                          const fd = new FormData();
+                          fd.append('tipo', 'aquisicao_bem');
+                          fd.append('arquivo', arquivo);
+                          await agir(() => comprasAnexarArquivo(pedido.id, fd), 'Arquivo da aquisição anexado.');
+                        }
+                      }}
+                    />
+                    <ul className="mt-2 space-y-1">
+                      {(pedido.anexos || []).filter((a) => a.tipo === 'aquisicao_bem').map((anexo) => (
+                        <li key={anexo.id} className="flex items-center justify-between gap-2 text-xs">
+                          <span className="truncate">{anexo.nome_arquivo}</span>
+                          <span className="flex shrink-0 gap-3">
+                            <button
+                              type="button"
+                              className="font-semibold text-sky-800 underline"
+                              onClick={() => comprasBaixarAnexo(pedido.id, anexo.id, anexo.nome_arquivo)
+                                .catch(() => setErro('Não foi possível baixar o arquivo.'))}
+                            >
+                              Baixar
+                            </button>
+                            <button
+                              type="button"
+                              className="font-semibold text-rose-700 underline"
+                              onClick={() => {
+                                if (!window.confirm(`Excluir "${anexo.nome_arquivo}"?`)) return;
+                                agir(() => comprasRemoverAnexo(pedido.id, anexo.id), 'Arquivo da aquisição excluído.');
+                              }}
+                            >
+                              Excluir
+                            </button>
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
                 <div className="mt-4">
                   <PremiumButton
                     onClick={() => agir(
@@ -1910,7 +2044,20 @@ export default function ComprasPedido() {
                     Aprovar na unidade
                   </PremiumButton>
                 )}
-                {pedido.status === 'aguardando_aprovacao_sede' && sede && !pulaAprovacaoSede && (
+                {hortifrutiDireto && pedido.status === 'aguardando_aprovacao_sede' && sede && (
+                  <PremiumButton
+                    onClick={async () => {
+                      const ok = await agir(
+                        () => comprasAprovarSede(pedido.id),
+                        'Suprimentos aprovou. Envie o pedido de compra ao fornecedor.',
+                      );
+                      if (ok) abrirModalEmail('pedido_compra');
+                    }}
+                  >
+                    Aprovar e enviar ao fornecedor
+                  </PremiumButton>
+                )}
+                {pedido.status === 'aguardando_aprovacao_sede' && sede && !pulaAprovacaoSede && !hortifrutiDireto && (
                   cotacaoProjeto ? (
                     <PremiumButton
                       onClick={() => {
@@ -2027,6 +2174,21 @@ export default function ComprasPedido() {
         onCancelar={fecharModalEmail}
         onConfirmar={confirmarEnvioEmail}
       />
+      <ModalPosicionarTextoNf
+        aberto={modalTextoNf}
+        arquivo={arqNf}
+        texto={nfForm.observacao}
+        onFechar={() => {
+          setModalTextoNf(false);
+          setArqNf(null);
+          setCarimboNf(null);
+        }}
+        onConfirmar={(posicao) => {
+          setCarimboNf(posicao);
+          setModalTextoNf(false);
+          setOk('Texto posicionado. Clique em Anexar NF para gravar no arquivo.');
+        }}
+      />
       <ModalPosicionarAssinaturaOrcamento
         aberto={Boolean(modalAssinatura)}
         pedidoId={modalAssinatura?.pedidoId}
@@ -2043,6 +2205,34 @@ export default function ComprasPedido() {
             throw new Error('Não foi possível assinar o orçamento.');
           }
           setModalAssinatura(null);
+        }}
+      />
+      <ModalFormItemConsumo
+        aberto={Boolean(modalNovoItem)}
+        descricaoInicial={modalNovoItem?.descricao || ''}
+        competenciaInicial={competenciaPadraoDoSegmento(
+          pedido?.tipo === TIPO_SERVICO ? SEGMENTO_SERVICO : segmentoDoTipoPedido(pedido?.tipo),
+        )}
+        categorias={categorias}
+        itens={itensConsumo}
+        onFechar={() => setModalNovoItem(null)}
+        onSalvo={async (criado) => {
+          const lista = await comprasItensConsumo({ ativos: true });
+          setItensConsumo(Array.isArray(lista) ? lista : []);
+          if (criado?.id) {
+            setItem((atual) => ({
+              ...atual,
+              catalogo_item_id: criado.id,
+              descricao: criado.descricao || atual.descricao,
+              unidade_medida: unidadeParaPedido(criado) || atual.unidade_medida,
+              embalagem: criado.embalagem || '',
+              marca_preferencial: criado.marca_preferencial || '',
+              categoria_id: criado.categoria_id || '',
+            }));
+          }
+          setModalNovoItem(null);
+          setErro('');
+          setOk('Item cadastrado. Ele já está nesta linha — confirme com Incluir item.');
         }}
       />
       <ModalVisualizarAnexoCompras

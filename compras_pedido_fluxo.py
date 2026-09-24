@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from compras_itens_consumo_utils import embalagem_efetiva_pedido
 from compras_nf_xml_utils import extrair_campos_nf_xml
-from compras_assinatura_pdf import carimbar_assinatura_pdf
+from compras_assinatura_pdf import carimbar_assinatura_pdf, carimbar_texto_pdf
 from compras_emails import (
     corpo_padrao_pedido_compra,
     corpo_padrao_solicitacao_cotacao,
@@ -30,7 +30,10 @@ from compras_pedido_pdf import (
 from compras_regras import (
     ESCOPO_PROJETO,
     MIN_COTACOES_RECOMENDADAS,
+    FONTE_TIPO_CONVENIO,
     PATRIMONIO_ORIGEM_COMPRA,
+    PATRIMONIO_PROPRIEDADE_AEB,
+    PATRIMONIO_PROPRIEDADE_PUBLICO,
     PATRIMONIO_SITUACAO_BOM,
     STATUS_AGUARDANDO_COTACAO,
     STATUS_AGUARDANDO_ESCOLHA,
@@ -46,6 +49,7 @@ from compras_regras import (
     STATUS_RASCUNHO,
     STATUS_TERMINAIS_PEDIDO,
     TIPO_CONSUMO,
+    TIPO_ANEXO_AQUISICAO,
     TIPO_ANEXO_NF_PDF,
     TIPO_ANEXO_NF_XML,
     TIPO_ANEXO_ORCAMENTO,
@@ -84,7 +88,9 @@ from email_utils import enviar_email_smtp_com_anexo
 from models import (
     ComprasCotacaoDB,
     ComprasFornecedorDB,
+    ComprasFonteRecursoDB,
     ComprasItemConsumoDB,
+    ComprasPatrimonioAnexoDB,
     ComprasPatrimonioDB,
     ComprasPedidoAnexoDB,
     ComprasPedidoDB,
@@ -1573,6 +1579,20 @@ async def registrar_nota_fiscal(
         raw = await file.read()
         if not raw:
             raise HTTPException(status_code=400, detail="Arquivo da NF está vazio.")
+        texto_nf = (campos.get("observacao") or "").strip()
+        if texto_nf and ext == ".pdf":
+            try:
+                raw = carimbar_texto_pdf(
+                    pdf_bytes=raw,
+                    texto=texto_nf,
+                    page_index=int(payload.get("carimbo_pagina") or 0),
+                    x=float(payload.get("carimbo_x") or 36),
+                    y=float(payload.get("carimbo_y") or 36),
+                    width=float(payload.get("carimbo_w") or 240),
+                    height=float(payload.get("carimbo_h") or 48),
+                )
+            except (TypeError, ValueError) as exc:
+                raise HTTPException(status_code=400, detail=str(exc) or "Não foi possível gravar o texto na NF.") from exc
         if ext == ".xml":
             tipo_anexo = TIPO_ANEXO_NF_XML
             try:
@@ -1628,6 +1648,42 @@ async def registrar_nota_fiscal(
     )
     pedido.atualizado_em = agora_operacional_naive()
     return nota
+
+
+async def remover_nota_fiscal(
+    db: AsyncSession,
+    usuario: dict,
+    pedido: ComprasPedidoDB,
+    nota_id: str,
+) -> None:
+    if pedido.status != STATUS_ENVIADO:
+        raise HTTPException(status_code=400, detail="A NF só pode ser removida antes de encerrar o processo.")
+    nota = (
+        await db.execute(
+            select(ComprasPedidoNotaFiscalDB).where(
+                ComprasPedidoNotaFiscalDB.id == nota_id,
+                ComprasPedidoNotaFiscalDB.pedido_id == pedido.id,
+            )
+        )
+    ).scalar_one_or_none()
+    if not nota:
+        raise HTTPException(status_code=404, detail="Nota fiscal não encontrada.")
+    if nota.anexo_id:
+        anexo = (
+            await db.execute(
+                select(ComprasPedidoAnexoDB).where(ComprasPedidoAnexoDB.id == nota.anexo_id)
+            )
+        ).scalar_one_or_none()
+        if anexo:
+            anexo.ativo = False
+    await db.delete(nota)
+    await registrar_evento_pedido(
+        db,
+        pedido_id=pedido.id,
+        tipo=TIPO_EVENTO_ANEXO,
+        texto="Nota fiscal removida para nova inclusão.",
+        usuario_id=_uid(usuario),
+    )
 
 
 async def encerrar_pedido(
@@ -1686,25 +1742,60 @@ async def encerrar_pedido(
             escopo = getattr(pedido, "escopo_unidade", ESCOPO_PROJETO) or ESCOPO_PROJETO
             inst_id = None if pedido_escopo_sede(escopo) else pedido.instituicao_id
             agora = agora_operacional_naive()
-            for item in itens:
-                db.add(
-                    ComprasPatrimonioDB(
-                        organizacao_id=pedido.organizacao_id,
-                        instituicao_id=inst_id,
-                        pedido_id=pedido.id,
-                        pedido_item_id=item.id,
-                        descricao=item.descricao,
-                        documento_nf=doc_nf,
-                        valor_centavos=valor_item,
-                        origem=PATRIMONIO_ORIGEM_COMPRA,
-                        propriedade="aeb",
-                        situacao=PATRIMONIO_SITUACAO_BOM,
-                        escopo_unidade=escopo,
-                        data_aquisicao=data_operacional(),
-                        criado_em=agora,
-                        atualizado_em=agora,
+            propriedade = PATRIMONIO_PROPRIEDADE_AEB
+            if pedido.fonte_recurso_id:
+                fonte = (
+                    await db.execute(
+                        select(ComprasFonteRecursoDB).where(
+                            ComprasFonteRecursoDB.id == pedido.fonte_recurso_id
+                        )
                     )
+                ).scalar_one_or_none()
+                if fonte and (fonte.tipo or "") == FONTE_TIPO_CONVENIO:
+                    propriedade = PATRIMONIO_PROPRIEDADE_PUBLICO
+            for item in itens:
+                bem = ComprasPatrimonioDB(
+                    organizacao_id=pedido.organizacao_id,
+                    instituicao_id=inst_id,
+                    pedido_id=pedido.id,
+                    pedido_item_id=item.id,
+                    categoria_id=item.categoria_id,
+                    descricao=item.descricao,
+                    documento_nf=doc_nf,
+                    valor_centavos=valor_item,
+                    origem=PATRIMONIO_ORIGEM_COMPRA,
+                    propriedade=propriedade,
+                    situacao=PATRIMONIO_SITUACAO_BOM,
+                    escopo_unidade=escopo,
+                    data_aquisicao=data_operacional(),
+                    criado_em=agora,
+                    atualizado_em=agora,
                 )
+                db.add(bem)
+                await db.flush()
+                anexos_pedido = await _anexos_pedido(db, pedido.id)
+                ids_nf = {n.anexo_id for n in notas if n.anexo_id}
+                vistos = set()
+                for anexo_nf in anexos_pedido:
+                    if not anexo_nf.ativo:
+                        continue
+                    if anexo_nf.id not in ids_nf and anexo_nf.tipo != TIPO_ANEXO_AQUISICAO:
+                        continue
+                    chave = anexo_nf.caminho_arquivo or anexo_nf.id
+                    if chave in vistos:
+                        continue
+                    vistos.add(chave)
+                    db.add(
+                        ComprasPatrimonioAnexoDB(
+                            patrimonio_id=bem.id,
+                            nome_arquivo=anexo_nf.nome_arquivo,
+                            caminho_arquivo=anexo_nf.caminho_arquivo,
+                            content_type=anexo_nf.content_type,
+                            tamanho_bytes=anexo_nf.tamanho_bytes,
+                            ativo=True,
+                            criado_em=agora,
+                        )
+                    )
 
     await registrar_evento_pedido(
         db,
@@ -1727,6 +1818,36 @@ async def remover_anexo_pedido(
     """Remove (desativa) um anexo de orçamento — projeto ou Sede, antes do processo fechar."""
     if pedido.status in STATUS_TERMINAIS_PEDIDO:
         raise HTTPException(status_code=400, detail="Processo encerrado não permite remover anexos.")
+    anexo = (
+        await db.execute(
+            select(ComprasPedidoAnexoDB).where(
+                ComprasPedidoAnexoDB.id == anexo_id,
+                ComprasPedidoAnexoDB.pedido_id == pedido.id,
+                ComprasPedidoAnexoDB.ativo.is_(True),
+            )
+        )
+    ).scalar_one_or_none()
+    if not anexo:
+        raise HTTPException(status_code=404, detail="Anexo não encontrado.")
+    if anexo.tipo == TIPO_ANEXO_AQUISICAO:
+        if pedido.status != STATUS_ENVIADO:
+            raise HTTPException(
+                status_code=400,
+                detail="Os arquivos da aquisição só podem ser excluídos antes de encerrar o processo.",
+            )
+        anexo.ativo = False
+        remover_arquivo_compras(anexo.caminho_arquivo)
+        await registrar_evento_pedido(
+            db,
+            pedido_id=pedido.id,
+            tipo=TIPO_EVENTO_OBSERVACAO,
+            texto=f"Anexo removido ({anexo.tipo}: {anexo.nome_arquivo}).",
+            usuario_id=_uid(usuario),
+            cotacao_id=anexo.cotacao_id,
+            aguardando_confirmacao=False,
+        )
+        pedido.atualizado_em = agora_operacional_naive()
+        return
     sede = usuario_e_sede_compras(
         perfil=(usuario.get("perfil_acesso") or usuario.get("perfil") or ""),
         is_manutencao=bool(usuario.get("is_manutencao")),

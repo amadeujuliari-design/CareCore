@@ -55,6 +55,11 @@ export async function comprasCategorias() {
   return data?.itens || [];
 }
 
+export async function comprasExcluirCategoria(id) {
+  const { data } = await api.delete(`/api/compras/categorias/${id}`);
+  return data;
+}
+
 export async function comprasSalvarCategoria(payload, id) {
   const { data } = id
     ? await api.put(`/api/compras/categorias/${id}`, payload)
@@ -243,6 +248,11 @@ export async function comprasAnexarArquivo(id, formData) {
   return data;
 }
 
+export async function comprasRemoverNotaFiscal(pedidoId, notaId) {
+  const { data } = await api.post(`/api/compras/pedidos/${pedidoId}/notas-fiscais/${notaId}/remover`);
+  return data;
+}
+
 export async function comprasRegistrarNotaFiscal(id, formData) {
   const { data } = await api.post(`/api/compras/pedidos/${id}/notas-fiscais`, formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
@@ -372,6 +382,36 @@ export async function comprasPatrimonio() {
   return data?.itens || [];
 }
 
+export async function comprasAnexarPatrimonio(id, arquivo) {
+  const formData = new FormData();
+  formData.append('arquivo', arquivo);
+  const { data } = await api.post(`/api/compras/patrimonio/${id}/anexos`, formData);
+  return data;
+}
+
+export async function comprasBaixarAnexoPatrimonio(itemId, anexoId, nomeArquivo) {
+  const token = localStorage.getItem('@CareCore:token') || localStorage.getItem('token');
+  const resposta = await fetch(
+    `${api.defaults.baseURL}/api/compras/patrimonio/${itemId}/anexos/${anexoId}/arquivo`,
+    { headers: token ? { Authorization: `Bearer ${token}` } : {} },
+  );
+  if (!resposta.ok) throw new Error('Não foi possível abrir o arquivo.');
+  const buffer = await resposta.arrayBuffer();
+  const headerTipo = (resposta.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
+  const contentType = _inferirContentTypeAnexo(buffer, headerTipo);
+  const blob = new Blob([buffer], { type: contentType });
+  const nome = _nomeArquivoDownload(nomeArquivo, contentType, anexoId);
+  const link = document.createElement('a');
+  const objectUrl = URL.createObjectURL(blob);
+  link.href = objectUrl;
+  link.download = nome;
+  link.rel = 'noopener';
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(objectUrl), 1500);
+}
+
 export async function comprasSalvarPatrimonio(payload, id) {
   const { data } = id
     ? await api.put(`/api/compras/patrimonio/${id}`, payload)
@@ -382,6 +422,11 @@ export async function comprasSalvarPatrimonio(payload, id) {
 export async function comprasItensConsumo(params = {}) {
   const { data } = await api.get('/api/compras/itens-consumo', { params });
   return data?.itens || [];
+}
+
+export async function comprasExcluirItemConsumo(id) {
+  const { data } = await api.delete(`/api/compras/itens-consumo/${id}`);
+  return data;
 }
 
 export async function comprasSalvarItemConsumo(payload, id) {

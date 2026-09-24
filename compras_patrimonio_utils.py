@@ -306,3 +306,24 @@ def resolver_categoria_patrimonio_id(
             fallback_id = cid
     desejada = chave_categoria_patrimonio_por_descricao(descricao)
     return por_chave.get(desejada) or fallback_id
+
+
+def valor_atual_depreciado_centavos(
+    valor_centavos: Optional[int],
+    data_aquisicao: Optional[date],
+    percentual_anual: Optional[float],
+    *,
+    hoje: Optional[date] = None,
+) -> Optional[int]:
+    """Valor de aquisição menos a depreciação linear anual da categoria."""
+    if valor_centavos is None:
+        return None
+    if not percentual_anual or not data_aquisicao:
+        return int(valor_centavos)
+    referencia = hoje or date.today()
+    dias = (referencia - data_aquisicao).days
+    if dias <= 0:
+        return int(valor_centavos)
+    anos = dias / 365.25
+    fator = max(0.0, 1.0 - (float(percentual_anual) / 100.0) * anos)
+    return int(round(int(valor_centavos) * fator))

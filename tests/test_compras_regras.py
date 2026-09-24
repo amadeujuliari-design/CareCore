@@ -434,8 +434,22 @@ def test_hortifruti_segmento_e_fluxo():
     assert tipo_eh_cotacao_sede(TIPO_HORTIFRUTI)
     assert not tipo_eh_cotacao_projeto(TIPO_HORTIFRUTI)
     assert not tipo_exige_janela(TIPO_HORTIFRUTI)
-    assert tipo_pula_aprovacao_sede(TIPO_HORTIFRUTI)
+    assert not tipo_pula_aprovacao_sede(TIPO_HORTIFRUTI)
     assert not exige_tres_cotacoes(TIPO_HORTIFRUTI)
+
+
+def test_consumo_aguardando_sede_nao_exige_aprovacao_da_unidade():
+    from compras_regras import TIPO_CONSUMO, TIPO_IMOBILIZADO, sede_exige_aprovacao_previa_unidade
+
+    assert not sede_exige_aprovacao_previa_unidade(
+        TIPO_CONSUMO, escopo_sede=False, aprovado_unidade=False,
+    )
+    assert sede_exige_aprovacao_previa_unidade(
+        TIPO_IMOBILIZADO, escopo_sede=False, aprovado_unidade=False,
+    )
+    assert not sede_exige_aprovacao_previa_unidade(
+        TIPO_IMOBILIZADO, escopo_sede=False, aprovado_unidade=True,
+    )
 
 
 def test_infraestrutura_nao_envia_email_fornecedor():

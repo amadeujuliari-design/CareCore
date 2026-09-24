@@ -1,24 +1,21 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Eye, Pencil, Plus, RefreshCw, Search, X } from 'lucide-react';
+import { Eye, Pencil, Plus, RefreshCw, Search, Trash2, X } from 'lucide-react';
 
 import ModalFichaItemConsumo from './ModalFichaItemConsumo';
-import { CampoSelect, CampoTexto } from './UsuariosCampos';
+import ModalFormItemConsumo from './ModalFormItemConsumo';
 import { EmptyState, PremiumBadge, PremiumButton, ReportActionButton, SectionCard } from './PremiumUI';
-import { useFecharSoNoBackdrop } from '../hooks/useFecharSoNoBackdrop';
-import { comprasSalvarItemConsumo } from '../services/comprasService';
+import { comprasExcluirItemConsumo } from '../services/comprasService';
 import {
   exportarItensConsumo,
   imprimirItensConsumo,
 } from '../utils/comprasItensConsumoExportPrint';
-import { filtrarItensConsumo, digitarQuantidadeEmbalagem, sanitizarUnidadeMedida, UNIDADES_MEDIDA_ITEM } from '../utils/comprasItensConsumoUtils';
+import { filtrarItensConsumo } from '../utils/comprasItensConsumoUtils';
 import { rotuloCategoria } from '../utils/comprasCategoriaUtils';
 import {
-  COMPETENCIA_SEDE,
   COMPETENCIAS_ORCAMENTO,
   ROTULO_COMPETENCIA_ORCAMENTO,
   ROTULO_SEGMENTO_CATALOGO,
   SEGMENTOS_CATALOGO,
-  competenciaPadraoDoSegmento,
   rotuloCompetenciaOrcamento,
   rotuloSegmentoCatalogo,
 } from '../utils/comprasPedidoTipos';
@@ -27,22 +24,6 @@ import { obterMensagemErro } from '../utils/usuariosUtils';
 /** Página menor para caber melhor na tela e permitir navegar listas médias. */
 const ITENS_POR_PAGINA = 25;
 
-const ITEM_VAZIO = {
-  id: '',
-  descricao: '',
-  categoria_id: '',
-  competencia_orcamento: COMPETENCIA_SEDE,
-  unidade_medida: '',
-  embalagem: '',
-  marca_preferencial: '',
-  observacao: '',
-  sinonimos: '',
-  fator_embalagem: '',
-  perecivel: false,
-  equivalente_item_id: '',
-  ativo: true,
-};
-
 export default function ComprasItensConsumoCadastro({
   itens = [],
   categorias = [],
@@ -50,6 +31,7 @@ export default function ComprasItensConsumoCadastro({
   sede = false,
   onRecarregar,
   onMensagem,
+  abrirNovo = false,
 }) {
   const [busca, setBusca] = useState('');
   const [filtroCategoria, setFiltroCategoria] = useState('');
@@ -57,12 +39,14 @@ export default function ComprasItensConsumoCadastro({
   const [filtroCompetencia, setFiltroCompetencia] = useState('');
   const [filtroStatus, setFiltroStatus] = useState('ativo');
   const [pagina, setPagina] = useState(1);
-  const [form, setForm] = useState(ITEM_VAZIO);
+  const [itemEmEdicao, setItemEmEdicao] = useState(null);
   const [formAberto, setFormAberto] = useState(false);
   const [ficha, setFicha] = useState(null);
-  const [salvando, setSalvando] = useState(false);
   const tabelaTopoRef = useRef(null);
-  const { onMouseDownBackdrop, onClickBackdrop } = useFecharSoNoBackdrop(() => setFormAberto(false));
+
+  useEffect(() => {
+    if (abrirNovo && podeEditar) setFormAberto(true);
+  }, [abrirNovo, podeEditar]);
 
   const categoriasFiltradas = useMemo(() => {
     if (!filtroSegmento) return categorias;
@@ -128,57 +112,14 @@ export default function ComprasItensConsumoCadastro({
   const inicio = (paginaSegura - 1) * ITENS_POR_PAGINA;
   const paginaItens = listaFiltrada.slice(inicio, inicio + ITENS_POR_PAGINA);
 
-  const abrirNovo = () => {
-    setForm(ITEM_VAZIO);
+  const iniciarNovoItem = () => {
+    setItemEmEdicao(null);
     setFormAberto(true);
   };
 
   const editar = (item) => {
-    setForm({
-      id: item.id,
-      descricao: item.descricao || '',
-      categoria_id: item.categoria_id || '',
-      competencia_orcamento: item.competencia_orcamento || COMPETENCIA_SEDE,
-      unidade_medida: sanitizarUnidadeMedida(item.unidade_medida),
-      embalagem: item.embalagem || '',
-      marca_preferencial: item.marca_preferencial || '',
-      observacao: item.observacao || '',
-      sinonimos: item.sinonimos || '',
-      fator_embalagem: item.fator_embalagem != null ? String(item.fator_embalagem) : '',
-      perecivel: Boolean(item.perecivel),
-      equivalente_item_id: item.equivalente_item_id || '',
-      ativo: item.ativo !== false,
-    });
+    setItemEmEdicao(item);
     setFormAberto(true);
-  };
-
-  const salvar = async (evento) => {
-    evento.preventDefault();
-    if (!form.descricao.trim()) return;
-    setSalvando(true);
-    try {
-      await comprasSalvarItemConsumo({
-        descricao: form.descricao.trim(),
-        categoria_id: form.categoria_id || null,
-        competencia_orcamento: form.competencia_orcamento || COMPETENCIA_SEDE,
-        unidade_medida: sanitizarUnidadeMedida(form.unidade_medida) || null,
-        embalagem: form.embalagem.trim() || null,
-        marca_preferencial: form.marca_preferencial.trim() || null,
-        observacao: form.observacao.trim() || null,
-        sinonimos: form.sinonimos.trim() || null,
-        fator_embalagem: form.fator_embalagem === '' ? null : Number(String(form.fator_embalagem).replace(',', '.')),
-        perecivel: Boolean(form.perecivel),
-        equivalente_item_id: form.equivalente_item_id || null,
-        ativo: form.ativo,
-      }, form.id || undefined);
-      setFormAberto(false);
-      onMensagem?.({ ok: form.id ? 'Item atualizado.' : 'Item cadastrado.' });
-      await onRecarregar?.();
-    } catch (err) {
-      onMensagem?.({ erro: obterMensagemErro(err, 'Não foi possível salvar o item.') });
-    } finally {
-      setSalvando(false);
-    }
   };
 
   const exportar = async () => {
@@ -247,7 +188,7 @@ export default function ComprasItensConsumoCadastro({
               Imprimir
             </ReportActionButton>
             {podeEditar ? (
-              <PremiumButton type="button" onClick={abrirNovo}>
+              <PremiumButton type="button" onClick={iniciarNovoItem}>
                 <span className="inline-flex items-center gap-1.5">
                   <Plus size={16} />
                   Novo item
@@ -410,6 +351,26 @@ export default function ComprasItensConsumoCadastro({
                               <Pencil size={16} />
                             </button>
                           ) : null}
+                          {podeEditar ? (
+                            <button
+                              type="button"
+                              className="rounded-lg p-2 text-rose-600 hover:bg-rose-50"
+                              title="Excluir"
+                              aria-label={`Excluir ${item.descricao}`}
+                              onClick={async () => {
+                                if (!window.confirm(`Excluir "${item.descricao}" do catálogo?`)) return;
+                                try {
+                                  await comprasExcluirItemConsumo(item.id);
+                                  onMensagem?.({ ok: 'Item excluído.' });
+                                  await onRecarregar?.();
+                                } catch (err) {
+                                  onMensagem?.({ erro: obterMensagemErro(err, 'Não foi possível excluir o item.') });
+                                }
+                              }}
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          ) : null}
                         </div>
                       </td>
                     </tr>
@@ -453,147 +414,19 @@ export default function ComprasItensConsumoCadastro({
         </div>
       </SectionCard>
 
-      {formAberto && (
-        <div
-          className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-900/45 p-4"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="form-item-consumo-titulo"
-          onMouseDown={onMouseDownBackdrop}
-          onClick={onClickBackdrop}
-        >
-          <form
-            className="flex w-full max-w-xl flex-col overflow-hidden rounded-2xl bg-white shadow-xl"
-            onClick={(evento) => evento.stopPropagation()}
-            onSubmit={salvar}
-          >
-            <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-5 py-4">
-              <h2 id="form-item-consumo-titulo" className="text-lg font-bold text-slate-900">
-                {form.id ? 'Editar item' : 'Novo item'}
-              </h2>
-              <button
-                type="button"
-                onClick={() => setFormAberto(false)}
-                className="rounded-lg px-2 py-1 text-sm text-slate-500 hover:bg-slate-100"
-              >
-                Fechar
-              </button>
-            </div>
-            <div className="space-y-3 px-5 py-4">
-              <CampoTexto
-                label="Descrição"
-                value={form.descricao}
-                onChange={(valor) => setForm((atual) => ({ ...atual, descricao: valor }))}
-                required
-              />
-              <CampoSelect
-                label="Categoria"
-                value={form.categoria_id}
-                onChange={(valor) => {
-                  const cat = categorias.find((c) => c.id === valor);
-                  setForm((atual) => ({
-                    ...atual,
-                    categoria_id: valor,
-                    competencia_orcamento: competenciaPadraoDoSegmento(cat?.segmento),
-                  }));
-                }}
-                options={categorias.map((cat) => ({
-                  value: cat.id,
-                  label: `${rotuloCategoria(cat)} · ${rotuloSegmentoCatalogo(cat.segmento)}`,
-                }))}
-                placeholder="Selecione"
-              />
-              <CampoSelect
-                label="Competência de orçamento"
-                value={form.competencia_orcamento || COMPETENCIA_SEDE}
-                onChange={(valor) => setForm((atual) => ({ ...atual, competencia_orcamento: valor }))}
-                options={COMPETENCIAS_ORCAMENTO.map((comp) => ({
-                  value: comp,
-                  label: ROTULO_COMPETENCIA_ORCAMENTO[comp],
-                }))}
-              />
-              <div className="grid gap-3 md:grid-cols-2">
-                <CampoSelect
-                  label="Unidade de medida"
-                  value={form.unidade_medida}
-                  onChange={(valor) => setForm((atual) => ({ ...atual, unidade_medida: valor }))}
-                  options={UNIDADES_MEDIDA_ITEM}
-                  placeholder="Selecione"
-                />
-                <CampoTexto
-                  label="Embalagem"
-                  value={form.embalagem}
-                  onChange={(valor) => setForm((atual) => ({ ...atual, embalagem: valor }))}
-                  placeholder="Ex.: fardo com 12 · PCT 2 kg"
-                />
-                <CampoTexto
-                  label="Marca preferencial"
-                  value={form.marca_preferencial}
-                  onChange={(valor) => setForm((atual) => ({ ...atual, marca_preferencial: valor }))}
-                />
-                <CampoTexto
-                  label="Quantidade na embalagem"
-                  value={form.fator_embalagem}
-                  onChange={(valor) => setForm((atual) => ({
-                    ...atual,
-                    fator_embalagem: digitarQuantidadeEmbalagem(valor),
-                  }))}
-                  placeholder="Ex.: 12"
-                  inputMode="decimal"
-                />
-              </div>
-              <p className="-mt-1 text-xs text-slate-500">
-                Quantidade na embalagem: quantas unidades vêm no pacote/fardo/caixa.
-                Se for 1 (ou a granel), deixe 1 ou vazio.
-              </p>
-              <CampoTexto
-                label="Sinônimos / nomes equivalentes"
-                value={form.sinonimos}
-                onChange={(valor) => setForm((atual) => ({ ...atual, sinonimos: valor }))}
-                placeholder="Separe por vírgula. Ex.: papel toalha, toalha interfolha"
-              />
-              <CampoSelect
-                label="Item equivalente (opcional)"
-                value={form.equivalente_item_id}
-                onChange={(valor) => setForm((atual) => ({ ...atual, equivalente_item_id: valor }))}
-                options={itens
-                  .filter((item) => item.id !== form.id)
-                  .map((item) => ({ value: item.id, label: item.descricao }))}
-                placeholder="Nenhum"
-              />
-              <label className="flex items-center gap-2 text-sm text-slate-700">
-                <input
-                  type="checkbox"
-                  checked={Boolean(form.perecivel)}
-                  onChange={(e) => setForm((atual) => ({ ...atual, perecivel: e.target.checked }))}
-                />
-                Perecível
-              </label>
-              <CampoTexto
-                label="Observação"
-                value={form.observacao}
-                onChange={(valor) => setForm((atual) => ({ ...atual, observacao: valor }))}
-              />
-              <label className="flex items-center gap-2 text-sm text-slate-700">
-                <input
-                  type="checkbox"
-                  checked={form.ativo}
-                  onChange={(e) => setForm((atual) => ({ ...atual, ativo: e.target.checked }))}
-                />
-                Ativo
-              </label>
-            </div>
-            <div className="flex justify-end gap-2 border-t border-slate-100 px-5 py-3">
-              <PremiumButton type="button" variant="secondary" onClick={() => setFormAberto(false)}>
-                Cancelar
-              </PremiumButton>
-              <PremiumButton type="submit" disabled={salvando}>
-                {salvando ? 'Salvando…' : 'Salvar'}
-              </PremiumButton>
-            </div>
-          </form>
-        </div>
-      )}
+      <ModalFormItemConsumo
+        aberto={formAberto}
+        item={itemEmEdicao}
+        categorias={categorias}
+        itens={itens}
+        onFechar={() => setFormAberto(false)}
+        onSalvo={async () => {
+          setFormAberto(false);
+          await onRecarregar?.();
+        }}
+        onMensagem={onMensagem}
+      />
+
 
       <ModalFichaItemConsumo
         item={ficha}

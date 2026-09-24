@@ -80,7 +80,11 @@ export function tipoExigeJanela(tipo) {
   return String(tipo || '').trim().toLowerCase() === TIPO_CONSUMO;
 }
 
-export function tipoPulaAprovacaoSede(tipo) {
+export function tipoPulaAprovacaoSede() {
+  return false;
+}
+
+export function tipoSuprimentosAprovaEEnvia(tipo) {
   return String(tipo || '').trim().toLowerCase() === TIPO_HORTIFRUTI;
 }
 

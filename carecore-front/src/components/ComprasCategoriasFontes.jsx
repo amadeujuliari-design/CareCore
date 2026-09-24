@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 
 import { CampoSelect, CampoTexto } from './UsuariosCampos';
 import { EmptyState, PremiumBadge, PremiumButton, SectionCard } from './PremiumUI';
-import { comprasSalvarCategoria, comprasSalvarFonte } from '../services/comprasService';
+import { comprasExcluirCategoria, comprasSalvarCategoria, comprasSalvarFonte } from '../services/comprasService';
 import { conflitosNomeCadastro, rotuloUsoCategoria } from '../utils/comprasCategoriaUtils';
 import {
   ROTULO_SEGMENTO_CATALOGO,
@@ -14,11 +14,7 @@ import { obterMensagemErro } from '../utils/usuariosUtils';
 
 const FONTES_TIPO_OPCOES = [
   { value: 'convenio', label: 'Convênio' },
-  { value: 'emenda', label: 'Emenda parlamentar' },
   { value: 'custo_indireto', label: 'Custo indireto' },
-  { value: 'proprio', label: 'Recurso próprio' },
-  { value: 'doacao', label: 'Doação' },
-  { value: 'outros', label: 'Outros' },
 ];
 
 const SEGMENTO_OPCOES = SEGMENTOS_CATALOGO.map((value) => ({
@@ -40,10 +36,11 @@ function ListaNomes({
   podeEditar,
   onSalvar,
   onAtualizarSegmento,
+  onRecarregar,
 }) {
   const [nome, setNome] = useState('');
   const [segmento, setSegmento] = useState(SEGMENTO_CONSUMO);
-  const [tipoFonte, setTipoFonte] = useState('outros');
+  const [tipoFonte, setTipoFonte] = useState('convenio');
   const [vigenciaInicio, setVigenciaInicio] = useState('');
   const [vigenciaFim, setVigenciaFim] = useState('');
   const [salvando, setSalvando] = useState(false);
@@ -67,7 +64,7 @@ function ListaNomes({
     };
     setNome('');
     setSegmento(SEGMENTO_CONSUMO);
-    setTipoFonte('outros');
+    setTipoFonte('convenio');
     setVigenciaInicio('');
     setVigenciaFim('');
     setSalvando(true);
@@ -172,6 +169,7 @@ function ListaNomes({
                   {tipo === 'fonte' ? <th className="px-2 py-2">Vigência</th> : null}
                   <th className="px-2 py-2">{colunaUso}</th>
                   <th className="px-2 py-2">Status</th>
+                  {tipo === 'categoria' && podeEditar ? <th className="px-2 py-2">Ações</th> : null}
                 </tr>
               </thead>
               <tbody>
@@ -213,6 +211,57 @@ function ListaNomes({
                           ? <PremiumBadge variant="success">Em uso</PremiumBadge>
                           : <PremiumBadge>Sem uso</PremiumBadge>}
                     </td>
+                    {tipo === 'categoria' && podeEditar ? (
+                      <td className="px-2 py-2.5">
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            className="text-xs font-semibold text-sky-800"
+                            onClick={async () => {
+                              const nomeNovo = window.prompt('Novo nome da categoria:', item.nome);
+                              if (!nomeNovo?.trim() || nomeNovo.trim() === item.nome) return;
+                              await onSalvar({
+                                nome: nomeNovo.trim(),
+                                segmento: item.segmento,
+                                depreciacao_anual_percentual: item.depreciacao_anual_percentual ?? null,
+                              }, item.id);
+                            }}
+                          >
+                            Editar
+                          </button>
+                          <button
+                            type="button"
+                            className="text-xs font-semibold text-rose-700"
+                            onClick={async () => {
+                              if (!window.confirm(`Excluir a categoria "${item.nome}"?`)) return;
+                              await comprasExcluirCategoria(item.id);
+                              await onRecarregar?.();
+                            }}
+                          >
+                            Excluir
+                          </button>
+                        </div>
+                        <label className="mt-1 block text-[11px] text-slate-500">
+                          Depreciação anual %
+                          <input
+                            type="number"
+                            min="0"
+                            max="100"
+                            step="0.1"
+                            className="mt-0.5 w-24 rounded-lg border border-slate-200 px-2 py-1 text-xs"
+                            defaultValue={item.depreciacao_anual_percentual ?? ''}
+                            onBlur={async (e) => {
+                              const valor = e.target.value;
+                              await onSalvar({
+                                nome: item.nome,
+                                segmento: item.segmento,
+                                depreciacao_anual_percentual: valor === '' ? null : Number(valor),
+                              }, item.id);
+                            }}
+                          />
+                        </label>
+                      </td>
+                    ) : null}
                   </tr>
                 ))}
               </tbody>
@@ -246,11 +295,11 @@ export default function ComprasCategoriasFontes({
     [fontes],
   );
 
-  const salvarCategoria = async (payload) => {
+  const salvarCategoria = async (payload, id) => {
     try {
       const corpo = typeof payload === 'string' ? { nome: payload } : payload;
-      await comprasSalvarCategoria(corpo);
-      onMensagem?.({ ok: 'Categoria cadastrada.' });
+      await comprasSalvarCategoria(corpo, id);
+      onMensagem?.({ ok: id ? 'Categoria atualizada.' : 'Categoria cadastrada.' });
       await onRecarregar?.();
     } catch (err) {
       onMensagem?.({ erro: obterMensagemErro(err, 'Não foi possível cadastrar a categoria.') });
@@ -292,11 +341,15 @@ export default function ComprasCategoriasFontes({
         podeEditar={podeEditar}
         onSalvar={salvarCategoria}
         onAtualizarSegmento={atualizarSegmento}
+        onRecarregar={async () => {
+          onMensagem?.({ ok: 'Categoria excluída.' });
+          await onRecarregar?.();
+        }}
       />
       {mostrarFontes ? (
         <ListaNomes
           titulo="Fontes de recurso"
-          ajuda="Fonte é a origem do dinheiro do pedido (convênio, emenda, recurso próprio). Não vem da planilha de itens."
+          ajuda="A fonte da verba do pedido só pode ser Convênio ou Custo indireto."
           itens={fontesLista}
           colunaUso="Pedidos"
           campoNovo="Nova fonte"

@@ -4,7 +4,12 @@ import { Eye, Pencil, Plus, Search } from 'lucide-react';
 import ModalFichaPatrimonio from './ModalFichaPatrimonio';
 import ModalFormPatrimonio from './ModalFormPatrimonio';
 import { EmptyState, PremiumBadge, PremiumButton, SectionCard } from './PremiumUI';
-import { comprasSalvarPatrimonio, moneyCentavos } from '../services/comprasService';
+import {
+  comprasAnexarPatrimonio,
+  comprasBaixarAnexoPatrimonio,
+  comprasSalvarPatrimonio,
+  moneyCentavos,
+} from '../services/comprasService';
 import {
   PATRIMONIO_PROPRIEDADE,
   PATRIMONIO_SITUACAO,
@@ -315,7 +320,7 @@ export default function ComprasPatrimonioCadastro({
                           <strong className="text-slate-900 hover:text-violet-700">{item.descricao}</strong>
                           <p className="text-xs text-slate-500">
                             {item.numero_etiqueta ? `Etiqueta ${item.numero_etiqueta}` : 'Sem etiqueta'}
-                            {item.propriedade === 'publico' ? ' · Público' : ''}
+                            {item.propriedade === 'publico' ? ' · Prefeitura' : ' · AEB'}
                           </p>
                         </button>
                       </td>
@@ -324,7 +329,7 @@ export default function ComprasPatrimonioCadastro({
                         <span className="line-clamp-2">{item.localizacao || '—'}</span>
                       </td>
                       <td className="whitespace-nowrap px-2 py-2.5 align-top text-slate-600">
-                        {item.valor_centavos != null ? moneyCentavos(item.valor_centavos) : '—'}
+                        <div>{item.valor_centavos != null ? moneyCentavos(item.valor_centavos) : '—'}</div>
                       </td>
                       <td className="px-2 py-2.5 align-top">{badgeSituacao(item.situacao)}</td>
                       <td className="px-2 py-2.5 align-top">
@@ -387,7 +392,28 @@ export default function ComprasPatrimonioCadastro({
         </div>
       </SectionCard>
 
-      <ModalFichaPatrimonio item={ficha} onFechar={() => setFicha(null)} onEditar={editar} />
+      <ModalFichaPatrimonio
+        item={ficha}
+        onFechar={() => setFicha(null)}
+        onEditar={editar}
+        onBaixar={(anexo) => comprasBaixarAnexoPatrimonio(ficha.id, anexo.id, anexo.nome_arquivo)
+          .catch((err) => onMensagem?.({ erro: err?.message || 'Não foi possível baixar o arquivo.' }))}
+        onAnexar={async (arquivos) => {
+          if (!ficha?.id) return;
+          try {
+            let atual = null;
+            for (const arquivo of arquivos) {
+              const data = await comprasAnexarPatrimonio(ficha.id, arquivo);
+              atual = (data?.itens || []).find((bem) => bem.id === ficha.id) || atual;
+            }
+            if (atual) setFicha(atual);
+            onMensagem?.({ ok: 'Arquivo anexado ao bem.' });
+            await onRecarregar?.();
+          } catch (err) {
+            onMensagem?.({ erro: err?.response?.data?.detail || 'Não foi possível anexar o arquivo.' });
+          }
+        }}
+      />
 
       {formAberto && (
         <ModalFormPatrimonio

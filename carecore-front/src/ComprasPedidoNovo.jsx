@@ -11,22 +11,26 @@ import {
 } from './components/PremiumUI';
 import { useAuth } from './context/AuthContext';
 import {
+  comprasCategorias,
   comprasCriarPedido,
   comprasFontes,
   comprasItensConsumo,
-  comprasPatrimonio,
   comprasUnidades,
 } from './services/comprasService';
 import ComprasItemTypeahead from './components/ComprasItemTypeahead';
+import ModalFormItemConsumo from './components/ModalFormItemConsumo';
 import {
   BOTOES_NOVO_PEDIDO,
+  SEGMENTO_SERVICO,
   TIPO_CONSUMO,
   TIPO_HORTIFRUTI,
   TIPO_IMOBILIZADO,
   TIPO_MANUTENCAO,
   TIPO_SERVICO,
+  competenciaPadraoDoSegmento,
   itensConsumoDoSegmentoPedido,
   rotuloTipoPedido,
+  segmentoDoTipoPedido,
   tipoEhCotacaoProjeto,
 } from './utils/comprasPedidoTipos';
 import { unidadeParaPedido } from './utils/comprasItensConsumoUtils';
@@ -69,8 +73,9 @@ export default function ComprasPedidoNovo() {
   const [salvando, setSalvando] = useState(false);
   const [fontes, setFontes] = useState([]);
   const [unidades, setUnidades] = useState([]);
-  const [patrimonios, setPatrimonios] = useState([]);
   const [itensConsumo, setItensConsumo] = useState([]);
+  const [categorias, setCategorias] = useState([]);
+  const [modalItem, setModalItem] = useState(null);
 
   const [form, setForm] = useState({
     destino: 'projeto',
@@ -82,7 +87,6 @@ export default function ComprasPedidoNovo() {
     local_texto: '',
     fonte_recurso_id: '',
     valor_estimado_reais: '',
-    patrimonio_id: '',
     defeito: '',
     tipo_manutencao: 'corretiva',
     escopo_servico: '',
@@ -95,20 +99,18 @@ export default function ComprasPedidoNovo() {
     let alive = true;
     (async () => {
       try {
-        const [f, u] = await Promise.all([
+        const [f, u, cats] = await Promise.all([
           comprasFontes(),
           sede ? comprasUnidades() : Promise.resolve([]),
+          comprasCategorias(),
         ]);
         if (!alive) return;
         setFontes(Array.isArray(f) ? f : (f?.itens || []));
         setUnidades(Array.isArray(u) ? u : (u?.itens || []));
-        if (tipo === TIPO_CONSUMO || tipo === TIPO_HORTIFRUTI || tipo === TIPO_MANUTENCAO || tipo === TIPO_IMOBILIZADO) {
+        setCategorias(Array.isArray(cats) ? cats : []);
+        if (tipo === TIPO_CONSUMO || tipo === TIPO_HORTIFRUTI || tipo === TIPO_MANUTENCAO || tipo === TIPO_IMOBILIZADO || tipo === TIPO_SERVICO) {
           const itens = await comprasItensConsumo();
           if (alive) setItensConsumo(Array.isArray(itens) ? itens : (itens?.itens || []));
-        }
-        if (tipo === TIPO_MANUTENCAO) {
-          const pat = await comprasPatrimonio();
-          if (alive) setPatrimonios(Array.isArray(pat) ? pat : (pat?.itens || []));
         }
       } catch (e) {
         if (alive) setErro(e?.response?.data?.detail || 'Não foi possível carregar o formulário.');
@@ -116,6 +118,21 @@ export default function ComprasPedidoNovo() {
     })();
     return () => { alive = false; };
   }, [meta, sede, tipo]);
+
+  useEffect(() => {
+    const aoAtualizarCatalogo = async (evento) => {
+      if (evento.key !== 'compras-catalogo-atualizado') return;
+      if (![TIPO_CONSUMO, TIPO_HORTIFRUTI, TIPO_MANUTENCAO, TIPO_IMOBILIZADO, TIPO_SERVICO].includes(tipo)) return;
+      try {
+        const itens = await comprasItensConsumo();
+        setItensConsumo(Array.isArray(itens) ? itens : (itens?.itens || []));
+      } catch {
+        /* o pedido aberto permanece; a busca atualiza na próxima abertura */
+      }
+    };
+    window.addEventListener('storage', aoAtualizarCatalogo);
+    return () => window.removeEventListener('storage', aoAtualizarCatalogo);
+  }, [tipo]);
 
   if (!meta) {
     return (
@@ -161,6 +178,18 @@ export default function ComprasPedidoNovo() {
           categoria_id: l.categoria_id || undefined,
         }));
 
+      if (itens.some((l) => !l.catalogo_item_id)) {
+        setErro('Só entram itens que já estão no catálogo. Cadastre o que falta e escolha-o na lista.');
+        setSalvando(false);
+        return;
+      }
+
+      if (!form.fonte_recurso_id) {
+        setErro('Selecione a fonte da verba (Convênio ou Custo indireto).');
+        setSalvando(false);
+        return;
+      }
+
       if (tipo === TIPO_CONSUMO && !itens.length) {
         setErro('Inclua ao menos um item do catálogo.');
         setSalvando(false);
@@ -196,7 +225,6 @@ export default function ComprasPedidoNovo() {
           payload.valor_estimado_reais = Number(String(form.valor_estimado_reais).replace(',', '.'));
         }
         if (tipo === TIPO_MANUTENCAO) {
-          payload.patrimonio_id = form.patrimonio_id || undefined;
           payload.defeito = form.defeito.trim();
           payload.tipo_manutencao = form.tipo_manutencao;
         }
@@ -234,6 +262,23 @@ export default function ComprasPedidoNovo() {
             {erro ? (
               <div className="rounded-xl bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">{erro}</div>
             ) : null}
+
+            <SectionCard title="Fonte da verba">
+              <label>
+                <span className="mb-1 block text-xs font-semibold text-slate-600">Convênio ou custo indireto *</span>
+                <select
+                  className={inputClass}
+                  value={form.fonte_recurso_id}
+                  onChange={(e) => atualizar('fonte_recurso_id', e.target.value)}
+                  required
+                >
+                  <option value="">Selecione…</option>
+                  {fontes.map((f) => (
+                    <option key={f.id} value={f.id}>{f.nome}</option>
+                  ))}
+                </select>
+              </label>
+            </SectionCard>
 
             {sede ? (
               <SectionCard title="Unidade">
@@ -335,21 +380,6 @@ export default function ComprasPedidoNovo() {
                       placeholder="Endereço ou local de execução"
                     />
                   </label>
-                  {fontes.length ? (
-                    <label>
-                      <span className="mb-1 block text-xs font-semibold text-slate-600">Fonte da verba</span>
-                      <select
-                        className={inputClass}
-                        value={form.fonte_recurso_id}
-                        onChange={(e) => atualizar('fonte_recurso_id', e.target.value)}
-                      >
-                        <option value="">Selecione…</option>
-                        {fontes.map((f) => (
-                          <option key={f.id} value={f.id}>{f.nome}</option>
-                        ))}
-                      </select>
-                    </label>
-                  ) : null}
                 </div>
               </SectionCard>
             ) : null}
@@ -357,21 +387,6 @@ export default function ComprasPedidoNovo() {
             {tipo === TIPO_MANUTENCAO ? (
               <SectionCard title="Itens de manutenção">
                 <div className="space-y-3">
-                  <label>
-                    <span className="mb-1 block text-xs font-semibold text-slate-600">Patrimônio (opcional)</span>
-                    <select
-                      className={inputClass}
-                      value={form.patrimonio_id}
-                      onChange={(e) => atualizar('patrimonio_id', e.target.value)}
-                    >
-                      <option value="">Sem vínculo / ainda não cadastrado</option>
-                      {patrimonios.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.descricao || p.numero_patrimonio || p.id}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
                   <label>
                     <span className="mb-1 block text-xs font-semibold text-slate-600">Tipo</span>
                     <select
@@ -437,26 +452,34 @@ export default function ComprasPedidoNovo() {
                     key={linha.key}
                     className="grid gap-3 rounded-xl border border-slate-100 bg-slate-50/60 p-3 md:grid-cols-12"
                   >
-                    {tipo !== TIPO_SERVICO ? (
-                      <div className="md:col-span-6">
+                    <div className="md:col-span-6">
                         <span className="mb-1 block text-xs font-semibold text-slate-600">
                           Item {idx + 1}
                         </span>
                         <ComprasItemTypeahead
                           className="w-full"
-                          itens={itensConsumoDoSegmentoPedido(itensConsumo, tipo)}
+                          itens={
+                            tipo === TIPO_SERVICO
+                              ? itensConsumo.filter((item) => (item.segmento || '') === 'servico')
+                              : itensConsumoDoSegmentoPedido(itensConsumo, tipo)
+                          }
                           value={linha.descricao}
                           placeholder={
                             tipo === TIPO_CONSUMO
                               ? 'Digite o item de consumo'
                               : tipo === TIPO_MANUTENCAO
                                 ? 'Buscar peça/material de manutenção'
-                                : 'Buscar bem no catálogo'
+                                : tipo === TIPO_SERVICO
+                                  ? 'Buscar serviço no catálogo'
+                                  : tipo === TIPO_HORTIFRUTI
+                                    ? 'Buscar item de hortifruti'
+                                    : 'Buscar bem no catálogo'
                           }
                           onChange={(valor) => atualizarLinha(linha.key, {
                             descricao: valor,
                             catalogo_item_id: '',
                           })}
+                          onCadastrar={(texto) => setModalItem({ linhaKey: linha.key, descricao: texto })}
                           onEscolher={(item) => atualizarLinha(linha.key, item ? {
                             catalogo_item_id: item.id,
                             descricao: item.descricao,
@@ -467,19 +490,6 @@ export default function ComprasPedidoNovo() {
                           } : { catalogo_item_id: '' })}
                         />
                       </div>
-                    ) : (
-                      <label className="md:col-span-6">
-                        <span className="mb-1 block text-xs font-semibold text-slate-600">
-                          Descrição {idx + 1}
-                        </span>
-                        <input
-                          className={inputClass}
-                          value={linha.descricao}
-                          onChange={(e) => atualizarLinha(linha.key, { descricao: e.target.value })}
-                          placeholder="Pode complementar depois na ficha"
-                        />
-                      </label>
-                    )}
                     <label className="md:col-span-2">
                       <span className="mb-1 block text-xs font-semibold text-slate-600">Qtd</span>
                       <input
@@ -537,6 +547,33 @@ export default function ComprasPedidoNovo() {
           </form>
         </ScrollArea>
       </MainShell>
+      <ModalFormItemConsumo
+        aberto={Boolean(modalItem)}
+        descricaoInicial={modalItem?.descricao || ''}
+        competenciaInicial={competenciaPadraoDoSegmento(
+          tipo === TIPO_SERVICO ? SEGMENTO_SERVICO : segmentoDoTipoPedido(tipo),
+        )}
+        categorias={categorias}
+        itens={itensConsumo}
+        onFechar={() => setModalItem(null)}
+        onMensagem={({ erro: msgErro }) => { if (msgErro) setErro(msgErro); }}
+        onSalvo={async (criado) => {
+          const lista = await comprasItensConsumo();
+          setItensConsumo(Array.isArray(lista) ? lista : []);
+          if (modalItem?.linhaKey && criado?.id) {
+            atualizarLinha(modalItem.linhaKey, {
+              catalogo_item_id: criado.id,
+              descricao: criado.descricao || modalItem.descricao,
+              unidade_medida: unidadeParaPedido(criado),
+              embalagem: criado.embalagem || '',
+              marca_preferencial: criado.marca_preferencial || '',
+              categoria_id: criado.categoria_id || '',
+            });
+          }
+          setModalItem(null);
+          setErro('');
+        }}
+      />
     </AppShell>
   );
 }
