@@ -5,6 +5,7 @@ import logoCarecore from '../assets/logo.PNG';
 import QRCodeLib from 'react-qr-code';
 import BarcodeLib from 'react-barcode';
 import { obterCodigoCarteirinhaConvivente } from '../utils/rotinaDiariaUtils';
+import { carteirinhaOcultaAcomodacao } from '../utils/carteirinhaDados';
 import { avaliarCarteirinhaConvivente } from '../utils/carteirinhaValidadeUtils';
 import { formatarDataBr } from '../utils/dataBrasilUtils';
 
@@ -66,6 +67,7 @@ export default function CarteirinhaCard({
   const foto = fotoCaminho ?? convivente.foto_url ?? null;
   const logoProjeto = identidadeRelatorio?.relatorio_logo_url || null;
   const nomeProjeto = identidadeRelatorio?.relatorio_nome_exibicao || 'Projeto';
+  const exibirAcomodacao = !carteirinhaOcultaAcomodacao(nomeProjeto);
 
   const tecnicoResponsavel = tecnicos.find(
     (tec) => tec.id === convivente.tecnico_id
@@ -169,6 +171,7 @@ export default function CarteirinhaCard({
           </div>
         </div>
 
+        {exibirAcomodacao ? (
         <div
           className={`
             p-1.5 rounded text-[7.5px] mb-2 border
@@ -221,6 +224,7 @@ export default function CarteirinhaCard({
             Tipo: {tipoAcomodacao}
           </p>
         </div>
+        ) : null}
 
         <div className="mt-auto w-full bg-white pt-1">
           <div className="text-center mb-1">

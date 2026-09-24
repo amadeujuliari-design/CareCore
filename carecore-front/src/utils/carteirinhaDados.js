@@ -2,6 +2,16 @@
 import { avaliarCarteirinhaConvivente } from './carteirinhaValidadeUtils.js';
 import { formatarDataBr } from './dataBrasilUtils.js';
 
+/** Casa Porto não usa acomodação na carteirinha. */
+export function carteirinhaOcultaAcomodacao(nomeProjeto) {
+  const texto = String(nomeProjeto || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ');
+  return texto.includes('casa porto');
+}
+
 export function resolverDadosCarteirinha(convivente, quartos = [], tecnicos = [], fotoCaminho = null) {
   if (!convivente) return null;
 
@@ -336,11 +346,11 @@ export function gerarHtmlCarteirinhaUnitaria(
         <div class="full"><b>ENTRADA:</b> ${escaparHtml(d.entrada)}</div>
         <div class="full"><b>TÉCNICO:</b> ${escaparHtml(d.tecnico)}</div>
       </div>
-      <div class="acom">
+      ${carteirinhaOcultaAcomodacao(nomeProjeto) ? '' : `<div class="acom">
         <div class="t1">Acomodação Atual</div>
         <div class="t2">${escaparHtml(d.nomeAcomodacao)}</div>
         <div class="t3">Tipo: ${escaparHtml(d.tipoAcomodacao)}</div>
-      </div>
+      </div>`}
       <div class="bar">
         <div class="lbl">Identificação de Acesso</div>
         ${barcodeSvgHtml ? `<div style="display:flex;justify-content:center;line-height:0;">${barcodeSvgHtml}</div>` : ''}
