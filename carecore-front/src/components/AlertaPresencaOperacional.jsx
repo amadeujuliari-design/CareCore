@@ -51,7 +51,8 @@ export default function AlertaPresencaOperacional() {
 
   const semInteracao = dados?.listas_totais?.sem_interacao_24h ?? 0;
   const ausentes = dados?.listas_totais?.ausentes_operacionais ?? 0;
-  const total = semInteracao + ausentes;
+  const saida16h = dados?.listas_totais?.saida_pendente_16h ?? 0;
+  const total = semInteracao + ausentes + saida16h;
 
   const fecharAlerta = () => {
     setTotalIgnorado(total);
@@ -83,6 +84,11 @@ export default function AlertaPresencaOperacional() {
                 <p>
                   <strong>{semInteracao}</strong> dentro do projeto sem interação nas últimas 24h
                   {nomesSemInteracao.length ? `: ${nomesSemInteracao.join(', ')}` : ''}.
+                </p>
+              )}
+              {saida16h > 0 && (
+                <p>
+                  <strong>{saida16h}</strong> ainda dentro da Casa Porto Seguro depois das 16h. Registre a saída.
                 </p>
               )}
               {ausentes > 0 && (

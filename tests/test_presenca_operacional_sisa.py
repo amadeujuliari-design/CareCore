@@ -80,6 +80,7 @@ def test_dentro_por_ultimo_fluxo():
     assert convivente_dentro_por_ultimo_fluxo({"tipo_registro": "Entrada"}) is True
     assert convivente_dentro_por_ultimo_fluxo({"tipo_registro": "Saída"}) is False
     assert convivente_dentro_por_ultimo_fluxo(None) is True
+    assert convivente_dentro_por_ultimo_fluxo(None, sem_registro_conta_dentro=False) is False
 
 
 def test_sem_interacao_24h():

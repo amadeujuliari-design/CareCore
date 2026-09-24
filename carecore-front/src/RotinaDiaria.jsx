@@ -10,6 +10,7 @@ import AuthenticatedImage from './components/AuthenticatedImage';
 import BannerSomenteLeituraGlobal from './components/BannerSomenteLeituraGlobal';
 import { AppShell, MainShell, PageHeader, PremiumButton, ScrollArea } from './components/PremiumUI';
 import { useAuth } from './context/AuthContext';
+import { projetoOcultaAcomodacoes } from './config/configOperacionalDefaults';
 import { API_ROOT } from './config/apiBase';
 import { useDeviceInfo } from './hooks/useDeviceInfo';
 import { useLeitorUsbGlobal } from './hooks/useLeitorUsbGlobal';
@@ -176,7 +177,7 @@ const ROTULOS_REFEICAO_EXTRA = {
 
 export default function RotinaDiaria() {
   const navigate = useNavigate();
-  const { isGlobalPuro: somenteLeitura } = useAuth();
+  const { isGlobalPuro: somenteLeitura, usuario } = useAuth();
   const { config: configOperacional } = useConfigOperacional();
   const opcoesInteracaoRotina = useMemo(
     () => obterOpcoesInteracaoRotina(configOperacional),
@@ -1375,6 +1376,13 @@ export default function RotinaDiaria() {
   const contagensInteracoesVisiveis = ocultarSomatoriaAlimentacao
     ? filtrarContagensInteracaoSemAlimentacao(contagensInteracoes)
     : contagensInteracoes;
+  const casaPorto = projetoOcultaAcomodacoes(usuario?.projeto_nome);
+  const horaSaoPaulo = Number(new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'America/Sao_Paulo',
+    hour: '2-digit',
+    hourCycle: 'h23',
+  }).format(new Date()));
+  const avisoSaida16h = casaPorto && horaSaoPaulo >= 16 && totalDentro > 0;
   const totalInteracoesRotina = ocultarSomatoriaAlimentacao
     ? totalInteracoesSemAlimentacao(contagensInteracoes)
     : Object.values(contagensInteracoes).reduce(
@@ -1467,6 +1475,15 @@ export default function RotinaDiaria() {
           <div className="w-full max-w-7xl mx-auto space-y-6">
           {somenteLeitura && (
             <BannerSomenteLeituraGlobal modulo="a rotina diária" />
+          )}
+          {avisoSaida16h && (
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+              <p className="font-black uppercase tracking-wide text-amber-800">Saída pendente</p>
+              <p className="mt-1">
+                <strong>{totalDentro}</strong> convivente(s) ainda constam dentro da Casa Porto Seguro depois das 16h.
+                Registre a saída de quem já deixou a unidade.
+              </p>
+            </div>
           )}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-between">

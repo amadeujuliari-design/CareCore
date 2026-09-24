@@ -41,6 +41,7 @@ from config_operacional import (
     obter_tipos_refeicao_ativos,
     obter_tipos_rotina_validos,
 )
+from config_operacional_projeto import projeto_e_casa_porto
 from config_operacional_service import carregar_config_operacional_instituicao
 from acomodacao_tb import (
     aplicar_regras_acomodacao_tb,
@@ -61,7 +62,7 @@ from pia_acompanhamento_sync import reconciliar_espelhos_pia_convivente
 from database import get_db
 from audit_log import registrar_evento_auditoria
 from models import (
-    ConviventeDB, MotivoInativacaoDB, OrigemEncaminhamentoDB, 
+    ConviventeDB, InstituicaoDB, MotivoInativacaoDB, OrigemEncaminhamentoDB, 
     QuartoDB, LeitoDB, DocumentoConviventeDB, OcorrenciaConviventeDB, UsuarioDB,
     InteracaoOcorrenciaDB, ObservadorOcorrenciaDB, FuncionarioEnvolvidoOcorrenciaDB, RegistroRotinaDB,
     FechamentoMensalDB,
@@ -82,6 +83,13 @@ from models import (
 )
 
 ORIGEM_HISTORICO_ROTINA_OPERACIONAL = "Rotina operacional"
+HORA_AVISO_SAIDA_CASA_PORTO = 16
+
+
+async def _projeto_sem_pernoite(db: AsyncSession, instituicao_id: str) -> bool:
+    """Casa Porto não pernoita: sem Entrada/Saída a pessoa está fora."""
+    projeto = await db.get(InstituicaoDB, instituicao_id)
+    return projeto_e_casa_porto(projeto)
 REGISTROS_POR_PAGINA_PADRAO = 30
 LISTAGEM_OPERACIONAL_DIAS_PADRAO = 7
 EXPORT_ROTINA_HISTORICO_LIMITE_MAX = 5000
@@ -3617,9 +3625,10 @@ async def registar_rotina(
         )
     ).scalars().first()
 
+    sem_pernoite = await _projeto_sem_pernoite(db, obter_instituicao_escopo(usuario_atual))
     esta_fora = (
-        ultimo_movimento and
-        ultimo_movimento.tipo_registro == "Saída"
+        (ultimo_movimento and ultimo_movimento.tipo_registro == "Saída")
+        or (sem_pernoite and ultimo_movimento is None)
     )
 
     # ============================================================
@@ -4003,6 +4012,15 @@ async def resumo_rotina_hoje(
             resumo[r.convivente_id]["ultimo_movimento_id"] = r.id
             resumo[r.convivente_id]["ultimo_movimento_data"] = r.data_registro.isoformat()
 
+    if await _projeto_sem_pernoite(db, instituicao_id):
+        for convivente_id in ids_operacionais:
+            item = resumo.get(convivente_id)
+            if item is None:
+                item = _estrutura_resumo_rotina_vazia()
+                resumo[convivente_id] = item
+            if not item.get("ultimo_movimento"):
+                item["ultimo_movimento"] = "Saída"
+
     # Última interação de pares (cobertor/toalha/bagageiro) — histórico completo,
     # alinhado à validação em registar_rotina (não reseta na virada do dia).
     grupo_por_tipo = {
@@ -4255,15 +4273,20 @@ async def montar_dashboard_operacional_payload(
         if not registro.cancelado
     ]
 
+    sem_pernoite = await _projeto_sem_pernoite(db, inst_id)
     presentes = []
     fora_por_saida = []
+    sem_fluxo_fora = 0
     sem_interacao_24h = []
     ausentes_operacionais = []
 
     for convivente in conviventes_ativos:
         ultimo = ultimo_movimento_por_convivente.get(convivente.id)
         ultimo_registro = ultimo_registro_por_convivente.get(convivente.id)
-        dentro = convivente_dentro_por_ultimo_fluxo(ultimo)
+        dentro = convivente_dentro_por_ultimo_fluxo(
+            ultimo,
+            sem_registro_conta_dentro=not sem_pernoite,
+        )
 
         if dentro:
             presentes.append({
@@ -4289,6 +4312,8 @@ async def montar_dashboard_operacional_payload(
                     "data_registro": getattr(ultimo_registro, "data_registro", None),
                     "origem_estado": "dentro_sem_interacao_24h",
                 })
+        elif sem_pernoite and not ultimo:
+            sem_fluxo_fora += 1
         elif ultimo and ultimo["tipo_registro"] == "Saída":
             item_fora = {
                 **ultimo,
@@ -4396,6 +4421,17 @@ async def montar_dashboard_operacional_payload(
             ),
         })
 
+    saida_pendente_16h = len(presentes) if sem_pernoite and agora.hour >= HORA_AVISO_SAIDA_CASA_PORTO else 0
+    if saida_pendente_16h:
+        alertas.append({
+            "tipo": "saida_16h_casa_porto",
+            "titulo": "Saída pendente às 16h",
+            "descricao": (
+                f"{saida_pendente_16h} convivente(s) ainda constam dentro da Casa Porto Seguro. "
+                "Registre a saída de quem já deixou a unidade."
+            ),
+        })
+
     if ausentes_operacionais:
         alertas.append({
             "tipo": "ausentes_operacionais",
@@ -4428,9 +4464,10 @@ async def montar_dashboard_operacional_payload(
 
             # Estado real atual.
             "presentes_agora": len(presentes),
-            "fora_agora": len(fora_por_saida),
+            "fora_agora": len(fora_por_saida) + sem_fluxo_fora,
             "dentro_projeto": len(presentes),
-            "fora_projeto": len(fora_por_saida),
+            "fora_projeto": len(fora_por_saida) + sem_fluxo_fora,
+            "saida_pendente_16h": saida_pendente_16h,
             "fora_com_saida": len(fora_por_saida),
             "sem_movimento": len(sem_interacao_24h),
             "sem_interacao_24h": len(sem_interacao_24h),
@@ -4462,6 +4499,7 @@ async def montar_dashboard_operacional_payload(
             "sem_movimento": len(sem_interacao_24h),
             "sem_interacao_24h": len(sem_interacao_24h),
             "ausentes_operacionais": len(ausentes_operacionais),
+            "saida_pendente_16h": saida_pendente_16h,
         },
         "limite_listas": limite_listas_seguro,
         "presentes": presentes[:limite_listas_seguro],

@@ -171,10 +171,14 @@ def calcular_dias_presenca_operacional(
     return dias_presentes
 
 
-def convivente_dentro_por_ultimo_fluxo(ultimo_movimento_fluxo: dict | None) -> bool:
-    """Estado atual: dentro do projeto (último fluxo Entrada ou sem saída registrada)."""
+def convivente_dentro_por_ultimo_fluxo(
+    ultimo_movimento_fluxo: dict | None,
+    *,
+    sem_registro_conta_dentro: bool = True,
+) -> bool:
+    """Estado atual: dentro do projeto (último fluxo Entrada ou, no pernoite, sem saída)."""
     if not ultimo_movimento_fluxo:
-        return True
+        return sem_registro_conta_dentro
     return ultimo_movimento_fluxo.get("tipo_registro") != "Saída"
 
 
