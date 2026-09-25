@@ -603,9 +603,7 @@ def usuario_ve_modulo_compras(
         return False
     if perfil == PERFIL_ADM_PEDIDOS:
         return True
-    if perfil in PERFIS_PROJETO_ELEGIVEIS:
-        return bool(compras_modulo_ativo)
-    return False
+    return bool(compras_modulo_ativo)
 
 
 def usuario_pode_pedir(
@@ -622,7 +620,11 @@ def usuario_pode_pedir(
         org_compras_ativo=org_compras_ativo,
     ):
         return False
-    return perfil in {PERFIL_ADM_PEDIDOS, *PERFIS_PROJETO_ELEGIVEIS} or is_manutencao
+    return (
+        perfil in {PERFIL_ADM_PEDIDOS, *PERFIS_PROJETO_ELEGIVEIS}
+        or is_manutencao
+        or bool(compras_modulo_ativo)
+    )
 
 
 def usuario_pode_aprovar_unidade(
@@ -639,7 +641,11 @@ def usuario_pode_aprovar_unidade(
         org_compras_ativo=org_compras_ativo,
     ):
         return False
-    return perfil in {PERFIL_ADM_PEDIDOS, *PERFIS_PROJETO_ELEGIVEIS} or is_manutencao
+    return (
+        perfil in {PERFIL_ADM_PEDIDOS, *PERFIS_PROJETO_ELEGIVEIS}
+        or is_manutencao
+        or bool(compras_modulo_ativo)
+    )
 
 
 def usuario_pode_aprovar_sede(*, perfil: str, is_manutencao: bool = False) -> bool:
@@ -717,12 +723,9 @@ def usuario_pode_cadastrar_mestre_compras(
     """Sede, ADM Pedidos ou perfil de projeto com Compras marcado cadastram itens/fornecedores."""
     if is_manutencao or _perfil_adm_compras(perfil) in PERFIS_ADM_COMPRAS_SEDE:
         return True
-    perfil_limpo = (perfil or "").strip()
-    if perfil_limpo == PERFIL_ADM_PEDIDOS:
+    if (perfil or "").strip() == PERFIL_ADM_PEDIDOS:
         return True
-    if perfil_limpo in PERFIS_PROJETO_ELEGIVEIS:
-        return bool(compras_modulo_ativo)
-    return False
+    return bool(compras_modulo_ativo)
 
 
 def chave_split_categoria_pedido(

@@ -181,8 +181,9 @@ def test_rbac_visibilidade():
     assert usuario_ve_modulo_compras(perfil="ADM Pedidos", compras_modulo_ativo=False, org_compras_ativo=True)
     assert usuario_ve_modulo_compras(perfil="Gestor", compras_modulo_ativo=True)
     assert not usuario_ve_modulo_compras(perfil="Gestor", compras_modulo_ativo=False)
-    assert not usuario_ve_modulo_compras(perfil="Orientador", compras_modulo_ativo=True)
-    assert not usuario_ve_modulo_compras(perfil="Consulta", compras_modulo_ativo=True)
+    assert usuario_ve_modulo_compras(perfil="Orientador", compras_modulo_ativo=True)
+    assert usuario_ve_modulo_compras(perfil="Consulta", compras_modulo_ativo=True)
+    assert not usuario_ve_modulo_compras(perfil="Orientador", compras_modulo_ativo=False)
     assert usuario_ve_modulo_compras(perfil="Gestor", compras_modulo_ativo=False, is_manutencao=True)
 
 
@@ -385,7 +386,8 @@ def test_usuario_pode_cadastrar_mestre_compras():
     assert usuario_pode_cadastrar_mestre_compras(perfil="Gestor", compras_modulo_ativo=True)
     assert usuario_pode_cadastrar_mestre_compras(perfil="Técnico", compras_modulo_ativo=True)
     assert not usuario_pode_cadastrar_mestre_compras(perfil="Técnico")
-    assert not usuario_pode_cadastrar_mestre_compras(perfil="Orientador", compras_modulo_ativo=True)
+    assert usuario_pode_cadastrar_mestre_compras(perfil="Orientador", compras_modulo_ativo=True)
+    assert usuario_pode_aprovar_unidade(perfil="Consulta", compras_modulo_ativo=True)
 
 
 def test_inferir_cadastros_compras():

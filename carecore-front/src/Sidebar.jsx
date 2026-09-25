@@ -41,7 +41,7 @@ import { carecoreVersaoRotulo } from './config/versao';
 import { MENU_ACOMPANHAMENTOS, MENU_CONVIVENTES } from './config/acompanhamentosConfig';
 import { acompanhamentoAtivo, moduloAtivo, projetoOcultaAcomodacoes } from './config/configOperacionalDefaults';
 import { useConfigOperacional } from './hooks/useConfigOperacional';
-import { usuarioEhAdmCompras, usuarioEhAdmGlobal, usuarioEhAdmPedidos, usuarioEhAdmProducao, usuarioEhOficineiro, normalizarPerfilRbac, usuarioPodeVerCompras, usuarioPodeAcessarNfp, usuarioPodeAcessarModuloOperacional, PERFIS_ADM_COMPRAS_SEDE, PERFIL_ADM_GLOBAL, PERFIL_ADM_PRODUCAO, PERFIL_ADM_PEDIDOS } from './utils/rbacUtils';
+import { usuarioEhAdmCompras, usuarioEhAdmGlobal, usuarioEhAdmPedidos, usuarioEhAdmProducao, usuarioEhOficineiro, normalizarPerfilRbac, usuarioPodeVerCompras, usuarioPodeAcessarNfp, usuarioPodeAcessarModuloOperacional, PERFIS_ADM_COMPRAS_SEDE, PERFIL_ADM_GLOBAL, PERFIL_ADM_PRODUCAO } from './utils/rbacUtils';
 import { decodificarPayloadJwt } from './utils/jwtUtils';
 import { usuarioOrganizacaoFinanceira } from './utils/orgPacoteUtils';
 import FinanceSidebar from './components/FinanceSidebar';
@@ -827,16 +827,19 @@ export default function Sidebar() {
     }
 
     if (item.escopoNfp === 'projeto') {
-      if (!['Gestor', 'Técnico', 'Administrativo'].includes(perfilNormalizado)) return false;
       return usuarioPodeAcessarNfp({
         perfil_acesso: perfilNormalizado,
+        is_manutencao: isManutencao,
         nfp_modulo_ativo: usuarioSessao?.nfp_modulo_ativo,
       });
     }
     if (item.escopoCompras === 'projeto') {
-      // Unidade: Gestor/Técnico/Administrativo (flag Compras). Manutenção/Sede ficam em Gestão Global.
       if (isManutencao || ehAdmCompras) return false;
-      if (!['Gestor', 'Técnico', 'Administrativo', PERFIL_ADM_PEDIDOS].includes(perfilNormalizado)) {
+      if (!usuarioPodeVerCompras({
+        perfil_acesso: perfilNormalizado,
+        is_manutencao: isManutencao,
+        compras_modulo_ativo: usuarioSessao?.compras_modulo_ativo,
+      })) {
         return false;
       }
     }

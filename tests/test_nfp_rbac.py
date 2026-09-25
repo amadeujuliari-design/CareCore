@@ -36,6 +36,8 @@ def test_usuario_pode_acessar_nfp():
     assert usuario_pode_acessar_nfp({"perfil_acesso": "Gestor", "nfp_modulo_ativo": True}) is True
     assert usuario_pode_acessar_nfp({"perfil_acesso": "Técnico"}) is False
     assert usuario_pode_acessar_nfp({"perfil_acesso": "Administrativo", "nfp_modulo_ativo": True}) is True
+    assert usuario_pode_acessar_nfp({"perfil_acesso": "Orientador", "nfp_modulo_ativo": True}) is True
+    assert usuario_pode_acessar_nfp({"perfil_acesso": "Consulta", "nfp_modulo_ativo": False}) is False
     assert usuario_pode_gestao_nfp_completa({"perfil_acesso": "Gestor", "nfp_modulo_ativo": True}) is False
 
 

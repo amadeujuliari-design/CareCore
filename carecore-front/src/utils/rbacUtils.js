@@ -190,11 +190,7 @@ export function usuarioPodeVerCompras(usuario) {
   if (usuarioEhManutencao(usuario) || usuarioEhAdmCompras(usuario) || usuarioEhAdmPedidos(usuario)) {
     return true;
   }
-  const perfil = normalizarPerfilRbac(usuario.perfil_acesso);
-  if (['Gestor', 'Técnico', 'Administrativo'].includes(perfil)) {
-    return usuario.compras_modulo_ativo === true;
-  }
-  return false;
+  return usuario.compras_modulo_ativo === true;
 }
 
 export function usuarioPodeAcessarNfp(usuario) {
@@ -202,11 +198,7 @@ export function usuarioPodeAcessarNfp(usuario) {
   if (usuarioEhManutencao(usuario) || usuarioEhAdmNfpOrg(usuario)) return true;
   if (usuario.is_global === true) return true;
   if (normalizarPerfilRbac(usuario.perfil_acesso) === 'Global') return true;
-  const perfil = normalizarPerfilRbac(usuario.perfil_acesso);
-  if (['Gestor', 'Técnico', 'Administrativo'].includes(perfil)) {
-    return usuario.nfp_modulo_ativo === true;
-  }
-  return false;
+  return usuario.nfp_modulo_ativo === true;
 }
 
 export function usuarioPodeGestaoNfp(usuario) {

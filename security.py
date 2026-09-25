@@ -338,12 +338,8 @@ def usuario_eh_adm_nfp_org(usuario: dict | UsuarioDB | None) -> bool:
 
 def _nfp_modulo_ativo_no_perfil_projeto(usuario: dict | UsuarioDB) -> bool:
     if isinstance(usuario, dict):
-        perfil = normalizar_perfil_acesso(usuario.get("perfil_acesso"))
-        ligado = usuario.get("nfp_modulo_ativo") is True
-    else:
-        perfil = normalizar_perfil_acesso(getattr(usuario, "perfil_acesso", None))
-        ligado = bool(getattr(usuario, "nfp_modulo_ativo", False))
-    return perfil in {"Gestor", "Técnico", "Administrativo"} and ligado
+        return usuario.get("nfp_modulo_ativo") is True
+    return bool(getattr(usuario, "nfp_modulo_ativo", False))
 
 
 def usuario_pode_acessar_nfp(usuario: dict | UsuarioDB | None) -> bool:
