@@ -286,6 +286,7 @@ def exigir_cadastro_mestre_compras(usuario: dict) -> None:
     if usuario_pode_cadastrar_mestre_compras(
         perfil=_perfil(usuario),
         is_manutencao=bool(usuario.get("is_manutencao")),
+        compras_modulo_ativo=bool(usuario.get("compras_modulo_ativo")),
     ):
         return
     raise HTTPException(
@@ -2593,6 +2594,7 @@ async def salvar_item_consumo(db: AsyncSession, usuario: dict, payload: dict, it
     pode_mestre = usuario_pode_cadastrar_mestre_compras(
         perfil=_perfil(usuario),
         is_manutencao=bool(usuario.get("is_manutencao")),
+        compras_modulo_ativo=bool(usuario.get("compras_modulo_ativo")),
     )
 
     # Projeto/unidade sem ADM Pedidos: só atualiza embalagem/marca de item já cadastrado (via pedido).

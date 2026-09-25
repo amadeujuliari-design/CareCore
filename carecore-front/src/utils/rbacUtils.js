@@ -180,6 +180,11 @@ export function usuarioEscopoOrganizacao(usuario) {
   return false;
 }
 
+/** Gestor/Técnico/Administrativo com Compras marcado cadastram item como o ADM Pedidos. */
+export function usuarioPodeCadastrarMestreCompras(usuario) {
+  return usuarioPodeVerCompras(usuario);
+}
+
 export function usuarioPodeVerCompras(usuario) {
   if (!usuario) return false;
   if (usuarioEhManutencao(usuario) || usuarioEhAdmCompras(usuario) || usuarioEhAdmPedidos(usuario)) {

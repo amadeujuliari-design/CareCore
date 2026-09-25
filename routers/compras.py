@@ -320,6 +320,7 @@ async def me_acesso(
     pode_mestre = usuario_pode_cadastrar_mestre_compras(
         perfil=usuario_atual.get("perfil_acesso") or "",
         is_manutencao=bool(usuario_atual.get("is_manutencao")),
+        compras_modulo_ativo=bool(usuario_atual.get("compras_modulo_ativo")),
     )
     return {
         "permitido": permitido,

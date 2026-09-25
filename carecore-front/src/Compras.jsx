@@ -52,7 +52,7 @@ import {
   competenciaAtual,
   moneyCentavos,
 } from './services/comprasService';
-import { usuarioEhAdmCompras, usuarioEhAdmPedidos, usuarioEhManutencao } from './utils/rbacUtils';
+import { usuarioEhAdmCompras, usuarioEhManutencao, usuarioPodeCadastrarMestreCompras } from './utils/rbacUtils';
 import { BOTOES_NOVO_PEDIDO, rotuloTipoPedido } from './utils/comprasPedidoTipos';
 import {
   progressoOrcamentosTexto,
@@ -210,8 +210,7 @@ export default function Compras() {
   const [searchParams] = useSearchParams();
   const usuario = useMemo(() => usuarioSessao(), []);
   const sede = usuarioEhAdmCompras(usuario) || usuarioEhManutencao(usuario);
-  const admPedidos = usuarioEhAdmPedidos(usuario);
-  const podeCadastrarMestre = sede || admPedidos;
+  const podeCadastrarMestre = usuarioPodeCadastrarMestreCompras(usuario);
   const [aba, setAba] = useState('pedidos');
   const [abaCadastro, setAbaCadastro] = useState('fornecedores');
   const [acesso, setAcesso] = useState(null);

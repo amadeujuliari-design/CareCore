@@ -382,7 +382,10 @@ def test_usuario_pode_cadastrar_mestre_compras():
     assert usuario_pode_cadastrar_mestre_compras(perfil="ADM Pedidos")
     assert usuario_pode_cadastrar_mestre_compras(perfil="Gestor", is_manutencao=True)
     assert not usuario_pode_cadastrar_mestre_compras(perfil="Gestor")
+    assert usuario_pode_cadastrar_mestre_compras(perfil="Gestor", compras_modulo_ativo=True)
+    assert usuario_pode_cadastrar_mestre_compras(perfil="Técnico", compras_modulo_ativo=True)
     assert not usuario_pode_cadastrar_mestre_compras(perfil="Técnico")
+    assert not usuario_pode_cadastrar_mestre_compras(perfil="Orientador", compras_modulo_ativo=True)
 
 
 def test_inferir_cadastros_compras():

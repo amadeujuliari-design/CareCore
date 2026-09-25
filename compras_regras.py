@@ -708,11 +708,21 @@ def usuario_sede_pode_ver_tipo(
     return (tipo or "").strip().lower() in tipos
 
 
-def usuario_pode_cadastrar_mestre_compras(*, perfil: str, is_manutencao: bool = False) -> bool:
-    """Sede (ADM Global Compras / classes) ou ADM Pedidos podem cadastrar itens/fornecedores."""
+def usuario_pode_cadastrar_mestre_compras(
+    *,
+    perfil: str,
+    is_manutencao: bool = False,
+    compras_modulo_ativo: bool = False,
+) -> bool:
+    """Sede, ADM Pedidos ou perfil de projeto com Compras marcado cadastram itens/fornecedores."""
     if is_manutencao or _perfil_adm_compras(perfil) in PERFIS_ADM_COMPRAS_SEDE:
         return True
-    return (perfil or "").strip() == PERFIL_ADM_PEDIDOS
+    perfil_limpo = (perfil or "").strip()
+    if perfil_limpo == PERFIL_ADM_PEDIDOS:
+        return True
+    if perfil_limpo in PERFIS_PROJETO_ELEGIVEIS:
+        return bool(compras_modulo_ativo)
+    return False
 
 
 def chave_split_categoria_pedido(

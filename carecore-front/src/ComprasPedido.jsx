@@ -55,7 +55,7 @@ import {
   comprasSubmeter,
   moneyCentavos,
 } from './services/comprasService';
-import { usuarioEhAdmCompras, usuarioEhAdmPedidos, usuarioEhManutencao, usuarioPodeEnviarEmailCompras } from './utils/rbacUtils';
+import { usuarioEhAdmCompras, usuarioEhAdmPedidos, usuarioEhManutencao, usuarioPodeCadastrarMestreCompras, usuarioPodeEnviarEmailCompras } from './utils/rbacUtils';
 import { formatarDataBr } from './utils/comprasJanelaUtils';
 import { formatarDataHoraBr } from './utils/dataBrasilUtils';
 import { itemConsumoPeloDetalheErro, pedidoItemUnidadeConfusa, sugerirItensConsumo, unidadeParaPedido } from './utils/comprasItensConsumoUtils';
@@ -140,7 +140,7 @@ export default function ComprasPedido() {
   const manutencao = usuarioEhManutencao(usuario);
   const podeDispararEmailCompras = usuarioPodeEnviarEmailCompras(usuario);
   const admPedidos = usuarioEhAdmPedidos(usuario);
-  const podeCadastrarMestre = sede || admPedidos;
+  const podeCadastrarMestre = usuarioPodeCadastrarMestreCompras(usuario);
   const unidade = admPedidos
     || manutencao
     || ['Gestor', 'Técnico', 'Administrativo'].includes(usuario.perfil_acesso);
