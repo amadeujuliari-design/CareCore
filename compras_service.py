@@ -1430,8 +1430,19 @@ async def escolher_cotacao(
     pedido: ComprasPedidoDB,
     cotacao_id: str,
 ) -> ComprasPedidoDB:
-    """Somente a Sede escolhe o orçamento vencedor (pode trocar/revogar depois)."""
-    if not usuario_pode_aprovar_sede(
+    """Sede escolhe o vencedor. Em consumo, o projeto escolhe depois do ok de Suprimentos."""
+    consumo_projeto = (pedido.tipo or "").strip().lower() == TIPO_CONSUMO and not _sede(usuario)
+    if consumo_projeto:
+        if not usuario_pode_aprovar_unidade(
+            perfil=_perfil(usuario),
+            compras_modulo_ativo=bool(usuario.get("compras_modulo_ativo")),
+            is_manutencao=bool(usuario.get("is_manutencao")),
+            org_compras_ativo=True,
+        ):
+            raise HTTPException(status_code=403, detail="Sem permissão para escolher o orçamento neste projeto.")
+        if pedido.instituicao_id != usuario.get("instituicao_id") and not usuario.get("is_manutencao"):
+            raise HTTPException(status_code=403, detail="A escolha do orçamento é do próprio projeto.")
+    elif not usuario_pode_aprovar_sede(
         perfil=_perfil(usuario),
         is_manutencao=bool(usuario.get("is_manutencao")),
     ):
@@ -1439,7 +1450,7 @@ async def escolher_cotacao(
             status_code=403,
             detail="Somente a Sede (ADM Compras) escolhe o orçamento vencedor.",
         )
-    if not usuario_sede_pode_ver_tipo(
+    if not consumo_projeto and not usuario_sede_pode_ver_tipo(
         perfil=_perfil(usuario),
         tipo=pedido.tipo,
         is_manutencao=bool(usuario.get("is_manutencao")),
@@ -1466,14 +1477,15 @@ async def escolher_cotacao(
     for cotacao in cotacoes:
         cotacao.escolhida = cotacao.id == cotacao_id
 
+    quem = "Projeto" if consumo_projeto else "Sede"
     if anterior and anterior.id != alvo.id:
         texto = (
-            f"Sede revogou a escolha de {anterior.fornecedor_nome} e escolheu "
+            f"{quem} revogou a escolha de {anterior.fornecedor_nome} e escolheu "
             f"{alvo.fornecedor_nome} (R$ {alvo.valor_centavos / 100:.2f}) como orçamento vencedor."
         )
     else:
         texto = (
-            f"Sede escolheu o orçamento vencedor: {alvo.fornecedor_nome} "
+            f"{quem} escolheu o orçamento vencedor: {alvo.fornecedor_nome} "
             f"(R$ {alvo.valor_centavos / 100:.2f})."
         )
     await registrar_evento_pedido(
@@ -1491,7 +1503,7 @@ async def escolher_cotacao(
         STATUS_AGUARDANDO_ESCOLHA,
     }:
         # Hortifruti: Sede escolhe o vencedor; aprovação só da unidade (pula Sede).
-        if tipo_pula_aprovacao_sede(pedido.tipo):
+        if (pedido.tipo or "").strip().lower() == TIPO_CONSUMO or tipo_pula_aprovacao_sede(pedido.tipo):
             pedido.status = STATUS_AGUARDANDO_UNIDADE
         else:
             pedido.status = STATUS_AGUARDANDO_SEDE
@@ -1504,7 +1516,16 @@ async def revogar_escolha_cotacao(
     usuario: dict,
     pedido: ComprasPedidoDB,
 ) -> ComprasPedidoDB:
-    if not usuario_pode_aprovar_sede(
+    consumo_projeto = (pedido.tipo or "").strip().lower() == TIPO_CONSUMO and not _sede(usuario)
+    if consumo_projeto:
+        if not usuario_pode_aprovar_unidade(
+            perfil=_perfil(usuario),
+            compras_modulo_ativo=bool(usuario.get("compras_modulo_ativo")),
+            is_manutencao=bool(usuario.get("is_manutencao")),
+            org_compras_ativo=True,
+        ):
+            raise HTTPException(status_code=403, detail="Sem permissão para revogar a escolha neste projeto.")
+    elif not usuario_pode_aprovar_sede(
         perfil=_perfil(usuario),
         is_manutencao=bool(usuario.get("is_manutencao")),
     ):
@@ -1514,7 +1535,11 @@ async def revogar_escolha_cotacao(
             status_code=400,
             detail="Só é possível revogar enquanto o pedido aguarda aprovação após a escolha.",
         )
-    if pedido.status == STATUS_AGUARDANDO_UNIDADE and not tipo_pula_aprovacao_sede(pedido.tipo):
+    if (
+        pedido.status == STATUS_AGUARDANDO_UNIDADE
+        and not tipo_pula_aprovacao_sede(pedido.tipo)
+        and (pedido.tipo or "").strip().lower() != TIPO_CONSUMO
+    ):
         raise HTTPException(
             status_code=400,
             detail="Neste tipo de pedido a revogação só ocorre enquanto aguarda a Sede.",
@@ -1530,8 +1555,8 @@ async def revogar_escolha_cotacao(
         pedido_id=pedido.id,
         tipo=TIPO_EVENTO_OBSERVACAO,
         texto=(
-            f"Sede revogou a escolha do orçamento ({anterior.fornecedor_nome}). "
-            "Escolha outro para seguir o fluxo."
+            f"{'Projeto' if consumo_projeto else 'Sede'} revogou a escolha do orçamento "
+            f"({anterior.fornecedor_nome}). Escolha outro para seguir o fluxo."
         ),
         usuario_id=_uid(usuario),
         cotacao_id=anterior.id,
@@ -1565,7 +1590,7 @@ async def aprovar_unidade(db: AsyncSession, usuario: dict, pedido: ComprasPedido
         raise HTTPException(status_code=400, detail="Cotação escolhida ainda não está completa.")
     pedido.aprovado_unidade_por_id = _uid(usuario)
     pedido.aprovado_unidade_em = agora_operacional_naive()
-    if tipo_pula_aprovacao_sede(pedido.tipo):
+    if tipo_pula_aprovacao_sede(pedido.tipo) or (pedido.tipo or "").strip().lower() == TIPO_CONSUMO:
         pedido.status = STATUS_APROVADO
     else:
         pedido.status = STATUS_AGUARDANDO_SEDE

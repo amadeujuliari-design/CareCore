@@ -295,9 +295,13 @@ export default function ComprasPedido() {
   );
   const pulaAprovacaoSede = tipoPulaAprovacaoSede(pedido.tipo) || Boolean(pedido.pula_aprovacao_sede);
   const segmentoCotacao = segmentoFornecedorDoTipoPedido(pedido.tipo);
-  const podeEscolherCotacao = !orcamentosTravados
-    && sede
-    && ['aguardando_aprovacao_sede', 'em_cotacao', 'aguardando_cotacao', 'aguardando_escolha_orcamento', 'aguardando_aprovacao_unidade'].includes(pedido.status);
+  const consumoProjetoEscolhe = pedido.tipo === 'consumo';
+  const podeEscolherCotacao = !orcamentosTravados && (
+    (sede && !consumoProjetoEscolhe
+      && ['aguardando_aprovacao_sede', 'em_cotacao', 'aguardando_cotacao', 'aguardando_escolha_orcamento', 'aguardando_aprovacao_unidade'].includes(pedido.status))
+    || (unidade && consumoProjetoEscolhe && !pedidoSede
+      && ['aguardando_escolha_orcamento', 'aguardando_aprovacao_unidade'].includes(pedido.status))
+  );
   const podeLancarCotacao = !orcamentosTravados && (
     (sede && cotacaoSede && !terminal)
     || (unidade && cotacaoProjeto && ['rascunho', 'em_cotacao', 'aguardando_cotacao'].includes(pedido.status))
@@ -314,7 +318,10 @@ export default function ComprasPedido() {
     && cotacaoSede
     && ['aguardando_cotacao', 'em_cotacao'].includes(pedido.status)
     && Number(pedido.orcamentos_com_anexo || 0) >= 1
-    && Number(pedido.orcamentos_com_anexo || 0) < Number(pedido.min_orcamentos_recomendados || 3);
+    && (
+      pedido.tipo === 'consumo'
+      || Number(pedido.orcamentos_com_anexo || 0) < Number(pedido.min_orcamentos_recomendados || 3)
+    );
   const podeEncerrar = pedido.status === 'enviado_fornecedor' && (sede || (unidade && !pedidoSede));
   const podeReabrir = pedido.pode_reabrir && pedido.fechado_por_id === usuarioId;
   const pedidoCompra = (pedido.anexos || []).find((a) => a.tipo === 'pedido_compra');
@@ -701,10 +708,13 @@ export default function ComprasPedido() {
             {podeLiberarEscolha ? (
               <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border-2 border-sky-300 bg-sky-50 px-4 py-3">
                 <div className="min-w-0 flex-1 text-sm text-sky-950">
-                  <p className="font-bold">Liberar para escolha</p>
+                  <p className="font-bold">
+                    {pedido.tipo === 'consumo' ? 'Ok para o projeto escolher' : 'Liberar para escolha'}
+                  </p>
                   <p className="mt-0.5 text-xs text-sky-800">
-                    Há {pedido.orcamentos_com_anexo} orçamento(s) anexado(s). O ideal são {pedido.min_orcamentos_recomendados || 3}.
-                    Se já bastam, libere para marcar o pedido como «Pronto para escolher».
+                    {pedido.tipo === 'consumo'
+                      ? `Há ${pedido.orcamentos_com_anexo} orçamento(s) anexado(s). O ok libera o projeto para escolher e aprovar.`
+                      : `Há ${pedido.orcamentos_com_anexo} orçamento(s) anexado(s). O ideal são ${pedido.min_orcamentos_recomendados || 3}. Se já bastam, libere para marcar o pedido como «Pronto para escolher».`}
                   </p>
                 </div>
                 <PremiumButton
@@ -713,9 +723,16 @@ export default function ComprasPedido() {
                     const min = pedido.min_orcamentos_recomendados || 3;
                     const n = pedido.orcamentos_com_anexo || 0;
                     if (!window.confirm(
-                      `Liberar escolha com ${n} orçamento(s)? O recomendado são ${min}.`,
+                      pedido.tipo === 'consumo'
+                        ? `Dar ok e liberar o projeto para escolher, com ${n} orçamento(s)?`
+                        : `Liberar escolha com ${n} orçamento(s)? O recomendado são ${min}.`,
                     )) return;
-                    agir(() => comprasLiberarEscolha(pedido.id), 'Pedido pronto para escolher o orçamento.');
+                    agir(
+                      () => comprasLiberarEscolha(pedido.id),
+                      pedido.tipo === 'consumo'
+                        ? 'Ok registrado. O projeto pode escolher e aprovar o orçamento.'
+                        : 'Pedido pronto para escolher o orçamento.',
+                    );
                   }}
                 >
                   Liberar para escolha
@@ -2005,13 +2022,14 @@ export default function ComprasPedido() {
                   ) : null}
                   <PremiumButton type="submit">Anexar NF</PremiumButton>
                 </form>
-                {pedido.tipo === 'imobilizado' ? (
-                  <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
+                <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
                     <p className="text-xs font-semibold text-slate-700">
-                      Arquivos da aquisição do bem
+                      {pedido.tipo === 'imobilizado' ? 'Arquivos da aquisição do bem' : 'Documentos junto da nota fiscal'}
                     </p>
                     <p className="mt-1 text-xs text-slate-500">
-                      Anexe quantos arquivos forem necessários, junto da nota. Ao encerrar, eles passam a fazer parte do bem.
+                      {pedido.tipo === 'imobilizado'
+                        ? 'Anexe quantos arquivos forem necessários, junto da nota. Ao encerrar, eles passam a fazer parte do bem.'
+                        : 'Anexe quantos arquivos forem necessários junto da nota fiscal para encerrar o processo.'}
                     </p>
                     <input
                       type="file"
@@ -2024,7 +2042,10 @@ export default function ComprasPedido() {
                           const fd = new FormData();
                           fd.append('tipo', 'aquisicao_bem');
                           fd.append('arquivo', arquivo);
-                          await agir(() => comprasAnexarArquivo(pedido.id, fd), 'Arquivo da aquisição anexado.');
+                          await agir(
+                            () => comprasAnexarArquivo(pedido.id, fd),
+                            pedido.tipo === 'imobilizado' ? 'Arquivo da aquisição anexado.' : 'Documento anexado.',
+                          );
                         }
                       }}
                     />
@@ -2033,6 +2054,13 @@ export default function ComprasPedido() {
                         <li key={anexo.id} className="flex items-center justify-between gap-2 text-xs">
                           <span className="truncate">{anexo.nome_arquivo}</span>
                           <span className="flex shrink-0 gap-3">
+                            <button
+                              type="button"
+                              className="font-semibold text-slate-800 underline"
+                              onClick={() => setModalAnexo(anexo)}
+                            >
+                              Visualizar
+                            </button>
                             <button
                               type="button"
                               className="font-semibold text-sky-800 underline"
@@ -2055,8 +2083,7 @@ export default function ComprasPedido() {
                         </li>
                       ))}
                     </ul>
-                  </div>
-                ) : null}
+                </div>
                 <div className="mt-4">
                   <PremiumButton
                     onClick={() => agir(
@@ -2129,8 +2156,14 @@ export default function ComprasPedido() {
                   </PremiumButton>
                 )}
                 {pedido.status === 'aguardando_aprovacao_unidade' && unidade && !pedidoSede && (
-                  <PremiumButton onClick={() => agir(() => comprasAprovarUnidade(pedido.id))}>
-                    Aprovar na unidade
+                  <PremiumButton onClick={() => agir(
+                    () => comprasAprovarUnidade(pedido.id),
+                    pedido.tipo === 'consumo'
+                      ? 'Orçamento aprovado. Suprimentos pode enviar o pedido ao fornecedor.'
+                      : 'Unidade aprovou.',
+                  )}
+                  >
+                    {pedido.tipo === 'consumo' ? 'Aprovar orçamento' : 'Aprovar na unidade'}
                   </PremiumButton>
                 )}
                 {hortifrutiDireto && sede && [

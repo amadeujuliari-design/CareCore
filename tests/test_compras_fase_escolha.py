@@ -17,7 +17,7 @@ from compras_regras import (
 def status_apos_escolha_sede(tipo: str) -> str:
     """Espelha a regra de escolher_cotacao para tipos de cotação da Sede."""
     assert tipo_eh_cotacao_sede(tipo)
-    if tipo_pula_aprovacao_sede(tipo):
+    if tipo == TIPO_CONSUMO or tipo_pula_aprovacao_sede(tipo):
         return STATUS_AGUARDANDO_UNIDADE
     return STATUS_AGUARDANDO_SEDE
 
@@ -31,4 +31,4 @@ def test_status_aguardando_escolha_definido():
 
 def test_hortifruti_apos_escolha_vai_para_sede():
     assert status_apos_escolha_sede(TIPO_HORTIFRUTI) == STATUS_AGUARDANDO_SEDE
-    assert status_apos_escolha_sede(TIPO_CONSUMO) == STATUS_AGUARDANDO_SEDE
+    assert status_apos_escolha_sede(TIPO_CONSUMO) == STATUS_AGUARDANDO_UNIDADE

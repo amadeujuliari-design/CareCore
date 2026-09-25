@@ -634,9 +634,11 @@ async def upload_anexo_pedido(
             )
 
     # Cotação da Sede: com 3 PDFs anexados, libera a fase de escolha do vencedor.
+    # Consumo não avança sozinho: Suprimentos dá ok para o projeto escolher.
     if (
         tipo == TIPO_ANEXO_ORCAMENTO
         and tipo_eh_cotacao_sede(pedido.tipo)
+        and (pedido.tipo or "").strip().lower() != "consumo"
         and pedido.status in STATUS_COTACAO_SEDE_COLETANDO
     ):
         qtd = await contar_orcamentos_com_anexo(db, pedido.id)
