@@ -1356,7 +1356,20 @@ async def registrar_cotacao(
         }
         and not _sede(usuario)
     )
-    if not _sede(usuario) and not unidade_cotacao_projeto:
+    unidade_hortifruti = (
+        (pedido.tipo or "").strip().lower() == TIPO_HORTIFRUTI
+        and not _sede(usuario)
+        and pedido.status in {
+            STATUS_RASCUNHO,
+            STATUS_AGUARDANDO_COTACAO,
+            STATUS_EM_COTACAO,
+            STATUS_AGUARDANDO_ESCOLHA,
+            STATUS_AGUARDANDO_UNIDADE,
+            STATUS_AGUARDANDO_SEDE,
+            STATUS_APROVADO,
+        }
+    )
+    if not _sede(usuario) and not unidade_cotacao_projeto and not unidade_hortifruti:
         raise HTTPException(status_code=403, detail="Cotações de consumo são lançadas pela Sede.")
     if pedido.status not in {
         STATUS_RASCUNHO,

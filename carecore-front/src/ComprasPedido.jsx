@@ -287,9 +287,11 @@ export default function ComprasPedido() {
   const cotacaoSede = tipoEhCotacaoSede(pedido.tipo) && !hortifrutiDireto;
   // Após envio ao fornecedor (ou encerrado), orçamentos ficam só leitura.
   const orcamentosTravados = ['enviado_fornecedor', 'recebido', 'cancelado', 'reprovado'].includes(pedido.status);
+  const hortifrutiAberto = hortifrutiDireto && !orcamentosTravados && !terminal;
   const podeRemoverOrcamento = !orcamentosTravados && (
     Boolean(pedido.pode_substituir_orcamento)
     || (unidade && cotacaoProjeto && ['rascunho', 'em_cotacao', 'aguardando_cotacao'].includes(pedido.status))
+    || hortifrutiAberto
   );
   const pulaAprovacaoSede = tipoPulaAprovacaoSede(pedido.tipo) || Boolean(pedido.pula_aprovacao_sede);
   const segmentoCotacao = segmentoFornecedorDoTipoPedido(pedido.tipo);
@@ -299,6 +301,7 @@ export default function ComprasPedido() {
   const podeLancarCotacao = !orcamentosTravados && (
     (sede && cotacaoSede && !terminal)
     || (unidade && cotacaoProjeto && ['rascunho', 'em_cotacao', 'aguardando_cotacao'].includes(pedido.status))
+    || hortifrutiAberto
   );
   const podePedirCotacaoEmail = !orcamentosTravados && podeDispararEmailCompras && (
     (sede && cotacaoSede
@@ -1107,7 +1110,7 @@ export default function ComprasPedido() {
               </div>
             </SectionCard>
 
-            <SectionCard title="Cotações e orçamentos">
+            <SectionCard title={hortifrutiDireto ? 'Cotações, Orçamentos ou Arquivos' : 'Cotações e orçamentos'}>
               <p className="mb-2 text-sm font-semibold text-slate-800">
                 Orçamentos anexados: {pedido.qtd_orcamentos ?? (pedido.cotacoes || []).length}
               </p>
@@ -1118,6 +1121,10 @@ export default function ComprasPedido() {
               ) : cotacaoProjeto && !sede ? (
                 <p className="mb-3 text-xs text-slate-500">
                   Peça cotação por e-mail (caixa do projeto) e anexe os orçamentos recebidos (valor + PDF).
+                </p>
+              ) : hortifrutiDireto ? (
+                <p className="mb-3 text-xs text-slate-500">
+                  O projeto e a Sede podem anexar cotações, orçamentos ou outros arquivos. Os dois lados visualizam e baixam.
                 </p>
               ) : !sede && cotacaoSede ? (
                 <p className="mb-3 text-xs text-slate-500">
@@ -1356,7 +1363,7 @@ export default function ComprasPedido() {
                           </div>
                         </div>
                       ))}
-                      {!terminal && podeRemoverOrcamento && (sede || cotacaoProjeto) && (
+                      {!terminal && podeRemoverOrcamento && (sede || cotacaoProjeto || hortifrutiAberto) && (
                         <label className="inline-flex cursor-pointer text-xs font-semibold text-slate-600">
                           + Anexar PDFs
                           <input
@@ -1385,6 +1392,78 @@ export default function ComprasPedido() {
                   </li>
                 ))}
               </ul>
+              {(pedido.anexos || []).some((a) => a.tipo === 'orcamento' && !a.cotacao_id) && (
+                <ul className="mb-3 space-y-2">
+                  {(pedido.anexos || [])
+                    .filter((a) => a.tipo === 'orcamento' && !a.cotacao_id)
+                    .map((anexo) => (
+                      <li
+                        key={anexo.id}
+                        className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2"
+                      >
+                        <p className="min-w-0 truncate text-xs font-medium text-slate-800">
+                          {anexo.nome_arquivo || 'Arquivo'}
+                        </p>
+                        <div className="flex shrink-0 flex-wrap items-center gap-2">
+                          <button
+                            type="button"
+                            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-bold text-slate-800 hover:bg-slate-50"
+                            onClick={() => setModalAnexo(anexo)}
+                          >
+                            Visualizar
+                          </button>
+                          <button
+                            type="button"
+                            className="inline-flex items-center gap-1.5 rounded-lg bg-slate-800 px-3 py-1.5 text-xs font-bold text-white hover:bg-slate-900"
+                            onClick={() => comprasBaixarAnexo(pedido.id, anexo.id, anexo.nome_arquivo)
+                              .catch(() => setErro('Não foi possível baixar o arquivo.'))}
+                          >
+                            <FileText size={14} />
+                            Baixar
+                          </button>
+                          {!terminal && podeRemoverOrcamento && (
+                            <button
+                              type="button"
+                              className="rounded px-1.5 text-xs font-bold text-rose-700 hover:bg-rose-50"
+                              title="Remover este arquivo"
+                              onClick={async () => {
+                                if (!window.confirm(`Remover o arquivo ${anexo.nome_arquivo}?`)) return;
+                                await agir(() => comprasRemoverAnexo(pedido.id, anexo.id), 'Anexo removido.');
+                              }}
+                            >
+                              ×
+                            </button>
+                          )}
+                        </div>
+                      </li>
+                    ))}
+                </ul>
+              )}
+              {hortifrutiAberto && (
+                <label className="mb-3 inline-flex cursor-pointer items-center gap-2 text-sm font-semibold text-slate-700">
+                  <FileText size={16} />
+                  Anexar arquivos
+                  <input
+                    type="file"
+                    accept=".pdf,.jpg,.jpeg,.png,.webp"
+                    multiple
+                    className="hidden"
+                    onChange={async (e) => {
+                      const files = Array.from(e.target.files || []);
+                      e.target.value = '';
+                      if (!files.length) return;
+                      await agir(async () => {
+                        for (const file of files) {
+                          const fd = new FormData();
+                          fd.append('tipo', 'orcamento');
+                          fd.append('arquivo', file);
+                          await comprasAnexarArquivo(pedido.id, fd);
+                        }
+                      }, files.length === 1 ? 'Arquivo anexado.' : `${files.length} arquivos anexados.`);
+                    }}
+                  />
+                </label>
+              )}
               {podeLancarCotacao && (
                 <form
                   className="grid gap-2 md:grid-cols-5"
