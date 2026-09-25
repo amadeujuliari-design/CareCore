@@ -1951,8 +1951,9 @@ export default function ComprasPedido() {
                   />
                   <input
                     value={nfForm.valor_reais}
-                    onChange={(e) => setNfForm((a) => ({ ...a, valor_reais: e.target.value }))}
-                    placeholder="Valor R$ (manual se PDF)"
+                    onChange={(e) => setNfForm((a) => ({ ...a, valor_reais: mascararMoedaDigitando(e.target.value) }))}
+                    placeholder="R$ 0,00"
+                    inputMode="numeric"
                     className="rounded-xl border border-slate-200 px-3 py-2 text-sm"
                   />
                   <label className="md:col-span-3 text-xs font-semibold text-slate-600">
