@@ -152,6 +152,7 @@ class ModulosOperacionalConfig(BaseModel):
     historico_legado: bool = False
     acomodacoes: bool = True
     pertences_recolhidos: bool = True
+    lavanderia_pecas: bool = True
 
 
 class TermoCompromissoConfig(BaseModel):
@@ -208,6 +209,7 @@ def montar_config_operacional_padrao(*, siat: bool = False, casa_porto: bool = F
         interacoes = INTERACOES_ROTINA_CASA_PORTO
         modulos["acomodacoes"] = False
         modulos["pertences_recolhidos"] = False
+        modulos["lavanderia_pecas"] = False
     termo_compromisso_titulo = TERMO_COMPROMISSO_TITULO_SIAT if siat else TERMO_COMPROMISSO_TITULO_PADRAO
     termo_compromisso_texto = TERMO_COMPROMISSO_TEXTO_SIAT if siat else TERMO_COMPROMISSO_TEXTO_PADRAO
     termo_lgpd_texto = TERMO_LGPD_TEXTO_SIAT if siat else TERMO_LGPD_TEXTO_PADRAO
@@ -278,13 +280,19 @@ def mesclar_config_operacional(
         else:
             merged[chave] = valor
 
-    config = ConfigOperacionalProjeto.model_validate(merged)
+    try:
+        config = ConfigOperacionalProjeto.model_validate(merged)
+    except Exception:
+        if not casa_porto:
+            raise
+        config = base
     if not casa_porto:
         return config
     config.refeicoes.itens = [RefeicaoOperacionalItem(**item) for item in REFEICOES_CASA_PORTO]
     config.interacoes_rotina = [InteracaoRotinaItem(**item) for item in INTERACOES_ROTINA_CASA_PORTO]
     config.modulos.acomodacoes = False
     config.modulos.pertences_recolhidos = False
+    config.modulos.lavanderia_pecas = False
     return config
 
 

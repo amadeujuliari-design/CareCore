@@ -148,6 +148,12 @@ const MAPA_PARES_INTERACAO_PADRAO = {
 
 export function obterMapaInteracoesPar(config) {
   const mapa = { ...MAPA_PARES_INTERACAO_PADRAO };
+  if (config) {
+    const ativos = new Set(obterInteracoesRotinaAtivas(config).map((item) => item.valor));
+    Object.keys(MAPA_PARES_INTERACAO_PADRAO).forEach((chave) => {
+      if (!ativos.has(chave)) delete mapa[chave];
+    });
+  }
   (config?.interacoes_rotina || []).forEach((item) => {
     if (item.grupo === 'par' && item.tipo_retirada && item.tipo_entrega) {
       mapa[item.valor] = [item.tipo_retirada, item.tipo_entrega];
@@ -210,7 +216,9 @@ export function aplicarPresetCasaPorto(config, nomeProjeto) {
       ...(base.modulos || {}),
       acomodacoes: false,
       pertences_recolhidos: false,
+      lavanderia_pecas: false,
     },
+    preset_casa_porto: true,
   };
 }
 

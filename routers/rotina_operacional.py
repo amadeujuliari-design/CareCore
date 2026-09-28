@@ -6,6 +6,7 @@ from sqlalchemy import cast, func, or_, String
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
+from config_operacional_service import carregar_config_operacional_instituicao
 from database import get_db
 from models import (
     ConviventeDB,
@@ -451,6 +452,15 @@ async def listar_lavanderia(
     }
 
 
+async def _bloquear_controle_pecas_lavanderia(db: AsyncSession, instituicao_id: str) -> None:
+    config, _, _ = await carregar_config_operacional_instituicao(db, instituicao_id)
+    if config.modulos.lavanderia_pecas is False:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Neste projeto a lavanderia é só utilização na rotina, sem controle de peças.",
+        )
+
+
 @router.post(
     "/lavanderia",
     response_model=LavanderiaRegistroResponse,
@@ -463,6 +473,7 @@ async def registrar_lavanderia(
 ):
     bloquear_usuario_global_puro(usuario_atual)
     instituicao_id = obter_instituicao_escopo(usuario_atual)
+    await _bloquear_controle_pecas_lavanderia(db, instituicao_id)
     convivente = await _obter_convivente_ativo(db, instituicao_id, payload.convivente_id)
     agora = agora_sao_paulo()
 
@@ -494,6 +505,7 @@ async def retirar_lavanderia(
 ):
     bloquear_usuario_global_puro(usuario_atual)
     instituicao_id = obter_instituicao_escopo(usuario_atual)
+    await _bloquear_controle_pecas_lavanderia(db, instituicao_id)
     linha = (
         await db.execute(
             select(LavanderiaRegistroDB, ConviventeDB)
@@ -584,6 +596,7 @@ async def cancelar_lavanderia(
 ):
     bloquear_usuario_global_puro(usuario_atual)
     instituicao_id = obter_instituicao_escopo(usuario_atual)
+    await _bloquear_controle_pecas_lavanderia(db, instituicao_id)
     linha = (
         await db.execute(
             select(LavanderiaRegistroDB, ConviventeDB)

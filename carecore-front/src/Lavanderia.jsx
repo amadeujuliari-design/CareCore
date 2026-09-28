@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Navigate } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import { AppShell, MainShell, PageHeader, PremiumButton, ReportActionButton, ScrollArea } from './components/PremiumUI';
 import api from './services/api';
@@ -26,6 +27,8 @@ import LeitorCarteirinhaModal from './components/LeitorCarteirinhaModal';
 import ModalAlertaOk from './components/ModalAlertaOk';
 import { useLeitorUsbGlobal } from './hooks/useLeitorUsbGlobal';
 import { encontrarConviventePorCodigo } from './utils/conviventeIdentificacaoUtils';
+import { useConfigOperacional } from './hooks/useConfigOperacional';
+import { moduloAtivo, projetoOcultaAcomodacoes } from './config/configOperacionalDefaults';
 
 function nomeConvivente(convivente) {
   return convivente?.nome_social || convivente?.nome_completo || 'Convivente';
@@ -67,6 +70,16 @@ function montarDadosRelatorioLavanderia(registrosLista) {
 }
 
 export default function Lavanderia() {
+  const {
+    config: configOperacional,
+    nomeProjeto,
+    carregando: carregandoConfig,
+  } = useConfigOperacional();
+  const semControlePecas = !carregandoConfig && (
+    projetoOcultaAcomodacoes(nomeProjeto)
+    || configOperacional?.preset_casa_porto === true
+    || (configOperacional != null && !moduloAtivo(configOperacional, 'lavanderia_pecas'))
+  );
   const [registros, setRegistros] = useState([]);
   const [totalRegistros, setTotalRegistros] = useState(0);
   const [temMais, setTemMais] = useState(false);
@@ -136,6 +149,10 @@ export default function Lavanderia() {
   }, [statusFiltro, filtrosPeriodo]);
 
   const carregarDados = useCallback(async ({ append = false, offset = 0 } = {}) => {
+    if (semControlePecas || carregandoConfig) {
+      setLoading(false);
+      return;
+    }
     try {
       if (!append) {
         setLoading(true);
@@ -166,7 +183,7 @@ export default function Lavanderia() {
       setLoading(false);
       setCarregandoMais(false);
     }
-  }, [statusFiltro, montarParamsLista]);
+  }, [statusFiltro, montarParamsLista, semControlePecas, carregandoConfig]);
 
   useEffect(() => {
     if (statusFiltro === 'pendentes') {
@@ -536,6 +553,10 @@ export default function Lavanderia() {
       setSalvando(false);
     }
   };
+
+  if (semControlePecas) {
+    return <Navigate to="/rotina" replace />;
+  }
 
   return (
     <AppShell>

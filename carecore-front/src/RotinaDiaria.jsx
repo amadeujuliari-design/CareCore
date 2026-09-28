@@ -178,7 +178,7 @@ const ROTULOS_REFEICAO_EXTRA = {
 export default function RotinaDiaria() {
   const navigate = useNavigate();
   const { isGlobalPuro: somenteLeitura, usuario } = useAuth();
-  const { config: configOperacional } = useConfigOperacional();
+  const { config: configOperacional, nomeProjeto: nomeProjetoOperacional } = useConfigOperacional();
   const opcoesInteracaoRotina = useMemo(
     () => obterOpcoesInteracaoRotina(configOperacional),
     [configOperacional],
@@ -1376,7 +1376,8 @@ export default function RotinaDiaria() {
   const contagensInteracoesVisiveis = ocultarSomatoriaAlimentacao
     ? filtrarContagensInteracaoSemAlimentacao(contagensInteracoes)
     : contagensInteracoes;
-  const casaPorto = projetoOcultaAcomodacoes(usuario?.projeto_nome);
+  const casaPorto = projetoOcultaAcomodacoes(nomeProjetoOperacional || usuario?.projeto_nome)
+    || configOperacional?.preset_casa_porto === true;
   const horaSaoPaulo = Number(new Intl.DateTimeFormat('en-GB', {
     timeZone: 'America/Sao_Paulo',
     hour: '2-digit',
@@ -1648,7 +1649,9 @@ export default function RotinaDiaria() {
                       </select>
                     </div>
                     <p className="rounded-xl bg-white px-3 py-2 text-xs font-semibold text-blue-700 border border-blue-100">
-                      Refeições repetidas pedem confirmação e entram como extras; toalha/cobertor sugerem a próxima ação.
+                      {opcoesInteracaoRotina.some((opcao) => opcao.valor === 'Cobertor' || opcao.valor === 'Toalha')
+                        ? 'Refeições repetidas pedem confirmação e entram como extras; toalha/cobertor sugerem a próxima ação.'
+                        : 'Refeições repetidas pedem confirmação e entram como extras.'}
                     </p>
                   </div>
                 )}

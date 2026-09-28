@@ -184,7 +184,7 @@ function montarComprasChildrenSede(filaAssinaturaPendentes) {
 export default function Sidebar() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { config: configOperacional } = useConfigOperacional();
+  const { config: configOperacional, nomeProjeto: nomeProjetoOperacional } = useConfigOperacional();
   const [menuMobileAberto, setMenuMobileAberto] = useState(false);
   const [menusExpandidos, setMenusExpandidos] = useState({});
   const [historicoLegadoApiAtivo, setHistoricoLegadoApiAtivo] = useState(false);
@@ -857,11 +857,16 @@ export default function Sidebar() {
     if (item.path === '/convenio-sisa' && configOperacional && !moduloAtivo(configOperacional, 'sisa')) {
       return false;
     }
-    const ocultaAcomodacoesCasaPorto = projetoOcultaAcomodacoes(usuarioSessao?.projeto_nome);
+    const ocultaAcomodacoesCasaPorto = projetoOcultaAcomodacoes(
+      nomeProjetoOperacional || usuarioSessao?.projeto_nome,
+    );
     if (item.path === '/quartos' && (ocultaAcomodacoesCasaPorto || (configOperacional && !moduloAtivo(configOperacional, 'acomodacoes')))) {
       return false;
     }
     if (item.path === '/rotina/pertences-recolhidos' && (ocultaAcomodacoesCasaPorto || (configOperacional && !moduloAtivo(configOperacional, 'pertences_recolhidos')))) {
+      return false;
+    }
+    if (item.path === '/rotina/lavanderia' && (ocultaAcomodacoesCasaPorto || (configOperacional && !moduloAtivo(configOperacional, 'lavanderia_pecas')))) {
       return false;
     }
     const featurePermitida =

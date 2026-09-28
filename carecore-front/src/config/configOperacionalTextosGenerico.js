@@ -58,6 +58,7 @@ export const MODULOS_GENERICO = {
   historico_legado: false,
   acomodacoes: true,
   pertences_recolhidos: true,
+  lavanderia_pecas: true,
 };
 
 export const MODULOS_SIAT = {

@@ -60,6 +60,47 @@ def test_modulo_acompanhamento_desligado():
     assert modulo_acompanhamento_ativo(config, "transferencias") is True
 
 
+def test_casa_porto_forca_rotina_curta_e_sem_controle_de_pecas():
+    config = mesclar_config_operacional(
+        {
+            "refeicoes": {
+                "itens": [
+                    {
+                        "id": "jantar",
+                        "nome": "Jantar",
+                        "inicio": "17:50",
+                        "fim": "20:30",
+                        "ativo": True,
+                    }
+                ]
+            },
+            "interacoes_rotina": [
+                {"valor": "Cobertor", "label": "Cobertor", "grupo": "simples", "ativo": True},
+            ],
+            "modulos": {"acomodacoes": True, "lavanderia_pecas": True},
+        },
+        casa_porto=True,
+    )
+    nomes = [item.nome for item in config.refeicoes.itens]
+    valores = [item.valor for item in config.interacoes_rotina]
+    tipos = obter_tipos_rotina_validos(config)
+    assert nomes == ["Café da manhã", "Almoço", "Lanche da tarde"]
+    assert valores == [
+        "Banho",
+        "Lavanderia",
+        "Bipar documentos guardados",
+        "Bipar documentos retirados",
+    ]
+    assert "Jantar" not in tipos
+    assert "Lanche noturno" not in tipos
+    assert "Cobertor" not in tipos
+    assert "Lavanderia" in tipos
+    assert "Lanche da tarde" in tipos
+    assert config.modulos.acomodacoes is False
+    assert config.modulos.pertences_recolhidos is False
+    assert config.modulos.lavanderia_pecas is False
+
+
 def test_interacao_par_customizada_entra_nos_tipos_validos():
     config = montar_config_operacional_padrao()
     config.interacoes_rotina.append(
