@@ -190,16 +190,16 @@
   .cover-strip .item .d{ font-size:9.5px; color:var(--muted); margin-top:3px; }
 
   /* ====== ÍNDICE ====== */
-  .toc{ display:grid; gap:4px; margin-top:2px; }
+  .toc{ display:grid; gap:1px; margin-top:0; }
   .toc a, .toc .row{
-    display:flex; align-items:center; gap:11px; text-decoration:none; color:inherit;
-    border:1px solid var(--line); border-radius:10px; padding:5px 12px; background:#fff;
+    display:flex; align-items:center; gap:8px; text-decoration:none; color:inherit;
+    border:1px solid var(--line); border-radius:8px; padding:1px 8px; background:#fff;
   }
-  .toc .tnum{ width:23px; height:23px; flex:none; border-radius:7px; background:var(--soft-2); color:var(--brand);
-    display:flex; align-items:center; justify-content:center; font-weight:900; font-size:11px; border:1px solid #ede9fe; }
+  .toc .tnum{ width:20px; height:20px; flex:none; border-radius:6px; background:var(--soft-2); color:var(--brand);
+    display:flex; align-items:center; justify-content:center; font-weight:900; font-size:10px; border:1px solid #ede9fe; }
   .toc .ttl{ flex:1; }
-  .toc .ttl b{ display:block; font-size:11px; color:var(--ink); }
-  .toc .ttl small{ font-size:9px; color:var(--muted); }
+  .toc .ttl b{ display:block; font-size:10.5px; color:var(--ink); line-height:1.15; }
+  .toc .ttl small{ font-size:8px; color:var(--muted); line-height:1.15; }
   .toc .dots{ flex:1; border-bottom:2px dotted var(--line); margin:0 4px; height:10px; }
   .toc .tpg{ font-weight:900; color:var(--brand-2); font-size:11.5px; }
 
@@ -237,8 +237,8 @@
         <h1 class="cover-title">CARE<span>CORE+</span></h1>
         <p class="cover-sub">
           Guia do sistema para o primeiro acesso e o dia a dia. Da organização e seus projetos ao
-          controle de presença, rotina, acomodações, ocorrências, convênio SISA e relatórios —
-          tudo passo a passo, com as telas reais do programa.
+          controle de presença, rotina, atividades, acomodações, ocorrências, convênio SISA,
+          compras, Nota Fiscal Paulista e relatórios — passo a passo, com as telas reais.
         </p>
         <div class="cover-tags">
           <div class="pill-list" style="justify-content:center;">
@@ -246,6 +246,9 @@
             <span class="pill b">Telas reais</span>
             <span class="pill b">Leitura por carteirinha</span>
             <span class="pill b">Auditoria SISA</span>
+            <span class="pill b">Atividades</span>
+            <span class="pill b">Compras</span>
+            <span class="pill b">Nota Fiscal Paulista</span>
           </div>
         </div>
 
@@ -282,7 +285,7 @@
 
       <nav class="toc">
         <a href="#sec1" class="row"><span class="tnum">01</span><span class="ttl"><b>Primeiro acesso: organização, projeto e master</b><small>Estrutura inicial da operação</small></span><span class="dots"></span><span class="tpg">03</span></a>
-        <a href="#sec2" class="row"><span class="tnum">02</span><span class="ttl"><b>Usuários e permissões</b><small>Globais, gestores, técnicos e orientadores</small></span><span class="dots"></span><span class="tpg">04</span></a>
+        <a href="#sec2" class="row"><span class="tnum">02</span><span class="ttl"><b>Usuários e permissões</b><small>Perfis do sistema, NFP, Compras e a marcação no cadastro</small></span><span class="dots"></span><span class="tpg">04</span></a>
         <a href="#sec3" class="row"><span class="tnum">03</span><span class="ttl"><b>Dashboard principal</b><small>A tela inicial, personalizada por perfil</small></span><span class="dots"></span><span class="tpg">05</span></a>
         <a href="#sec4" class="row"><span class="tnum">04</span><span class="ttl"><b>Cadastro de conviventes e abas</b><small>Ficha completa e proteção por perfil</small></span><span class="dots"></span><span class="tpg">06</span></a>
         <a href="#sec5" class="row"><span class="tnum">05</span><span class="ttl"><b>Dados sensíveis e carteirinha</b><small>Sigilo por perfil e ID de acesso</small></span><span class="dots"></span><span class="tpg">07</span></a>
@@ -291,13 +294,17 @@
         <a href="#sec8" class="row"><span class="tnum">08</span><span class="ttl"><b>Ocorrências</b><small>Prioridade, atenção do técnico e autoria do convivente</small></span><span class="dots"></span><span class="tpg">10</span></a>
         <a href="#sec9" class="row"><span class="tnum">09</span><span class="ttl"><b>Rotina diária</b><small>Entradas, refeições, itens e módulos operacionais</small></span><span class="dots"></span><span class="tpg">11</span></a>
         <a href="#sec10" class="row"><span class="tnum">10</span><span class="ttl"><b>Lavanderia e pertences recolhidos</b><small>Controle de pendências, retiradas e baixas</small></span><span class="dots"></span><span class="tpg">12</span></a>
-        <a href="#sec11" class="row"><span class="tnum">11</span><span class="ttl"><b>Dashboard operacional</b><small>Visão de plantão em tempo real</small></span><span class="dots"></span><span class="tpg">13</span></a>
+        <a href="#sec11" class="row"><span class="tnum">11</span><span class="ttl"><b>Dashboard operacional</b><small>Plantão do dia e gráfico do retrato das 22:40</small></span><span class="dots"></span><span class="tpg">13</span></a>
         <a href="#sec12" class="row"><span class="tnum">12</span><span class="ttl"><b>Histórico geral da rotina</b><small>Auditoria com filtro por tipo de registro</small></span><span class="dots"></span><span class="tpg">14</span></a>
         <a href="#sec13" class="row"><span class="tnum">13</span><span class="ttl"><b>Convênio / SISA</b><small>Importação e divergências de repasse</small></span><span class="dots"></span><span class="tpg">15</span></a>
         <a href="#sec14" class="row"><span class="tnum">14</span><span class="ttl"><b>Comunicação interna</b><small>Avisos direcionados e leitura</small></span><span class="dots"></span><span class="tpg">16</span></a>
         <a href="#sec15" class="row"><span class="tnum">15</span><span class="ttl"><b>Central de relatórios</b><small>Abas, filtros e impressão</small></span><span class="dots"></span><span class="tpg">17</span></a>
         <a href="#sec16" class="row"><span class="tnum">16</span><span class="ttl"><b>Relatório de evolução</b><small>Gráficos para prestação de contas</small></span><span class="dots"></span><span class="tpg">18</span></a>
-        <a href="#sec17" class="row"><span class="tnum">17</span><span class="ttl"><b>Contato e próximos passos</b><small>Fale com a equipe CARECORE+</small></span><span class="dots"></span><span class="tpg">19</span></a>
+        <a href="#sec18" class="row"><span class="tnum">18</span><span class="ttl"><b>Atividades</b><small>Cadastro e chamada na 19; grade na 20</small></span><span class="dots"></span><span class="tpg">19</span></a>
+        <a href="#sec19" class="row"><span class="tnum">19</span><span class="ttl"><b>Compras</b><small>Pedidos, cotações e nota fiscal</small></span><span class="dots"></span><span class="tpg">21</span></a>
+        <a href="#sec20" class="row"><span class="tnum">20</span><span class="ttl"><b>Nota Fiscal Paulista — leitura</b><small>QR do cupom e fila de chaves</small></span><span class="dots"></span><span class="tpg">22</span></a>
+        <a href="#sec21" class="row"><span class="tnum">21</span><span class="ttl"><b>Nota Fiscal Paulista — envio</b><small>Senha gov.br só no site oficial</small></span><span class="dots"></span><span class="tpg">23</span></a>
+        <a href="#sec22" class="row"><span class="tnum">22</span><span class="ttl"><b>Contato e próximos passos</b><small>Fale com a equipe CARECORE+</small></span><span class="dots"></span><span class="tpg">24</span></a>
       </nav>
     </div>
 
@@ -396,13 +403,19 @@
           <tr><td>Técnico</td><td>Acompanhamento e prontuário, incluindo dados sensíveis e PIA dos conviventes sob sua referência.</td></tr>
           <tr><td>Orientador</td><td>Operação de portaria e rotina (entradas, saídas, refeições e itens) — sem acesso a dados sensíveis.</td></tr>
           <tr><td>Administrativo/Consulta</td><td>Acesso direcionado para apoio, conferência e consulta, conforme permissões definidas pela instituição.</td></tr>
+          <tr><td>ADM Pedidos</td><td>Usuário só de Compras de um projeto: pedidos, cotações e catálogo. Não opera rotina nem prontuário.</td></tr>
+          <tr><td>ADM Produção NFP</td><td>Usuário só da Nota Fiscal Paulista do projeto: lê cupons e acompanha a fila. Não dispara o envio à SEFAZ.</td></tr>
+          <tr><td>ADM Global NFP</td><td>Gestão da Nota Fiscal Paulista na organização, inclusive o envio. A senha gov.br é digitada no site oficial, não no CareCore.</td></tr>
+          <tr><td>ADM Global Compras</td><td>Sede do módulo: Suprimentos conduz cotação e envio; Infraestrutura acompanha aprovação e assinatura.</td></tr>
         </tbody>
       </table>
 
-      <div class="callout ok" style="margin-top:13px;">
+      <div class="callout ok" style="margin-top:10px;">
         <span class="ico">🛡️</span>
-        <span><b>Hierarquia e privacidade:</b> os perfis evitam que todos vejam tudo. Prontuários, documentos,
-        dados sensíveis e relatórios ficam disponíveis conforme a função real de cada usuário.</span>
+        <span><b>Marcação no usuário do sistema:</b> no cadastro de Gestor, Técnico e Administrativo há duas opções —
+        liberar Compras e liberar NFP. Marcada, a pessoa continua no perfil dela e também vê o módulo.
+        Sem a marcação, Compras ou NFP não aparecem. Gestor já entra com Compras marcado; dá para desmarcar.
+        Quem é só ADM Pedidos ou só ADM Produção NFP permanece restrito ao próprio módulo.</span>
       </div>
     </div>
 
@@ -468,7 +481,7 @@
         O Módulo de Prontuários reúne a ficha completa de cada convivente, organizada em <b>abas</b>:
         Pessoais e status, Assistência social, Histórico, PIA, Fluxo Diário, Saúde e cofre, Dados sensíveis
         e Anexos/GED. A ficha guarda foto, nome social, número de prontuário, status, número SISA, técnico
-        de referência e a alocação de leito.
+        de referência e, quando o projeto tem pernoite, a alocação de leito. Projeto sem pernoite não pede quarto nem cama.
       </p>
 
       <div class="shot">
@@ -525,7 +538,8 @@
         <span class="ico">🪪</span>
         <span><b>A carteirinha é a chave da operação:</b> é com a leitura dela que se autenticam entradas,
         saídas, refeições, retiradas de itens e até a assinatura digital de ocorrências. Imprima uma a uma
-        no cadastro ou <b>em lote</b> pela Central de Relatórios (seção 15).</span>
+        no cadastro ou <b>em lote</b> pela Central de Relatórios (seção 15). Em projeto sem pernoite, a carteirinha
+        não imprime acomodação nem tipo de leito.</span>
       </div>
     </div>
 
@@ -605,6 +619,11 @@
         <div class="mini"><b>👆 Atribuir / remover</b><span>Clique no leito para alocar ou liberar.</span></div>
         <div class="mini"><b>🧱 Editar o quarto</b><span>Inclua ou exclua leitos como no físico.</span></div>
       </div>
+      <div class="callout brand" style="margin-top:12px;">
+        <span class="ico">🛏️</span>
+        <span><b>Só onde há pernoite:</b> projeto sem dormitório não mostra Acomodações nem pertences recolhidos.
+        A rotina desse projeto segue sem quarto e sem cama.</span>
+      </div>
     </div>
 
     <footer class="pg-footer">
@@ -672,11 +691,12 @@
       <div class="divider"></div>
 
       <p class="lead">
-        A Rotina Diária concentra o fluxo completo do convivente, <b>tudo autenticado pela leitura da
-        carteirinha</b>: saída, entrada, café da manhã, almoço, jantar e lanche noturno, retirada e
-        devolução de <b>cobertores</b> e <b>toalhas</b>, acesso ao <b>bagageiro</b> e retirada/entrega de
-        <b>documentos</b>. Também reúne módulos auxiliares para controlar <b>lavanderia</b> e
-        <b>pertences recolhidos</b>, mantendo data, hora, responsável e observações do plantão.
+        A Rotina Diária concentra o fluxo do convivente, <b>autenticado pela leitura da carteirinha</b>.
+        O conjunto padrão traz entrada, saída, café da manhã, almoço, jantar, lanche noturno, banho,
+        cobertor, toalha, bagageiro e documentos, além de lavanderia e pertences quando o projeto usa.
+        <b>A lista é do projeto:</b> uma unidade sem pernoite pode ficar só com café, almoço, lanche da tarde,
+        banho, lavanderia como utilização e documentos — sem jantar, lanche noturno, cobertor, toalha,
+        bagageiro, acomodação nem controle de peças.
       </p>
 
       <div class="shot">
@@ -692,6 +712,7 @@
         <span class="pill">Almoço</span>
         <span class="pill">Jantar</span>
         <span class="pill">Lanche noturno</span>
+        <span class="pill">Banho</span>
         <span class="pill">Cobertor</span>
         <span class="pill">Toalha</span>
         <span class="pill">Bagageiro</span>
@@ -703,8 +724,8 @@
       <div class="callout brand" style="margin-top:13px;">
         <span class="ico">🔁</span>
         <span><b>Inteligência embutida:</b> refeição extra fica destacada quando houver repetição; cobertor e
-        toalha alternam sozinhos entre “retirar” e “devolver”; documentos, bagagem, lavanderia e pertences
-        mantêm rastro completo para conferência da equipe.</span>
+        toalha, quando existem no projeto, alternam entre “retirar” e “devolver”. O histórico só oferece
+        os tipos que aquele projeto realmente registra.</span>
       </div>
     </div>
 
@@ -753,8 +774,9 @@
 
       <div class="callout ok" style="margin-top:13px;">
         <span class="ico">✅</span>
-        <span><b>Operação mais segura:</b> retiradas parciais mantêm o saldo aberto; divergências exigem motivo;
-        e baixas administrativas registram justificativa para auditoria posterior.</span>
+        <span><b>Quando o projeto não controla peças:</b> a lavanderia vira só uma utilização na rotina, no mesmo
+        espírito do banho. Some o menu de quantidade, prazo de 48 horas e saldo. Pertences recolhidos também
+        ficam de fora do projeto sem pernoite.</span>
       </div>
     </div>
 
@@ -778,21 +800,29 @@
       <div class="divider"></div>
 
       <p class="lead">
-        Voltado à operação do dia, o <b>Dashboard Operacional</b> mostra em tempo real quem está dentro e
-        fora, as refeições já servidas, as movimentações de itens e os alertas do plantão. É a tela ideal
-        para a portaria e para a equipe acompanhar o andamento da casa.
+        Voltado à operação do dia, o <b>Dashboard Operacional</b> mostra quem está dentro e fora, as
+        refeições já servidas e os alertas do plantão. Todo dia o sistema grava um retrato — a foto das
+        22:40 — e o gráfico desse histórico fica na mesma tela.
       </p>
 
       <div class="shot">
         <div class="bar"><i></i><i></i><i></i><span class="url">carecore+ · Dashboard Operacional</span></div>
         <img src="telas/g14-operacional.png" alt="Dashboard operacional" />
       </div>
-      <p class="shot-cap">Presença, refeições e movimentações consolidadas em tempo real, com alertas.</p>
+      <p class="shot-cap">Gráfico do retrato diário: a foto que o sistema grava às 22:40, dia a dia.</p>
 
       <div class="mini3">
         <div class="mini"><b>🚪 Dentro / fora</b><span>Quem está na casa e quem saiu, ao vivo.</span></div>
-        <div class="mini"><b>🍽️ Refeições</b><span>Totais servidos por tipo no dia.</span></div>
+        <div class="mini"><b>📸 Retrato 22:40</b><span>Foto diária do plantão, no gráfico do período.</span></div>
         <div class="mini"><b>⚠️ Alertas</b><span>Pendências e situações que pedem ação.</span></div>
+      </div>
+      <div class="callout brand" style="margin-top:12px;">
+        <span class="ico">⏰</span>
+        <span><b>Aviso e saída são do projeto:</b> o horário do aviso e a opção de lançar saída automática
+        são configuráveis. O projeto define a hora em que o sistema avisa quem ainda está dentro, e se nessa
+        hora ele só alerta ou também registra a saída. Com pernoite, dentro e fora continuam pelo último
+        movimento. Sem pernoite, o aviso evita esquecer alguém no fim do expediente — e a saída só entra
+        sozinha se essa opção estiver ligada.</span>
       </div>
     </div>
 
@@ -817,8 +847,8 @@
 
       <p class="lead">
         O Histórico Geral da Rotina é a trilha de auditoria de todos os registros. Você filtra por período,
-        convivente e por <b>qualquer tipo de registro</b> — entrada, saída, café, almoço, jantar, lanche,
-        cobertor, toalha, bagageiro e documentos. O card <b>“Tipo de registro”</b> no topo é <b>dinâmico</b>:
+        convivente e por <b>qualquer tipo que o projeto registra</b> — no conjunto padrão, entrada, saída,
+        refeições, banho, cobertor, toalha, bagageiro e documentos. O card <b>“Tipo de registro”</b> no topo é <b>dinâmico</b>:
         mostra a soma do tipo que estiver filtrado. Gestores ainda editam ou cancelam registros com motivo.
       </p>
 
@@ -1023,21 +1053,168 @@
     </footer>
   </section>
 
-  <!-- ================= PÁGINA 19 — CONTATO ================= -->
-  <section class="page" id="sec17">
+  <!-- ================= PÁGINA 19 — ATIVIDADES ================= -->
+  <section class="page" id="sec18">
     <header class="pg-header">
       <div class="brand"><img class="brand-logo" src="logo.png" alt="CARECORE+" /></div>
-      <span class="pg-kicker">17 · Contato</span>
+      <span class="pg-kicker">18 · Atividades</span>
+    </header>
+    <div class="content">
+      <p class="eyebrow">Oficinas, esportes e sessões do mês</p>
+      <h2 class="h-section"><span class="num">18.</span> Atividades: cadastro e chamada</h2>
+      <div class="divider"></div>
+      <p class="lead">
+        O módulo de Atividades cadastra oficinas, esportes e encontros, gera as sessões do mês e faz a
+        chamada. Cada atividade tem categoria, responsável, frequência e o vínculo com a descrição do SISA
+        quando a unidade presta conta por ali.
+      </p>
+      <div class="grid g2" style="margin-top:10px;">
+        <div>
+          <div class="shot in-grid"><div class="bar"><i></i><i></i><i></i><span class="url">carecore+ · Atividades</span></div><img src="telas/g23-atividades.png" alt="Cadastro de atividades" /></div>
+          <p class="two-cap">Cadastro: atividade, responsável e sessões do mês</p>
+        </div>
+        <div>
+          <div class="shot in-grid"><div class="bar"><i></i><i></i><i></i><span class="url">carecore+ · Chamada</span></div><img src="telas/g24-atividades-chamada.png" alt="Chamada de presença" /></div>
+          <p class="two-cap">Chamada da sessão, com carteirinha ou marcação manual</p>
+        </div>
+      </div>
+    </div>
+    <footer class="pg-footer">
+      <span class="pg-num">Página 19</span>
+      <div class="zap"><img class="zap-qr" src="whatsapp_qr.svg" alt="QR WhatsApp" /><span class="zap-label">WhatsApp me</span><span class="zap-phone">(11) 97072-9208</span></div>
+      <span class="pg-tag"><b>CARECORE+</b><a class="pg-site" href="https://carecoreplus.com.br" target="_blank" rel="noopener noreferrer">carecoreplus.com.br</a></span>
+    </footer>
+  </section>
+
+  <!-- ================= PÁGINA 20 — GRADE ================= -->
+  <section class="page" id="sec18b">
+    <header class="pg-header">
+      <div class="brand"><img class="brand-logo" src="logo.png" alt="CARECORE+" /></div>
+      <span class="pg-kicker">18 · Atividades</span>
+    </header>
+    <div class="content">
+      <p class="eyebrow">O mês inteiro numa folha</p>
+      <h2 class="h-section"><span class="num">18.</span> Grade, conteúdo e conferência</h2>
+      <div class="divider"></div>
+      <p class="lead">
+        A grade mensal mostra quem esteve em cada sessão. O conteúdo registra o que foi feito naquele dia.
+        A conferência SISA compara a planilha do convênio com as presenças do CareCore+. Pontos e brindes
+        ficam no mesmo módulo, quando a unidade usa.
+      </p>
+      <div class="shot">
+        <div class="bar"><i></i><i></i><i></i><span class="url">carecore+ · Grade mensal</span></div>
+        <img src="telas/g25-atividades-grade.png" alt="Grade mensal de atividades" />
+      </div>
+      <p class="shot-cap">Grade de agosto: cada “P” é uma presença na sessão daquele dia.</p>
+    </div>
+    <footer class="pg-footer">
+      <span class="pg-num">Página 20</span>
+      <div class="zap"><img class="zap-qr" src="whatsapp_qr.svg" alt="QR WhatsApp" /><span class="zap-label">WhatsApp me</span><span class="zap-phone">(11) 97072-9208</span></div>
+      <span class="pg-tag"><b>CARECORE+</b><a class="pg-site" href="https://carecoreplus.com.br" target="_blank" rel="noopener noreferrer">carecoreplus.com.br</a></span>
+    </footer>
+  </section>
+
+  <!-- ================= PÁGINA 21 — COMPRAS ================= -->
+  <section class="page" id="sec19">
+    <header class="pg-header">
+      <div class="brand"><img class="brand-logo" src="logo.png" alt="CARECORE+" /></div>
+      <span class="pg-kicker">19 · Compras</span>
+    </header>
+    <div class="content">
+      <p class="eyebrow">Do pedido à nota</p>
+      <h2 class="h-section"><span class="num">19.</span> Compras</h2>
+      <div class="divider"></div>
+      <p class="lead">
+        Compras reúne pedidos da unidade, cotações, catálogo, categorias e fornecedores. Consumo, hortifruti,
+        bem, manutenção e serviço seguem o tipo escolhido na abertura. No consumo, Suprimentos anexa os
+        orçamentos e dá o ok; o projeto escolhe e aprova; Suprimentos envia ao fornecedor; o projeto junta
+        a nota fiscal e os documentos para encerrar. Nas outras modalidades, a nota também aceita arquivos junto.
+      </p>
+      <div class="shot">
+        <div class="bar"><i></i><i></i><i></i><span class="url">carecore+ · Compras</span></div>
+        <img src="telas/g26-compras.png" alt="Pedidos e cotações" />
+      </div>
+      <p class="shot-cap">Abertura por tipo e a lista de pedidos em andamento.</p>
+    </div>
+    <footer class="pg-footer">
+      <span class="pg-num">Página 21</span>
+      <div class="zap"><img class="zap-qr" src="whatsapp_qr.svg" alt="QR WhatsApp" /><span class="zap-label">WhatsApp me</span><span class="zap-phone">(11) 97072-9208</span></div>
+      <span class="pg-tag"><b>CARECORE+</b><a class="pg-site" href="https://carecoreplus.com.br" target="_blank" rel="noopener noreferrer">carecoreplus.com.br</a></span>
+    </footer>
+  </section>
+
+  <!-- ================= PÁGINA 22 — NFP LEITURA ================= -->
+  <section class="page" id="sec20">
+    <header class="pg-header">
+      <div class="brand"><img class="brand-logo" src="logo.png" alt="CARECORE+" /></div>
+      <span class="pg-kicker">20 · Nota Fiscal Paulista</span>
+    </header>
+    <div class="content">
+      <p class="eyebrow">O cupom entra sozinho</p>
+      <h2 class="h-section"><span class="num">20.</span> Leitura de cupons</h2>
+      <div class="divider"></div>
+      <p class="lead">
+        A leitura bipa o QR pela câmera ou pelo leitor USB. O CareCore consulta a SEFAZ e só guarda cupom
+        sem CPF do consumidor. A chave fica na fila, com status de pendente ou enviada. Agentes, doadores,
+        CNPJs, metas e o rateio do mês ficam no mesmo módulo.
+      </p>
+      <div class="shot">
+        <div class="bar"><i></i><i></i><i></i><span class="url">carecore+ · Leitura de cupons</span></div>
+        <img src="telas/g28-nfp-leitura.png" alt="Leitura de cupons da Nota Fiscal Paulista" />
+      </div>
+      <p class="shot-cap">Câmera ou leitor à esquerda; a fila de chaves lidas à direita.</p>
+    </div>
+    <footer class="pg-footer">
+      <span class="pg-num">Página 22</span>
+      <div class="zap"><img class="zap-qr" src="whatsapp_qr.svg" alt="QR WhatsApp" /><span class="zap-label">WhatsApp me</span><span class="zap-phone">(11) 97072-9208</span></div>
+      <span class="pg-tag"><b>CARECORE+</b><a class="pg-site" href="https://carecoreplus.com.br" target="_blank" rel="noopener noreferrer">carecoreplus.com.br</a></span>
+    </footer>
+  </section>
+
+  <!-- ================= PÁGINA 23 — NFP ENVIO ================= -->
+  <section class="page" id="sec21">
+    <header class="pg-header">
+      <div class="brand"><img class="brand-logo" src="logo.png" alt="CARECORE+" /></div>
+      <span class="pg-kicker">21 · Nota Fiscal Paulista</span>
+    </header>
+    <div class="content">
+      <p class="eyebrow">A senha não fica no sistema</p>
+      <h2 class="h-section"><span class="num">21.</span> Envio sem guardar a senha gov.br</h2>
+      <div class="divider"></div>
+      <p class="lead">
+        O envio roda no computador da instituição. A pessoa autorizada abre o site oficial da Nota Fiscal
+        Paulista e <b>digita a senha gov.br ali</b>. O CareCore não pede essa senha e não a armazena.
+        Depois do login, ela inicia o envio automático das chaves que já estão na fila, acompanha o
+        resultado e pode interromper. Quem só lê cupom não dispara essa fila.
+      </p>
+      <div class="shot">
+        <div class="bar"><i></i><i></i><i></i><span class="url">carecore+ · Envio SEFAZ</span></div>
+        <img src="telas/g29-nfp-envio.png" alt="Envio das chaves para a Nota Fiscal Paulista" />
+      </div>
+      <p class="shot-cap">O login fica no site oficial. O CareCore só conduz as chaves já lidas.</p>
+    </div>
+    <footer class="pg-footer">
+      <span class="pg-num">Página 23</span>
+      <div class="zap"><img class="zap-qr" src="whatsapp_qr.svg" alt="QR WhatsApp" /><span class="zap-label">WhatsApp me</span><span class="zap-phone">(11) 97072-9208</span></div>
+      <span class="pg-tag"><b>CARECORE+</b><a class="pg-site" href="https://carecoreplus.com.br" target="_blank" rel="noopener noreferrer">carecoreplus.com.br</a></span>
+    </footer>
+  </section>
+
+  <!-- ================= PÁGINA 24 — CONTATO ================= -->
+  <section class="page" id="sec22">
+    <header class="pg-header">
+      <div class="brand"><img class="brand-logo" src="logo.png" alt="CARECORE+" /></div>
+      <span class="pg-kicker">22 · Contato</span>
     </header>
 
     <div class="content" style="display:flex; flex-direction:column;">
       <p class="eyebrow">Vamos conversar</p>
-      <h2 class="h-section"><span class="num">17.</span> Próximos passos</h2>
+      <h2 class="h-section"><span class="num">22.</span> Próximos passos</h2>
       <div class="divider"></div>
 
       <p class="lead">
         Com este guia você já consegue dar o primeiro acesso, montar a equipe e operar o dia a dia — da
-        portaria à prestação de contas. Quer ajuda para configurar a sua instituição ou ver tudo
+        portaria à prestação de contas, incluindo atividades, compras e a Nota Fiscal Paulista. Quer ajuda para configurar a sua instituição ou ver tudo
         funcionando ao vivo? Fale com a gente.
       </p>
 
@@ -1060,7 +1237,7 @@
     </div>
 
     <footer class="pg-footer">
-      <span class="pg-num">Página 19</span>
+      <span class="pg-num">Página 24</span>
       <div class="zap"><img class="zap-qr" src="whatsapp_qr.svg" alt="QR WhatsApp" /><span class="zap-label">WhatsApp me</span><span class="zap-phone">(11) 97072-9208</span></div>
       <span class="pg-tag"><b>CARECORE+</b><a class="pg-site" href="https://carecoreplus.com.br" target="_blank" rel="noopener noreferrer">carecoreplus.com.br</a></span>
     </footer>

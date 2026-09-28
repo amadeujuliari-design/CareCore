@@ -14,15 +14,15 @@ const modules = [
     alt: 'Ficha da convivente Elaine Barbosa Barbosa',
   },
   {
-    title: 'Rotina e presença',
+    title: 'Acomodações',
     items: [
-      'Controle de fluxo diário: entrada, saída e refeições',
-      'Bipagem manual ou automática por câmera/leitor',
-      'Histórico da rotina com filtros e exportação',
-      'Dashboard operacional do dia',
+      'Para unidades com pernoite: quartos, alas e leitos com ocupação',
+      'Bloqueio de exclusão de leito ocupado',
+      'Visão de lotação no dashboard',
+      'Projetos sem pernoite operam a rotina sem esse cadastro',
     ],
-    image: '/telas/rotina.png',
-    alt: 'Rotina diária',
+    image: '/telas/acomodacoes.png',
+    alt: 'Gestão de acomodações',
   },
   {
     title: 'Ocorrências e equipe',
@@ -36,14 +36,26 @@ const modules = [
     alt: 'Central de ocorrências',
   },
   {
-    title: 'Acomodações',
+    title: 'Rotina e presença',
     items: [
-      'Quartos, alas e leitos com ocupação em tempo real',
-      'Bloqueio de exclusão de leito ocupado',
-      'Visão de lotação no dashboard',
+      'Controle de fluxo diário: entrada, saída e refeições',
+      'Bipagem manual ou automática por câmera/leitor',
+      'Histórico da rotina com filtros e exportação',
+      'Dashboard operacional do dia',
     ],
-    image: '/telas/acomodacoes.png',
-    alt: 'Gestão de acomodações',
+    image: '/telas/rotina.png',
+    alt: 'Rotina diária',
+  },
+  {
+    title: 'Atividades',
+    items: [
+      'Cadastro de oficinas, esportes e encontros, com sessões do mês',
+      'Chamada da sessão pela carteirinha ou marcação manual',
+      'Grade mensal de presenças, conteúdo do dia e conferência com o SISA',
+      'Pontos e brindes, quando a unidade utiliza',
+    ],
+    image: '/telas/atividades-grade.png',
+    alt: 'Grade mensal de presenças nas atividades',
   },
   {
     title: 'Convênio / SISA',
@@ -65,12 +77,36 @@ const modules = [
     image: '/telas/relatorios.png',
     alt: 'Central de relatórios',
   },
+  {
+    title: 'Compras',
+    items: [
+      'Pedidos da unidade, cotações e orçamentos no mesmo fluxo',
+      'Catálogo de itens, categorias e fornecedores',
+      'Aprovação e assinatura na sede, quando o pedido exige',
+      'Nota fiscal e documentos para encerrar o processo',
+    ],
+    image: '/telas/compras.png',
+    alt: 'Pedidos e cotações de compras',
+  },
+  {
+    title: 'Nota Fiscal Paulista',
+    items: [
+      'Leitura do QR do cupom pela câmera ou pelo leitor USB, com validação na SEFAZ',
+      'Só entram cupons sem CPF do consumidor; a chave fica na fila do CareCore',
+      'Envio automático depois que a pessoa entra no site oficial e digita a senha gov.br lá',
+      'A senha não é cadastrada nem armazenada no sistema',
+      'Agentes, doadores, metas, rateio, conferência e relatórios de cupons',
+    ],
+    href: '/nfp',
+    image: '/telas/nfp-leitura.png',
+    alt: 'Leitura de cupons da Nota Fiscal Paulista',
+  },
 ];
 ---
 
 <BaseLayout
   title="Funcionalidades — CareCore+"
-  description="Conheça os módulos do CareCore+: prontuário, rotina diária, ocorrências, acomodações, SISA e relatórios."
+  description="Módulos do CareCore+: prontuário, rotina, Nota Fiscal Paulista, compras, ocorrências, SISA e relatórios."
 >
   <section class="mx-auto max-w-6xl px-4 py-14 sm:px-6">
     <h1 class="section-title">Funcionalidades</h1>
@@ -78,7 +114,8 @@ const modules = [
       Sua ONG entende a necessidade do vulnerável? O CareCore+ entende a necessidade da sua operação.
     </p>
     <p class="section-lead">
-      Módulos integrados para a operação diária da instituição — do acolhimento à prestação de contas.
+      Módulos integrados para a operação diária — do acolhimento e da rotina à Nota Fiscal Paulista,
+      às compras e à prestação de contas. Acomodação e lavanderia de peças entram quando a unidade usa.
     </p>
 
     <div class="mt-12 space-y-16">
@@ -103,6 +140,11 @@ const modules = [
             </div>
             <div class="card overflow-hidden p-0">
               <img src={mod.image} alt={mod.alt} width="900" height="560" class="w-full" loading="lazy" />
+              {mod.href && (
+                <div class="p-4">
+                  <a href={mod.href} class="text-sm font-bold text-brand-600 hover:underline">Ver o fluxo da Nota Fiscal Paulista</a>
+                </div>
+              )}
             </div>
           </article>
         ))

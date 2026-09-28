@@ -6,15 +6,19 @@ import { SITE, whatsappLink } from '../config/site';
 const highlights = [
   {
     title: 'Rotina diária',
-    text: 'Entrada, saída, refeições e interações com bipagem por QR/código — pensado para portaria e plantão.',
+    text: 'Entrada, saída, refeições e interações com bipagem por QR ou código — pensado para portaria e plantão.',
   },
   {
     title: 'Prontuário completo',
-    text: 'Ficha do acolhido com abas, documentos, PIA, histórico e controle de acesso por perfil (RBAC).',
+    text: 'Ficha do acolhido com abas, documentos, PIA, histórico e controle de acesso por perfil.',
   },
   {
-    title: 'Operação e relatórios',
-    text: 'Dashboard, ocorrências, acomodações, Convênio/SISA e central de relatórios para gestão e prestação de contas.',
+    title: 'Nota Fiscal Paulista',
+    text: 'Leitura automática do cupom e envio das chaves. A senha gov.br é digitada no site oficial e não fica armazenada.',
+  },
+  {
+    title: 'Compras, atividades e relatórios',
+    text: 'Pedidos e cotações, chamada e grade das atividades, além de ocorrências, SISA e a central de relatórios.',
   },
 ];
 
@@ -40,14 +44,15 @@ const pillars = [
           Sua ONG acolhe pessoas? O CareCore+ acolhe a gestão da sua ONG.
         </h1>
         <p class="mt-6 text-lg leading-relaxed text-slate-600">
-          Centralize rotina, prontuários, ocorrências, acomodações e relatórios em uma
-          plataforma criada para quem cuida de vidas todos os dias.
+          Centralize rotina, prontuários, ocorrências, compras e a Nota Fiscal Paulista
+          em uma plataforma criada para quem cuida de vidas todos os dias.
         </p>
         <div class="mt-8 flex flex-wrap gap-3">
           <a href={whatsappLink()} class="btn-primary" rel="noopener noreferrer" target="_blank">
             Falar conosco
           </a>
           <a href="/funcionalidades" class="btn-secondary">Ver funcionalidades</a>
+          <a href="/nfp" class="btn-secondary">Nota Fiscal Paulista</a>
           <a href={SITE.guiaUrl} class="btn-secondary">Guia do sistema</a>
         </div>
         <p class="mt-6 text-sm text-slate-500">
@@ -94,7 +99,7 @@ const pillars = [
       Menos planilhas, mais clareza operacional e mais tempo para sua equipe se dedicar ao
       que realmente importa: o cuidado.
     </p>
-    <div class="mt-10 grid gap-6 md:grid-cols-3">
+    <div class="mt-10 grid gap-6 md:grid-cols-2">
       {
         highlights.map((item) => (
           <article class="card">

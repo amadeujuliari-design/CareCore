@@ -1,0 +1,142 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import { whatsappLink } from '../config/site';
+
+const passos = [
+  {
+    numero: '1',
+    titulo: 'Ler o cupom',
+    texto: 'A equipe bipa o QR Code do cupom pela câmera do celular, do tablet ou por um leitor USB. O CareCore extrai a chave, consulta a SEFAZ e só guarda cupom sem CPF do consumidor. A chave também pode ser digitada quando o código não lê.',
+  },
+  {
+    numero: '2',
+    titulo: 'Guardar a fila',
+    texto: 'Cada chave aceita fica no CareCore, ligada à operação da Nota Fiscal Paulista: agentes captadores, doadores e CNPJs ou CPFs. Dá para acompanhar o que foi lido, o que ainda falta enviar e o rateio do mês.',
+  },
+  {
+    numero: '3',
+    titulo: 'Enviar sem guardar senha',
+    texto: 'No computador da instituição, a própria pessoa entra no site oficial da Nota Fiscal Paulista e digita a senha gov.br ali. O CareCore não pede essa senha e não a armazena. Depois do login, ela inicia o envio automático das chaves que já estão na fila.',
+  },
+];
+
+const cuidados = [
+  'A senha gov.br do envio é digitada somente no site oficial, pela pessoa autorizada, naquele momento.',
+  'Ninguém da equipe do CareCore, nem o sistema, precisa conhecer ou guardar essa senha.',
+  'O que fica no CareCore são as chaves e o andamento de cada cupom: lido, enviado ou com erro.',
+  'A pessoa acompanha a fila e pode interromper o envio. O login continua só na sessão do site oficial.',
+];
+---
+
+<BaseLayout
+  title="Nota Fiscal Paulista — CareCore+"
+  description="Leitura automática de cupons da Nota Fiscal Paulista e envio das chaves sem armazenar a senha gov.br. Quem opera digita a senha no site oficial e inicia o envio."
+>
+  <section class="relative overflow-hidden bg-gradient-to-br from-brand-soft via-white to-slate-50">
+    <div class="mx-auto max-w-5xl px-4 py-14 sm:px-6 lg:py-20">
+      <p class="inline-flex rounded-full bg-brand-soft px-4 py-1 text-xs font-bold uppercase tracking-wider text-brand-600">
+        Nota Fiscal Paulista
+      </p>
+      <h1 class="section-title mt-4">Do cupom lido ao envio, sem guardar a senha gov.br</h1>
+      <p class="section-lead">
+        O módulo NFP – Créditos lê o cupom, valida a chave e deixa a fila pronta para envio.
+        A senha gov.br não entra no CareCore: a pessoa autorizada digita no site oficial da
+        Nota Fiscal Paulista e, em seguida, dispara o envio automático do que já foi armazenado.
+      </p>
+      <div class="mt-8 flex flex-wrap gap-3">
+        <a href="/funcionalidades" class="btn-secondary">Ver os outros módulos</a>
+        <a
+          href={whatsappLink('Olá! Quero ver o módulo de Nota Fiscal Paulista do CareCore+, da leitura do cupom ao envio.')}
+          class="btn-primary"
+          rel="noopener noreferrer"
+          target="_blank"
+        >
+          Pedir uma demonstração
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <section class="mx-auto max-w-5xl px-4 py-14 sm:px-6">
+    <h2 class="text-2xl font-black text-slate-900">As telas do módulo</h2>
+    <div class="mt-8 grid gap-6 lg:grid-cols-2">
+      <figure class="card overflow-hidden p-0">
+        <img src="/telas/nfp-leitura.png" alt="Leitura de cupons pelo QR Code" class="w-full" />
+        <figcaption class="p-4 text-sm text-slate-600">Leitura: câmera ou leitor, e a fila de chaves já guardadas.</figcaption>
+      </figure>
+      <figure class="card overflow-hidden p-0">
+        <img src="/telas/nfp-envio.png" alt="Envio das chaves sem armazenar a senha gov.br" class="w-full" />
+        <figcaption class="p-4 text-sm text-slate-600">Envio: a senha gov.br fica no site oficial; o CareCore só conduz a fila.</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <section class="mx-auto max-w-5xl px-4 py-14 sm:px-6">
+    <h2 class="text-2xl font-black text-slate-900">Como o fluxo funciona</h2>
+    <div class="mt-8 grid gap-6 md:grid-cols-3">
+      {
+        passos.map((passo) => (
+          <article class="card">
+            <p class="text-xs font-black uppercase tracking-wider text-brand-600">Passo {passo.numero}</p>
+            <h3 class="mt-2 text-lg font-bold text-slate-900">{passo.titulo}</h3>
+            <p class="mt-3 text-sm leading-relaxed text-slate-600">{passo.texto}</p>
+          </article>
+        ))
+      }
+    </div>
+  </section>
+
+  <section class="bg-slate-900 text-white">
+    <div class="mx-auto max-w-5xl px-4 py-14 sm:px-6">
+      <h2 class="text-2xl font-black">A senha fica com quem opera, no site oficial</h2>
+      <p class="mt-3 max-w-3xl text-slate-300">
+        O envio foi desenhado para que a senha gov.br não precise ser cadastrada, copiada ou
+        guardada por ninguém. Ela é usada uma vez, pela própria pessoa, no site da Fazenda,
+        e o CareCore só conduz as chaves que já estavam na fila.
+      </p>
+      <ul class="mt-8 space-y-4">
+        {
+          cuidados.map((item) => (
+            <li class="flex gap-3 text-sm leading-relaxed text-slate-200">
+              <span class="mt-0.5 font-black text-brand-400" aria-hidden="true">✓</span>
+              <span>{item}</span>
+            </li>
+          ))
+        }
+      </ul>
+    </div>
+  </section>
+
+  <section class="mx-auto max-w-5xl px-4 py-14 sm:px-6">
+    <h2 class="text-2xl font-black text-slate-900">O que a equipe acompanha no módulo</h2>
+    <div class="mt-8 grid gap-4 sm:grid-cols-2">
+      <article class="card">
+        <h3 class="font-bold text-slate-900">Leitura de cupons</h3>
+        <p class="mt-2 text-sm leading-relaxed text-slate-600">
+          QR Code pela câmera ou pelo leitor, com validação na SEFAZ no ato da leitura.
+          Cupom com CPF do consumidor não entra.
+        </p>
+      </article>
+      <article class="card">
+        <h3 class="font-bold text-slate-900">Cadastros da captação</h3>
+        <p class="mt-2 text-sm leading-relaxed text-slate-600">
+          Agentes captadores, doadores e CNPJs ou CPFs usados na operação dos créditos.
+        </p>
+      </article>
+      <article class="card">
+        <h3 class="font-bold text-slate-900">Envio da fila</h3>
+        <p class="mt-2 text-sm leading-relaxed text-slate-600">
+          Depois do login no site oficial, o envio percorre as chaves pendentes e registra
+          o resultado de cada uma. A rotina pode ser interrompida.
+        </p>
+      </article>
+      <article class="card">
+        <h3 class="font-bold text-slate-900">Conferência, metas e relatórios</h3>
+        <p class="mt-2 text-sm leading-relaxed text-slate-600">
+          Conferência antes do prazo, metas e rateio do mês, além dos relatórios de cupons
+          lidos, enviados e do rateio consolidado ou detalhado.
+        </p>
+      </article>
+    </div>
+  </section>
+</BaseLayout>
