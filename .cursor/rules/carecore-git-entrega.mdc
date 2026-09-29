@@ -13,6 +13,7 @@ Ao commitar no CareCore+, seja conservador: inclua somente arquivos relacionados
 - Nao usar comandos destrutivos de Git sem autorizacao explicita.
 - Se houver mudancas do usuario na arvore de trabalho, preserve-as e nao reverta.
 - Push deve ir para o remoto correto apos commit bem sucedido.
+- Se a mudanca altera tela, menu, fluxo ou texto ja documentado, o mesmo commit inclui site, guia e documentacao. Ver `carecore-site-documentacao.mdc`.
 
 ## Checagem obrigatoria antes do push (evita CI vermelho)
 

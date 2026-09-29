@@ -1,0 +1,53 @@
+---
+description: Atualizar site e documentacao no mesmo commit quando a tela ou o texto do produto mudar
+alwaysApply: true
+---
+
+# Site e documentacao acompanham o produto
+
+Mudanca visivel que altere tela, menu, fluxo, campo, botao, perfil ou texto ja publicado entra no mesmo trabalho. Quando o pedido for commitar e subir, esses arquivos vao no mesmo commit do codigo. Nao deixar para uma entrega seguinte.
+
+## Quando atualizar
+
+- Modulo novo, tela nova ou item novo de menu.
+- Tela ja fotografada mudou (layout, rotulo, botao, grafico, aba).
+- Comportamento ja escrito mudou: campo obrigatorio, ligacao entre registros, permissao, flag, ordem do menu, fluxo.
+
+Nao atualizar por refactor interno, teste, comentario ou correcao que nao mude o que a pessoa ve nem o que ja esta escrito.
+
+## Onde
+
+1. Site e guia publico (publicam com o push do site):
+   - `apresentacao/apresentacao-carecore.html` e `apresentacao/telas/`
+   - paginas e tour em `carecore-site/src/` e prints em `carecore-site/public/telas/`
+   - apos editar o guia: `npm run sync:guia` em `carecore-site` (o `prebuild` tambem sincroniza)
+2. Documentacao Completa, somente local:
+   - trecho em `documentacao/_inventario/*.md` e print em `documentacao/telas/`
+   - regenerar com `python documentacao/gerar_html.py` e o PDF `documentacao/documentacao-completa-carecore.pdf`
+   - nao publicar essa pasta no site (ha prints de prontuario real)
+   - pacote `financeiro_pessoal` (`/financeiro/*`) fica de fora dessa documentacao
+
+Refazer so a tela e o trecho afetados. Nao regravar o manual inteiro.
+
+## Guia: paginacao e indice
+
+O guia publico (`apresentacao/apresentacao-carecore.html`) e folha A4 fixa. Cada `section.page` e uma folha: cabecalho no topo, rodape no pe, numero em `Página N`. O indice e a pagina 2 (`nav.toc`): cada `.tpg` e a folha real da secao (`#sec1` em diante).
+
+Se o texto ou o print empurrar conteudo e mudar a paginacao:
+
+- Encaixar de novo em folhas A4. Nao deixar rodape no cabecalho da folha seguinte nem folha so com titulo.
+- Renumerar os rodapes na ordem.
+- Refazer o indice para a folha nova de cada assunto, inclusive a frase que cita pagina dentro do capitulo (ex.: grade na folha tal).
+- So sincronizar o guia (`npm run sync:guia`) depois que indice e rodapes baterem.
+
+Errado: incluir um assunto, empurrar Compras da 21 para a 22 e deixar o indice em 21.
+Certo: indice, rodape e link do assunto na mesma folha.
+
+## Commit e push
+
+No pedido de commitar e subir, site, guia e documentacao dessa mudanca entram no mesmo commit. Nao subir so o produto com guia ou documentacao defasados.
+
+Se a mudanca nao altera tela nem texto documentado, dizer isso e nao mexer em site nem documentacao.
+
+Errado: nova aba em Compras e commit so de `Compras.jsx`.
+Certo: a mesma aba no guia, no print e no inventario, no mesmo commit.
