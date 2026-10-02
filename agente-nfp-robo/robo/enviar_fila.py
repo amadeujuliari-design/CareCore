@@ -36,6 +36,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from ler_planilha_chaves import ler_chaves_json, ler_chaves_xlsx  # noqa: E402
 from contador_estado import marcar_fim, registrar_item  # noqa: E402
+from login_gov import tentar_relogin_gov  # noqa: E402
 from navegar_doacao_aeb import (  # noqa: E402
     bloqueio_doacao_terceiros_sefaz,
     fechar_modal_instrutivo,
@@ -219,7 +220,8 @@ async def _posicionar_tela(page, *, rotulo: str) -> str:
     if _parada_solicitada():
         return "parada_usuario"
     if await sessao_nfp_caiu(page):
-        return "sessao_caiu"
+        if not await tentar_relogin_gov(page):
+            return "sessao_caiu"
     if await bloqueio_doacao_terceiros_sefaz(page):
         return "bloqueio_sefaz"
     # Caminho quente: apos Salvar Nota a SEFAZ costuma manter Cadastro + AEB.
@@ -230,7 +232,12 @@ async def _posicionar_tela(page, *, rotulo: str) -> str:
     if await bloqueio_doacao_terceiros_sefaz(page):
         return "bloqueio_sefaz"
     if await sessao_nfp_caiu(page):
-        return "sessao_caiu"
+        if not await tentar_relogin_gov(page):
+            return "sessao_caiu"
+        if await garantir_tela_doacao_aeb(page):
+            return "ok"
+        if await sessao_nfp_caiu(page):
+            return "sessao_caiu"
     print(f"Falha ao posicionar Cadastro de Notas/AEB ({rotulo}).")
     return "falha"
 
@@ -304,7 +311,10 @@ async def rodar(args: argparse.Namespace) -> int:
             )
             estado0 = await _posicionar_tela(page, rotulo="inicio")
             if estado0 == "sessao_caiu":
-                print("ERRO: sessao NFP caiu (login). Autentique manualmente e rode de novo.")
+                print(
+                    "ERRO: sessao NFP caiu e o login GOV nao concluiu. "
+                    "Confira CPF/senha no painel ou entre no Chrome."
+                )
                 motivo_interrupcao = "sessao_caiu"
                 codigo_saida = 1
             elif estado0 == "bloqueio_sefaz":
@@ -346,7 +356,7 @@ async def rodar(args: argparse.Namespace) -> int:
                         break
                     if estado == "sessao_caiu":
                         motivo_interrupcao = "sessao_caiu"
-                        print("Sessao caiu — interrompendo (login manual).")
+                        print("Sessao caiu e o login GOV nao concluiu — interrompendo.")
                         break
                     if estado == "bloqueio_sefaz":
                         motivo_interrupcao = "bloqueio_sefaz"
@@ -456,6 +466,26 @@ async def rodar(args: argparse.Namespace) -> int:
                             break
 
                     cls = await processar_retorno(page, texto_antes=texto_antes)
+                    if cls.tipo == "sessao_caiu":
+                        print(
+                            "Sessao caiu no meio do cupom. "
+                            "Entrando de novo e tentando esta chave outra vez."
+                        )
+                        estado_r = await _posicionar_tela(page, rotulo="relogin no cupom")
+                        if estado_r == "bloqueio_sefaz":
+                            motivo_interrupcao = "bloqueio_sefaz"
+                            print("Bloqueio SEFAZ apos relogin — parando.")
+                            break
+                        if estado_r == "parada_usuario":
+                            parado_pelo_usuario = True
+                            motivo_interrupcao = "parada_usuario"
+                            break
+                        if (
+                            estado_r == "ok"
+                            and await preencher_chave(page, chave)
+                            and await clicar_registrar(page)
+                        ):
+                            cls = await processar_retorno(page, texto_antes="")
                     if captura_tela_habilitada():
                         await gravar_captura_sefaz(
                             page,
@@ -492,10 +522,7 @@ async def rodar(args: argparse.Namespace) -> int:
 
                     if cls.tipo == "sessao_caiu":
                         motivo_interrupcao = "sessao_caiu"
-                        print(
-                            "Sessao caiu. Refaca login e rode de novo com --inicio",
-                            i - 1 + int(args.inicio),
-                        )
+                        print("Nao foi possivel voltar do login. O envio parou.")
                         break
 
                     if cls.tipo == "bloqueio_sefaz":

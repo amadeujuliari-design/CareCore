@@ -356,24 +356,18 @@ async def _tem_botao_salvar_nota(page) -> bool:
 
 
 async def sessao_nfp_caiu(page) -> bool:
-    """True somente quando o portal pede login de novo (nao recuperavel sozinho)."""
+    """True quando o portal pede login de novo. O envio tenta entrar com o GOV salvo."""
+    from login_gov import pagina_pede_login
+
     try:
         url = _url_norm(page.url or "")
     except Exception:
         url = ""
-    if "sso.acesso.gov" in url or "acesso.gov.br" in url:
-        return True
-    if "login" in url and "nfce" not in url:
-        return True
     try:
-        texto = " ".join(((await page.inner_text("body")) or "").lower().split())
+        texto = (await page.inner_text("body")) or ""
     except Exception:
         texto = ""
-    if "acesse sua conta gov.br" in texto or "entrar com gov.br" in texto:
-        return True
-    if "efetuar login" in texto and "entidad" not in url:
-        return True
-    return False
+    return pagina_pede_login(url, texto)
 
 
 async def _eh_fluxo_consumidor(page) -> bool:

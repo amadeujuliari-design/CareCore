@@ -105,7 +105,7 @@ $info = [ordered]@{
     'Baixe CareCore-Agente-NFP.exe. Se o Windows avisar, OK e use Desbloquear (Propriedades) ou Executar mesmo assim.',
     'Execute o .exe. Nao precisa instalar Python - o pacote ja traz o Python do agente. E preciso ter Google Chrome.',
     'Ao terminar a instalacao, o painel abre sozinho. Faca login CareCore para sincronizar a fila online.',
-    'No painel: Abrir site Fazenda -> CAPTCHA -> Enviar fila.',
+    'No painel, em Enviar fila, informe CPF e senha GOV. Abra o site da Fazenda ate Bem-vindo e envie a fila. Se o site voltar ao login, o robo entra com o GOV salvo e continua.',
     'Nas proximas vezes use o atalho na Area de Trabalho ou rode o .exe de novo.'
   )
 }

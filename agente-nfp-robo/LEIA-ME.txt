@@ -34,9 +34,10 @@ Fluxo diario (recomendado)
 1. abrir_painel.bat  (deixe a janela preta aberta)
 2. LOGIN no painel com e-mail e senha do CareCore
    -> isso ativa a sincronizacao da fila (pendentes/enviados) no banco online
-3. Abrir site Fazenda -> login/CAPTCHA ate Bem-vindo
-4. Enviar fila / Envio continuo
-5. Parar no proprio painel, se precisar
+3. Em Enviar fila, informe CPF e senha GOV (ficam so neste PC)
+4. Abrir site Fazenda -> login/CAPTCHA ate Bem-vindo
+5. Enviar fila / Envio continuo. Se a Fazenda voltar ao login, o robo entra com o GOV salvo e continua
+6. Parar no proprio painel, se precisar
 
 Nao e preciso editar arquivo JSON.
 

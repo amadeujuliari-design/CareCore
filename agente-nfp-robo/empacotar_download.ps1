@@ -55,7 +55,7 @@ $info = [ordered]@{
     'Baixe o ZIP. Se o Windows avisar que pode nao ser seguro: OK; botao direito no ZIP -> Propriedades -> Desbloquear -> Aplicar. Se pedir Executar mesmo assim, pode seguir (agente oficial CareCore).',
     'Descompacte e rode instalar.bat. Nao precisa instalar Python - o ZIP ja traz o Python do agente. E preciso ter Google Chrome.',
     'Ao terminar, o painel abre no navegador. Faca login com e-mail e senha do CareCore (ADM Global ou Manutencao) para sincronizar a fila online.',
-    'No painel: Abrir site Fazenda -> login/CAPTCHA ate Bem-vindo -> Enviar fila.',
+    'No painel, em Enviar fila, informe CPF e senha GOV. Abra o site da Fazenda ate Bem-vindo e envie a fila. Se o site voltar ao login, o robo entra com o GOV salvo e continua.',
     'Deixe a janela preta do painel aberta enquanto envia; use Parar se precisar.'
   )
 }

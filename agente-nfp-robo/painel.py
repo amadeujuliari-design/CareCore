@@ -33,6 +33,7 @@ from agente_nfp import (  # noqa: E402
     obter_api,
     processar_sessao,
     salvar_credenciais,
+    salvar_gov,
 )
 from carecore_api import CareCoreApi, CareCoreApiError  # noqa: E402
 from chrome_local import abrir_chrome_fazenda, status_cdp  # noqa: E402
@@ -144,6 +145,8 @@ def _status_completo() -> dict[str, Any]:
             "cdp": cfg["cdp"],
             "config_ok": _credenciais_ok(cfg),
             "logado": logado,
+            "gov_ok": bool((cfg.get("gov_cpf") or "").strip() and (cfg.get("gov_senha") or "").strip()),
+            "gov_cpf": cfg.get("gov_cpf") or "",
         },
         "erro_api": erro_api,
     }
@@ -313,6 +316,24 @@ HTML = r"""<!DOCTYPE html>
         <button class="chip" type="button" data-lim="500">500</button>
         <button class="chip" type="button" data-lim="">Continuo</button>
       </div>
+      <p>Se a Fazenda voltar à tela de login, o robô clica em <strong>Entrar com gov.br</strong>, digita este CPF e esta senha e continua a fila. Fica salvo só neste PC.</p>
+      <div class="fields">
+        <label class="field">CPF GOV
+          <input id="govCpf" type="text" inputmode="numeric" autocomplete="off" placeholder="000.000.000-00" />
+        </label>
+        <label class="field">Senha GOV
+          <span class="senha-wrap">
+            <input id="govSenha" type="password" autocomplete="new-password" placeholder="Senha do gov.br" />
+            <button type="button" class="olho" id="btnVerSenhaGov" aria-label="Mostrar senha" aria-pressed="false">
+              <svg id="iconeOlhoGov" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"></path>
+                <circle cx="12" cy="12" r="3"></circle>
+              </svg>
+            </button>
+          </span>
+        </label>
+      </div>
+      <p class="sub" id="govStatus">Sem CPF/senha GOV salvos. Se a sessão cair, o envio para.</p>
       <div class="row">
         <button class="primary" id="btnEnviar" type="button">Rodar rotina / enviar fila</button>
         <button class="secondary" id="btnContinuo" type="button">Envio contínuo (noite)</button>
@@ -384,6 +405,17 @@ HTML = r"""<!DOCTYPE html>
       badge.className = 'badge ' + (cfg.logado ? 'on' : 'off');
       if (cfg.email && !$('email').value) $('email').value = cfg.email.startsWith('seu.usuario') ? '' : cfg.email;
       if (cfg.nome_maquina && !$('nomeMaquina').value) $('nomeMaquina').value = cfg.nome_maquina;
+      if (!window._govPrefill && cfg.gov_cpf) {
+        window._govPrefill = true;
+        const d = String(cfg.gov_cpf).replace(/\D/g, '');
+        if (d.length === 11 && !$('govCpf').value) {
+          $('govCpf').value = d.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
+        }
+      }
+      $('govSenha').placeholder = cfg.gov_ok ? 'Senha GOV salva neste PC' : 'Senha do gov.br';
+      $('govStatus').textContent = cfg.gov_ok
+        ? 'CPF e senha GOV salvos neste PC. Se a Fazenda voltar ao login, o robô entra sozinho.'
+        : 'Sem CPF/senha GOV salvos. Se a sessão cair, o envio para.';
       $('cards').innerHTML = [
         card('Chrome / CDP', cdpOk ? (state.cdp.browser || 'Ativo') : 'Não conectado', cdpOk),
         card('Pendentes', String(fila.pendentes_total ?? '—'), (fila.pendentes_total || 0) === 0),
@@ -432,16 +464,20 @@ HTML = r"""<!DOCTYPE html>
     }
 
     $('btnRefresh').onclick = refresh;
-    $('btnVerSenha').onclick = () => {
-      const el = $('senha');
-      const mostrar = el.type === 'password';
-      el.type = mostrar ? 'text' : 'password';
-      $('btnVerSenha').setAttribute('aria-label', mostrar ? 'Ocultar senha' : 'Mostrar senha');
-      $('btnVerSenha').setAttribute('aria-pressed', mostrar ? 'true' : 'false');
-      $('iconeOlho').innerHTML = mostrar
-        ? '<path d="M10.7 5.1A10.8 10.8 0 0 1 12 5c6.5 0 10 7 10 7a18 18 0 0 1-1.7 2.6"></path><path d="M6.6 6.6C3.1 8.8 2 12 2 12s3.5 7 10 7a9.7 9.7 0 0 0 5.4-1.6"></path><line x1="2" x2="22" y1="2" y2="22"></line><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"></path>'
-        : '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"></path><circle cx="12" cy="12" r="3"></circle>';
-    };
+    function ligarOlho(botaoId, inputId, iconeId) {
+      $(botaoId).onclick = () => {
+        const el = $(inputId);
+        const mostrar = el.type === 'password';
+        el.type = mostrar ? 'text' : 'password';
+        $(botaoId).setAttribute('aria-label', mostrar ? 'Ocultar senha' : 'Mostrar senha');
+        $(botaoId).setAttribute('aria-pressed', mostrar ? 'true' : 'false');
+        $(iconeId).innerHTML = mostrar
+          ? '<path d="M10.7 5.1A10.8 10.8 0 0 1 12 5c6.5 0 10 7 10 7a18 18 0 0 1-1.7 2.6"></path><path d="M6.6 6.6C3.1 8.8 2 12 2 12s3.5 7 10 7a9.7 9.7 0 0 0 5.4-1.6"></path><line x1="2" x2="22" y1="2" y2="22"></line><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"></path>'
+          : '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"></path><circle cx="12" cy="12" r="3"></circle>';
+      };
+    }
+    ligarOlho('btnVerSenha', 'senha', 'iconeOlho');
+    ligarOlho('btnVerSenhaGov', 'govSenha', 'iconeOlhoGov');
     $('btnLogin').onclick = async () => {
       try {
         const data = await api('/api/login', {
@@ -486,7 +522,11 @@ HTML = r"""<!DOCTYPE html>
 
     async function enviar(continuo) {
       const raw = $('limite').value.trim();
-      const body = { continuo: !!continuo };
+      const body = {
+        continuo: !!continuo,
+        gov_cpf: $('govCpf').value.trim(),
+        gov_senha: $('govSenha').value,
+      };
       if (raw) body.limite = Number(raw);
       try {
         const data = await api('/api/enviar', { method: 'POST', body: JSON.stringify(body) });
@@ -653,6 +693,10 @@ class PainelHandler(BaseHTTPRequestHandler):
                     limite_n = int(limite)
                     if limite_n < 1:
                         raise ValueError("limite invalido")
+                salvar_gov(
+                    cpf=str(body.get("gov_cpf") or ""),
+                    senha=str(body.get("gov_senha") or ""),
+                )
                 th = threading.Thread(
                     target=_worker_enviar,
                     kwargs={"continuo": continuo, "limite": limite_n},

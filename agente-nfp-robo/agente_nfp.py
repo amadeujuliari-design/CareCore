@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -61,10 +62,14 @@ def carregar_config_leve(path: Path = CONFIG_PATH) -> dict[str, Any]:
     senha = cfg.get("senha") or ""
     cdp = (cfg.get("cdp") or CDP_PADRAO).rstrip("/")
     nome_maquina = (cfg.get("nome_maquina") or os.environ.get("COMPUTERNAME") or "sede").strip()
+    gov_cpf = re.sub(r"\D", "", str(cfg.get("gov_cpf") or ""))
+    gov_senha = cfg.get("gov_senha") or ""
     return {
         "api_base_url": api,
         "email": email,
         "senha": senha,
+        "gov_cpf": gov_cpf,
+        "gov_senha": gov_senha,
         "cdp": cdp,
         "nome_maquina": nome_maquina,
         "tamanho_lote": int(cfg.get("tamanho_lote") or TAMANHO_LOTE),
@@ -125,6 +130,24 @@ def salvar_credenciais(
         atual["tamanho_lote"] = TAMANHO_LOTE
     path.write_text(json.dumps(atual, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     apagar_token()
+    return atual
+
+
+def salvar_gov(*, cpf: str, senha: str, path: Path = CONFIG_PATH) -> dict[str, Any]:
+    """Grava CPF e senha GOV neste PC. Senha vazia mantem a que ja estava salva."""
+    atual = carregar_config_leve(path)
+    digitos = re.sub(r"\D", "", cpf or "")
+    senha_n = senha or ""
+    if digitos and len(digitos) != 11:
+        raise ValueError("CPF GOV precisa ter 11 digitos.")
+    if not digitos and not senha_n:
+        return atual
+    if digitos:
+        atual["gov_cpf"] = digitos
+    if senha_n:
+        atual["gov_senha"] = senha_n
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(atual, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     return atual
 
 
@@ -219,6 +242,8 @@ def rodar_enviar_fila(
     caminho_json: Path,
     capturar_metadados: bool = True,
     captura_tela: bool = True,
+    gov_cpf: str = "",
+    gov_senha: str = "",
 ) -> list[dict]:
     if not ENVIAR_FILA.is_file():
         raise RuntimeError(
@@ -258,6 +283,11 @@ def rodar_enviar_fila(
     env["PYTHONIOENCODING"] = "utf-8"
     env["CARECORE_NFP_CAPTURAR_METADADOS"] = "1" if capturar_metadados else "0"
     env["CARECORE_NFP_CAPTURA_TELA"] = "1" if captura_tela else "0"
+    cpf_gov = re.sub(r"\D", "", gov_cpf or "")
+    if len(cpf_gov) == 11:
+        env["CARECORE_NFP_GOV_CPF"] = cpf_gov
+    if (gov_senha or "").strip():
+        env["CARECORE_NFP_GOV_SENHA"] = gov_senha
     print(f"[{_agora()}] Robo: {caminho_json.name} ({cdp})")
     proc = subprocess.run(
         cmd,
@@ -427,6 +457,8 @@ def processar_sessao(
                 caminho_json=caminho_json,
                 capturar_metadados=bool(cfg.get("capturar_metadados_sefaz", True)),
                 captura_tela=bool(cfg.get("captura_tela_sefaz", True)),
+                gov_cpf=str(cfg.get("gov_cpf") or ""),
+                gov_senha=str(cfg.get("gov_senha") or ""),
             )
             if itens:
                 sync = api.aplicar_resultados(itens)
@@ -454,7 +486,7 @@ def processar_sessao(
             restante -= processados_lote
 
         if sessao_caiu:
-            print(f"[{_agora()}] Sessao NFP caiu — encerrando (login manual necessario).")
+            print(f"[{_agora()}] Sessao NFP caiu — o login GOV nao concluiu. O envio parou.")
             break
 
         if bloqueio_sefaz:

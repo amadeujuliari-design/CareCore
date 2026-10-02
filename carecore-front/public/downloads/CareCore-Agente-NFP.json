@@ -1,15 +1,15 @@
 ﻿{
     "arquivo":  "CareCore-Agente-NFP.exe",
-    "versao_app":  "1.6.88",
-    "gerado_em":  "2026-09-11 11:10:41",
+    "versao_app":  "1.7.48",
+    "gerado_em":  "2026-10-02 14:10:52",
     "fuso":  "America/Sao_Paulo",
-    "tamanho_bytes":  24406822,
+    "tamanho_bytes":  24409715,
     "assinado":  false,
     "instrucoes":  [
                        "Baixe CareCore-Agente-NFP.exe. Se o Windows avisar, OK e use Desbloquear (Propriedades) ou Executar mesmo assim.",
                        "Execute o .exe. Nao precisa instalar Python - o pacote ja traz o Python do agente. E preciso ter Google Chrome.",
                        "Ao terminar a instalacao, o painel abre sozinho. Faca login CareCore para sincronizar a fila online.",
-                       "No painel: Abrir site Fazenda -\u003e CAPTCHA -\u003e Enviar fila.",
+                       "No painel, em Enviar fila, informe CPF e senha GOV. Abra o site da Fazenda ate Bem-vindo e envie a fila. Se o site voltar ao login, o robo entra com o GOV salvo e continua.",
                        "Nas proximas vezes use o atalho na Area de Trabalho ou rode o .exe de novo."
                    ]
 }
