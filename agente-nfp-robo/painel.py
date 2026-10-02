@@ -23,6 +23,7 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "robo"))
 
 from agente_nfp import (  # noqa: E402
+    TOKEN_PATH,
     _ler_token,
     apagar_token,
     autenticar,
@@ -103,27 +104,34 @@ def _status_completo() -> dict[str, Any]:
                 "(nao deixe o painel tentando sozinho)."
             )
         else:
+            logado = True
             try:
                 api = CareCoreApi(cfg["api_base_url"], token=token)
-                fila = api.fila()
-                logado = True
+                fila = api.fila(timeout=12)
                 erro_api = None
             except CareCoreApiError as exc:
                 if exc.status == 429:
                     erro_api = (
-                        "Muitas tentativas de login no CareCore. Feche esta janela, "
-                        "aguarde 15 minutos e clique em Entrar uma unica vez com a senha correta."
+                        "Muitas consultas à fila. O login deste PC continua valido. "
+                        "Aguarde um pouco antes de clicar em Entrar de novo."
                     )
                 elif exc.status in {401, 403}:
                     apagar_token()
+                    logado = False
                     erro_api = (
                         "Sessao expirada ou senha antiga neste PC. Digite a senha correta "
                         "e clique em Entrar uma vez."
                     )
                 else:
-                    erro_api = str(exc)
+                    erro_api = (
+                        "A fila online demorou para responder. "
+                        "O login CareCore deste PC continua valido."
+                    )
             except Exception as exc:
-                erro_api = str(exc)
+                erro_api = (
+                    "A fila online demorou para responder. "
+                    "O login CareCore deste PC continua valido."
+                )
     contador = {}
     try:
         from contador_estado import resumo_exibicao, tkinter_disponivel
@@ -257,7 +265,7 @@ HTML = r"""<!DOCTYPE html>
 
     <div class="card box">
       <h2>Login CareCore
-        <span class="badge off" id="badgeLogin">não conectado</span>
+        <span class="badge off" id="badgeLogin">verificando...</span>
       </h2>
       <p>Use o mesmo e-mail e senha do CareCore (ADM Global ou Manutenção). Não precisa editar arquivo.</p>
       <div class="fields">
@@ -454,12 +462,17 @@ HTML = r"""<!DOCTYPE html>
       return data;
     }
 
+    let refreshEmCurso = false;
     async function refresh() {
+      if (refreshEmCurso) return;
+      refreshEmCurso = true;
       try {
         state = await api('/api/status');
         render();
       } catch (e) {
         showMsg(String(e.message || e), 'err');
+      } finally {
+        refreshEmCurso = false;
       }
     }
 
@@ -586,11 +599,14 @@ class PainelHandler(BaseHTTPRequestHandler):
                 email = str(body.get("email") or "").strip()
                 senha = str(body.get("senha") or "")
                 nome = str(body.get("nome_maquina") or "").strip() or None
+                token_anterior = _ler_token()
                 salvar_credenciais(email=email, senha=senha, nome_maquina=nome)
                 cfg = carregar_config()
                 try:
                     api = autenticar(cfg)
                 except CareCoreApiError as exc:
+                    if token_anterior:
+                        TOKEN_PATH.write_text(token_anterior, encoding="utf-8")
                     if exc.status == 429:
                         self._send_json(
                             200,

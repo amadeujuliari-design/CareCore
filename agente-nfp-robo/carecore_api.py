@@ -77,8 +77,11 @@ class CareCoreApi:
         self.token = token
         return token
 
-    def fila(self) -> dict:
-        return self._request("GET", "/api/nfp/envio-sefaz/agente/fila")
+    def fila(self, *, timeout: Optional[int] = None) -> dict:
+        extra: dict[str, Any] = {}
+        if timeout is not None:
+            extra["timeout"] = timeout
+        return self._request("GET", "/api/nfp/envio-sefaz/agente/fila", **extra)
 
     def reservar_lote(self, tamanho: int = 100) -> dict:
         return self._request(
