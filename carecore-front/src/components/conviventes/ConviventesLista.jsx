@@ -2,9 +2,10 @@ import { formatarCPF } from '../../utils/conviventesUtils';
 import { conviventeEhMeuCaso } from '../../hooks/useConviventesLista';
 import AuthenticatedImage from '../AuthenticatedImage';
 import { getFotoUrl } from '../../utils/rotinaDiariaUtils';
+import { textoRotinaLista } from '../../utils/rotinaPariCampos';
 
 function textoObservacaoOperacional(convivente) {
-  return String(convivente?.observacao_operacional || '').trim();
+  return textoRotinaLista(convivente);
 }
 
 function IconeObservacaoOperacional({ convivente }) {
@@ -15,7 +16,7 @@ function IconeObservacaoOperacional({ convivente }) {
     <span
       className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-800 border border-amber-300 cursor-help"
       title={observacao}
-      aria-label={`Observação: ${observacao}`}
+      aria-label={observacao}
     >
       <svg viewBox="0 0 20 20" fill="currentColor" className="h-3.5 w-3.5" aria-hidden="true">
         <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-4a.75.75 0 01.75.75v4.5a.75.75 0 01-1.5 0v-4.5A.75.75 0 0110 6zm0 8a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
@@ -81,7 +82,7 @@ export default function ConviventesLista({
       <div className="mb-6 grid grid-cols-1 md:grid-cols-4 gap-4 p-5 bg-gray-50/50 rounded-xl border border-gray-200 shadow-inner">
         <div className="md:col-span-2">
           <label className="block text-xs font-medium text-gray-500 uppercase mb-1.5">Pesquisar acolhido</label>
-          <input type="text" value={termoPesquisa} onChange={(e) => setTermoPesquisa(e.target.value)} placeholder="Pesquise por prontuário, nome ou CPF..." className="w-full px-4 py-2.5 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-brand text-sm bg-white" />
+          <input type="text" value={termoPesquisa} onChange={(e) => setTermoPesquisa(e.target.value)} placeholder="Pesquise por prontuário, nome, CPF ou família (F001)..." className="w-full px-4 py-2.5 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-brand text-sm bg-white" />
         </div>
         <div>
           <label className="block text-xs font-medium text-gray-500 uppercase mb-1.5">Status</label>
@@ -132,6 +133,29 @@ export default function ConviventesLista({
                         <p className="truncate text-xs text-slate-500">
                           Civil: {c.nome_completo}
                         </p>
+                      )}
+                      {c.familia_codigo && (
+                        <div className="mt-2 flex flex-wrap gap-1">
+                          <button
+                            type="button"
+                            onClick={() => setTermoPesquisa(c.familia_codigo)}
+                            className="rounded-full bg-brand/10 px-2 py-0.5 text-[10px] font-black uppercase text-brand"
+                          >
+                            Família {c.familia_codigo}
+                          </button>
+                          {conviventesFiltrados
+                            .filter((outro) => outro.id !== c.id && outro.familia_codigo === c.familia_codigo)
+                            .map((outro) => (
+                              <button
+                                key={outro.id}
+                                type="button"
+                                onClick={() => abrirParaEdicao(outro)}
+                                className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-600"
+                              >
+                                {outro.nome_social || outro.nome_completo}
+                              </button>
+                            ))}
+                        </div>
                       )}
                       </div>
                     </div>

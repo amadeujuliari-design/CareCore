@@ -71,12 +71,29 @@ export function filtrarOrdenarConviventes({
 }) {
   const usuarioTecnico = usuarioEhTecnico(perfilUsuario);
 
-  return conviventes
-    .filter((convivente) => (
-      conviventeCorrespondePesquisa(convivente, termoPesquisa) &&
-      conviventeCorrespondeStatus(convivente, filtroStatus) &&
-      conviventeCorrespondeLeito(convivente, filtroLeito)
+  const termo = String(termoPesquisa || '').trim().toLowerCase();
+  const corresponde = (convivente) => (
+    conviventeCorrespondeStatus(convivente, filtroStatus) &&
+    conviventeCorrespondeLeito(convivente, filtroLeito)
+  );
+  const encontrados = conviventes.filter((convivente) => (
+    conviventeCorrespondePesquisa(convivente, termoPesquisa) && corresponde(convivente)
+  ));
+  if (!termo || termo.startsWith('#')) {
+    return encontrados.sort((a, b) => ordenarConviventes(a, b, termoPesquisa, idUsuarioLogado, usuarioTecnico));
+  }
+  const familias = new Set(
+    encontrados.map((convivente) => String(convivente.familia_codigo || '').trim().toLowerCase()).filter(Boolean),
+  );
+  const ids = new Set(encontrados.map((convivente) => convivente.id));
+  const familiares = familias.size
+    ? conviventes.filter((convivente) => (
+      !ids.has(convivente.id)
+      && familias.has(String(convivente.familia_codigo || '').trim().toLowerCase())
+      && corresponde(convivente)
     ))
+    : [];
+  return [...encontrados, ...familiares]
     .sort((a, b) => ordenarConviventes(a, b, termoPesquisa, idUsuarioLogado, usuarioTecnico));
 }
 

@@ -2,6 +2,9 @@ import { moduloAtivo, projetoOcultaAcomodacoes } from '../../config/configOperac
 import { useAuth } from '../../context/AuthContext';
 import { useConfigOperacional } from '../../hooks/useConfigOperacional';
 import AuthenticatedImage from '../AuthenticatedImage';
+import FamiliaVinculoCampo from './FamiliaVinculoCampo';
+import RotinaPariCampos from './RotinaPariCampos';
+import { projetoEhReencontroPari } from '../../utils/projetoPari';
 import ProntuarioFamilia from './ProntuarioFamilia';
 import { EQUIPAMENTO_ANTERIOR_OUTROS } from '../../config/piaFichaConfig';
 import { calcularIdade } from '../../utils/conviventesUtils';
@@ -52,8 +55,10 @@ export default function ProntuarioPessoais({
   trocarAbaComSalvamento,
   setFormData,
   setErrosValidacao,
+  vinculoFamiliar = null,
 }) {
-  const { config } = useConfigOperacional();
+  const { config, nomeProjeto } = useConfigOperacional();
+  const projetoPari = projetoEhReencontroPari(nomeProjeto);
   const { usuario } = useAuth();
   const acomodacoesAtivas = !projetoOcultaAcomodacoes(usuario?.projeto_nome)
     && moduloAtivo(config, 'acomodacoes');
@@ -128,20 +133,33 @@ export default function ProntuarioPessoais({
               <div><label className="block text-xs font-semibold text-gray-700 mb-1">Nome Social</label><input type="text" name="nome_social" value={formData.nome_social} onChange={handleChange} className="w-full px-3 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none text-sm" /></div>
               <div><label className="block text-xs font-bold text-brand mb-1">Técnico de Referência</label><select name="tecnico_id" value={formData.tecnico_id} onChange={handleChange} className="w-full px-3 py-1.5 border border-brand/40 rounded-lg focus:ring-2 focus:ring-brand outline-none bg-white text-sm font-medium text-gray-700"><option value="">Não Definido (Atendimento Geral)</option>{listaTecnicos.map(tec => <option key={tec.id} value={tec.id}>{tec.nome} ({tec.perfil_acesso})</option>)}</select></div>
             </div>
+            {vinculoFamiliar && (
+              <FamiliaVinculoCampo
+                valor={vinculoFamiliar.valor}
+                onChange={vinculoFamiliar.onChange}
+                familias={vinculoFamiliar.familias}
+                proximoCodigo={vinculoFamiliar.proximoCodigo}
+                conviventeId={editandoId}
+              />
+            )}
           </div>
         </div>
 
-        <div>
-          <label className="block text-xs font-semibold text-amber-900 mb-1">Observação operacional</label>
-          <textarea
-            name="observacao_operacional"
-            value={formData.observacao_operacional || ''}
-            onChange={handleChange}
-            rows={2}
-            placeholder="Aviso operacional (aparece na lista com ícone; apague e salve para remover)"
-            className="w-full px-3 py-1.5 border border-amber-200 rounded-lg bg-white focus:ring-2 focus:ring-amber-400 outline-none text-sm text-slate-800 resize-y min-h-[2.75rem]"
-          />
-        </div>
+        {projetoPari ? (
+          <RotinaPariCampos formData={formData} setFormData={setFormData} />
+        ) : (
+          <div>
+            <label className="block text-xs font-semibold text-amber-900 mb-1">Observação operacional</label>
+            <textarea
+              name="observacao_operacional"
+              value={formData.observacao_operacional || ''}
+              onChange={handleChange}
+              rows={2}
+              placeholder="Aviso operacional (aparece na lista com ícone; apague e salve para remover)"
+              className="w-full px-3 py-1.5 border border-amber-200 rounded-lg bg-white focus:ring-2 focus:ring-amber-400 outline-none text-sm text-slate-800 resize-y min-h-[2.75rem]"
+            />
+          </div>
+        )}
       </div>
 
       <div className={`p-4 rounded-xl border shadow-sm transition-colors duration-500 ${formData.status === 'Ativo' ? 'bg-blue-50/50 border-blue-100' : formData.status === 'Saída qualificada' ? 'bg-emerald-50/60 border-emerald-200' : formData.status === 'Ausência justificada' ? 'bg-sky-50/70 border-sky-200' : 'bg-red-50/50 border-red-200'}`}>

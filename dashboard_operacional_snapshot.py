@@ -39,6 +39,7 @@ METRICAS_GRAFICO = (
     "ausentes_operacionais",
     "total_interacoes_hoje",
     "total_registros_hoje",
+    "conviventes_inativos",
     "retornos_rapidos_hoje",
     "cancelados_hoje",
     "editados_hoje",
@@ -68,6 +69,7 @@ ORDEM_METRICAS_BASE = (
     "conviventes_ativos",
     "total_interacoes_hoje",
     "total_registros_hoje",
+    "conviventes_inativos",
 )
 
 ORDEM_TIPOS_INTERACAO = (

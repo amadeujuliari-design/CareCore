@@ -41,7 +41,7 @@ from config_operacional import (
     obter_tipos_refeicao_ativos,
     obter_tipos_rotina_validos,
 )
-from config_operacional_projeto import projeto_e_casa_porto
+from config_operacional_projeto import projeto_e_casa_porto, projeto_e_reencontro_pari
 from config_operacional_service import carregar_config_operacional_instituicao
 from acomodacao_tb import (
     aplicar_regras_acomodacao_tb,
@@ -77,6 +77,7 @@ from models import (
     HistoricoLegadoSIATDB,
     HistoricoLegadoRotinaSIATDB,
     AusenciaJustificadaConfirmacaoDB,
+    FamiliaConviventeDB,
     LavanderiaRegistroDB,
     PertenceRecolhidoBaixaDB,
     PertenceRecolhidoDB,
@@ -952,11 +953,27 @@ async def listar_conviventes_resumo(
         ConviventeDB.foto_url,
         ConviventeDB.preferencial,
         ConviventeDB.observacao_operacional,
+        ConviventeDB.ocupacao_trabalho,
+        ConviventeDB.escala_trabalho,
+        ConviventeDB.dias_trabalho,
+        ConviventeDB.trabalho_inicio,
+        ConviventeDB.trabalho_fim,
+        ConviventeDB.parcerias,
+        ConviventeDB.etapa_escolar,
+        ConviventeDB.curso_escolar,
+        ConviventeDB.turno_escolar,
+        ConviventeDB.escolar_inicio,
+        ConviventeDB.escolar_fim,
         ConviventeDB.leito_provisorio_desde,
         ConviventeDB.numero_sisa,
         ConviventeDB.numero_nis,
         ConviventeDB.data_entrada,
         ConviventeDB.cidade,
+        ConviventeDB.familia_id,
+        FamiliaConviventeDB.codigo.label("familia_codigo"),
+    ).outerjoin(
+        FamiliaConviventeDB,
+        FamiliaConviventeDB.id == ConviventeDB.familia_id,
     ).where(
         ConviventeDB.instituicao_id == obter_instituicao_escopo(usuario_atual),
     )
@@ -991,11 +1008,24 @@ async def listar_conviventes_resumo(
             "foto_url": row.foto_url,
             "preferencial": bool(row.preferencial),
             "observacao_operacional": row.observacao_operacional,
+            "ocupacao_trabalho": row.ocupacao_trabalho,
+            "escala_trabalho": row.escala_trabalho,
+            "dias_trabalho": row.dias_trabalho,
+            "trabalho_inicio": row.trabalho_inicio,
+            "trabalho_fim": row.trabalho_fim,
+            "parcerias": row.parcerias,
+            "etapa_escolar": row.etapa_escolar,
+            "curso_escolar": row.curso_escolar,
+            "turno_escolar": row.turno_escolar,
+            "escolar_inicio": row.escolar_inicio,
+            "escolar_fim": row.escolar_fim,
             "leito_provisorio_desde": row.leito_provisorio_desde,
             "numero_sisa": row.numero_sisa,
             "numero_nis": row.numero_nis,
             "data_entrada": row.data_entrada,
             "cidade": row.cidade,
+            "familia_id": row.familia_id,
+            "familia_codigo": row.familia_codigo,
         }
         for row in rows
     ]
@@ -3523,6 +3553,12 @@ async def registar_rotina(
     instituicao_id = obter_instituicao_escopo(usuario_atual)
     config_operacional, _, _ = await carregar_config_operacional_instituicao(db, instituicao_id)
     tipos_rotina_validos = obter_tipos_rotina_validos(config_operacional)
+    projeto = await db.get(InstituicaoDB, instituicao_id)
+    sem_portaria = projeto_e_reencontro_pari(projeto)
+    if sem_portaria:
+        tipos_rotina_validos = {
+            tipo for tipo in tipos_rotina_validos if tipo not in {"Entrada", "Saída"}
+        }
     tipos_refeicoes = obter_tipos_refeicao_ativos(config_operacional)
 
     if payload.tipo_registro not in tipos_rotina_validos:
@@ -3649,7 +3685,7 @@ async def registar_rotina(
             detail="O convivente já consta como fora."
         )
 
-    if esta_fora and payload.tipo_registro != "Entrada":
+    if not sem_portaria and esta_fora and payload.tipo_registro != "Entrada":
         raise HTTPException(
             status_code=400,
             detail=(
@@ -4490,6 +4526,12 @@ async def montar_dashboard_operacional_payload(
                 qtd for tipo, qtd in interacoes_hoje.items()
                 if tipo not in {"Entrada", "Saída"}
             ),
+            "conviventes_inativos": int((await db.execute(
+                select(func.count(ConviventeDB.id)).where(
+                    ConviventeDB.instituicao_id == inst_id,
+                    ConviventeDB.status == "Inativado",
+                )
+            )).scalar_one() or 0),
         },
         "interacoes_hoje": interacoes_hoje,
         "listas_totais": {
@@ -5474,6 +5516,20 @@ async def listar_historico_rotina(
         )
         for registro, nome_completo, nome_social, numero_institucional, usuario_nome, usuario_perfil in linhas
     ]
+
+    inst_estoque = obter_instituicao_escopo(usuario_atual)
+    resumo_periodo["conviventes_ativos"] = int((await db.execute(
+        select(func.count(ConviventeDB.id)).where(
+            ConviventeDB.instituicao_id == inst_estoque,
+            ConviventeDB.status == "Ativo",
+        )
+    )).scalar_one() or 0)
+    resumo_periodo["conviventes_inativos"] = int((await db.execute(
+        select(func.count(ConviventeDB.id)).where(
+            ConviventeDB.instituicao_id == inst_estoque,
+            ConviventeDB.status == "Inativado",
+        )
+    )).scalar_one() or 0)
 
     return {
         "registros": registros,

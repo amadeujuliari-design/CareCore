@@ -11,6 +11,7 @@ import BannerSomenteLeituraGlobal from './components/BannerSomenteLeituraGlobal'
 import { AppShell, MainShell, PageHeader, PremiumButton, ScrollArea } from './components/PremiumUI';
 import { useAuth } from './context/AuthContext';
 import { projetoOcultaAcomodacoes } from './config/configOperacionalDefaults';
+import { projetoEhReencontroPari } from './utils/projetoPari';
 import { API_ROOT } from './config/apiBase';
 import { useDeviceInfo } from './hooks/useDeviceInfo';
 import { useLeitorUsbGlobal } from './hooks/useLeitorUsbGlobal';
@@ -178,22 +179,24 @@ const ROTULOS_REFEICAO_EXTRA = {
 export default function RotinaDiaria() {
   const navigate = useNavigate();
   const { isGlobalPuro: somenteLeitura, usuario } = useAuth();
-  const { config: configOperacional, nomeProjeto: nomeProjetoOperacional } = useConfigOperacional();
+  const { config: configOperacional, nomeProjeto: nomeProjetoOperacional, carregando: carregandoConfig } = useConfigOperacional();
+  const semPortaria = projetoEhReencontroPari(nomeProjetoOperacional || usuario?.projeto_nome);
+  const configInteracaoPronta = carregandoConfig ? null : configOperacional;
   const opcoesInteracaoRotina = useMemo(
-    () => obterOpcoesInteracaoRotina(configOperacional),
-    [configOperacional],
+    () => (configInteracaoPronta ? obterOpcoesInteracaoRotina(configInteracaoPronta) : []),
+    [configInteracaoPronta],
   );
   const mapaInteracoesPar = useMemo(
-    () => obterMapaInteracoesPar(configOperacional),
-    [configOperacional],
+    () => (configInteracaoPronta ? obterMapaInteracoesPar(configInteracaoPronta) : {}),
+    [configInteracaoPronta],
   );
   const contextoInteracaoRotina = useMemo(
     () => ({ mapaPares: mapaInteracoesPar, opcoes: opcoesInteracaoRotina }),
     [mapaInteracoesPar, opcoesInteracaoRotina],
   );
   const tiposRefeicaoRotina = useMemo(
-    () => Object.keys(obterJanelasRefeicao(configOperacional)),
-    [configOperacional],
+    () => (configInteracaoPronta ? Object.keys(obterJanelasRefeicao(configInteracaoPronta)) : []),
+    [configInteracaoPronta],
   );
   const token = localStorage.getItem('@CareCore:token');
   const deviceInfo = useDeviceInfo();
@@ -214,6 +217,9 @@ export default function RotinaDiaria() {
   const [feedback, setFeedback] = useState(null);
   const [modoAutomatico, setModoAutomatico] = useState(true);
   const [tipoBipagemAutomatica, setTipoBipagemAutomatica] = useState('fluxo');
+  useEffect(() => {
+    if (semPortaria) setTipoBipagemAutomatica('interacao');
+  }, [semPortaria]);
   const [interacaoSelecionada, setInteracaoSelecionada] = useState('Almoço');
   const [interacaoConfirmacao, setInteracaoConfirmacao] = useState(null);
   const [refeicaoExtraPendente, setRefeicaoExtraPendente] = useState(null);
@@ -1422,7 +1428,9 @@ export default function RotinaDiaria() {
           eyebrow="Rotina"
           title="Controle de Fluxo Diário"
           subtitle={
-            somenteLeitura
+            semPortaria
+              ? 'Alimentação e demais interações da população acolhida.'
+              : somenteLeitura
               ? 'Consulta de presença, entradas, saídas e interações do dia (somente leitura).'
               : 'Entradas, saídas e alimentação da população acolhida.'
           }
@@ -1448,7 +1456,7 @@ export default function RotinaDiaria() {
                 className="min-h-10 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-sm font-bold text-blue-700 shadow-sm outline-none"
                 title="Escolha o que o bip automático deve registrar"
               >
-                <option value="fluxo">Bipar entrada/saída</option>
+                {!semPortaria && <option value="fluxo">Bipar entrada/saída</option>}
                 <option value="interacao">Bipar interação</option>
               </select>
             )}
@@ -1486,7 +1494,9 @@ export default function RotinaDiaria() {
               </p>
             </div>
           )}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className={`grid grid-cols-1 ${semPortaria ? '' : 'sm:grid-cols-3'} gap-4`}>
+            {!semPortaria && (
+            <>
             <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-between">
               <div>
                 <p className="text-xs text-gray-500 font-bold uppercase tracking-wide">
@@ -1514,6 +1524,8 @@ export default function RotinaDiaria() {
                 {">"}
               </div>
             </div>
+            </>
+            )}
 
             <button
               type="button"
@@ -1603,7 +1615,8 @@ export default function RotinaDiaria() {
                     </p>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className={`grid gap-2 ${semPortaria ? 'grid-cols-1' : 'grid-cols-2'}`}>
+                    {!semPortaria && (
                     <button
                       type="button"
                       onClick={() => setTipoBipagemAutomatica('fluxo')}
@@ -1615,6 +1628,7 @@ export default function RotinaDiaria() {
                     >
                       Entrada/Saída
                     </button>
+                    )}
 
                     <button
                       type="button"
@@ -1641,6 +1655,9 @@ export default function RotinaDiaria() {
                         onChange={(event) => setInteracaoSelecionada(event.target.value)}
                         className="min-h-11 w-full rounded-xl border border-blue-100 bg-white px-3 py-2 text-sm font-bold text-blue-800 outline-none"
                       >
+                        {!opcoesInteracaoRotina.length && (
+                          <option value="">Carregando interações...</option>
+                        )}
                         {opcoesInteracaoRotina.map((opcao) => (
                           <option key={opcao.valor} value={opcao.valor}>
                             {opcao.label}
@@ -1774,7 +1791,7 @@ export default function RotinaDiaria() {
               <div className="flex flex-col border border-gray-200 rounded-xl overflow-hidden shadow-sm">
                 <div className="bg-gray-50 px-4 py-3 flex justify-between items-center border-b border-gray-200 text-xs font-bold text-gray-500 uppercase tracking-wider">
                   <div className="flex-1">Acolhido e Prontuário</div>
-                  <div className="w-24 text-center mr-4 hidden sm:block">Status</div>
+                  <div className={`w-24 text-center mr-4 ${semPortaria ? 'hidden' : 'hidden sm:block'}`}>Status</div>
                   <div className="w-[380px] text-center hidden md:block">Ações Rápidas</div>
                 </div>
 
@@ -1809,7 +1826,7 @@ export default function RotinaDiaria() {
                               {c.nome_social || c.nome_completo}
                             </span>
 
-                            <span className="md:hidden flex-shrink-0">
+                            <span className={`${semPortaria ? 'hidden' : 'md:hidden'} flex-shrink-0`}>
                               {isFora ? (
                                 <span className="bg-orange-100 text-orange-700 text-[9px] font-black px-1.5 py-0.5 rounded border border-orange-200">
                                   SAIU
@@ -1828,7 +1845,7 @@ export default function RotinaDiaria() {
                         </div>
                       </div>
 
-                      <div className="w-24 flex-shrink-0 text-center hidden md:block">
+                      <div className={`w-24 flex-shrink-0 text-center ${semPortaria ? 'hidden' : 'hidden md:block'}`}>
                         {isFora ? (
                           <span className="bg-orange-100 text-orange-700 text-[10px] font-black px-2 py-1 rounded shadow-sm border border-orange-200 block w-16 mx-auto">
                             SAIU
@@ -1841,6 +1858,7 @@ export default function RotinaDiaria() {
                       </div>
 
                       <div className={`grid w-full grid-cols-1 gap-2 sm:grid-cols-3 md:mt-0 md:flex md:w-[380px] md:flex-shrink-0 md:items-center md:justify-end ${somenteLeitura ? 'hidden' : ''}`}>
+                        {!semPortaria && (
                         <button
                           onClick={() => handleRegistrar(c.id, 'Entrada')}
                           disabled={!isFora || processandoAcao === `${c.id}-Entrada`}
@@ -1849,7 +1867,9 @@ export default function RotinaDiaria() {
                         >
                           <span className="text-[11px] sm:text-xs">Entrada</span>
                         </button>
+                        )}
 
+                        {!semPortaria && (
                         <button
                           onClick={() => handleRegistrar(c.id, 'Saída')}
                           disabled={isFora || processandoAcao === `${c.id}-Saída`}
@@ -1858,12 +1878,13 @@ export default function RotinaDiaria() {
                         >
                           <span className="text-[11px] sm:text-xs">Saída</span>
                         </button>
+                        )}
 
                         <button
                           onClick={() => solicitarRegistroInteracao(c)}
-                          disabled={isFora || Boolean(processandoAcao?.startsWith(`${c.id}-`))}
+                          disabled={(!semPortaria && isFora) || Boolean(processandoAcao?.startsWith(`${c.id}-`))}
                           className={`min-h-11 md:min-h-0 px-3 py-2 md:py-1.5 rounded-md text-xs font-bold transition-all shadow-sm flex items-center justify-center gap-1.5 md:min-w-[90px]
-                            ${isFora ? 'bg-gray-100 text-gray-400 cursor-not-allowed opacity-60' : 'bg-blue-500 hover:bg-blue-600 text-white active:scale-95'}`}
+                            ${!semPortaria && isFora ? 'bg-gray-100 text-gray-400 cursor-not-allowed opacity-60' : 'bg-blue-500 hover:bg-blue-600 text-white active:scale-95'}`}
                         >
                           <span className="text-[11px] sm:text-xs">
                             {obterRotuloBotaoInteracao(
@@ -1924,7 +1945,7 @@ export default function RotinaDiaria() {
                   onChange={(event) => setTipoBipagemAutomatica(event.target.value)}
                   className="min-h-11 w-full rounded-xl border border-blue-100 bg-white px-3 py-2 text-sm font-bold text-blue-800 outline-none"
                 >
-                  <option value="fluxo">Entrada/Saída conforme presença</option>
+                  {!semPortaria && <option value="fluxo">Entrada/Saída conforme presença</option>}
                   <option value="interacao">Interação selecionada</option>
                 </select>
                 {tipoBipagemAutomatica === 'interacao' && (
@@ -1933,6 +1954,9 @@ export default function RotinaDiaria() {
                     onChange={(event) => setInteracaoSelecionada(event.target.value)}
                     className="mt-2 min-h-11 w-full rounded-xl border border-blue-100 bg-white px-3 py-2 text-sm font-bold text-blue-800 outline-none"
                   >
+                    {!opcoesInteracaoRotina.length && (
+                      <option value="">Carregando interações...</option>
+                    )}
                     {opcoesInteracaoRotina.map((opcao) => (
                       <option key={opcao.valor} value={opcao.valor}>
                         {opcao.label}
@@ -2026,7 +2050,7 @@ export default function RotinaDiaria() {
                   </p>
                 </div>
 
-                <div className="inline-block px-3 py-1 bg-gray-100 rounded-full text-xs font-bold text-gray-600 uppercase tracking-wide border border-gray-200">
+                <div className={`inline-block px-3 py-1 bg-gray-100 rounded-full text-xs font-bold text-gray-600 uppercase tracking-wide border border-gray-200 ${semPortaria ? 'hidden' : ''}`}>
                   Status Atual:{' '}
                   {isFora ? (
                     <span className="text-orange-600">Fora da Unidade</span>
@@ -2038,6 +2062,7 @@ export default function RotinaDiaria() {
                 <AvisoCarteirinhaProvisoria convivente={pacienteEscaneado} quartos={quartos} />
 
                 <div className="pt-4 border-t border-gray-100 grid grid-cols-1 gap-3">
+                  {!semPortaria && (
                   <button
                     onClick={() => handleRegistrar(pacienteEscaneado.id, 'Entrada')}
                     disabled={!isFora}
@@ -2046,7 +2071,9 @@ export default function RotinaDiaria() {
                   >
                     Registrar entrada
                   </button>
+                  )}
 
+                  {!semPortaria && (
                   <button
                     onClick={() => handleRegistrar(pacienteEscaneado.id, 'Saída')}
                     disabled={isFora}
@@ -2055,6 +2082,7 @@ export default function RotinaDiaria() {
                   >
                     Registrar saída
                   </button>
+                  )}
 
                   <div className="rounded-2xl border border-blue-100 bg-blue-50 p-3 text-left">
                     <label className="mb-2 block text-[10px] font-black uppercase tracking-wide text-blue-700">
@@ -2065,6 +2093,9 @@ export default function RotinaDiaria() {
                       onChange={(event) => setInteracaoSelecionada(event.target.value)}
                       className="mb-2 min-h-11 w-full rounded-xl border border-blue-100 bg-white px-3 py-2 text-sm font-bold text-blue-800 outline-none"
                     >
+                      {!opcoesInteracaoRotina.length && (
+                        <option value="">Carregando interações...</option>
+                      )}
                       {opcoesInteracaoRotina.map((opcao) => (
                         <option key={opcao.valor} value={opcao.valor}>
                           {opcao.label}
@@ -2073,9 +2104,9 @@ export default function RotinaDiaria() {
                     </select>
                     <button
                       onClick={() => solicitarRegistroInteracao(pacienteEscaneado)}
-                      disabled={isFora}
+                      disabled={!semPortaria && isFora}
                       className={`w-full py-3 rounded-xl font-bold transition-all flex justify-center items-center gap-2 text-sm shadow-md
-                        ${isFora ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : 'bg-blue-500 hover:bg-blue-600 text-white'}`}
+                        ${!semPortaria && isFora ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : 'bg-blue-500 hover:bg-blue-600 text-white'}`}
                     >
                       {obterRotuloBotaoInteracao(
                         resumoHoje,

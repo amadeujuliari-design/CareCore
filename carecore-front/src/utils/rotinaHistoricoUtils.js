@@ -6,6 +6,11 @@ import {
 import { formatarDataBr } from './dataBrasilUtils.js';
 import { rotuloRepeticaoExtraRefeicao } from './rotinaRefeicaoUtils';
 import {
+  obterOpcoesInteracaoRotina,
+  projetoOcultaAcomodacoes,
+} from '../config/configOperacionalDefaults.js';
+import { projetoEhReencontroPari } from './projetoPari.js';
+import {
   tipoRegistroAlimentacao,
   TIPOS_ROTINA_REFEICOES,
 } from './rotinaDiariaUtils.js';
@@ -75,6 +80,55 @@ export function listarTiposRegistroFiltroRotina(_perfil, opcoes = TIPOS_REGISTRO
   return opcoes;
 }
 
+function projetoUsaListaPropria(nomeProjeto) {
+  return projetoEhReencontroPari(nomeProjeto) || projetoOcultaAcomodacoes(nomeProjeto);
+}
+
+function opcoesInteracaoDoProjeto(config, nomeProjeto) {
+  const semFluxo = projetoEhReencontroPari(nomeProjeto);
+  const itens = [];
+  if (!semFluxo) {
+    itens.push(
+      { valor: 'Entrada', label: 'Entrada' },
+      { valor: 'Saída', label: 'Saída' },
+    );
+  }
+  obterOpcoesInteracaoRotina(config).forEach((opcao) => {
+    if (!opcao?.valor || opcao.valor === 'Entrada' || opcao.valor === 'Saída') return;
+    if (itens.some((item) => item.valor === opcao.valor)) return;
+    itens.push({ valor: opcao.valor, label: opcao.label || opcao.valor, grupo: opcao.grupo, tipo_retirada: opcao.tipo_retirada, tipo_entrega: opcao.tipo_entrega });
+  });
+  return itens;
+}
+
+/** Filtro de tipo: SIAT mantém a lista fixa. PARI e Casa Porto usam a config do projeto. */
+export function listarFiltroInteracaoDoProjeto(config, nomeProjeto, { carregando = false } = {}) {
+  if (!projetoUsaListaPropria(nomeProjeto)) return TIPOS_REGISTRO_FILTRO;
+  if (carregando || !config) {
+    return [{ valor: '', label: 'Carregando interações...' }];
+  }
+  return [{ valor: '', label: 'Todos os tipos' }, ...opcoesInteracaoDoProjeto(config, nomeProjeto)];
+}
+
+/** Tipos reais da edição manual. PARI não oferece Entrada/Saída. */
+export function listarTiposEdicaoDoProjeto(config, nomeProjeto, { carregando = false } = {}) {
+  if (!projetoUsaListaPropria(nomeProjeto)) return TIPOS_REGISTRO_EDICAO;
+  if (carregando || !config) return [];
+  const tipos = [];
+  opcoesInteracaoDoProjeto(config, nomeProjeto).forEach((opcao) => {
+    if (opcao.grupo === 'par' && opcao.tipo_retirada && opcao.tipo_entrega) {
+      tipos.push(opcao.tipo_retirada, opcao.tipo_entrega);
+      return;
+    }
+    if (opcao.grupo === 'par_bagageiro') {
+      tipos.push('Movimentação de Bagageiro');
+      return;
+    }
+    if (opcao.valor) tipos.push(opcao.valor);
+  });
+  return [...new Set(tipos)];
+}
+
 export function obterTotalResumoSemAlimentacao(resumoPeriodo, registros = []) {
   if (resumoPeriodo?.contagens_por_tipo) {
     const totalAlimentacao = TIPOS_ROTINA_REFEICOES.reduce(
@@ -111,9 +165,10 @@ export function tipoRegistroCorresponde(tipoRegistro, filtro) {
   return tipoRegistro === filtro;
 }
 
-export function rotuloTipoRegistroFiltro(filtro) {
-  const item = TIPOS_REGISTRO_FILTRO.find((t) => t.valor === filtro);
-  return item ? item.label : 'Todos os tipos';
+export function rotuloTipoRegistroFiltro(filtro, opcoes = TIPOS_REGISTRO_FILTRO) {
+  if (!filtro) return 'Todos os tipos';
+  const item = (opcoes || TIPOS_REGISTRO_FILTRO).find((t) => t.valor === filtro);
+  return item ? item.label : filtro;
 }
 
 export function contarRegistrosPorTipo(registros, filtro) {
@@ -303,9 +358,10 @@ export function montarFiltrosTextoHistoricoRotina({
   auditoriaFiltro,
   tecnicoIdFiltro,
   tecnicoNomeFiltro,
+  opcoesTipoFiltro,
 }) {
   return [
-    tipoFiltro ? `Tipo: ${rotuloTipoRegistroFiltro(tipoFiltro)}` : '',
+    tipoFiltro ? `Tipo: ${rotuloTipoRegistroFiltro(tipoFiltro, opcoesTipoFiltro)}` : '',
     dataInicioFiltro ? `Data inicial: ${formatarDataBr(dataInicioFiltro)}` : '',
     dataFimFiltro ? `Data final: ${formatarDataBr(dataFimFiltro)}` : '',
     buscaFiltro?.trim() ? `Busca: ${buscaFiltro.trim()}` : '',

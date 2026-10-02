@@ -1,4 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
+import { useAuth } from './context/AuthContext';
+import { useConfigOperacional } from './hooks/useConfigOperacional';
+import { projetoEhReencontroPari } from './utils/projetoPari';
 import Sidebar from './Sidebar';
 import { AppShell, MainShell, PageHeader, ReportActionButton, ScrollArea } from './components/PremiumUI';
 import AuthenticatedImage from './components/AuthenticatedImage';
@@ -51,7 +54,23 @@ import {
 } from './utils/relatorioIdentidadePrint';
 import { decodificarPayloadJwt } from './utils/jwtUtils';
 
+const ROTULOS_FLUXO_SISA = new Set(['Entradas', 'Saídas', 'Entrada', 'Saída', 'Ausentes']);
+
+function omitirColunasFluxoSisa(colunas, linhas, omitir) {
+  if (!omitir) return { colunas, linhas };
+  const manter = colunas
+    .map((coluna, indice) => (ROTULOS_FLUXO_SISA.has(coluna) ? -1 : indice))
+    .filter((indice) => indice >= 0);
+  return {
+    colunas: manter.map((indice) => colunas[indice]),
+    linhas: linhas.map((linha) => manter.map((indice) => linha[indice])),
+  };
+}
+
 export default function ConvenioSisa() {
+  const { usuario } = useAuth();
+  const { nomeProjeto } = useConfigOperacional();
+  const semPortaria = projetoEhReencontroPari(nomeProjeto || usuario?.projeto_nome);
   const token = localStorage.getItem('@CareCore:token');
   let perfilUsuario = '';
   let usuarioMaster = false;
@@ -818,10 +837,13 @@ export default function ConvenioSisa() {
         { titulo: 'Banhos', valor: resumoMensalFiltrado.total_banhos },
       ]
       : resumoCardsDiarios;
-    const colunas = !periodoEhDia
+    const cardsVisiveis = semPortaria
+      ? cards.filter((card) => !ROTULOS_FLUXO_SISA.has(card.titulo))
+      : cards;
+    const colunasBrutas = !periodoEhDia
       ? ['Pront.', 'Nº SISA', 'Convivente', 'Presenças', 'Justificativas', 'Entradas', 'Saídas', 'Cafés', 'Almoços', 'Jantares', 'Lanches', 'Extras', 'Banhos']
       : ['Pront.', 'Nº SISA', 'Convivente', 'Presença', 'Justificativa', 'Entrada', 'Saída', 'Café', 'Almoço', 'Jantar', 'Lanche', 'Extras', 'Banho', 'Observações'];
-    const linhas = !periodoEhDia
+    const linhasBrutas = !periodoEhDia
       ? itensMensaisFiltrados.map(item => [
         `#${item.prontuario || 'S/N'}`,
         item.numero_sisa || '-',
@@ -853,7 +875,8 @@ export default function ConvenioSisa() {
         item.banho || '-',
         item.observacoes || '-',
       ]);
-    const cardsHtml = cards.map(card => `
+    const { colunas, linhas } = omitirColunasFluxoSisa(colunasBrutas, linhasBrutas, semPortaria);
+    const cardsHtml = cardsVisiveis.map(card => `
       <div class="card">
         <span>${escaparHtml(card.titulo)}</span>
         <strong>${Number(card.valor || 0).toLocaleString('pt-BR')}</strong>
@@ -1572,8 +1595,8 @@ export default function ConvenioSisa() {
                 <ResumoCard titulo="Conviventes" valor={resumoMensalFiltrado.conviventes} />
                 <ResumoCard titulo="Presenças" valor={resumoMensalFiltrado.total_atendimentos} />
                 <ResumoCard titulo="Justificativas" valor={resumoMensalFiltrado.total_justificativas} />
-                <ResumoCard titulo="Entradas" valor={resumoMensalFiltrado.total_entradas} />
-                <ResumoCard titulo="Saídas" valor={resumoMensalFiltrado.total_saidas} />
+                {!semPortaria && <ResumoCard titulo="Entradas" valor={resumoMensalFiltrado.total_entradas} />}
+                {!semPortaria && <ResumoCard titulo="Saídas" valor={resumoMensalFiltrado.total_saidas} />}
                 <ResumoCard titulo="Cafés" valor={resumoMensalFiltrado.total_cafes} />
                 <ResumoCard titulo="Almoços" valor={resumoMensalFiltrado.total_almocos} />
                 <ResumoCard titulo="Jantares" valor={resumoMensalFiltrado.total_jantares} />
@@ -1674,17 +1697,21 @@ export default function ConvenioSisa() {
                           <p className="text-[10px] font-black uppercase text-gray-400">Justif.</p>
                           <p className="text-lg font-black text-gray-800">{item.dias_justificados || 0}</p>
                         </div>
+                        {!semPortaria && (
                         <div className="rounded-xl bg-white px-2 py-2">
                           <p className="text-[10px] font-black uppercase text-gray-400">Entradas</p>
                           <p className="text-lg font-black text-gray-800">{item.entradas}</p>
                         </div>
+                        )}
                       </div>
 
                       <div className="mt-2 grid grid-cols-3 gap-2 text-center">
+                        {!semPortaria && (
                         <div className="rounded-xl bg-white px-2 py-2">
                           <p className="text-[10px] font-black uppercase text-gray-400">Saídas</p>
                           <p className="text-lg font-black text-gray-800">{item.saidas}</p>
                         </div>
+                        )}
                         <div className="rounded-xl bg-white px-2 py-2">
                           <p className="text-[10px] font-black uppercase text-gray-400">Aliment.</p>
                           <p className="text-lg font-black text-gray-800">{Number(item.cafes || 0) + Number(item.almocos || 0) + Number(item.jantares || 0) + Number(item.lanches || 0)}</p>
@@ -1715,8 +1742,8 @@ export default function ConvenioSisa() {
                       <Th>Convivente</Th>
                       <Th>Presenças</Th>
                       <Th>Justificativas</Th>
-                      <Th>Entradas</Th>
-                      <Th>Saídas</Th>
+                      {!semPortaria && <Th>Entradas</Th>}
+                      {!semPortaria && <Th>Saídas</Th>}
                       <Th>Cafés</Th>
                       <Th>Almoços</Th>
                       <Th>Jantares</Th>
@@ -1734,8 +1761,8 @@ export default function ConvenioSisa() {
                         <Td destaque>{item.nome}</Td>
                         <Td>{item.total_atendimentos ?? item.dias_presentes ?? 0}</Td>
                         <Td>{item.dias_justificados || 0}</Td>
-                        <Td>{item.entradas}</Td>
-                        <Td>{item.saidas}</Td>
+                        {!semPortaria && <Td>{item.entradas}</Td>}
+                        {!semPortaria && <Td>{item.saidas}</Td>}
                         <Td>{item.cafes || 0}</Td>
                         <Td>{item.almocos}</Td>
                         <Td>{item.jantares || 0}</Td>
@@ -1751,8 +1778,8 @@ export default function ConvenioSisa() {
                         <Td destaque>{item.nome}</Td>
                         <Td>{item.total_atendimentos ?? item.dias_presentes ?? 0}</Td>
                         <Td>{item.dias_justificados || 0}</Td>
-                        <Td>{item.entradas}</Td>
-                        <Td>{item.saidas}</Td>
+                        {!semPortaria && <Td>{item.entradas}</Td>}
+                        {!semPortaria && <Td>{item.saidas}</Td>}
                         <Td>{item.cafes || 0}</Td>
                         <Td>{item.almocos}</Td>
                         <Td>{item.jantares || 0}</Td>
@@ -1794,7 +1821,7 @@ export default function ConvenioSisa() {
               </h2>
 
               <div className="sisa-resumo-diario mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-7">
-                {resumoCardsDiarios.map(card => (
+                {resumoCardsDiarios.filter((card) => !semPortaria || !ROTULOS_FLUXO_SISA.has(card.titulo)).map(card => (
                   <ResumoCard
                     key={card.titulo}
                     titulo={card.titulo}
@@ -1843,14 +1870,18 @@ export default function ConvenioSisa() {
                       </div>
 
                       <div className="mt-3 grid grid-cols-3 gap-2 text-center">
+                        {!semPortaria && (
                         <div className="rounded-xl bg-white px-2 py-2">
                           <p className="text-[10px] font-black uppercase text-gray-400">Entrada</p>
                           <p className="text-xs font-bold text-gray-800">{formatarDataHora(item.entrada)}</p>
                         </div>
+                        )}
+                        {!semPortaria && (
                         <div className="rounded-xl bg-white px-2 py-2">
                           <p className="text-[10px] font-black uppercase text-gray-400">Saída</p>
                           <p className="text-xs font-bold text-gray-800">{formatarDataHora(item.saida)}</p>
                         </div>
+                        )}
                         <div className="rounded-xl bg-white px-2 py-2">
                           <p className="text-[10px] font-black uppercase text-gray-400">Almoço</p>
                           <p className="text-xs font-bold text-gray-800">
@@ -1888,8 +1919,8 @@ export default function ConvenioSisa() {
                       <Th>Convivente</Th>
                       <Th>Presença</Th>
                       <Th>Justificativa</Th>
-                      <Th>Entrada</Th>
-                      <Th>Saída</Th>
+                      {!semPortaria && <Th>Entrada</Th>}
+                      {!semPortaria && <Th>Saída</Th>}
                       <Th>Café</Th>
                       <Th>Almoço</Th>
                       <Th>Jantar</Th>
@@ -1918,8 +1949,8 @@ export default function ConvenioSisa() {
                           </span>
                         </Td>
                         <Td>{item.presenca_por_justificativa || 'Não'}</Td>
-                        <Td>{formatarDataHora(item.entrada)}</Td>
-                        <Td>{formatarDataHora(item.saida)}</Td>
+                        {!semPortaria && <Td>{formatarDataHora(item.entrada)}</Td>}
+                        {!semPortaria && <Td>{formatarDataHora(item.saida)}</Td>}
                         <Td>{formatarRefeicaoRelatorio(item.cafe, item.cafes, item.cafes_extras)}</Td>
                         <Td>{formatarRefeicaoRelatorio(item.almoco, item.almocos, item.almocos_extras)}</Td>
                         <Td>{formatarRefeicaoRelatorio(item.jantar, item.jantares, item.jantares_extras)}</Td>
@@ -1946,8 +1977,8 @@ export default function ConvenioSisa() {
                           </span>
                         </Td>
                         <Td>{item.presenca_por_justificativa || 'Não'}</Td>
-                        <Td>{formatarDataHora(item.entrada)}</Td>
-                        <Td>{formatarDataHora(item.saida)}</Td>
+                        {!semPortaria && <Td>{formatarDataHora(item.entrada)}</Td>}
+                        {!semPortaria && <Td>{formatarDataHora(item.saida)}</Td>}
                         <Td>{formatarRefeicaoRelatorio(item.cafe, item.cafes, item.cafes_extras)}</Td>
                         <Td>{formatarRefeicaoRelatorio(item.almoco, item.almocos, item.almocos_extras)}</Td>
                         <Td>{formatarRefeicaoRelatorio(item.jantar, item.jantares, item.jantares_extras)}</Td>

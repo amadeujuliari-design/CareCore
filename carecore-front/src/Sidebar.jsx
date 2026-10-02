@@ -40,6 +40,7 @@ import { API_ROOT } from './config/apiBase';
 import { carecoreVersaoRotulo } from './config/versao';
 import { MENU_ACOMPANHAMENTOS, MENU_CONVIVENTES } from './config/acompanhamentosConfig';
 import { acompanhamentoAtivo, moduloAtivo, projetoOcultaAcomodacoes } from './config/configOperacionalDefaults';
+import { projetoEhReencontroPari } from './utils/projetoPari';
 import { useConfigOperacional } from './hooks/useConfigOperacional';
 import { usuarioEhAdmCompras, usuarioEhAdmGlobal, usuarioEhAdmPedidos, usuarioEhAdmProducao, usuarioEhOficineiro, normalizarPerfilRbac, usuarioPodeVerCompras, usuarioPodeAcessarNfp, usuarioPodeAcessarModuloOperacional, PERFIS_ADM_COMPRAS_SEDE, PERFIL_ADM_GLOBAL, PERFIL_ADM_PRODUCAO } from './utils/rbacUtils';
 import { decodificarPayloadJwt } from './utils/jwtUtils';
@@ -397,6 +398,12 @@ export default function Sidebar() {
               path: '/rotina/lavanderia',
               icon: WashingMachine,
               label: 'Lavanderia'
+            },
+            {
+              path: '/rotina/kit-higiene',
+              icon: PackageOpen,
+              label: 'Kit de higiene',
+              somentePari: true,
             },
             {
               path: '/rotina/pertences-recolhidos',
@@ -863,10 +870,16 @@ export default function Sidebar() {
     if (item.path === '/quartos' && (ocultaAcomodacoesCasaPorto || (configOperacional && !moduloAtivo(configOperacional, 'acomodacoes')))) {
       return false;
     }
-    if (item.path === '/rotina/pertences-recolhidos' && (ocultaAcomodacoesCasaPorto || (configOperacional && !moduloAtivo(configOperacional, 'pertences_recolhidos')))) {
+    const reencontroPari = projetoEhReencontroPari(
+      nomeProjetoOperacional || usuarioSessao?.projeto_nome,
+    );
+    if (item.path === '/rotina/pertences-recolhidos' && (reencontroPari || ocultaAcomodacoesCasaPorto || (configOperacional && !moduloAtivo(configOperacional, 'pertences_recolhidos')))) {
       return false;
     }
-    if (item.path === '/rotina/lavanderia' && (ocultaAcomodacoesCasaPorto || (configOperacional && !moduloAtivo(configOperacional, 'lavanderia_pecas')))) {
+    if (item.somentePari && !reencontroPari) {
+      return false;
+    }
+    if (item.path === '/rotina/lavanderia' && !reencontroPari && (ocultaAcomodacoesCasaPorto || (configOperacional && !moduloAtivo(configOperacional, 'lavanderia_pecas')))) {
       return false;
     }
     const featurePermitida =

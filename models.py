@@ -484,6 +484,107 @@ class ConviventeDB(Base):
     portaria_excecao_saida_ate = Column(String, nullable=True)
     portaria_excecao_entrada_ate = Column(String, nullable=True)
     impressoes_carteirinha_oficiais = Column(Integer, default=0, nullable=False)
+    familia_id = Column(String, ForeignKey("familias_convivente.id"), nullable=True, index=True)
+    tipo_individuo = Column(String, nullable=True)
+    retira_alimentacao = Column(Boolean, default=True, nullable=False)
+    ubs_referencia = Column(String, nullable=True)
+    unidade_escolar = Column(String, nullable=True)
+    motivo_saida = Column(Text, nullable=True)
+    sexo = Column(String, nullable=True)
+    motivo_procura = Column(Text, nullable=True)
+    ocupacao_trabalho = Column(Text, nullable=True)
+    escala_trabalho = Column(String, nullable=True)
+    dias_trabalho = Column(String, nullable=True)
+    trabalho_inicio = Column(String, nullable=True)
+    trabalho_fim = Column(String, nullable=True)
+    parcerias = Column(Text, nullable=True)
+    etapa_escolar = Column(String, nullable=True)
+    curso_escolar = Column(String, nullable=True)
+    turno_escolar = Column(String, nullable=True)
+    escolar_inicio = Column(String, nullable=True)
+    escolar_fim = Column(String, nullable=True)
+
+
+class FamiliaConviventeDB(Base):
+    __tablename__ = "familias_convivente"
+    __table_args__ = (
+        UniqueConstraint("instituicao_id", "codigo", name="uq_familia_convivente_codigo"),
+    )
+
+    id = Column(String, primary_key=True, default=get_uuid)
+    instituicao_id = Column(String, ForeignKey("instituicoes.id"), nullable=False, index=True)
+    codigo = Column(String, nullable=False, index=True)
+
+
+class TipoIndividuoHigieneDB(Base):
+    __tablename__ = "tipos_individuo_higiene"
+    __table_args__ = (
+        UniqueConstraint("instituicao_id", "nome", name="uq_tipo_individuo_higiene_nome"),
+    )
+
+    id = Column(String, primary_key=True, default=get_uuid)
+    instituicao_id = Column(String, ForeignKey("instituicoes.id"), nullable=False, index=True)
+    nome = Column(String, nullable=False)
+    descricao = Column(String, nullable=True)
+    ordem = Column(Integer, default=0, nullable=False)
+    ativo = Column(Boolean, default=True, nullable=False)
+    idade_min = Column(Integer, nullable=True)
+    idade_max = Column(Integer, nullable=True)
+    sexo = Column(String, nullable=True)
+
+
+class ItemHigieneDB(Base):
+    __tablename__ = "itens_higiene"
+
+    id = Column(String, primary_key=True, default=get_uuid)
+    instituicao_id = Column(String, ForeignKey("instituicoes.id"), nullable=False, index=True)
+    nome = Column(String, nullable=False)
+    ativo = Column(Boolean, default=True, nullable=False)
+
+
+class KitHigieneRegraDB(Base):
+    __tablename__ = "kit_higiene_regras"
+    __table_args__ = (
+        UniqueConstraint("item_id", "tipo_id", name="uq_kit_higiene_item_tipo"),
+    )
+
+    id = Column(String, primary_key=True, default=get_uuid)
+    instituicao_id = Column(String, ForeignKey("instituicoes.id"), nullable=False, index=True)
+    item_id = Column(String, ForeignKey("itens_higiene.id"), nullable=False)
+    tipo_id = Column(String, ForeignKey("tipos_individuo_higiene.id"), nullable=False)
+    quantidade = Column(Integer, nullable=False, default=1)
+
+
+class KitHigieneEntregaDB(Base):
+    __tablename__ = "kit_higiene_entregas"
+    __table_args__ = (
+        UniqueConstraint("familia_id", "competencia", name="uq_kit_higiene_familia_mes"),
+    )
+
+    id = Column(String, primary_key=True, default=get_uuid)
+    instituicao_id = Column(String, ForeignKey("instituicoes.id"), nullable=False, index=True)
+    familia_id = Column(String, ForeignKey("familias_convivente.id"), nullable=False, index=True)
+    competencia = Column(String, nullable=False, index=True)
+    convivente_id = Column(String, ForeignKey("conviventes.id"), nullable=False)
+    entregue_em = Column(DateTime, nullable=False)
+    usuario_id = Column(String, ForeignKey("usuarios.id"), nullable=True)
+    composicao = Column(Text, nullable=True)
+
+
+class LavanderiaAgendaDB(Base):
+    __tablename__ = "lavanderia_agenda"
+    __table_args__ = (
+        UniqueConstraint("instituicao_id", "maquina", "inicio", name="uq_lavanderia_agenda_slot"),
+    )
+
+    id = Column(String, primary_key=True, default=get_uuid)
+    instituicao_id = Column(String, ForeignKey("instituicoes.id"), nullable=False, index=True)
+    maquina = Column(String, nullable=False, index=True)
+    inicio = Column(DateTime, nullable=False, index=True)
+    fim = Column(DateTime, nullable=False)
+    convivente_id = Column(String, ForeignKey("conviventes.id"), nullable=False, index=True)
+    status = Column(String, nullable=False, default="agendado")
+    liberado_em = Column(DateTime, nullable=True)
 
 
 class CarteirinhaImpressaoLogDB(Base):

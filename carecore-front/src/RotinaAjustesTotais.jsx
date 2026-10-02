@@ -7,6 +7,10 @@ import {
 } from './services/rotinaAjustesTotaisService';
 import { dataHojeIsoLocal } from './utils/prontuarioHistoricoFluxoUtils';
 import { formatarDataBr } from './utils/dataBrasilUtils';
+import { useAuth } from './context/AuthContext';
+import { useConfigOperacional } from './hooks/useConfigOperacional';
+import { obterOpcoesInteracaoRotina, projetoOcultaAcomodacoes } from './config/configOperacionalDefaults';
+import { projetoEhReencontroPari } from './utils/projetoPari';
 
 const JUSTIFICATIVA_MIN = 30;
 
@@ -21,6 +25,11 @@ function dataOntemIsoLocal() {
 }
 
 export default function RotinaAjustesTotais() {
+  const { usuario } = useAuth();
+  const { config: configOperacional, nomeProjeto, carregando: carregandoConfig } = useConfigOperacional();
+  const nomeProjetoAtivo = nomeProjeto || usuario?.projeto_nome || '';
+  const listaPropria = projetoEhReencontroPari(nomeProjetoAtivo) || projetoOcultaAcomodacoes(nomeProjetoAtivo);
+  const semPortaria = projetoEhReencontroPari(nomeProjetoAtivo);
   const [dataReferencia, setDataReferencia] = useState(() => dataOntemIsoLocal());
   const [painel, setPainel] = useState(null);
   const [ajustesForm, setAjustesForm] = useState({});
@@ -31,6 +40,26 @@ export default function RotinaAjustesTotais() {
   const [sucesso, setSucesso] = useState('');
 
   const hojeIso = useMemo(() => dataHojeIsoLocal(), []);
+  const tiposVisiveis = useMemo(() => {
+    if (!listaPropria) return null;
+    if (carregandoConfig || !configOperacional) return new Set();
+    const nomes = new Set();
+    if (!semPortaria) {
+      nomes.add('Entrada');
+      nomes.add('Saída');
+    }
+    obterOpcoesInteracaoRotina(configOperacional).forEach((opcao) => {
+      if (opcao?.valor && opcao.valor !== 'Entrada' && opcao.valor !== 'Saída') {
+        nomes.add(opcao.valor);
+      }
+    });
+    return nomes;
+  }, [carregandoConfig, configOperacional, listaPropria, semPortaria]);
+  const itensPainel = useMemo(() => {
+    const itens = painel?.itens || [];
+    if (!tiposVisiveis) return itens;
+    return itens.filter((item) => tiposVisiveis.has(item.tipo_registro));
+  }, [painel, tiposVisiveis]);
 
   const carregarPainel = useCallback(async () => {
     try {
@@ -208,7 +237,7 @@ export default function RotinaAjustesTotais() {
                       </tr>
                     </thead>
                     <tbody>
-                      {(painel?.itens || []).map((item) => {
+                      {itensPainel.map((item) => {
                         const complemento = Number(ajustesForm[item.tipo_registro] || 0);
                         const total = Number(item.registrados || 0) + complemento;
                         return (

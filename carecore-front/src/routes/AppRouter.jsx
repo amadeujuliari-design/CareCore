@@ -16,6 +16,7 @@ const Conviventes = lazy(() => import('../Conviventes'));
 const CentralOcorrencias = lazy(() => import('../CentralOcorrencias'));
 const RotinaDiaria = lazy(() => import('../RotinaDiaria'));
 const Lavanderia = lazy(() => import('../Lavanderia'));
+const PariKitHigiene = lazy(() => import('../PariKitHigiene'));
 const PertencesRecolhidos = lazy(() => import('../PertencesRecolhidos'));
 const RotinaHistorico = lazy(() => import('../RotinaHistorico'));
 const RotinaAjustesTotais = lazy(() => import('../RotinaAjustesTotais'));
@@ -255,6 +256,15 @@ function RotasAplicacao() {
           element={
             <ProtectedRoute perfis={['Gestor', 'Técnico', 'Orientador', 'Administrativo']}>
               <Lavanderia />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/rotina/kit-higiene"
+          element={
+            <ProtectedRoute perfis={['Gestor', 'Técnico', 'Orientador', 'Administrativo']}>
+              <PariKitHigiene />
             </ProtectedRoute>
           }
         />

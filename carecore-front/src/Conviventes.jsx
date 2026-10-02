@@ -62,6 +62,8 @@ import {
 } from './services/conviventesProntuarioService';
 import { consultarCep } from './services/cepService';
 import { useConfigOperacional } from './hooks/useConfigOperacional';
+import api from './services/api';
+import { projetoEhReencontroPari } from './utils/projetoPari';
 
 const BNMP_PORTAL_URL = 'https://portalbnmp.cnj.jus.br/#/captcha/';
 const TIPO_DOC_CONSULTA_BNMP = 'Consulta BNMP';
@@ -71,7 +73,8 @@ export default function Conviventes() {
   const token = localStorage.getItem('@CareCore:token');
   const deviceInfo = useDeviceInfo();
   const { payload: usuarioPayload, perfilUsuario, idUsuarioLogado } = useTokenIdentity(token);
-  const { config: configOperacional } = useConfigOperacional();
+  const { config: configOperacional, nomeProjeto } = useConfigOperacional();
+  const projetoPari = projetoEhReencontroPari(nomeProjeto);
 
   // Dados Principais
   const [conviventes, setConviventes] = useState([]);
@@ -80,6 +83,10 @@ export default function Conviventes() {
   const [alertaOk, setAlertaOk] = useState({ aberto: false, titulo: 'Atenção', mensagem: '' });
   const [sucesso, setSucesso] = useState('');
   const [quartos, setQuartos] = useState([]);
+  const [familiasPari, setFamiliasPari] = useState([]);
+  const [proximoCodigoFamilia, setProximoCodigoFamilia] = useState('');
+  const [vinculoFamiliar, setVinculoFamiliar] = useState('');
+  const [vinculoFamiliarOriginal, setVinculoFamiliarOriginal] = useState('');
 
   // Dados do Cérebro de Ocorrências e Histórico
   const [listaTecnicos, setListaTecnicos] = useState([]);
@@ -336,6 +343,8 @@ export default function Conviventes() {
     setErro('');
     setErrosValidacao({ email_pessoal: '', cpf: '', cep: '', telefone_celular: '', contato_emergencia_telefone: '' });
     setEditandoId(null);
+    setVinculoFamiliar('');
+    setVinculoFamiliarOriginal('');
     snapshotSalvoRef.current = null;
     resetarDocumentosProntuario();
     resetarPia();
@@ -369,6 +378,8 @@ export default function Conviventes() {
     setMostrarSenhaGovbr(false);
     setStatusOriginal(prontuario.status || 'Ativo'); // <-- NOVO: Salva na memória o status que veio do banco
     setEditandoId(prontuario.id);
+    setVinculoFamiliar(convivente.familia_id || '');
+    setVinculoFamiliarOriginal(convivente.familia_id || '');
     setNumeroProntuarioEdicao(prontuario.numero_institucional ?? null);
     setAbaAtual('pessoais');
     setTelaAtual('form');
@@ -385,6 +396,21 @@ export default function Conviventes() {
 
 
 // === INÍCIO DA SEÇÃO 3: WEBCAM, GED E SALVAMENTO DE FORMULÁRIO ===
+  useEffect(() => {
+    if (!projetoPari) return undefined;
+    let ativo = true;
+    api.get('/api/pari/familias')
+      .then((resposta) => {
+        if (!ativo) return;
+        setFamiliasPari(resposta.data.familias || []);
+        setProximoCodigoFamilia(resposta.data.proximo_codigo || '');
+      })
+      .catch(() => {});
+    return () => {
+      ativo = false;
+    };
+  }, [projetoPari]);
+
   useEffect(() => {
     if (!editandoId || telaAtual !== 'form') return;
 
@@ -588,6 +614,30 @@ export default function Conviventes() {
 
       snapshotSalvoRef.current = JSON.stringify(payload);
 
+      if (projetoPari && conviventeSalvo?.id && vinculoFamiliar !== vinculoFamiliarOriginal) {
+        try {
+          const respostaFamilia = await api.post('/api/pari/familias/vincular', {
+            convivente_id: conviventeSalvo.id,
+            familia_id: vinculoFamiliar && vinculoFamiliar !== 'nova' ? vinculoFamiliar : null,
+            nova: vinculoFamiliar === 'nova',
+          });
+          setVinculoFamiliar(respostaFamilia.data.familia_id || '');
+          setVinculoFamiliarOriginal(respostaFamilia.data.familia_id || '');
+          const codigoFamilia = respostaFamilia.data.codigo;
+          if (!silencioso) {
+            setSucesso(codigoFamilia
+              ? `Prontuário salvo. Vínculo familiar: ${codigoFamilia}.`
+              : 'Prontuário salvo. Vínculo familiar removido.');
+          }
+          const listaFamilias = await api.get('/api/pari/familias');
+          setFamiliasPari(listaFamilias.data.familias || []);
+          setProximoCodigoFamilia(listaFamilias.data.proximo_codigo || '');
+        } catch (errorFamilia) {
+          setErro(obterMensagemErro(errorFamilia) || 'O prontuário foi salvo, mas o vínculo familiar não.');
+          return conviventeSalvo;
+        }
+      }
+
       if (conviventeSalvo?.data_inclusao) {
         const dataInclusaoServidor = String(conviventeSalvo.data_inclusao).split('T')[0];
         const dataInclusaoForm = formDataCorrigido.data_inclusao
@@ -707,6 +757,8 @@ export default function Conviventes() {
       setSucesso('Cadastro sem vínculos excluído com sucesso.');
       setTelaAtual('lista');
       setEditandoId(null);
+      setVinculoFamiliar('');
+      setVinculoFamiliarOriginal('');
       setAbaAtual('pessoais');
       setFormData(estadoInicial);
       setStatusOriginal('Ativo');
@@ -845,6 +897,29 @@ export default function Conviventes() {
           {telaAtual === 'form' && (
             <div className="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden mb-8">
               
+              {editandoId && (() => {
+                const atual = conviventes.find((item) => item.id === editandoId);
+                const familiares = atual?.familia_codigo
+                  ? conviventes.filter((item) => item.familia_codigo === atual.familia_codigo)
+                  : [];
+                if (familiares.length < 2) return null;
+                return (
+                  <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 bg-slate-50 px-5 py-3">
+                    <span className="text-xs font-black uppercase tracking-wide text-brand">Família {atual.familia_codigo}</span>
+                    {familiares.map((familiar) => (
+                      <button
+                        key={familiar.id}
+                        type="button"
+                        onClick={() => abrirParaEdicao(familiar)}
+                        className={`rounded-full px-3 py-1 text-xs font-bold ${familiar.id === editandoId ? 'bg-brand text-white' : 'bg-white text-slate-700 border border-slate-200'}`}
+                      >
+                        {familiar.nome_social || familiar.nome_completo}
+                      </button>
+                    ))}
+                  </div>
+                );
+              })()}
+
               <ProntuarioCabecalho
                 abaAtual={abaAtual}
                 editandoId={editandoId}
@@ -885,6 +960,12 @@ export default function Conviventes() {
                       trocarAbaComSalvamento={trocarAbaComSalvamento}
                       setFormData={setFormData}
                       setErrosValidacao={setErrosValidacao}
+                      vinculoFamiliar={projetoPari ? {
+                        valor: vinculoFamiliar,
+                        onChange: setVinculoFamiliar,
+                        familias: familiasPari,
+                        proximoCodigo: proximoCodigoFamilia,
+                      } : null}
                     />
                   )}
 {/* === FIM DA SEÇÃO 5 === */}

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Navigate } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import { AppShell, MainShell, PageHeader, PremiumButton, ReportActionButton, ScrollArea } from './components/PremiumUI';
 import api from './services/api';
@@ -28,6 +29,9 @@ import LeitorCarteirinhaModal from './components/LeitorCarteirinhaModal';
 import { useLeitorUsbGlobal } from './hooks/useLeitorUsbGlobal';
 import { encontrarConviventePorCodigo } from './utils/conviventeIdentificacaoUtils';
 import { decodificarPayloadJwt } from './utils/jwtUtils';
+import { useConfigOperacional } from './hooks/useConfigOperacional';
+import { useAuth } from './context/AuthContext';
+import { projetoEhReencontroPari } from './utils/projetoPari';
 
 function formatarDataHora(valor) {
   if (!valor) return '-';
@@ -61,6 +65,8 @@ function montarDadosRelatorioPertences(registrosLista) {
 }
 
 export default function PertencesRecolhidos() {
+  const { nomeProjeto } = useConfigOperacional();
+  const { usuario } = useAuth();
   const token = localStorage.getItem('@CareCore:token');
   let perfilUsuario = '';
   let usuarioMaster = false;
@@ -668,6 +674,10 @@ export default function PertencesRecolhidos() {
       setSalvando(false);
     }
   };
+
+  if (projetoEhReencontroPari(nomeProjeto || usuario?.projeto_nome)) {
+    return <Navigate to="/rotina" replace />;
+  }
 
   return (
     <AppShell>

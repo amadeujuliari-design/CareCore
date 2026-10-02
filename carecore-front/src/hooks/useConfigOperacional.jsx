@@ -1,5 +1,6 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 
+import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
 import { buscarConfigOperacional } from '../services/configOperacionalService';
 import { aplicarPresetCasaPorto, montarConfigOperacionalPadrao } from '../config/configOperacionalDefaults';
@@ -32,15 +33,24 @@ async function resolverNomeProjetoAtual() {
 }
 
 export function ConfigOperacionalProvider({ children }) {
+  const { usuario, loading: carregandoAuth } = useAuth();
   const [config, setConfig] = useState(null);
   const [nomeProjeto, setNomeProjeto] = useState('');
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState('');
+  const geracao = useRef(0);
+  const sessaoChave = usuario
+    ? `${usuario.id || usuario.email || ''}|${usuario.instituicao_id || ''}|${usuario.projeto_nome || ''}`
+    : '';
 
   const recarregar = useCallback(async () => {
+    const geracaoAtual = geracao.current + 1;
+    geracao.current = geracaoAtual;
+    const aindaVale = () => geracaoAtual === geracao.current;
     const token = localStorage.getItem('@CareCore:token') || localStorage.getItem('token');
-    const usuario = obterUsuarioSessao();
+    const usuarioSessao = obterUsuarioSessao();
     const nome = await resolverNomeProjetoAtual();
+    if (!aindaVale()) return;
     setNomeProjeto(nome);
     if (!token) {
       setConfig(aplicarPresetCasaPorto(montarConfigOperacionalPadrao(), nome));
@@ -49,7 +59,7 @@ export function ConfigOperacionalProvider({ children }) {
       return;
     }
 
-    if (!usuarioPodeAcessarModuloOperacional(usuario)) {
+    if (!usuarioPodeAcessarModuloOperacional(usuarioSessao)) {
       setConfig(aplicarPresetCasaPorto(montarConfigOperacionalPadrao(), nome));
       setCarregando(false);
       setErro('');
@@ -60,19 +70,23 @@ export function ConfigOperacionalProvider({ children }) {
     setErro('');
     try {
       const dados = await buscarConfigOperacional();
+      if (!aindaVale()) return;
       setConfig(aplicarPresetCasaPorto(dados, nome));
     } catch (error) {
+      if (!aindaVale()) return;
       setConfig(aplicarPresetCasaPorto(montarConfigOperacionalPadrao(), nome));
       setErro('Não foi possível carregar a configuração operacional do projeto.');
       console.error(error);
     } finally {
-      setCarregando(false);
+      if (aindaVale()) setCarregando(false);
     }
   }, []);
 
   useEffect(() => {
+    if (carregandoAuth) return;
+    setConfig(null);
     recarregar();
-  }, [recarregar]);
+  }, [carregandoAuth, recarregar, sessaoChave]);
 
   const valor = useMemo(
     () => ({ config, nomeProjeto, carregando, erro, recarregar, setConfig }),

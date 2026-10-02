@@ -16,6 +16,7 @@ import {
 } from './direitosReservados';
 import { obterLogoRelatorioSrc } from './relatorioIdentidadePrint';
 import { formatarDataBr } from './dataBrasilUtils.js';
+import { linhasRotinaPari } from './rotinaPariCampos.js';
 
 function escaparHtml(valor) {
   return String(valor ?? '')
@@ -258,6 +259,8 @@ function renderEscolaridadeTrabalho(c) {
   return secao('Escolaridade e trabalho', [
     linha('Escolaridade', escolaridade),
     linha('Profissão', c.profissao),
+    ...linhasRotinaPari(c).map((item) => linha(item.rotulo, item.valor)),
+    linha('Avisos/Alertas', c.observacao_operacional),
     linha('Situações de trabalho', situacoes),
     linha('Atividade não remunerada', c.trabalho_nao_remunerada_qual),
     linha('Já participou de curso', c.trabalho_cursos_participou),

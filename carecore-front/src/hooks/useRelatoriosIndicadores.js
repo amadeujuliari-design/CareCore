@@ -26,6 +26,8 @@ export function useRelatoriosIndicadores({
   tecnicoId,
   tecnicos,
   equipe = [],
+  semFluxoPortaria = false,
+  estoqueCadastro = null,
 }) {
   const dados = useMemo(() => {
     const totalConviventes = conviventesFiltrados.length;
@@ -162,27 +164,45 @@ export function useRelatoriosIndicadores({
       rotina: [
         {
           titulo: 'Histórico da rotina',
-          descricao: 'Entradas, saídas, almoços, edições, cancelamentos e retornos rápidos por filtros.',
+          descricao: semFluxoPortaria
+            ? 'Interações do projeto, edições e cancelamentos por filtros.'
+            : 'Entradas, saídas, almoços, edições, cancelamentos e retornos rápidos por filtros.',
           status: 'pronto',
           link: '/rotina/historico',
-          metricas: [
-            { label: 'Registros', valor: dados.rotinaFiltradaResumo.total },
-            { label: 'Entradas', valor: dados.rotinaFiltradaResumo.entradas },
-            { label: 'Saídas', valor: dados.rotinaFiltradaResumo.saidas },
-            { label: 'Almoços', valor: dados.rotinaFiltradaResumo.almocos },
-          ],
+          metricas: semFluxoPortaria
+            ? [
+              { label: 'Registros', valor: dados.rotinaFiltradaResumo.total },
+              { label: 'Ativos', valor: estoqueCadastro?.ativos || 0 },
+              { label: 'Inativos', valor: estoqueCadastro?.inativos || 0 },
+              { label: 'Almoços', valor: dados.rotinaFiltradaResumo.almocos },
+            ]
+            : [
+              { label: 'Registros', valor: dados.rotinaFiltradaResumo.total },
+              { label: 'Entradas', valor: dados.rotinaFiltradaResumo.entradas },
+              { label: 'Saídas', valor: dados.rotinaFiltradaResumo.saidas },
+              { label: 'Almoços', valor: dados.rotinaFiltradaResumo.almocos },
+            ],
         },
         {
           titulo: 'Dashboard operacional',
-          descricao: 'Situação atual dos acolhidos dentro/fora, sem movimento e auditoria do dia.',
+          descricao: semFluxoPortaria
+            ? 'Ativos, inativos e interações do dia.'
+            : 'Situação atual dos acolhidos dentro/fora, sem movimento e auditoria do dia.',
           status: 'pronto',
           link: '/rotina/dashboard',
-          metricas: [
-            { label: 'Retornos', valor: dados.rotinaFiltradaResumo.retornosRapidos },
-            { label: 'Editados', valor: dados.rotinaFiltradaResumo.editados },
-            { label: 'Cancelados', valor: dados.rotinaFiltradaResumo.cancelados },
-            { label: 'Presentes agora', valor: dados.rotinaResumo.presentes_agora || 0 },
-          ],
+          metricas: semFluxoPortaria
+            ? [
+              { label: 'Ativos', valor: estoqueCadastro?.ativos || 0 },
+              { label: 'Inativos', valor: estoqueCadastro?.inativos || 0 },
+              { label: 'Editados', valor: dados.rotinaFiltradaResumo.editados },
+              { label: 'Cancelados', valor: dados.rotinaFiltradaResumo.cancelados },
+            ]
+            : [
+              { label: 'Retornos', valor: dados.rotinaFiltradaResumo.retornosRapidos },
+              { label: 'Editados', valor: dados.rotinaFiltradaResumo.editados },
+              { label: 'Cancelados', valor: dados.rotinaFiltradaResumo.cancelados },
+              { label: 'Presentes agora', valor: dados.rotinaResumo.presentes_agora || 0 },
+            ],
         },
       ],
       ocorrencias: [
@@ -283,14 +303,14 @@ export function useRelatoriosIndicadores({
           status: 'pronto',
           metricas: [
             { label: 'Atendimentos', valor: dados.rotinaFiltradaResumo.total },
-            { label: 'Entradas', valor: dados.rotinaFiltradaResumo.entradas },
+            { label: semFluxoPortaria ? 'Ativos' : 'Entradas', valor: semFluxoPortaria ? (estoqueCadastro?.ativos || 0) : dados.rotinaFiltradaResumo.entradas },
             { label: 'Ocorrências', valor: dados.totalOcorrencias },
             { label: 'Novos', valor: dados.totalConviventes },
           ],
         },
       ],
     };
-  }, [dados]);
+  }, [dados, estoqueCadastro, semFluxoPortaria]);
 
   const relatoriosAtuais = relatoriosPorAba[aba] || [];
 
@@ -303,12 +323,19 @@ export function useRelatoriosIndicadores({
         { label: 'Centro dia / sem leito', valor: dados.semLeitoAtivo, detalhe: 'Ativos sem acomodação fixa' },
         { label: 'Sem SISA', valor: dados.semSisa, detalhe: 'Cadastro incompleto para convênio' },
       ],
-      rotina: [
-        { label: 'Registros filtrados', valor: dados.rotinaFiltradaResumo.total, detalhe: 'Histórico da rotina' },
-        { label: 'Entradas', valor: dados.rotinaFiltradaResumo.entradas, detalhe: `${dados.rotinaFiltradaResumo.saidas} saídas` },
-        { label: 'Almoços', valor: dados.rotinaFiltradaResumo.almocos, detalhe: 'Registros de alimentação' },
-        { label: 'Auditoria', valor: dados.auditoriaRotinaTotal, detalhe: 'Editados, cancelados e retornos' },
-      ],
+      rotina: semFluxoPortaria
+        ? [
+          { label: 'Registros filtrados', valor: dados.rotinaFiltradaResumo.total, detalhe: 'Histórico da rotina' },
+          { label: 'Ativos', valor: estoqueCadastro?.ativos || 0, detalhe: `${estoqueCadastro?.inativos || 0} inativos` },
+          { label: 'Almoços', valor: dados.rotinaFiltradaResumo.almocos, detalhe: 'Registros de alimentação' },
+          { label: 'Auditoria', valor: dados.rotinaFiltradaResumo.editados + dados.rotinaFiltradaResumo.cancelados, detalhe: 'Editados e cancelados' },
+        ]
+        : [
+          { label: 'Registros filtrados', valor: dados.rotinaFiltradaResumo.total, detalhe: 'Histórico da rotina' },
+          { label: 'Entradas', valor: dados.rotinaFiltradaResumo.entradas, detalhe: `${dados.rotinaFiltradaResumo.saidas} saídas` },
+          { label: 'Almoços', valor: dados.rotinaFiltradaResumo.almocos, detalhe: 'Registros de alimentação' },
+          { label: 'Auditoria', valor: dados.auditoriaRotinaTotal, detalhe: 'Editados, cancelados e retornos' },
+        ],
       ocorrencias: [
         { label: 'Ocorrências filtradas', valor: dados.totalOcorrencias, detalhe: 'Conforme filtros atuais' },
         { label: 'Pendentes', valor: dados.ocorrenciasPendentes, detalhe: `${dados.ocorrenciasAltaCritica} alta/crítica` },
@@ -354,7 +381,7 @@ export function useRelatoriosIndicadores({
     };
 
     return cardsPorAba[aba] || cardsPorAba.conviventes;
-  }, [aba, dados]);
+  }, [aba, dados, estoqueCadastro, semFluxoPortaria]);
 
   return {
     cardsTopo,

@@ -28,6 +28,9 @@ import ModalAlertaOk from './components/ModalAlertaOk';
 import { useLeitorUsbGlobal } from './hooks/useLeitorUsbGlobal';
 import { encontrarConviventePorCodigo } from './utils/conviventeIdentificacaoUtils';
 import { useConfigOperacional } from './hooks/useConfigOperacional';
+import { useAuth } from './context/AuthContext';
+import { projetoEhReencontroPari } from './utils/projetoPari';
+import PariLavanderia from './PariLavanderia';
 import { moduloAtivo, projetoOcultaAcomodacoes } from './config/configOperacionalDefaults';
 
 function nomeConvivente(convivente) {
@@ -75,6 +78,8 @@ export default function Lavanderia() {
     nomeProjeto,
     carregando: carregandoConfig,
   } = useConfigOperacional();
+  const { usuario } = useAuth();
+  const nomePari = nomeProjeto || usuario?.projeto_nome;
   const semControlePecas = !carregandoConfig && (
     projetoOcultaAcomodacoes(nomeProjeto)
     || configOperacional?.preset_casa_porto === true
@@ -553,6 +558,10 @@ export default function Lavanderia() {
       setSalvando(false);
     }
   };
+
+  if (projetoEhReencontroPari(nomePari)) {
+    return <PariLavanderia />;
+  }
 
   if (semControlePecas) {
     return <Navigate to="/rotina" replace />;

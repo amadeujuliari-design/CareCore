@@ -8,6 +8,7 @@ from models import InstituicaoDB
 
 _MARCADORES_SIAT = ("siat", "armenia")
 _MARCADORES_CASA_PORTO = ("casa porto",)
+_MARCADORES_REENCONTRO_PARI = ("reencontro pari",)
 
 
 def _normalizar_texto_busca(valor: str | None) -> str:
@@ -52,3 +53,19 @@ def projeto_e_casa_porto(projeto: InstituicaoDB | None) -> bool:
     )
     texto = _normalizar_texto_busca(referencias)
     return any(marcador in texto for marcador in _MARCADORES_CASA_PORTO)
+
+
+def projeto_e_reencontro_pari(projeto: InstituicaoDB | None) -> bool:
+    if not projeto:
+        return False
+    referencias = " ".join(
+        filter(
+            None,
+            [
+                projeto.nome_fantasia,
+                projeto.relatorio_nome_exibicao,
+            ],
+        )
+    )
+    texto = _normalizar_texto_busca(referencias)
+    return any(marcador in texto for marcador in _MARCADORES_REENCONTRO_PARI)

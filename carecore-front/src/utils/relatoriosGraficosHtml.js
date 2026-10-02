@@ -51,7 +51,16 @@ export function gerarGraficosEvolucaoHtml({
   dadosEvolucao,
   dadosPendenciasTecnicasEvolucao,
   tecnicoPendenciasSelecionadoNome,
+  semFluxoPortaria = false,
+  estoqueCadastro = null,
 }) {
+  const serieFluxo = semFluxoPortaria
+    ? (dadosEvolucao.serie || []).map((item) => ({
+      ...item,
+      ativos: estoqueCadastro?.ativos || 0,
+      inativos: estoqueCadastro?.inativos || 0,
+    }))
+    : dadosEvolucao.serie;
   return [
     gerarGraficoRelatorioHtml({
       titulo: 'Evolução de atendimentos',
@@ -60,14 +69,22 @@ export function gerarGraficosEvolucaoHtml({
       series: [{ chave: 'atendimentos', label: 'Atendimentos', cor: '#2563eb' }],
     }),
     gerarGraficoRelatorioHtml({
-      titulo: 'Entradas, saídas e almoços',
-      subtitulo: 'Comparativo diário entre os principais tipos de lançamento.',
-      dados: dadosEvolucao.serie,
-      series: [
-        { chave: 'entradas', label: 'Entradas', cor: '#10b981' },
-        { chave: 'saidas', label: 'Saídas', cor: '#f97316' },
-        { chave: 'almocos', label: 'Almoços', cor: '#6366f1' },
-      ],
+      titulo: semFluxoPortaria ? 'Ativos, inativos e almoços' : 'Entradas, saídas e almoços',
+      subtitulo: semFluxoPortaria
+        ? 'Ativos e inativos são o estoque atual do cadastro, o mesmo em cada dia. Almoços seguem o lançamento do dia.'
+        : 'Comparativo diário entre os principais tipos de lançamento.',
+      dados: serieFluxo,
+      series: semFluxoPortaria
+        ? [
+          { chave: 'ativos', label: 'Ativos', cor: '#10b981' },
+          { chave: 'inativos', label: 'Inativos', cor: '#64748b' },
+          { chave: 'almocos', label: 'Almoços', cor: '#6366f1' },
+        ]
+        : [
+          { chave: 'entradas', label: 'Entradas', cor: '#10b981' },
+          { chave: 'saidas', label: 'Saídas', cor: '#f97316' },
+          { chave: 'almocos', label: 'Almoços', cor: '#6366f1' },
+        ],
     }),
     gerarGraficoRelatorioHtml({
       titulo: 'Ocorrências abertas e resolvidas',

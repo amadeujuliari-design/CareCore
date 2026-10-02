@@ -17,6 +17,9 @@ import { API_ROOT } from './config/apiBase';
 import { criarHeadersAutenticados } from './utils/requestIdUtils';
 import { decodificarPayloadJwt } from './utils/jwtUtils';
 import { perfilOcultaSomatoriaAlimentacao } from './utils/rotinaDiariaUtils';
+import { useAuth } from './context/AuthContext';
+import { useConfigOperacional } from './hooks/useConfigOperacional';
+import { projetoEhReencontroPari } from './utils/projetoPari';
 import { buscarIdentidadeRelatorios } from './utils/relatorioIdentidadePrint';
 import {
   exportarRetratosDashboardOperacionalXlsx,
@@ -26,7 +29,8 @@ import {
 const METRICAS_LABEL = {
   dentro_projeto: 'Dentro do projeto',
   fora_projeto: 'Fora do projeto',
-  conviventes_ativos: 'Conviventes ativos',
+  conviventes_ativos: 'Ativos',
+  conviventes_inativos: 'Inativos',
   sem_interacao_24h: 'Sem interação 24h',
   ausentes_operacionais: 'Ausentes operacionais',
   total_interacoes_hoje: 'Total de interações',
@@ -48,6 +52,21 @@ const METRICAS_PADRAO = [
   'total_interacoes_hoje',
 ];
 
+const METRICAS_PADRAO_SEM_PORTARIA = [
+  'conviventes_ativos',
+  'conviventes_inativos',
+  'total_interacoes_hoje',
+];
+
+const CHAVES_PORTARIA = new Set([
+  'dentro_projeto',
+  'fora_projeto',
+  'ausentes_operacionais',
+  'retornos_rapidos_hoje',
+  'interacao:Entrada',
+  'interacao:Saída',
+]);
+
 const CORES_SERIE = {
   dentro_projeto: '#059669',
   fora_projeto: '#ea580c',
@@ -55,6 +74,7 @@ const CORES_SERIE = {
   'interacao:Saída': '#e11d48',
   total_interacoes_hoje: '#7c3aed',
   conviventes_ativos: '#334155',
+  conviventes_inativos: '#64748b',
   sem_interacao_24h: '#d97706',
   ausentes_operacionais: '#dc2626',
   total_registros_hoje: '#0f766e',
@@ -198,6 +218,9 @@ function GraficoMultiSerie({ series, metricasAtivas, onSelecionar }) {
 
 export default function DashboardOperacional() {
   const token = localStorage.getItem('@CareCore:token');
+  const { usuario } = useAuth();
+  const { nomeProjeto } = useConfigOperacional();
+  const semPortaria = projetoEhReencontroPari(nomeProjeto || usuario?.projeto_nome);
 
   let perfilUsuario = '';
   try {
@@ -222,6 +245,12 @@ export default function DashboardOperacional() {
   const [histItems, setHistItems] = useState([]);
   const [histMetricas, setHistMetricas] = useState(Object.keys(METRICAS_LABEL));
   const [metricasAtivas, setMetricasAtivas] = useState(METRICAS_PADRAO);
+
+  useEffect(() => {
+    if (!semPortaria) return;
+    setAbaLista('sem_interacao');
+    setMetricasAtivas(METRICAS_PADRAO_SEM_PORTARIA);
+  }, [semPortaria]);
   const [histLoading, setHistLoading] = useState(false);
   const [histErro, setHistErro] = useState('');
   const [retrato, setRetrato] = useState(null);
@@ -440,6 +469,7 @@ export default function DashboardOperacional() {
       if (vistas.has(rotulo)) return false;
       vistas.add(rotulo);
 
+      if (semPortaria && CHAVES_PORTARIA.has(chave)) return false;
       if (!ocultarSomatoriaAlimentacao) return true;
       return !(
         rotulo.includes('cafe')
@@ -448,7 +478,7 @@ export default function DashboardOperacional() {
         || rotulo.includes('lanche')
       );
     });
-  }, [histMetricas, ocultarSomatoriaAlimentacao]);
+  }, [histMetricas, ocultarSomatoriaAlimentacao, semPortaria]);
 
   const alternarMetrica = (chave) => {
     setMetricasAtivas((atual) => {
@@ -460,7 +490,26 @@ export default function DashboardOperacional() {
     });
   };
 
-  const cardsPrincipais = [
+  const cardsRefeicaoHoje = (mapa) => Object.entries(mapa || {})
+    .filter(([tipo]) => tipo !== 'Entrada' && tipo !== 'Saída')
+    .map(([tipo, valor]) => ({ label: `${tipo} hoje`, valor: valor || 0 }));
+
+  const cardsPrincipais = semPortaria
+    ? [
+      {
+        label: 'Ativos',
+        valor: resumo.conviventes_ativos || 0,
+        detalhe: 'cadastro no projeto',
+        classe: 'bg-emerald-50 text-emerald-700 border-emerald-100'
+      },
+      {
+        label: 'Inativos',
+        valor: resumo.conviventes_inativos || 0,
+        detalhe: 'saíram do cadastro',
+        classe: 'bg-slate-50 text-slate-700 border-slate-200'
+      },
+    ]
+    : [
     {
       label: 'Dentro do projeto',
       valor: resumo.dentro_projeto ?? resumo.presentes_agora ?? 0,
@@ -489,21 +538,40 @@ export default function DashboardOperacional() {
 
   const cardsSecundarios = [
     ...(!ocultarSomatoriaAlimentacao
-      ? [
-        { label: 'Cafés da manhã hoje', valor: resumo.cafes_hoje || 0 },
-        { label: 'Almoços hoje', valor: resumo.almocos_hoje || 0 },
-        { label: 'Jantares hoje', valor: resumo.jantares_hoje || 0 },
-        { label: 'Lanches noturnos hoje', valor: resumo.lanches_noturnos_hoje || 0 },
-      ]
+      ? (semPortaria
+        ? cardsRefeicaoHoje(interacoesHoje)
+        : [
+          { label: 'Cafés da manhã hoje', valor: resumo.cafes_hoje || 0 },
+          { label: 'Almoços hoje', valor: resumo.almocos_hoje || 0 },
+          { label: 'Jantares hoje', valor: resumo.jantares_hoje || 0 },
+          { label: 'Lanches noturnos hoje', valor: resumo.lanches_noturnos_hoje || 0 },
+        ])
       : []),
-    { label: 'Total de conviventes ativos', valor: resumo.conviventes_ativos || 0 },
+    ...(!semPortaria
+      ? [{ label: 'Total de conviventes ativos', valor: resumo.conviventes_ativos || 0 }]
+      : []),
     { label: 'Total de interações hoje', valor: resumo.total_interacoes_hoje || 0 },
     { label: 'Total de registros hoje', valor: resumo.total_registros_hoje || 0 },
     { label: 'Sem interação 24h', valor: resumo.sem_interacao_24h ?? resumo.sem_movimento ?? 0 },
-    { label: 'Ausentes (saída ontem)', valor: resumo.ausentes_operacionais || 0 }
+    ...(!semPortaria
+      ? [{ label: 'Ausentes (saída ontem)', valor: resumo.ausentes_operacionais || 0 }]
+      : []),
   ];
 
-  const cardsRetratoPrincipais = [
+  const cardsRetratoPrincipais = semPortaria
+    ? [
+      {
+        label: 'Ativos',
+        valor: resumoRetrato.conviventes_ativos || 0,
+        classe: 'bg-emerald-50 text-emerald-700 border-emerald-100'
+      },
+      {
+        label: 'Inativos',
+        valor: resumoRetrato.conviventes_inativos || 0,
+        classe: 'bg-slate-50 text-slate-700 border-slate-200'
+      },
+    ]
+    : [
     {
       label: 'Dentro do projeto',
       valor: resumoRetrato.dentro_projeto ?? resumoRetrato.presentes_agora ?? 0,
@@ -656,7 +724,7 @@ export default function DashboardOperacional() {
                     })}
                     <button
                       type="button"
-                      onClick={() => setMetricasAtivas(METRICAS_PADRAO.filter((k) => metricasSelect.includes(k)))}
+                      onClick={() => setMetricasAtivas((semPortaria ? METRICAS_PADRAO_SEM_PORTARIA : METRICAS_PADRAO).filter((k) => metricasSelect.includes(k)))}
                       className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-1.5 text-[11px] font-black text-gray-600"
                     >
                       Resetar (dentro/fora/interações)
@@ -818,17 +886,19 @@ export default function DashboardOperacional() {
                           </div>
                           <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3">
                             {[
-                              ['Ativos', resumoRetrato.conviventes_ativos],
+                              ...(!semPortaria ? [['Ativos', resumoRetrato.conviventes_ativos]] : []),
                               ['Interações', resumoRetrato.total_interacoes_hoje],
                               ['Sem interação 24h', resumoRetrato.sem_interacao_24h ?? resumoRetrato.sem_movimento],
-                              ['Ausentes', resumoRetrato.ausentes_operacionais],
+                              ...(!semPortaria ? [['Ausentes', resumoRetrato.ausentes_operacionais]] : []),
                               ...(!ocultarSomatoriaAlimentacao
-                                ? [
+                                ? (semPortaria
+                                  ? cardsRefeicaoHoje(interacoesRetrato).map((card) => [card.label.replace(/ hoje$/, ''), card.valor])
+                                  : [
                                   ['Cafés', resumoRetrato.cafes_hoje],
                                   ['Almoços', resumoRetrato.almocos_hoje],
                                   ['Jantares', resumoRetrato.jantares_hoje],
                                   ['Lanches', resumoRetrato.lanches_noturnos_hoje],
-                                ]
+                                ])
                                 : []),
                             ].map(([label, valor]) => (
                               <div key={label} className="rounded-xl border border-white bg-white/80 p-3">
@@ -839,7 +909,9 @@ export default function DashboardOperacional() {
                           </div>
                           {Object.keys(interacoesRetrato).length > 0 && (
                             <div className="flex flex-wrap gap-2">
-                              {Object.entries(interacoesRetrato).map(([tipo, qtd]) => (
+                              {Object.entries(interacoesRetrato)
+                                .filter(([tipo]) => !semPortaria || (tipo !== 'Entrada' && tipo !== 'Saída'))
+                                .map(([tipo, qtd]) => (
                                 <span
                                   key={tipo}
                                   className="inline-flex items-center gap-2 rounded-xl border border-teal-200 bg-white px-3 py-1.5 text-xs font-black text-teal-900"
@@ -864,11 +936,15 @@ export default function DashboardOperacional() {
                           Situação dos conviventes
                         </h2>
                         <p className="text-xs text-gray-500 mt-1">
-                          Ativos sem saída registrada são considerados dentro do projeto.
+                          {semPortaria
+                            ? 'Acolhidos ativos sem interação nas últimas 24 horas.'
+                            : 'Ativos sem saída registrada são considerados dentro do projeto.'}
                         </p>
                       </div>
 
                       <div className="flex gap-2 overflow-x-auto pb-1 md:flex-wrap md:overflow-visible md:pb-0">
+                        {!semPortaria && (
+                          <>
                         <button
                           type="button"
                           onClick={() => setAbaLista('presentes')}
@@ -891,6 +967,8 @@ export default function DashboardOperacional() {
                         >
                           Fora do projeto
                         </button>
+                          </>
+                        )}
                         <button
                           type="button"
                           onClick={() => setAbaLista('sem_interacao')}
@@ -902,6 +980,7 @@ export default function DashboardOperacional() {
                         >
                           Sem interação 24h
                         </button>
+                        {!semPortaria && (
                         <button
                           type="button"
                           onClick={() => setAbaLista('ausentes')}
@@ -913,6 +992,7 @@ export default function DashboardOperacional() {
                         >
                           Ausentes
                         </button>
+                        )}
                       </div>
                     </div>
 

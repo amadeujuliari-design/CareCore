@@ -26,6 +26,8 @@ export function pontuarConviventeBusca(convivente, termoNormalizado) {
   if (nomeCompleto.startsWith(termoNormalizado)) return 1;
   if (textoTemPalavraIniciandoCom(convivente?.nome_social, termoNormalizado)) return 2;
   if (textoTemPalavraIniciandoCom(convivente?.nome_completo, termoNormalizado)) return 3;
+  const familia = normalizarTextoBusca(convivente?.familia_codigo);
+  if (familia && (familia === termoNormalizado || familia.startsWith(termoNormalizado))) return 4;
   if (termoNumerico && prontuario.startsWith(termoNumerico)) return 4;
   if (termoNumerico && sisa.startsWith(termoNumerico)) return 5;
   if (termoNumerico && cpf.includes(termoNumerico)) return 6;

@@ -1348,6 +1348,17 @@ class ConviventeBase(BaseModel):
     prontuario_saude: Optional[str] = None
     preferencial: bool = False
     observacao_operacional: Optional[str] = None
+    ocupacao_trabalho: Optional[str] = None
+    escala_trabalho: Optional[str] = None
+    dias_trabalho: Optional[str] = None
+    trabalho_inicio: Optional[str] = None
+    trabalho_fim: Optional[str] = None
+    parcerias: Optional[str] = None
+    etapa_escolar: Optional[str] = None
+    curso_escolar: Optional[str] = None
+    turno_escolar: Optional[str] = None
+    escolar_inicio: Optional[str] = None
+    escolar_fim: Optional[str] = None
     leito_provisorio_desde: Optional[datetime] = None
     ausencia_justificada_desde: Optional[date] = None
     leito_id: Optional[str] = None
@@ -1672,6 +1683,8 @@ class RotinaHistoricoResumoPeriodo(BaseModel):
     entradas_registradas: Optional[int] = None
     saidas_registradas: Optional[int] = None
     ajustes_por_tipo: dict[str, int] = Field(default_factory=dict)
+    conviventes_ativos: int = 0
+    conviventes_inativos: int = 0
 
 
 class RotinaHistoricoListaResponse(BaseModel):

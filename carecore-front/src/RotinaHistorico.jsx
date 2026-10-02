@@ -6,10 +6,10 @@ import DireitosReservadosAviso from './components/DireitosReservadosAviso';
 import { API_ROOT } from './config/apiBase';
 import {
   REGISTROS_POR_PAGINA,
-  TIPOS_REGISTRO_EDICAO,
   classeTipoRegistroRotina,
   formatarDataHoraRotina,
-  listarTiposRegistroFiltroRotina,
+  listarFiltroInteracaoDoProjeto,
+  listarTiposEdicaoDoProjeto,
   montarDadosImpressaoHistoricoRotina,
   montarFiltrosTextoHistoricoRotina,
   montarObservacoesAuditoriaRegistro,
@@ -37,6 +37,9 @@ import { buscarHistoricoRotinaCompleto } from './services/rotinaHistoricoService
 import { urlArquivoBackend } from './utils/arquivosApi';
 import { decodificarPayloadJwt } from './utils/jwtUtils';
 import { criarHeadersAutenticados } from './utils/requestIdUtils';
+import { useAuth } from './context/AuthContext';
+import { useConfigOperacional } from './hooks/useConfigOperacional';
+import { projetoEhReencontroPari } from './utils/projetoPari';
 import {
   FILTRO_TECNICO_SEM_VINCULADO,
   rotuloFiltroTecnicoRelatorios,
@@ -45,6 +48,10 @@ import {
 export default function RotinaHistorico() {
 
   const token = localStorage.getItem('@CareCore:token');
+  const { usuario } = useAuth();
+  const { config: configOperacional, nomeProjeto, carregando: carregandoConfig } = useConfigOperacional();
+  const nomeProjetoAtivo = nomeProjeto || usuario?.projeto_nome || '';
+  const semPortaria = projetoEhReencontroPari(nomeProjetoAtivo);
 
   const [registros, setRegistros] = useState([]);
   const [totalRegistros, setTotalRegistros] = useState(0);
@@ -108,9 +115,20 @@ export default function RotinaHistorico() {
 
   const ocultarSomatoriaAlimentacao = perfilOcultaSomatoriaAlimentacao(perfilUsuario);
   const tiposRegistroFiltro = useMemo(
-    () => listarTiposRegistroFiltroRotina(perfilUsuario),
-    [perfilUsuario],
+    () => listarFiltroInteracaoDoProjeto(configOperacional, nomeProjetoAtivo, { carregando: carregandoConfig }),
+    [carregandoConfig, configOperacional, nomeProjetoAtivo],
   );
+  const tiposRegistroEdicao = useMemo(
+    () => listarTiposEdicaoDoProjeto(configOperacional, nomeProjetoAtivo, { carregando: carregandoConfig }),
+    [carregandoConfig, configOperacional, nomeProjetoAtivo],
+  );
+
+  useEffect(() => {
+    if (!tipoFiltro) return;
+    if (!tiposRegistroFiltro.some((opcao) => opcao.valor === tipoFiltro)) {
+      setTipoFiltro('');
+    }
+  }, [tipoFiltro, tiposRegistroFiltro]);
 
   // =====================================================================
   // PARAMS
@@ -401,6 +419,8 @@ export default function RotinaHistorico() {
         total: resumoPeriodo.total || 0,
         entradas: resumoPeriodo.entradas || 0,
         saidas: resumoPeriodo.saidas || 0,
+        ativos: resumoPeriodo.conviventes_ativos || 0,
+        inativos: resumoPeriodo.conviventes_inativos || 0,
         editados: resumoPeriodo.editados || 0,
         cancelados: resumoPeriodo.cancelados || 0,
         retornosRapidos: resumoPeriodo.retornos_rapidos || 0,
@@ -413,8 +433,8 @@ export default function RotinaHistorico() {
   }, [registros, resumoPeriodo]);
 
   const rotuloTipoSelecionado = useMemo(
-    () => rotuloTipoRegistroFiltro(tipoFiltro),
-    [tipoFiltro],
+    () => rotuloTipoRegistroFiltro(tipoFiltro, tiposRegistroFiltro),
+    [tipoFiltro, tiposRegistroFiltro],
   );
 
   const totalTipoSelecionado = useMemo(() => {
@@ -521,6 +541,7 @@ export default function RotinaHistorico() {
     auditoriaFiltro,
     tecnicoIdFiltro,
     tecnicoNomeFiltro: rotuloFiltroTecnicoRelatorios(tecnicoIdFiltro, tecnicos),
+    opcoesTipoFiltro: tiposRegistroFiltro,
   });
 
   const abrirRelatorioImpressao = async () => {
@@ -550,10 +571,17 @@ export default function RotinaHistorico() {
         subtitulo: `${totalFiltrado} registro(s) filtrado(s). Filtros: ${filtrosAtivos.join(' | ') || 'Todos'}.`,
         metricas: [
           { label: 'Total', valor: resumo.total },
-          { label: 'Entradas', valor: resumo.entradas },
-          { label: 'Saídas', valor: resumo.saidas },
+          ...(semPortaria
+            ? [
+              { label: 'Ativos', valor: resumo.ativos || 0 },
+              { label: 'Inativos', valor: resumo.inativos || 0 },
+            ]
+            : [
+              { label: 'Entradas', valor: resumo.entradas },
+              { label: 'Saídas', valor: resumo.saidas },
+              { label: 'Retorno rápido', valor: resumo.retornosRapidos },
+            ]),
           { label: rotuloTipoSelecionado, valor: totalTipoSelecionado },
-          { label: 'Retorno rápido', valor: resumo.retornosRapidos },
           { label: 'Editados', valor: resumo.editados },
           { label: 'Cancelados', valor: resumo.cancelados },
         ],
@@ -602,7 +630,11 @@ export default function RotinaHistorico() {
         <PageHeader
           eyebrow="Auditoria da rotina"
           title="Histórico Geral da Rotina"
-          subtitle="Entradas, saídas, refeições, enxoval, bagagem, documentos e eventos de auditoria."
+          subtitle={
+            semPortaria
+              ? 'Interações do projeto, refeições e eventos de auditoria.'
+              : 'Entradas, saídas, refeições, enxoval, bagagem, documentos e eventos de auditoria.'
+          }
           icon="H"
           actions={(
             <>
@@ -665,15 +697,29 @@ export default function RotinaHistorico() {
             <p className="text-2xl font-black text-gray-800">{formatarContagemResumo(totalResumoExibido)}</p>
           </div>
 
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-3 sm:p-4">
-            <p className="text-xs uppercase font-black text-gray-400">Entradas</p>
-            <p className="text-2xl font-black text-emerald-700">{resumo.entradas}</p>
-          </div>
-
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-3 sm:p-4">
-            <p className="text-xs uppercase font-black text-gray-400">Saídas</p>
-            <p className="text-2xl font-black text-orange-700">{resumo.saidas}</p>
-          </div>
+          {semPortaria ? (
+            <>
+              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-3 sm:p-4">
+                <p className="text-xs uppercase font-black text-gray-400">Ativos</p>
+                <p className="text-2xl font-black text-emerald-700">{resumo.ativos || 0}</p>
+              </div>
+              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-3 sm:p-4">
+                <p className="text-xs uppercase font-black text-gray-400">Inativos</p>
+                <p className="text-2xl font-black text-slate-700">{resumo.inativos || 0}</p>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-3 sm:p-4">
+                <p className="text-xs uppercase font-black text-gray-400">Entradas</p>
+                <p className="text-2xl font-black text-emerald-700">{resumo.entradas}</p>
+              </div>
+              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-3 sm:p-4">
+                <p className="text-xs uppercase font-black text-gray-400">Saídas</p>
+                <p className="text-2xl font-black text-orange-700">{resumo.saidas}</p>
+              </div>
+            </>
+          )}
 
           <div className="bg-violet-50 rounded-2xl border border-violet-100 shadow-sm p-3 sm:p-4">
             <p className="text-xs uppercase font-black text-violet-400 truncate" title={rotuloTipoSelecionado}>
@@ -682,10 +728,12 @@ export default function RotinaHistorico() {
             <p className="text-2xl font-black text-violet-700">{formatarContagemResumo(totalTipoSelecionado)}</p>
           </div>
 
+          {!semPortaria && (
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-3 sm:p-4">
             <p className="text-xs uppercase font-black text-gray-400">Retornos</p>
             <p className="text-2xl font-black text-amber-700">{resumo.retornosRapidos}</p>
           </div>
+          )}
 
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-3 sm:p-4">
             <p className="text-xs uppercase font-black text-gray-400">Editados</p>
@@ -853,7 +901,7 @@ export default function RotinaHistorico() {
               >
                 <option value="">Todos</option>
                 <option value="editados">Editados</option>
-                <option value="retorno_rapido">Retorno rápido</option>
+                {!semPortaria && <option value="retorno_rapido">Retorno rápido</option>}
               </select>
 
             </div>
@@ -1288,7 +1336,7 @@ export default function RotinaHistorico() {
                   }
                   className="w-full border border-gray-300 rounded-xl px-4 py-3"
                 >
-                  {TIPOS_REGISTRO_EDICAO.map((tipo) => (
+                  {tiposRegistroEdicao.map((tipo) => (
                     <option key={tipo} value={tipo}>
                       {tipo}
                     </option>

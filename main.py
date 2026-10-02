@@ -44,6 +44,7 @@ from routers import auth
 from routers import quartos
 from routers import carteirinha
 from routers import conviventes
+from routers import pari
 from routers import avisos
 from routers import arquivos
 from routers import organizacoes
@@ -491,6 +492,32 @@ async def lifespan(app: FastAPI):
                 "ALTER TABLE compras_patrimonio ADD COLUMN observacao TEXT",
                 "ALTER TABLE compras_patrimonio ADD COLUMN escopo_unidade VARCHAR DEFAULT 'projeto'",
                 "ALTER TABLE compras_patrimonio ADD COLUMN atualizado_em DATETIME",
+                "ALTER TABLE conviventes ADD COLUMN familia_id VARCHAR",
+                "ALTER TABLE conviventes ADD COLUMN tipo_individuo VARCHAR",
+                "ALTER TABLE conviventes ADD COLUMN retira_alimentacao BOOLEAN DEFAULT 1",
+                "ALTER TABLE conviventes ADD COLUMN ubs_referencia VARCHAR",
+                "ALTER TABLE conviventes ADD COLUMN unidade_escolar VARCHAR",
+                "ALTER TABLE conviventes ADD COLUMN motivo_saida TEXT",
+                "ALTER TABLE conviventes ADD COLUMN sexo VARCHAR",
+                "ALTER TABLE conviventes ADD COLUMN motivo_procura TEXT",
+                "ALTER TABLE conviventes ADD COLUMN ocupacao_trabalho TEXT",
+                "ALTER TABLE conviventes ADD COLUMN escala_trabalho VARCHAR",
+                "ALTER TABLE conviventes ADD COLUMN dias_trabalho VARCHAR",
+                "ALTER TABLE conviventes ADD COLUMN trabalho_inicio VARCHAR",
+                "ALTER TABLE conviventes ADD COLUMN trabalho_fim VARCHAR",
+                "ALTER TABLE conviventes ADD COLUMN parcerias TEXT",
+                "ALTER TABLE conviventes ADD COLUMN etapa_escolar VARCHAR",
+                "ALTER TABLE conviventes ADD COLUMN curso_escolar VARCHAR",
+                "ALTER TABLE conviventes ADD COLUMN turno_escolar VARCHAR",
+                "ALTER TABLE conviventes ADD COLUMN escolar_inicio VARCHAR",
+                "ALTER TABLE conviventes ADD COLUMN escolar_fim VARCHAR",
+                "ALTER TABLE tipos_individuo_higiene ADD COLUMN ordem INTEGER DEFAULT 0",
+                "ALTER TABLE tipos_individuo_higiene ADD COLUMN ativo BOOLEAN DEFAULT 1",
+                "ALTER TABLE tipos_individuo_higiene ADD COLUMN idade_min INTEGER",
+                "ALTER TABLE tipos_individuo_higiene ADD COLUMN idade_max INTEGER",
+                "ALTER TABLE tipos_individuo_higiene ADD COLUMN sexo VARCHAR",
+                "ALTER TABLE itens_higiene ADD COLUMN ativo BOOLEAN DEFAULT 1",
+                "ALTER TABLE lavanderia_agenda ADD COLUMN liberado_em DATETIME",
             ):
                 with contextlib.suppress(Exception):
                     await conn.execute(text(ddl))
@@ -948,6 +975,7 @@ app.include_router(arquivos.router)
 app.include_router(quartos.router)
 app.include_router(carteirinha.router)
 app.include_router(conviventes.router)
+app.include_router(pari.router)
 app.include_router(rotina_operacional.router)
 app.include_router(avisos.router)
 app.include_router(organizacoes.router)
