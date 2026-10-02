@@ -985,6 +985,25 @@ def consumo_escolha_libera_envio_suprimentos(
     )
 
 
+_RE_QUEM_ESCOLHEU = re.compile(r"^(Projeto|Sede)\b", re.IGNORECASE)
+
+
+def quem_registrou_escolha_vigente(textos: list[Optional[str]]) -> Optional[str]:
+    """'projeto' ou 'sede' no registro mais recente que descreve a escolha.
+
+    textos: do mais recente para o mais antigo. None se nenhum texto registrar a escolha.
+    """
+    for texto in textos:
+        bruto = (texto or "").strip()
+        if "escolheu" not in bruto.lower():
+            continue
+        achou = _RE_QUEM_ESCOLHEU.match(bruto)
+        if not achou:
+            continue
+        return achou.group(1).lower()
+    return None
+
+
 def aviso_cotacoes_insuficientes(qtd_cotacoes: int) -> Optional[str]:
     if qtd_cotacoes >= MIN_COTACOES_RECOMENDADAS:
         return None

@@ -11,6 +11,7 @@ from compras_regras import (
     TIPO_CONSUMO,
     TIPO_HORTIFRUTI,
     consumo_escolha_libera_envio_suprimentos,
+    quem_registrou_escolha_vigente,
     status_depois_de_escolher_cotacao,
     tipo_eh_cotacao_sede,
     tipo_pula_aprovacao_sede,
@@ -53,6 +54,20 @@ def test_projeto_ao_escolher_consumo_libera_envio():
         STATUS_AGUARDANDO_UNIDADE,
         tem_escolhida=False,
     )
+
+
+def test_quem_escolheu_usa_o_registro_mais_recente():
+    assert quem_registrou_escolha_vigente([
+        "Projeto escolheu o orçamento vencedor: FEMAPEL (R$ 2255.33).",
+        "Cotação liberada para escolha com 2 orçamento(s).",
+    ]) == "projeto"
+    assert quem_registrou_escolha_vigente([
+        "Sede escolheu o orçamento vencedor: FEMAPEL (R$ 10.00).",
+    ]) == "sede"
+    assert quem_registrou_escolha_vigente([
+        "Projeto revogou a escolha de JA e escolheu FEMAPEL (R$ 10.00) como orçamento vencedor.",
+    ]) == "projeto"
+    assert quem_registrou_escolha_vigente(["Pedido confirmado na timeline."]) is None
 
 
 def test_sede_ao_escolher_consumo_ainda_aguarda_projeto():

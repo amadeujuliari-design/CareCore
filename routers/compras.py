@@ -30,6 +30,7 @@ from compras_pedido_fluxo import (
     upload_anexo_pedido,
 )
 from compras_service import (
+    alinhar_status_consumo_escolhido_pelo_projeto,
     aprovar_sede,
     aprovar_unidade,
     cancelar_pedido,
@@ -728,6 +729,7 @@ async def get_pedido(
 ):
     await _ctx(db, usuario_atual)
     pedido = await obter_pedido(db, usuario_atual, pedido_id)
+    await alinhar_status_consumo_escolhido_pelo_projeto(db, [pedido])
     return await serializar_pedido(db, pedido, incluir_detalhe=True, usuario=usuario_atual)
 
 

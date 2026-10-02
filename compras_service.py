@@ -91,6 +91,7 @@ from compras_regras import (
     pedido_itens_podem_editar,
     consumo_escolha_libera_envio_suprimentos,
     pedido_pronto_para_aprovacao_unidade,
+    quem_registrou_escolha_vigente,
     status_depois_de_escolher_cotacao,
     pedido_rascunho_pode_excluir,
     periodo_semana_util_mes,
@@ -688,6 +689,99 @@ async def exigir_janela_consumo(
         raise HTTPException(status_code=400, detail=detalhe)
 
 
+async def _registros_escolha_por_pedido(
+    db: AsyncSession,
+    pedido_ids: list[str],
+) -> dict[str, list[tuple[str, Optional[str]]]]:
+    """Observações de cada pedido, da mais recente para a mais antiga: (texto, usuario_id)."""
+    if not pedido_ids:
+        return {}
+    eventos = (
+        await db.execute(
+            select(ComprasPedidoEventoDB)
+            .where(
+                ComprasPedidoEventoDB.pedido_id.in_(pedido_ids),
+                ComprasPedidoEventoDB.tipo == TIPO_EVENTO_OBSERVACAO,
+            )
+            .order_by(ComprasPedidoEventoDB.criado_em.desc())
+        )
+    ).scalars().all()
+    por_pedido: dict[str, list[tuple[str, Optional[str]]]] = defaultdict(list)
+    for evento in eventos:
+        por_pedido[evento.pedido_id].append((evento.texto or "", evento.usuario_id))
+    return por_pedido
+
+
+async def alinhar_status_consumo_escolhido_pelo_projeto(
+    db: AsyncSession,
+    pedidos: list[ComprasPedidoDB],
+) -> bool:
+    """Consumo em que o projeto já escolheu o vencedor sai de aguardando unidade para aprovado.
+
+    A escolha da Sede continua aguardando o ok do projeto.
+    """
+    candidatos = [
+        pedido
+        for pedido in pedidos
+        if (pedido.tipo or "").strip().lower() == TIPO_CONSUMO
+        and pedido.status == STATUS_AGUARDANDO_UNIDADE
+    ]
+    if not candidatos:
+        return False
+    ids = [pedido.id for pedido in candidatos]
+    cotacoes = (
+        await db.execute(
+            select(ComprasCotacaoDB).where(ComprasCotacaoDB.pedido_id.in_(ids))
+        )
+    ).scalars().all()
+    with_escolhida = {
+        cotacao.pedido_id
+        for cotacao in cotacoes
+        if getattr(cotacao, "ativa", True) and cotacao.escolhida
+    }
+    candidatos = [pedido for pedido in candidatos if pedido.id in with_escolhida]
+    if not candidatos:
+        return False
+    registros = await _registros_escolha_por_pedido(db, [pedido.id for pedido in candidatos])
+    agora = agora_operacional_naive()
+    mudou = False
+    for pedido in candidatos:
+        pares = registros.get(pedido.id) or []
+        if quem_registrou_escolha_vigente([texto for texto, _uid_ev in pares]) != "projeto":
+            continue
+        status_antes = pedido.status
+        autor = next(
+            (
+                uid_ev
+                for texto, uid_ev in pares
+                if quem_registrou_escolha_vigente([texto]) == "projeto"
+            ),
+            None,
+        )
+        if not pedido.aprovado_unidade_em:
+            pedido.aprovado_unidade_em = agora
+        if not pedido.aprovado_unidade_por_id and autor:
+            pedido.aprovado_unidade_por_id = autor
+        pedido.status = STATUS_APROVADO
+        pedido.atualizado_em = agora
+        await registrar_evento_pedido(
+            db,
+            pedido_id=pedido.id,
+            tipo=TIPO_EVENTO_STATUS,
+            texto=(
+                "Projeto já tinha escolhido o orçamento. "
+                "Status ajustado para aprovado. Suprimentos pode enviar o pedido ao fornecedor."
+            ),
+            usuario_id=autor,
+            status_anterior=status_antes,
+            status_novo=STATUS_APROVADO,
+        )
+        mudou = True
+    if mudou:
+        await db.commit()
+    return mudou
+
+
 async def obter_pedido(
     db: AsyncSession,
     usuario: dict,
@@ -763,6 +857,7 @@ async def listar_pedidos(
             .order_by(ComprasPedidoDB.atualizado_em.desc())
         )
     ).scalars().all()
+    await alinhar_status_consumo_escolhido_pelo_projeto(db, list(rows))
     return [await serializar_pedido(db, pedido) for pedido in rows]
 
 
@@ -1657,11 +1752,12 @@ async def enviar_fornecedor(db: AsyncSession, usuario: dict, pedido: ComprasPedi
         cotacoes_ativas = [
             c for c in await _cotacoes_do_pedido(db, pedido.id) if getattr(c, "ativa", True)
         ]
+        pares_escolha = (await _registros_escolha_por_pedido(db, [pedido.id])).get(pedido.id) or []
         if consumo_escolha_libera_envio_suprimentos(
             pedido.tipo,
             pedido.status,
             tem_escolhida=any(c.escolhida for c in cotacoes_ativas),
-        ):
+        ) and quem_registrou_escolha_vigente([texto for texto, _uid_ev in pares_escolha]) == "projeto":
             # Pedidos em que o projeto já escolheu e o status ficou em aguardando unidade.
             status_antes = pedido.status
             if not pedido.aprovado_unidade_em:

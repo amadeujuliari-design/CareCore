@@ -42,7 +42,7 @@ Tipos de novo pedido (`BOTOES_NOVO_PEDIDO` em `utils/comprasPedidoTipos.js`):
 1. Projeto cria rascunho (`/compras/novo/consumo`) e envia (`Enviar pedido`) — cotação é da Sede (`TIPOS_COTACAO_SEDE`).
 2. Suprimentos (Sede) pede cotação por e-mail e **registra orçamentos** (valor + PDF) na ficha.
 3. Eventos na timeline com `aguardando_confirmacao` exigem botão **Ok** (confirmação explícita da outra parte).
-4. Projeto **escolhe** orçamento (`Escolher`) e, em `aguardando_aprovacao_unidade`, **Aprovar orçamento**.
+4. Projeto **escolhe** orçamento (`Escolher`). Essa escolha já deixa o pedido `aprovado`. Se a Sede escolhe, o status continua `aguardando_aprovacao_unidade` até o projeto **Aprovar orçamento**. Pedido em que o projeto já escolheu e o status ficou em aguardando unidade passa a `aprovado` ao abrir a lista ou a ficha.
 5. Suprimentos **Enviar pedido de compra por e-mail**.
 6. Projeto anexa NF (+ documentos extras) e **Encerrar processo (com NF anexada)**.
 
