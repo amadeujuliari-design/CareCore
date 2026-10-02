@@ -128,6 +128,7 @@ function ListaAgendamentos({
   limite,
   onExportar,
   onImprimir,
+  onCancelar,
 }) {
   const [ordem, setOrdem] = useState(ordemInicial);
   const [pagina, setPagina] = useState(1);
@@ -193,6 +194,7 @@ function ListaAgendamentos({
                       </th>
                     );
                   })}
+                  {onCancelar && <th className="px-2 py-2">Ação</th>}
                 </tr>
               </thead>
               <tbody>
@@ -204,6 +206,17 @@ function ListaAgendamentos({
                     <td className="px-2 py-2">{dataHoraBr(item.inicio)}</td>
                     <td className="px-2 py-2">{dataHoraBr(item.fim)}</td>
                     <td className="px-2 py-2">{dataHoraBr(item.liberado_em) || '—'}</td>
+                    {onCancelar && (
+                      <td className="px-2 py-2">
+                        <button
+                          type="button"
+                          onClick={() => onCancelar(item)}
+                          className="text-xs font-bold text-red-700"
+                        >
+                          Cancelar
+                        </button>
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>
@@ -343,7 +356,7 @@ export default function PariLavanderia() {
     }
     const jaTem = daMaquina.find((item) => item.convivente_id === escolhido.id && item.status === 'agendado');
     if (jaTem) {
-      setErro('Esta pessoa já tem horário. Para mudar, arraste o nome até outro horário livre.');
+      setErro('Esta pessoa já tem horário. Arraste o nome até outro horário livre ou cancele o agendamento.');
       return;
     }
     setErro('');
@@ -355,6 +368,33 @@ export default function PariLavanderia() {
       mensagem: `Marcar ${nomePessoa(escolhido)} em ${rotuloQuando(slot.inicio)}?`,
     });
   }, [daMaquina, escolhido]);
+
+  const cancelar = useCallback(async (agendaId) => {
+    setSalvando(true);
+    setErro('');
+    try {
+      const resposta = await api.delete(`/api/pari/lavanderia/${agendaId}`);
+      setMensagem(resposta.data?.mensagem || 'Horário cancelado. A vaga voltou a ficar livre.');
+      setConfirmacao(null);
+      await carregar(inicioFaixa);
+    } catch (error) {
+      setMensagem('');
+      setErro(detalheErro(error, 'Não foi possível cancelar o horário.'));
+    } finally {
+      setSalvando(false);
+    }
+  }, [carregar, inicioFaixa]);
+
+  const pedirCancelamento = useCallback((slot) => {
+    if (!slot?.id) return;
+    setErro('');
+    setConfirmacao({
+      tipo: 'cancelar',
+      id: slot.id,
+      titulo: 'Cancelar agendamento',
+      mensagem: `Cancelar ${slot.convivente_nome} em ${rotuloQuando(slot.inicio)}? O horário volta a ficar livre.`,
+    });
+  }, []);
 
   const pedirMudanca = useCallback((origem, destinoInicio) => {
     if (!origem?.convivente_id || !destinoInicio || origem.inicio === destinoInicio) return;
@@ -420,7 +460,7 @@ export default function PariLavanderia() {
         <PageHeader
           eyebrow="Rotina Diária"
           title="Lavanderia OMO"
-          subtitle="Cada horário de 1h30 vale para lavar e secar juntas. Verde está livre, âmbar está ocupado. O agendamento só vale depois do OK."
+          subtitle="Cada horário de 1h30 vale para lavar e secar juntas. Verde está livre, âmbar está ocupado. Cancele o agendamento se a pessoa desistir: a vaga volta a ficar livre."
           icon="L"
         />
 
@@ -503,10 +543,8 @@ export default function PariLavanderia() {
                       : `${slot.familia_codigo ? `${slot.familia_codigo} · ` : ''}${slot.convivente_nome}`;
                     return (
                       <td key={`${dia}-${hora}`} className="p-0">
-                        <button
-                          type="button"
+                        <div
                           draggable={agendado}
-                          disabled={emUso || salvando}
                           onDragStart={(event) => {
                             if (!agendado) return;
                             event.dataTransfer.setData('text/plain', JSON.stringify({
@@ -534,13 +572,31 @@ export default function PariLavanderia() {
                             }
                           }}
                           onClick={() => {
-                            if (livre) pedirAgendamento(slot);
+                            if (livre && !salvando) pedirAgendamento(slot);
                           }}
-                          className={`min-h-14 w-full rounded-lg border px-2 py-1 text-left text-[11px] font-semibold leading-snug disabled:cursor-default ${classe}`}
-                          title={livre ? `Marcar ${hora}` : agendado ? 'Arraste para mudar o horário' : texto}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter' && livre && !salvando) pedirAgendamento(slot);
+                          }}
+                          role="button"
+                          tabIndex={emUso ? -1 : 0}
+                          className={`min-h-14 w-full rounded-lg border px-2 py-1 text-left text-[11px] font-semibold leading-snug ${emUso ? 'cursor-default' : 'cursor-pointer'} ${classe}`}
+                          title={livre ? `Marcar ${hora}` : agendado ? 'Arraste para mudar ou cancele se a pessoa desistiu' : texto}
                         >
-                          {emUso ? `Em uso · ${texto}` : texto}
-                        </button>
+                          <span className="block">{emUso ? `Em uso · ${texto}` : texto}</span>
+                          {agendado && (
+                            <button
+                              type="button"
+                              disabled={salvando}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                pedirCancelamento(slot);
+                              }}
+                              className="mt-1 text-[11px] font-black text-red-700 underline"
+                            >
+                              Cancelar
+                            </button>
+                          )}
+                        </div>
                       </td>
                     );
                   })}
@@ -615,6 +671,7 @@ export default function PariLavanderia() {
             limite={limiteLista}
             onExportar={(lista) => exportarLista('Agendamentos confirmados — Lavanderia OMO', lista, `lavanderia-confirmados-${hojeISO()}`)}
             onImprimir={(lista) => imprimirLista('Agendamentos confirmados — Lavanderia OMO', lista)}
+            onCancelar={pedirCancelamento}
           />
         )}
         {verRealizados && (
@@ -637,14 +694,17 @@ export default function PariLavanderia() {
               <p className="mt-2 text-sm text-slate-700">{confirmacao.mensagem}</p>
               <div className="mt-5 flex justify-end gap-2">
                 <PremiumButton type="button" variant="secondary" disabled={salvando} onClick={() => setConfirmacao(null)}>
-                  Cancelar
+                  Voltar
                 </PremiumButton>
                 <PremiumButton
                   type="button"
                   disabled={salvando}
-                  onClick={() => reservar(confirmacao.convivente, confirmacao.inicio)}
+                  onClick={() => {
+                    if (confirmacao.tipo === 'cancelar') cancelar(confirmacao.id);
+                    else reservar(confirmacao.convivente, confirmacao.inicio);
+                  }}
                 >
-                  OK
+                  {confirmacao.tipo === 'cancelar' ? 'Liberar horário' : 'OK'}
                 </PremiumButton>
               </div>
             </div>

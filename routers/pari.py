@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 import re
-from datetime import datetime, time, timedelta
+from datetime import date, datetime, time, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -19,6 +19,7 @@ from kit_higiene_pari import (
     descricao_faixa,
     faixa_cruza,
     montar_kit,
+    normalizar_sexo,
 )
 from models import (
     ConviventeDB,
@@ -73,6 +74,11 @@ class RegraCreate(BaseModel):
 
 class EntregaCreate(BaseModel):
     convivente_id: str
+
+
+class MembroKitUpdate(BaseModel):
+    data_nascimento: date | None = None
+    sexo: str = ""
 
 
 class LeituraLavanderia(BaseModel):
@@ -310,12 +316,13 @@ async def obter_kit(
     ).scalars().all()
     entregas = (
         await db.execute(
-            select(KitHigieneEntregaDB)
+            select(KitHigieneEntregaDB, FamiliaConviventeDB.codigo)
+            .outerjoin(FamiliaConviventeDB, FamiliaConviventeDB.id == KitHigieneEntregaDB.familia_id)
             .where(KitHigieneEntregaDB.instituicao_id == instituicao_id)
             .order_by(KitHigieneEntregaDB.entregue_em.desc())
             .limit(20)
         )
-    ).scalars().all()
+    ).all()
     return {
         "tipos": [
             {
@@ -346,11 +353,12 @@ async def obter_kit(
             {
                 "id": entrega.id,
                 "familia_id": entrega.familia_id,
+                "familia_codigo": codigo or "",
                 "competencia": entrega.competencia,
                 "entregue_em": _iso(entrega.entregue_em),
                 "composicao": json.loads(entrega.composicao or "[]"),
             }
-            for entrega in entregas
+            for entrega, codigo in entregas
         ],
     }
 
@@ -497,6 +505,18 @@ async def _previa_familia(db: AsyncSession, instituicao_id: str, convivente_id: 
         "competencia": competencia,
         "ja_entregue": ja_entregue is not None,
         "composicao_entregue": json.loads(ja_entregue.composicao or "[]") if ja_entregue else [],
+        "membros": [
+            {
+                "id": membro.id,
+                "nome": membro.nome_social or membro.nome_completo,
+                "nascimento": membro.data_nascimento.isoformat() if membro.data_nascimento else None,
+                "sexo": normalizar_sexo(membro.sexo or membro.identidade_genero) or "",
+            }
+            for membro in sorted(
+                membros,
+                key=lambda item: (item.nome_social or item.nome_completo or "").casefold(),
+            )
+        ],
     })
     return previa, convivente
 
@@ -540,7 +560,32 @@ async def atualizar_tipo(
     tipo.sexo = sexo
     tipo.descricao = descricao_faixa(payload.idade_min, payload.idade_max, sexo)
     await db.commit()
-    return {"status": "ok"}
+    return {"status": "ok", "descricao": tipo.descricao}
+
+
+@router.patch("/kit/membros/{convivente_id}")
+async def atualizar_membro_kit(
+    convivente_id: str,
+    payload: MembroKitUpdate,
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    instituicao_id = await _exigir_pari(db, usuario_atual)
+    convivente = await _convivente_pari(db, instituicao_id, convivente_id)
+    if convivente.status != "Ativo":
+        raise HTTPException(status_code=400, detail="Somente acolhido ativo entra no kit.")
+    texto_sexo = (payload.sexo or "").strip()
+    if texto_sexo:
+        sexo = normalizar_sexo(texto_sexo)
+        if sexo not in {"masculino", "feminino"}:
+            raise HTTPException(status_code=400, detail="Informe masculino ou feminino.")
+    else:
+        sexo = None
+    convivente.data_nascimento = payload.data_nascimento
+    convivente.sexo = sexo
+    await db.commit()
+    previa, _convivente = await _previa_familia(db, instituicao_id, convivente.id)
+    return previa
 
 
 @router.post("/kit/previa")
@@ -708,6 +753,23 @@ async def listar_registros_lavanderia(
         else:
             confirmados.append(item)
     return {"confirmados": confirmados, "realizados": list(reversed(realizados))}
+
+
+@router.delete("/lavanderia/{agenda_id}")
+async def cancelar_agendamento(
+    agenda_id: str,
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    instituicao_id = await _exigir_pari(db, usuario_atual)
+    registro = await db.get(LavanderiaAgendaDB, agenda_id)
+    if not registro or registro.instituicao_id != instituicao_id:
+        raise HTTPException(status_code=404, detail="Agendamento não encontrado.")
+    if registro.status != "agendado":
+        raise HTTPException(status_code=400, detail="Só é possível cancelar um horário que ainda está agendado.")
+    registro.status = "cancelado"
+    await db.commit()
+    return {"status": "ok", "mensagem": "Horário cancelado. A vaga voltou a ficar livre."}
 
 
 @router.post("/lavanderia/leitura")
