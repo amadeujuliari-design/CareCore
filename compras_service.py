@@ -89,7 +89,9 @@ from compras_regras import (
     normalizar_tipo_fonte,
     pedido_escopo_sede,
     pedido_itens_podem_editar,
+    consumo_escolha_libera_envio_suprimentos,
     pedido_pronto_para_aprovacao_unidade,
+    status_depois_de_escolher_cotacao,
     pedido_rascunho_pode_excluir,
     periodo_semana_util_mes,
     pode_criar_rascunho_consumo,
@@ -1497,16 +1499,32 @@ async def escolher_cotacao(
         cotacao_id=alvo.id,
     )
 
-    if tipo_eh_cotacao_sede(pedido.tipo) and pedido.status in {
-        STATUS_AGUARDANDO_COTACAO,
-        STATUS_EM_COTACAO,
-        STATUS_AGUARDANDO_ESCOLHA,
-    }:
-        # Hortifruti: Sede escolhe o vencedor; aprovação só da unidade (pula Sede).
-        if (pedido.tipo or "").strip().lower() == TIPO_CONSUMO or tipo_pula_aprovacao_sede(pedido.tipo):
-            pedido.status = STATUS_AGUARDANDO_UNIDADE
-        else:
-            pedido.status = STATUS_AGUARDANDO_SEDE
+    status_antes = pedido.status
+    status_novo = status_depois_de_escolher_cotacao(
+        pedido.tipo,
+        projeto_escolheu=consumo_projeto,
+        status_atual=status_antes,
+    )
+    if status_novo and status_novo != status_antes:
+        if status_novo == STATUS_APROVADO and consumo_projeto:
+            agora_escolha = agora_operacional_naive()
+            pedido.aprovado_unidade_por_id = _uid(usuario)
+            pedido.aprovado_unidade_em = agora_escolha
+        pedido.status = status_novo
+        if status_novo == STATUS_APROVADO:
+            await registrar_evento_pedido(
+                db,
+                pedido_id=pedido.id,
+                tipo=TIPO_EVENTO_STATUS,
+                texto=(
+                    "Projeto aprovou o orçamento escolhido. "
+                    "Suprimentos pode enviar o pedido ao fornecedor."
+                ),
+                usuario_id=_uid(usuario),
+                cotacao_id=alvo.id,
+                status_anterior=status_antes,
+                status_novo=status_novo,
+            )
     pedido.atualizado_em = agora_operacional_naive()
     return pedido
 
@@ -1636,13 +1654,41 @@ async def enviar_fornecedor(db: AsyncSession, usuario: dict, pedido: ComprasPedi
     else:
         exigir_sede(usuario)
     if pedido.status != STATUS_APROVADO:
-        if tipo_eh_cotacao_projeto(pedido.tipo):
-            detalhe = "Envio ao fornecedor só após assinatura/aprovação da Sede."
-        elif tipo_pula_aprovacao_sede(pedido.tipo):
-            detalhe = "Envio ao fornecedor só após a aprovação da unidade."
+        cotacoes_ativas = [
+            c for c in await _cotacoes_do_pedido(db, pedido.id) if getattr(c, "ativa", True)
+        ]
+        if consumo_escolha_libera_envio_suprimentos(
+            pedido.tipo,
+            pedido.status,
+            tem_escolhida=any(c.escolhida for c in cotacoes_ativas),
+        ):
+            # Pedidos em que o projeto já escolheu e o status ficou em aguardando unidade.
+            status_antes = pedido.status
+            if not pedido.aprovado_unidade_em:
+                pedido.aprovado_unidade_em = agora_operacional_naive()
+            pedido.status = STATUS_APROVADO
+            await registrar_evento_pedido(
+                db,
+                pedido_id=pedido.id,
+                tipo=TIPO_EVENTO_STATUS,
+                texto=(
+                    "Escolha do projeto liberou o envio. "
+                    "Suprimentos segue com o pedido ao fornecedor."
+                ),
+                usuario_id=_uid(usuario),
+                status_anterior=status_antes,
+                status_novo=STATUS_APROVADO,
+            )
         else:
-            detalhe = "Envio ao fornecedor só após as duas aprovações."
-        raise HTTPException(status_code=400, detail=detalhe)
+            if tipo_eh_cotacao_projeto(pedido.tipo):
+                detalhe = "Envio ao fornecedor só após assinatura/aprovação da Sede."
+            elif tipo_pula_aprovacao_sede(pedido.tipo):
+                detalhe = "Envio ao fornecedor só após a aprovação da unidade."
+            elif (pedido.tipo or "").strip().lower() == TIPO_CONSUMO:
+                detalhe = "Envio ao fornecedor só depois que o projeto escolher o orçamento."
+            else:
+                detalhe = "Envio ao fornecedor só após as duas aprovações."
+            raise HTTPException(status_code=400, detail=detalhe)
     await gerar_pedido_compra(db, usuario, pedido)
     pedido.status = STATUS_ENVIADO
     pedido.enviado_em = agora_operacional_naive()

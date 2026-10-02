@@ -943,6 +943,48 @@ def pedido_pronto_para_aprovacao_unidade(tipo: str, qtd_cotacoes: int, tem_escol
     return True
 
 
+def status_depois_de_escolher_cotacao(
+    tipo: Optional[str],
+    *,
+    projeto_escolheu: bool,
+    status_atual: Optional[str],
+) -> Optional[str]:
+    """Próximo status ao marcar o orçamento vencedor.
+
+    No consumo, a escolha feita pelo projeto já vale como aprovação da unidade:
+    Suprimentos pode enviar o pedido ao fornecedor. Se a Sede escolhe, o pedido
+    continua aguardando o ok do projeto.
+    """
+    tipo_norm = (tipo or "").strip().lower()
+    if projeto_escolheu and tipo_norm == TIPO_CONSUMO:
+        return STATUS_APROVADO
+    if not tipo_eh_cotacao_sede(tipo):
+        return None
+    if (status_atual or "") not in {
+        STATUS_AGUARDANDO_COTACAO,
+        STATUS_EM_COTACAO,
+        STATUS_AGUARDANDO_ESCOLHA,
+    }:
+        return None
+    if tipo_norm == TIPO_CONSUMO or tipo_pula_aprovacao_sede(tipo):
+        return STATUS_AGUARDANDO_UNIDADE
+    return STATUS_AGUARDANDO_SEDE
+
+
+def consumo_escolha_libera_envio_suprimentos(
+    tipo: Optional[str],
+    status: Optional[str],
+    *,
+    tem_escolhida: bool,
+) -> bool:
+    """Pedido de consumo já escolhido pelo projeto e ainda parado em aguardando unidade."""
+    return (
+        (tipo or "").strip().lower() == TIPO_CONSUMO
+        and (status or "") == STATUS_AGUARDANDO_UNIDADE
+        and bool(tem_escolhida)
+    )
+
+
 def aviso_cotacoes_insuficientes(qtd_cotacoes: int) -> Optional[str]:
     if qtd_cotacoes >= MIN_COTACOES_RECOMENDADAS:
         return None

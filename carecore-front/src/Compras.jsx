@@ -208,6 +208,7 @@ function agruparPedidosPorUnidade(lista, ordem) {
 export default function Compras() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const visaoConcluidos = (searchParams.get('visao') || '').trim().toLowerCase() === 'concluidos';
   const usuario = useMemo(() => usuarioSessao(), []);
   const sede = usuarioEhAdmCompras(usuario) || usuarioEhManutencao(usuario);
   const podeCadastrarMestre = usuarioPodeCadastrarMestreCompras(usuario);
@@ -230,13 +231,25 @@ export default function Compras() {
   const [itensConsumo, setItensConsumo] = useState([]);
   const [patrimonio, setPatrimonio] = useState([]);
   const [economia, setEconomia] = useState(null);
-  const [competencia, setCompetencia] = useState(competenciaAtual());
+  const [competencia, setCompetencia] = useState(() => (
+    visaoConcluidos ? competenciaAtual() : ''
+  ));
   const [salvandoJanela, setSalvandoJanela] = useState(false);
   const [ordemPedidos, setOrdemPedidos] = useState({ coluna: 'atualizado', direcao: 'desc' });
-  const [agruparPorUnidade, setAgruparPorUnidade] = useState(false);
+  const [agruparPorUnidade, setAgruparPorUnidade] = useState(() => !visaoConcluidos);
   const [unidadeExpandida, setUnidadeExpandida] = useState(null);
-  const visaoConcluidos = (searchParams.get('visao') || '').trim().toLowerCase() === 'concluidos';
   const statusGrupoPedidos = visaoConcluidos ? 'terminais' : 'abertos';
+
+  useEffect(() => {
+    if (visaoConcluidos) {
+      setCompetencia(competenciaAtual());
+      setAgruparPorUnidade(false);
+      return;
+    }
+    setCompetencia('');
+    setAgruparPorUnidade(true);
+    setUnidadeExpandida(null);
+  }, [visaoConcluidos]);
 
   const pedidosOrdenados = useMemo(() => {
     const lista = [...(pedidos || [])];
@@ -462,16 +475,30 @@ export default function Compras() {
                   title="Filtros"
                   subtitle={
                     visaoConcluidos
-                      ? 'Competência operacional (AAAA-MM) — só pedidos encerrados/cancelados/reprovados'
-                      : 'Competência operacional (AAAA-MM) — pedidos em andamento'
+                      ? 'Competência operacional (AAAA-MM) — só pedidos encerrados/cancelados/reprovados. Vazio mostra todos os períodos.'
+                      : 'Por padrão, todos os pedidos em andamento, agrupados por unidade. Escolha um mês para ver só aquele período.'
                   }
                 >
-                  <input
-                    type="month"
-                    value={competencia}
-                    onChange={(e) => setCompetencia(e.target.value)}
-                    className="rounded-xl border border-slate-200 px-3 py-2 text-sm"
-                  />
+                  <div className="flex flex-wrap items-center gap-2">
+                    <input
+                      type="month"
+                      value={competencia}
+                      onChange={(e) => setCompetencia(e.target.value)}
+                      className="rounded-xl border border-slate-200 px-3 py-2 text-sm"
+                      aria-label="Competência operacional"
+                    />
+                    {competencia ? (
+                      <button
+                        type="button"
+                        onClick={() => setCompetencia('')}
+                        className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:border-slate-400"
+                      >
+                        Todos os períodos
+                      </button>
+                    ) : (
+                      <span className="text-sm text-slate-500">Todos os períodos</span>
+                    )}
+                  </div>
                 </FilterPanel>
 
                 {!visaoConcluidos && (
@@ -518,8 +545,12 @@ export default function Compras() {
                     <EmptyState
                       title={
                         visaoConcluidos
-                          ? 'Nenhum pedido concluído nesta competência'
-                          : 'Nenhum pedido em andamento nesta competência'
+                          ? (competencia
+                            ? 'Nenhum pedido concluído nesta competência'
+                            : 'Nenhum pedido concluído')
+                          : (competencia
+                            ? 'Nenhum pedido em andamento nesta competência'
+                            : 'Nenhum pedido em andamento')
                       }
                     />
                   ) : (

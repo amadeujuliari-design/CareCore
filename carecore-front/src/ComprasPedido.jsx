@@ -326,8 +326,14 @@ export default function ComprasPedido() {
   const podeReabrir = pedido.pode_reabrir && pedido.fechado_por_id === usuarioId;
   const pedidoCompra = (pedido.anexos || []).find((a) => a.tipo === 'pedido_compra');
   const emailPedidoCompraEnviado = Boolean(pedido.email_pedido_compra_enviado);
+  const consumoEscolhidoAguardandoEnvio = pedido.tipo === 'consumo'
+    && pedido.status === 'aguardando_aprovacao_unidade'
+    && (pedido.cotacoes || []).some((c) => c.escolhida);
   const podeEnviarPedidoCompra = podeDispararEmailCompras
-    && ['aprovado', 'enviado_fornecedor'].includes(pedido.status)
+    && (
+      ['aprovado', 'enviado_fornecedor'].includes(pedido.status)
+      || (sede && consumoEscolhidoAguardandoEnvio)
+    )
     && (sede || (cotacaoProjeto && unidade && !pedidoSede));
   const fornecedoresSolicitacao = (pedido.fornecedores_solicitacao || []).filter((f) => f.id);
   const idsSolicitacao = new Set(fornecedoresSolicitacao.map((f) => f.id));
@@ -412,7 +418,10 @@ export default function ComprasPedido() {
             : `Cotações enviadas com sucesso para: ${nomesOk.join(', ')}.`,
         );
       } else {
-        if (modalEmail.modo === 'pedido_compra' && pedido.status === 'aprovado') {
+        if (
+          modalEmail.modo === 'pedido_compra'
+          && (pedido.status === 'aprovado' || consumoEscolhidoAguardandoEnvio)
+        ) {
           await comprasEnviar(pedido.id);
         } else if (modalEmail.modo === 'pedido_compra' && !pedidoCompra) {
           await comprasGerarPedidoCompra(pedido.id);

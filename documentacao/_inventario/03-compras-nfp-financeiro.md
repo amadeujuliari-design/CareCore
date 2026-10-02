@@ -72,8 +72,9 @@ Hub do módulo: ativação, abas (pedidos, janela, cadastros, patrimônio, econo
 
 | Rótulo / UI | Obrig. | O que informar | Ligação |
 | --- | --- | --- | --- |
-| (input `type="month"` no FilterPanel «Filtros») | — | Competência AAAA-MM | `competencia` → `comprasPedidos` |
-| Subtitle filtro andamento | — | Competência operacional (AAAA-MM) — pedidos em andamento | — |
+| (input `type="month"` no FilterPanel «Filtros») | — | Competência AAAA-MM; vazio = todos os períodos. Em andamento abre sem mês | `competencia` → `comprasPedidos` |
+| Todos os períodos | — | Limpa o mês e volta a listar todas as competências | — |
+| Subtitle filtro andamento | — | Por padrão, todos os pedidos em andamento, agrupados por unidade | — |
 | Subtitle filtro concluídos | — | Competência operacional (AAAA-MM) — só pedidos encerrados/cancelados/reprovados | — |
 
 ### Abas (não concluídos)
@@ -97,7 +98,7 @@ Unidade · Tipo · Grupo · Objeto / categoria · Envio previsto · Status · Or
 | --- | --- |
 | Ativar módulo Compras | Módulo inativo e `pode_ativar` ou sede |
 | Cards Novo pedido (5 tipos) | Aba Pedidos, não concluídos |
-| Agrupar por unidade / Desagrupar | Lista com pedidos |
+| Agrupar por unidade / Desagrupar | Lista com pedidos. Em andamento já abre agrupado |
 | Ordenar por \<coluna\> | Cabeçalhos da tabela |
 | Expandir / Recolher | Agrupamento por unidade |
 | Abrir | Linha do pedido → `/compras/pedidos/:id` |
