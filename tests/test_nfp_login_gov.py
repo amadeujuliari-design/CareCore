@@ -57,6 +57,48 @@ def test_cpf_so_digitos():
     assert digitos_cpf("") == ""
 
 
+def test_item_para_sync_nao_leva_trecho_da_pagina():
+    from agente_nfp import item_para_sync
+
+    item = item_para_sync(
+        {
+            "chave": "1" * 44,
+            "tipo": "sucesso",
+            "status_carecore": "enviado",
+            "mensagem": "ok",
+            "trecho": "x" * 8000,
+            "html": "<pagina>",
+        }
+    )
+    assert "trecho" not in item
+    assert "html" not in item
+    assert item["chave"] == "1" * 44
+
+
+def test_sincronizar_repete_quando_a_conexao_cai(monkeypatch):
+    import agente_nfp
+    from agente_nfp import sincronizar_resultados
+    from carecore_api import CareCoreApiError
+
+    monkeypatch.setattr(agente_nfp.time, "sleep", lambda _s: None)
+
+    chamadas = {"n": 0}
+
+    class Api:
+        def aplicar_resultados(self, itens):
+            chamadas["n"] += 1
+            if chamadas["n"] < 3:
+                raise CareCoreApiError(
+                    "Falha de rede em /api/nfp/envio-sefaz/agente/aplicar-resultados: "
+                    "WinError 10054"
+                )
+            return {"atualizados": len(itens)}
+
+    sync = sincronizar_resultados(Api(), [{"chave": "1" * 44, "tipo": "sucesso", "mensagem": "ok"}])
+    assert chamadas["n"] == 3
+    assert sync["atualizados"] == 1
+
+
 def test_salvar_gov_mantem_senha_se_vier_vazia(tmp_path: Path):
     from agente_nfp import salvar_gov
 

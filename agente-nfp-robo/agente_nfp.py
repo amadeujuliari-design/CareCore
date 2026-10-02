@@ -366,6 +366,69 @@ def rodar_enviar_fila(
     return itens
 
 
+_CAMPOS_SYNC = (
+    "chave",
+    "tipo",
+    "status_carecore",
+    "mensagem",
+    "tipo_retorno_sefaz",
+    "numero_nota_sefaz",
+    "cnpj_sefaz",
+    "data_nota_sefaz",
+    "valor_sefaz_centavos",
+    "sefaz_registrado_em",
+)
+
+
+def item_para_sync(item: dict) -> dict:
+    """So o que a API grava. Trecho da pagina e metadados grandes derrubam o POST."""
+    out: dict[str, Any] = {}
+    for chave in _CAMPOS_SYNC:
+        valor = item.get(chave)
+        if valor is None or valor == "":
+            continue
+        out[chave] = valor
+    if "mensagem" in out:
+        out["mensagem"] = str(out["mensagem"])[:500]
+    return out
+
+
+def _falha_de_rede(exc: CareCoreApiError) -> bool:
+    if exc.status is None:
+        return True
+    texto = str(exc)
+    return "Falha de rede" in texto or "WinError" in texto
+
+
+def sincronizar_resultados(api: CareCoreApi, itens: list[dict]) -> dict:
+    """Grava o lote em blocos e repete se a conexao com o CareCore cair."""
+    enxutos = [item_para_sync(it) for it in itens if isinstance(it, dict)]
+    atualizados = 0
+    passo = 25
+    for inicio in range(0, len(enxutos), passo):
+        bloco = enxutos[inicio : inicio + passo]
+        ultimo: Optional[CareCoreApiError] = None
+        for tentativa in range(1, 4):
+            try:
+                sync = api.aplicar_resultados(bloco)
+                atualizados += int(sync.get("atualizados") or 0)
+                ultimo = None
+                break
+            except CareCoreApiError as exc:
+                ultimo = exc
+                if not _falha_de_rede(exc) or tentativa == 3:
+                    raise
+                espera = 3 * tentativa
+                print(
+                    f"[{_agora()}] Conexao caiu ao gravar o lote "
+                    f"({tentativa}/3). Nova tentativa em {espera}s."
+                )
+                time.sleep(espera)
+        if ultimo is not None:
+            raise ultimo
+    return {"ok": True, "atualizados": atualizados}
+
+
 def processar_sessao(
     api: CareCoreApi,
     cfg: dict[str, Any],
@@ -461,8 +524,14 @@ def processar_sessao(
                 gov_senha=str(cfg.get("gov_senha") or ""),
             )
             if itens:
-                sync = api.aplicar_resultados(itens)
-                print(f"[{_agora()}] Sincronizados no CareCore: {sync.get('atualizados', 0)}")
+                try:
+                    sync = sincronizar_resultados(api, itens)
+                    print(f"[{_agora()}] Sincronizados no CareCore: {sync.get('atualizados', 0)}")
+                except CareCoreApiError as exc:
+                    print(
+                        f"[{_agora()}] Nao gravei este lote no CareCore ({exc}). "
+                        "Os cupons ainda reservados voltam a pendente e o envio segue."
+                    )
                 if len(itens) < len(chaves):
                     print(
                         f"[{_agora()}] Lote parcial: {len(itens)}/{len(chaves)} processados. "
