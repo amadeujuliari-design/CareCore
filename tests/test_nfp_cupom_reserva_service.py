@@ -82,6 +82,43 @@ def test_reserva_lote_max_100():
     asyncio.run(caso())
 
 
+def test_repetir_o_mesmo_lote_nao_reserva_outro():
+    async def caso():
+        engine, factory = await _prep()
+        try:
+            async with factory() as db:
+                out = await reservar_lote_cupons(
+                    db,
+                    organizacao_id=ORG,
+                    usuario_id="u1",
+                    tamanho=10,
+                    lote_id="lote-retry-10054",
+                )
+            async with factory() as db:
+                out2 = await reservar_lote_cupons(
+                    db,
+                    organizacao_id=ORG,
+                    usuario_id="u1",
+                    tamanho=10,
+                    lote_id="lote-retry-10054",
+                )
+            assert out["qtd"] == 10
+            assert out2["lote_id"] == out["lote_id"] == "lote-retry-10054"
+            assert out2["chaves"] == out["chaves"]
+            async with factory() as db:
+                res = (
+                    await db.execute(
+                        __import__("sqlalchemy").select(NfpCupomLidoDB.status)
+                        .where(NfpCupomLidoDB.organizacao_id == ORG)
+                    )
+                ).scalars().all()
+            assert res.count(STATUS_RESERVADO) == 10
+        finally:
+            await engine.dispose()
+
+    asyncio.run(caso())
+
+
 def test_liberar_lote_devolve_pendente():
     async def caso():
         engine, factory = await _prep()

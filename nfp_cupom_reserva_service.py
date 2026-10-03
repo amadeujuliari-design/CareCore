@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import uuid
 from datetime import datetime, timedelta
 from typing import Any, Optional
 
-from sqlalchemy import select, update
+from sqlalchemy import select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import AsyncSessionLocal
@@ -63,21 +64,68 @@ async def liberar_reservas_expiradas(
     return int(res.rowcount or 0)
 
 
+def _chave_trava_lote(lote_id: str) -> int:
+    digest = hashlib.sha256(lote_id.encode("utf-8")).digest()
+    return int.from_bytes(digest[:8], "big", signed=True)
+
+
+async def _travar_lote_idempotente(db: AsyncSession, lote_id: str) -> None:
+    """Serializa nova reserva e a repetição da mesma chamada no Postgres."""
+    conn = await db.connection()
+    if getattr(conn.dialect, "name", "") != "postgresql":
+        return
+    await db.execute(
+        text("SELECT pg_advisory_xact_lock(:chave)"),
+        {"chave": _chave_trava_lote(lote_id)},
+    )
+
+
+async def _chaves_ja_reservadas(
+    db: AsyncSession,
+    *,
+    organizacao_id: str,
+    lote_id: str,
+) -> list[str]:
+    rows = (
+        await db.execute(
+            select(NfpCupomLidoDB.chave)
+            .where(
+                NfpCupomLidoDB.organizacao_id == organizacao_id,
+                NfpCupomLidoDB.lote_id == lote_id,
+                NfpCupomLidoDB.status == STATUS_RESERVADO,
+            )
+            .order_by(NfpCupomLidoDB.lido_em.asc())
+        )
+    ).scalars().all()
+    return [chave for chave in rows if chave]
+
+
 async def reservar_lote_cupons(
     db: AsyncSession,
     *,
     organizacao_id: str,
     usuario_id: Optional[str],
     tamanho: int = TAMANHO_LOTE_PADRAO,
+    lote_id: Optional[str] = None,
 ) -> dict[str, Any]:
     """Reserva ate `tamanho` pendentes (FIFO). Retorna lote_id + chaves.
 
     Chaves estruturalmente invalidas sao marcadas como erro e nao entram no lote.
+    Se o agente repetir a mesma chamada com o mesmo lote_id (conexão caiu na
+    resposta), devolve o lote já gravado em vez de reservar outro.
     """
     qtd = max(1, min(int(tamanho or TAMANHO_LOTE_PADRAO), TAMANHO_LOTE_PADRAO))
     await liberar_reservas_expiradas(db, organizacao_id)
 
-    lote_id = str(uuid.uuid4())
+    informado = (lote_id or "").strip() or None
+    if informado:
+        await _travar_lote_idempotente(db, informado)
+        ja = await _chaves_ja_reservadas(db, organizacao_id=organizacao_id, lote_id=informado)
+        if ja:
+            return {"lote_id": informado, "chaves": ja, "qtd": len(ja)}
+        lote_id = informado
+    else:
+        lote_id = str(uuid.uuid4())
     agora = agora_operacional_naive()
     chaves: list[str] = []
     restantes = qtd
@@ -185,6 +233,7 @@ def reservar_lote_cupons_sync(
     organizacao_id: str,
     usuario_id: Optional[str],
     tamanho: int = TAMANHO_LOTE_PADRAO,
+    lote_id: Optional[str] = None,
 ) -> dict[str, Any]:
     async def _run():
         async with AsyncSessionLocal() as db:
@@ -193,6 +242,7 @@ def reservar_lote_cupons_sync(
                 organizacao_id=organizacao_id,
                 usuario_id=usuario_id,
                 tamanho=tamanho,
+                lote_id=lote_id,
             )
 
     return _run_async(_run())

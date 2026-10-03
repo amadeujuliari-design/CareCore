@@ -83,11 +83,15 @@ class CareCoreApi:
             extra["timeout"] = timeout
         return self._request("GET", "/api/nfp/envio-sefaz/agente/fila", **extra)
 
-    def reservar_lote(self, tamanho: int = 100) -> dict:
+    def reservar_lote(self, tamanho: int = 100, lote_id: str = "") -> dict:
+        body: dict[str, Any] = {"tamanho": tamanho}
+        if (lote_id or "").strip():
+            body["lote_id"] = lote_id.strip()
         return self._request(
             "POST",
             "/api/nfp/envio-sefaz/agente/reservar-lote",
-            body={"tamanho": tamanho},
+            body=body,
+            timeout=90,
         )
 
     def liberar_lote(self, lote_id: str) -> dict:

@@ -13,6 +13,7 @@ import re
 import subprocess
 import sys
 import time
+import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
@@ -460,6 +461,8 @@ def processar_sessao(
     restante = int(limite) if limite is not None else None
     lotes = 0
     processados = 0
+    lote_cliente = ""
+    falhas_reserva = 0
     out_dir = ROBO_DIR / "_capturas"
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -476,10 +479,30 @@ def processar_sessao(
             break
 
         tamanho = min(cfg["tamanho_lote"], restante) if restante is not None else cfg["tamanho_lote"]
+        if not lote_cliente:
+            lote_cliente = str(uuid.uuid4())
         try:
-            reserva = api.reservar_lote(tamanho)
+            reserva = api.reservar_lote(tamanho, lote_id=lote_cliente)
         except CareCoreApiError as exc:
-            raise SystemExit(f"Falha ao reservar lote: {exc}") from exc
+            if not _falha_de_rede(exc):
+                raise SystemExit(f"Falha ao reservar lote: {exc}") from exc
+            falhas_reserva += 1
+            espera = min(30, 3 * falhas_reserva)
+            print(
+                f"[{_agora()}] Conexao caiu ao reservar o lote "
+                f"({falhas_reserva}). Nova tentativa em {espera}s, sem encerrar o envio."
+            )
+            for _ in range(max(1, espera // 5)):
+                if parada_solicitada():
+                    break
+                time.sleep(5)
+            if parada_solicitada():
+                print(f"[{_agora()}] Parado pelo operador.")
+                break
+            continue
+
+        falhas_reserva = 0
+        lote_cliente = ""
 
         chaves = reserva.get("chaves") or []
         lote_id = reserva.get("lote_id")

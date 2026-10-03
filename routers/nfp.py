@@ -1638,11 +1638,15 @@ async def envio_sefaz_agente_reservar_lote(
         raise HTTPException(status_code=400, detail="tamanho invalido.") from exc
     if tamanho < 1:
         raise HTTPException(status_code=400, detail="tamanho deve ser >= 1.")
+    lote_id = str(payload.get("lote_id") or "").strip()
+    if len(lote_id) > 64:
+        raise HTTPException(status_code=400, detail="lote_id invalido.")
     reserva = await reservar_lote_cupons(
         db,
         organizacao_id=org,
         usuario_id=str(usuario_atual.get("id") or "") or None,
         tamanho=tamanho,
+        lote_id=lote_id or None,
     )
     return {"ok": True, **reserva}
 
