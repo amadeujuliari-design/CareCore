@@ -38,6 +38,7 @@ from ler_planilha_chaves import ler_chaves_json, ler_chaves_xlsx  # noqa: E402
 from contador_estado import marcar_fim, registrar_item  # noqa: E402
 from login_gov import tentar_relogin_gov  # noqa: E402
 from navegar_doacao_aeb import (  # noqa: E402
+    _clicar_nova_nota,
     bloqueio_doacao_terceiros_sefaz,
     fechar_modal_instrutivo,
     garantir_tela_doacao_aeb,
@@ -56,7 +57,11 @@ from preencher_sem_enviar import (  # noqa: E402
     fechar_modal_mensagem,
     preencher_chave,
 )
-from retorno_nfp import resultado_operacional_ok  # noqa: E402
+from retorno_nfp import (  # noqa: E402
+    ClassificacaoRetorno,
+    aviso_da_tela_nao_mudou,
+    resultado_operacional_ok,
+)
 from validar_chave_acesso import validar_chave_acesso_nfe  # noqa: E402
 
 try:
@@ -181,7 +186,7 @@ async def processar_retorno(page, *, texto_antes: str = "") -> object:
     cls = await aguardar_classificacao_retorno(
         page, timeout_ms=6000, intervalo_ms=200, texto_antes=texto_antes
     )
-    if cls.tipo == "inconclusivo":
+    if cls.tipo == "inconclusivo" and not aviso_da_tela_nao_mudou(cls):
         cls = await aguardar_classificacao_retorno(
             page, timeout_ms=4000, intervalo_ms=250, texto_antes=texto_antes
         )
@@ -240,6 +245,79 @@ async def _posicionar_tela(page, *, rotulo: str) -> str:
             return "sessao_caiu"
     print(f"Falha ao posicionar Cadastro de Notas/AEB ({rotulo}).")
     return "falha"
+
+
+async def _atualizar_pagina_cadastro(page) -> str:
+    """Recarrega o cadastro quando o aviso da tela e o de antes do clique."""
+    if _parada_solicitada():
+        return "parada_usuario"
+    if await sessao_nfp_caiu(page):
+        if not await tentar_relogin_gov(page):
+            return "sessao_caiu"
+    if await bloqueio_doacao_terceiros_sefaz(page):
+        return "bloqueio_sefaz"
+    print("Aviso da tela não mudou. Atualizando a página do cadastro.")
+    try:
+        await page.reload(wait_until="domcontentloaded", timeout=25000)
+        await page.wait_for_timeout(800)
+    except Exception as exc:
+        print(f"Não recarregou a página ({exc}). Seguindo pela Nova Nota.")
+    if await bloqueio_doacao_terceiros_sefaz(page):
+        return "bloqueio_sefaz"
+    if await sessao_nfp_caiu(page):
+        if not await tentar_relogin_gov(page):
+            return "sessao_caiu"
+    if await _clicar_nova_nota(page) and await tela_pronta_para_enviar(page, fechar_modais=True):
+        return "ok"
+    if await garantir_tela_doacao_aeb(page):
+        return "ok"
+    print("Falha ao atualizar o cadastro depois do aviso antigo.")
+    return "falha"
+
+
+async def _reenviar_se_aviso_antigo(page, chave: str, cls):
+    """Uma nova tentativa na pagina limpa. Se o aviso continuar, o cupom fica pendente."""
+    if not aviso_da_tela_nao_mudou(cls):
+        return cls, ""
+    estado = await _atualizar_pagina_cadastro(page)
+    if estado == "bloqueio_sefaz":
+        return (
+            ClassificacaoRetorno(
+                tipo="bloqueio_sefaz",
+                mensagem=(
+                    "SEFAZ bloqueou a doacao (indicios de notas de terceiros). "
+                    "Parando sem fechar o modal."
+                ),
+                status_carecore="pendente",
+            ),
+            estado,
+        )
+    if estado == "sessao_caiu":
+        return (
+            ClassificacaoRetorno(
+                tipo="sessao_caiu",
+                mensagem="Sessão NFP caiu ao atualizar o cadastro.",
+                status_carecore="pendente",
+            ),
+            estado,
+        )
+    if estado != "ok":
+        print("Cadastro não atualizou. Cupom fica pendente.")
+        return cls, estado
+    if not await preencher_chave(page, chave):
+        print("Não preenchi a chave depois de atualizar a página. Cupom fica pendente.")
+        return cls, estado
+    try:
+        texto_antes = await coletar_texto_retorno(page)
+    except Exception:
+        texto_antes = ""
+    if not await clicar_registrar(page):
+        print("Não cliquei em Salvar Nota depois de atualizar a página. Cupom fica pendente.")
+        return cls, estado
+    cls2 = await processar_retorno(page, texto_antes=texto_antes)
+    if aviso_da_tela_nao_mudou(cls2):
+        print("A página continuou com o aviso anterior. Cupom fica pendente.")
+    return cls2, estado
 
 
 async def rodar(args: argparse.Namespace) -> int:
@@ -486,6 +564,11 @@ async def rodar(args: argparse.Namespace) -> int:
                             and await clicar_registrar(page)
                         ):
                             cls = await processar_retorno(page, texto_antes="")
+                    if aviso_da_tela_nao_mudou(cls):
+                        cls, estado_att = await _reenviar_se_aviso_antigo(page, chave, cls)
+                        if estado_att == "parada_usuario":
+                            parado_pelo_usuario = True
+                            motivo_interrupcao = "parada_usuario"
                     if captura_tela_habilitada():
                         await gravar_captura_sefaz(
                             page,

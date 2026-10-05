@@ -287,25 +287,6 @@ async def classificar_retorno_pagina(page) -> "ClassificacaoRetorno":
     return classificar_texto_retorno(texto, url=url)
 
 
-def _extrair_horarios_sucesso(texto: str) -> list[str]:
-    """Horarios embutidos na msg inline: '... sucesso. ... 12/08/2026 04:36:39'."""
-    return re.findall(
-        r"doa[cç][aã]o\s+registrada\s+com\s+sucesso[^\d]{0,80}(\d{2}/\d{2}/\d{4}\s+\d{2}:\d{2}:\d{2})",
-        texto or "",
-        flags=re.I,
-    )
-
-
-def _banner_inline_compacto(texto: str) -> str:
-    """Trecho curto do banner de retorno do cadastro entidade."""
-    from retorno_nfp import classificar_texto_retorno
-
-    cls = classificar_texto_retorno(texto or "")
-    if cls.tipo == "inconclusivo":
-        return ""
-    return (cls.trecho or cls.mensagem or "").strip()[:180]
-
-
 async def aguardar_classificacao_retorno(
     page,
     *,
@@ -315,12 +296,15 @@ async def aguardar_classificacao_retorno(
 ) -> "ClassificacaoRetorno":
     """Espera mensagem da NFP (modal OU banner inline no cadastro entidade).
 
-    texto_antes: snapshot antes do Salvar Nota — evita falso positivo com
-    banner antigo (sucesso / ja existe / prazo) que permanece no topo.
+    texto_antes: snapshot antes do Salvar Nota. Se o aviso (qualquer frase)
+    continuar o mesmo, nao aceita: devolve pendente para a fila atualizar a pagina.
     """
-    import time
-
-    from retorno_nfp import ClassificacaoRetorno, classificar_texto_retorno
+    from retorno_nfp import (
+        MSG_AVISO_NAO_MUDOU,
+        ClassificacaoRetorno,
+        classificar_texto_retorno,
+        feedback_ainda_e_o_anterior,
+    )
 
     tentativas = max(1, int(timeout_ms / max(intervalo_ms, 50)))
     ultima = ClassificacaoRetorno(
@@ -329,48 +313,31 @@ async def aguardar_classificacao_retorno(
         status_carecore="pendente",
     )
     antes = texto_antes or ""
-    cls_antes = classificar_texto_retorno(antes) if antes else None
-    hs_antes = set(_extrair_horarios_sucesso(antes))
-    banner_antes = _banner_inline_compacto(antes) if antes else ""
-    t0 = time.monotonic()
-    # Postback do Salvar Nota: mesmo texto "já existe"/"prazo" em cupons
-    # consecutivos e valido apos esta janela (nao ha horario na mensagem).
-    aceitar_mesmo_banner_ms = 1600
+    texto_ultimo = ""
 
     for _ in range(tentativas):
         try:
             texto_agora = await coletar_texto_retorno(page)
         except Exception:
             texto_agora = ""
+        texto_ultimo = texto_agora
         ultima = classificar_texto_retorno(texto_agora, url=page.url)
+        if ultima.tipo in {"sessao_caiu", "bloqueio_sefaz"}:
+            return ultima
+        if antes and feedback_ainda_e_o_anterior(antes, texto_agora):
+            await page.wait_for_timeout(intervalo_ms)
+            continue
         if ultima.tipo == "inconclusivo":
             await page.wait_for_timeout(intervalo_ms)
             continue
-
-        elapsed_ms = (time.monotonic() - t0) * 1000
-
-        if ultima.tipo == "sucesso" and antes:
-            hs_agora = set(_extrair_horarios_sucesso(texto_agora))
-            novos = hs_agora - hs_antes
-            if not novos and cls_antes and cls_antes.tipo == "sucesso":
-                await page.wait_for_timeout(intervalo_ms)
-                continue
-
-        # ja_existe / prazo (e erro generico): se o banner era o mesmo antes do clique,
-        # espera o postback; se continuar igual, aceita (nova chave, mesma msg).
-        if (
-            ultima.tipo in {"ja_existe", "erro"}
-            and cls_antes
-            and cls_antes.tipo == ultima.tipo
-            and banner_antes
-        ):
-            banner_agora = _banner_inline_compacto(texto_agora)
-            if banner_agora and banner_agora == banner_antes and elapsed_ms < aceitar_mesmo_banner_ms:
-                await page.wait_for_timeout(intervalo_ms)
-                continue
-
         return ultima
 
+    if antes and texto_ultimo and feedback_ainda_e_o_anterior(antes, texto_ultimo):
+        return ClassificacaoRetorno(
+            tipo="inconclusivo",
+            mensagem=MSG_AVISO_NAO_MUDOU,
+            status_carecore="pendente",
+        )
     return ultima
 
 

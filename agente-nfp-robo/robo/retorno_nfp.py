@@ -29,6 +29,13 @@ MSG_SUCESSO = (
     "Doação registrada com sucesso. Aguardando processamento pelo sistema."
 )
 MSG_PRAZO = "A Data da Nota excedeu o prazo máximo para cadastro."
+MSG_AVISO_NAO_MUDOU = "Aviso da tela não mudou após salvar."
+
+# Relogio colado no aviso (sucesso, erro generico). "às" e opcional.
+_RE_HORARIO_AVISO = re.compile(
+    r"\d{2}/\d{2}/\d{4}(?:\s+[àa]s)?\s+\d{2}:\d{2}:\d{2}",
+    re.I,
+)
 
 RE_JA_EXISTE = re.compile(
     r"este\s+pedido\s+j[aá]\s+existe|"
@@ -192,3 +199,52 @@ def _extrair_trecho(texto: str, padrao: re.Pattern[str]) -> str:
 def resultado_operacional_ok(cls: ClassificacaoRetorno) -> bool:
     """Sucesso novo ou pedido já existente: ambos saem da fila operacional."""
     return cls.tipo in {"sucesso", "ja_existe"}
+
+
+def aviso_da_tela_nao_mudou(cls: ClassificacaoRetorno) -> bool:
+    return (cls.mensagem or "").startswith(MSG_AVISO_NAO_MUDOU)
+
+
+def _janela_do_aviso(texto: str) -> str:
+    """Trecho do aviso com folga antes, para incluir o relogio que fica na frente da frase."""
+    compacto = normalizar_texto(texto)
+    if not compacto:
+        return ""
+    cls = classificar_texto_retorno(compacto)
+    if cls.tipo in {"inconclusivo", "sessao_caiu", "bloqueio_sefaz"}:
+        return ""
+    ancora = (cls.trecho or "").strip()[:40]
+    if not ancora:
+        return ""
+    pos = compacto.find(ancora)
+    if pos < 0:
+        return compacto
+    return compacto[max(0, pos - 40) : pos + len(ancora) + 120]
+
+
+def horarios_do_aviso(texto: str) -> set[str]:
+    return set(_RE_HORARIO_AVISO.findall(_janela_do_aviso(texto)))
+
+
+def feedback_ainda_e_o_anterior(texto_antes: str, texto_agora: str) -> bool:
+    """True quando o aviso na tela e o mesmo de antes do clique.
+
+    Com relogio: o horario nao mudou. Sem relogio (ja existe, prazo, chave
+    invalida): a frase inteira continua igual a que ja estava na tela.
+    """
+    agora = classificar_texto_retorno(normalizar_texto(texto_agora))
+    if agora.tipo in {"inconclusivo", "sessao_caiu", "bloqueio_sefaz"}:
+        return False
+    antes = classificar_texto_retorno(normalizar_texto(texto_antes))
+    if antes.tipo in {"inconclusivo", "sessao_caiu", "bloqueio_sefaz"}:
+        return False
+
+    horarios_agora = horarios_do_aviso(texto_agora)
+    if horarios_agora:
+        return horarios_agora.issubset(horarios_do_aviso(texto_antes))
+
+    frase_agora = (agora.trecho or "").strip()
+    frase_antes = (antes.trecho or "").strip()
+    if not frase_agora or not frase_antes:
+        return False
+    return frase_agora == frase_antes
