@@ -15,6 +15,55 @@ PERFIS_PADRAO = (
 SEXOS_PERFIL = ("qualquer", "masculino", "feminino")
 _TETO_ABERTO = 200
 
+# Complementos do Cruzeiro do Sul. A faixa é em meses completos, inclusive.
+# Fralda até completar 3 anos, sabonete até completar 2, leite dos 6 meses até completar 6.
+COMPLEMENTOS_CRUZEIRO = (
+    {
+        "ordem": 20,
+        "nome": "Fralda",
+        "papel": "complemento",
+        "gatilho": "idade",
+        "idade_min_meses": 0,
+        "idade_max_meses": 35,
+        "sexo": "qualquer",
+        "descricao": "Até completar 3 anos",
+        "item": "Fralda",
+    },
+    {
+        "ordem": 21,
+        "nome": "Sabonete infantil",
+        "papel": "complemento",
+        "gatilho": "idade",
+        "idade_min_meses": 0,
+        "idade_max_meses": 23,
+        "sexo": "qualquer",
+        "descricao": "Até completar 2 anos",
+        "item": "Sabonete infantil",
+    },
+    {
+        "ordem": 22,
+        "nome": "Leite",
+        "papel": "complemento",
+        "gatilho": "idade",
+        "idade_min_meses": 6,
+        "idade_max_meses": 71,
+        "sexo": "qualquer",
+        "descricao": "Dos 6 meses até completar 6 anos",
+        "item": "Leite",
+    },
+    {
+        "ordem": 23,
+        "nome": "Menstruação",
+        "papel": "complemento",
+        "gatilho": "flag",
+        "idade_min_meses": None,
+        "idade_max_meses": None,
+        "sexo": "feminino",
+        "descricao": "A partir da primeira menstruação",
+        "item": "Absorvente",
+    },
+)
+
 
 def normalizar_sexo(valor: str | None) -> str | None:
     texto = (valor or "").strip().casefold()
@@ -31,6 +80,15 @@ def idade_em(nascimento: date | None, hoje: date) -> int | None:
     if not nascimento:
         return None
     return hoje.year - nascimento.year - ((hoje.month, hoje.day) < (nascimento.month, nascimento.day))
+
+
+def idade_meses(nascimento: date | None, hoje: date) -> int | None:
+    if not nascimento:
+        return None
+    meses = (hoje.year - nascimento.year) * 12 + (hoje.month - nascimento.month)
+    if hoje.day < nascimento.day:
+        meses -= 1
+    return meses
 
 
 def descricao_faixa(idade_min: int, idade_max: int | None, sexo: str) -> str:
@@ -68,6 +126,28 @@ def faixa_cruza(esquerda: dict, direita: dict) -> bool:
     return bool(_sexos(esquerda) & _sexos(direita))
 
 
+def papel_do_perfil(perfil: dict) -> str:
+    return perfil.get("papel") or "base"
+
+
+def complemento_aplica(perfil: dict, meses: int | None, sexo: str | None, menstrua: bool) -> bool:
+    if not perfil.get("ativo", True) or papel_do_perfil(perfil) != "complemento":
+        return False
+    sexo_perfil = perfil.get("sexo") or "qualquer"
+    if sexo_perfil not in {"qualquer", ""} and sexo_perfil != sexo:
+        return False
+    if perfil.get("gatilho") == "flag":
+        return bool(menstrua)
+    if meses is None or perfil.get("idade_min_meses") is None:
+        return False
+    if meses < int(perfil["idade_min_meses"]):
+        return False
+    teto = perfil.get("idade_max_meses")
+    if teto is not None and meses > int(teto):
+        return False
+    return True
+
+
 def perfil_compativel(perfil: dict, idade: int, sexo: str | None) -> bool:
     if perfil.get("idade_min") is None or not perfil.get("ativo", True):
         return False
@@ -78,8 +158,37 @@ def perfil_compativel(perfil: dict, idade: int, sexo: str | None) -> bool:
     return bool(sexo) and perfil.get("sexo") == sexo
 
 
-def montar_kit(pessoas: list[dict], perfis: list[dict], regras: list[dict], itens: list[dict], hoje: date) -> dict:
-    ativos = [perfil for perfil in perfis if perfil.get("ativo", True) and perfil.get("idade_min") is not None]
+def _somar_perfil(grupos, totais, regras_por_tipo, item_por_id, perfil, nome) -> None:
+    grupo = grupos.setdefault(
+        perfil["id"],
+        {"perfil": perfil["nome"], "ordem": perfil.get("ordem") or 0, "pessoas": []},
+    )
+    grupo["pessoas"].append(nome)
+    for regra in regras_por_tipo.get(perfil["id"], []):
+        item = item_por_id.get(regra["item_id"])
+        if not item:
+            continue
+        totais[item["nome"]] = totais.get(item["nome"], 0) + int(regra["quantidade"] or 0)
+
+
+def montar_kit(
+    pessoas: list[dict],
+    perfis: list[dict],
+    regras: list[dict],
+    itens: list[dict],
+    hoje: date,
+    somar_complementos: bool = False,
+) -> dict:
+    ativos = [
+        perfil for perfil in perfis
+        if perfil.get("ativo", True)
+        and perfil.get("idade_min") is not None
+        and papel_do_perfil(perfil) != "complemento"
+    ]
+    complementos = [
+        perfil for perfil in perfis
+        if somar_complementos and papel_do_perfil(perfil) == "complemento" and perfil.get("ativo", True)
+    ]
     item_por_id = {item["id"]: item for item in itens if item.get("ativo", True)}
     regras_por_tipo: dict[str, list[dict]] = {}
     for regra in regras:
@@ -111,13 +220,12 @@ def montar_kit(pessoas: list[dict], perfis: list[dict], regras: list[dict], iten
                 pendencias.append({"nome": nome, "motivo": "Sem perfil para esta idade"})
             continue
         perfil = compativeis[0]
-        grupo = grupos.setdefault(perfil["id"], {"perfil": perfil["nome"], "ordem": perfil.get("ordem") or 0, "pessoas": []})
-        grupo["pessoas"].append(nome)
-        for regra in regras_por_tipo.get(perfil["id"], []):
-            item = item_por_id.get(regra["item_id"])
-            if not item:
-                continue
-            totais[item["nome"]] = totais.get(item["nome"], 0) + int(regra["quantidade"] or 0)
+        _somar_perfil(grupos, totais, regras_por_tipo, item_por_id, perfil, nome)
+        if complementos:
+            meses = idade_meses(pessoa.get("nascimento"), hoje)
+            for complemento in complementos:
+                if complemento_aplica(complemento, meses, sexo, bool(pessoa.get("menstrua"))):
+                    _somar_perfil(grupos, totais, regras_por_tipo, item_por_id, complemento, nome)
 
     composicao = [{"nome": nome, "quantidade": quantidade} for nome, quantidade in sorted(totais.items())]
     return {

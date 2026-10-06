@@ -577,7 +577,7 @@ Bipar QR (câmera/leitor USB) ou informar chave; validação SEFAZ; só cupom se
 
 | Rótulo | Ligação |
 | --- | --- |
-| Captador / unidade | select (fixo se vínculo do usuário) |
+| Captador / unidade | select. Abre na unidade do projeto logado; Sede só se o login for da Sede ou não houver unidade correspondente. Continua editável. Fica fixo quando o usuário tem vínculo NFP |
 | Chave 44 dígitos ou URL | leitura manual |
 | Filtros lista: status / captador / usuário | checando, pendente, reservado, enviado, erro, rejeitado CPF, rejeitado prazo… |
 

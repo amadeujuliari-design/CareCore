@@ -3,6 +3,7 @@
 from datetime import date
 
 from kit_higiene_pari import (
+    COMPLEMENTOS_CRUZEIRO,
     PERFIS_PADRAO,
     faixa_cruza,
     idade_em,
@@ -134,3 +135,87 @@ def test_sem_nascimento_fica_fora():
     )
     assert resultado["pendencias"][0]["motivo"] == "Sem data de nascimento"
     assert resultado["completo"] is False
+
+
+def _meses(quantidade: int) -> date:
+    ano = HOJE.year
+    mes = HOJE.month - quantidade
+    while mes <= 0:
+        mes += 12
+        ano -= 1
+    return date(ano, mes, HOJE.day)
+
+
+def _complementos():
+    return [
+        {"id": item["nome"], **item, "ativo": True, "idade_min": 0, "idade_max": None}
+        for item in COMPLEMENTOS_CRUZEIRO
+    ]
+
+
+def _regras_cruzeiro():
+    return [
+        {"tipo_id": "Bebê", "item_id": "base", "quantidade": 1},
+        {"tipo_id": "Criança", "item_id": "base", "quantidade": 1},
+        {"tipo_id": "Adolescente feminino", "item_id": "base", "quantidade": 1},
+        {"tipo_id": "Fralda", "item_id": "fra", "quantidade": 1},
+        {"tipo_id": "Sabonete infantil", "item_id": "sab", "quantidade": 1},
+        {"tipo_id": "Leite", "item_id": "lei", "quantidade": 1},
+        {"tipo_id": "Menstruação", "item_id": "abs", "quantidade": 1},
+    ]
+
+
+def _itens_cruzeiro():
+    return [
+        {"id": "base", "nome": "Kit base", "ativo": True},
+        {"id": "fra", "nome": "Fralda", "ativo": True},
+        {"id": "sab", "nome": "Sabonete infantil", "ativo": True},
+        {"id": "lei", "nome": "Leite", "ativo": True},
+        {"id": "abs", "nome": "Absorvente", "ativo": True},
+    ]
+
+
+def _nomes(meses, sexo="Feminino", menstrua=False):
+    pessoa = {
+        "nome": "Acolhido",
+        "nascimento": _meses(meses),
+        "sexo": sexo,
+        "menstrua": menstrua,
+    }
+    resultado = montar_kit(
+        [pessoa],
+        _perfis() + _complementos(),
+        _regras_cruzeiro(),
+        _itens_cruzeiro(),
+        HOJE,
+        somar_complementos=True,
+    )
+    return {item["nome"] for item in resultado["composicao"]}
+
+
+def test_cruzeiro_soma_complementos_pela_idade_em_meses():
+    assert _nomes(0) == {"Kit base", "Fralda", "Sabonete infantil"}
+    assert _nomes(6) == {"Kit base", "Fralda", "Sabonete infantil", "Leite"}
+    assert _nomes(23) == {"Kit base", "Fralda", "Sabonete infantil", "Leite"}
+    assert _nomes(24) == {"Kit base", "Fralda", "Leite"}
+    assert _nomes(35) == {"Kit base", "Fralda", "Leite"}
+    assert _nomes(36) == {"Kit base", "Leite"}
+    assert _nomes(71) == {"Kit base", "Leite"}
+    assert _nomes(72) == {"Kit base"}
+
+
+def test_cruzeiro_menstruacao_so_entra_com_a_flag():
+    assert "Absorvente" not in _nomes(13 * 12, "Feminino", False)
+    assert "Absorvente" in _nomes(13 * 12, "Feminino", True)
+    assert "Absorvente" not in _nomes(13 * 12, "Masculino", True)
+
+
+def test_pari_ignora_complemento_mesmo_se_a_faixa_existir():
+    resultado = montar_kit(
+        [_pessoa("Bebe", 0, "Feminino")],
+        _perfis() + _complementos(),
+        _regras_cruzeiro(),
+        _itens_cruzeiro(),
+        HOJE,
+    )
+    assert resultado["composicao"] == [{"nome": "Kit base", "quantidade": 1}]

@@ -503,6 +503,7 @@ class ConviventeDB(Base):
     turno_escolar = Column(String, nullable=True)
     escolar_inicio = Column(String, nullable=True)
     escolar_fim = Column(String, nullable=True)
+    kit_menstrua = Column(Boolean, default=False, nullable=False)
 
 
 class FamiliaConviventeDB(Base):
@@ -531,6 +532,10 @@ class TipoIndividuoHigieneDB(Base):
     idade_min = Column(Integer, nullable=True)
     idade_max = Column(Integer, nullable=True)
     sexo = Column(String, nullable=True)
+    papel = Column(String, nullable=False, default="base")
+    gatilho = Column(String, nullable=False, default="idade")
+    idade_min_meses = Column(Integer, nullable=True)
+    idade_max_meses = Column(Integer, nullable=True)
 
 
 class ItemHigieneDB(Base):

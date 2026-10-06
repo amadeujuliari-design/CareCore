@@ -61,6 +61,21 @@ def projeto_e_casa_porto(projeto: InstituicaoDB | None) -> bool:
     return any(marcador in texto for marcador in _MARCADORES_CASA_PORTO)
 
 
+def projeto_e_cruzeiro_do_sul(projeto: InstituicaoDB | None) -> bool:
+    if not projeto:
+        return False
+    referencias = " ".join(
+        filter(
+            None,
+            [
+                projeto.nome_fantasia,
+                projeto.relatorio_nome_exibicao,
+            ],
+        )
+    )
+    return "reencontro cruzeiro do sul" in _normalizar_texto_busca(referencias)
+
+
 def projeto_e_reencontro_pari(projeto: InstituicaoDB | None) -> bool:
     if not projeto:
         return False

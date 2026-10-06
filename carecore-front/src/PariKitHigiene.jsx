@@ -12,8 +12,12 @@ function detalheErro(error, fallback) {
 }
 
 function PerfilCard({ perfil, itens, regras, onSalvarFaixa, onIncluir, onRemover }) {
+  const complemento = perfil.papel === 'complemento';
+  const porFlag = complemento && perfil.gatilho === 'flag';
   const [idadeMin, setIdadeMin] = useState(perfil.idade_min ?? 0);
   const [idadeMax, setIdadeMax] = useState(perfil.idade_max ?? '');
+  const [mesesMin, setMesesMin] = useState(perfil.idade_min_meses ?? 0);
+  const [mesesMax, setMesesMax] = useState(perfil.idade_max_meses ?? '');
   const [sexo, setSexo] = useState(perfil.sexo || 'qualquer');
   const [itemId, setItemId] = useState('');
   const [quantidade, setQuantidade] = useState(1);
@@ -23,34 +27,41 @@ function PerfilCard({ perfil, itens, regras, onSalvarFaixa, onIncluir, onRemover
   useEffect(() => {
     setIdadeMin(perfil.idade_min ?? 0);
     setIdadeMax(perfil.idade_max ?? '');
+    setMesesMin(perfil.idade_min_meses ?? 0);
+    setMesesMax(perfil.idade_max_meses ?? '');
     setSexo(perfil.sexo || 'qualquer');
-  }, [perfil.id, perfil.idade_min, perfil.idade_max, perfil.sexo]);
+  }, [perfil.id, perfil.idade_min, perfil.idade_max, perfil.idade_min_meses, perfil.idade_max_meses, perfil.sexo]);
 
   return (
     <article className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
-      <h3 className="text-base font-black text-slate-900">{perfil.nome}</h3>
+      <h3 className="text-base font-black text-slate-900">
+        {perfil.nome}
+        {complemento && <span className="ml-2 rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-bold text-sky-800">Complemento</span>}
+      </h3>
       <p className="mt-1 text-xs text-slate-500">{perfil.descricao}</p>
+      {porFlag && <p className="mt-2 text-xs font-semibold text-slate-600">Entra quando a flag Já menstrua está ligada no acolhido.</p>}
+      {!porFlag && (
       <div className="mt-3 grid grid-cols-3 gap-2">
         <label className="text-[11px] font-bold text-slate-600">
-          De
+          {complemento ? 'De (meses)' : 'De'}
           <input
             type="number"
             min="0"
-            max="120"
-            value={idadeMin}
-            onChange={(event) => setIdadeMin(event.target.value)}
+            max={complemento ? '1440' : '120'}
+            value={complemento ? mesesMin : idadeMin}
+            onChange={(event) => (complemento ? setMesesMin(event.target.value) : setIdadeMin(event.target.value))}
             className="mt-1 block w-full rounded-xl border border-slate-200 px-2 py-2 text-sm"
           />
         </label>
         <label className="text-[11px] font-bold text-slate-600">
-          Até
+          {complemento ? 'Até (meses)' : 'Até'}
           <input
             type="number"
             min="0"
-            max="120"
-            value={idadeMax}
+            max={complemento ? '1440' : '120'}
+            value={complemento ? mesesMax : idadeMax}
             placeholder="sem limite"
-            onChange={(event) => setIdadeMax(event.target.value)}
+            onChange={(event) => (complemento ? setMesesMax(event.target.value) : setIdadeMax(event.target.value))}
             className="mt-1 block w-full rounded-xl border border-slate-200 px-2 py-2 text-sm"
           />
         </label>
@@ -67,12 +78,13 @@ function PerfilCard({ perfil, itens, regras, onSalvarFaixa, onIncluir, onRemover
           </select>
         </label>
       </div>
+      )}
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <PremiumButton
           type="button"
           onClick={async () => {
             setAviso('');
-            const resultado = await onSalvarFaixa(perfil, idadeMin, idadeMax, sexo);
+            const resultado = await onSalvarFaixa(perfil, idadeMin, idadeMax, sexo, mesesMin, mesesMax);
             if (resultado) setAviso('Idade salva.');
           }}
         >
@@ -124,16 +136,18 @@ function PerfilCard({ perfil, itens, regras, onSalvarFaixa, onIncluir, onRemover
   );
 }
 
-function MembroIdade({ membro, onSalvar }) {
+function MembroIdade({ membro, onSalvar, cruzeiro }) {
   const [nascimento, setNascimento] = useState(membro.nascimento || '');
   const [sexo, setSexo] = useState(membro.sexo || '');
+  const [menstrua, setMenstrua] = useState(Boolean(membro.menstrua));
   const [aviso, setAviso] = useState('');
   const [erroLocal, setErroLocal] = useState('');
 
   useEffect(() => {
     setNascimento(membro.nascimento || '');
     setSexo(membro.sexo || '');
-  }, [membro.id, membro.nascimento, membro.sexo]);
+    setMenstrua(Boolean(membro.menstrua));
+  }, [membro.id, membro.nascimento, membro.sexo, membro.menstrua]);
 
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-3">
@@ -160,13 +174,23 @@ function MembroIdade({ membro, onSalvar }) {
             <option value="feminino">Feminino</option>
           </select>
         </label>
+        {cruzeiro && (
+          <label className="mb-2 flex items-center gap-2 text-xs font-bold text-slate-700">
+            <input
+              type="checkbox"
+              checked={menstrua}
+              onChange={(event) => setMenstrua(event.target.checked)}
+            />
+            Já menstrua
+          </label>
+        )}
         <PremiumButton
           type="button"
           onClick={async () => {
             setAviso('');
             setErroLocal('');
             try {
-              await onSalvar(membro.id, nascimento || null, sexo);
+              await onSalvar(membro.id, nascimento || null, sexo, cruzeiro ? menstrua : null);
               setAviso('Idade salva.');
             } catch (error) {
               setErroLocal(detalheErro(error, 'Não foi possível salvar a idade.'));
@@ -183,7 +207,9 @@ function MembroIdade({ membro, onSalvar }) {
 }
 
 export default function PariKitHigiene() {
-  const [catalogo, setCatalogo] = useState({ tipos: [], itens: [], regras: [], entregas: [] });
+  const [catalogo, setCatalogo] = useState({ tipos: [], itens: [], regras: [], entregas: [], modelo: 'pari' });
+  const [nomePerfil, setNomePerfil] = useState('');
+  const [gatilhoPerfil, setGatilhoPerfil] = useState('idade');
   const [conviventes, setConviventes] = useState([]);
   const [codigo, setCodigo] = useState('');
   const [busca, setBusca] = useState('');
@@ -217,14 +243,19 @@ export default function PariKitHigiene() {
     }
   };
 
-  const salvarFaixa = async (perfil, idadeMin, idadeMax, sexo) => {
+  const salvarFaixa = async (perfil, idadeMin, idadeMax, sexo, mesesMin, mesesMax) => {
     setErro('');
     try {
-      await api.patch(`/api/pari/kit/tipos/${perfil.id}`, {
+      const corpo = {
         idade_min: Number(idadeMin),
         idade_max: idadeMax === '' || idadeMax == null ? null : Number(idadeMax),
         sexo,
-      });
+      };
+      if (perfil.papel === 'complemento' && perfil.gatilho !== 'flag') {
+        corpo.idade_min_meses = Number(mesesMin);
+        corpo.idade_max_meses = mesesMax === '' || mesesMax == null ? null : Number(mesesMax);
+      }
+      await api.patch(`/api/pari/kit/tipos/${perfil.id}`, corpo);
       await carregar();
       return true;
     } catch (error) {
@@ -259,11 +290,13 @@ export default function PariKitHigiene() {
 
   useLeitorUsbGlobal({ ativo: true, onCodigoLido: lerCodigo });
 
-  const salvarMembro = async (conviventeId, nascimento, sexo) => {
-    const resposta = await api.patch(`/api/pari/kit/membros/${conviventeId}`, {
+  const salvarMembro = async (conviventeId, nascimento, sexo, menstrua) => {
+    const corpo = {
       data_nascimento: nascimento,
       sexo,
-    });
+    };
+    if (menstrua != null) corpo.menstrua = menstrua;
+    const resposta = await api.patch(`/api/pari/kit/membros/${conviventeId}`, corpo);
     setPrevia(resposta.data);
     setMensagem('Idade salva. O kit da família foi recalculado.');
   };
@@ -364,7 +397,7 @@ export default function PariKitHigiene() {
               )}
               <div className="mt-3 space-y-2">
                 {(previa.membros || []).map((membro) => (
-                  <MembroIdade key={membro.id} membro={membro} onSalvar={salvarMembro} />
+                  <MembroIdade key={membro.id} membro={membro} onSalvar={salvarMembro} cruzeiro={catalogo.modelo === 'cruzeiro'} />
                 ))}
               </div>
               <ul className="mt-3 space-y-1">
@@ -438,7 +471,42 @@ export default function PariKitHigiene() {
 
         <section className="mt-6">
           <h2 className="text-lg font-bold text-slate-900">Perfis</h2>
-          <p className="mt-1 text-sm text-slate-500">Ajuste a idade de cada tipo e clique em Salvar idade. Uma idade não pode caber em dois perfis.</p>
+          <p className="mt-1 text-sm text-slate-500">
+            {catalogo.modelo === 'cruzeiro'
+              ? 'O perfil de base continua um só por pessoa. Os complementos somam no kit e podem cruzar a mesma idade. A flag Já menstrua liga o complemento de menstruação.'
+              : 'Ajuste a idade de cada tipo e clique em Salvar idade. Uma idade não pode caber em dois perfis.'}
+          </p>
+          {catalogo.modelo === 'cruzeiro' && (
+            <form
+              className="mt-4 flex flex-wrap gap-2"
+              onSubmit={(event) => {
+                event.preventDefault();
+                if (!nomePerfil.trim()) return;
+                criar('/api/pari/kit/tipos', {
+                  nome: nomePerfil.trim(),
+                  papel: 'complemento',
+                  gatilho: gatilhoPerfil,
+                });
+                setNomePerfil('');
+              }}
+            >
+              <input
+                value={nomePerfil}
+                onChange={(event) => setNomePerfil(event.target.value)}
+                placeholder="Novo complemento, por exemplo fralda noturna"
+                className="min-h-11 min-w-[16rem] flex-1 rounded-xl border border-slate-200 px-3 text-sm"
+              />
+              <select
+                value={gatilhoPerfil}
+                onChange={(event) => setGatilhoPerfil(event.target.value)}
+                className="min-h-11 rounded-xl border border-slate-200 px-3 text-sm"
+              >
+                <option value="idade">Entra pela idade</option>
+                <option value="flag">Entra pela flag Já menstrua</option>
+              </select>
+              <PremiumButton type="submit" variant="secondary">Incluir complemento</PremiumButton>
+            </form>
+          )}
           <div className="mt-4 grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
             {catalogo.tipos.map((perfil) => (
               <PerfilCard

@@ -107,8 +107,9 @@ function compararLista(a, b, coluna, direcao) {
   return direcao === 'desc' ? -cmp : cmp;
 }
 
-function linhasRelatorio(lista) {
+function linhasRelatorio(lista, separado) {
   return (lista || []).map((item) => ({
+    ...(separado ? { Máquina: item.maquina_rotulo || '' } : {}),
     Convivente: item.convivente_nome || '',
     Família: item.familia_codigo || '',
     Prontuário: item.prontuario ?? '',
@@ -116,6 +117,145 @@ function linhasRelatorio(lista) {
     Fim: dataHoraBr(item.fim),
     'Liberado em': dataHoraBr(item.liberado_em),
   }));
+}
+
+function GradeOmo({
+  titulo,
+  duracao,
+  slots,
+  salvando,
+  sobreLivre,
+  setSobreLivre,
+  pedirAgendamento,
+  pedirCancelamento,
+  pedirMudanca,
+  setErro,
+  travada,
+}) {
+  const dias = useMemo(() => {
+    const lista = [];
+    slots.forEach((slot) => {
+      const { data } = partesIso(slot.inicio);
+      if (data && !lista.includes(data)) lista.push(data);
+    });
+    return lista;
+  }, [slots]);
+  const horarios = useMemo(() => {
+    const lista = [];
+    slots.forEach((slot) => {
+      const { data, hora } = partesIso(slot.inicio);
+      if (data === dias[0] && hora && !lista.includes(hora)) lista.push(hora);
+    });
+    return lista;
+  }, [slots, dias]);
+  const porChave = useMemo(() => {
+    const mapa = {};
+    slots.forEach((slot) => {
+      mapa[slot.inicio] = slot;
+    });
+    return mapa;
+  }, [slots]);
+
+  return (
+    <div className="mb-4 overflow-x-auto rounded-2xl border border-slate-100 bg-white p-3 shadow-sm">
+      {titulo && <h2 className="mb-2 text-sm font-black text-slate-800">{titulo}</h2>}
+      <table className="min-w-[760px] w-full border-separate border-spacing-1 text-left">
+        <thead>
+          <tr>
+            <th className="px-2 py-2 text-xs font-bold text-slate-500">{duracao}</th>
+            {dias.map((dia) => (
+              <th key={dia} className="px-2 py-2 text-xs font-black capitalize text-slate-700">{rotuloDia(dia)}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {horarios.map((hora) => (
+            <tr key={hora}>
+              <td className="whitespace-nowrap px-2 py-1 text-xs font-bold text-slate-600">{hora}</td>
+              {dias.map((dia) => {
+                const slot = porChave[`${dia}T${hora}`];
+                const livre = !slot || slot.status === 'livre';
+                const emUso = slot?.status === 'em_uso';
+                const agendado = slot?.status === 'agendado';
+                const marca = `${slot?.maquina || ''}|${slot?.inicio || ''}`;
+                const emCima = sobreLivre === marca;
+                const classe = livre
+                  ? `bg-emerald-50 text-emerald-900 border-emerald-200 ${travada ? '' : 'hover:bg-emerald-100'} ${emCima ? 'ring-2 ring-emerald-500' : ''}`
+                  : emUso
+                    ? 'bg-blue-50 text-blue-900 border-blue-200'
+                    : 'bg-amber-50 text-amber-950 border-amber-200 cursor-grab';
+                const texto = livre
+                  ? 'Livre'
+                  : `${slot.familia_codigo ? `${slot.familia_codigo} · ` : ''}${slot.convivente_nome}`;
+                return (
+                  <td key={`${dia}-${hora}`} className="p-0">
+                    <div
+                      draggable={agendado && !travada}
+                      onDragStart={(event) => {
+                        if (!agendado || travada) return;
+                        event.dataTransfer.setData('text/plain', JSON.stringify({
+                          convivente_id: slot.convivente_id,
+                          convivente_nome: slot.convivente_nome,
+                          inicio: slot.inicio,
+                        }));
+                        event.dataTransfer.effectAllowed = 'move';
+                      }}
+                      onDragOver={(event) => {
+                        if (travada || !livre) return;
+                        event.preventDefault();
+                            setSobreLivre(marca);
+                      }}
+                          onDragLeave={() => setSobreLivre((atual) => (atual === marca ? '' : atual))}
+                      onDrop={(event) => {
+                        event.preventDefault();
+                        setSobreLivre('');
+                        if (travada || !livre) return;
+                        try {
+                          const origem = JSON.parse(event.dataTransfer.getData('text/plain') || '{}');
+                          pedirMudanca(origem, slot.inicio);
+                        } catch {
+                          setErro('Não foi possível ler o horário arrastado.');
+                        }
+                      }}
+                      onClick={() => {
+                        if (travada) {
+                          if (livre) setErro('A secagem entra sozinha no primeiro horário livre depois da lavagem.');
+                          return;
+                        }
+                        if (livre && !salvando) pedirAgendamento(slot);
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' && livre && !salvando && !travada) pedirAgendamento(slot);
+                      }}
+                      role="button"
+                      tabIndex={emUso ? -1 : 0}
+                      className={`min-h-14 w-full rounded-lg border px-2 py-1 text-left text-[11px] font-semibold leading-snug ${emUso || travada ? 'cursor-default' : 'cursor-pointer'} ${classe}`}
+                      title={travada ? 'A secagem acompanha a lavagem' : livre ? `Marcar ${hora}` : agendado ? 'Arraste para mudar ou cancele se a pessoa desistiu' : texto}
+                    >
+                      <span className="block">{emUso ? `Em uso · ${texto}` : texto}</span>
+                      {agendado && (
+                        <button
+                          type="button"
+                          disabled={salvando}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            pedirCancelamento(slot);
+                          }}
+                          className="mt-1 text-[11px] font-black text-red-700 underline"
+                        >
+                          Cancelar
+                        </button>
+                      )}
+                    </div>
+                  </td>
+                );
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
 }
 
 function ListaAgendamentos({
@@ -129,7 +269,11 @@ function ListaAgendamentos({
   onExportar,
   onImprimir,
   onCancelar,
+  mostrarMaquina,
 }) {
+  const colunas = mostrarMaquina
+    ? [{ id: 'maquina_rotulo', rotulo: 'Máquina' }, ...COLUNAS_LISTA]
+    : COLUNAS_LISTA;
   const [ordem, setOrdem] = useState(ordemInicial);
   const [pagina, setPagina] = useState(1);
 
@@ -172,7 +316,7 @@ function ListaAgendamentos({
             <table className="w-full min-w-[640px] text-left text-sm">
               <thead>
                 <tr className="border-b border-slate-100 text-xs font-bold uppercase text-slate-500">
-                  {COLUNAS_LISTA.map((coluna) => {
+                  {colunas.map((coluna) => {
                     const ativo = ordem.coluna === coluna.id;
                     return (
                       <th key={coluna.id} className="px-2 py-2">
@@ -200,6 +344,7 @@ function ListaAgendamentos({
               <tbody>
                 {paginaAtual.map((item) => (
                   <tr key={item.id} className="border-b border-slate-50">
+                    {mostrarMaquina && <td className="px-2 py-2">{item.maquina_rotulo || '—'}</td>}
                     <td className="px-2 py-2 font-semibold text-slate-800">{item.convivente_nome}</td>
                     <td className="px-2 py-2">{item.familia_codigo || '—'}</td>
                     <td className="px-2 py-2">{item.prontuario ?? '—'}</td>
@@ -257,6 +402,7 @@ function ListaAgendamentos({
 export default function PariLavanderia() {
   const [inicioFaixa, setInicioFaixa] = useState(hojeISO);
   const [agenda, setAgenda] = useState([]);
+  const [modelo, setModelo] = useState('conjunto');
   const [confirmados, setConfirmados] = useState([]);
   const [realizados, setRealizados] = useState([]);
   const [identidadeRelatorio, setIdentidadeRelatorio] = useState(null);
@@ -282,6 +428,7 @@ export default function PariLavanderia() {
       api.get('/api/conviventes/resumo', { params: { status: 'Ativo' } }),
     ]);
     setAgenda(lista.data?.agenda || []);
+    setModelo(lista.data?.modelo || 'conjunto');
     setConfirmados(registros.data?.confirmados || []);
     setRealizados(registros.data?.realizados || []);
     setConviventes(resumo.data || []);
@@ -311,22 +458,7 @@ export default function PariLavanderia() {
     return lista;
   }, [daMaquina]);
 
-  const horarios = useMemo(() => {
-    const lista = [];
-    daMaquina.forEach((slot) => {
-      const { data, hora } = partesIso(slot.inicio);
-      if (data === dias[0] && hora && !lista.includes(hora)) lista.push(hora);
-    });
-    return lista;
-  }, [daMaquina, dias]);
-
-  const porChave = useMemo(() => {
-    const mapa = {};
-    daMaquina.forEach((slot) => {
-      mapa[slot.inicio] = slot;
-    });
-    return mapa;
-  }, [daMaquina]);
+  const separado = modelo === 'separado';
 
   const reservar = useCallback(async (convivente, inicio) => {
     setSalvando(true);
@@ -365,9 +497,11 @@ export default function PariLavanderia() {
       convivente: escolhido,
       inicio: slot.inicio,
       titulo: 'Confirmar agendamento',
-      mensagem: `Marcar ${nomePessoa(escolhido)} em ${rotuloQuando(slot.inicio)}?`,
+      mensagem: modelo === 'separado'
+        ? `Marcar a lavagem de ${nomePessoa(escolhido)} em ${rotuloQuando(slot.inicio)}? A secagem entra no primeiro horário livre depois dessa lavagem.`
+        : `Marcar ${nomePessoa(escolhido)} em ${rotuloQuando(slot.inicio)}?`,
     });
-  }, [daMaquina, escolhido]);
+  }, [daMaquina, escolhido, modelo]);
 
   const cancelar = useCallback(async (agendaId) => {
     setSalvando(true);
@@ -392,9 +526,11 @@ export default function PariLavanderia() {
       tipo: 'cancelar',
       id: slot.id,
       titulo: 'Cancelar agendamento',
-      mensagem: `Cancelar ${slot.convivente_nome} em ${rotuloQuando(slot.inicio)}? O horário volta a ficar livre.`,
+      mensagem: modelo === 'separado'
+        ? `Cancelar ${slot.convivente_nome} em ${rotuloQuando(slot.inicio)}? A lavagem e a secagem desse par voltam a ficar livres.`
+        : `Cancelar ${slot.convivente_nome} em ${rotuloQuando(slot.inicio)}? O horário volta a ficar livre.`,
     });
-  }, []);
+  }, [modelo]);
 
   const pedirMudanca = useCallback((origem, destinoInicio) => {
     if (!origem?.convivente_id || !destinoInicio || origem.inicio === destinoInicio) return;
@@ -404,9 +540,11 @@ export default function PariLavanderia() {
       convivente: { id: origem.convivente_id, nome_completo: origem.convivente_nome },
       inicio: destinoInicio,
       titulo: 'Mudar horário',
-      mensagem: `Deseja mesmo mudar ${origem.convivente_nome} de ${rotuloQuando(origem.inicio)} para ${rotuloQuando(destinoInicio)}?`,
+      mensagem: modelo === 'separado'
+        ? `Mudar a lavagem de ${origem.convivente_nome} de ${rotuloQuando(origem.inicio)} para ${rotuloQuando(destinoInicio)}? A secagem é recalculada.`
+        : `Deseja mesmo mudar ${origem.convivente_nome} de ${rotuloQuando(origem.inicio)} para ${rotuloQuando(destinoInicio)}?`,
     });
-  }, []);
+  }, [modelo]);
 
   const lerCodigo = useCallback((lido) => {
     const convivente = encontrarConviventePorCodigo(conviventes, lido);
@@ -431,8 +569,8 @@ export default function PariLavanderia() {
         Até: dataBr(periodoFim) || '—',
         Total: lista.length,
       },
-      colunas: ROTULOS_LISTA,
-      dados: linhasRelatorio(lista),
+      colunas: separado ? ['Máquina', ...ROTULOS_LISTA] : ROTULOS_LISTA,
+      dados: linhasRelatorio(lista, separado),
     });
   };
 
@@ -441,8 +579,8 @@ export default function PariLavanderia() {
     imprimirRelatorio({
       titulo,
       subtitulo: `Período: ${dataBr(periodoInicio) || '—'} a ${dataBr(periodoFim) || '—'} · ${lista.length} registro(s)`,
-      colunas: ROTULOS_LISTA,
-      dados: linhasRelatorio(lista),
+      colunas: separado ? ['Máquina', ...ROTULOS_LISTA] : ROTULOS_LISTA,
+      dados: linhasRelatorio(lista, separado),
       identidade: {
         ...(identidadeRelatorio || {}),
         logo_src: logoRelatorioDataUrl,
@@ -460,7 +598,9 @@ export default function PariLavanderia() {
         <PageHeader
           eyebrow="Rotina Diária"
           title="Lavanderia OMO"
-          subtitle="Cada horário de 1h30 vale para lavar e secar juntas. Verde está livre, âmbar está ocupado. Cancele o agendamento se a pessoa desistir: a vaga volta a ficar livre."
+          subtitle={separado
+            ? 'Lavagem e secagem são grades de 45 minutos, das 7h às 12h e das 14h às 18h. Clique na lavagem; a secagem entra no primeiro horário livre depois. Cancelar um dos dois cancela o par.'
+            : 'Cada horário de 1h30 vale para lavar e secar juntas. Verde está livre, âmbar está ocupado. Cancele o agendamento se a pessoa desistir: a vaga volta a ficar livre.'}
           icon="L"
         />
 
@@ -513,98 +653,47 @@ export default function PariLavanderia() {
         {mensagem && <p className="mb-4 rounded-xl bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-800">{mensagem}</p>}
         {erro && <p className="mb-4 rounded-xl bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">{erro}</p>}
 
-        <div className="overflow-x-auto rounded-2xl border border-slate-100 bg-white p-3 shadow-sm">
-          <table className="min-w-[760px] w-full border-separate border-spacing-1 text-left">
-            <thead>
-              <tr>
-                <th className="px-2 py-2 text-xs font-bold text-slate-500">1h30</th>
-                {dias.map((dia) => (
-                  <th key={dia} className="px-2 py-2 text-xs font-black capitalize text-slate-700">{rotuloDia(dia)}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {horarios.map((hora) => (
-                <tr key={hora}>
-                  <td className="whitespace-nowrap px-2 py-1 text-xs font-bold text-slate-600">{hora}</td>
-                  {dias.map((dia) => {
-                    const slot = porChave[`${dia}T${hora}`];
-                    const livre = !slot || slot.status === 'livre';
-                    const emUso = slot?.status === 'em_uso';
-                    const agendado = slot?.status === 'agendado';
-                    const emCima = sobreLivre === slot?.inicio;
-                    const classe = livre
-                      ? `bg-emerald-50 text-emerald-900 border-emerald-200 hover:bg-emerald-100 ${emCima ? 'ring-2 ring-emerald-500' : ''}`
-                      : emUso
-                        ? 'bg-blue-50 text-blue-900 border-blue-200'
-                        : 'bg-amber-50 text-amber-950 border-amber-200 cursor-grab';
-                    const texto = livre
-                      ? 'Livre'
-                      : `${slot.familia_codigo ? `${slot.familia_codigo} · ` : ''}${slot.convivente_nome}`;
-                    return (
-                      <td key={`${dia}-${hora}`} className="p-0">
-                        <div
-                          draggable={agendado}
-                          onDragStart={(event) => {
-                            if (!agendado) return;
-                            event.dataTransfer.setData('text/plain', JSON.stringify({
-                              convivente_id: slot.convivente_id,
-                              convivente_nome: slot.convivente_nome,
-                              inicio: slot.inicio,
-                            }));
-                            event.dataTransfer.effectAllowed = 'move';
-                          }}
-                          onDragOver={(event) => {
-                            if (!livre) return;
-                            event.preventDefault();
-                            setSobreLivre(slot.inicio);
-                          }}
-                          onDragLeave={() => setSobreLivre((atual) => (atual === slot?.inicio ? '' : atual))}
-                          onDrop={(event) => {
-                            event.preventDefault();
-                            setSobreLivre('');
-                            if (!livre) return;
-                            try {
-                              const origem = JSON.parse(event.dataTransfer.getData('text/plain') || '{}');
-                              pedirMudanca(origem, slot.inicio);
-                            } catch {
-                              setErro('Não foi possível ler o horário arrastado.');
-                            }
-                          }}
-                          onClick={() => {
-                            if (livre && !salvando) pedirAgendamento(slot);
-                          }}
-                          onKeyDown={(event) => {
-                            if (event.key === 'Enter' && livre && !salvando) pedirAgendamento(slot);
-                          }}
-                          role="button"
-                          tabIndex={emUso ? -1 : 0}
-                          className={`min-h-14 w-full rounded-lg border px-2 py-1 text-left text-[11px] font-semibold leading-snug ${emUso ? 'cursor-default' : 'cursor-pointer'} ${classe}`}
-                          title={livre ? `Marcar ${hora}` : agendado ? 'Arraste para mudar ou cancele se a pessoa desistiu' : texto}
-                        >
-                          <span className="block">{emUso ? `Em uso · ${texto}` : texto}</span>
-                          {agendado && (
-                            <button
-                              type="button"
-                              disabled={salvando}
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                pedirCancelamento(slot);
-                              }}
-                              className="mt-1 text-[11px] font-black text-red-700 underline"
-                            >
-                              Cancelar
-                            </button>
-                          )}
-                        </div>
-                      </td>
-                    );
-                  })}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        {separado ? (
+          <>
+            <GradeOmo
+              titulo="Lavagem"
+              duracao="45 min"
+              slots={agenda.filter((slot) => slot.maquina === 'lavar')}
+              salvando={salvando}
+              sobreLivre={sobreLivre}
+              setSobreLivre={setSobreLivre}
+              pedirAgendamento={pedirAgendamento}
+              pedirCancelamento={pedirCancelamento}
+              pedirMudanca={pedirMudanca}
+              setErro={setErro}
+            />
+            <GradeOmo
+              titulo="Secagem"
+              duracao="45 min"
+              slots={agenda.filter((slot) => slot.maquina === 'secar')}
+              salvando={salvando}
+              sobreLivre={sobreLivre}
+              setSobreLivre={setSobreLivre}
+              pedirAgendamento={pedirAgendamento}
+              pedirCancelamento={pedirCancelamento}
+              pedirMudanca={pedirMudanca}
+              setErro={setErro}
+              travada
+            />
+          </>
+        ) : (
+          <GradeOmo
+            duracao="1h30"
+            slots={agenda}
+            salvando={salvando}
+            sobreLivre={sobreLivre}
+            setSobreLivre={setSobreLivre}
+            pedirAgendamento={pedirAgendamento}
+            pedirCancelamento={pedirCancelamento}
+            pedirMudanca={pedirMudanca}
+            setErro={setErro}
+          />
+        )}
         <section className="mt-6 rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
           <div className="flex flex-wrap items-end gap-3">
             <label className="text-xs font-bold text-slate-600">
@@ -672,6 +761,7 @@ export default function PariLavanderia() {
             onExportar={(lista) => exportarLista('Agendamentos confirmados — Lavanderia OMO', lista, `lavanderia-confirmados-${hojeISO()}`)}
             onImprimir={(lista) => imprimirLista('Agendamentos confirmados — Lavanderia OMO', lista)}
             onCancelar={pedirCancelamento}
+            mostrarMaquina={separado}
           />
         )}
         {verRealizados && (
@@ -685,6 +775,7 @@ export default function PariLavanderia() {
             limite={limiteLista}
             onExportar={(lista) => exportarLista('Agendamentos realizados — Lavanderia OMO', lista, `lavanderia-realizados-${hojeISO()}`)}
             onImprimir={(lista) => imprimirLista('Agendamentos realizados — Lavanderia OMO', lista)}
+            mostrarMaquina={separado}
           />
         )}
         {confirmacao && (

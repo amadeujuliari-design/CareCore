@@ -11,15 +11,24 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from config_operacional_projeto import projeto_e_reencontro_pari
+from config_operacional_projeto import projeto_e_cruzeiro_do_sul, projeto_e_reencontro_pari
 from database import get_db
 from kit_higiene_pari import (
+    COMPLEMENTOS_CRUZEIRO,
     PERFIS_PADRAO,
     SEXOS_PERFIL,
     descricao_faixa,
     faixa_cruza,
     montar_kit,
     normalizar_sexo,
+    papel_do_perfil,
+)
+from lavanderia_cruzeiro import (
+    MAQUINA_LAVAR,
+    MAQUINA_SECAR,
+    eh_slot_lavagem,
+    proxima_secagem,
+    slots_do_dia as slots_cruzeiro,
 )
 from models import (
     ConviventeDB,
@@ -41,6 +50,8 @@ class PerfilUpdate(BaseModel):
     idade_min: int = Field(ge=0, le=120)
     idade_max: int | None = Field(default=None, ge=0, le=120)
     sexo: str
+    idade_min_meses: int | None = Field(default=None, ge=0, le=1440)
+    idade_max_meses: int | None = Field(default=None, ge=0, le=1440)
 
 
 INICIOS_LAVANDERIA = (
@@ -64,6 +75,8 @@ MAQUINA_CONJUNTO = "conjunto"
 class NomeCreate(BaseModel):
     nome: str = Field(min_length=2, max_length=80)
     descricao: str = ""
+    papel: str = "base"
+    gatilho: str = "idade"
 
 
 class RegraCreate(BaseModel):
@@ -79,6 +92,7 @@ class EntregaCreate(BaseModel):
 class MembroKitUpdate(BaseModel):
     data_nascimento: date | None = None
     sexo: str = ""
+    menstrua: bool | None = None
 
 
 class LeituraLavanderia(BaseModel):
@@ -115,6 +129,10 @@ def _perfil_dict(tipo: TipoIndividuoHigieneDB) -> dict:
         "sexo": tipo.sexo or "",
         "ativo": bool(tipo.ativo),
         "ordem": tipo.ordem or 0,
+        "papel": papel_do_perfil({"papel": getattr(tipo, "papel", None)}),
+        "gatilho": getattr(tipo, "gatilho", None) or "idade",
+        "idade_min_meses": getattr(tipo, "idade_min_meses", None),
+        "idade_max_meses": getattr(tipo, "idade_max_meses", None),
     }
 
 
@@ -123,6 +141,7 @@ def _pessoa_kit(membro: ConviventeDB) -> dict:
         "nome": membro.nome_social or membro.nome_completo,
         "nascimento": membro.data_nascimento,
         "sexo": membro.sexo or membro.identidade_genero,
+        "menstrua": bool(getattr(membro, "kit_menstrua", False)),
     }
 
 
@@ -180,6 +199,74 @@ async def _alinhar_perfis(db: AsyncSession, instituicao_id: str) -> None:
             atual.ordem = padrao["ordem"]
             atual.ativo = True
             atual.descricao = descricao_faixa(padrao["idade_min"], padrao["idade_max"], padrao["sexo"])
+    await db.commit()
+
+
+async def _alinhar_complementos_cruzeiro(db: AsyncSession, instituicao_id: str) -> None:
+    tipos = (
+        await db.execute(
+            select(TipoIndividuoHigieneDB).where(TipoIndividuoHigieneDB.instituicao_id == instituicao_id)
+        )
+    ).scalars().all()
+    itens = (
+        await db.execute(select(ItemHigieneDB).where(ItemHigieneDB.instituicao_id == instituicao_id))
+    ).scalars().all()
+    por_nome = {tipo.nome.casefold(): tipo for tipo in tipos}
+    item_por_nome = {item.nome.casefold(): item for item in itens}
+    for padrao in COMPLEMENTOS_CRUZEIRO:
+        atual = por_nome.get(padrao["nome"].casefold())
+        criado_agora = atual is None
+        if atual is None:
+            atual = TipoIndividuoHigieneDB(
+                instituicao_id=instituicao_id,
+                nome=padrao["nome"],
+                descricao=padrao["descricao"],
+                ordem=padrao["ordem"],
+                ativo=True,
+                idade_min=0,
+                idade_max=None,
+                sexo=padrao["sexo"],
+                papel="complemento",
+                gatilho=padrao["gatilho"],
+                idade_min_meses=padrao["idade_min_meses"],
+                idade_max_meses=padrao["idade_max_meses"],
+            )
+            db.add(atual)
+            await db.flush()
+            por_nome[padrao["nome"].casefold()] = atual
+        elif (atual.papel or "base") != "complemento":
+            atual.papel = "complemento"
+            atual.gatilho = padrao["gatilho"]
+            atual.sexo = padrao["sexo"]
+            atual.descricao = padrao["descricao"]
+            atual.idade_min_meses = padrao["idade_min_meses"]
+            atual.idade_max_meses = padrao["idade_max_meses"]
+            atual.ativo = True
+        item = item_por_nome.get(padrao["item"].casefold())
+        if item is None:
+            item = ItemHigieneDB(instituicao_id=instituicao_id, nome=padrao["item"], ativo=True)
+            db.add(item)
+            await db.flush()
+            item_por_nome[padrao["item"].casefold()] = item
+        if not criado_agora:
+            continue
+        regra = (
+            await db.execute(
+                select(KitHigieneRegraDB).where(
+                    KitHigieneRegraDB.item_id == item.id,
+                    KitHigieneRegraDB.tipo_id == atual.id,
+                )
+            )
+        ).scalar_one_or_none()
+        if regra is None:
+            db.add(
+                KitHigieneRegraDB(
+                    instituicao_id=instituicao_id,
+                    item_id=item.id,
+                    tipo_id=atual.id,
+                    quantidade=1,
+                )
+            )
     await db.commit()
 
 
@@ -291,7 +378,10 @@ async def obter_kit(
     usuario_atual: dict = Depends(get_usuario_logado),
 ):
     instituicao_id = await _exigir_pari(db, usuario_atual)
+    projeto = await db.get(InstituicaoDB, instituicao_id)
     await _alinhar_perfis(db, instituicao_id)
+    if projeto_e_cruzeiro_do_sul(projeto):
+        await _alinhar_complementos_cruzeiro(db, instituicao_id)
     tipos = (
         await db.execute(
             select(TipoIndividuoHigieneDB)
@@ -333,9 +423,14 @@ async def obter_kit(
                 "idade_max": tipo.idade_max,
                 "sexo": tipo.sexo or "qualquer",
                 "ordem": tipo.ordem or 0,
+                "papel": papel_do_perfil(_perfil_dict(tipo)),
+                "gatilho": getattr(tipo, "gatilho", None) or "idade",
+                "idade_min_meses": getattr(tipo, "idade_min_meses", None),
+                "idade_max_meses": getattr(tipo, "idade_max_meses", None),
             }
             for tipo in tipos
         ],
+        "modelo": "cruzeiro" if projeto_e_cruzeiro_do_sul(projeto) else "pari",
         "itens": [
             {"id": item.id, "nome": item.nome, "ativo": bool(item.ativo)}
             for item in itens
@@ -370,13 +465,27 @@ async def criar_tipo(
     usuario_atual: dict = Depends(get_usuario_logado),
 ):
     instituicao_id = await _exigir_pari(db, usuario_atual)
+    projeto = await db.get(InstituicaoDB, instituicao_id)
+    papel = (payload.papel or "base").strip().casefold()
+    gatilho = (payload.gatilho or "idade").strip().casefold()
+    if papel not in {"base", "complemento"} or gatilho not in {"idade", "flag"}:
+        raise HTTPException(status_code=400, detail="Perfil inválido.")
+    if papel == "complemento" and not projeto_e_cruzeiro_do_sul(projeto):
+        raise HTTPException(status_code=400, detail="Complemento de kit existe só no Cruzeiro do Sul.")
     db.add(
         TipoIndividuoHigieneDB(
             instituicao_id=instituicao_id,
             nome=payload.nome.strip(),
-            descricao=payload.descricao.strip() or None,
-            ordem=50,
+            descricao=(
+                payload.descricao.strip()
+                or ("A partir da primeira menstruação" if gatilho == "flag" else "Defina a faixa em meses")
+            ),
+            ordem=50 if papel == "complemento" else 40,
             ativo=True,
+            idade_min=0 if papel == "complemento" else None,
+            sexo="feminino" if papel == "complemento" and gatilho == "flag" else "qualquer",
+            papel=papel,
+            gatilho=gatilho if papel == "complemento" else "idade",
         )
     )
     try:
@@ -480,6 +589,7 @@ async def _previa_familia(db: AsyncSession, instituicao_id: str, convivente_id: 
         )
     ).scalars().all()
     hoje = agora_operacional_naive().date()
+    projeto = await db.get(InstituicaoDB, instituicao_id)
     previa = montar_kit(
         [_pessoa_kit(membro) for membro in membros],
         [_perfil_dict(tipo) for tipo in tipos],
@@ -489,6 +599,7 @@ async def _previa_familia(db: AsyncSession, instituicao_id: str, convivente_id: 
         ],
         [{"id": item.id, "nome": item.nome, "ativo": bool(item.ativo)} for item in itens],
         hoje,
+        somar_complementos=projeto_e_cruzeiro_do_sul(projeto),
     )
     competencia = hoje.strftime("%Y-%m")
     ja_entregue = (
@@ -511,6 +622,7 @@ async def _previa_familia(db: AsyncSession, instituicao_id: str, convivente_id: 
                 "nome": membro.nome_social or membro.nome_completo,
                 "nascimento": membro.data_nascimento.isoformat() if membro.data_nascimento else None,
                 "sexo": normalizar_sexo(membro.sexo or membro.identidade_genero) or "",
+                "menstrua": bool(getattr(membro, "kit_menstrua", False)),
             }
             for membro in sorted(
                 membros,
@@ -537,28 +649,43 @@ async def atualizar_tipo(
         raise HTTPException(status_code=400, detail="Sexo do perfil inválido.")
     if payload.idade_max is not None and payload.idade_max < payload.idade_min:
         raise HTTPException(status_code=400, detail="A idade final precisa ser igual ou maior que a inicial.")
-    outros = (
-        await db.execute(
-            select(TipoIndividuoHigieneDB).where(
-                TipoIndividuoHigieneDB.instituicao_id == instituicao_id,
-                TipoIndividuoHigieneDB.id != tipo.id,
-                TipoIndividuoHigieneDB.ativo.is_(True),
+    if (
+        payload.idade_max_meses is not None
+        and payload.idade_min_meses is not None
+        and payload.idade_max_meses < payload.idade_min_meses
+    ):
+        raise HTTPException(status_code=400, detail="A faixa em meses precisa terminar depois do início.")
+    eh_complemento = papel_do_perfil(_perfil_dict(tipo)) == "complemento"
+    if not eh_complemento:
+        outros = (
+            await db.execute(
+                select(TipoIndividuoHigieneDB).where(
+                    TipoIndividuoHigieneDB.instituicao_id == instituicao_id,
+                    TipoIndividuoHigieneDB.id != tipo.id,
+                    TipoIndividuoHigieneDB.ativo.is_(True),
+                )
             )
-        )
-    ).scalars().all()
-    proposta = {
-        "idade_min": payload.idade_min,
-        "idade_max": payload.idade_max,
-        "sexo": sexo,
-        "ativo": True,
-    }
-    for outro in outros:
-        if faixa_cruza(proposta, _perfil_dict(outro)):
-            raise HTTPException(status_code=400, detail=f"Essa faixa cruza com {outro.nome}.")
+        ).scalars().all()
+        proposta = {
+            "idade_min": payload.idade_min,
+            "idade_max": payload.idade_max,
+            "sexo": sexo,
+            "ativo": True,
+        }
+        for outro in outros:
+            if papel_do_perfil(_perfil_dict(outro)) == "complemento":
+                continue
+            if faixa_cruza(proposta, _perfil_dict(outro)):
+                raise HTTPException(status_code=400, detail=f"Essa faixa cruza com {outro.nome}.")
     tipo.idade_min = payload.idade_min
     tipo.idade_max = payload.idade_max
     tipo.sexo = sexo
-    tipo.descricao = descricao_faixa(payload.idade_min, payload.idade_max, sexo)
+    if eh_complemento and (tipo.gatilho or "idade") == "idade" and payload.idade_min_meses is not None:
+        tipo.idade_min_meses = payload.idade_min_meses
+        tipo.idade_max_meses = payload.idade_max_meses
+        tipo.descricao = f"De {payload.idade_min_meses} a {payload.idade_max_meses if payload.idade_max_meses is not None else '…'} meses"
+    elif not eh_complemento:
+        tipo.descricao = descricao_faixa(payload.idade_min, payload.idade_max, sexo)
     await db.commit()
     return {"status": "ok", "descricao": tipo.descricao}
 
@@ -583,6 +710,8 @@ async def atualizar_membro_kit(
         sexo = None
     convivente.data_nascimento = payload.data_nascimento
     convivente.sexo = sexo
+    if payload.menstrua is not None:
+        convivente.kit_menstrua = bool(payload.menstrua)
     await db.commit()
     previa, _convivente = await _previa_familia(db, instituicao_id, convivente.id)
     return previa
@@ -653,7 +782,9 @@ async def listar_agenda(
     usuario_atual: dict = Depends(get_usuario_logado),
 ):
     instituicao_id = await _exigir_pari(db, usuario_atual)
-    await _unificar_maquinas(db, instituicao_id)
+    cruzeiro = projeto_e_cruzeiro_do_sul(await db.get(InstituicaoDB, instituicao_id))
+    if not cruzeiro:
+        await _unificar_maquinas(db, instituicao_id)
     agora = agora_operacional_naive()
     try:
         dia = datetime.strptime(data, "%Y-%m-%d").date() if data else agora.date()
@@ -689,25 +820,33 @@ async def listar_agenda(
         for registro, convivente_id, nome, codigo in registros
     }
     agenda = []
+    maquinas = (MAQUINA_LAVAR, MAQUINA_SECAR) if cruzeiro else (MAQUINA_CONJUNTO,)
+    grade = slots_cruzeiro if cruzeiro else _slots_do_dia
     for deslocamento in range(dias):
         dia_slot = dia + timedelta(days=deslocamento)
-        for inicio, fim in _slots_do_dia(dia_slot):
-            chave = (MAQUINA_CONJUNTO, inicio)
-            agenda.append(
-                ocupados.get(
-                    chave,
-                    {
-                        "maquina": MAQUINA_CONJUNTO,
-                        "inicio": _iso(inicio),
-                        "fim": _iso(fim),
-                        "status": "livre",
-                        "convivente_id": "",
-                        "convivente_nome": "",
-                        "familia_codigo": "",
-                    },
+        for maquina in maquinas:
+            for inicio, fim in grade(dia_slot):
+                chave = (maquina, inicio)
+                agenda.append(
+                    ocupados.get(
+                        chave,
+                        {
+                            "maquina": maquina,
+                            "inicio": _iso(inicio),
+                            "fim": _iso(fim),
+                            "status": "livre",
+                            "convivente_id": "",
+                            "convivente_nome": "",
+                            "familia_codigo": "",
+                        },
+                    )
                 )
-            )
-    return {"data": dia.isoformat(), "dias": dias, "agenda": agenda}
+    return {
+        "data": dia.isoformat(),
+        "dias": dias,
+        "modelo": "separado" if cruzeiro else "conjunto",
+        "agenda": agenda,
+    }
 
 
 @router.get("/lavanderia/registros")
@@ -716,7 +855,10 @@ async def listar_registros_lavanderia(
     usuario_atual: dict = Depends(get_usuario_logado),
 ):
     instituicao_id = await _exigir_pari(db, usuario_atual)
-    await _unificar_maquinas(db, instituicao_id)
+    cruzeiro = projeto_e_cruzeiro_do_sul(await db.get(InstituicaoDB, instituicao_id))
+    if not cruzeiro:
+        await _unificar_maquinas(db, instituicao_id)
+    maquinas = (MAQUINA_LAVAR, MAQUINA_SECAR) if cruzeiro else (MAQUINA_CONJUNTO,)
     linhas = (
         await db.execute(
             select(
@@ -730,7 +872,7 @@ async def listar_registros_lavanderia(
             .outerjoin(FamiliaConviventeDB, FamiliaConviventeDB.id == ConviventeDB.familia_id)
             .where(
                 LavanderiaAgendaDB.instituicao_id == instituicao_id,
-                LavanderiaAgendaDB.maquina == MAQUINA_CONJUNTO,
+                LavanderiaAgendaDB.maquina.in_(maquinas),
                 LavanderiaAgendaDB.status.in_(("agendado", "em_uso")),
             )
             .order_by(LavanderiaAgendaDB.inicio)
@@ -747,6 +889,7 @@ async def listar_registros_lavanderia(
             "inicio": _iso(registro.inicio),
             "fim": _iso(registro.fim),
             "liberado_em": _iso(registro.liberado_em),
+            "maquina_rotulo": {"lavar": "Lavar", "secar": "Secar"}.get(registro.maquina, ""),
         }
         if registro.status == "em_uso":
             realizados.append(item)
@@ -768,8 +911,157 @@ async def cancelar_agendamento(
     if registro.status != "agendado":
         raise HTTPException(status_code=400, detail="Só é possível cancelar um horário que ainda está agendado.")
     registro.status = "cancelado"
+    if projeto_e_cruzeiro_do_sul(await db.get(InstituicaoDB, instituicao_id)):
+        par = await _par_lavanderia_cruzeiro(db, registro)
+        if par:
+            par.status = "cancelado"
     await db.commit()
     return {"status": "ok", "mensagem": "Horário cancelado. A vaga voltou a ficar livre."}
+
+
+async def _par_lavanderia_cruzeiro(db: AsyncSession, registro: LavanderiaAgendaDB):
+    outros = (
+        await db.execute(
+            select(LavanderiaAgendaDB).where(
+                LavanderiaAgendaDB.instituicao_id == registro.instituicao_id,
+                LavanderiaAgendaDB.convivente_id == registro.convivente_id,
+                LavanderiaAgendaDB.status == "agendado",
+                LavanderiaAgendaDB.id != registro.id,
+            )
+        )
+    ).scalars().all()
+    if registro.maquina == MAQUINA_LAVAR:
+        candidatos = [item for item in outros if item.maquina == MAQUINA_SECAR and item.inicio >= registro.fim]
+        return min(candidatos, key=lambda item: item.inicio, default=None)
+    if registro.maquina == MAQUINA_SECAR:
+        candidatos = [item for item in outros if item.maquina == MAQUINA_LAVAR and item.fim <= registro.inicio]
+        return max(candidatos, key=lambda item: item.fim, default=None)
+    return None
+
+
+async def _ler_lavanderia_cruzeiro(db: AsyncSession, instituicao_id: str, payload: LeituraLavanderia):
+    convivente = await _convivente_pari(db, instituicao_id, payload.convivente_id)
+    if convivente.status != "Ativo":
+        raise HTTPException(status_code=400, detail="Somente convivente ativo usa a lavanderia.")
+    agora = agora_operacional_naive()
+    inicio_pedido = _parse_inicio_agenda(payload.inicio) if payload.inicio else None
+    if inicio_pedido and inicio_pedido < agora - timedelta(minutes=2):
+        raise HTTPException(status_code=400, detail="Esse horário já passou.")
+    if inicio_pedido and not eh_slot_lavagem(inicio_pedido):
+        raise HTTPException(status_code=400, detail="Escolha um horário da grade de lavagem.")
+    vigentes = (
+        await db.execute(
+            select(LavanderiaAgendaDB).where(
+                LavanderiaAgendaDB.instituicao_id == instituicao_id,
+                LavanderiaAgendaDB.convivente_id == convivente.id,
+                LavanderiaAgendaDB.maquina.in_((MAQUINA_LAVAR, MAQUINA_SECAR)),
+                LavanderiaAgendaDB.status == "agendado",
+                LavanderiaAgendaDB.fim > agora,
+            )
+        )
+    ).scalars().all()
+    em_curso = [item for item in vigentes if item.inicio <= agora]
+    if em_curso and (inicio_pedido is None or any(item.inicio == inicio_pedido for item in em_curso)):
+        alvo = next(item for item in em_curso if inicio_pedido is None or item.inicio == inicio_pedido)
+        alvo.status = "em_uso"
+        alvo.liberado_em = agora
+        await db.commit()
+        etapa = "Lavagem" if alvo.maquina == MAQUINA_LAVAR else "Secagem"
+        return {
+            "acao": "liberado",
+            "mensagem": f"{etapa} liberada até {_iso(alvo.fim)[-5:]}.",
+            "inicio": _iso(alvo.inicio),
+            "fim": _iso(alvo.fim),
+            "maquina": alvo.maquina,
+        }
+    lavagem = next((item for item in vigentes if item.maquina == MAQUINA_LAVAR), None)
+    if lavagem and (inicio_pedido is None or inicio_pedido == lavagem.inicio):
+        secagem = next((item for item in vigentes if item.maquina == MAQUINA_SECAR), None)
+        texto_seco = f" Secagem às {_iso(secagem.inicio)[-5:]}." if secagem else ""
+        return {
+            "acao": "agendado",
+            "mensagem": f"Lavagem já marcada às {_iso(lavagem.inicio)[-5:]}.{texto_seco}",
+            "inicio": _iso(lavagem.inicio),
+            "fim": _iso(lavagem.fim),
+            "maquina": MAQUINA_LAVAR,
+        }
+    for item in list(vigentes):
+        await db.delete(item)
+    if vigentes:
+        await db.flush()
+    expirados = (
+        await db.execute(
+            select(LavanderiaAgendaDB).where(
+                LavanderiaAgendaDB.instituicao_id == instituicao_id,
+                LavanderiaAgendaDB.convivente_id == convivente.id,
+                LavanderiaAgendaDB.status == "agendado",
+                LavanderiaAgendaDB.fim <= agora,
+            )
+        )
+    ).scalars().all()
+    for expirado in expirados:
+        expirado.status = "perdido"
+    if inicio_pedido:
+        inicio = inicio_pedido
+        fim = inicio + timedelta(minutes=45)
+    else:
+        limite = agora - timedelta(minutes=2)
+        escolhido = None
+        for deslocamento in range(15):
+            dia = (agora + timedelta(days=deslocamento)).date()
+            ocupados = set(
+                (
+                    await db.execute(
+                        select(LavanderiaAgendaDB.inicio).where(
+                            LavanderiaAgendaDB.instituicao_id == instituicao_id,
+                            LavanderiaAgendaDB.maquina == MAQUINA_LAVAR,
+                            LavanderiaAgendaDB.status.in_(("agendado", "em_uso")),
+                            LavanderiaAgendaDB.inicio >= datetime.combine(dia, time.min),
+                            LavanderiaAgendaDB.inicio < datetime.combine(dia, time.min) + timedelta(days=1),
+                        )
+                    )
+                ).scalars().all()
+            )
+            for marca, fim_slot in slots_cruzeiro(dia):
+                if marca < limite or marca in ocupados:
+                    continue
+                escolhido = (marca, fim_slot)
+                break
+            if escolhido:
+                break
+        if not escolhido:
+            raise HTTPException(status_code=400, detail="Não há lavagem livre nas próximas duas semanas.")
+        inicio, fim = escolhido
+    ocupados_secar = set(
+        (
+            await db.execute(
+                select(LavanderiaAgendaDB.inicio).where(
+                    LavanderiaAgendaDB.instituicao_id == instituicao_id,
+                    LavanderiaAgendaDB.maquina == MAQUINA_SECAR,
+                    LavanderiaAgendaDB.status.in_(("agendado", "em_uso")),
+                    LavanderiaAgendaDB.inicio >= fim,
+                )
+            )
+        ).scalars().all()
+    )
+    seco = proxima_secagem(fim, ocupados_secar)
+    if not seco:
+        raise HTTPException(status_code=400, detail="Não há secagem livre nas próximas duas semanas.")
+    inicio_seco, fim_seco = seco
+    await _gravar_reserva(db, instituicao_id, MAQUINA_LAVAR, inicio, fim, convivente.id)
+    await _gravar_reserva(db, instituicao_id, MAQUINA_SECAR, inicio_seco, fim_seco, convivente.id)
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="Esse horário acabou de ser reservado. Leia de novo.")
+    return {
+        "acao": "agendado",
+        "mensagem": f"Lavagem às {_iso(inicio)[-5:]} e secagem às {_iso(inicio_seco)[-5:]}.",
+        "inicio": _iso(inicio),
+        "fim": _iso(fim_seco),
+        "maquina": MAQUINA_LAVAR,
+    }
 
 
 @router.post("/lavanderia/leitura")
@@ -779,6 +1071,8 @@ async def ler_lavanderia(
     usuario_atual: dict = Depends(get_usuario_logado),
 ):
     instituicao_id = await _exigir_pari(db, usuario_atual)
+    if projeto_e_cruzeiro_do_sul(await db.get(InstituicaoDB, instituicao_id)):
+        return await _ler_lavanderia_cruzeiro(db, instituicao_id, payload)
     await _unificar_maquinas(db, instituicao_id)
     maquina = MAQUINA_CONJUNTO
     convivente = await _convivente_pari(db, instituicao_id, payload.convivente_id)

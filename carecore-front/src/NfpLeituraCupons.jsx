@@ -14,6 +14,7 @@ import {
   nfpRegistrarLeituraCupom,
 } from './services/nfpService';
 import { erroApiNfp, opcoesAgentesCaptacao } from './utils/nfpCadastroUtils';
+import { captadorInicialDoProjeto } from './utils/nfpCaptadorInicial';
 import {
   deveIgnorarCupomNfpJaTratado,
   deveIgnorarLeituraCodigoRepetida,
@@ -21,7 +22,7 @@ import {
   registrarCupomNfpTratado,
 } from './utils/leituraCodigoUtils';
 import { decodificarPayloadJwt } from './utils/jwtUtils';
-import { usuarioEhAdmProducao, usuarioSomenteLeituraNfp } from './utils/rbacUtils';
+import { usuarioEhAdmProducao, usuarioSomenteLeituraNfp, vinculoEhSede } from './utils/rbacUtils';
 
 function chaveCurta(chave) {
   if (!chave || chave.length < 44) return chave || '—';
@@ -96,7 +97,10 @@ export default function NfpLeituraCupons() {
   }, []);
   const somenteLeitura = useMemo(() => usuarioSomenteLeituraNfp(sessao), [sessao]);
   const ehAdmProducao = useMemo(() => usuarioEhAdmProducao(sessao), [sessao]);
-  const [captador, setCaptador] = useState('SEDE AEB');
+  const projetoSessao = (sessao?.projeto_nome || '').trim();
+  const [captador, setCaptador] = useState(
+    projetoSessao && !vinculoEhSede(projetoSessao) ? projetoSessao : 'SEDE AEB',
+  );
   const [opcoesCaptador, setOpcoesCaptador] = useState([]);
   const [vinculoFixo, setVinculoFixo] = useState('');
   const [forcarVinculo, setForcarVinculo] = useState(ehAdmProducao);
@@ -203,7 +207,10 @@ export default function NfpLeituraCupons() {
             const ops = opcoesAgentesCaptacao(lista);
             setOpcoesCaptador(ops);
             if (!vinculo) {
-              if (ops.some((o) => o.value === 'SEDE AEB')) {
+              const doProjeto = captadorInicialDoProjeto(ops, sessao?.projeto_nome);
+              if (doProjeto) {
+                setCaptador(doProjeto);
+              } else if (ops.some((o) => o.value === 'SEDE AEB')) {
                 setCaptador('SEDE AEB');
               } else if (ops[0]?.value) {
                 setCaptador(ops[0].value);
@@ -226,7 +233,7 @@ export default function NfpLeituraCupons() {
     return () => {
       cancelado = true;
     };
-  }, [carregarLista, somenteLeitura, ehAdmProducao]);
+  }, [carregarLista, somenteLeitura, ehAdmProducao, sessao]);
 
   const temChecando = useMemo(
     () => itens.some((i) => String(i.status || '').toLowerCase() === 'checando'),

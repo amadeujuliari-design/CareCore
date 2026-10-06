@@ -516,6 +516,11 @@ async def lifespan(app: FastAPI):
                 "ALTER TABLE tipos_individuo_higiene ADD COLUMN idade_min INTEGER",
                 "ALTER TABLE tipos_individuo_higiene ADD COLUMN idade_max INTEGER",
                 "ALTER TABLE tipos_individuo_higiene ADD COLUMN sexo VARCHAR",
+                "ALTER TABLE tipos_individuo_higiene ADD COLUMN papel VARCHAR DEFAULT 'base'",
+                "ALTER TABLE tipos_individuo_higiene ADD COLUMN gatilho VARCHAR DEFAULT 'idade'",
+                "ALTER TABLE tipos_individuo_higiene ADD COLUMN idade_min_meses INTEGER",
+                "ALTER TABLE tipos_individuo_higiene ADD COLUMN idade_max_meses INTEGER",
+                "ALTER TABLE conviventes ADD COLUMN kit_menstrua BOOLEAN DEFAULT 0",
                 "ALTER TABLE itens_higiene ADD COLUMN ativo BOOLEAN DEFAULT 1",
                 "ALTER TABLE lavanderia_agenda ADD COLUMN liberado_em DATETIME",
             ):
