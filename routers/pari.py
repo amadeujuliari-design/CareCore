@@ -102,7 +102,7 @@ async def _exigir_pari(db: AsyncSession, usuario_atual: dict) -> str:
     instituicao_id = obter_instituicao_escopo(usuario_atual)
     projeto = await db.get(InstituicaoDB, instituicao_id)
     if not projeto_e_reencontro_pari(projeto):
-        raise HTTPException(status_code=404, detail="Recurso disponível apenas no Reencontro Pari.")
+        raise HTTPException(status_code=404, detail="Recurso disponível apenas nos projetos do modelo Reencontro Pari.")
     return instituicao_id
 
 

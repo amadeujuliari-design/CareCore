@@ -8,7 +8,13 @@ from models import InstituicaoDB
 
 _MARCADORES_SIAT = ("siat", "armenia")
 _MARCADORES_CASA_PORTO = ("casa porto",)
-_MARCADORES_REENCONTRO_PARI = ("reencontro pari",)
+# Mesmo menu e rotina do PARI. Não inclui outros nomes que só contenham "reencontro".
+_MARCADORES_REENCONTRO_PARI = (
+    "reencontro pari",
+    "reencontro anhangabau",
+    "reencontro cruzeiro do sul",
+    "reencontro jabaquara",
+)
 
 
 def _normalizar_texto_busca(valor: str | None) -> str:

@@ -479,7 +479,7 @@ Título **Resumo mensal**. Campos: **Mês de referência**, **Data inicial**, **
 
 **Casa Porto:** banner após 16h se houver conviventes dentro (texto fixo 16h — ver destaque no topo).
 
-**Reencontro Pari:** sem botões de Entrada/Saída, sem status Dentro/Saiu e sem totais de presentes na unidade. Fica alimentação e as interações do projeto.
+**Reencontro Pari:** sem botões de Entrada/Saída, sem status Dentro/Saiu e sem totais de presentes na unidade. Fica alimentação e as interações do projeto. O mesmo modelo vale para **REENCONTRO ANHANGABAÚ**, **REENCONTRO CRUZEIRO DO SUL** e **REENCONTRO JABAQUARA** (menu, rotina, lavanderia OMO e kit). O cadastro de cada projeto continua separado.
 
 ---
 
@@ -506,7 +506,7 @@ Título **Resumo mensal**. Campos: **Mês de referência**, **Data inicial**, **
 | --- | --- |
 | **Rota** | `/rotina/kit-higiene` |
 | **Arquivo** | `PariKitHigiene.jsx` |
-| **Menu** | Kit de higiene, só no Reencontro Pari |
+| **Menu** | Kit de higiene, no Reencontro Pari e nos projetos do mesmo modelo (Anhangabaú, Cruzeiro do Sul e Jabaquara) |
 
 **Retirada do kit:** primeiro bloco da tela. Busca por família ou pessoa, leitura de carteirinha ou prontuário. Cada pessoa da família tem nascimento, sexo e **Salvar idade**. **Registrar retirada** grava o kit do mês. A lista **Retiradas deste projeto** mostra as últimas famílias. A segunda retirada da mesma família no mês é recusada.
 
