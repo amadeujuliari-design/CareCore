@@ -21,7 +21,8 @@ def upgrade() -> None:
     inspector = sa.inspect(bind)
     tabelas = set(inspector.get_table_names())
     if "conviventes" in tabelas:
-        op.execute(sa.text("UPDATE conviventes SET kit_menstrua = 0 WHERE kit_menstrua IS NULL"))
+        falso = "0" if bind.dialect.name == "sqlite" else "false"
+        op.execute(sa.text(f"UPDATE conviventes SET kit_menstrua = {falso} WHERE kit_menstrua IS NULL"))
         with op.batch_alter_table("conviventes") as lote:
             lote.alter_column("kit_menstrua", existing_type=sa.Boolean(), nullable=False)
     if "tipos_individuo_higiene" in tabelas:
