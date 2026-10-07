@@ -928,6 +928,11 @@ STATUS_HORTIFRUTI_ENVIO_SUPRIMENTOS = frozenset({
 })
 
 
+def pode_reabrir_orcamento_aprovado(*, status: Optional[str], pedido_compra_enviado: bool) -> bool:
+    """Pedido aprovado que ainda não foi enviado ao fornecedor."""
+    return (status or "") == STATUS_APROVADO and not pedido_compra_enviado
+
+
 def hortifruti_aguardando_envio_suprimentos(tipo: Optional[str], status: Optional[str]) -> bool:
     return tipo_suprimentos_aprova_e_envia(tipo) and (status or "") in STATUS_HORTIFRUTI_ENVIO_SUPRIMENTOS
 

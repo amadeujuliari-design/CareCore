@@ -75,6 +75,7 @@ from compras_regras import (
     pedido_escopo_sede,
     pedido_itens_podem_editar,
     pedido_rascunho_pode_excluir,
+    pode_reabrir_orcamento_aprovado,
     tipo_eh_cotacao_projeto,
     tipo_suprimentos_aprova_e_envia,
     tipo_eh_cotacao_sede,
@@ -483,6 +484,10 @@ async def extras_serializacao_pedido(db: AsyncSession, pedido: ComprasPedidoDB) 
         "pedido_compra_anexo_id": pedido.pedido_compra_anexo_id,
         "email_pedido_compra_enviado": bool(email_pedido_ok and pedido.pedido_compra_anexo_id),
         "pode_reabrir": pedido.status in {STATUS_REPROVADO, STATUS_CANCELADO},
+        "pode_reabrir_aprovado": pode_reabrir_orcamento_aprovado(
+            status=pedido.status,
+            pedido_compra_enviado=bool(email_pedido_ok and pedido.pedido_compra_anexo_id),
+        ),
         "pode_excluir": pedido_rascunho_pode_excluir(
             status=pedido.status,
             qtd_cotacoes=len(cotacoes_todas),
@@ -900,6 +905,72 @@ async def reabrir_pedido(
         usuario_id=_uid(usuario),
         status_anterior=anterior_status,
         status_novo=novo,
+    )
+    return pedido
+
+
+async def reabrir_orcamento_aprovado(
+    db: AsyncSession,
+    usuario: dict,
+    pedido: ComprasPedidoDB,
+    motivo: str,
+) -> ComprasPedidoDB:
+    """A Sede desfaz a aprovação e devolve o pedido à escolha do orçamento vencedor."""
+    if not usuario_pode_aprovar_sede(
+        perfil=usuario.get("perfil"),
+        is_manutencao=bool(usuario.get("is_manutencao")),
+    ) or not usuario_sede_pode_ver_tipo(
+        perfil=usuario.get("perfil") or "",
+        tipo=pedido.tipo,
+        is_manutencao=bool(usuario.get("is_manutencao")),
+    ):
+        raise HTTPException(status_code=403, detail="Somente a Sede pode reabrir um orçamento aprovado.")
+    texto = (motivo or "").strip()
+    if not texto:
+        raise HTTPException(status_code=400, detail="Informe o motivo da reabertura.")
+    if pedido.status != STATUS_APROVADO:
+        raise HTTPException(
+            status_code=400,
+            detail="Só um pedido aprovado, ainda não enviado ao fornecedor, pode ser reaberto.",
+        )
+    eventos = await _eventos_pedido(db, pedido.id)
+    email_enviado = any(
+        evento.tipo == TIPO_EVENTO_EMAIL and (evento.texto or "").startswith("E-mail enviado para")
+        for evento in eventos
+    )
+    if email_enviado and pedido.pedido_compra_anexo_id:
+        raise HTTPException(
+            status_code=400,
+            detail="O pedido de compra já foi enviado ao fornecedor. Não é possível reabrir.",
+        )
+
+    cotacoes = await _cotacoes_ativas(db, pedido.id)
+    for cotacao in cotacoes:
+        cotacao.escolhida = False
+
+    anexos = await _anexos_pedido(db, pedido.id)
+    for anexo in anexos:
+        if anexo.tipo in {TIPO_ANEXO_ORCAMENTO_ASSINADO, TIPO_ANEXO_PEDIDO_PDF}:
+            anexo.ativo = False
+    pedido.pedido_compra_anexo_id = None
+    pedido.aprovado_unidade_por_id = None
+    pedido.aprovado_unidade_em = None
+    pedido.aprovado_sede_por_id = None
+    pedido.aprovado_sede_em = None
+    anterior = pedido.status
+    pedido.status = STATUS_AGUARDANDO_ESCOLHA
+    pedido.atualizado_em = agora_operacional_naive()
+    await registrar_evento_pedido(
+        db,
+        pedido_id=pedido.id,
+        tipo=TIPO_EVENTO_STATUS,
+        texto=(
+            f"Sede reabriu o orçamento aprovado. Motivo: {texto}. "
+            "O processo voltou para a escolha do orçamento vencedor e precisa de nova aprovação."
+        ),
+        usuario_id=_uid(usuario),
+        status_anterior=anterior,
+        status_novo=STATUS_AGUARDANDO_ESCOLHA,
     )
     return pedido
 

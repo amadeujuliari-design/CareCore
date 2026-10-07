@@ -70,6 +70,14 @@ def test_quem_escolheu_usa_o_registro_mais_recente():
     assert quem_registrou_escolha_vigente(["Pedido confirmado na timeline."]) is None
 
 
+def test_orcamento_aprovado_pode_ser_reaberto_antes_do_envio():
+    from compras_regras import pode_reabrir_orcamento_aprovado
+
+    assert pode_reabrir_orcamento_aprovado(status=STATUS_APROVADO, pedido_compra_enviado=False)
+    assert not pode_reabrir_orcamento_aprovado(status=STATUS_APROVADO, pedido_compra_enviado=True)
+    assert not pode_reabrir_orcamento_aprovado(status=STATUS_AGUARDANDO_ESCOLHA, pedido_compra_enviado=False)
+
+
 def test_sede_ao_escolher_consumo_ainda_aguarda_projeto():
     assert status_depois_de_escolher_cotacao(
         TIPO_CONSUMO,

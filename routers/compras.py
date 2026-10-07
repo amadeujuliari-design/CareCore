@@ -23,6 +23,7 @@ from compras_pedido_fluxo import (
     registrar_comunicacao_pedido,
     registrar_nota_fiscal,
     remover_nota_fiscal,
+    reabrir_orcamento_aprovado,
     reabrir_pedido,
     remover_anexo_pedido,
     reprovar_pedido,
@@ -185,6 +186,10 @@ class ComunicacaoIn(BaseModel):
 
 
 class ReprovarIn(BaseModel):
+    motivo: str
+
+
+class ReabrirAprovadoIn(BaseModel):
     motivo: str
 
 
@@ -1084,6 +1089,20 @@ async def post_reabrir(
     await _ctx(db, usuario_atual)
     pedido = await obter_pedido(db, usuario_atual, pedido_id)
     await reabrir_pedido(db, usuario_atual, pedido)
+    await db.commit()
+    return await serializar_pedido(db, pedido, incluir_detalhe=True, usuario=usuario_atual)
+
+
+@router.post("/pedidos/{pedido_id}/reabrir-aprovado")
+async def post_reabrir_aprovado(
+    pedido_id: str,
+    payload: ReabrirAprovadoIn,
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    await _ctx(db, usuario_atual)
+    pedido = await obter_pedido(db, usuario_atual, pedido_id)
+    await reabrir_orcamento_aprovado(db, usuario_atual, pedido, payload.motivo)
     await db.commit()
     return await serializar_pedido(db, pedido, incluir_detalhe=True, usuario=usuario_atual)
 

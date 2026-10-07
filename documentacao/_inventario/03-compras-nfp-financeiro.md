@@ -43,8 +43,9 @@ Tipos de novo pedido (`BOTOES_NOVO_PEDIDO` em `utils/comprasPedidoTipos.js`):
 2. Suprimentos (Sede) pede cotação por e-mail e **registra orçamentos** (valor + PDF) na ficha.
 3. Eventos na timeline com `aguardando_confirmacao` exigem botão **Ok** (confirmação explícita da outra parte).
 4. Projeto **escolhe** orçamento (`Escolher`). Essa escolha já deixa o pedido `aprovado`. Se a Sede escolhe, o status continua `aguardando_aprovacao_unidade` até o projeto **Aprovar orçamento**. Pedido em que o projeto já escolheu e o status ficou em aguardando unidade passa a `aprovado` ao abrir a lista ou a ficha.
-5. Suprimentos **Enviar pedido de compra por e-mail**.
-6. Projeto anexa NF (+ documentos extras) e **Encerrar processo (com NF anexada)**.
+5. Enquanto o pedido está `aprovado` e o e-mail de compra ainda não foi enviado, a Sede pode **Reabrir orçamento aprovado** (motivo obrigatório). A escolha vencedora e a aprovação são desfeitas e o pedido volta para `aguardando_escolha_orcamento`.
+6. Suprimentos **Enviar pedido de compra por e-mail**.
+7. Projeto anexa NF (+ documentos extras) e **Encerrar processo (com NF anexada)**.
 
 Hortifruti: seção **Cotações, Orçamentos ou Arquivos** com **Anexar arquivos**; Suprimentos pode **Aprovar e enviar ao fornecedor**.
 
@@ -253,6 +254,7 @@ Botões: Anexar NF · Encerrar processo (com NF anexada) · Visualizar · Baixar
 | Posicionar assinatura e aprovar (Sede) | cotação projeto na sede |
 | Enviar pedido de compra por e-mail | aprovado / pode enviar |
 | Reabrir processo | quando `podeReabrir` |
+| Reabrir orçamento aprovado | Sede + `aprovado` + pedido de compra ainda não enviado (motivo obrigatório) |
 | Excluir rascunho | `pedido.pode_excluir` |
 | Reprovar / Cancelar | não terminal (motivo via prompt) |
 | Voltar | sempre |

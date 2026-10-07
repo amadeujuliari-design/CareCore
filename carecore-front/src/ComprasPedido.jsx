@@ -43,6 +43,7 @@ import {
   comprasObterPedido,
   comprasReceber,
   comprasReabrir,
+  comprasReabrirAprovado,
   comprasRegistrarNotaFiscal,
   comprasRemoverNotaFiscal,
   comprasRemoverAnexo,
@@ -324,6 +325,7 @@ export default function ComprasPedido() {
     );
   const podeEncerrar = pedido.status === 'enviado_fornecedor' && (sede || (unidade && !pedidoSede));
   const podeReabrir = pedido.pode_reabrir && pedido.fechado_por_id === usuarioId;
+  const podeReabrirAprovado = sede && pedido.pode_reabrir_aprovado;
   const pedidoCompra = (pedido.anexos || []).find((a) => a.tipo === 'pedido_compra');
   const emailPedidoCompraEnviado = Boolean(pedido.email_pedido_compra_enviado);
   const consumoEscolhidoAguardandoEnvio = pedido.tipo === 'consumo'
@@ -2238,6 +2240,22 @@ export default function ComprasPedido() {
                 {podeReabrir && (
                   <PremiumButton onClick={() => agir(() => comprasReabrir(pedido.id), 'Processo reaberto.')}>
                     Reabrir processo
+                  </PremiumButton>
+                )}
+                {podeReabrirAprovado && (
+                  <PremiumButton
+                    variant="secondary"
+                    className="border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100"
+                    onClick={() => {
+                      const motivo = promptMotivo('Motivo da reabertura do orçamento aprovado:');
+                      if (!motivo) return;
+                      agir(
+                        () => comprasReabrirAprovado(pedido.id, motivo),
+                        'Orçamento aprovado reaberto. Escolha o vencedor e aprove de novo.',
+                      );
+                    }}
+                  >
+                    Reabrir orçamento aprovado
                   </PremiumButton>
                 )}
                 {pedido.pode_excluir ? (

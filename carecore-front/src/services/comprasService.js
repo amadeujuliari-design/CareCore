@@ -226,6 +226,11 @@ export async function comprasReabrir(id) {
   return data;
 }
 
+export async function comprasReabrirAprovado(id, motivo) {
+  const { data } = await api.post(`/api/compras/pedidos/${id}/reabrir-aprovado`, { motivo });
+  return data;
+}
+
 export async function comprasComunicacao(id, payload) {
   const { data } = await api.post(`/api/compras/pedidos/${id}/comunicacao`, payload);
   return data;
