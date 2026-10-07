@@ -9,7 +9,7 @@ import {
   obterOpcoesInteracaoRotina,
   projetoOcultaAcomodacoes,
 } from '../config/configOperacionalDefaults.js';
-import { projetoEhReencontroPari } from './projetoPari.js';
+import { projetoEhReencontroPari, projetoSemFluxoPortaria } from './projetoPari.js';
 import {
   tipoRegistroAlimentacao,
   TIPOS_ROTINA_REFEICOES,
@@ -85,7 +85,7 @@ function projetoUsaListaPropria(nomeProjeto) {
 }
 
 function opcoesInteracaoDoProjeto(config, nomeProjeto) {
-  const semFluxo = projetoEhReencontroPari(nomeProjeto);
+  const semFluxo = projetoSemFluxoPortaria(nomeProjeto);
   const itens = [];
   if (!semFluxo) {
     itens.push(

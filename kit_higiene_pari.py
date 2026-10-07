@@ -53,13 +53,13 @@ COMPLEMENTOS_CRUZEIRO = (
     },
     {
         "ordem": 23,
-        "nome": "Menstruação",
+        "nome": "Absorvente íntimo",
         "papel": "complemento",
         "gatilho": "flag",
         "idade_min_meses": None,
         "idade_max_meses": None,
         "sexo": "feminino",
-        "descricao": "A partir da primeira menstruação",
+        "descricao": "Absorvente íntimo",
         "item": "Absorvente",
     },
 )
@@ -178,6 +178,7 @@ def montar_kit(
     itens: list[dict],
     hoje: date,
     somar_complementos: bool = False,
+    itens_familia: list[dict] | None = None,
 ) -> dict:
     ativos = [
         perfil for perfil in perfis
@@ -197,6 +198,11 @@ def montar_kit(
     totais: dict[str, int] = {}
     grupos: dict[str, dict] = {}
     pendencias = []
+    for item in itens_familia or []:
+        nome_item = (item.get("nome") or "").strip()
+        quantidade = int(item.get("quantidade") or 0)
+        if nome_item and quantidade > 0:
+            totais[nome_item] = totais.get(nome_item, 0) + quantidade
 
     for pessoa in pessoas:
         nome = (pessoa.get("nome") or "Acolhido").strip() or "Acolhido"

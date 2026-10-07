@@ -10,7 +10,7 @@ import { formatarDataBr } from './utils/dataBrasilUtils';
 import { useAuth } from './context/AuthContext';
 import { useConfigOperacional } from './hooks/useConfigOperacional';
 import { obterOpcoesInteracaoRotina, projetoOcultaAcomodacoes } from './config/configOperacionalDefaults';
-import { projetoEhReencontroPari } from './utils/projetoPari';
+import { projetoEhReencontroPari, projetoSemFluxoPortaria } from './utils/projetoPari';
 
 const JUSTIFICATIVA_MIN = 30;
 
@@ -29,7 +29,7 @@ export default function RotinaAjustesTotais() {
   const { config: configOperacional, nomeProjeto, carregando: carregandoConfig } = useConfigOperacional();
   const nomeProjetoAtivo = nomeProjeto || usuario?.projeto_nome || '';
   const listaPropria = projetoEhReencontroPari(nomeProjetoAtivo) || projetoOcultaAcomodacoes(nomeProjetoAtivo);
-  const semPortaria = projetoEhReencontroPari(nomeProjetoAtivo);
+  const semPortaria = projetoSemFluxoPortaria(nomeProjetoAtivo);
   const [dataReferencia, setDataReferencia] = useState(() => dataOntemIsoLocal());
   const [painel, setPainel] = useState(null);
   const [ajustesForm, setAjustesForm] = useState({});

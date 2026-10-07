@@ -61,32 +61,40 @@ def projeto_e_casa_porto(projeto: InstituicaoDB | None) -> bool:
     return any(marcador in texto for marcador in _MARCADORES_CASA_PORTO)
 
 
+def projeto_e_casa_pari(projeto: InstituicaoDB | None) -> bool:
+    """A casa PARI. Anhangabaú, Cruzeiro do Sul e Jabaquara não entram aqui."""
+    return "reencontro pari" in _referencias_projeto(projeto)
+
+
 def projeto_e_cruzeiro_do_sul(projeto: InstituicaoDB | None) -> bool:
+    return "reencontro cruzeiro do sul" in _referencias_projeto(projeto)
+
+
+def _referencias_projeto(projeto: InstituicaoDB | None) -> str:
     if not projeto:
-        return False
-    referencias = " ".join(
-        filter(
-            None,
-            [
-                projeto.nome_fantasia,
-                projeto.relatorio_nome_exibicao,
-            ],
+        return ""
+    return _normalizar_texto_busca(
+        " ".join(
+            filter(
+                None,
+                [
+                    projeto.nome_fantasia,
+                    projeto.relatorio_nome_exibicao,
+                ],
+            )
         )
     )
-    return "reencontro cruzeiro do sul" in _normalizar_texto_busca(referencias)
+
+
+def projeto_e_jabaquara(projeto: InstituicaoDB | None) -> bool:
+    return "reencontro jabaquara" in _referencias_projeto(projeto)
+
+
+def projeto_sem_fluxo_portaria(projeto: InstituicaoDB | None) -> bool:
+    """Pari, Anhangabaú e Cruzeiro não bipam entrada e saída. O Jabaquara bipa."""
+    return projeto_e_reencontro_pari(projeto) and not projeto_e_jabaquara(projeto)
 
 
 def projeto_e_reencontro_pari(projeto: InstituicaoDB | None) -> bool:
-    if not projeto:
-        return False
-    referencias = " ".join(
-        filter(
-            None,
-            [
-                projeto.nome_fantasia,
-                projeto.relatorio_nome_exibicao,
-            ],
-        )
-    )
-    texto = _normalizar_texto_busca(referencias)
+    texto = _referencias_projeto(projeto)
     return any(marcador in texto for marcador in _MARCADORES_REENCONTRO_PARI)

@@ -11,7 +11,7 @@ import BannerSomenteLeituraGlobal from './components/BannerSomenteLeituraGlobal'
 import { AppShell, MainShell, PageHeader, PremiumButton, ScrollArea } from './components/PremiumUI';
 import { useAuth } from './context/AuthContext';
 import { projetoOcultaAcomodacoes } from './config/configOperacionalDefaults';
-import { projetoEhReencontroPari } from './utils/projetoPari';
+import { projetoSemFluxoPortaria } from './utils/projetoPari';
 import { API_ROOT } from './config/apiBase';
 import { useDeviceInfo } from './hooks/useDeviceInfo';
 import { useLeitorUsbGlobal } from './hooks/useLeitorUsbGlobal';
@@ -180,7 +180,7 @@ export default function RotinaDiaria() {
   const navigate = useNavigate();
   const { isGlobalPuro: somenteLeitura, usuario } = useAuth();
   const { config: configOperacional, nomeProjeto: nomeProjetoOperacional, carregando: carregandoConfig } = useConfigOperacional();
-  const semPortaria = projetoEhReencontroPari(nomeProjetoOperacional || usuario?.projeto_nome);
+  const semPortaria = projetoSemFluxoPortaria(nomeProjetoOperacional || usuario?.projeto_nome);
   const configInteracaoPronta = carregandoConfig ? null : configOperacional;
   const opcoesInteracaoRotina = useMemo(
     () => (configInteracaoPronta ? obterOpcoesInteracaoRotina(configInteracaoPronta) : []),

@@ -479,7 +479,7 @@ Título **Resumo mensal**. Campos: **Mês de referência**, **Data inicial**, **
 
 **Casa Porto:** banner após 16h se houver conviventes dentro (texto fixo 16h — ver destaque no topo).
 
-**Reencontro Pari:** sem botões de Entrada/Saída, sem status Dentro/Saiu e sem totais de presentes na unidade. Fica alimentação e as interações do projeto. O mesmo modelo de menu e rotina vale para **REENCONTRO ANHANGABAÚ**, **REENCONTRO CRUZEIRO DO SUL** e **REENCONTRO JABAQUARA**. Lavanderia OMO e kit do Cruzeiro do Sul têm regra própria (seções 7 e 7.1). O cadastro de cada projeto continua separado.
+**Reencontro Pari:** sem botões de Entrada/Saída, sem status Dentro/Saiu e sem totais de presentes na unidade. Fica alimentação e as interações do projeto. O mesmo modelo de menu e rotina vale para **REENCONTRO ANHANGABAÚ** e **REENCONTRO CRUZEIRO DO SUL**. **REENCONTRO JABAQUARA** mantém esse modelo e também controla Entrada/Saída, com status Dentro/Saiu e totais de presentes. Lavanderia OMO e kit seguem o mesmo modelo nos quatro (seções 7 e 7.1). O cadastro de cada projeto continua separado.
 
 ---
 
@@ -492,8 +492,7 @@ Título **Resumo mensal**. Campos: **Mês de referência**, **Data inicial**, **
 | **Título** | Lavanderia |
 | **Subtítulo** | Controle de peças deixadas para lavagem/secagem, prazo de 48h e retirada conferida. |
 | **Casa Porto** | Menu oculto (módulo `lavanderia_pecas` false). Uso de lavanderia fica só na Rotina Diária. |
-| **Reencontro Pari, Anhangabaú e Jabaquara** | A mesma rota abre a grade OMO: semana de horários de 1h30 para lavar e secar juntas, livre ou ocupado. Marcar pede OK. Mudar o horário é arrastando o nome para outro livre, com nova confirmação. Em horário ainda agendado, **Cancelar** na grade ou na lista de confirmados libera a vaga. Abaixo da grade: listas de confirmados e de realizados, com período, por página, botões para mostrar só uma delas, ordenação ao clicar na coluna, **Exportar** e **Imprimir**. Não usa controle de peças. |
-| **Reencontro Cruzeiro do Sul** | Duas grades de 45 minutos, lavagem e secagem, das 7h às 12h e das 14h às 18h. O último início da manhã é 10h45 (termina 11h30) e o da tarde é 17h (termina 17h45). A pessoa marca a lavagem; a secagem entra no primeiro horário livre que começa quando essa lavagem acaba. Lavagem que termina 11h30 seca às 14h. Lavagem que termina 17h45 seca no dia seguinte às 7h. Arrastar a lavagem recalcula a secagem. Cancelar lavagem ou secagem cancela o par. |
+| **Reencontro Pari, Anhangabaú, Cruzeiro do Sul e Jabaquara** | Duas grades de 45 minutos, lavagem e secagem. No topo da tela o projeto define a manhã e a tarde. O padrão do Pari é das 5h20 às 12h e das 14h às 0h30. Anhangabaú, Cruzeiro do Sul e Jabaquara começam das 7h às 12h15 e das 14h às 18h30. Só entra o uso que cabe inteiro no período. Se a nova grade deixaria de fora um agendamento ainda pendente, o sistema lista a pessoa, a etapa e o horário e não grava até que esse uso termine ou seja cancelado e remanejado. Agendamento já encerrado não impede a mudança. A pessoa marca a lavagem; a secagem entra no primeiro horário livre que começa quando essa lavagem acaba. Arrastar a lavagem recalcula a secagem. Cancelar lavagem ou secagem cancela o par. Abaixo da grade: listas de confirmados e de realizados, com período, por página, botões para mostrar só uma delas, ordenação ao clicar na coluna, **Exportar** e **Imprimir**. Não usa controle de peças. |
 
 **Registrar entrega:** Convivente · Peças · Observação  
 **Retirada / cancelamento:** quantidade, observação, motivo  
@@ -501,20 +500,21 @@ Título **Resumo mensal**. Campos: **Mês de referência**, **Data inicial**, **
 
 ---
 
-## 7.1 Kit mensal de higiene (Reencontro Pari)
+## 7.1 Kit mensal da Família (Reencontro Pari)
 
 | | |
 | --- | --- |
 | **Rota** | `/rotina/kit-higiene` |
 | **Arquivo** | `PariKitHigiene.jsx` |
-| **Menu** | Kit de higiene, no Reencontro Pari e nos projetos do mesmo modelo (Anhangabaú, Cruzeiro do Sul e Jabaquara) |
+| **Menu** | Kit mensal da Família, no Reencontro Pari e nos projetos do mesmo modelo (Anhangabaú, Cruzeiro do Sul e Jabaquara) |
 
 **Retirada do kit:** primeiro bloco da tela. Busca por família ou pessoa, leitura de carteirinha ou prontuário. Cada pessoa da família tem nascimento, sexo e **Salvar idade**. **Registrar retirada** grava o kit do mês. A lista **Retiradas deste projeto** mostra as últimas famílias. A segunda retirada da mesma família no mês é recusada.
 
-**Itens:** nome do que pode entrar no kit. A quantidade fica no perfil.  
+**Itens:** nome do que pode entrar no kit de cada pessoa. A quantidade fica no perfil.  
+**Itens da família:** nome e quantidade entregues uma vez por família. O número não muda com a quantidade de pessoas e o item não entra em perfil nenhum.  
 **Perfis:** Bebê (0 a 1 ano, qualquer sexo), Criança (2 a 10 anos, qualquer sexo), Adolescente masculino e feminino (11 a 16 anos), Homem e Mulher (17 anos ou mais). Cada cartão lista os itens e a quantidade do mês. A faixa etária do tipo é salva em **Salvar idade**. Uma idade não pode caber em dois perfis de base.
 
-**Cruzeiro do Sul:** o perfil de base continua um só por pessoa. Os complementos somam no kit e podem cruzar a mesma idade. A equipe cria outros complementos e define itens e quantidades. Os complementos iniciais são Fralda (até completar 3 anos), Sabonete infantil (até completar 2 anos) e Leite (dos 6 meses até completar 6 anos). Menstruação não usa idade: a flag **Já menstrua** no acolhido, com sexo feminino, inclui o absorvente. Salvar a idade do acolhido também grava essa flag.
+Nos quatro projetos, o perfil de base continua um só por pessoa. Os complementos somam no kit e podem cruzar a mesma idade. A equipe cria outros complementos e define itens e quantidades. Os complementos iniciais são Fralda (até completar 3 anos), Sabonete infantil (até completar 2 anos) e Leite (dos 6 meses até completar 6 anos). Absorvente íntimo não usa idade: a opção **Absorvente íntimo?** no acolhido, com sexo feminino, inclui o absorvente. Ela não aparece para o sexo masculino. Salvar a idade do acolhido também grava essa opção.
 
 Quem está sem data, sem sexo na faixa que separa masculino e feminino, ou sem perfil aparece em **Fora do kit** e bloqueia **Registrar retirada**.
 

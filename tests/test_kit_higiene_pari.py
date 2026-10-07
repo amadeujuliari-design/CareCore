@@ -161,7 +161,7 @@ def _regras_cruzeiro():
         {"tipo_id": "Fralda", "item_id": "fra", "quantidade": 1},
         {"tipo_id": "Sabonete infantil", "item_id": "sab", "quantidade": 1},
         {"tipo_id": "Leite", "item_id": "lei", "quantidade": 1},
-        {"tipo_id": "Menstruação", "item_id": "abs", "quantidade": 1},
+        {"tipo_id": "Absorvente íntimo", "item_id": "abs", "quantidade": 1},
     ]
 
 
@@ -202,6 +202,19 @@ def test_cruzeiro_soma_complementos_pela_idade_em_meses():
     assert _nomes(36) == {"Kit base", "Leite"}
     assert _nomes(71) == {"Kit base", "Leite"}
     assert _nomes(72) == {"Kit base"}
+
+
+def test_item_da_familia_entra_uma_vez_mesmo_com_duas_pessoas():
+    resultado = montar_kit(
+        [_pessoa("Ana", 5, "Feminino"), _pessoa("Beto", 8, "Masculino")],
+        _perfis(),
+        [],
+        [],
+        HOJE,
+        itens_familia=[{"nome": "Detergente", "quantidade": 2}],
+    )
+    assert resultado["composicao"] == [{"nome": "Detergente", "quantidade": 2}]
+    assert resultado["completo"] is True
 
 
 def test_cruzeiro_menstruacao_so_entra_com_a_flag():

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useAuth } from './context/AuthContext';
 import { useConfigOperacional } from './hooks/useConfigOperacional';
-import { projetoEhReencontroPari } from './utils/projetoPari';
+import { projetoSemFluxoPortaria } from './utils/projetoPari';
 import Sidebar from './Sidebar';
 import { AppShell, MainShell, PageHeader, ReportActionButton, ScrollArea } from './components/PremiumUI';
 import AuthenticatedImage from './components/AuthenticatedImage';
@@ -70,7 +70,7 @@ function omitirColunasFluxoSisa(colunas, linhas, omitir) {
 export default function ConvenioSisa() {
   const { usuario } = useAuth();
   const { nomeProjeto } = useConfigOperacional();
-  const semPortaria = projetoEhReencontroPari(nomeProjeto || usuario?.projeto_nome);
+  const semPortaria = projetoSemFluxoPortaria(nomeProjeto || usuario?.projeto_nome);
   const token = localStorage.getItem('@CareCore:token');
   let perfilUsuario = '';
   let usuarioMaster = false;

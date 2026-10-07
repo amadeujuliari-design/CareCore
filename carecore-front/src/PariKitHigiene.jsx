@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 
 import Sidebar from './Sidebar';
-import { AppShell, MainShell, PageHeader, PremiumButton } from './components/PremiumUI';
+import { AppShell, MainShell, PageHeader, PremiumButton, ScrollArea } from './components/PremiumUI';
 import api from './services/api';
 import { useLeitorUsbGlobal } from './hooks/useLeitorUsbGlobal';
 import { encontrarConviventePorCodigo } from './utils/conviventeIdentificacaoUtils';
@@ -39,7 +39,7 @@ function PerfilCard({ perfil, itens, regras, onSalvarFaixa, onIncluir, onRemover
         {complemento && <span className="ml-2 rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-bold text-sky-800">Complemento</span>}
       </h3>
       <p className="mt-1 text-xs text-slate-500">{perfil.descricao}</p>
-      {porFlag && <p className="mt-2 text-xs font-semibold text-slate-600">Entra quando a flag Já menstrua está ligada no acolhido.</p>}
+      {porFlag && <p className="mt-2 text-xs font-semibold text-slate-600">Entra quando Absorvente íntimo? está marcado no acolhido.</p>}
       {!porFlag && (
       <div className="mt-3 grid grid-cols-3 gap-2">
         <label className="text-[11px] font-bold text-slate-600">
@@ -174,14 +174,14 @@ function MembroIdade({ membro, onSalvar, cruzeiro }) {
             <option value="feminino">Feminino</option>
           </select>
         </label>
-        {cruzeiro && (
+        {cruzeiro && sexo !== 'masculino' && (
           <label className="mb-2 flex items-center gap-2 text-xs font-bold text-slate-700">
             <input
               type="checkbox"
               checked={menstrua}
               onChange={(event) => setMenstrua(event.target.checked)}
             />
-            Já menstrua
+            Absorvente íntimo?
           </label>
         )}
         <PremiumButton
@@ -190,7 +190,8 @@ function MembroIdade({ membro, onSalvar, cruzeiro }) {
             setAviso('');
             setErroLocal('');
             try {
-              await onSalvar(membro.id, nascimento || null, sexo, cruzeiro ? menstrua : null);
+              const flag = !cruzeiro ? null : sexo === 'masculino' ? false : menstrua;
+              await onSalvar(membro.id, nascimento || null, sexo, flag);
               setAviso('Idade salva.');
             } catch (error) {
               setErroLocal(detalheErro(error, 'Não foi possível salvar a idade.'));
@@ -207,7 +208,7 @@ function MembroIdade({ membro, onSalvar, cruzeiro }) {
 }
 
 export default function PariKitHigiene() {
-  const [catalogo, setCatalogo] = useState({ tipos: [], itens: [], regras: [], entregas: [], modelo: 'pari' });
+  const [catalogo, setCatalogo] = useState({ tipos: [], itens: [], regras: [], entregas: [], itens_familia: [], modelo: 'pari' });
   const [nomePerfil, setNomePerfil] = useState('');
   const [gatilhoPerfil, setGatilhoPerfil] = useState('idade');
   const [conviventes, setConviventes] = useState([]);
@@ -218,6 +219,8 @@ export default function PariKitHigiene() {
   const [previa, setPrevia] = useState(null);
   const [conviventePrevia, setConviventePrevia] = useState(null);
   const [nomeItem, setNomeItem] = useState('');
+  const [nomeFamilia, setNomeFamilia] = useState('');
+  const [quantidadeFamilia, setQuantidadeFamilia] = useState(1);
   const [confirmando, setConfirmando] = useState(false);
 
   const carregar = useCallback(async () => {
@@ -337,10 +340,11 @@ export default function PariKitHigiene() {
       <MainShell>
         <PageHeader
           eyebrow="Rotina Diária"
-          title="Kit mensal de higiene"
+          title="Kit mensal da Família"
           subtitle="A retirada fica no topo: busque a família, salve a idade de quem estiver sem data e confirme o kit do mês. A configuração dos itens fica mais abaixo."
           icon="K"
         />
+        <ScrollArea>
         {erro && <p className="mb-4 rounded-xl bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">{erro}</p>}
 
         <section className="rounded-3xl border border-slate-100 bg-white p-5 shadow-sm">
@@ -448,7 +452,7 @@ export default function PariKitHigiene() {
 
         <section className="mt-6 rounded-3xl border border-slate-100 bg-white p-5 shadow-sm">
           <h2 className="text-lg font-bold text-slate-900">Itens</h2>
-          <p className="mt-1 text-sm text-slate-500">O que pode entrar no kit. A quantidade fica em cada perfil.</p>
+          <p className="mt-1 text-sm text-slate-500">O que pode entrar no kit de cada pessoa. A quantidade fica em cada perfil.</p>
           <form
             className="mt-4 flex gap-2"
             onSubmit={(event) => {
@@ -469,11 +473,77 @@ export default function PariKitHigiene() {
           </div>
         </section>
 
+        <section className="mt-6 rounded-3xl border border-slate-100 bg-white p-5 shadow-sm">
+          <h2 className="text-lg font-bold text-slate-900">Itens da família</h2>
+          <p className="mt-1 text-sm text-slate-500">Entram uma vez em cada família, na quantidade informada. Não dependem de quem mora na casa nem de quantas pessoas são.</p>
+          <form
+            className="mt-4 flex flex-wrap gap-2"
+            onSubmit={async (event) => {
+              event.preventDefault();
+              if (!nomeFamilia.trim()) return;
+              setErro('');
+              try {
+                await api.post('/api/pari/kit/familia', {
+                  nome: nomeFamilia.trim(),
+                  quantidade: Number(quantidadeFamilia) || 1,
+                });
+                setNomeFamilia('');
+                setQuantidadeFamilia(1);
+                await carregar();
+                if (conviventePrevia) await verKit(conviventePrevia);
+              } catch (error) {
+                setErro(detalheErro(error, 'Não foi possível incluir o item da família.'));
+              }
+            }}
+          >
+            <input
+              value={nomeFamilia}
+              onChange={(event) => setNomeFamilia(event.target.value)}
+              placeholder="Novo item da família, por exemplo detergente"
+              className="min-h-11 min-w-[16rem] flex-1 rounded-xl border border-slate-200 px-3 text-sm"
+            />
+            <input
+              type="number"
+              min="1"
+              max="99"
+              value={quantidadeFamilia}
+              onChange={(event) => setQuantidadeFamilia(event.target.value)}
+              aria-label="Quantidade por família"
+              className="min-h-11 w-20 rounded-xl border border-slate-200 px-2 text-sm"
+            />
+            <PremiumButton type="submit" variant="secondary">Incluir item</PremiumButton>
+          </form>
+          <ul className="mt-3 space-y-1 text-sm text-slate-700">
+            {(catalogo.itens_familia || []).map((item) => (
+              <li key={item.id} className="flex items-center justify-between gap-3 rounded-xl bg-slate-50 px-3 py-2">
+                <span className="font-semibold">{item.quantidade}× {item.nome}</span>
+                <button
+                  type="button"
+                  className="text-xs font-bold text-red-600"
+                  onClick={async () => {
+                    setErro('');
+                    try {
+                      await api.delete(`/api/pari/kit/familia/${item.id}`);
+                      await carregar();
+                      if (conviventePrevia) await verKit(conviventePrevia);
+                    } catch (error) {
+                      setErro(detalheErro(error, 'Não foi possível remover o item da família.'));
+                    }
+                  }}
+                >
+                  Remover
+                </button>
+              </li>
+            ))}
+            {(catalogo.itens_familia || []).length === 0 && <li className="text-slate-400">Nenhum item da família.</li>}
+          </ul>
+        </section>
+
         <section className="mt-6">
           <h2 className="text-lg font-bold text-slate-900">Perfis</h2>
           <p className="mt-1 text-sm text-slate-500">
             {catalogo.modelo === 'cruzeiro'
-              ? 'O perfil de base continua um só por pessoa. Os complementos somam no kit e podem cruzar a mesma idade. A flag Já menstrua liga o complemento de menstruação.'
+              ? 'O perfil de base continua um só por pessoa. Os complementos somam no kit e podem cruzar a mesma idade. A opção Absorvente íntimo? liga esse complemento.'
               : 'Ajuste a idade de cada tipo e clique em Salvar idade. Uma idade não pode caber em dois perfis.'}
           </p>
           {catalogo.modelo === 'cruzeiro' && (
@@ -502,7 +572,7 @@ export default function PariKitHigiene() {
                 className="min-h-11 rounded-xl border border-slate-200 px-3 text-sm"
               >
                 <option value="idade">Entra pela idade</option>
-                <option value="flag">Entra pela flag Já menstrua</option>
+                <option value="flag">Entra por Absorvente íntimo?</option>
               </select>
               <PremiumButton type="submit" variant="secondary">Incluir complemento</PremiumButton>
             </form>
@@ -521,6 +591,7 @@ export default function PariKitHigiene() {
             ))}
           </div>
         </section>
+        </ScrollArea>
       </MainShell>
     </AppShell>
   );

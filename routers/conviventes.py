@@ -41,7 +41,7 @@ from config_operacional import (
     obter_tipos_refeicao_ativos,
     obter_tipos_rotina_validos,
 )
-from config_operacional_projeto import projeto_e_casa_porto, projeto_e_reencontro_pari
+from config_operacional_projeto import projeto_e_casa_porto, projeto_sem_fluxo_portaria
 from config_operacional_service import carregar_config_operacional_instituicao
 from acomodacao_tb import (
     aplicar_regras_acomodacao_tb,
@@ -3554,7 +3554,7 @@ async def registar_rotina(
     config_operacional, _, _ = await carregar_config_operacional_instituicao(db, instituicao_id)
     tipos_rotina_validos = obter_tipos_rotina_validos(config_operacional)
     projeto = await db.get(InstituicaoDB, instituicao_id)
-    sem_portaria = projeto_e_reencontro_pari(projeto)
+    sem_portaria = projeto_sem_fluxo_portaria(projeto)
     if sem_portaria:
         tipos_rotina_validos = {
             tipo for tipo in tipos_rotina_validos if tipo not in {"Entrada", "Saída"}

@@ -79,6 +79,7 @@ class InstituicaoDB(Base):
     relatorio_site = Column(String, nullable=True)
     historico_legado_ativo = Column(Boolean, default=False)
     config_operacional_json = Column(Text, nullable=True)
+    lavanderia_grade_json = Column(Text, nullable=True)
 
 class UsuarioDB(Base):
     __tablename__ = "usuarios"
@@ -557,6 +558,18 @@ class KitHigieneRegraDB(Base):
     instituicao_id = Column(String, ForeignKey("instituicoes.id"), nullable=False, index=True)
     item_id = Column(String, ForeignKey("itens_higiene.id"), nullable=False)
     tipo_id = Column(String, ForeignKey("tipos_individuo_higiene.id"), nullable=False)
+    quantidade = Column(Integer, nullable=False, default=1)
+
+
+class KitHigieneItemFamiliaDB(Base):
+    __tablename__ = "kit_higiene_itens_familia"
+    __table_args__ = (
+        UniqueConstraint("instituicao_id", "nome", name="uq_kit_higiene_item_familia"),
+    )
+
+    id = Column(String, primary_key=True, default=get_uuid)
+    instituicao_id = Column(String, ForeignKey("instituicoes.id"), nullable=False, index=True)
+    nome = Column(String, nullable=False)
     quantidade = Column(Integer, nullable=False, default=1)
 
 

@@ -19,7 +19,7 @@ import { decodificarPayloadJwt } from './utils/jwtUtils';
 import { perfilOcultaSomatoriaAlimentacao } from './utils/rotinaDiariaUtils';
 import { useAuth } from './context/AuthContext';
 import { useConfigOperacional } from './hooks/useConfigOperacional';
-import { projetoEhReencontroPari } from './utils/projetoPari';
+import { projetoSemFluxoPortaria } from './utils/projetoPari';
 import { buscarIdentidadeRelatorios } from './utils/relatorioIdentidadePrint';
 import {
   exportarRetratosDashboardOperacionalXlsx,
@@ -220,7 +220,7 @@ export default function DashboardOperacional() {
   const token = localStorage.getItem('@CareCore:token');
   const { usuario } = useAuth();
   const { nomeProjeto } = useConfigOperacional();
-  const semPortaria = projetoEhReencontroPari(nomeProjeto || usuario?.projeto_nome);
+  const semPortaria = projetoSemFluxoPortaria(nomeProjeto || usuario?.projeto_nome);
 
   let perfilUsuario = '';
   try {

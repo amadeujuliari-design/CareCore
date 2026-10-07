@@ -11,7 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from config_operacional_projeto import projeto_e_cruzeiro_do_sul, projeto_e_reencontro_pari
+from config_operacional_projeto import projeto_e_casa_pari, projeto_e_reencontro_pari
 from database import get_db
 from kit_higiene_pari import (
     COMPLEMENTOS_CRUZEIRO,
@@ -26,9 +26,14 @@ from kit_higiene_pari import (
 from lavanderia_cruzeiro import (
     MAQUINA_LAVAR,
     MAQUINA_SECAR,
+    PADRAO,
+    PADRAO_PARI,
+    PeriodosLavanderia,
     eh_slot_lavagem,
+    periodos_do_json,
     proxima_secagem,
     slots_do_dia as slots_cruzeiro,
+    validar_periodos,
 )
 from models import (
     ConviventeDB,
@@ -36,6 +41,7 @@ from models import (
     InstituicaoDB,
     ItemHigieneDB,
     KitHigieneEntregaDB,
+    KitHigieneItemFamiliaDB,
     KitHigieneRegraDB,
     LavanderiaAgendaDB,
     TipoIndividuoHigieneDB,
@@ -54,24 +60,6 @@ class PerfilUpdate(BaseModel):
     idade_max_meses: int | None = Field(default=None, ge=0, le=1440)
 
 
-INICIOS_LAVANDERIA = (
-    (5, 20),
-    (6, 50),
-    (8, 20),
-    (9, 50),
-    (11, 20),
-    (14, 0),
-    (15, 30),
-    (17, 0),
-    (18, 30),
-    (20, 0),
-    (21, 30),
-    (23, 0),
-)
-DURACAO_SLOT = timedelta(minutes=90)
-MAQUINA_CONJUNTO = "conjunto"
-
-
 class NomeCreate(BaseModel):
     nome: str = Field(min_length=2, max_length=80)
     descricao: str = ""
@@ -82,6 +70,11 @@ class NomeCreate(BaseModel):
 class RegraCreate(BaseModel):
     item_id: str
     tipo_id: str
+    quantidade: int = Field(ge=1, le=99)
+
+
+class ItemFamiliaCreate(BaseModel):
+    nome: str = Field(min_length=2, max_length=80)
     quantidade: int = Field(ge=1, le=99)
 
 
@@ -99,6 +92,13 @@ class LeituraLavanderia(BaseModel):
     convivente_id: str
     maquina: str | None = None
     inicio: str | None = None
+
+
+class PeriodosLavanderiaIn(BaseModel):
+    manha_inicio: str
+    manha_fim: str
+    tarde_inicio: str
+    tarde_fim: str
 
 
 class VinculoFamiliar(BaseModel):
@@ -213,6 +213,13 @@ async def _alinhar_complementos_cruzeiro(db: AsyncSession, instituicao_id: str) 
     ).scalars().all()
     por_nome = {tipo.nome.casefold(): tipo for tipo in tipos}
     item_por_nome = {item.nome.casefold(): item for item in itens}
+    for origem in ("menstruação", "absorvente íntimo?"):
+        antigo = por_nome.get(origem)
+        if antigo is None or "absorvente íntimo" in por_nome:
+            continue
+        antigo.nome = "Absorvente íntimo"
+        por_nome["absorvente íntimo"] = antigo
+        del por_nome[origem]
     for padrao in COMPLEMENTOS_CRUZEIRO:
         atual = por_nome.get(padrao["nome"].casefold())
         criado_agora = atual is None
@@ -242,6 +249,8 @@ async def _alinhar_complementos_cruzeiro(db: AsyncSession, instituicao_id: str) 
             atual.idade_min_meses = padrao["idade_min_meses"]
             atual.idade_max_meses = padrao["idade_max_meses"]
             atual.ativo = True
+        if padrao["gatilho"] == "flag" and "menstru" in (atual.descricao or "").casefold():
+            atual.descricao = padrao["descricao"]
         item = item_por_nome.get(padrao["item"].casefold())
         if item is None:
             item = ItemHigieneDB(instituicao_id=instituicao_id, nome=padrao["item"], ativo=True)
@@ -270,14 +279,6 @@ async def _alinhar_complementos_cruzeiro(db: AsyncSession, instituicao_id: str) 
     await db.commit()
 
 
-def _slots_do_dia(dia) -> list[tuple[datetime, datetime]]:
-    saida = []
-    for hora, minuto in INICIOS_LAVANDERIA:
-        inicio = datetime.combine(dia, time(hora, minuto))
-        saida.append((inicio, inicio + DURACAO_SLOT))
-    return saida
-
-
 def _parse_inicio_agenda(valor: str) -> datetime:
     texto = (valor or "").strip().replace("Z", "")
     if "." in texto:
@@ -288,33 +289,6 @@ def _parse_inicio_agenda(valor: str) -> datetime:
         except ValueError:
             continue
     raise HTTPException(status_code=400, detail="Horário inválido.")
-
-
-def _fim_do_slot(inicio: datetime) -> datetime:
-    grade = {marca: fim for marca, fim in _slots_do_dia(inicio.date())}
-    fim = grade.get(inicio)
-    if not fim:
-        raise HTTPException(status_code=400, detail="Esse horário não faz parte da grade de 1h30.")
-    return fim
-
-
-async def _unificar_maquinas(db: AsyncSession, instituicao_id: str) -> None:
-    antigos = (
-        await db.execute(
-            select(LavanderiaAgendaDB).where(
-                LavanderiaAgendaDB.instituicao_id == instituicao_id,
-                LavanderiaAgendaDB.maquina.in_(("lavar", "secar")),
-            )
-        )
-    ).scalars().all()
-    if not antigos:
-        return
-    for registro in antigos:
-        if registro.maquina == "secar":
-            await db.delete(registro)
-        else:
-            registro.maquina = MAQUINA_CONJUNTO
-    await db.commit()
 
 
 async def _gravar_reserva(
@@ -380,7 +354,7 @@ async def obter_kit(
     instituicao_id = await _exigir_pari(db, usuario_atual)
     projeto = await db.get(InstituicaoDB, instituicao_id)
     await _alinhar_perfis(db, instituicao_id)
-    if projeto_e_cruzeiro_do_sul(projeto):
+    if projeto_e_reencontro_pari(projeto):
         await _alinhar_complementos_cruzeiro(db, instituicao_id)
     tipos = (
         await db.execute(
@@ -430,7 +404,7 @@ async def obter_kit(
             }
             for tipo in tipos
         ],
-        "modelo": "cruzeiro" if projeto_e_cruzeiro_do_sul(projeto) else "pari",
+        "modelo": "cruzeiro" if projeto_e_reencontro_pari(projeto) else "pari",
         "itens": [
             {"id": item.id, "nome": item.nome, "ativo": bool(item.ativo)}
             for item in itens
@@ -443,6 +417,10 @@ async def obter_kit(
                 "quantidade": regra.quantidade,
             }
             for regra in regras
+        ],
+        "itens_familia": [
+            {"id": item.id, "nome": item.nome, "quantidade": item.quantidade}
+            for item in await _listar_itens_familia(db, instituicao_id)
         ],
         "entregas": [
             {
@@ -470,15 +448,15 @@ async def criar_tipo(
     gatilho = (payload.gatilho or "idade").strip().casefold()
     if papel not in {"base", "complemento"} or gatilho not in {"idade", "flag"}:
         raise HTTPException(status_code=400, detail="Perfil inválido.")
-    if papel == "complemento" and not projeto_e_cruzeiro_do_sul(projeto):
-        raise HTTPException(status_code=400, detail="Complemento de kit existe só no Cruzeiro do Sul.")
+    if papel == "complemento" and not projeto_e_reencontro_pari(projeto):
+        raise HTTPException(status_code=400, detail="Complemento de kit existe nos projetos Reencontro.")
     db.add(
         TipoIndividuoHigieneDB(
             instituicao_id=instituicao_id,
             nome=payload.nome.strip(),
             descricao=(
                 payload.descricao.strip()
-                or ("A partir da primeira menstruação" if gatilho == "flag" else "Defina a faixa em meses")
+                or ("Absorvente íntimo" if gatilho == "flag" else "Defina a faixa em meses")
             ),
             ordem=50 if papel == "complemento" else 40,
             ativo=True,
@@ -504,6 +482,60 @@ async def criar_item(
 ):
     instituicao_id = await _exigir_pari(db, usuario_atual)
     db.add(ItemHigieneDB(instituicao_id=instituicao_id, nome=payload.nome.strip(), ativo=True))
+    await db.commit()
+    return {"status": "ok"}
+
+
+async def _listar_itens_familia(db: AsyncSession, instituicao_id: str) -> list[KitHigieneItemFamiliaDB]:
+    return (
+        await db.execute(
+            select(KitHigieneItemFamiliaDB)
+            .where(KitHigieneItemFamiliaDB.instituicao_id == instituicao_id)
+            .order_by(KitHigieneItemFamiliaDB.nome)
+        )
+    ).scalars().all()
+
+
+@router.post("/kit/familia")
+async def criar_item_familia(
+    payload: ItemFamiliaCreate,
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    instituicao_id = await _exigir_pari(db, usuario_atual)
+    nome = payload.nome.strip()
+    for atual in await _listar_itens_familia(db, instituicao_id):
+        if atual.nome.casefold() == nome.casefold():
+            atual.nome = nome
+            atual.quantidade = payload.quantidade
+            await db.commit()
+            return {"status": "ok"}
+    db.add(
+        KitHigieneItemFamiliaDB(
+            instituicao_id=instituicao_id,
+            nome=nome,
+            quantidade=payload.quantidade,
+        )
+    )
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(status_code=400, detail="Já existe um item da família com esse nome.")
+    return {"status": "ok"}
+
+
+@router.delete("/kit/familia/{item_id}")
+async def excluir_item_familia(
+    item_id: str,
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    instituicao_id = await _exigir_pari(db, usuario_atual)
+    item = await db.get(KitHigieneItemFamiliaDB, item_id)
+    if not item or item.instituicao_id != instituicao_id:
+        raise HTTPException(status_code=404, detail="Item da família não encontrado.")
+    await db.delete(item)
     await db.commit()
     return {"status": "ok"}
 
@@ -590,6 +622,7 @@ async def _previa_familia(db: AsyncSession, instituicao_id: str, convivente_id: 
     ).scalars().all()
     hoje = agora_operacional_naive().date()
     projeto = await db.get(InstituicaoDB, instituicao_id)
+    familiares = await _listar_itens_familia(db, instituicao_id)
     previa = montar_kit(
         [_pessoa_kit(membro) for membro in membros],
         [_perfil_dict(tipo) for tipo in tipos],
@@ -599,7 +632,8 @@ async def _previa_familia(db: AsyncSession, instituicao_id: str, convivente_id: 
         ],
         [{"id": item.id, "nome": item.nome, "ativo": bool(item.ativo)} for item in itens],
         hoje,
-        somar_complementos=projeto_e_cruzeiro_do_sul(projeto),
+        somar_complementos=projeto_e_reencontro_pari(projeto),
+        itens_familia=[{"nome": item.nome, "quantidade": item.quantidade} for item in familiares],
     )
     competencia = hoje.strftime("%Y-%m")
     ja_entregue = (
@@ -774,6 +808,101 @@ async def entregar_kit(
     return previa
 
 
+def _periodos_do_projeto(projeto: InstituicaoDB | None) -> PeriodosLavanderia:
+    padrao = PADRAO_PARI if projeto_e_casa_pari(projeto) else PADRAO
+    return periodos_do_json(getattr(projeto, "lavanderia_grade_json", None), padrao)
+
+
+def _rotulo_maquina(maquina: str) -> str:
+    return {"lavar": "Lavagem", "secar": "Secagem"}.get(maquina, "Lavagem e secagem")
+
+
+async def _migrar_conjunto_compativel(
+    db: AsyncSession,
+    instituicao_id: str,
+    periodos: PeriodosLavanderia,
+) -> None:
+    """Uso antigo de 1h30 que cai num início da nova grade vira lavagem de 45 minutos e uma secagem."""
+    agora = agora_operacional_naive()
+    registros = (
+        await db.execute(
+            select(LavanderiaAgendaDB).where(
+                LavanderiaAgendaDB.instituicao_id == instituicao_id,
+                LavanderiaAgendaDB.maquina == "conjunto",
+                LavanderiaAgendaDB.status == "agendado",
+                LavanderiaAgendaDB.inicio > agora,
+                LavanderiaAgendaDB.fim > agora,
+            )
+        )
+    ).scalars().all()
+    compativeis = sorted(
+        (registro for registro in registros if eh_slot_lavagem(registro.inicio, periodos)),
+        key=lambda registro: registro.inicio,
+    )
+    if not compativeis:
+        return
+    for registro in compativeis:
+        fim = next(
+            fim_slot
+            for marca, fim_slot in slots_cruzeiro(registro.inicio.date(), periodos)
+            if marca == registro.inicio
+        )
+        registro.maquina = MAQUINA_LAVAR
+        registro.fim = fim
+        await db.flush()
+        ocupados = set(
+            (
+                await db.execute(
+                    select(LavanderiaAgendaDB.inicio).where(
+                        LavanderiaAgendaDB.instituicao_id == instituicao_id,
+                        LavanderiaAgendaDB.maquina == MAQUINA_SECAR,
+                        LavanderiaAgendaDB.status.in_(("agendado", "em_uso")),
+                        LavanderiaAgendaDB.inicio >= fim,
+                    )
+                )
+            ).scalars().all()
+        )
+        seco = proxima_secagem(fim, ocupados, periodos=periodos)
+        if seco:
+            inicio_seco, fim_seco = seco
+            await _gravar_reserva(
+                db,
+                instituicao_id,
+                MAQUINA_SECAR,
+                inicio_seco,
+                fim_seco,
+                registro.convivente_id,
+            )
+    await db.commit()
+
+
+async def _conflitos_da_grade(db: AsyncSession, instituicao_id: str, periodos: PeriodosLavanderia) -> list[dict]:
+    agora = agora_operacional_naive()
+    pendentes = (
+        await db.execute(
+            select(LavanderiaAgendaDB, ConviventeDB.nome_social, ConviventeDB.nome_completo)
+            .join(ConviventeDB, ConviventeDB.id == LavanderiaAgendaDB.convivente_id)
+            .where(
+                LavanderiaAgendaDB.instituicao_id == instituicao_id,
+                LavanderiaAgendaDB.status.in_(("agendado", "em_uso")),
+                LavanderiaAgendaDB.fim > agora,
+            )
+            .order_by(LavanderiaAgendaDB.inicio)
+        )
+    ).all()
+    conflitos = []
+    for registro, nome_social, nome_completo in pendentes:
+        if registro.maquina != "conjunto" and eh_slot_lavagem(registro.inicio, periodos):
+            continue
+        conflitos.append({
+            "nome": nome_social or nome_completo,
+            "maquina": _rotulo_maquina(registro.maquina),
+            "inicio": _iso(registro.inicio),
+            "fim": _iso(registro.fim),
+        })
+    return conflitos
+
+
 @router.get("/lavanderia")
 async def listar_agenda(
     data: str | None = None,
@@ -782,9 +911,9 @@ async def listar_agenda(
     usuario_atual: dict = Depends(get_usuario_logado),
 ):
     instituicao_id = await _exigir_pari(db, usuario_atual)
-    cruzeiro = projeto_e_cruzeiro_do_sul(await db.get(InstituicaoDB, instituicao_id))
-    if not cruzeiro:
-        await _unificar_maquinas(db, instituicao_id)
+    projeto = await db.get(InstituicaoDB, instituicao_id)
+    periodos = _periodos_do_projeto(projeto)
+    await _migrar_conjunto_compativel(db, instituicao_id, periodos)
     agora = agora_operacional_naive()
     try:
         dia = datetime.strptime(data, "%Y-%m-%d").date() if data else agora.date()
@@ -819,34 +948,99 @@ async def listar_agenda(
         }
         for registro, convivente_id, nome, codigo in registros
     }
+    conjuntos = (
+        await db.execute(
+            select(LavanderiaAgendaDB, ConviventeDB.nome_completo, FamiliaConviventeDB.codigo)
+            .join(ConviventeDB, ConviventeDB.id == LavanderiaAgendaDB.convivente_id)
+            .outerjoin(FamiliaConviventeDB, FamiliaConviventeDB.id == ConviventeDB.familia_id)
+            .where(
+                LavanderiaAgendaDB.instituicao_id == instituicao_id,
+                LavanderiaAgendaDB.maquina == "conjunto",
+                LavanderiaAgendaDB.status.in_(("agendado", "em_uso")),
+                LavanderiaAgendaDB.fim > agora,
+            )
+        )
+    ).all()
     agenda = []
-    maquinas = (MAQUINA_LAVAR, MAQUINA_SECAR) if cruzeiro else (MAQUINA_CONJUNTO,)
-    grade = slots_cruzeiro if cruzeiro else _slots_do_dia
     for deslocamento in range(dias):
         dia_slot = dia + timedelta(days=deslocamento)
-        for maquina in maquinas:
-            for inicio, fim in grade(dia_slot):
+        for maquina in (MAQUINA_LAVAR, MAQUINA_SECAR):
+            for inicio, fim in slots_cruzeiro(dia_slot, periodos):
                 chave = (maquina, inicio)
-                agenda.append(
-                    ocupados.get(
-                        chave,
-                        {
-                            "maquina": maquina,
-                            "inicio": _iso(inicio),
-                            "fim": _iso(fim),
-                            "status": "livre",
-                            "convivente_id": "",
-                            "convivente_nome": "",
-                            "familia_codigo": "",
-                        },
-                    )
+                if chave in ocupados:
+                    agenda.append(ocupados[chave])
+                    continue
+                cobre = next(
+                    (
+                        (registro, nome, codigo)
+                        for registro, nome, codigo in conjuntos
+                        if registro.inicio < fim and inicio < registro.fim
+                    ),
+                    None,
                 )
+                if cobre:
+                    registro, nome, codigo = cobre
+                    agenda.append({
+                        "id": registro.id,
+                        "maquina": maquina,
+                        "inicio": _iso(inicio),
+                        "fim": _iso(fim),
+                        "status": registro.status,
+                        "convivente_id": registro.convivente_id,
+                        "convivente_nome": nome,
+                        "familia_codigo": codigo or "",
+                    })
+                    continue
+                agenda.append({
+                    "maquina": maquina,
+                    "inicio": _iso(inicio),
+                    "fim": _iso(fim),
+                    "status": "livre",
+                    "convivente_id": "",
+                    "convivente_nome": "",
+                    "familia_codigo": "",
+                })
+    conflitos = await _conflitos_da_grade(db, instituicao_id, periodos)
     return {
         "data": dia.isoformat(),
         "dias": dias,
-        "modelo": "separado" if cruzeiro else "conjunto",
+        "modelo": "separado",
+        "periodos": periodos.como_dict(),
         "agenda": agenda,
+        "fora_da_grade": {
+            "mensagem": "Há agendamentos que ficaram fora da grade de 45 minutos. Conclua esses usos, ou cancele e mude o horário.",
+            "conflitos": conflitos[:20],
+            "restantes": max(len(conflitos) - 20, 0),
+        } if conflitos else None,
     }
+
+
+@router.put("/lavanderia/periodos")
+async def salvar_periodos_lavanderia(
+    payload: PeriodosLavanderiaIn,
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    instituicao_id = await _exigir_pari(db, usuario_atual)
+    projeto = await db.get(InstituicaoDB, instituicao_id)
+    try:
+        periodos = validar_periodos(payload.model_dump())
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await _migrar_conjunto_compativel(db, instituicao_id, periodos)
+    conflitos = await _conflitos_da_grade(db, instituicao_id, periodos)
+    if conflitos:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "mensagem": "Há agendamentos que ficariam fora da nova grade. Conclua esses usos, ou cancele e mude o horário, antes de salvar.",
+                "conflitos": conflitos[:20],
+                "restantes": max(len(conflitos) - 20, 0),
+            },
+        )
+    projeto.lavanderia_grade_json = json.dumps(periodos.como_dict(), ensure_ascii=False)
+    await db.commit()
+    return periodos.como_dict()
 
 
 @router.get("/lavanderia/registros")
@@ -855,10 +1049,7 @@ async def listar_registros_lavanderia(
     usuario_atual: dict = Depends(get_usuario_logado),
 ):
     instituicao_id = await _exigir_pari(db, usuario_atual)
-    cruzeiro = projeto_e_cruzeiro_do_sul(await db.get(InstituicaoDB, instituicao_id))
-    if not cruzeiro:
-        await _unificar_maquinas(db, instituicao_id)
-    maquinas = (MAQUINA_LAVAR, MAQUINA_SECAR) if cruzeiro else (MAQUINA_CONJUNTO,)
+    maquinas = (MAQUINA_LAVAR, MAQUINA_SECAR, "conjunto")
     linhas = (
         await db.execute(
             select(
@@ -889,7 +1080,7 @@ async def listar_registros_lavanderia(
             "inicio": _iso(registro.inicio),
             "fim": _iso(registro.fim),
             "liberado_em": _iso(registro.liberado_em),
-            "maquina_rotulo": {"lavar": "Lavar", "secar": "Secar"}.get(registro.maquina, ""),
+            "maquina_rotulo": {"lavar": "Lavar", "secar": "Secar", "conjunto": "Lavagem e secagem"}.get(registro.maquina, ""),
         }
         if registro.status == "em_uso":
             realizados.append(item)
@@ -911,7 +1102,7 @@ async def cancelar_agendamento(
     if registro.status != "agendado":
         raise HTTPException(status_code=400, detail="Só é possível cancelar um horário que ainda está agendado.")
     registro.status = "cancelado"
-    if projeto_e_cruzeiro_do_sul(await db.get(InstituicaoDB, instituicao_id)):
+    if registro.maquina in (MAQUINA_LAVAR, MAQUINA_SECAR):
         par = await _par_lavanderia_cruzeiro(db, registro)
         if par:
             par.status = "cancelado"
@@ -940,6 +1131,7 @@ async def _par_lavanderia_cruzeiro(db: AsyncSession, registro: LavanderiaAgendaD
 
 
 async def _ler_lavanderia_cruzeiro(db: AsyncSession, instituicao_id: str, payload: LeituraLavanderia):
+    periodos = _periodos_do_projeto(await db.get(InstituicaoDB, instituicao_id))
     convivente = await _convivente_pari(db, instituicao_id, payload.convivente_id)
     if convivente.status != "Ativo":
         raise HTTPException(status_code=400, detail="Somente convivente ativo usa a lavanderia.")
@@ -947,7 +1139,7 @@ async def _ler_lavanderia_cruzeiro(db: AsyncSession, instituicao_id: str, payloa
     inicio_pedido = _parse_inicio_agenda(payload.inicio) if payload.inicio else None
     if inicio_pedido and inicio_pedido < agora - timedelta(minutes=2):
         raise HTTPException(status_code=400, detail="Esse horário já passou.")
-    if inicio_pedido and not eh_slot_lavagem(inicio_pedido):
+    if inicio_pedido and not eh_slot_lavagem(inicio_pedido, periodos):
         raise HTTPException(status_code=400, detail="Escolha um horário da grade de lavagem.")
     vigentes = (
         await db.execute(
@@ -1003,7 +1195,7 @@ async def _ler_lavanderia_cruzeiro(db: AsyncSession, instituicao_id: str, payloa
         expirado.status = "perdido"
     if inicio_pedido:
         inicio = inicio_pedido
-        fim = inicio + timedelta(minutes=45)
+        fim = next(fim_slot for marca, fim_slot in slots_cruzeiro(inicio.date(), periodos) if marca == inicio)
     else:
         limite = agora - timedelta(minutes=2)
         escolhido = None
@@ -1022,7 +1214,7 @@ async def _ler_lavanderia_cruzeiro(db: AsyncSession, instituicao_id: str, payloa
                     )
                 ).scalars().all()
             )
-            for marca, fim_slot in slots_cruzeiro(dia):
+            for marca, fim_slot in slots_cruzeiro(dia, periodos):
                 if marca < limite or marca in ocupados:
                     continue
                 escolhido = (marca, fim_slot)
@@ -1044,7 +1236,7 @@ async def _ler_lavanderia_cruzeiro(db: AsyncSession, instituicao_id: str, payloa
             )
         ).scalars().all()
     )
-    seco = proxima_secagem(fim, ocupados_secar)
+    seco = proxima_secagem(fim, ocupados_secar, periodos=periodos)
     if not seco:
         raise HTTPException(status_code=400, detail="Não há secagem livre nas próximas duas semanas.")
     inicio_seco, fim_seco = seco
@@ -1071,107 +1263,7 @@ async def ler_lavanderia(
     usuario_atual: dict = Depends(get_usuario_logado),
 ):
     instituicao_id = await _exigir_pari(db, usuario_atual)
-    if projeto_e_cruzeiro_do_sul(await db.get(InstituicaoDB, instituicao_id)):
-        return await _ler_lavanderia_cruzeiro(db, instituicao_id, payload)
-    await _unificar_maquinas(db, instituicao_id)
-    maquina = MAQUINA_CONJUNTO
-    convivente = await _convivente_pari(db, instituicao_id, payload.convivente_id)
-    if convivente.status != "Ativo":
-        raise HTTPException(status_code=400, detail="Somente convivente ativo usa a lavanderia.")
-    agora = agora_operacional_naive()
-    inicio_pedido = _parse_inicio_agenda(payload.inicio) if payload.inicio else None
-    if inicio_pedido and inicio_pedido < agora - timedelta(minutes=2):
-        raise HTTPException(status_code=400, detail="Esse horário já passou.")
-    vigente = (
-        await db.execute(
-            select(LavanderiaAgendaDB).where(
-                LavanderiaAgendaDB.instituicao_id == instituicao_id,
-                LavanderiaAgendaDB.maquina == maquina,
-                LavanderiaAgendaDB.convivente_id == convivente.id,
-                LavanderiaAgendaDB.status == "agendado",
-                LavanderiaAgendaDB.fim > agora,
-            )
-        )
-    ).scalar_one_or_none()
-    if vigente and vigente.inicio <= agora:
-        vigente.status = "em_uso"
-        vigente.liberado_em = agora
-        await db.commit()
-        return {
-            "acao": "liberado",
-            "mensagem": f"Uso liberado até {_iso(vigente.fim)[-5:]}.",
-            "inicio": _iso(vigente.inicio),
-            "fim": _iso(vigente.fim),
-            "maquina": maquina,
-        }
-    if vigente and (inicio_pedido is None or inicio_pedido == vigente.inicio):
-        return {
-            "acao": "agendado",
-            "mensagem": f"Já há horário marcado às {_iso(vigente.inicio)[-5:]}. A segunda leitura, nesse horário, libera o uso.",
-            "inicio": _iso(vigente.inicio),
-            "fim": _iso(vigente.fim),
-            "maquina": maquina,
-        }
-    if vigente and inicio_pedido:
-        await db.delete(vigente)
-        await db.flush()
-    expirados = (
-        await db.execute(
-            select(LavanderiaAgendaDB).where(
-                LavanderiaAgendaDB.instituicao_id == instituicao_id,
-                LavanderiaAgendaDB.convivente_id == convivente.id,
-                LavanderiaAgendaDB.maquina == maquina,
-                LavanderiaAgendaDB.status == "agendado",
-                LavanderiaAgendaDB.fim <= agora,
-            )
-        )
-    ).scalars().all()
-    for expirado in expirados:
-        expirado.status = "perdido"
-    if inicio_pedido:
-        inicio = inicio_pedido
-        fim = _fim_do_slot(inicio_pedido)
-    else:
-        limite = agora - timedelta(minutes=2)
-        escolhido = None
-        for deslocamento in range(15):
-            dia = (agora + timedelta(days=deslocamento)).date()
-            ocupados = set(
-                (
-                    await db.execute(
-                        select(LavanderiaAgendaDB.inicio).where(
-                            LavanderiaAgendaDB.instituicao_id == instituicao_id,
-                            LavanderiaAgendaDB.maquina == maquina,
-                            LavanderiaAgendaDB.status.in_(("agendado", "em_uso")),
-                            LavanderiaAgendaDB.inicio >= datetime.combine(dia, time.min),
-                            LavanderiaAgendaDB.inicio < datetime.combine(dia, time.min) + timedelta(days=1),
-                        )
-                    )
-                ).scalars().all()
-            )
-            for marca, fim_slot in _slots_do_dia(dia):
-                if marca < limite or marca in ocupados:
-                    continue
-                escolhido = (marca, fim_slot)
-                break
-            if escolhido:
-                break
-        if not escolhido:
-            raise HTTPException(status_code=400, detail="Não há horário livre nas próximas duas semanas.")
-        inicio, fim = escolhido
-    await _gravar_reserva(db, instituicao_id, maquina, inicio, fim, convivente.id)
-    try:
-        await db.commit()
-    except IntegrityError:
-        await db.rollback()
-        raise HTTPException(status_code=409, detail="Esse horário acabou de ser reservado. Leia de novo.")
-    return {
-        "acao": "agendado",
-        "mensagem": f"Horário marcado: {inicio.strftime('%d/%m')} às {inicio.strftime('%H:%M')}. Nova leitura nesse horário libera o uso.",
-        "inicio": _iso(inicio),
-        "fim": _iso(fim),
-        "maquina": maquina,
-    }
+    return await _ler_lavanderia_cruzeiro(db, instituicao_id, payload)
 
 
 def _numero_familia(codigo: str) -> int:

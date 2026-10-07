@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ArrowDown, ArrowUp, ArrowUpDown } from 'lucide-react';
 
 import Sidebar from './Sidebar';
-import { AppShell, MainShell, PageHeader, PremiumButton, ReportActionButton } from './components/PremiumUI';
+import { AppShell, MainShell, PageHeader, PremiumButton, ReportActionButton, ScrollArea } from './components/PremiumUI';
 import api from './services/api';
 import { useLeitorUsbGlobal } from './hooks/useLeitorUsbGlobal';
 import { encontrarConviventePorCodigo } from './utils/conviventeIdentificacaoUtils';
@@ -33,8 +33,14 @@ function somarDias(iso, quantidade) {
 }
 
 function partesIso(iso) {
-  const [data, hora = ''] = String(iso || '').split('T');
-  return { data, hora: hora.slice(0, 5) };
+  const texto = String(iso || '').trim().replace(' ', 'T');
+  const [data, hora = ''] = texto.split('T');
+  return { data: data.slice(0, 10), hora: hora.slice(0, 5) };
+}
+
+function chaveHorario(iso) {
+  const { data, hora } = partesIso(iso);
+  return data && hora ? `${data}T${hora}` : '';
 }
 
 function rotuloDia(iso) {
@@ -140,18 +146,22 @@ function GradeOmo({
     });
     return lista;
   }, [slots]);
-  const horarios = useMemo(() => {
-    const lista = [];
+  const faixas = useMemo(() => {
+    const mapa = new Map();
     slots.forEach((slot) => {
-      const { data, hora } = partesIso(slot.inicio);
-      if (data === dias[0] && hora && !lista.includes(hora)) lista.push(hora);
+      const { hora } = partesIso(slot.inicio);
+      const fim = partesIso(slot.fim).hora;
+      if (hora && !mapa.has(hora)) mapa.set(hora, fim || '');
     });
-    return lista;
-  }, [slots, dias]);
+    return [...mapa.entries()]
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([hora, fim]) => ({ hora, fim }));
+  }, [slots]);
   const porChave = useMemo(() => {
     const mapa = {};
     slots.forEach((slot) => {
-      mapa[slot.inicio] = slot;
+      const chave = chaveHorario(slot.inicio);
+      if (chave) mapa[chave] = slot;
     });
     return mapa;
   }, [slots]);
@@ -159,19 +169,21 @@ function GradeOmo({
   return (
     <div className="mb-4 overflow-x-auto rounded-2xl border border-slate-100 bg-white p-3 shadow-sm">
       {titulo && <h2 className="mb-2 text-sm font-black text-slate-800">{titulo}</h2>}
-      <table className="min-w-[760px] w-full border-separate border-spacing-1 text-left">
+      <table className="w-full table-fixed border-separate border-spacing-1 text-left">
         <thead>
           <tr>
-            <th className="px-2 py-2 text-xs font-bold text-slate-500">{duracao}</th>
+            <th className="w-28 px-1 py-2 text-xs font-bold text-slate-500">{duracao}</th>
             {dias.map((dia) => (
-              <th key={dia} className="px-2 py-2 text-xs font-black capitalize text-slate-700">{rotuloDia(dia)}</th>
+              <th key={dia} className="px-1 py-2 text-center text-[11px] font-black capitalize text-slate-700">{rotuloDia(dia)}</th>
             ))}
           </tr>
         </thead>
         <tbody>
-          {horarios.map((hora) => (
+          {faixas.map(({ hora, fim }) => (
             <tr key={hora}>
-              <td className="whitespace-nowrap px-2 py-1 text-xs font-bold text-slate-600">{hora}</td>
+              <td className="whitespace-nowrap px-1 py-1 text-[11px] font-bold text-slate-700">
+                {fim ? `${hora}–${fim}` : hora}
+              </td>
               {dias.map((dia) => {
                 const slot = porChave[`${dia}T${hora}`];
                 const livre = !slot || slot.status === 'livre';
@@ -180,10 +192,10 @@ function GradeOmo({
                 const marca = `${slot?.maquina || ''}|${slot?.inicio || ''}`;
                 const emCima = sobreLivre === marca;
                 const classe = livre
-                  ? `bg-emerald-50 text-emerald-900 border-emerald-200 ${travada ? '' : 'hover:bg-emerald-100'} ${emCima ? 'ring-2 ring-emerald-500' : ''}`
+                  ? `bg-emerald-100 text-emerald-950 border-emerald-300 ${travada ? '' : 'hover:bg-emerald-200'} ${emCima ? 'ring-2 ring-emerald-600' : ''}`
                   : emUso
-                    ? 'bg-blue-50 text-blue-900 border-blue-200'
-                    : 'bg-amber-50 text-amber-950 border-amber-200 cursor-grab';
+                    ? 'bg-blue-100 text-blue-950 border-blue-300'
+                    : 'bg-amber-100 text-amber-950 border-amber-300 cursor-grab';
                 const texto = livre
                   ? 'Livre'
                   : `${slot.familia_codigo ? `${slot.familia_codigo} · ` : ''}${slot.convivente_nome}`;
@@ -201,15 +213,15 @@ function GradeOmo({
                         event.dataTransfer.effectAllowed = 'move';
                       }}
                       onDragOver={(event) => {
-                        if (travada || !livre) return;
+                        if (travada || !livre || !slot) return;
                         event.preventDefault();
-                            setSobreLivre(marca);
+                        setSobreLivre(marca);
                       }}
-                          onDragLeave={() => setSobreLivre((atual) => (atual === marca ? '' : atual))}
+                      onDragLeave={() => setSobreLivre((atual) => (atual === marca ? '' : atual))}
                       onDrop={(event) => {
                         event.preventDefault();
                         setSobreLivre('');
-                        if (travada || !livre) return;
+                        if (travada || !livre || !slot) return;
                         try {
                           const origem = JSON.parse(event.dataTransfer.getData('text/plain') || '{}');
                           pedirMudanca(origem, slot.inicio);
@@ -222,14 +234,14 @@ function GradeOmo({
                           if (livre) setErro('A secagem entra sozinha no primeiro horário livre depois da lavagem.');
                           return;
                         }
-                        if (livre && !salvando) pedirAgendamento(slot);
+                        if (livre && !salvando && slot) pedirAgendamento(slot);
                       }}
                       onKeyDown={(event) => {
-                        if (event.key === 'Enter' && livre && !salvando && !travada) pedirAgendamento(slot);
+                        if (event.key === 'Enter' && livre && !salvando && !travada && slot) pedirAgendamento(slot);
                       }}
                       role="button"
                       tabIndex={emUso ? -1 : 0}
-                      className={`min-h-14 w-full rounded-lg border px-2 py-1 text-left text-[11px] font-semibold leading-snug ${emUso || travada ? 'cursor-default' : 'cursor-pointer'} ${classe}`}
+                      className={`flex min-h-12 w-full flex-col items-start justify-center rounded-lg border px-2 py-1 text-left text-xs font-bold leading-snug ${emUso || travada ? 'cursor-default' : 'cursor-pointer'} ${classe}`}
                       title={travada ? 'A secagem acompanha a lavagem' : livre ? `Marcar ${hora}` : agendado ? 'Arraste para mudar ou cancele se a pessoa desistiu' : texto}
                     >
                       <span className="block">{emUso ? `Em uso · ${texto}` : texto}</span>
@@ -403,6 +415,12 @@ export default function PariLavanderia() {
   const [inicioFaixa, setInicioFaixa] = useState(hojeISO);
   const [agenda, setAgenda] = useState([]);
   const [modelo, setModelo] = useState('conjunto');
+  const [periodos, setPeriodos] = useState(null);
+  const [manhaInicio, setManhaInicio] = useState('07:00');
+  const [manhaFim, setManhaFim] = useState('12:15');
+  const [tardeInicio, setTardeInicio] = useState('14:00');
+  const [tardeFim, setTardeFim] = useState('18:30');
+  const [conflitosGrade, setConflitosGrade] = useState(null);
   const [confirmados, setConfirmados] = useState([]);
   const [realizados, setRealizados] = useState([]);
   const [identidadeRelatorio, setIdentidadeRelatorio] = useState(null);
@@ -429,6 +447,8 @@ export default function PariLavanderia() {
     ]);
     setAgenda(lista.data?.agenda || []);
     setModelo(lista.data?.modelo || 'conjunto');
+    setPeriodos(lista.data?.periodos || null);
+    setConflitosGrade(lista.data?.fora_da_grade || null);
     setConfirmados(registros.data?.confirmados || []);
     setRealizados(registros.data?.realizados || []);
     setConviventes(resumo.data || []);
@@ -437,6 +457,19 @@ export default function PariLavanderia() {
   useEffect(() => {
     carregar(inicioFaixa).catch((error) => setErro(detalheErro(error, 'Não foi possível carregar a agenda.')));
   }, [carregar, inicioFaixa]);
+
+  const chavePeriodos = periodos
+    ? `${periodos.manha_inicio}|${periodos.manha_fim}|${periodos.tarde_inicio}|${periodos.tarde_fim}`
+    : '';
+
+  useEffect(() => {
+    if (!chavePeriodos) return;
+    const [inicioManha, fimManha, inicioTarde, fimTarde] = chavePeriodos.split('|');
+    setManhaInicio(inicioManha);
+    setManhaFim(fimManha);
+    setTardeInicio(inicioTarde);
+    setTardeFim(fimTarde);
+  }, [chavePeriodos]);
 
   useEffect(() => {
     buscarIdentidadeRelatorios().then(setIdentidadeRelatorio);
@@ -599,11 +632,78 @@ export default function PariLavanderia() {
           eyebrow="Rotina Diária"
           title="Lavanderia OMO"
           subtitle={separado
-            ? 'Lavagem e secagem são grades de 45 minutos, das 7h às 12h e das 14h às 18h. Clique na lavagem; a secagem entra no primeiro horário livre depois. Cancelar um dos dois cancela o par.'
+            ? `Lavagem e secagem são grades de 45 minutos, das ${periodos?.manha_inicio || '07:00'} às ${periodos?.manha_fim || '12:15'} e das ${periodos?.tarde_inicio || '14:00'} às ${periodos?.tarde_fim || '18:30'}. Clique na lavagem; a secagem entra no primeiro horário livre depois. Cancelar um dos dois cancela o par.`
             : 'Cada horário de 1h30 vale para lavar e secar juntas. Verde está livre, âmbar está ocupado. Cancele o agendamento se a pessoa desistir: a vaga volta a ficar livre.'}
           icon="L"
         />
 
+        <ScrollArea>
+        {separado && (
+          <form
+            className="mb-4 rounded-2xl border border-slate-100 bg-white p-4 shadow-sm"
+            onSubmit={async (event) => {
+              event.preventDefault();
+              setSalvando(true);
+              setErro('');
+              setConflitosGrade(null);
+              try {
+                const resposta = await api.put('/api/pari/lavanderia/periodos', {
+                  manha_inicio: manhaInicio,
+                  manha_fim: manhaFim,
+                  tarde_inicio: tardeInicio,
+                  tarde_fim: tardeFim,
+                });
+                setPeriodos(resposta.data);
+                setMensagem('Horário de uso da lavanderia atualizado.');
+                await carregar(inicioFaixa);
+              } catch (error) {
+                const detalhe = error?.response?.data?.detail;
+                if (detalhe && typeof detalhe === 'object' && Array.isArray(detalhe.conflitos)) {
+                  setMensagem('');
+                  setConflitosGrade(detalhe);
+                } else {
+                  setMensagem('');
+                  setErro(detalheErro(error, 'Não foi possível salvar o horário de uso.'));
+                }
+              } finally {
+                setSalvando(false);
+              }
+            }}
+          >
+            <h2 className="text-sm font-black text-slate-900">Horário de uso</h2>
+            <p className="mt-1 text-sm text-slate-500">A grade só mostra o uso de 45 minutos que cabe inteiro em cada período.</p>
+            <div className="mt-3 flex flex-wrap items-end gap-3">
+              <label className="text-[11px] font-bold text-slate-600">
+                Manhã das
+                <input type="time" value={manhaInicio} onChange={(event) => setManhaInicio(event.target.value)} className="mt-1 block min-h-11 rounded-xl border border-slate-200 px-3 text-sm" required />
+              </label>
+              <label className="text-[11px] font-bold text-slate-600">
+                até
+                <input type="time" value={manhaFim} onChange={(event) => setManhaFim(event.target.value)} className="mt-1 block min-h-11 rounded-xl border border-slate-200 px-3 text-sm" required />
+              </label>
+              <label className="text-[11px] font-bold text-slate-600">
+                Tarde das
+                <input type="time" value={tardeInicio} onChange={(event) => setTardeInicio(event.target.value)} className="mt-1 block min-h-11 rounded-xl border border-slate-200 px-3 text-sm" required />
+              </label>
+              <label className="text-[11px] font-bold text-slate-600">
+                até
+                <input type="time" value={tardeFim} onChange={(event) => setTardeFim(event.target.value)} className="mt-1 block min-h-11 rounded-xl border border-slate-200 px-3 text-sm" required />
+              </label>
+              <PremiumButton type="submit" variant="secondary" disabled={salvando}>Salvar horário</PremiumButton>
+            </div>
+            {conflitosGrade && (
+              <div className="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-950">
+                <p className="font-bold">{conflitosGrade.mensagem}</p>
+                <ul className="mt-2 list-disc pl-5">
+                  {conflitosGrade.conflitos.map((item) => (
+                    <li key={`${item.maquina}-${item.inicio}-${item.nome}`}>{item.nome} · {item.maquina} · {rotuloQuando(item.inicio)}</li>
+                  ))}
+                </ul>
+                {conflitosGrade.restantes > 0 && <p className="mt-2">E mais {conflitosGrade.restantes}.</p>}
+              </div>
+            )}
+          </form>
+        )}
         <div className="mb-4 flex flex-wrap items-center gap-2">
           <PremiumButton type="button" variant="secondary" disabled={inicioFaixa <= hoje} onClick={() => setInicioFaixa(somarDias(inicioFaixa, -7))}>
             Semana anterior
@@ -801,6 +901,7 @@ export default function PariLavanderia() {
             </div>
           </div>
         )}
+        </ScrollArea>
       </MainShell>
     </AppShell>
   );

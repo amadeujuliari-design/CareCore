@@ -40,7 +40,7 @@ import {
 import { useRelatoriosIdentidade } from './hooks/useRelatoriosIdentidade';
 import { useConfigOperacional } from './hooks/useConfigOperacional';
 import { useAuth } from './context/AuthContext';
-import { projetoEhReencontroPari } from './utils/projetoPari';
+import { projetoSemFluxoPortaria } from './utils/projetoPari';
 import { lerUsuarioTextoOriginal, usuarioPodeVerTextoOriginal } from './utils/textoOriginalUtils';
 import { decodificarPayloadJwt } from './utils/jwtUtils';
 import { normalizarPerfilRbac, usuarioPodeConfigOperacionalProjeto } from './utils/rbacUtils';
@@ -93,7 +93,7 @@ export default function Relatorios() {
   const podeConfigOperacional = usuarioPodeConfigOperacionalProjeto(perfilRelatorios, tokenPayload);
   const { usuario } = useAuth();
   const { config: configOperacional, nomeProjeto } = useConfigOperacional();
-  const semFluxoPortaria = projetoEhReencontroPari(nomeProjeto || usuario?.projeto_nome);
+  const semFluxoPortaria = projetoSemFluxoPortaria(nomeProjeto || usuario?.projeto_nome);
   const usuarioTextoOriginal = useMemo(() => lerUsuarioTextoOriginal(token), [token]);
   const podeVerTextoOriginal = usuarioPodeVerTextoOriginal(usuarioTextoOriginal);
   const [incluirTextoOriginalOcorrencias, setIncluirTextoOriginalOcorrencias] = useState(false);

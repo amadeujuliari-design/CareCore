@@ -402,7 +402,7 @@ export default function Sidebar() {
             {
               path: '/rotina/kit-higiene',
               icon: PackageOpen,
-              label: 'Kit de higiene',
+              label: 'Kit mensal da Família',
               somentePari: true,
             },
             {

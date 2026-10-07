@@ -39,7 +39,7 @@ import { decodificarPayloadJwt } from './utils/jwtUtils';
 import { criarHeadersAutenticados } from './utils/requestIdUtils';
 import { useAuth } from './context/AuthContext';
 import { useConfigOperacional } from './hooks/useConfigOperacional';
-import { projetoEhReencontroPari } from './utils/projetoPari';
+import { projetoSemFluxoPortaria } from './utils/projetoPari';
 import {
   FILTRO_TECNICO_SEM_VINCULADO,
   rotuloFiltroTecnicoRelatorios,
@@ -51,7 +51,7 @@ export default function RotinaHistorico() {
   const { usuario } = useAuth();
   const { config: configOperacional, nomeProjeto, carregando: carregandoConfig } = useConfigOperacional();
   const nomeProjetoAtivo = nomeProjeto || usuario?.projeto_nome || '';
-  const semPortaria = projetoEhReencontroPari(nomeProjetoAtivo);
+  const semPortaria = projetoSemFluxoPortaria(nomeProjetoAtivo);
 
   const [registros, setRegistros] = useState([]);
   const [totalRegistros, setTotalRegistros] = useState(0);
