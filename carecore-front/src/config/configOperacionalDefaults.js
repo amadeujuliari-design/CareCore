@@ -1,3 +1,4 @@
+import { projetoEhReencontroPari } from '../utils/projetoPari';
 import {
   TERMO_COMPROMISSO_TEXTO,
   TERMO_LGPD_SUBTITULO,
@@ -204,6 +205,24 @@ const INTERACOES_CASA_PORTO = [
   { valor: 'Bipar documentos guardados', label: 'Documentos guardados', grupo: 'observacao', ativo: true },
   { valor: 'Bipar documentos retirados', label: 'Documentos retirados', grupo: 'observacao', ativo: true },
 ];
+
+export const REFEICOES_REENCONTRO = [
+  { id: 'cafe', nome: 'Café da manhã', inicio: '06:55', fim: '08:30', ativo: true },
+  { id: 'almoco', nome: 'Almoço', inicio: '11:50', fim: '14:30', ativo: true },
+  { id: 'cafe_tarde', nome: 'Café da tarde', inicio: '15:00', fim: '16:30', ativo: true },
+  { id: 'jantar', nome: 'Jantar', inicio: '17:50', fim: '20:30', ativo: true },
+];
+
+export function aplicarPresetReencontro(config, nomeProjeto) {
+  if (!projetoEhReencontroPari(nomeProjeto)) return config;
+  const base = config || montarConfigOperacionalPadrao();
+  return {
+    ...base,
+    refeicoes: { habilitadas: true, itens: REFEICOES_REENCONTRO.map((item) => ({ ...item })) },
+    interacoes_rotina: [],
+    preset_reencontro: true,
+  };
+}
 
 export function aplicarPresetCasaPorto(config, nomeProjeto) {
   if (!projetoOcultaAcomodacoes(nomeProjeto)) return config;

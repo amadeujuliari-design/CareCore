@@ -14,8 +14,10 @@ from config_operacional_defaults import (
     INTERACOES_ROTINA_PADRAO,
     MODULOS_PADRAO,
     PORTARIA_PADRAO,
+    INTERACOES_ROTINA_REENCONTRO,
     REFEICOES_CASA_PORTO,
     REFEICOES_PADRAO,
+    REFEICOES_REENCONTRO,
     TERMO_BAGAGEIRO_COMPROMISSO_PADRAO,
     TERMO_BAGAGEIRO_ITENS_PADRAO,
     TERMO_BAGAGEIRO_RETIRADA_SUBTITULO_PADRAO,
@@ -200,7 +202,12 @@ def _parse_hora_str(valor: str) -> time:
     return time(hora, minuto)
 
 
-def montar_config_operacional_padrao(*, siat: bool = False, casa_porto: bool = False) -> ConfigOperacionalProjeto:
+def montar_config_operacional_padrao(
+    *,
+    siat: bool = False,
+    casa_porto: bool = False,
+    reencontro: bool = False,
+) -> ConfigOperacionalProjeto:
     modulos = dict(MODULOS_SIAT if siat else MODULOS_PADRAO)
     refeicoes = REFEICOES_PADRAO
     interacoes = INTERACOES_ROTINA_PADRAO
@@ -210,6 +217,9 @@ def montar_config_operacional_padrao(*, siat: bool = False, casa_porto: bool = F
         modulos["acomodacoes"] = False
         modulos["pertences_recolhidos"] = False
         modulos["lavanderia_pecas"] = False
+    elif reencontro:
+        refeicoes = REFEICOES_REENCONTRO
+        interacoes = INTERACOES_ROTINA_REENCONTRO
     termo_compromisso_titulo = TERMO_COMPROMISSO_TITULO_SIAT if siat else TERMO_COMPROMISSO_TITULO_PADRAO
     termo_compromisso_texto = TERMO_COMPROMISSO_TEXTO_SIAT if siat else TERMO_COMPROMISSO_TEXTO_PADRAO
     termo_lgpd_texto = TERMO_LGPD_TEXTO_SIAT if siat else TERMO_LGPD_TEXTO_PADRAO
@@ -252,13 +262,21 @@ def montar_config_operacional_padrao(*, siat: bool = False, casa_porto: bool = F
     )
 
 
+def _aplicar_preset_reencontro(config: ConfigOperacionalProjeto) -> ConfigOperacionalProjeto:
+    config.refeicoes.habilitadas = True
+    config.refeicoes.itens = [RefeicaoOperacionalItem(**item) for item in REFEICOES_REENCONTRO]
+    config.interacoes_rotina = [InteracaoRotinaItem(**item) for item in INTERACOES_ROTINA_REENCONTRO]
+    return config
+
+
 def mesclar_config_operacional(
   stored: dict[str, Any] | str | None,
   *,
   siat: bool = False,
   casa_porto: bool = False,
+  reencontro: bool = False,
 ) -> ConfigOperacionalProjeto:
-    base = montar_config_operacional_padrao(siat=siat, casa_porto=casa_porto)
+    base = montar_config_operacional_padrao(siat=siat, casa_porto=casa_porto, reencontro=reencontro)
     if not stored:
         return base
 
@@ -283,16 +301,18 @@ def mesclar_config_operacional(
     try:
         config = ConfigOperacionalProjeto.model_validate(merged)
     except Exception:
-        if not casa_porto:
+        if not casa_porto and not reencontro:
             raise
         config = base
-    if not casa_porto:
+    if casa_porto:
+        config.refeicoes.itens = [RefeicaoOperacionalItem(**item) for item in REFEICOES_CASA_PORTO]
+        config.interacoes_rotina = [InteracaoRotinaItem(**item) for item in INTERACOES_ROTINA_CASA_PORTO]
+        config.modulos.acomodacoes = False
+        config.modulos.pertences_recolhidos = False
+        config.modulos.lavanderia_pecas = False
         return config
-    config.refeicoes.itens = [RefeicaoOperacionalItem(**item) for item in REFEICOES_CASA_PORTO]
-    config.interacoes_rotina = [InteracaoRotinaItem(**item) for item in INTERACOES_ROTINA_CASA_PORTO]
-    config.modulos.acomodacoes = False
-    config.modulos.pertences_recolhidos = False
-    config.modulos.lavanderia_pecas = False
+    if reencontro:
+        return _aplicar_preset_reencontro(config)
     return config
 
 

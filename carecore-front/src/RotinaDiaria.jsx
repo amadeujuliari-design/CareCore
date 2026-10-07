@@ -172,6 +172,7 @@ function PainelOperadorRotina({ className = '' }) {
 const ROTULOS_REFEICAO_EXTRA = {
   'Café da manhã': 'café da manhã',
   Almoço: 'almoço',
+  'Café da tarde': 'café da tarde',
   Jantar: 'jantar',
   'Lanche noturno': 'lanche noturno',
 };

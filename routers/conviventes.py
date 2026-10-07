@@ -231,7 +231,7 @@ async def montar_convivente_response(
     return ConviventeResponse.model_validate(payload)
 
 TIPOS_ROTINA_PRINCIPAIS = {"Entrada", "Saída"}
-TIPOS_ROTINA_REFEICOES = {"Café da manhã", "Almoço", "Jantar", "Lanche noturno"}
+TIPOS_ROTINA_REFEICOES = {"Café da manhã", "Almoço", "Café da tarde", "Jantar", "Lanche noturno"}
 TIPOS_ROTINA_INTERACOES_SIMPLES = {"Banho"}
 TIPOS_ROTINA_PARES = {
     "Retirada de Cobertor",
@@ -272,6 +272,7 @@ DEPENDENCIAS_EXCLUSAO_CONVIVENTE = (
 ROTULOS_REFEICOES_EXTRAS = {
     "Café da manhã": "café da manhã",
     "Almoço": "almoço",
+    "Café da tarde": "café da tarde",
     "Jantar": "jantar",
     "Lanche noturno": "lanche noturno",
 }

@@ -3,7 +3,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
 import { buscarConfigOperacional } from '../services/configOperacionalService';
-import { aplicarPresetCasaPorto, montarConfigOperacionalPadrao } from '../config/configOperacionalDefaults';
+import { aplicarPresetCasaPorto, aplicarPresetReencontro, montarConfigOperacionalPadrao } from '../config/configOperacionalDefaults';
 import {
   obterUsuarioSessao,
   usuarioPodeAcessarModuloOperacional,
@@ -53,14 +53,14 @@ export function ConfigOperacionalProvider({ children }) {
     if (!aindaVale()) return;
     setNomeProjeto(nome);
     if (!token) {
-      setConfig(aplicarPresetCasaPorto(montarConfigOperacionalPadrao(), nome));
+      setConfig(aplicarPresetReencontro(aplicarPresetCasaPorto(montarConfigOperacionalPadrao(), nome), nome));
       setCarregando(false);
       setErro('');
       return;
     }
 
     if (!usuarioPodeAcessarModuloOperacional(usuarioSessao)) {
-      setConfig(aplicarPresetCasaPorto(montarConfigOperacionalPadrao(), nome));
+      setConfig(aplicarPresetReencontro(aplicarPresetCasaPorto(montarConfigOperacionalPadrao(), nome), nome));
       setCarregando(false);
       setErro('');
       return;
@@ -71,10 +71,10 @@ export function ConfigOperacionalProvider({ children }) {
     try {
       const dados = await buscarConfigOperacional();
       if (!aindaVale()) return;
-      setConfig(aplicarPresetCasaPorto(dados, nome));
+      setConfig(aplicarPresetReencontro(aplicarPresetCasaPorto(dados, nome), nome));
     } catch (error) {
       if (!aindaVale()) return;
-      setConfig(aplicarPresetCasaPorto(montarConfigOperacionalPadrao(), nome));
+      setConfig(aplicarPresetReencontro(aplicarPresetCasaPorto(montarConfigOperacionalPadrao(), nome), nome));
       setErro('Não foi possível carregar a configuração operacional do projeto.');
       console.error(error);
     } finally {

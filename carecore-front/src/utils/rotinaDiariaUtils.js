@@ -3,6 +3,7 @@ import { filtrarOrdenarConviventesPorBusca } from './conviventeBuscaUtils.js';
 export const TIPOS_ROTINA_REFEICOES = [
   'Café da manhã',
   'Almoço',
+  'Café da tarde',
   'Jantar',
   'Lanche noturno',
 ];

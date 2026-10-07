@@ -101,6 +101,38 @@ def test_casa_porto_forca_rotina_curta_e_sem_controle_de_pecas():
     assert config.modulos.lavanderia_pecas is False
 
 
+def test_reencontro_fica_so_com_as_quatro_refeicoes():
+    config = mesclar_config_operacional(
+        {
+            "refeicoes": {
+                "itens": [
+                    {
+                        "id": "lanche",
+                        "nome": "Lanche noturno",
+                        "inicio": "21:00",
+                        "fim": "22:30",
+                        "ativo": True,
+                    }
+                ]
+            },
+            "interacoes_rotina": [
+                {"valor": "Banho", "label": "Banho", "grupo": "simples", "ativo": True},
+                {"valor": "Bagageiro", "label": "Bagageiro (entrada/saída)", "grupo": "par_bagageiro", "ativo": True},
+            ],
+        },
+        reencontro=True,
+    )
+    nomes = [item.nome for item in config.refeicoes.itens]
+    tipos = obter_tipos_rotina_validos(config)
+    assert nomes == ["Café da manhã", "Almoço", "Café da tarde", "Jantar"]
+    assert config.interacoes_rotina == []
+    assert "Café da tarde" in tipos
+    assert "Lanche noturno" not in tipos
+    assert "Banho" not in tipos
+    assert "Entrada" in tipos
+    assert "Saída" in tipos
+
+
 def test_interacao_par_customizada_entra_nos_tipos_validos():
     config = montar_config_operacional_padrao()
     config.interacoes_rotina.append(

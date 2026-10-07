@@ -479,7 +479,7 @@ Título **Resumo mensal**. Campos: **Mês de referência**, **Data inicial**, **
 
 **Casa Porto:** banner após 16h se houver conviventes dentro (texto fixo 16h — ver destaque no topo).
 
-**Reencontro Pari:** sem botões de Entrada/Saída, sem status Dentro/Saiu e sem totais de presentes na unidade. Fica alimentação e as interações do projeto. O mesmo modelo de menu e rotina vale para **REENCONTRO ANHANGABAÚ** e **REENCONTRO CRUZEIRO DO SUL**. **REENCONTRO JABAQUARA** mantém esse modelo e também controla Entrada/Saída, com status Dentro/Saiu e totais de presentes. Lavanderia OMO e kit seguem o mesmo modelo nos quatro (seções 7 e 7.1). O cadastro de cada projeto continua separado.
+**Reencontro Pari, Anhangabaú, Cruzeiro do Sul e Jabaquara:** a rotina oferece só **Café da manhã**, **Almoço**, **Café da tarde** e **Jantar**. Não entram lanche noturno, banho, cobertor, toalha, bagageiro nem documentos. Pari, Anhangabaú e Cruzeiro não têm botões de Entrada/Saída, status Dentro/Saiu nem totais de presentes. **REENCONTRO JABAQUARA** mantém essas quatro refeições e também controla Entrada/Saída, com status Dentro/Saiu e totais de presentes. Lavanderia OMO e kit seguem o mesmo modelo nos quatro (seções 7 e 7.1). O cadastro de cada projeto continua separado.
 
 ---
 
