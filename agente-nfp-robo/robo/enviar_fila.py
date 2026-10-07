@@ -55,7 +55,7 @@ from preencher_sem_enviar import (  # noqa: E402
     conectar_navegador,
     escolher_pagina,
     fechar_modal_mensagem,
-    preencher_chave,
+    preencher_item,
 )
 from retorno_nfp import (  # noqa: E402
     ClassificacaoRetorno,
@@ -275,7 +275,7 @@ async def _atualizar_pagina_cadastro(page) -> str:
     return "falha"
 
 
-async def _reenviar_se_aviso_antigo(page, chave: str, cls):
+async def _reenviar_se_aviso_antigo(page, item: dict, cls):
     """Uma nova tentativa na pagina limpa. Se o aviso continuar, o cupom fica pendente."""
     if not aviso_da_tela_nao_mudou(cls):
         return cls, ""
@@ -304,8 +304,8 @@ async def _reenviar_se_aviso_antigo(page, chave: str, cls):
     if estado != "ok":
         print("Cadastro não atualizou. Cupom fica pendente.")
         return cls, estado
-    if not await preencher_chave(page, chave):
-        print("Não preenchi a chave depois de atualizar a página. Cupom fica pendente.")
+    if not await preencher_item(page, item):
+        print("Não preenchi o cupom depois de atualizar a página. Cupom fica pendente.")
         return cls, estado
     try:
         texto_antes = await coletar_texto_retorno(page)
@@ -450,8 +450,12 @@ async def rodar(args: argparse.Namespace) -> int:
                         break
 
                     chave = item["chave"]
-                    print(f"\n[{i}/{len(fila)}] {chave}")
-                    ok_chave, motivo_chave = validar_chave_acesso_nfe(chave)
+                    por_dados = str(item.get("forma") or "") == "dados" or str(chave).startswith("DADOS:")
+                    if por_dados:
+                        print(f"\n[{i}/{len(fila)}] dados COO {item.get('coo') or '—'} CNPJ {item.get('cnpj') or '—'}")
+                    else:
+                        print(f"\n[{i}/{len(fila)}] {chave}")
+                    ok_chave, motivo_chave = (True, "") if por_dados else validar_chave_acesso_nfe(chave)
                     if not ok_chave:
                         msg = (
                             (motivo_chave or "Chave estruturalmente invalida.")
@@ -482,14 +486,14 @@ async def rodar(args: argparse.Namespace) -> int:
                             await page.wait_for_timeout(int(args.pausa * 1000))
                         continue
 
-                    if not await preencher_chave(page, chave):
+                    if not await preencher_item(page, item):
                         print("Campo chave sumiu — tentando recuperar tela e repetir uma vez...")
                         estado_r = await _posicionar_tela(page, rotulo="retry preencher")
                         if estado_r == "bloqueio_sefaz":
                             motivo_interrupcao = "bloqueio_sefaz"
                             print("Bloqueio SEFAZ no retry — parando.")
                             break
-                        if estado_r == "ok" and await preencher_chave(page, chave):
+                        if estado_r == "ok" and await preencher_item(page, item):
                             pass
                         else:
                             print("Falha ao preencher — interrompendo.")
@@ -523,7 +527,7 @@ async def rodar(args: argparse.Namespace) -> int:
                             print("Bloqueio SEFAZ no retry — parando.")
                             break
                         if estado_r == "ok":
-                            if not await preencher_chave(page, chave):
+                            if not await preencher_item(page, item):
                                 print("Falha ao preencher apos recuperacao — interrompendo.")
                                 motivo_interrupcao = "falha_preencher"
                                 codigo_saida = 1
@@ -560,12 +564,12 @@ async def rodar(args: argparse.Namespace) -> int:
                             break
                         if (
                             estado_r == "ok"
-                            and await preencher_chave(page, chave)
+                            and await preencher_item(page, item)
                             and await clicar_registrar(page)
                         ):
                             cls = await processar_retorno(page, texto_antes="")
                     if aviso_da_tela_nao_mudou(cls):
-                        cls, estado_att = await _reenviar_se_aviso_antigo(page, chave, cls)
+                        cls, estado_att = await _reenviar_se_aviso_antigo(page, item, cls)
                         if estado_att == "parada_usuario":
                             parado_pelo_usuario = True
                             motivo_interrupcao = "parada_usuario"

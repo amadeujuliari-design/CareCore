@@ -203,6 +203,20 @@ def validar_chave_acesso_nfe(chave: str) -> tuple[bool, str]:
     return True, ""
 
 
+PREFIXO_CUPOM_DADOS = "DADOS:"
+
+
+def cupom_lancado_por_dados(chave: str | None) -> bool:
+    return str(chave or "").startswith(PREFIXO_CUPOM_DADOS)
+
+
+def montar_chave_cupom_dados(cnpj: str, data_iso: str, coo: str) -> str:
+    """Identificador único do cupom digitado. Não é chave de acesso."""
+    cnpj_limpo = "".join(ch for ch in str(cnpj or "") if ch.isdigit())
+    coo_limpo = "".join(ch for ch in str(coo or "") if ch.isdigit())
+    return f"{PREFIXO_CUPOM_DADOS}{cnpj_limpo}:{str(data_iso or '').replace('-', '')}:{coo_limpo}"
+
+
 def mensagem_chave_invalida(motivo: str) -> str:
     m = (motivo or "").strip() or "Chave de acesso estruturalmente invalida."
     if not m.lower().startswith("chave"):

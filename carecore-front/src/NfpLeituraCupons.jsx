@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { CheckCircle2, QrCode } from 'lucide-react';
+import { CheckCircle2, Lock, LockOpen, Minus, Plus, QrCode } from 'lucide-react';
 
 import Sidebar from './Sidebar';
 import BannerSomenteLeituraGlobal from './components/BannerSomenteLeituraGlobal';
@@ -11,8 +11,10 @@ import {
   nfpGarantirAgentesPadrao,
   nfpListarAgentes,
   nfpListarCupons,
+  nfpRegistrarCupomDados,
   nfpRegistrarLeituraCupom,
 } from './services/nfpService';
+import { centavosParaInput } from './utils/comprasPatrimonioUtils';
 import { erroApiNfp, opcoesAgentesCaptacao } from './utils/nfpCadastroUtils';
 import { captadorInicialDoProjeto } from './utils/nfpCaptadorInicial';
 import {
@@ -27,6 +29,81 @@ import { usuarioEhAdmProducao, usuarioSomenteLeituraNfp, vinculoEhSede } from '.
 function chaveCurta(chave) {
   if (!chave || chave.length < 44) return chave || '—';
   return `${chave.slice(0, 8)}…${chave.slice(-8)}`;
+}
+
+function cupomPorDados(chave) {
+  return String(chave || '').startsWith('DADOS:');
+}
+
+function rotuloCupom(item) {
+  if (cupomPorDados(item?.chave)) {
+    return `Dados · COO ${item?.numero_nf || '—'}`;
+  }
+  return chaveCurta(item?.chave);
+}
+
+function partesHojeSp() {
+  const iso = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Sao_Paulo',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date());
+  const [ano, mes, dia] = iso.split('-');
+  return { ano, mes, dia };
+}
+
+function mascararCnpj(valor) {
+  const d = String(valor || '').replace(/\D/g, '').slice(0, 14);
+  if (d.length <= 2) return d;
+  if (d.length <= 5) return `${d.slice(0, 2)}.${d.slice(2)}`;
+  if (d.length <= 8) return `${d.slice(0, 2)}.${d.slice(2, 5)}.${d.slice(5)}`;
+  if (d.length <= 12) return `${d.slice(0, 2)}.${d.slice(2, 5)}.${d.slice(5, 8)}/${d.slice(8)}`;
+  return `${d.slice(0, 2)}.${d.slice(2, 5)}.${d.slice(5, 8)}/${d.slice(8, 12)}-${d.slice(12)}`;
+}
+
+function mascararMoedaDigitando(texto) {
+  const digitos = String(texto || '').replace(/\D/g, '').slice(0, 12);
+  if (!digitos) return '';
+  return centavosParaInput(Number(digitos));
+}
+
+function ajustarCoo(atual, delta) {
+  const digitos = String(atual || '').replace(/\D/g, '').slice(0, 9);
+  const largura = digitos.length || 6;
+  const proximo = Math.min(999999999, Math.max(0, (digitos ? Number(digitos) : 0) + delta));
+  return String(proximo).padStart(largura, '0');
+}
+
+const NOMES_MES = [
+  'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+  'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro',
+];
+
+function somarMeses(ano, mes, delta) {
+  const total = Number(ano) * 12 + (Number(mes) - 1) + delta;
+  return { ano: Math.floor(total / 12), mes: (total % 12) + 1 };
+}
+
+function mesesCompraAbertos(hoje) {
+  const hojeData = new Date(Number(hoje.ano), Number(hoje.mes) - 1, Number(hoje.dia));
+  const abertos = [];
+  for (let delta = -3; delta <= 0; delta += 1) {
+    const ref = somarMeses(hoje.ano, hoje.mes, delta);
+    const lim = somarMeses(ref.ano, ref.mes, 2);
+    const limiteLeitura = new Date(lim.ano, lim.mes - 1, 20);
+    limiteLeitura.setDate(limiteLeitura.getDate() + 1);
+    if (hojeData > limiteLeitura) continue;
+    const mm = String(ref.mes).padStart(2, '0');
+    abertos.push({
+      chave: `${ref.ano}-${mm}`,
+      ano: String(ref.ano),
+      mes: mm,
+      nome: NOMES_MES[ref.mes - 1],
+      limite: `20/${String(lim.mes).padStart(2, '0')}`,
+    });
+  }
+  return abertos;
 }
 
 function formatarValorLeitura(centavos) {
@@ -78,6 +155,9 @@ function mensagemFlashLeitura(cupom, checagem) {
   if (checagem === 'imediata_cpf' || cupom?.status === 'rejeitado_cpf') {
     return `Cupom com CPF — fora da fila · ${curta}`;
   }
+  if (checagem === 'fila_dados') {
+    return `Cupom por dados na fila · COO ${cupom?.numero_nf || '—'}`;
+  }
   if (cupom?.status === 'checando' || checagem === 'agendada') {
     return `Lido · validando SEFAZ em segundo plano · ${curta}`;
   }
@@ -120,6 +200,18 @@ export default function NfpLeituraCupons() {
   const [sucessoFlash, setSucessoFlash] = useState('');
   const [ultimoIdLido, setUltimoIdLido] = useState('');
   const [chaveManual, setChaveManual] = useState('');
+  const [modoLeitura, setModoLeitura] = useState('qr');
+  const hojeSp = useMemo(() => partesHojeSp(), []);
+  const [cnpjDados, setCnpjDados] = useState('');
+  const [cnpjTravado, setCnpjTravado] = useState(true);
+  const [anoDados, setAnoDados] = useState(hojeSp.ano);
+  const [mesDados, setMesDados] = useState(hojeSp.mes);
+  const [mesTravado, setMesTravado] = useState(false);
+  const mesesAbertos = useMemo(() => mesesCompraAbertos(hojeSp), [hojeSp]);
+  const [diaDados, setDiaDados] = useState(hojeSp.dia);
+  const [cooDados, setCooDados] = useState('');
+  const [valorDados, setValorDados] = useState('');
+  const [enviandoDados, setEnviandoDados] = useState(false);
   const emVooRef = useRef(new Set());
   const captadorRef = useRef(captador);
   const paginaRef = useRef(1);
@@ -317,8 +409,89 @@ export default function NfpLeituraCupons() {
     processarLeituraRef.current = processarLeitura;
   }, [processarLeitura]);
 
+  const enviarDados = useCallback(async () => {
+    if (somenteLeitura || enviandoDados) return;
+    const destino = (captadorRef.current || '').trim();
+    if (!destino) {
+      setErro(
+        forcarVinculo
+          ? 'Seu usuário não tem vínculo NFP configurado.'
+          : 'Selecione o captador / unidade antes de inserir.',
+      );
+      return;
+    }
+    const cnpj = cnpjDados.replace(/\D/g, '');
+    const coo = cooDados.replace(/\D/g, '');
+    const dia = String(diaDados || '').replace(/\D/g, '').padStart(2, '0');
+    const dataIso = `${anoDados}-${mesDados}-${dia}`;
+    const conferida = new Date(`${dataIso}T12:00:00`);
+    if (cnpj.length !== 14) {
+      setErro('Informe o CNPJ do emissor com 14 dígitos.');
+      return;
+    }
+    if (!coo) {
+      setErro('Informe o COO do cupom.');
+      return;
+    }
+    if (Number.isNaN(conferida.getTime()) || String(conferida.getDate()).padStart(2, '0') !== dia) {
+      setErro('Dia inválido para este mês.');
+      return;
+    }
+    if (!Number(String(valorDados || '').replace(/\D/g, ''))) {
+      setErro('Informe o valor do cupom.');
+      return;
+    }
+    setEnviandoDados(true);
+    setErro('');
+    setSucessoFlash('');
+    try {
+      const data = await nfpRegistrarCupomDados({
+        captador: destino,
+        cnpj,
+        data: dataIso,
+        coo,
+        valor: valorDados,
+        tipo_nota: 'Cupom Fiscal',
+      });
+      const cupom = data?.cupom;
+      if (cupom) {
+        setAviso('');
+        setPagina(1);
+        setItens((prev) => [cupom, ...prev.filter((i) => i.id !== cupom.id)].slice(0, PAGE_SIZE));
+        setTotalLista((t) => t + 1);
+        setUltimoIdLido(cupom.id);
+        setSucessoFlash(mensagemFlashLeitura(cupom, data?.checagem));
+        setValorDados('');
+        requestAnimationFrame(() => {
+          listaTopoRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        });
+      }
+    } catch (error) {
+      const status = error?.response?.status;
+      const msg = erroApiNfp(error, 'Não foi possível inserir o cupom.');
+      if (status === 409) {
+        setAviso(msg || 'Este cupom já foi inserido (mesmo CNPJ, data e COO).');
+        setErro('');
+      } else {
+        setErro(msg);
+      }
+    } finally {
+      setEnviandoDados(false);
+    }
+  }, [
+    somenteLeitura,
+    enviandoDados,
+    forcarVinculo,
+    cnpjDados,
+    cooDados,
+    diaDados,
+    anoDados,
+    mesDados,
+    valorDados,
+  ]);
+
   useLeitorUsbGlobal({
-    ativo: !somenteLeitura,
+    ativo: !somenteLeitura && modoLeitura === 'qr',
     onCodigoLido: processarLeitura,
   });
 
@@ -449,7 +622,7 @@ export default function NfpLeituraCupons() {
         <PageHeader
           eyebrow="NFP – Créditos"
           title="Leitura de Cupons"
-          subtitle="Bipe o QR (câmera ou leitor). Validamos na SEFAZ e só entram cupons sem CPF do consumidor."
+          subtitle="Escolha leitura do QR ou inserção dos dados do cupom. O QR passa pela SEFAZ; os dados entram direto na fila do robô."
           icon={<QrCode className="h-5 w-5" />}
           backTo="/nfp"
         />
@@ -481,7 +654,7 @@ export default function NfpLeituraCupons() {
               </div>
             ) : null}
 
-            <div className="grid min-w-0 gap-3 lg:grid-cols-[minmax(0,280px)_minmax(0,1fr)] lg:items-start">
+            <div className="grid min-w-0 gap-3 lg:grid-cols-[minmax(0,340px)_minmax(0,1fr)] lg:items-start">
               {!somenteLeitura && (
               <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
                 {forcarVinculo ? (
@@ -505,6 +678,27 @@ export default function NfpLeituraCupons() {
                     placeholder="Selecione…"
                   />
                 )}
+                <div className="mt-3 grid grid-cols-2 gap-1 rounded-xl bg-slate-100 p-1 text-xs font-semibold">
+                  <button
+                    type="button"
+                    onClick={() => setModoLeitura('qr')}
+                    className={`rounded-lg px-2 py-2 ${modoLeitura === 'qr' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}
+                  >
+                    Leitura de QR Code
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setModoLeitura('dados');
+                      setCameraAtiva(false);
+                    }}
+                    className={`rounded-lg px-2 py-2 ${modoLeitura === 'dados' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}
+                  >
+                    Inserção de dados
+                  </button>
+                </div>
+                {modoLeitura === 'qr' ? (
+                  <>
                 <label className="mt-3 flex items-center gap-2 text-sm text-slate-700">
                   <input
                     type="checkbox"
@@ -561,6 +755,148 @@ export default function NfpLeituraCupons() {
                     Inserir
                   </button>
                 </div>
+                  </>
+                ) : (
+                  <div className="mt-3 space-y-2">
+                    <p className="text-xs text-slate-500">
+                      Mesmos campos do bloco sem chave de acesso da SEFAZ. O cadeado mantém o valor no próximo cupom. O valor zera depois de inserir.
+                    </p>
+                    <label className="block text-xs font-semibold text-slate-600">
+                      CNPJ do emissor
+                      <div className="mt-1 flex gap-1">
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          value={cnpjDados}
+                          onChange={(e) => setCnpjDados(mascararCnpj(e.target.value))}
+                          disabled={cnpjTravado && cnpjDados.replace(/\D/g, '').length === 14}
+                          placeholder="00.000.000/0000-00"
+                          className="w-full rounded-xl border border-slate-200 px-3 py-2 font-mono text-xs outline-none focus:border-slate-400 disabled:bg-slate-50"
+                        />
+                        <button
+                          type="button"
+                          aria-pressed={cnpjTravado}
+                          title={cnpjTravado ? 'CNPJ travado para o próximo cupom' : 'CNPJ livre'}
+                          onClick={() => setCnpjTravado((v) => !v)}
+                          className="rounded-xl border border-slate-200 px-2 text-slate-600"
+                        >
+                          {cnpjTravado ? <Lock className="h-4 w-4" /> : <LockOpen className="h-4 w-4" />}
+                        </button>
+                      </div>
+                    </label>
+                    <label className="block text-xs font-semibold text-slate-600">
+                      Tipo da nota
+                      <input
+                        type="text"
+                        value="Cupom Fiscal"
+                        readOnly
+                        className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700"
+                      />
+                    </label>
+                    <label className="block text-xs font-semibold text-slate-600">
+                      Mês da compra
+                      <div className="mt-1 flex gap-1">
+                        <select
+                          value={`${anoDados}-${mesDados}`}
+                          onChange={(e) => {
+                            const [ano, mes] = e.target.value.split('-');
+                            setAnoDados(ano);
+                            setMesDados(mes);
+                          }}
+                          disabled={mesTravado}
+                          className="w-full rounded-xl border border-slate-200 px-2 py-2 text-xs disabled:bg-slate-50"
+                        >
+                          {mesesAbertos.map((mes) => (
+                            <option key={mes.chave} value={mes.chave}>
+                              {mes.nome} {mes.ano}
+                            </option>
+                          ))}
+                        </select>
+                        <button
+                          type="button"
+                          aria-pressed={mesTravado}
+                          title={mesTravado ? 'Mês da compra travado para o próximo cupom' : 'Travar o mês da compra no próximo cupom'}
+                          onClick={() => setMesTravado((v) => !v)}
+                          className="rounded-xl border border-slate-200 px-2 text-slate-600"
+                        >
+                          {mesTravado ? <Lock className="h-4 w-4" /> : <LockOpen className="h-4 w-4" />}
+                        </button>
+                      </div>
+                      <span className="mt-1 block font-normal text-slate-400">
+                        {mesesAbertos.length
+                          ? `Prazo da SEFAZ: ${mesesAbertos.map((mes) => `${mes.nome.toLowerCase()} até ${mes.limite}`).join(', ')}.`
+                          : 'Nenhum mês de compra dentro do prazo da SEFAZ.'}
+                      </span>
+                    </label>
+                    <label className="block text-xs font-semibold text-slate-600">
+                      Dia da compra
+                      <input
+                        type="number"
+                        min="1"
+                        max="31"
+                        value={diaDados}
+                        onChange={(e) => setDiaDados(e.target.value)}
+                        className="mt-1 w-20 rounded-xl border border-slate-200 px-3 py-2 text-xs outline-none focus:border-slate-400"
+                      />
+                    </label>
+                    <label className="block text-xs font-semibold text-slate-600">
+                      COO
+                      <div className="mt-1 flex gap-1">
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          autoComplete="off"
+                          value={cooDados}
+                          onChange={(e) => setCooDados(e.target.value.replace(/\D/g, '').slice(0, 9))}
+                          placeholder="000000"
+                          className="w-full rounded-xl border border-slate-200 px-3 py-2 font-mono text-xs outline-none focus:border-slate-400"
+                        />
+                        <button
+                          type="button"
+                          title="Tira 1 do COO"
+                          onClick={() => setCooDados((atual) => ajustarCoo(atual, -1))}
+                          className="rounded-xl border border-slate-200 px-2 text-slate-700"
+                        >
+                          <Minus className="h-4 w-4" />
+                        </button>
+                        <button
+                          type="button"
+                          title="Soma 1 no COO"
+                          onClick={() => setCooDados((atual) => ajustarCoo(atual, 1))}
+                          className="rounded-xl border border-slate-200 px-2 text-slate-700"
+                        >
+                          <Plus className="h-4 w-4" />
+                        </button>
+                      </div>
+                      <span className="mt-1 block font-normal text-slate-400">
+                        Digite como está no cupom todos os dígitos.
+                      </span>
+                    </label>
+                    <label className="block text-xs font-semibold text-slate-600">
+                      Valor da nota
+                      <div className="mt-1 flex items-center rounded-xl border border-slate-200 focus-within:border-slate-400">
+                        <span className="pl-3 text-xs text-slate-500">R$</span>
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          autoComplete="off"
+                          value={valorDados}
+                          onChange={(e) => setValorDados(mascararMoedaDigitando(e.target.value))}
+                          placeholder="0,00"
+                          className="w-full rounded-xl bg-transparent px-2 py-2 text-xs outline-none"
+                        />
+                      </div>
+                    </label>
+                    <button
+                      type="button"
+                      disabled={enviandoDados}
+                      onClick={enviarDados}
+                      className="w-full rounded-xl bg-slate-800 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50"
+                    >
+                      {enviandoDados ? 'Inserindo…' : 'Inserir na fila'}
+                    </button>
+                  </div>
+                )}
               </div>
               )}
 
@@ -648,6 +984,21 @@ export default function NfpLeituraCupons() {
                           const blob = new Blob(
                             [JSON.stringify({
                               chaves: pendentes.map((p) => p.chave),
+                              itens: pendentes.map((p) => (
+                                cupomPorDados(p.chave)
+                                  ? {
+                                    chave: p.chave,
+                                    forma: 'dados',
+                                    cnpj: p.cnpj_emitente || '',
+                                    data: p.data_emissao || '',
+                                    coo: p.numero_nf || '',
+                                    valor: p.valor_centavos == null
+                                      ? ''
+                                      : (Number(p.valor_centavos) / 100).toFixed(2).replace('.', ','),
+                                    tipo_nota: p.modelo || 'Cupom Fiscal',
+                                  }
+                                  : { chave: p.chave, forma: 'chave' }
+                              )),
                               total_api: data?.paginacao?.total ?? pendentes.length,
                               exportados: pendentes.length,
                               observacao: 'Máximo 200 nesta exportação rápida da tela.',
@@ -710,7 +1061,7 @@ export default function NfpLeituraCupons() {
                                 className="font-mono text-slate-800"
                                 title={item.chave || undefined}
                               >
-                                {chaveCurta(item.chave)}
+                                {rotuloCupom(item)}
                               </span>
                               <span className="ml-2 text-slate-500">{item.captador}</span>
                               {item.lido_por_nome ? (

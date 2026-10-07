@@ -115,9 +115,29 @@ def ler_chaves_json(caminho: Path) -> list[dict[str, str]]:
     saida: list[dict[str, str]] = []
     vistos: set[str] = set()
     for item in chaves or []:
+        if isinstance(item, dict) and (
+            str(item.get("forma") or "") == "dados"
+            or str(item.get("chave") or "").startswith("DADOS:")
+        ):
+            chave = str(item.get("chave") or "").strip()
+            if not chave or chave in vistos:
+                continue
+            vistos.add(chave)
+            saida.append(
+                {
+                    "chave": chave,
+                    "forma": "dados",
+                    "cnpj": str(item.get("cnpj") or ""),
+                    "data": str(item.get("data") or ""),
+                    "coo": str(item.get("coo") or ""),
+                    "valor": str(item.get("valor") or ""),
+                    "tipo_nota": str(item.get("tipo_nota") or "Cupom Fiscal"),
+                }
+            )
+            continue
         bruto = item if isinstance(item, str) else (item.get("chave") or "")
         digitos = re.sub(r"\D", "", bruto)
         if len(digitos) == 44 and digitos not in vistos:
             vistos.add(digitos)
-            saida.append({"chave": digitos})
+            saida.append({"chave": digitos, "forma": "chave"})
     return saida

@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from database import AsyncSessionLocal
 from models import NfpCupomLidoDB
 from nfp_conferencia_sefaz_service import parse_sefaz_registrado_em
-from nfp_cupom_utils import mensagem_chave_invalida, validar_chave_acesso_nfe
+from nfp_cupom_utils import cupom_lancado_por_dados, mensagem_chave_invalida, validar_chave_acesso_nfe
 from nfp_utils import limpar_nota
 from time_operacional import agora_operacional_naive
 
@@ -100,6 +100,46 @@ async def _chaves_ja_reservadas(
     return [chave for chave in rows if chave]
 
 
+def item_fila_cupom(row: NfpCupomLidoDB) -> dict[str, Any]:
+    chave = row.chave or ""
+    if cupom_lancado_por_dados(chave):
+        centavos = row.valor_centavos
+        valor = ""
+        if centavos is not None:
+            valor = f"{int(centavos) / 100:.2f}".replace(".", ",")
+        return {
+            "chave": chave,
+            "forma": "dados",
+            "cnpj": row.cnpj_emitente or "",
+            "data": row.data_emissao or "",
+            "coo": row.numero_nf or "",
+            "valor": valor,
+            "valor_centavos": centavos,
+            "tipo_nota": row.modelo or "Cupom Fiscal",
+        }
+    return {"chave": chave, "forma": "chave"}
+
+
+async def _itens_ja_reservados(
+    db: AsyncSession,
+    *,
+    organizacao_id: str,
+    lote_id: str,
+) -> list[dict[str, Any]]:
+    rows = (
+        await db.execute(
+            select(NfpCupomLidoDB)
+            .where(
+                NfpCupomLidoDB.organizacao_id == organizacao_id,
+                NfpCupomLidoDB.lote_id == lote_id,
+                NfpCupomLidoDB.status == STATUS_RESERVADO,
+            )
+            .order_by(NfpCupomLidoDB.lido_em.asc())
+        )
+    ).scalars().all()
+    return [item_fila_cupom(row) for row in rows]
+
+
 async def reservar_lote_cupons(
     db: AsyncSession,
     *,
@@ -120,14 +160,20 @@ async def reservar_lote_cupons(
     informado = (lote_id or "").strip() or None
     if informado:
         await _travar_lote_idempotente(db, informado)
-        ja = await _chaves_ja_reservadas(db, organizacao_id=organizacao_id, lote_id=informado)
+        ja = await _itens_ja_reservados(db, organizacao_id=organizacao_id, lote_id=informado)
         if ja:
-            return {"lote_id": informado, "chaves": ja, "qtd": len(ja)}
+            return {
+                "lote_id": informado,
+                "chaves": [item["chave"] for item in ja],
+                "itens": ja,
+                "qtd": len(ja),
+            }
         lote_id = informado
     else:
         lote_id = str(uuid.uuid4())
     agora = agora_operacional_naive()
     chaves: list[str] = []
+    itens: list[dict[str, Any]] = []
     restantes = qtd
     # Busca em rodadas: pode haver pendentes invalidos no meio da fila FIFO.
     while restantes > 0:
@@ -153,7 +199,10 @@ async def reservar_lote_cupons(
         for row in rows:
             if restantes <= 0:
                 break
-            ok_chave, motivo_chave = validar_chave_acesso_nfe(row.chave or "")
+            if not cupom_lancado_por_dados(row.chave):
+                ok_chave, motivo_chave = validar_chave_acesso_nfe(row.chave or "")
+            else:
+                ok_chave, motivo_chave = True, ""
             if not ok_chave:
                 row.status = STATUS_ERRO
                 row.lote_id = None
@@ -171,6 +220,7 @@ async def reservar_lote_cupons(
             row.atualizado_em = agora
             row.mensagem = f"Reservado para envio SEFAZ (lote {lote_id[:8]}…)."
             chaves.append(row.chave)
+            itens.append(item_fila_cupom(row))
             restantes -= 1
             validos_nesta_rodada += 1
 
@@ -185,8 +235,8 @@ async def reservar_lote_cupons(
 
     await db.commit()
     if not chaves:
-        return {"lote_id": None, "chaves": [], "qtd": 0}
-    return {"lote_id": lote_id, "chaves": chaves, "qtd": len(chaves)}
+        return {"lote_id": None, "chaves": [], "itens": [], "qtd": 0}
+    return {"lote_id": lote_id, "chaves": chaves, "itens": itens, "qtd": len(chaves)}
 
 
 async def liberar_lote(
@@ -268,12 +318,17 @@ async def aplicar_resultados_envio(
     atualizados = 0
     agora = agora_operacional_naive()
     for item in itens:
-        chave = "".join(ch for ch in str(item.get("chave") or "") if ch.isdigit())
-        if len(chave) != 44:
-            continue
+        bruto = str(item.get("chave") or "").strip()
+        if cupom_lancado_por_dados(bruto):
+            chave = bruto
+            ok_chave, motivo_chave = True, ""
+        else:
+            chave = "".join(ch for ch in bruto if ch.isdigit())
+            if len(chave) != 44:
+                continue
+            ok_chave, motivo_chave = validar_chave_acesso_nfe(chave)
         status_cc = (item.get("status_carecore") or "").strip().lower()
         tipo = (item.get("tipo") or "").strip().lower()
-        ok_chave, motivo_chave = validar_chave_acesso_nfe(chave)
         if not ok_chave:
             status_cc = "erro"
             if not (item.get("mensagem") or "").strip():

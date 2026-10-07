@@ -181,6 +181,11 @@ export async function nfpRegistrarLeituraCupom(payload) {
   return data;
 }
 
+export async function nfpRegistrarCupomDados(payload) {
+  const { data } = await api.post('/api/nfp/cupons/dados', payload);
+  return data;
+}
+
 export async function nfpAtualizarStatusCupom(id, payload) {
   const { data } = await api.patch(`/api/nfp/cupons/${id}/status`, payload);
   return data;

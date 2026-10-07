@@ -26,6 +26,7 @@ from nfp_cupom_utils import (
     extrair_chave_de_leitura,
     mensagem_chave_invalida,
     mensagem_rejeicao_prazo,
+    montar_chave_cupom_dados,
     parsear_leitura_cupom,
     qr_indica_cpf_destinatario,
     validar_chave_acesso_nfe,
@@ -268,3 +269,69 @@ async def _aplicar_checagem_sefaz(cupom_id: str) -> None:
             )[:2000]
 
         await db.commit()
+
+
+async def registrar_cupom_dados(
+    db: AsyncSession,
+    *,
+    organizacao_id: str,
+    captador: str,
+    cnpj: str,
+    data_iso: str,
+    coo: str,
+    valor_centavos: int,
+    tipo_nota: str = "Cupom Fiscal",
+    usuario_id: Optional[str] = None,
+) -> dict[str, Any]:
+    """Cupom digitado (sem QR). Entra direto na fila para o bloco sem chave da SEFAZ."""
+    chave = montar_chave_cupom_dados(cnpj, data_iso, coo)
+    existente = (
+        await db.execute(
+            select(NfpCupomLidoDB).where(
+                NfpCupomLidoDB.organizacao_id == organizacao_id,
+                NfpCupomLidoDB.chave == chave,
+            )
+        )
+    ).scalar_one_or_none()
+    if existente:
+        raise LookupError(existente)
+
+    agora = agora_operacional_naive()
+    data_ref = data_iso[:7]
+    comum = dict(
+        organizacao_id=organizacao_id,
+        chave=chave,
+        captador=captador,
+        cnpj_emitente=cnpj,
+        data_emissao=data_iso,
+        data_emissao_ref=data_ref,
+        numero_nf=coo,
+        valor_centavos=valor_centavos,
+        modelo=tipo_nota,
+        qr_bruto="forma:dados",
+        lido_por_usuario_id=usuario_id or None,
+        lido_em=agora,
+        criado_em=agora,
+        atualizado_em=agora,
+    )
+    if cupom_fora_prazo_leitura(data_ref, hoje=agora.date()):
+        row = NfpCupomLidoDB(
+            status=STATUS_REJEITADO_PRAZO,
+            mensagem=mensagem_rejeicao_prazo(data_ref),
+            **comum,
+        )
+        db.add(row)
+        await db.commit()
+        await db.refresh(row)
+        return {"ok": True, "checagem": "imediata_prazo", "cupom": row}
+
+    row = NfpCupomLidoDB(
+        status=STATUS_PENDENTE,
+        consumidor_identificado=False,
+        mensagem="Inserido por dados. Na fila para lançamento sem chave de acesso.",
+        **comum,
+    )
+    db.add(row)
+    await db.commit()
+    await db.refresh(row)
+    return {"ok": True, "checagem": "fila_dados", "cupom": row}

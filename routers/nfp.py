@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import asyncio
+import re
+from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
@@ -26,7 +28,11 @@ from nfp_conferencia_sefaz_service import (
     reenfileirar_cupons_conferencia,
     resumo_conferencia,
 )
-from nfp_cupom_leitura_service import agendar_checagem_sefaz, registrar_leitura_rapida
+from nfp_cupom_leitura_service import (
+    agendar_checagem_sefaz,
+    registrar_cupom_dados,
+    registrar_leitura_rapida,
+)
 from nfp_cupom_relatorio_service import relatorio_cupons
 from nfp_metas_service import (
     consolidado_metas,
@@ -1427,6 +1433,87 @@ async def registrar_leitura_cupom(
             status_code=409,
             detail={
                 "mensagem": "Cupom ja lido anteriormente.",
+                "cupom": _serializar_cupom_lido(existente),
+            },
+        ) from exc
+
+    row = resultado["cupom"]
+    return {
+        "ok": True,
+        "checagem": resultado.get("checagem"),
+        "cupom": _serializar_cupom_lido(row),
+    }
+
+
+def _centavos_de_valor(texto: str) -> int | None:
+    bruto = (texto or "").strip().replace("R$", "").strip()
+    if not bruto:
+        return None
+    if "," in bruto:
+        bruto = bruto.replace(".", "").replace(",", ".")
+    try:
+        return int(round(float(bruto) * 100))
+    except ValueError:
+        return None
+
+
+@router.post("/cupons/dados")
+async def registrar_cupom_por_dados(
+    payload: dict,
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    """Inserção manual: CNPJ, data, COO e valor entram na fila sem chave de acesso."""
+    _exigir_nfp_escrita_cupons(usuario_atual)
+    org = _organizacao_id(usuario_atual)
+    await garantir_agentes_padrao(db, org)
+
+    if usuario_eh_adm_producao(usuario_atual):
+        captador = (usuario_atual.get("nfp_captador_vinculo") or "").strip()
+        if not normalizar_agente_captacao(captador):
+            raise HTTPException(
+                status_code=400,
+                detail="Seu usuário ADM Produção ainda não tem vínculo com projeto/Sede. Peça ao ADM Global, Global ou Manutenção para configurar.",
+            )
+    else:
+        captador = normalizar_agente_captacao(payload.get("captador"))
+        if not captador:
+            raise HTTPException(status_code=400, detail="Selecione o captador / unidade (ex.: SEDE AEB).")
+
+    cnpj = re.sub(r"\D", "", str(payload.get("cnpj") or ""))
+    if len(cnpj) != 14:
+        raise HTTPException(status_code=400, detail="Informe o CNPJ do emissor com 14 dígitos.")
+    coo = re.sub(r"\D", "", str(payload.get("coo") or ""))
+    if not coo or len(coo) > 9:
+        raise HTTPException(status_code=400, detail="Informe o COO do cupom.")
+    data_iso = str(payload.get("data") or "").strip()[:10]
+    try:
+        datetime.strptime(data_iso, "%Y-%m-%d")
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Data da compra inválida.")
+    valor_centavos = _centavos_de_valor(str(payload.get("valor") or ""))
+    if valor_centavos is None or valor_centavos <= 0:
+        raise HTTPException(status_code=400, detail="Informe o valor do cupom.")
+    tipo_nota = (payload.get("tipo_nota") or "Cupom Fiscal").strip() or "Cupom Fiscal"
+
+    try:
+        resultado = await registrar_cupom_dados(
+            db,
+            organizacao_id=org,
+            captador=captador,
+            cnpj=cnpj,
+            data_iso=data_iso,
+            coo=coo,
+            valor_centavos=valor_centavos,
+            tipo_nota=tipo_nota,
+            usuario_id=str(usuario_atual.get("id") or "") or None,
+        )
+    except LookupError as exc:
+        existente = exc.args[0]
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "mensagem": "Este cupom já foi inserido (mesmo CNPJ, data e COO).",
                 "cupom": _serializar_cupom_lido(existente),
             },
         ) from exc

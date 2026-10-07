@@ -186,3 +186,68 @@ def test_aplicar_resultados_envio_marca_enviado():
             await engine.dispose()
 
     asyncio.run(caso())
+
+
+def test_reserva_aceita_cupom_por_dados_e_rejeita_chave_invalida():
+    async def caso():
+        engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+        try:
+            agora = agora_operacional_naive()
+            chave_dados = "DADOS:26563652078747:20260803:019651"
+            async with factory() as db:
+                db.add(OrganizacaoDB(id=ORG, nome="Org Reserva"))
+                db.add(
+                    NfpCupomLidoDB(
+                        organizacao_id=ORG,
+                        chave=chave_dados,
+                        captador="SEDE AEB",
+                        status=STATUS_PENDENTE,
+                        cnpj_emitente="26563652078747",
+                        data_emissao="2026-08-03",
+                        numero_nf="019651",
+                        valor_centavos=2188,
+                        modelo="Cupom Fiscal",
+                        lido_em=agora,
+                        criado_em=agora,
+                        atualizado_em=agora,
+                    )
+                )
+                db.add(
+                    NfpCupomLidoDB(
+                        organizacao_id=ORG,
+                        chave="0" * 44,
+                        captador="SEDE AEB",
+                        status=STATUS_PENDENTE,
+                        lido_em=agora,
+                        criado_em=agora,
+                        atualizado_em=agora,
+                    )
+                )
+                await db.commit()
+                out = await reservar_lote_cupons(
+                    db, organizacao_id=ORG, usuario_id="u1", tamanho=5, lote_id="lote-dados"
+                )
+            dados = [item for item in out["itens"] if item["forma"] == "dados"]
+            assert len(dados) == 1
+            assert dados[0]["chave"] == chave_dados
+            assert dados[0]["coo"] == "019651"
+            assert dados[0]["valor"] == "21,88"
+            assert "0" * 44 not in out["chaves"]
+            async with factory() as db:
+                de_novo = await reservar_lote_cupons(
+                    db, organizacao_id=ORG, usuario_id="u1", tamanho=5, lote_id="lote-dados"
+                )
+                n = await aplicar_resultados_envio(
+                    db,
+                    organizacao_id=ORG,
+                    itens=[{"chave": chave_dados, "tipo": "sucesso", "mensagem": "ok"}],
+                )
+            assert de_novo["itens"][0]["forma"] == "dados"
+            assert n == 1
+        finally:
+            await engine.dispose()
+
+    asyncio.run(caso())

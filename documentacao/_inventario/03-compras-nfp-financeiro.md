@@ -571,7 +571,7 @@ Filtro: Todos os captadores
 
 ### Função
 
-Bipar QR (câmera/leitor USB) ou informar chave; validação SEFAZ; só cupom sem CPF do consumidor.
+Menu Leitura de QR Code (câmera, leitor USB ou chave) ou Inserção de dados (CNPJ, tipo Cupom Fiscal, data, COO e valor, com CNPJ travável, mês da compra dentro do prazo SEFAZ (cadeado opcional), valor em reais e +/− no COO). QR passa pela validação SEFAZ e só entra sem CPF do consumidor. Dados entram direto na mesma fila; o robô lança no bloco sem chave de acesso.
 
 ### Campos
 

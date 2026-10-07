@@ -302,7 +302,7 @@
         <a href="#sec16" class="row"><span class="tnum">16</span><span class="ttl"><b>Relatório de evolução</b><small>Gráficos para prestação de contas</small></span><span class="dots"></span><span class="tpg">18</span></a>
         <a href="#sec18" class="row"><span class="tnum">18</span><span class="ttl"><b>Atividades</b><small>Cadastro e chamada na 19; grade na 20</small></span><span class="dots"></span><span class="tpg">19</span></a>
         <a href="#sec19" class="row"><span class="tnum">19</span><span class="ttl"><b>Compras</b><small>Pedidos, cotações e nota fiscal</small></span><span class="dots"></span><span class="tpg">21</span></a>
-        <a href="#sec20" class="row"><span class="tnum">20</span><span class="ttl"><b>Nota Fiscal Paulista — leitura</b><small>QR do cupom e fila de chaves</small></span><span class="dots"></span><span class="tpg">22</span></a>
+        <a href="#sec20" class="row"><span class="tnum">20</span><span class="ttl"><b>Nota Fiscal Paulista — leitura</b><small>QR, dados do cupom e a fila</small></span><span class="dots"></span><span class="tpg">22</span></a>
         <a href="#sec21" class="row"><span class="tnum">21</span><span class="ttl"><b>Nota Fiscal Paulista — envio</b><small>Senha gov.br só no site oficial</small></span><span class="dots"></span><span class="tpg">23</span></a>
         <a href="#sec22" class="row"><span class="tnum">22</span><span class="ttl"><b>Contato e próximos passos</b><small>Fale com a equipe CARECORE+</small></span><span class="dots"></span><span class="tpg">24</span></a>
       </nav>
@@ -1155,15 +1155,15 @@
       <h2 class="h-section"><span class="num">20.</span> Leitura de cupons</h2>
       <div class="divider"></div>
       <p class="lead">
-        A leitura bipa o QR pela câmera ou pelo leitor USB. O CareCore consulta a SEFAZ e só guarda cupom
-        sem CPF do consumidor. A chave fica na fila, com status de pendente ou enviada. Agentes, doadores,
-        CNPJs, metas e o rateio do mês ficam no mesmo módulo.
+        A pessoa bipa o QR (câmera ou leitor) ou digita CNPJ, data, COO e valor. O QR passa pela SEFAZ
+        e só entra sem CPF. Os dados vão para a mesma fila, e o robô lança no bloco sem chave.
+        Agentes, doadores, CNPJs, metas e o rateio ficam no mesmo módulo.
       </p>
       <div class="shot">
         <div class="bar"><i></i><i></i><i></i><span class="url">carecore+ · Leitura de cupons</span></div>
         <img src="telas/g28-nfp-leitura.png" alt="Leitura de cupons da Nota Fiscal Paulista" />
       </div>
-      <p class="shot-cap">Câmera ou leitor à esquerda; a fila de chaves lidas à direita.</p>
+      <p class="shot-cap">QR ou dados à esquerda; a fila dos cupons à direita.</p>
     </div>
     <footer class="pg-footer">
       <span class="pg-num">Página 22</span>
@@ -1185,14 +1185,14 @@
       <p class="lead">
         O envio roda no computador da instituição. A pessoa autorizada abre o site oficial da Nota Fiscal
         Paulista e <b>digita a senha gov.br ali</b>. O CareCore não pede essa senha e não a armazena.
-        Depois do login, ela inicia o envio automático das chaves que já estão na fila, acompanha o
+        Depois do login, ela inicia o envio automático dos cupons que já estão na fila, acompanha o
         resultado e pode interromper. Quem só lê cupom não dispara essa fila.
       </p>
       <div class="shot">
         <div class="bar"><i></i><i></i><i></i><span class="url">carecore+ · Envio SEFAZ</span></div>
         <img src="telas/g29-nfp-envio.png" alt="Envio das chaves para a Nota Fiscal Paulista" />
       </div>
-      <p class="shot-cap">O login fica no site oficial. O CareCore só conduz as chaves já lidas.</p>
+      <p class="shot-cap">O login fica no site oficial. O CareCore só conduz a fila já lida ou digitada.</p>
     </div>
     <footer class="pg-footer">
       <span class="pg-num">Página 23</span>

@@ -152,6 +152,166 @@ async def preencher_chave(page, chave: str) -> bool:
     return ok
 
 
+def _item_por_dados(item: dict) -> bool:
+    return str(item.get("forma") or "") == "dados" or str(item.get("chave") or "").startswith("DADOS:")
+
+
+def _data_br(valor: str) -> str:
+    texto = (valor or "").strip()
+    m = re.fullmatch(r"(\d{4})-(\d{2})-(\d{2})", texto)
+    if m:
+        return f"{m.group(3)}/{m.group(2)}/{m.group(1)}"
+    return texto
+
+
+def _cnpj_mascara(digitos: str) -> str:
+    d = re.sub(r"\D", "", digitos or "")
+    if len(d) != 14:
+        return digitos or ""
+    return f"{d[:2]}.{d[2:5]}.{d[5:8]}/{d[8:12]}-{d[12:]}"
+
+
+async def _primeiro_visivel(candidatos):
+    for loc in candidatos:
+        try:
+            alvo = loc.first
+            if await alvo.count() == 0:
+                continue
+            if await alvo.is_visible(timeout=800):
+                return alvo
+        except Exception:
+            continue
+    return None
+
+
+async def _preencher_texto(campo, valor: str) -> None:
+    await campo.click()
+    await campo.fill("")
+    await campo.fill(valor)
+    await campo.dispatch_event("input")
+    await campo.dispatch_event("change")
+    await campo.blur()
+
+
+async def limpar_campo_chave(page) -> None:
+    campo = await localizar_campo_chave(page)
+    if campo is None:
+        return
+    try:
+        await campo.fill("")
+        await campo.dispatch_event("input")
+        await campo.dispatch_event("change")
+    except Exception:
+        pass
+
+
+async def preencher_cupom_dados(page, item: dict) -> bool:
+    """Bloco Documentos sem Chave-de-acesso, na mesma tela do QR."""
+    try:
+        from navegar_doacao_aeb import fechar_modal_instrutivo
+
+        await fechar_modal_instrutivo(page)
+    except Exception:
+        pass
+
+    await limpar_campo_chave(page)
+    chave_acima = page.locator("#ckbxtxtCNPJEstabelecimento").locator(
+        "xpath=preceding::input[@type='text'][2]"
+    )
+    try:
+        if await chave_acima.count() and await chave_acima.is_visible(timeout=800):
+            await chave_acima.fill("")
+            await chave_acima.dispatch_event("change")
+    except Exception:
+        pass
+
+    cnpj = _cnpj_mascara(str(item.get("cnpj") or ""))
+    data = _data_br(str(item.get("data") or ""))
+    coo = str(item.get("coo") or "").strip()
+    valor = str(item.get("valor") or "").strip()
+    tipo = str(item.get("tipo_nota") or "Cupom Fiscal").strip() or "Cupom Fiscal"
+    if not (cnpj and data and coo and valor):
+        print("ERRO: cupom por dados sem CNPJ, data, COO ou valor.")
+        return False
+
+    campo_cnpj = await _primeiro_visivel(
+        [
+            page.get_by_label(re.compile(r"CNPJ do Emissor", re.I)),
+            page.get_by_role("textbox", name=re.compile(r"CNPJ do Emissor", re.I)),
+            page.locator("#ckbxtxtCNPJEstabelecimento").locator("xpath=preceding::input[@type='text'][1]"),
+            page.locator("input[type='text'][maxlength='18']"),
+        ]
+    )
+    campo_data = await _primeiro_visivel(
+        [
+            page.get_by_label(re.compile(r"Data da Nota", re.I)),
+            page.get_by_role("textbox", name=re.compile(r"Data da Nota", re.I)),
+            page.locator("#ckbxtxtDtNota").locator("xpath=preceding::input[@type='text'][1]"),
+            page.locator("input[type='text'][maxlength='10']"),
+        ]
+    )
+    campo_coo = await _primeiro_visivel(
+        [
+            page.get_by_label(re.compile(r"^COO$", re.I)),
+            page.get_by_role("textbox", name=re.compile(r"^COO$", re.I)),
+            page.locator("#ckbxtxtDtNota").locator("xpath=following::input[@type='text'][1]"),
+            page.locator("input[type='text'][maxlength='6']"),
+        ]
+    )
+    campo_valor = await _primeiro_visivel(
+        [
+            page.get_by_label(re.compile(r"Valor da Nota", re.I)),
+            page.get_by_role("textbox", name=re.compile(r"Valor da Nota", re.I)),
+            page.locator("#ckbxtxtDtNota").locator("xpath=following::input[@type='text'][2]"),
+            page.locator("input[type='text'][maxlength='25']"),
+        ]
+    )
+    select_tipo = await _primeiro_visivel(
+        [
+            page.get_by_label(re.compile(r"tipo da Nota", re.I)),
+            page.locator("#ckbxddlTpNota").locator("xpath=preceding::select[1]"),
+            page.locator("select").filter(has=page.locator("option", has_text=re.compile(re.escape(tipo), re.I))),
+        ]
+    )
+    faltando = [
+        nome
+        for nome, campo in (
+            ("CNPJ do Emissor da Nota", campo_cnpj),
+            ("tipo da nota", select_tipo),
+            ("Data da Nota (Compra)", campo_data),
+            ("COO", campo_coo),
+            ("Valor da Nota", campo_valor),
+        )
+        if campo is None
+    ]
+    if faltando:
+        print("ERRO: nao achei no formulario sem chave: " + ", ".join(faltando))
+        await listar_inputs(page)
+        return False
+
+    await _preencher_texto(campo_cnpj, cnpj)
+    try:
+        await select_tipo.select_option(label=tipo)
+    except Exception:
+        opcoes = [t.strip() for t in await select_tipo.locator("option").all_inner_texts()]
+        escolhida = next((o for o in opcoes if tipo.lower() in o.lower()), "")
+        if not escolhida:
+            print(f"ERRO: tipo '{tipo}' nao esta no combo. Opcoes: {opcoes}")
+            return False
+        await select_tipo.select_option(label=escolhida)
+    await _preencher_texto(campo_data, data)
+    await _preencher_texto(campo_coo, coo)
+    await _preencher_texto(campo_valor, valor)
+    print(f"OK: cupom por dados CNPJ {cnpj} data {data} COO {coo} valor {valor} tipo {tipo}")
+    return True
+
+
+async def preencher_item(page, item: dict) -> bool:
+    if _item_por_dados(item):
+        return await preencher_cupom_dados(page, item)
+    return await preencher_chave(page, str(item.get("chave") or ""))
+
+
 async def garantir_nao_enviar(page) -> None:
     """Sanidade: se o usuario pedir envio no futuro, este helper existe para bloquear."""
     botoes = page.get_by_role("button", name=BOTOES_ENVIO_PROIBIDOS)

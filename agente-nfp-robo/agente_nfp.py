@@ -525,8 +525,9 @@ def processar_sessao(
 
         stamp = _agora_stamp()
         caminho_json = out_dir / f"fila_lote_{cfg['nome_maquina']}_{stamp}.json"
+        itens_reserva = reserva.get("itens") or [{"chave": c, "forma": "chave"} for c in chaves]
         caminho_json.write_text(
-            json.dumps([{"chave": c} for c in chaves], ensure_ascii=False, indent=2),
+            json.dumps(itens_reserva, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
         print(
