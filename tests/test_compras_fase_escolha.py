@@ -70,6 +70,14 @@ def test_quem_escolheu_usa_o_registro_mais_recente():
     assert quem_registrou_escolha_vigente(["Pedido confirmado na timeline."]) is None
 
 
+def test_suprimentos_reabre_consumo_pelo_perfil_da_sessao():
+    from compras_regras import PERFIL_ADM_COMPRAS_SUPRIMENTOS, sede_pode_reabrir_aprovado
+
+    sessao = {"perfil_acesso": PERFIL_ADM_COMPRAS_SUPRIMENTOS}
+    assert sede_pode_reabrir_aprovado(sessao, TIPO_CONSUMO)
+    assert not sede_pode_reabrir_aprovado({"perfil_acesso": "Gestor"}, TIPO_CONSUMO)
+
+
 def test_orcamento_aprovado_pode_ser_reaberto_antes_do_envio():
     from compras_regras import pode_reabrir_orcamento_aprovado
 

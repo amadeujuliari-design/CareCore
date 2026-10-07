@@ -933,6 +933,26 @@ def pode_reabrir_orcamento_aprovado(*, status: Optional[str], pedido_compra_envi
     return (status or "") == STATUS_APROVADO and not pedido_compra_enviado
 
 
+def perfil_compras_da_sessao(usuario: Optional[dict]) -> str:
+    """O login grava o perfil em perfil_acesso."""
+    if not isinstance(usuario, dict):
+        return ""
+    return str(usuario.get("perfil_acesso") or usuario.get("perfil") or "").strip()
+
+
+def sede_pode_reabrir_aprovado(usuario: Optional[dict], tipo: Optional[str]) -> bool:
+    perfil = perfil_compras_da_sessao(usuario)
+    manutencao = bool((usuario or {}).get("is_manutencao")) if isinstance(usuario, dict) else False
+    return usuario_pode_aprovar_sede(
+        perfil=perfil,
+        is_manutencao=manutencao,
+    ) and usuario_sede_pode_ver_tipo(
+        perfil=perfil,
+        tipo=tipo,
+        is_manutencao=manutencao,
+    )
+
+
 def hortifruti_aguardando_envio_suprimentos(tipo: Optional[str], status: Optional[str]) -> bool:
     return tipo_suprimentos_aprova_e_envia(tipo) and (status or "") in STATUS_HORTIFRUTI_ENVIO_SUPRIMENTOS
 

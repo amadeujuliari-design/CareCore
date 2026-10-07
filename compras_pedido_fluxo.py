@@ -76,6 +76,7 @@ from compras_regras import (
     pedido_itens_podem_editar,
     pedido_rascunho_pode_excluir,
     pode_reabrir_orcamento_aprovado,
+    sede_pode_reabrir_aprovado,
     tipo_eh_cotacao_projeto,
     tipo_suprimentos_aprova_e_envia,
     tipo_eh_cotacao_sede,
@@ -916,14 +917,7 @@ async def reabrir_orcamento_aprovado(
     motivo: str,
 ) -> ComprasPedidoDB:
     """A Sede desfaz a aprovação e devolve o pedido à escolha do orçamento vencedor."""
-    if not usuario_pode_aprovar_sede(
-        perfil=usuario.get("perfil"),
-        is_manutencao=bool(usuario.get("is_manutencao")),
-    ) or not usuario_sede_pode_ver_tipo(
-        perfil=usuario.get("perfil") or "",
-        tipo=pedido.tipo,
-        is_manutencao=bool(usuario.get("is_manutencao")),
-    ):
+    if not sede_pode_reabrir_aprovado(usuario, pedido.tipo):
         raise HTTPException(status_code=403, detail="Somente a Sede pode reabrir um orçamento aprovado.")
     texto = (motivo or "").strip()
     if not texto:
