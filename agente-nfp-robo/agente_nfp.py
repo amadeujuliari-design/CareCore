@@ -12,6 +12,7 @@ import os
 import re
 import subprocess
 import sys
+import threading
 import time
 import uuid
 from datetime import datetime
@@ -237,6 +238,71 @@ def parada_solicitada() -> bool:
     return STOP_FLAG.is_file()
 
 
+def operador_pediu_parada(motivo: str = "", *, parada: bool | None = None) -> bool:
+    """Parar encerra lote unico e continuo. Nao depende da rotina que foi iniciada."""
+    pedido = parada_solicitada() if parada is None else parada
+    if pedido:
+        return True
+    return (motivo or "").strip() == "parada_usuario"
+
+
+def _executar_robo(cmd: list[str], env: dict[str, str]) -> subprocess.CompletedProcess[str]:
+    """Roda o envio e corta o processo assim que o painel pede parada."""
+    proc = subprocess.Popen(
+        cmd,
+        cwd=str(ROOT),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        env=env,
+    )
+    saida: list[str] = []
+    erro: list[str] = []
+
+    def _ler(pipe, destino: list[str]) -> None:
+        if pipe is None:
+            return
+        try:
+            destino.append(pipe.read())
+        except Exception:
+            destino.append("")
+
+    t_out = threading.Thread(target=_ler, args=(proc.stdout, saida), daemon=True)
+    t_err = threading.Thread(target=_ler, args=(proc.stderr, erro), daemon=True)
+    t_out.start()
+    t_err.start()
+    limite = time.time() + 60 * 60
+    try:
+        while proc.poll() is None:
+            if time.time() >= limite:
+                proc.kill()
+                break
+            if operador_pediu_parada():
+                prazo = time.time() + 2
+                while proc.poll() is None and time.time() < prazo:
+                    time.sleep(0.2)
+                if proc.poll() is None:
+                    print(f"[{_agora()}] Parada: encerrando o envio agora.")
+                    proc.terminate()
+                    try:
+                        proc.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        proc.kill()
+                break
+            time.sleep(0.3)
+    finally:
+        t_out.join(timeout=5)
+        t_err.join(timeout=5)
+    return subprocess.CompletedProcess(
+        cmd,
+        proc.returncode if proc.returncode is not None else -1,
+        stdout=saida[0] if saida else "",
+        stderr=erro[0] if erro else "",
+    )
+
+
 def rodar_enviar_fila(
     *,
     cdp: str,
@@ -290,16 +356,7 @@ def rodar_enviar_fila(
     if (gov_senha or "").strip():
         env["CARECORE_NFP_GOV_SENHA"] = gov_senha
     print(f"[{_agora()}] Robo: {caminho_json.name} ({cdp})")
-    proc = subprocess.run(
-        cmd,
-        cwd=str(ROOT),
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        env=env,
-        timeout=60 * 60,
-    )
+    proc = _executar_robo(cmd, env)
     if proc.stdout:
         print(proc.stdout[-3000:])
     if proc.returncode != 0 and proc.stderr:
@@ -334,13 +391,18 @@ def rodar_enviar_fila(
         )
         return []
 
-    log = max(candidatas, key=lambda p: p.stat().st_mtime)
-    try:
-        payload = json.loads(log.read_text(encoding="utf-8"))
-        itens = list(payload.get("itens") or [])
-    except Exception as exc:
-        print(f"[{_agora()}] Aviso: falha ao ler {log.name}: {exc}")
+    payload = None
+    log = None
+    for candidato in sorted(candidatas, key=lambda p: p.stat().st_mtime, reverse=True):
+        try:
+            payload = json.loads(candidato.read_text(encoding="utf-8"))
+            log = candidato
+            break
+        except Exception as exc:
+            print(f"[{_agora()}] Aviso: falha ao ler {candidato.name}: {exc}")
+    if payload is None or log is None:
         return []
+    itens = list(payload.get("itens") or [])
 
     if chaves_lote:
         filtrados = [
@@ -364,6 +426,8 @@ def rodar_enviar_fila(
         f"[{_agora()}] Resultado lote: {log.name} itens={len(itens)}"
         + (f" motivo={motivo}" if motivo else "")
     )
+    if operador_pediu_parada(motivo):
+        marcar_parar()
     return itens
 
 
@@ -472,8 +536,11 @@ def processar_sessao(
         print(f"[{_agora()}] Aviso liberar expirados: {exc}")
 
     while True:
-        if parada_solicitada():
-            print(f"[{_agora()}] Parado pelo operador.")
+        if operador_pediu_parada():
+            print(
+                f"[{_agora()}] Parado pelo operador. "
+                "Cupons ainda reservados voltam para a fila."
+            )
             break
         if restante is not None and restante <= 0:
             break
@@ -493,11 +560,14 @@ def processar_sessao(
                 f"({falhas_reserva}). Nova tentativa em {espera}s, sem encerrar o envio."
             )
             for _ in range(max(1, espera // 5)):
-                if parada_solicitada():
+                if operador_pediu_parada():
                     break
                 time.sleep(5)
-            if parada_solicitada():
-                print(f"[{_agora()}] Parado pelo operador.")
+            if operador_pediu_parada():
+                print(
+                f"[{_agora()}] Parado pelo operador. "
+                "Cupons ainda reservados voltam para a fila."
+            )
                 break
             continue
 
@@ -513,11 +583,14 @@ def processar_sessao(
                     "(modo continuo noturno). Parar no painel encerra."
                 )
                 for _ in range(12):
-                    if parada_solicitada():
+                    if operador_pediu_parada():
                         break
                     time.sleep(5)
-                if parada_solicitada():
-                    print(f"[{_agora()}] Parado pelo operador.")
+                if operador_pediu_parada():
+                    print(
+                f"[{_agora()}] Parado pelo operador. "
+                "Cupons ainda reservados voltam para a fila."
+            )
                     break
                 continue
             print(f"[{_agora()}] Sem pendentes na fila online.")
@@ -589,8 +662,11 @@ def processar_sessao(
             )
             break
 
-        if parada_solicitada():
-            print(f"[{_agora()}] Parado pelo operador.")
+        if operador_pediu_parada():
+            print(
+                f"[{_agora()}] Parado pelo operador. "
+                "Cupons ainda reservados voltam para a fila."
+            )
             break
         if restante is not None and restante <= 0:
             break
@@ -603,11 +679,14 @@ def processar_sessao(
                 f"[{_agora()}] Nenhum item neste lote — aguardando 15s e tentando de novo."
             )
             for _ in range(3):
-                if parada_solicitada():
+                if operador_pediu_parada():
                     break
                 time.sleep(5)
-            if parada_solicitada():
-                print(f"[{_agora()}] Parado pelo operador.")
+            if operador_pediu_parada():
+                print(
+                f"[{_agora()}] Parado pelo operador. "
+                "Cupons ainda reservados voltam para a fila."
+            )
                 break
             if not continuo and limite is None:
                 break

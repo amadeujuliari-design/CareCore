@@ -364,11 +364,6 @@ async def rodar(args: argparse.Namespace) -> int:
     out_dir = Path(__file__).resolve().parent / "_capturas"
     out_dir.mkdir(exist_ok=True)
     lote_origem = Path(args.json).name if args.json else ""
-    # Limpa flag antiga para nao abortar logo no inicio
-    try:
-        STOP_FLAG.unlink(missing_ok=True)
-    except OSError:
-        pass
 
     parado_pelo_usuario = False
     motivo_interrupcao = ""
@@ -419,7 +414,10 @@ async def rodar(args: argparse.Namespace) -> int:
 
                 for i, item in enumerate(fila, start=1):
                     if _parada_solicitada():
-                        print("Parada solicitada pelo CareCore — encerrando apos o item atual.")
+                        print(
+                            "Parada solicitada — encerrando agora. "
+                            "Cupons ainda nao enviados voltam para a fila."
+                        )
                         parado_pelo_usuario = True
                         motivo_interrupcao = "parada_usuario"
                         break
@@ -606,6 +604,21 @@ async def rodar(args: argparse.Namespace) -> int:
                         )
                     except Exception:
                         pass
+                    try:
+                        _gravar_resultado_lote(
+                            out_dir,
+                            resultados=resultados,
+                            fila_total=len(fila),
+                            ok_count=ok_count,
+                            ja_existe_count=ja_existe_count,
+                            erro_count=erro_count,
+                            parado_pelo_usuario=parado_pelo_usuario,
+                            motivo_interrupcao=motivo_interrupcao,
+                            lote_origem=lote_origem,
+                        )
+                        gravou_resultado = True
+                    except Exception as exc:
+                        print(f"ERRO ao gravar fila_resultado: {exc}", file=sys.stderr)
 
                     if cls.tipo == "sessao_caiu":
                         motivo_interrupcao = "sessao_caiu"
@@ -636,7 +649,10 @@ async def rodar(args: argparse.Namespace) -> int:
                         print("  → inconclusivo; segue (revise o log depois).")
 
                     if _parada_solicitada():
-                        print("Parada solicitada pelo CareCore — encerrando.")
+                        print(
+                            "Parada solicitada — encerrando agora. "
+                            "Cupons ainda nao enviados voltam para a fila."
+                        )
                         parado_pelo_usuario = True
                         motivo_interrupcao = "parada_usuario"
                         break
@@ -680,10 +696,6 @@ async def rodar(args: argparse.Namespace) -> int:
     try:
         marcar_fim(mensagem=f"Fim do lote — motivo={motivo_interrupcao or 'ok'}")
     except Exception:
-        pass
-    try:
-        STOP_FLAG.unlink(missing_ok=True)
-    except OSError:
         pass
     return codigo_saida
 

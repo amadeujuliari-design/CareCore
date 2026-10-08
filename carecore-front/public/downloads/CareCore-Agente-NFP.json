@@ -1,9 +1,9 @@
 ﻿{
     "arquivo":  "CareCore-Agente-NFP.exe",
     "versao_app":  "1.7.63",
-    "gerado_em":  "2026-10-08 08:30:02",
+    "gerado_em":  "2026-10-08 09:20:25",
     "fuso":  "America/Sao_Paulo",
-    "tamanho_bytes":  24413294,
+    "tamanho_bytes":  24414245,
     "assinado":  false,
     "instrucoes":  [
                        "Baixe CareCore-Agente-NFP.exe. Se o Windows avisar, OK e use Desbloquear (Propriedades) ou Executar mesmo assim.",

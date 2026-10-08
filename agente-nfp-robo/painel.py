@@ -31,6 +31,7 @@ from agente_nfp import (  # noqa: E402
     carregar_config_leve,
     limpar_parar,
     marcar_parar,
+    parada_solicitada,
     obter_api,
     processar_sessao,
     salvar_credenciais,
@@ -170,7 +171,13 @@ def _worker_enviar(*, continuo: bool, limite: Optional[int]) -> None:
         processar_sessao(api, cfg, limite=limite, continuo=continuo)
         snap = _snap_job()
         if snap.get("status") == "running":
-            _set_job(status="ok", mensagem="Envio concluído.")
+            if parada_solicitada():
+                _set_job(
+                    status="ok",
+                    mensagem="Parado. Cupons ainda reservados voltaram para a fila.",
+                )
+            else:
+                _set_job(status="ok", mensagem="Envio concluído.")
     except SystemExit as exc:
         _set_job(status="erro", mensagem=str(exc) or "Falha de configuração.")
     except Exception as exc:
