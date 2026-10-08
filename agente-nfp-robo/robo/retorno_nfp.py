@@ -6,6 +6,7 @@ INLINE no topo do formulario (sem modal):
   - sucesso: "Doação registrada com sucesso. Aguardando processamento..."
   - ja existe: "Este pedido já existe no sistema. Favor inserir uma nova nota."
   - prazo: "A Data da Nota excedeu o prazo máximo para cadastro."
+  - fora de SP: "Não é possível cadastrar nota de CF-e SAT/NFC-e emitido fora do Estado de São Paulo."
 """
 
 from __future__ import annotations
@@ -29,6 +30,9 @@ MSG_SUCESSO = (
     "Doação registrada com sucesso. Aguardando processamento pelo sistema."
 )
 MSG_PRAZO = "A Data da Nota excedeu o prazo máximo para cadastro."
+MSG_FORA_SP = (
+    "Não é possível cadastrar nota de CF-e SAT/NFC-e emitido fora do Estado de São Paulo."
+)
 MSG_AVISO_NAO_MUDOU = "Aviso da tela não mudou após salvar."
 
 # Relogio colado no aviso (sucesso, erro generico). "às" e opcional.
@@ -69,6 +73,13 @@ RE_ERRO = re.compile(
     r"documento\s+inv[aá]lid|"
     r"n[aã]o\s+foi\s+poss[ií]vel|"
     r"cpf\s+inv[aá]lid",
+    re.I,
+)
+
+# NFC-e/CF-e de outro estado: a SEFAZ recusa e o cupom nao deve voltar para a fila.
+RE_FORA_SP = re.compile(
+    r"n[aã]o\s+[eé]\s+poss[ií]vel\s+cadastrar\s+nota|"
+    r"emitid[oa]\s+fora\s+do\s+estado\s+de\s+s[aã]o\s+paulo",
     re.I,
 )
 
@@ -151,6 +162,15 @@ def classificar_texto_retorno(texto: str, *, url: str = "") -> ClassificacaoReto
             mensagem=MSG_PEDIDO_JA_EXISTE,
             status_carecore="enviado",
             trecho=_extrair_trecho(compacto, RE_JA_EXISTE),
+        )
+
+    if RE_FORA_SP.search(compacto):
+        trecho = _extrair_trecho(compacto, RE_FORA_SP) or MSG_FORA_SP
+        return ClassificacaoRetorno(
+            tipo="erro",
+            mensagem=MSG_FORA_SP,
+            status_carecore="erro",
+            trecho=trecho,
         )
 
     if RE_PRAZO.search(compacto):

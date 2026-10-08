@@ -405,6 +405,8 @@ async def _texto_modais_visiveis(page) -> str:
                 /Este pedido j[aá] existe no sistema[^\\n]{0,120}/i,
                 /A Data da Nota excedeu o prazo m[aá]ximo para cadastro[^\\n]{0,40}/i,
                 /excedeu o prazo m[aá]ximo para cadastro[^\\n]{0,40}/i,
+                /N[aã]o [eé] poss[ií]vel cadastrar nota[^\\n]{0,160}/i,
+                /emitid[oa] fora do Estado de S[aã]o Paulo[^\\n]{0,40}/i,
               ];
               for (const re of patterns) {
                 const m = body.match(re);

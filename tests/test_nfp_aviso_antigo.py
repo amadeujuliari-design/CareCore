@@ -8,7 +8,7 @@ from pathlib import Path
 ROBO = Path(__file__).resolve().parents[1] / "agente-nfp-robo" / "robo"
 sys.path.insert(0, str(ROBO))
 
-from retorno_nfp import feedback_ainda_e_o_anterior  # noqa: E402
+from retorno_nfp import classificar_texto_retorno, feedback_ainda_e_o_anterior  # noqa: E402
 
 ERRO = (
     "Cadastro de doação 05/10/2026 às 14:52:00 "
@@ -72,3 +72,23 @@ def test_formulario_limpo_nao_e_aviso_anterior():
 def test_frase_diferente_nao_e_o_aviso_anterior():
     assert feedback_ainda_e_o_anterior(JA_EXISTE, SUCESSO) is False
     assert feedback_ainda_e_o_anterior(ERRO, PRAZO) is False
+
+
+FORA_SP = (
+    "Não é possível cadastrar nota de CF-e SAT/NFC-e emitido fora do Estado de São Paulo."
+)
+TELA_COM_MENU = (
+    "Bem-vindo Entidade - Cadastro de Notas Documentos com Chave-de-acesso "
+    "Chave-de-acesso Salvar Nota " + FORA_SP
+)
+
+
+def test_nota_de_fora_de_sao_paulo_sai_da_fila():
+    cls = classificar_texto_retorno(TELA_COM_MENU)
+    assert cls.tipo == "erro"
+    assert cls.status_carecore == "erro"
+    assert cls.mensagem == FORA_SP
+
+
+def test_nota_de_fora_de_sao_paulo_igual_a_que_ja_estava_na_tela():
+    assert feedback_ainda_e_o_anterior(FORA_SP, FORA_SP) is True
