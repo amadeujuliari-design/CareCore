@@ -3,10 +3,12 @@
 from datetime import datetime
 
 from avaliacao_mensal import (
+    avaliacao_entra_no_filtro,
     competencia_de,
     competencia_seguinte,
     mensagem_agradecimento,
     mensagem_ja_respondida,
+    opcoes_filtro_relatorio,
     perguntas_da_vila,
     validar_respostas,
     vila_por_codigo,
@@ -71,6 +73,30 @@ def test_perguntas_usam_a_vila_escolhida_e_as_opcoes_certas():
     assert "minha " not in juntos
     assert "meu " not in juntos
     assert "meus " not in juntos
+
+
+def test_filtro_de_resposta_e_de_sugestao():
+    respostas = _respostas_completas()
+    respostas["alimentacao"] = "ruim"
+    assert avaliacao_entra_no_filtro(respostas, "quero mais fruta", resposta_id="ruim")
+    assert not avaliacao_entra_no_filtro(respostas, "", resposta_id="bom")
+    assert avaliacao_entra_no_filtro(
+        respostas,
+        "quero mais fruta",
+        pergunta_id="alimentacao",
+        resposta_id="ruim",
+    )
+    assert not avaliacao_entra_no_filtro(
+        respostas,
+        "quero mais fruta",
+        pergunta_id="alimentacao",
+        resposta_id="otimo",
+    )
+    assert avaliacao_entra_no_filtro(respostas, "quero mais fruta", sugestoes_filtro="com")
+    assert not avaliacao_entra_no_filtro(respostas, "   ", sugestoes_filtro="com")
+    assert avaliacao_entra_no_filtro(respostas, "", sugestoes_filtro="sem")
+    rotulos = [item["rotulo"] for item in opcoes_filtro_relatorio()]
+    assert rotulos == ["Ótimo", "Bom", "Mais ou menos", "Preciso melhorar", "Ruim"]
 
 
 def test_envio_exige_todas_as_perguntas():

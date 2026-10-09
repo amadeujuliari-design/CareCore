@@ -184,3 +184,36 @@ def validar_respostas(respostas: dict | None) -> str | None:
 def normalizar_sugestoes(texto: str | None) -> str:
     limpo = " ".join((texto or "").split())
     return limpo[:SUGESTOES_MAX]
+
+
+def opcoes_filtro_relatorio() -> tuple[dict, ...]:
+    rotulos = {codigo: rotulo for codigo, rotulo in OPCOES_VILA + OPCOES_PESSOA}
+    ordem = ("otimo", "bom", "mais_ou_menos", "preciso_melhorar", "ruim")
+    return tuple({"id": codigo, "rotulo": rotulos[codigo]} for codigo in ordem)
+
+
+def avaliacao_entra_no_filtro(
+    respostas: dict | None,
+    sugestoes: str | None,
+    *,
+    pergunta_id: str | None = None,
+    resposta_id: str | None = None,
+    sugestoes_filtro: str | None = None,
+) -> bool:
+    mapa = respostas if isinstance(respostas, dict) else {}
+    if pergunta_id and resposta_id:
+        if str(mapa.get(pergunta_id) or "") != resposta_id:
+            return False
+    elif pergunta_id:
+        if not str(mapa.get(pergunta_id) or "").strip():
+            return False
+    elif resposta_id:
+        if resposta_id not in {str(valor or "") for valor in mapa.values()}:
+            return False
+
+    texto = (sugestoes or "").strip()
+    if sugestoes_filtro == "com" and not texto:
+        return False
+    if sugestoes_filtro == "sem" and texto:
+        return False
+    return True

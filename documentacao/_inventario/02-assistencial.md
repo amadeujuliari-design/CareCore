@@ -689,7 +689,11 @@ Critério (novas inclusões / vinculações) · status · **Data inicial** · **
 ### 14.3 Avaliação mensal — `/relatorios/avaliacao-mensal`
 
 **Arquivo:** `RelatorioAvaliacaoMensal.jsx`  
-Menu só nas quatro Vilas Reencontro. O morador responde sem login em `/avaliacao`: escolhe a vila, informa o número de prontuário e, se ainda não respondeu naquele mês, preenche as 18 perguntas e as sugestões. Cada pergunta mostra uma ilustração na parte de baixo. Uma segunda resposta no mesmo mês fica bloqueada até o mês seguinte. O relatório mostra o total de cada resposta e quem respondeu.
+Menu só nas quatro Vilas Reencontro. O morador responde sem login em `/avaliacao`: escolhe a vila, informa o número de prontuário e, se ainda não respondeu naquele mês, preenche as 18 perguntas e as sugestões. Cada pergunta mostra uma ilustração na parte de baixo. Uma segunda resposta no mesmo mês fica bloqueada até o mês seguinte.
+
+**Filtros:** Data inicial · Data final · Técnico responsável · Convivente (nome ou prontuário) · Pergunta · Tipo de resposta · Sugestões · Situação no cadastro.
+
+**Botões:** **Gerar relatório** · **Exportar** (XLSX) · **Imprimir** (totais e quem respondeu, com a personalização do projeto) · **Para assinatura** (pesquisa completa de cada morador, com data em branco e assinatura do convivente). Na linha, **Assinatura** imprime só aquela pessoa. Marcar várias imprime só as marcadas. **Formulário para preencher à mão:** busca o morador ativo e **Imprimir formulário** gera a folha só com a identificação, as perguntas e as opções em branco.
 
 ### 14.4 Presença e ausência — `/relatorios/presenca-ausencia`
 

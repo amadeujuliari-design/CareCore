@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import re
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
@@ -13,10 +12,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from avaliacao_mensal import (
     VILAS,
+    avaliacao_entra_no_filtro,
     competencia_de,
+    ids_perguntas,
     mensagem_agradecimento,
     mensagem_ja_respondida,
     normalizar_sugestoes,
+    opcoes_filtro_relatorio,
     perguntas_da_vila,
     rotulo_competencia,
     validar_respostas,
@@ -24,7 +26,7 @@ from avaliacao_mensal import (
 )
 from config_operacional_projeto import _normalizar_texto_busca, projeto_e_reencontro_pari
 from database import get_db
-from models import AvaliacaoMensalDB, ConviventeDB, InstituicaoDB
+from models import AvaliacaoMensalDB, ConviventeDB, InstituicaoDB, UsuarioDB
 from security import (
     PERFIL_ADMINISTRATIVO,
     PERFIL_GESTOR,
@@ -34,11 +36,10 @@ from security import (
     get_usuario_logado,
     usuario_tem_perfil,
 )
-from time_operacional import agora_operacional_naive
+from time_operacional import agora_operacional_naive, parse_data_filtro_operacional
 
 router = APIRouter(prefix="/api/avaliacao-mensal", tags=["Avaliação mensal"])
 
-_RE_COMPETENCIA = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
 _PERFIS_RELATORIO = {
     PERFIL_GESTOR,
     PERFIL_TECNICO,
@@ -288,9 +289,54 @@ def _rotulo_opcao(pergunta: dict, opcao_id: str) -> str:
     return opcao_id
 
 
+def _periodo_relatorio(data_inicio: str | None, data_fim: str | None):
+    try:
+        inicio = parse_data_filtro_operacional(data_inicio, fim_do_dia=False)
+        fim = parse_data_filtro_operacional(data_fim, fim_do_dia=True)
+    except ValueError as erro:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Informe as datas no formato AAAA-MM-DD.",
+        ) from erro
+    if inicio is None or fim is None:
+        hoje = agora_operacional_naive()
+        inicio = hoje.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        fim = parse_data_filtro_operacional(hoje.date().isoformat(), fim_do_dia=True)
+    if inicio > fim:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="A data inicial não pode ser depois da data final.",
+        )
+    if (fim.date() - inicio.date()).days > 366:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="O período pode ter no máximo 366 dias.",
+        )
+    return inicio, fim
+
+
+def _busca_bate(convivente: ConviventeDB | None, numero: int, busca: str) -> bool:
+    termo = _normalizar_texto_busca(busca)
+    if not termo:
+        return True
+    if termo.isdigit() and termo in str(numero):
+        return True
+    nomes = []
+    if convivente:
+        nomes.extend((convivente.nome_completo or "", convivente.nome_social or ""))
+    return termo in _normalizar_texto_busca(" ".join(nomes))
+
+
 @router.get("/relatorio")
 async def relatorio(
-    competencia: str | None = Query(default=None),
+    data_inicio: str | None = Query(default=None),
+    data_fim: str | None = Query(default=None),
+    busca: str | None = Query(default=None),
+    tecnico_id: str | None = Query(default=None),
+    pergunta_id: str | None = Query(default=None),
+    resposta_id: str | None = Query(default=None),
+    sugestoes_filtro: str | None = Query(default=None),
+    status_cadastro: str | None = Query(default=None),
     usuario: dict = Depends(get_usuario_logado),
     db: AsyncSession = Depends(get_db),
 ):
@@ -311,79 +357,125 @@ async def relatorio(
             detail="A avaliação mensal é das Vilas Reencontro.",
         )
 
-    mes = (competencia or _competencia_atual()).strip()
-    if not _RE_COMPETENCIA.match(mes):
+    pergunta = (pergunta_id or "").strip() or None
+    resposta = (resposta_id or "").strip() or None
+    filtro_sugestoes = (sugestoes_filtro or "").strip() or None
+    filtro_status = (status_cadastro or "").strip() or None
+    if pergunta and pergunta not in ids_perguntas():
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Informe o mês no formato AAAA-MM.",
+            detail="Escolha uma pergunta da avaliação.",
+        )
+    if resposta and resposta not in {item["id"] for item in opcoes_filtro_relatorio()}:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Escolha um tipo de resposta da avaliação.",
+        )
+    if filtro_sugestoes and filtro_sugestoes not in {"com", "sem"}:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="O filtro de sugestões é com texto, sem texto ou todos.",
+        )
+    if filtro_status and filtro_status not in {"ativo", "nao_ativo"}:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="A situação do cadastro é ativo, não ativo ou todos.",
         )
 
+    inicio, fim = _periodo_relatorio(data_inicio, data_fim)
+    tecnico = (tecnico_id or "").strip() or None
     resultado = await db.execute(
-        select(AvaliacaoMensalDB, ConviventeDB)
+        select(AvaliacaoMensalDB, ConviventeDB, UsuarioDB.nome)
         .outerjoin(ConviventeDB, ConviventeDB.id == AvaliacaoMensalDB.convivente_id)
+        .outerjoin(UsuarioDB, UsuarioDB.id == ConviventeDB.tecnico_id)
         .where(
             AvaliacaoMensalDB.instituicao_id == instituicao_id,
-            AvaliacaoMensalDB.competencia == mes,
+            AvaliacaoMensalDB.respondido_em >= inicio,
+            AvaliacaoMensalDB.respondido_em <= fim,
         )
         .order_by(AvaliacaoMensalDB.numero_prontuario, AvaliacaoMensalDB.respondido_em)
     )
     linhas = resultado.all()
     perguntas = perguntas_da_vila(_rotulo_vila_projeto(projeto))
     contagem = {
-        pergunta["id"]: {opcao["id"]: 0 for opcao in pergunta["opcoes"]}
-        for pergunta in perguntas
+        item["id"]: {opcao["id"]: 0 for opcao in item["opcoes"]}
+        for item in perguntas
     }
     pessoas = []
-    for registro, convivente in linhas:
+    for registro, convivente, nome_tecnico in linhas:
         try:
             respostas = json.loads(registro.respostas_json or "{}")
         except json.JSONDecodeError:
             respostas = {}
         if not isinstance(respostas, dict):
             respostas = {}
-        for pergunta in perguntas:
-            opcao_id = str(respostas.get(pergunta["id"]) or "")
-            if opcao_id in contagem[pergunta["id"]]:
-                contagem[pergunta["id"]][opcao_id] += 1
+        if not _busca_bate(convivente, registro.numero_prontuario, busca or ""):
+            continue
+        if tecnico and (not convivente or convivente.tecnico_id != tecnico):
+            continue
+        situacao = (convivente.status if convivente else "") or ""
+        if filtro_status == "ativo" and situacao != "Ativo":
+            continue
+        if filtro_status == "nao_ativo" and situacao == "Ativo":
+            continue
+        if not avaliacao_entra_no_filtro(
+            respostas,
+            registro.sugestoes,
+            pergunta_id=pergunta,
+            resposta_id=resposta,
+            sugestoes_filtro=filtro_sugestoes,
+        ):
+            continue
+        for item in perguntas:
+            opcao_id = str(respostas.get(item["id"]) or "")
+            if opcao_id in contagem[item["id"]]:
+                contagem[item["id"]][opcao_id] += 1
         momento = registro.respondido_em
         pessoas.append(
             {
+                "id": registro.id,
                 "numero_prontuario": registro.numero_prontuario,
                 "nome": _nome_equipe(convivente, registro.numero_prontuario),
+                "tecnico": (nome_tecnico or "").strip() or "Sem técnico",
+                "status": situacao,
+                "competencia": registro.competencia,
                 "respondido_em": momento.strftime("%d/%m/%Y %H:%M") if momento else "",
                 "sugestoes": registro.sugestoes or "",
                 "respostas": [
                     {
-                        "pergunta": pergunta["texto"],
+                        "id": item["id"],
+                        "pergunta": item["texto"],
+                        "resposta_id": str(respostas.get(item["id"]) or ""),
                         "resposta": _rotulo_opcao(
-                            pergunta,
-                            str(respostas.get(pergunta["id"]) or ""),
+                            item,
+                            str(respostas.get(item["id"]) or ""),
                         ),
                     }
-                    for pergunta in perguntas
+                    for item in perguntas
                 ],
             }
         )
 
     return {
-        "competencia": mes,
-        "rotulo_competencia": rotulo_competencia(mes),
+        "data_inicio": inicio.date().isoformat(),
+        "data_fim": fim.date().isoformat(),
         "projeto": projeto.nome_fantasia,
         "total": len(pessoas),
+        "opcoes_filtro": list(opcoes_filtro_relatorio()),
         "perguntas": [
             {
-                "id": pergunta["id"],
-                "texto": pergunta["texto"],
+                "id": item["id"],
+                "texto": item["texto"],
                 "opcoes": [
                     {
                         "id": opcao["id"],
                         "rotulo": opcao["rotulo"],
-                        "total": contagem[pergunta["id"]][opcao["id"]],
+                        "total": contagem[item["id"]][opcao["id"]],
                     }
-                    for opcao in pergunta["opcoes"]
+                    for opcao in item["opcoes"]
                 ],
             }
-            for pergunta in perguntas
+            for item in perguntas
         ],
         "pessoas": pessoas,
     }

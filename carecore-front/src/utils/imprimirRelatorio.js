@@ -253,6 +253,8 @@ export function imprimirRelatorio({
   dados = [],
   identidade = null,
   orientacao = null,
+  paginasHtml = null,
+  margemPagina = "",
 }) {
   const dataAtual = new Date().toLocaleString("pt-BR");
   const tituloSeguro = escaparHtml(titulo);
@@ -267,6 +269,7 @@ export function imprimirRelatorio({
     identidade?.relatorio_email ? `E-mail: ${identidade.relatorio_email}` : "",
     identidade?.relatorio_site ? `Site: ${identidade.relatorio_site}` : "",
   ].filter(Boolean);
+  const paginasSeparadas = Array.isArray(paginasHtml) && paginasHtml.length > 0;
   const orientacaoInicial = orientacao || (colunas.length > 6 ? "landscape" : "portrait");
   const tabelaLarga = colunas.length >= 8;
   const estilosColunas = montarEstilosColunas(colunas);
@@ -282,6 +285,22 @@ export function imprimirRelatorio({
       `;
     })
     .join("");
+
+  const tabelaHtml = colunas.length
+    ? `
+                <table class="tabela-dados">
+                  <thead>
+                    <tr>
+                      ${tabelaCabecalho}
+                    </tr>
+                  </thead>
+
+                  <tbody>
+                    ${tabelaLinhas}
+                  </tbody>
+                </table>
+              `
+    : "";
 
   const metricasHtml = metricas
     .map(
@@ -314,7 +333,7 @@ export function imprimirRelatorio({
         <style>
           @page {
             size: A4 ${orientacaoInicial === "landscape" ? "landscape" : "portrait"};
-            margin: 10mm 8mm 12mm;
+            margin: ${margemPagina || "10mm 8mm 12mm"};
           }
 
           body {
@@ -327,6 +346,16 @@ export function imprimirRelatorio({
           .pagina-relatorio {
             width: 100%;
             border-collapse: collapse;
+          }
+
+          .pagina-relatorio.quebra-paginas > tbody > tr {
+            break-after: page;
+            page-break-after: always;
+          }
+
+          .pagina-relatorio.quebra-paginas > tbody > tr:last-child {
+            break-after: auto;
+            page-break-after: auto;
           }
 
           .pagina-relatorio > thead {
@@ -509,7 +538,7 @@ export function imprimirRelatorio({
       </head>
 
       <body>
-        <table class="pagina-relatorio">
+        <table class="pagina-relatorio${paginasSeparadas ? " quebra-paginas" : ""}">
           <thead class="cabecalho-pagina">
             <tr>
               <th>
@@ -547,6 +576,10 @@ export function imprimirRelatorio({
           </tfoot>
 
           <tbody>
+            ${
+              paginasSeparadas
+                ? paginasHtml.map((pagina) => `<tr><td>${pagina}</td></tr>`).join("")
+                : `
             <tr>
               <td>
                 ${
@@ -557,19 +590,10 @@ export function imprimirRelatorio({
 
                 ${conteudoExtraHtml}
 
-                <table class="tabela-dados">
-                  <thead>
-                    <tr>
-                      ${tabelaCabecalho}
-                    </tr>
-                  </thead>
-
-                  <tbody>
-                    ${tabelaLinhas}
-                  </tbody>
-                </table>
+                ${tabelaHtml}
               </td>
-            </tr>
+            </tr>`
+            }
           </tbody>
         </table>
       </body>
