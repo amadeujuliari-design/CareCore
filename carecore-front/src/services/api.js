@@ -58,6 +58,8 @@ function rotaAuthPublica(url = '') {
     path === '/api/login'
     || path === '/api/onboarding'
     || path.startsWith('/api/passkeys/login/')
+    || path === '/api/avaliacao-mensal/identificar'
+    || path === '/api/avaliacao-mensal/responder'
   );
 }
 

@@ -686,12 +686,17 @@ Aba **Evolução**: cards Atendimentos, Média diária, Pendências técnicas, N
 **Arquivo:** `RelatorioCadastrosNovos.jsx`  
 Critério (novas inclusões / vinculações) · status · **Data inicial** · **Data final** · **Técnico** · **Busca**.
 
-### 14.3 Presença e ausência — `/relatorios/presenca-ausencia`
+### 14.3 Avaliação mensal — `/relatorios/avaliacao-mensal`
+
+**Arquivo:** `RelatorioAvaliacaoMensal.jsx`  
+Menu só nas quatro Vilas Reencontro. O morador responde sem login em `/avaliacao`: escolhe a vila, informa o número de prontuário e, se ainda não respondeu naquele mês, preenche as 18 perguntas e as sugestões. Cada pergunta mostra uma ilustração na parte de baixo. Uma segunda resposta no mesmo mês fica bloqueada até o mês seguinte. O relatório mostra o total de cada resposta e quem respondeu.
+
+### 14.4 Presença e ausência — `/relatorios/presenca-ausencia`
 
 **Arquivo:** `RelatorioPresencaAusencia.jsx`  
 **Data inicial** · **Data final** · **Técnico** · **Busca** (Nome, prontuário ou SISA) · filtro de situação.
 
-### 14.4 Configuração operacional — `/relatorios/config-operacional`
+### 14.5 Configuração operacional — `/relatorios/config-operacional`
 
 **Arquivo:** `RelatoriosConfigOperacional.jsx`  
 **Não** é tela de horário de saída automática Casa Porto.
@@ -751,7 +756,9 @@ Título **Presenças no legado**. Filtros: Data inicial · Data final · Busca (
 | `/atividades/pontos-brindes` | `AtividadesPontosBrindes.jsx` |
 | `/convenio-sisa` | `ConvenioSisa.jsx` |
 | `/relatorios` | `Relatorios.jsx` |
+| `/avaliacao` | `AvaliacaoMensalPublica.jsx` |
 | `/relatorios/cadastros-novos` | `RelatorioCadastrosNovos.jsx` |
+| `/relatorios/avaliacao-mensal` | `RelatorioAvaliacaoMensal.jsx` |
 | `/relatorios/presenca-ausencia` | `RelatorioPresencaAusencia.jsx` |
 | `/relatorios/config-operacional` | `RelatoriosConfigOperacional.jsx` |
 | `/historico-legado` · `/historico-legado/rotina` | `HistoricoLegado.jsx` |

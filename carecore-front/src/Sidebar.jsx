@@ -499,6 +499,13 @@ export default function Sidebar() {
               icon: FileBarChart,
               label: 'Presença e ausência',
             },
+            {
+              path: '/relatorios/avaliacao-mensal',
+              icon: ClipboardCheck,
+              label: 'Avaliação mensal',
+              somentePari: true,
+              perfis: ['Gestor', 'Técnico', 'Orientador', 'Administrativo', 'Global'],
+            },
           ],
         },
         {

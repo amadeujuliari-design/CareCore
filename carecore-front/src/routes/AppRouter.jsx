@@ -28,6 +28,8 @@ const Relatorios = lazy(() => import('../Relatorios'));
 const RelatoriosConfigOperacional = lazy(() => import('../RelatoriosConfigOperacional'));
 const RelatorioPresencaAusencia = lazy(() => import('../RelatorioPresencaAusencia'));
 const RelatorioCadastrosNovos = lazy(() => import('../RelatorioCadastrosNovos'));
+const RelatorioAvaliacaoMensal = lazy(() => import('../RelatorioAvaliacaoMensal'));
+const AvaliacaoMensalPublica = lazy(() => import('../AvaliacaoMensalPublica'));
 const Organizacao = lazy(() => import('../Organizacao'));
 const GestaoGlobal = lazy(() => import('../GestaoGlobal'));
 const HistoricoLegado = lazy(() => import('../HistoricoLegado'));
@@ -77,6 +79,7 @@ function RotasAplicacao() {
       <Routes>
         <Route path="/" element={<Login />} />
         <Route path="/cadastro" element={<Cadastro />} />
+        <Route path="/avaliacao" element={<AvaliacaoMensalPublica />} />
         <Route path="/manutencao" element={<ManutencaoProgramada />} />
 
         <Route
@@ -373,6 +376,15 @@ function RotasAplicacao() {
           element={
             <ProtectedRoute perfis={['Gestor', 'Técnico', 'Orientador', 'Administrativo']}>
               <RelatorioCadastrosNovos />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/relatorios/avaliacao-mensal"
+          element={
+            <ProtectedRoute perfis={['Gestor', 'Técnico', 'Orientador', 'Administrativo', 'Global']}>
+              <RelatorioAvaliacaoMensal />
             </ProtectedRoute>
           }
         />

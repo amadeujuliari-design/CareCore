@@ -2550,6 +2550,30 @@ class FinanceiroInvestimentoDB(Base):
     criado_em = Column(DateTime, default=agora_operacional_naive)
 
 
+class AvaliacaoMensalDB(Base):
+    """Uma resposta por convivente em cada mês (fuso America/Sao_Paulo)."""
+
+    __tablename__ = "avaliacoes_mensais"
+    __table_args__ = (
+        UniqueConstraint(
+            "convivente_id",
+            "competencia",
+            name="uq_avaliacao_mensal_convivente_mes",
+        ),
+        Index("ix_avaliacao_mensal_projeto_mes", "instituicao_id", "competencia"),
+    )
+
+    id = Column(String, primary_key=True, default=get_uuid)
+    organizacao_id = Column(String, ForeignKey("organizacoes.id"), nullable=True)
+    instituicao_id = Column(String, ForeignKey("instituicoes.id"), nullable=False)
+    convivente_id = Column(String, ForeignKey("conviventes.id"), nullable=False)
+    numero_prontuario = Column(Integer, nullable=False)
+    competencia = Column(String(7), nullable=False)
+    respostas_json = Column(Text, nullable=False)
+    sugestoes = Column(Text, nullable=True)
+    respondido_em = Column(DateTime, default=agora_operacional_naive, nullable=False)
+
+
 class FinanceiroRegraCategoriaDB(Base):
     __tablename__ = "financeiro_regras_categoria"
     __table_args__ = (

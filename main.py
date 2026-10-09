@@ -63,6 +63,7 @@ from routers import atividades_sisa
 from routers import texto
 from routers import nfp
 from routers import compras
+from routers import avaliacao_mensal
 
 
 configurar_logging_carecore()
@@ -999,4 +1000,5 @@ app.include_router(atividades.router)
 app.include_router(texto.router)
 app.include_router(nfp.router)
 app.include_router(compras.router)
+app.include_router(avaliacao_mensal.router)
 

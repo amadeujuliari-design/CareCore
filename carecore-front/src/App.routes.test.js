@@ -25,7 +25,9 @@ const ROTAS_CRITICAS = [
   '/avisos',
   '/relatorios',
   '/relatorios/cadastros-novos',
+  '/relatorios/avaliacao-mensal',
   '/relatorios/presenca-ausencia',
+  '/avaliacao',
   '/historico-legado',
   '/usuarios',
   '/compras',
@@ -46,7 +48,7 @@ const ROTAS_CRITICAS = [
   '/convenio-sisa',
 ];
 
-const ROTAS_PROTEGIDAS = ROTAS_CRITICAS.filter((rota) => rota !== '/');
+const ROTAS_PROTEGIDAS = ROTAS_CRITICAS.filter((rota) => rota !== '/' && rota !== '/avaliacao');
 
 describe('App routes contract', () => {
   it('mantem lazy loading nas telas principais', () => {
@@ -81,6 +83,8 @@ describe('App routes contract', () => {
       '../RelatorioNfpRateioDetalhado',
       '../Relatorios',
       '../RelatorioCadastrosNovos',
+      '../RelatorioAvaliacaoMensal',
+      '../AvaliacaoMensalPublica',
       '../RelatorioPresencaAusencia',
       '../Organizacao',
       '../GestaoGlobal',
