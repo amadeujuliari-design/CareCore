@@ -465,7 +465,9 @@ Título **Resumo mensal**. Campos: **Mês de referência**, **Data inicial**, **
 | **Arquivo** | `RotinaDiaria.jsx` |
 | **Título** | Controle de Fluxo Diário |
 
-**Modos de bip automático:** **Entrada/Saída** · **Interação**  
+**Modos de bip automático:** **Entrada/Saída** · **Interação**
+
+**SIAT:** com o modo Entrada/Saída, a câmera do QR Code também reconhece o rosto a partir da foto já cadastrada. Correspondência forte registra Entrada ou Saída e mostra o mesmo aviso da carteirinha. Correspondência só moderada abre o painel para a portaria confirmar. O mesmo convivente não é registrado de novo em menos de 7 segundos. Nos outros projetos a câmera continua só no QR Code.  
 **Ações por convivente:** **Entrada** · **Saída** · botões de refeição/interação configuráveis · lista **Últimas Leituras**.
 
 **Campos / modais:**

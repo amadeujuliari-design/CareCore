@@ -40,6 +40,10 @@ import {
   deveIgnorarLeituraConviventeRepetida,
 } from './utils/leituraCodigoUtils';
 import {
+  observarRostoNaCamera,
+  prepararReferenciasFaciais,
+} from './utils/reconhecimentoFacial';
+import {
   conviventeEstaInativoParaRotina,
   encontrarConviventePorCodigo,
 } from './utils/conviventeIdentificacaoUtils';
@@ -182,6 +186,7 @@ export default function RotinaDiaria() {
   const { isGlobalPuro: somenteLeitura, usuario } = useAuth();
   const { config: configOperacional, nomeProjeto: nomeProjetoOperacional, carregando: carregandoConfig } = useConfigOperacional();
   const semPortaria = projetoSemFluxoPortaria(nomeProjetoOperacional || usuario?.projeto_nome);
+  const projetoSiat = configOperacional?.perfil_defaults === 'siat';
   const configInteracaoPronta = carregandoConfig ? null : configOperacional;
   const opcoesInteracaoRotina = useMemo(
     () => (configInteracaoPronta ? obterOpcoesInteracaoRotina(configInteracaoPronta) : []),
@@ -211,6 +216,7 @@ export default function RotinaDiaria() {
   const [processandoAcao, setProcessandoAcao] = useState(null);
 
   const [scannerAberto, setScannerAberto] = useState(false);
+  const [reconhecimentoFacialStatus, setReconhecimentoFacialStatus] = useState('');
   const [scannerErro, setScannerErro] = useState('');
   const [codigoManualScanner, setCodigoManualScanner] = useState('');
   const [pacienteEscaneado, setPacienteEscaneado] = useState(null);
@@ -218,6 +224,11 @@ export default function RotinaDiaria() {
   const [feedback, setFeedback] = useState(null);
   const [modoAutomatico, setModoAutomatico] = useState(true);
   const [tipoBipagemAutomatica, setTipoBipagemAutomatica] = useState('fluxo');
+  const facialAtivo = projetoSiat
+    && !semPortaria
+    && !somenteLeitura
+    && modoAutomatico
+    && tipoBipagemAutomatica === 'fluxo';
   useEffect(() => {
     if (semPortaria) setTipoBipagemAutomatica('interacao');
   }, [semPortaria]);
@@ -252,6 +263,7 @@ export default function RotinaDiaria() {
 
   const ultimaLeituraRef = useRef({ codigo: '', horario: 0 });
   const ultimaLeituraConviventeRef = useRef({ conviventeId: '', horario: 0 });
+  const aoReconhecerRostoRef = useRef(null);
   const assinaturaSyncRotinaRef = useRef(null);
   const syncRotinaEmAndamentoRef = useRef(false);
   const processarCodigoLidoRef = useRef(null);
@@ -374,6 +386,64 @@ export default function RotinaDiaria() {
   }
 };
 }, [scannerAberto, deviceInfo.isSecureCameraContext, deviceInfo.isTouchDevice]);
+
+  useEffect(() => {
+    if (!scannerAberto || !facialAtivo) {
+      setReconhecimentoFacialStatus('');
+      return undefined;
+    }
+
+    let cancelado = false;
+    let pararObservacao = () => {};
+    setReconhecimentoFacialStatus('Preparando o reconhecimento pelas fotos do cadastro...');
+
+    const esperarVideo = async () => {
+      for (let tentativa = 0; tentativa < 25; tentativa += 1) {
+        const video = document.querySelector('#leitor-camera video');
+        if (video) return video;
+        await new Promise((resolve) => setTimeout(resolve, 200));
+      }
+      return null;
+    };
+
+    (async () => {
+      try {
+        const referencias = await prepararReferenciasFaciais(conviventes, {
+          cancelado: () => cancelado,
+          aoProgresso: ({ uteis }) => {
+            if (cancelado) return;
+            setReconhecimentoFacialStatus(
+              uteis
+                ? `Rosto ou QR Code. ${uteis} foto(s) do cadastro prontas.`
+                : 'Carregando as fotos do cadastro...',
+            );
+          },
+        });
+        if (cancelado) return;
+        const video = await esperarVideo();
+        if (cancelado || !video) return;
+        if (!referencias.length) {
+          setReconhecimentoFacialStatus('Nenhuma foto de rosto utilizável no cadastro. O QR Code continua valendo.');
+          return;
+        }
+        setReconhecimentoFacialStatus(`Mostre o rosto ou o QR Code. ${referencias.length} foto(s) em uso.`);
+        pararObservacao = observarRostoNaCamera({
+          video,
+          referencias,
+          aoReconhecer: (evento) => aoReconhecerRostoRef.current?.(evento),
+        });
+      } catch {
+        if (!cancelado) {
+          setReconhecimentoFacialStatus('Não foi possível preparar o reconhecimento facial. O QR Code continua valendo.');
+        }
+      }
+    })();
+
+    return () => {
+      cancelado = true;
+      pararObservacao();
+    };
+  }, [scannerAberto, facialAtivo, conviventes]);
 
   const carregarDados = async ({ silencioso = false, somenteRotina = false } = {}) => {
     if (!silencioso) {
@@ -1248,6 +1318,32 @@ export default function RotinaDiaria() {
     handleRegistrarRef.current = handleRegistrar;
   });
 
+  useEffect(() => {
+    aoReconhecerRostoRef.current = ({ conviventeId, nivel }) => {
+      if (!facialAtivo || somenteLeitura) return;
+      if (
+        pacienteEscaneado
+        || alertaErroOperacional
+        || bloqueioConviventeFora
+        || horarioPortariaPendente
+        || retornoRapidoPendente
+      ) {
+        return;
+      }
+
+      const convivente = conviventes.find((item) => String(item.id) === String(conviventeId));
+      if (!convivente || processandoAcao) return;
+      if (deveIgnorarLeituraConviventeRepetida(ultimaLeituraConviventeRef, convivente.id)) return;
+
+      tocarBeep();
+      if (nivel === 'alta') {
+        handleRegistrar(convivente.id, definirAcaoAutomatica(convivente.id), convivente);
+        return;
+      }
+      setPacienteEscaneado(convivente);
+    };
+  });
+
   const confirmarInteracaoEnxovalPendente = useCallback(() => {
     setInteracaoConfirmacao((pendente) => {
       if (!pendente) return null;
@@ -1910,7 +2006,9 @@ export default function RotinaDiaria() {
         <div className="carecore-modal-overlay fixed inset-0 bg-gray-900/90 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
           <div className="carecore-modal-panel bg-white w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden flex max-h-[calc(100vh-2rem)] flex-col">
             <div className="bg-gray-800 p-4 flex items-center justify-between gap-3 text-white">
-              <h2 className="font-bold">Posicione o QR Code na câmera</h2>
+              <h2 className="font-bold">
+                {facialAtivo ? 'Mostre o rosto ou o QR Code' : 'Posicione o QR Code na câmera'}
+              </h2>
               <button
                 onClick={() => {
                   setScannerAberto(false);
@@ -2000,10 +2098,15 @@ export default function RotinaDiaria() {
             </form>
 
             <div className="p-4 bg-gray-50 text-center text-sm text-gray-600">
+              {facialAtivo && reconhecimentoFacialStatus && (
+                <p className="mb-2 font-semibold text-gray-700">{reconhecimentoFacialStatus}</p>
+              )}
               {modoAutomatico
                 ? tipoBipagemAutomatica === 'interacao'
                   ? 'Modo automático ativo: a leitura registra a interação selecionada.'
-                  : 'Modo automático ativo: a leitura registra Entrada ou Saída automaticamente.'
+                  : facialAtivo
+                    ? 'No SIAT, a mesma câmera lê o QR Code ou reconhece o rosto e registra Entrada ou Saída.'
+                    : 'Modo automático ativo: a leitura registra Entrada ou Saída automaticamente.'
                 : 'Modo manual ativo: a leitura abre o painel de ações.'}
             </div>
             </div>
