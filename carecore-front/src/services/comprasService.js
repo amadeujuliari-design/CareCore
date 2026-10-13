@@ -236,6 +236,16 @@ export async function comprasComunicacao(id, payload) {
   return data;
 }
 
+export async function comprasEditarEvento(pedidoId, eventoId, texto) {
+  const { data } = await api.post(`/api/compras/pedidos/${pedidoId}/eventos/${eventoId}`, { texto });
+  return data;
+}
+
+export async function comprasCopiarPedido(pedidoId, modo) {
+  const { data } = await api.post(`/api/compras/pedidos/${pedidoId}/copiar`, { modo });
+  return data;
+}
+
 export async function comprasConfirmarRevisaoItens(id) {
   const { data } = await api.post(`/api/compras/pedidos/${id}/itens-revisados`);
   return data;
@@ -389,9 +399,10 @@ export async function comprasPatrimonio() {
   return data?.itens || [];
 }
 
-export async function comprasAnexarPatrimonio(id, arquivo) {
+export async function comprasAnexarPatrimonio(id, arquivo, tipo = 'outro') {
   const formData = new FormData();
   formData.append('arquivo', arquivo);
+  if (tipo) formData.append('tipo', tipo);
   const { data } = await api.post(`/api/compras/patrimonio/${id}/anexos`, formData);
   return data;
 }

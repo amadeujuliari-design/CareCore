@@ -4,6 +4,7 @@ import {
   PATRIMONIO_ORIGEM,
   PATRIMONIO_PROPRIEDADE,
   PATRIMONIO_SITUACAO,
+  PATRIMONIO_TIPO_ARQUIVO,
   rotuloOpcao,
 } from '../utils/comprasPatrimonioUtils';
 import { moneyCentavos } from '../services/comprasService';
@@ -103,8 +104,12 @@ export default function ModalFichaPatrimonio({ item, onFechar, onEditar, onAnexa
           {(item.anexos || []).length ? (
             <ul className="mt-2 space-y-1">
               {item.anexos.map((anexo) => (
-                <li key={anexo.id} className="flex items-center justify-between gap-2 text-sm">
-                  <span className="truncate text-slate-800">{anexo.nome_arquivo || 'Arquivo'}</span>
+                <li key={`${anexo.origem || 'bem'}-${anexo.id}`} className="flex items-center justify-between gap-2 text-sm">
+                  <span className="truncate text-slate-800">
+                    {rotuloOpcao(PATRIMONIO_TIPO_ARQUIVO, anexo.tipo || 'outro')}
+                    {' · '}
+                    {anexo.nome_arquivo || 'Arquivo'}
+                  </span>
                   <button
                     type="button"
                     className="shrink-0 text-xs font-semibold text-sky-800 underline"

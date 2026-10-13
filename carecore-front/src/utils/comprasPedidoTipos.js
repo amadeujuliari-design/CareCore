@@ -331,3 +331,10 @@ export function itensConsumoDoSplitPedido(itens = [], pedido) {
     return chaveItem === chavePedido;
   });
 }
+
+/** Orçamento escolhido fica no topo da lista. */
+export function cotacoesComEscolhidaPrimeiro(cotacoes = []) {
+  return [...(cotacoes || [])].sort(
+    (a, b) => Number(Boolean(b?.escolhida)) - Number(Boolean(a?.escolhida)),
+  );
+}

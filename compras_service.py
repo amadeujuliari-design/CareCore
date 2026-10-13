@@ -64,12 +64,16 @@ from compras_regras import (
     TIPO_IMOBILIZADO,
     TIPO_MANUTENCAO,
     TIPO_SERVICO,
+    TIPOS_ANEXO_NO_BEM,
     TIPOS_PEDIDO,
     TIPOS_MANUTENCAO,
     URGENCIAS_PEDIDO,
     URGENCIA_NORMAL,
     chave_split_categoria_pedido,
+    normalizar_tipo_arquivo_bem,
+    tipo_arquivo_bem_de_anexo_pedido,
     competencia_de_data,
+    competencia_mes_seguinte,
     data_operacional,
     dias_liberados_janela,
     economia_centavos,
@@ -999,6 +1003,104 @@ async def criar_pedido(
         aguardando_confirmacao=False,
     )
     return pedido
+
+
+async def copiar_pedido_concluido(
+    db: AsyncSession,
+    usuario: dict,
+    pedido_id: str,
+    modo: str,
+) -> ComprasPedidoDB:
+    """Copia um pedido recebido como rascunho do mês seguinte.
+
+    inteiro junta os pedidos do mesmo envio (carne, peixe, alimentação).
+    dividido copia só o pedido escolhido.
+    """
+    origem = await obter_pedido(db, usuario, pedido_id)
+    if origem.status != STATUS_RECEBIDO:
+        raise HTTPException(status_code=400, detail="Só um pedido concluído pode ser copiado como rascunho.")
+    modo_norm = (modo or "inteiro").strip().lower()
+    if modo_norm not in {"inteiro", "dividido"}:
+        raise HTTPException(status_code=400, detail="Escolha copiar o pedido inteiro ou dividido.")
+
+    fontes = [origem]
+    if modo_norm == "inteiro" and origem.grupo_split_id:
+        fontes = list(
+            (
+                await db.execute(
+                    select(ComprasPedidoDB).where(
+                        ComprasPedidoDB.grupo_split_id == origem.grupo_split_id,
+                        ComprasPedidoDB.organizacao_id == origem.organizacao_id,
+                        ComprasPedidoDB.status == STATUS_RECEBIDO,
+                    )
+                )
+            ).scalars().all()
+        ) or [origem]
+
+    try:
+        competencia = competencia_mes_seguinte(origem.competencia) if origem.competencia else competencia_de_data(data_operacional())
+    except ValueError:
+        competencia = competencia_de_data(data_operacional())
+
+    novo = ComprasPedidoDB(
+        organizacao_id=origem.organizacao_id,
+        instituicao_id=origem.instituicao_id,
+        escopo_unidade=getattr(origem, "escopo_unidade", ESCOPO_PROJETO) or ESCOPO_PROJETO,
+        tipo=origem.tipo,
+        competencia=competencia,
+        status=STATUS_RASCUNHO,
+        fonte_recurso_id=origem.fonte_recurso_id,
+        observacao=origem.observacao,
+        criado_por_id=_uid(usuario),
+        pedido_origem_id=origem.id,
+    )
+    if tipo_eh_cotacao_projeto(origem.tipo):
+        novo.titulo = origem.titulo
+        novo.justificativa = origem.justificativa
+        novo.urgencia = origem.urgencia
+        novo.data_desejada = origem.data_desejada
+        novo.local_texto = origem.local_texto
+        novo.patrimonio_id = origem.patrimonio_id
+        novo.defeito = origem.defeito
+        novo.tipo_manutencao = origem.tipo_manutencao
+        novo.escopo_servico = origem.escopo_servico
+        novo.valor_estimado_centavos = origem.valor_estimado_centavos
+    db.add(novo)
+    await db.flush()
+
+    ids_fonte = [p.id for p in fontes]
+    itens = (
+        await db.execute(
+            select(ComprasPedidoItemDB)
+            .where(ComprasPedidoItemDB.pedido_id.in_(ids_fonte))
+            .order_by(ComprasPedidoItemDB.descricao.asc())
+        )
+    ).scalars().all()
+    for item in itens:
+        db.add(
+            ComprasPedidoItemDB(
+                pedido_id=novo.id,
+                categoria_id=item.categoria_id,
+                descricao=item.descricao,
+                quantidade=item.quantidade,
+                unidade_medida=item.unidade_medida,
+                embalagem=item.embalagem,
+                marca_preferencial=item.marca_preferencial,
+                observacao=item.observacao,
+                catalogo_item_id=item.catalogo_item_id,
+            )
+        )
+    rotulo_modo = "inteiro" if modo_norm == "inteiro" else "dividido"
+    await registrar_evento_pedido(
+        db,
+        pedido_id=novo.id,
+        tipo=TIPO_EVENTO_STATUS,
+        texto=f"Rascunho do mês {competencia} copiado de um pedido concluído ({rotulo_modo}).",
+        usuario_id=_uid(usuario),
+        status_novo=STATUS_RASCUNHO,
+        aguardando_confirmacao=False,
+    )
+    return novo
 
 
 async def _fator_catalogo_por_ids(db: AsyncSession, ids: list[str]) -> dict[str, dict]:
@@ -3143,14 +3245,28 @@ async def listar_patrimonio(db: AsyncSession, usuario: dict) -> list[dict]:
     nomes = await _nomes_instituicao(db, [r.instituicao_id for r in rows if r.instituicao_id])
     org_nome = await _nome_organizacao(db, _org_id(usuario))
     cats = await _mapa_nomes_categoria(db, _org_id(usuario))
-    anexos = await _anexos_patrimonio(db, [r.id for r in rows])
+    anexos = await _arquivos_patrimonio(db, rows)
     return [_serializar_patrimonio(r, nomes, org_nome, cats, anexos.get(r.id) or []) for r in rows]
 
 
-async def _anexos_patrimonio(db: AsyncSession, ids: list[str]) -> dict[str, list[dict]]:
+def _arquivo_bem_publico(anexo, *, origem: str, pedido_id: Optional[str], tipo: Optional[str]) -> dict:
+    return {
+        "id": anexo.id,
+        "nome_arquivo": anexo.nome_arquivo,
+        "content_type": anexo.content_type,
+        "tamanho_bytes": anexo.tamanho_bytes,
+        "tipo": tipo or "outro",
+        "origem": origem,
+        "pedido_id": pedido_id,
+    }
+
+
+async def _arquivos_patrimonio(db: AsyncSession, bens: list) -> dict[str, list[dict]]:
+    """Arquivos gravados no bem e os da compra (orçamentos, termo e notas) ainda não copiados."""
+    ids = [bem.id for bem in bens]
     if not ids:
         return {}
-    rows = (
+    locais = (
         await db.execute(
             select(ComprasPatrimonioAnexoDB).where(
                 ComprasPatrimonioAnexoDB.patrimonio_id.in_(ids),
@@ -3158,16 +3274,50 @@ async def _anexos_patrimonio(db: AsyncSession, ids: list[str]) -> dict[str, list
             )
         )
     ).scalars().all()
+    por_bem: dict[str, list] = {}
+    for anexo in locais:
+        por_bem.setdefault(anexo.patrimonio_id, []).append(anexo)
+
+    pedido_ids = [bem.pedido_id for bem in bens if bem.pedido_id]
+    por_pedido: dict[str, list] = {}
+    if pedido_ids:
+        da_compra = (
+            await db.execute(
+                select(ComprasPedidoAnexoDB).where(
+                    ComprasPedidoAnexoDB.pedido_id.in_(pedido_ids),
+                    ComprasPedidoAnexoDB.ativo.is_(True),
+                    ComprasPedidoAnexoDB.tipo.in_(list(TIPOS_ANEXO_NO_BEM)),
+                )
+            )
+        ).scalars().all()
+        for anexo in da_compra:
+            por_pedido.setdefault(anexo.pedido_id, []).append(anexo)
+
     saida: dict[str, list[dict]] = {}
-    for anexo in rows:
-        saida.setdefault(anexo.patrimonio_id, []).append(
-            {
-                "id": anexo.id,
-                "nome_arquivo": anexo.nome_arquivo,
-                "content_type": anexo.content_type,
-                "tamanho_bytes": anexo.tamanho_bytes,
-            }
-        )
+    for bem in bens:
+        vistos = set()
+        lista = []
+        for anexo in por_bem.get(bem.id, []):
+            chave = anexo.caminho_arquivo or anexo.id
+            vistos.add(chave)
+            lista.append(_arquivo_bem_publico(
+                anexo,
+                origem="bem",
+                pedido_id=None,
+                tipo=getattr(anexo, "tipo", None) or "outro",
+            ))
+        for anexo in por_pedido.get(bem.pedido_id, []):
+            chave = anexo.caminho_arquivo or anexo.id
+            if chave in vistos:
+                continue
+            vistos.add(chave)
+            lista.append(_arquivo_bem_publico(
+                anexo,
+                origem="compra",
+                pedido_id=bem.pedido_id,
+                tipo=tipo_arquivo_bem_de_anexo_pedido(anexo.tipo) or "outro",
+            ))
+        saida[bem.id] = lista
     return saida
 
 
@@ -3323,7 +3473,13 @@ async def salvar_patrimonio(
     return item
 
 
-async def anexar_arquivo_patrimonio(db: AsyncSession, usuario: dict, patrimonio_id: str, file):
+async def anexar_arquivo_patrimonio(
+    db: AsyncSession,
+    usuario: dict,
+    patrimonio_id: str,
+    file,
+    tipo: Optional[str] = None,
+):
     from compras_upload_utils import salvar_arquivo_compras
 
     org_id = _org_id(usuario)
@@ -3352,6 +3508,7 @@ async def anexar_arquivo_patrimonio(db: AsyncSession, usuario: dict, patrimonio_
         caminho_arquivo=caminho,
         content_type=content_type,
         tamanho_bytes=tamanho,
+        tipo=normalizar_tipo_arquivo_bem(tipo),
         ativo=True,
     )
     db.add(anexo)

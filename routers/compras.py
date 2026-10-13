@@ -20,6 +20,7 @@ from compras_pedido_fluxo import (
     gerar_pedido_compra,
     ler_bytes_anexo,
     liberar_cotacao_para_escolha,
+    editar_texto_evento_pedido,
     registrar_comunicacao_pedido,
     registrar_nota_fiscal,
     remover_nota_fiscal,
@@ -35,6 +36,7 @@ from compras_service import (
     aprovar_sede,
     aprovar_unidade,
     cancelar_pedido,
+    copiar_pedido_concluido,
     criar_pedido,
     excluir_rascunho_pedido,
     definir_modulo_ativo,
@@ -183,6 +185,14 @@ class ComunicacaoIn(BaseModel):
     tipo: str
     texto: str
     cotacao_id: Optional[str] = None
+
+
+class EditarEventoIn(BaseModel):
+    texto: str
+
+
+class CopiarPedidoIn(BaseModel):
+    modo: str = "inteiro"
 
 
 class ReprovarIn(BaseModel):
@@ -1128,6 +1138,34 @@ async def post_comunicacao(
     return await serializar_pedido(db, pedido, incluir_detalhe=True, usuario=usuario_atual)
 
 
+@router.post("/pedidos/{pedido_id}/copiar")
+async def post_copiar_pedido(
+    pedido_id: str,
+    payload: CopiarPedidoIn,
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    await _ctx(db, usuario_atual)
+    novo = await copiar_pedido_concluido(db, usuario_atual, pedido_id, payload.modo)
+    await db.commit()
+    return await serializar_pedido(db, novo, incluir_detalhe=True, usuario=usuario_atual)
+
+
+@router.post("/pedidos/{pedido_id}/eventos/{evento_id}")
+async def post_editar_evento(
+    pedido_id: str,
+    evento_id: str,
+    payload: EditarEventoIn,
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    await _ctx(db, usuario_atual)
+    pedido = await obter_pedido(db, usuario_atual, pedido_id)
+    await editar_texto_evento_pedido(db, usuario_atual, pedido, evento_id, payload.texto)
+    await db.commit()
+    return await serializar_pedido(db, pedido, incluir_detalhe=True, usuario=usuario_atual)
+
+
 @router.post("/pedidos/{pedido_id}/itens-revisados")
 async def post_itens_revisados(
     pedido_id: str,
@@ -1426,11 +1464,12 @@ async def put_patrimonio(
 async def post_patrimonio_anexo(
     item_id: str,
     arquivo: UploadFile = File(...),
+    tipo: Optional[str] = Form(None),
     db: AsyncSession = Depends(get_db),
     usuario_atual: dict = Depends(get_usuario_logado),
 ):
     await _ctx(db, usuario_atual)
-    await anexar_arquivo_patrimonio(db, usuario_atual, item_id, arquivo)
+    await anexar_arquivo_patrimonio(db, usuario_atual, item_id, arquivo, tipo)
     await db.commit()
     itens = await listar_patrimonio(db, usuario_atual)
     return {"itens": itens}

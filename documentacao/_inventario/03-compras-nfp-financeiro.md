@@ -114,6 +114,8 @@ Unidade · Tipo · Grupo · Objeto / categoria · Envio previsto · Status · Or
 
 Criar rascunho do pedido conforme o tipo; redireciona para a ficha.
 
+No topo, **Copiar um pedido concluído** abre rascunho do mês seguinte. **Inteiro** junta de novo o que foi separado (carne, peixe, alimentação) para dividir no próximo envio. **Dividido** copia só o pedido escolhido.
+
 ### Campos
 
 | Rótulo | Obrig. | O que informar | Ligação | Visível quando |
@@ -204,6 +206,8 @@ Botões: Incluir item · Só neste pedido · Sim, atualizar cadastro · Usar un 
 
 Botões: Enviar pedido de cotação · Escolher · Revogar escolha · Remover · Visualizar · Baixar · × · Registrar orçamento recebido · Retirar (seleção e-mail)
 
+O orçamento **Escolhida** fica no topo da lista, em negrito e com fundo verde, para a Sede e para o projeto.
+
 #### Comunicação (parecer, negativa, observação)
 
 | Campo | Opções / placeholder | Ligação |
@@ -216,7 +220,7 @@ Botão: Registrar
 
 #### Timeline do processo
 
-Botão **Ok** quando evento aguarda confirmação de outro usuário.
+Registro de **Suprimentos** em azul e do **projeto** em branco. Em observação, parecer e negativa, **Corrigir** altera o texto e guarda o anterior em **Histórico da correção** (quem e quando). Botão **Ok** quando o evento aguarda confirmação de outro usuário. **Voltar** retorna à tela anterior, com mês, projeto e calendário como estavam.
 
 #### Envio na janela (consumo + rascunho)
 
@@ -429,6 +433,8 @@ Ações: Ver ficha · Editar · Novo bem
 ### Modal bem
 
 Destino (Sede / Unidade / projeto) · Projeto · Descrição · Nº da etiqueta · Localização · Departamento · Categoria (Bem / imobilizado) · Propriedade · Origem · Conservação · Data da aquisição · Documento (NF / recibo) · Valor da aquisição (R$) · Forma da aquisição · Data da baixa · Motivo da baixa · Depreciação anual / Valor atual (exibição)
+
+**Arquivos do bem:** orçamentos, termo de doação e notas que vieram da compra, mais anexos feitos direto no bem (tipo Orçamento, Termo de doação, Nota, Aquisição ou Outro).
 
 Botões: Fechar · Cancelar · Incluir bem / Salvar alterações
 

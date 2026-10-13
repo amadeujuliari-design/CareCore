@@ -2420,6 +2420,18 @@ class ComprasPedidoEventoDB(Base):
     criado_em = Column(DateTime, default=agora_operacional_naive)
 
 
+class ComprasPedidoEventoRevisaoDB(Base):
+    """Texto anterior de uma correção na timeline."""
+    __tablename__ = "compras_pedido_evento_revisoes"
+    __table_args__ = (Index("ix_compras_pedido_evento_revisao_evento", "evento_id"),)
+
+    id = Column(String, primary_key=True, default=get_uuid)
+    evento_id = Column(String, ForeignKey("compras_pedido_eventos.id"), nullable=False)
+    texto_anterior = Column(Text, nullable=True)
+    usuario_id = Column(String, ForeignKey("usuarios.id"), nullable=True)
+    criado_em = Column(DateTime, default=agora_operacional_naive)
+
+
 class ComprasPatrimonioDB(Base):
     __tablename__ = "compras_patrimonio"
     __table_args__ = (
@@ -2463,6 +2475,7 @@ class ComprasPatrimonioAnexoDB(Base):
     caminho_arquivo = Column(String, nullable=False)
     content_type = Column(String, nullable=True)
     tamanho_bytes = Column(Integer, nullable=True)
+    tipo = Column(String, nullable=True)
     ativo = Column(Boolean, default=True, nullable=False)
     criado_em = Column(DateTime, default=agora_operacional_naive)
 

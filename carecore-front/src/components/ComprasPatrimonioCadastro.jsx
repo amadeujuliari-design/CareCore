@@ -6,6 +6,7 @@ import ModalFormPatrimonio from './ModalFormPatrimonio';
 import { EmptyState, PremiumBadge, PremiumButton, SectionCard } from './PremiumUI';
 import {
   comprasAnexarPatrimonio,
+  comprasBaixarAnexo,
   comprasBaixarAnexoPatrimonio,
   comprasSalvarPatrimonio,
   moneyCentavos,
@@ -396,8 +397,12 @@ export default function ComprasPatrimonioCadastro({
         item={ficha}
         onFechar={() => setFicha(null)}
         onEditar={editar}
-        onBaixar={(anexo) => comprasBaixarAnexoPatrimonio(ficha.id, anexo.id, anexo.nome_arquivo)
-          .catch((err) => onMensagem?.({ erro: err?.message || 'Não foi possível baixar o arquivo.' }))}
+        onBaixar={(anexo) => {
+          const baixar = anexo.origem === 'compra' && anexo.pedido_id
+            ? comprasBaixarAnexo(anexo.pedido_id, anexo.id, anexo.nome_arquivo)
+            : comprasBaixarAnexoPatrimonio(ficha.id, anexo.id, anexo.nome_arquivo);
+          return baixar.catch((err) => onMensagem?.({ erro: err?.message || 'Não foi possível baixar o arquivo.' }));
+        }}
         onAnexar={async (arquivos) => {
           if (!ficha?.id) return;
           try {
@@ -426,6 +431,27 @@ export default function ComprasPatrimonioCadastro({
           onAtualizar={atualizar}
           onSalvar={salvar}
           onCancelar={fecharForm}
+          onBaixar={(anexo) => {
+            const baixar = anexo.origem === 'compra' && anexo.pedido_id
+              ? comprasBaixarAnexo(anexo.pedido_id, anexo.id, anexo.nome_arquivo)
+              : comprasBaixarAnexoPatrimonio(form.id, anexo.id, anexo.nome_arquivo);
+            return baixar.catch((err) => onMensagem?.({ erro: err?.message || 'Não foi possível baixar o arquivo.' }));
+          }}
+          onAnexar={async (arquivos, tipo) => {
+            if (!form?.id) return;
+            try {
+              let atual = null;
+              for (const arquivo of arquivos) {
+                const data = await comprasAnexarPatrimonio(form.id, arquivo, tipo);
+                atual = (data?.itens || []).find((bem) => bem.id === form.id) || atual;
+              }
+              if (atual) setForm((prev) => ({ ...prev, anexos: atual.anexos || [] }));
+              onMensagem?.({ ok: 'Arquivo anexado ao bem.' });
+              await onRecarregar?.();
+            } catch (err) {
+              onMensagem?.({ erro: err?.response?.data?.detail || 'Não foi possível anexar o arquivo.' });
+            }
+          }}
         />
       )}
     </>

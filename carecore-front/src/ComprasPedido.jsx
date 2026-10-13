@@ -28,6 +28,7 @@ import {
   comprasCancelar,
   comprasCategorias,
   comprasComunicacao,
+  comprasEditarEvento,
   comprasConfirmarEvento,
   comprasConfirmarRevisaoItens,
   comprasCotacao,
@@ -68,6 +69,7 @@ import {
 } from './utils/comprasPedidoStatus';
 import {
   STEPS_COTACAO_PROJETO,
+  cotacoesComEscolhidaPrimeiro,
   etapaCotacaoProjeto,
   fornecedorSemCategoria,
   fornecedoresParaCotacaoPedido,
@@ -163,6 +165,7 @@ export default function ComprasPedido() {
   const [buscaFornecedorCotacao, setBuscaFornecedorCotacao] = useState('');
   const [buscaFornecedorLancamento, setBuscaFornecedorLancamento] = useState('');
   const [comunicacao, setComunicacao] = useState({ tipo: 'observacao', texto: '' });
+  const [eventoEdicao, setEventoEdicao] = useState(null);
   const [nfForm, setNfForm] = useState({
     tipo_nf: 'produto', numero: '', serie: '', valor_reais: '', observacao: '',
   });
@@ -1306,12 +1309,17 @@ export default function ComprasPedido() {
                 </p>
               )}
               <ul className="mb-3 space-y-2 text-sm">
-                {(pedido.cotacoes || []).map((c) => (
-                  <li key={c.id} className="rounded-xl border border-slate-100 px-3 py-2">
+                {cotacoesComEscolhidaPrimeiro(pedido.cotacoes).map((c) => (
+                  <li
+                    key={c.id}
+                    className={`rounded-xl border px-3 py-2 ${
+                      c.escolhida ? 'border-emerald-400 bg-emerald-50' : 'border-slate-100'
+                    }`}
+                  >
                     <div className="flex flex-wrap items-center justify-between gap-2">
-                      <span>
+                      <span className={c.escolhida ? 'font-bold text-emerald-950' : ''}>
                         {c.fornecedor_nome} · {moneyCentavos(c.valor_centavos)}
-                        {c.escolhida ? ' · escolhida' : ''}
+                        {c.escolhida ? ' · Escolhida' : ''}
                       </span>
                       <div className="flex flex-wrap gap-2">
                         {(podeEscolherCotacao) && !c.escolhida && (
@@ -1656,32 +1664,82 @@ export default function ComprasPedido() {
                 {(pedido.eventos || []).map((ev) => {
                   const pendente = Boolean(ev.aguardando_confirmacao);
                   const podeOk = pendente && ev.usuario_id && ev.usuario_id !== usuarioId;
+                  const suprimentos = ev.lado === 'suprimentos';
+                  const editando = eventoEdicao?.id === ev.id;
+                  const caixa = pendente
+                    ? 'border-amber-300 bg-amber-50'
+                    : (suprimentos ? 'border-sky-300 bg-sky-50' : 'border-slate-200 bg-white');
                   return (
-                    <li
-                      key={ev.id}
-                      className={`rounded-lg border px-3 py-2 ${
-                        pendente
-                          ? 'border-amber-300 bg-amber-50'
-                          : 'border-slate-100 bg-white'
-                      }`}
-                    >
+                    <li key={ev.id} className={`rounded-lg border px-3 py-2 ${caixa}`}>
                       <div className="flex flex-wrap items-start justify-between gap-2">
                         <div className="min-w-0 flex-1">
-                          <p className={`text-xs font-semibold uppercase ${pendente ? 'text-amber-800' : 'text-slate-500'}`}>
+                          <p className={`text-xs font-semibold uppercase ${pendente ? 'text-amber-800' : (suprimentos ? 'text-sky-800' : 'text-slate-500')}`}>
+                            {suprimentos ? 'Suprimentos' : (ev.usuario_id ? 'Projeto' : 'Sistema')}
+                            {' · '}
                             {ROTULO_EVENTO[ev.tipo] || ev.tipo}
                             {ev.criado_em ? ` · ${formatarDataHoraBr(ev.criado_em)}` : ''}
                             {pendente ? ' · aguardando ok' : ''}
                           </p>
-                          {ev.texto && <p className={`mt-1 ${pendente ? 'text-amber-950' : 'text-slate-800'}`}>{ev.texto}</p>}
+                          {editando ? (
+                            <form
+                              className="mt-2 flex flex-wrap gap-2"
+                              onSubmit={async (e) => {
+                                e.preventDefault();
+                                await agir(
+                                  () => comprasEditarEvento(pedido.id, ev.id, eventoEdicao.texto),
+                                  'Texto atualizado. O anterior ficou no histórico.',
+                                );
+                                setEventoEdicao(null);
+                              }}
+                            >
+                              <input
+                                value={eventoEdicao.texto}
+                                onChange={(e) => setEventoEdicao((atual) => ({ ...atual, texto: e.target.value }))}
+                                className="min-w-0 flex-1 rounded-xl border border-slate-200 px-3 py-2 text-sm"
+                                required
+                              />
+                              <PremiumButton type="submit">Salvar</PremiumButton>
+                              <PremiumButton type="button" variant="secondary" onClick={() => setEventoEdicao(null)}>
+                                Cancelar
+                              </PremiumButton>
+                            </form>
+                          ) : (
+                            ev.texto && <p className={`mt-1 ${pendente ? 'text-amber-950' : (suprimentos ? 'text-sky-950' : 'text-slate-800')}`}>{ev.texto}</p>
+                          )}
+                          {(ev.revisoes || []).length > 0 && (
+                            <details className="mt-2 text-xs text-slate-600">
+                              <summary className="cursor-pointer font-semibold">Histórico da correção</summary>
+                              <ul className="mt-1 space-y-1">
+                                {ev.revisoes.map((rev) => (
+                                  <li key={rev.id}>
+                                    {rev.criado_em ? formatarDataHoraBr(rev.criado_em) : ''}
+                                    {rev.autor_nome ? ` · ${rev.autor_nome}` : ''}
+                                    {': '}
+                                    {rev.texto_anterior || '(vazio)'}
+                                  </li>
+                                ))}
+                              </ul>
+                            </details>
+                          )}
                         </div>
-                        {podeOk && (
-                          <PremiumButton
-                            variant="secondary"
-                            onClick={() => agir(() => comprasConfirmarEvento(pedido.id, ev.id), 'Confirmado.')}
-                          >
-                            Ok
-                          </PremiumButton>
-                        )}
+                        <div className="flex shrink-0 flex-wrap gap-2">
+                          {ev.editavel && !editando && !terminal && (
+                            <PremiumButton
+                              variant="secondary"
+                              onClick={() => setEventoEdicao({ id: ev.id, texto: ev.texto || '' })}
+                            >
+                              Corrigir
+                            </PremiumButton>
+                          )}
+                          {podeOk && (
+                            <PremiumButton
+                              variant="secondary"
+                              onClick={() => agir(() => comprasConfirmarEvento(pedido.id, ev.id), 'Confirmado.')}
+                            >
+                              Ok
+                            </PremiumButton>
+                          )}
+                        </div>
                       </div>
                     </li>
                   );
@@ -2039,9 +2097,27 @@ export default function ComprasPedido() {
                     </p>
                     <p className="mt-1 text-xs text-slate-500">
                       {pedido.tipo === 'imobilizado'
-                        ? 'Anexe quantos arquivos forem necessários, junto da nota. Ao encerrar, eles passam a fazer parte do bem.'
+                        ? 'Orçamentos, termo de doação e notas deste processo aparecem no bem. Anexe aqui o que ainda falta.'
                         : 'Anexe quantos arquivos forem necessários junto da nota fiscal para encerrar o processo.'}
                     </p>
+                    {pedido.tipo === 'imobilizado' && (
+                      <label className="mt-2 block text-xs font-semibold text-slate-700">
+                        Termo de doação
+                        <input
+                          type="file"
+                          className="mt-1 block text-xs font-normal"
+                          onChange={async (e) => {
+                            const arquivo = e.target.files?.[0];
+                            e.target.value = '';
+                            if (!arquivo) return;
+                            const fd = new FormData();
+                            fd.append('tipo', 'termo_doacao');
+                            fd.append('arquivo', arquivo);
+                            await agir(() => comprasAnexarArquivo(pedido.id, fd), 'Termo de doação anexado.');
+                          }}
+                        />
+                      </label>
+                    )}
                     <input
                       type="file"
                       multiple
@@ -2301,7 +2377,7 @@ export default function ComprasPedido() {
                     </PremiumButton>
                   </>
                 ) : null}
-                <PremiumButton variant="secondary" onClick={() => navigate('/compras')}>
+                <PremiumButton variant="secondary" onClick={() => navigate(-1)}>
                   Voltar
                 </PremiumButton>
               </div>

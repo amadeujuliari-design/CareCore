@@ -52,6 +52,7 @@ from compras_regras import (
     TIPO_ANEXO_AQUISICAO,
     TIPO_ANEXO_NF_PDF,
     TIPO_ANEXO_NF_XML,
+    TIPOS_ANEXO_NO_BEM,
     TIPO_ANEXO_ORCAMENTO,
     TIPO_ANEXO_ORCAMENTO_ASSINADO,
     TIPO_ANEXO_PEDIDO_PDF,
@@ -82,6 +83,8 @@ from compras_regras import (
     tipo_eh_cotacao_sede,
     usuario_e_sede_compras,
     usuario_pode_aprovar_sede,
+    lado_timeline_compras,
+    tipo_arquivo_bem_de_anexo_pedido,
     usuario_pode_enviar_email_compras,
     usuario_pode_pedir,
     usuario_sede_pode_ver_tipo,
@@ -98,7 +101,9 @@ from models import (
     ComprasPedidoAnexoDB,
     ComprasPedidoDB,
     ComprasPedidoEventoDB,
+    ComprasPedidoEventoRevisaoDB,
     ComprasPedidoItemDB,
+    UsuarioDB,
     ComprasPedidoNotaFiscalDB,
     InstituicaoDB,
     OrganizacaoDB,
@@ -377,12 +382,20 @@ def _serializar_nota(nota: ComprasPedidoNotaFiscalDB) -> dict:
     }
 
 
-def _serializar_evento(evento: ComprasPedidoEventoDB) -> dict:
+def _serializar_evento(
+    evento: ComprasPedidoEventoDB,
+    *,
+    lado: str = "projeto",
+    autor_nome: Optional[str] = None,
+    revisoes: Optional[list] = None,
+) -> dict:
     return {
         "id": evento.id,
         "tipo": evento.tipo,
         "texto": evento.texto,
         "usuario_id": evento.usuario_id,
+        "autor_nome": autor_nome,
+        "lado": lado if evento.usuario_id else "",
         "cotacao_id": evento.cotacao_id,
         "anexo_id": evento.anexo_id,
         "status_anterior": evento.status_anterior,
@@ -391,7 +404,54 @@ def _serializar_evento(evento: ComprasPedidoEventoDB) -> dict:
         "confirmado_em": _iso(getattr(evento, "confirmado_em", None)),
         "confirmado_por_id": getattr(evento, "confirmado_por_id", None),
         "criado_em": _iso(evento.criado_em),
+        "revisoes": revisoes or [],
+        "editavel": evento.tipo in {
+            TIPO_EVENTO_PARECER,
+            TIPO_EVENTO_NEGATIVA,
+            TIPO_EVENTO_OBSERVACAO,
+        },
     }
+
+
+async def _autores_eventos(db: AsyncSession, usuario_ids: list[str]) -> dict[str, dict]:
+    ids = [item for item in dict.fromkeys(usuario_ids) if item]
+    if not ids:
+        return {}
+    rows = (
+        await db.execute(
+            select(UsuarioDB.id, UsuarioDB.nome, UsuarioDB.perfil_acesso).where(UsuarioDB.id.in_(ids))
+        )
+    ).all()
+    return {
+        row[0]: {
+            "nome": row[1],
+            "lado": lado_timeline_compras(perfil=row[2] or ""),
+        }
+        for row in rows
+    }
+
+
+async def _revisoes_eventos(db: AsyncSession, evento_ids: list[str]) -> dict[str, list]:
+    if not evento_ids:
+        return {}
+    rows = (
+        await db.execute(
+            select(ComprasPedidoEventoRevisaoDB, UsuarioDB.nome)
+            .outerjoin(UsuarioDB, UsuarioDB.id == ComprasPedidoEventoRevisaoDB.usuario_id)
+            .where(ComprasPedidoEventoRevisaoDB.evento_id.in_(evento_ids))
+            .order_by(ComprasPedidoEventoRevisaoDB.criado_em.desc())
+        )
+    ).all()
+    saida: dict[str, list] = {}
+    for revisao, nome in rows:
+        saida.setdefault(revisao.evento_id, []).append({
+            "id": revisao.id,
+            "texto_anterior": revisao.texto_anterior,
+            "usuario_id": revisao.usuario_id,
+            "autor_nome": nome,
+            "criado_em": _iso(revisao.criado_em),
+        })
+    return saida
 
 
 async def extras_serializacao_pedido(db: AsyncSession, pedido: ComprasPedidoDB) -> dict:
@@ -459,11 +519,21 @@ async def extras_serializacao_pedido(db: AsyncSession, pedido: ComprasPedidoDB) 
         e.tipo == TIPO_EVENTO_EMAIL and (e.texto or "").startswith("E-mail enviado para")
         for e in eventos
     )
+    autores = await _autores_eventos(db, [e.usuario_id for e in eventos if e.usuario_id])
+    revisoes = await _revisoes_eventos(db, [e.id for e in eventos])
 
     return {
         "anexos": [_serializar_anexo(a) for a in anexos],
         "notas_fiscais": [_serializar_nota(n) for n in notas],
-        "eventos": [_serializar_evento(e) for e in eventos],
+        "eventos": [
+            _serializar_evento(
+                e,
+                lado=(autores.get(e.usuario_id) or {}).get("lado", "projeto"),
+                autor_nome=(autores.get(e.usuario_id) or {}).get("nome"),
+                revisoes=revisoes.get(e.id) or [],
+            )
+            for e in eventos
+        ],
         "aviso_cotacoes": aviso_cotacoes_insuficientes(len(cotacoes)),
         "aviso_alteracao_itens": aviso_alteracao,
         "precisa_revisar_cotacao": precisa_revisar,
@@ -808,6 +878,45 @@ async def registrar_comunicacao_pedido(
         usuario_id=_uid(usuario),
         cotacao_id=cotacao_id,
     )
+    pedido.atualizado_em = agora_operacional_naive()
+    return evento
+
+
+async def editar_texto_evento_pedido(
+    db: AsyncSession,
+    usuario: dict,
+    pedido: ComprasPedidoDB,
+    evento_id: str,
+    texto: str,
+) -> ComprasPedidoEventoDB:
+    """Corrige observação, parecer ou negativa e guarda o texto anterior."""
+    evento = (
+        await db.execute(
+            select(ComprasPedidoEventoDB).where(
+                ComprasPedidoEventoDB.id == evento_id,
+                ComprasPedidoEventoDB.pedido_id == pedido.id,
+            )
+        )
+    ).scalar_one_or_none()
+    if not evento:
+        raise HTTPException(status_code=404, detail="Registro da timeline não encontrado.")
+    if evento.tipo not in {TIPO_EVENTO_PARECER, TIPO_EVENTO_NEGATIVA, TIPO_EVENTO_OBSERVACAO}:
+        raise HTTPException(status_code=400, detail="Só é possível corrigir observação, parecer ou negativa.")
+    novo = (texto or "").strip()
+    if not novo:
+        raise HTTPException(status_code=400, detail="Informe o texto.")
+    anterior = (evento.texto or "").strip()
+    if novo == anterior:
+        return evento
+    db.add(
+        ComprasPedidoEventoRevisaoDB(
+            evento_id=evento.id,
+            texto_anterior=evento.texto,
+            usuario_id=_uid(usuario),
+            criado_em=agora_operacional_naive(),
+        )
+    )
+    evento.texto = novo
     pedido.atualizado_em = agora_operacional_naive()
     return evento
 
@@ -1878,7 +1987,7 @@ async def encerrar_pedido(
                 for anexo_nf in anexos_pedido:
                     if not anexo_nf.ativo:
                         continue
-                    if anexo_nf.id not in ids_nf and anexo_nf.tipo != TIPO_ANEXO_AQUISICAO:
+                    if anexo_nf.id not in ids_nf and anexo_nf.tipo not in TIPOS_ANEXO_NO_BEM:
                         continue
                     chave = anexo_nf.caminho_arquivo or anexo_nf.id
                     if chave in vistos:
@@ -1891,6 +2000,7 @@ async def encerrar_pedido(
                             caminho_arquivo=anexo_nf.caminho_arquivo,
                             content_type=anexo_nf.content_type,
                             tamanho_bytes=anexo_nf.tamanho_bytes,
+                            tipo=tipo_arquivo_bem_de_anexo_pedido(anexo_nf.tipo) or "nota",
                             ativo=True,
                             criado_em=agora,
                         )

@@ -3,6 +3,7 @@ import { describe, it } from 'node:test';
 
 import {
   chaveSplitCategoriaPedido,
+  cotacoesComEscolhidaPrimeiro,
   fornecedorSemCategoria,
   fornecedoresParaCotacaoPedido,
   itensConsumoDoSegmentoPedido,
@@ -13,6 +14,17 @@ import {
   tipoExigeJanela,
   tipoPulaAprovacaoSede,
 } from './comprasPedidoTipos.js';
+
+describe('cotacoesComEscolhidaPrimeiro', () => {
+  it('coloca a escolhida no topo', () => {
+    const lista = cotacoesComEscolhidaPrimeiro([
+      { id: 'a', escolhida: false },
+      { id: 'b', escolhida: true },
+      { id: 'c', escolhida: false },
+    ]);
+    assert.equal(lista[0].id, 'b');
+  });
+});
 
 describe('chaveSplitCategoriaPedido', () => {
   it('agrupa carne / peixe / alimentação', () => {

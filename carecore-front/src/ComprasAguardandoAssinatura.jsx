@@ -26,7 +26,7 @@ import {
 } from './services/comprasService';
 import { usuarioEhAdmCompras, usuarioEhManutencao } from './utils/rbacUtils';
 import { formatarDataBr } from './utils/comprasJanelaUtils';
-import { rotuloTipoPedido, tipoEhCotacaoProjeto } from './utils/comprasPedidoTipos';
+import { cotacoesComEscolhidaPrimeiro, rotuloTipoPedido, tipoEhCotacaoProjeto } from './utils/comprasPedidoTipos';
 
 function usuarioSessao() {
   try {
@@ -225,16 +225,21 @@ export default function ComprasAguardandoAssinatura() {
                               </p>
                             )}
                             <ul className="mt-3 space-y-2">
-                              {cotacoes.map((c) => {
+                              {cotacoesComEscolhidaPrimeiro(cotacoes).map((c) => {
                                 const anexos = anexosOrcamento(pedido, c.id);
                                 return (
-                                  <li key={c.id} className="rounded-xl border border-slate-100 px-3 py-2 text-sm">
+                                  <li
+                                    key={c.id}
+                                    className={`rounded-xl border px-3 py-2 text-sm ${
+                                      c.escolhida ? 'border-emerald-400 bg-emerald-50' : 'border-slate-100'
+                                    }`}
+                                  >
                                     <div className="flex flex-wrap items-center justify-between gap-2">
-                                      <span>
+                                      <span className={c.escolhida ? 'font-bold text-emerald-950' : ''}>
                                         {c.fornecedor_nome}
                                         {' · '}
                                         {moneyCentavos(c.valor_centavos)}
-                                        {c.escolhida ? ' · escolhida' : ''}
+                                        {c.escolhida ? ' · Escolhida' : ''}
                                       </span>
                                       <div className="flex flex-wrap gap-2">
                                         {!c.escolhida && (

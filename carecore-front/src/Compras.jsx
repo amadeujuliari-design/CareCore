@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   ArrowDown,
@@ -205,6 +205,25 @@ function agruparPedidosPorUnidade(lista, ordem) {
   return grupos;
 }
 
+const CHAVE_VISTA_COMPRAS = '@CareCore:compras-vista';
+
+/** Sobrevive ao Voltar: a lista volta na hora e a API atualiza por trás. */
+const cacheListaCompras = { chave: '' };
+
+function chaveListaCompras(usuarioId, competencia, statusGrupo) {
+  return `${usuarioId || ''}|${competencia || ''}|${statusGrupo}`;
+}
+
+function lerVistaCompras(visaoConcluidos) {
+  try {
+    const data = JSON.parse(sessionStorage.getItem(CHAVE_VISTA_COMPRAS) || 'null');
+    if (!data || Boolean(data.visaoConcluidos) !== Boolean(visaoConcluidos)) return null;
+    return data;
+  } catch {
+    return null;
+  }
+}
+
 export default function Compras() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -212,44 +231,71 @@ export default function Compras() {
   const usuario = useMemo(() => usuarioSessao(), []);
   const sede = usuarioEhAdmCompras(usuario) || usuarioEhManutencao(usuario);
   const podeCadastrarMestre = usuarioPodeCadastrarMestreCompras(usuario);
-  const [aba, setAba] = useState('pedidos');
+  const vistaInicial = useMemo(() => lerVistaCompras(visaoConcluidos), [visaoConcluidos]);
+  const competenciaInicial = typeof vistaInicial?.competencia === 'string'
+    ? vistaInicial.competencia
+    : (visaoConcluidos ? competenciaAtual() : '');
+  const statusGrupoPedidos = visaoConcluidos ? 'terminais' : 'abertos';
+  const cacheVista = cacheListaCompras.chave === chaveListaCompras(
+    usuario?.id,
+    competenciaInicial,
+    statusGrupoPedidos,
+  )
+    ? cacheListaCompras
+    : null;
+  const [aba, setAba] = useState(() => vistaInicial?.aba || 'pedidos');
   const [abaCadastro, setAbaCadastro] = useState('fornecedores');
-  const [acesso, setAcesso] = useState(null);
+  const [acesso, setAcesso] = useState(() => cacheVista?.acesso || null);
   const [erro, setErro] = useState('');
   const [ok, setOk] = useState('');
-  const [carregando, setCarregando] = useState(true);
-  const [pedidos, setPedidos] = useState([]);
-  const [janelas, setJanelas] = useState([]);
+  const [carregando, setCarregando] = useState(!cacheVista);
+  const [pedidos, setPedidos] = useState(() => cacheVista?.pedidos || []);
+  const [janelas, setJanelas] = useState(() => cacheVista?.janelas || []);
   const [hojeOperacional, setHojeOperacional] = useState(() => {
+    if (cacheVista?.hoje) return cacheVista.hoje;
     const agora = new Date();
     return `${agora.getFullYear()}-${String(agora.getMonth() + 1).padStart(2, '0')}-${String(agora.getDate()).padStart(2, '0')}`;
   });
-  const [unidades, setUnidades] = useState([]);
-  const [categorias, setCategorias] = useState([]);
-  const [fontes, setFontes] = useState([]);
-  const [fornecedores, setFornecedores] = useState([]);
-  const [itensConsumo, setItensConsumo] = useState([]);
-  const [patrimonio, setPatrimonio] = useState([]);
-  const [economia, setEconomia] = useState(null);
-  const [competencia, setCompetencia] = useState(() => (
-    visaoConcluidos ? competenciaAtual() : ''
-  ));
+  const [unidades, setUnidades] = useState(() => cacheVista?.unidades || []);
+  const [categorias, setCategorias] = useState(() => cacheVista?.categorias || []);
+  const [fontes, setFontes] = useState(() => cacheVista?.fontes || []);
+  const [fornecedores, setFornecedores] = useState(() => cacheVista?.fornecedores || []);
+  const [itensConsumo, setItensConsumo] = useState(() => cacheVista?.itensConsumo || []);
+  const [patrimonio, setPatrimonio] = useState(() => cacheVista?.patrimonio || []);
+  const [economia, setEconomia] = useState(() => cacheVista?.economia ?? null);
+  const [competencia, setCompetencia] = useState(competenciaInicial);
   const [salvandoJanela, setSalvandoJanela] = useState(false);
-  const [ordemPedidos, setOrdemPedidos] = useState({ coluna: 'atualizado', direcao: 'desc' });
-  const [agruparPorUnidade, setAgruparPorUnidade] = useState(() => !visaoConcluidos);
-  const [unidadeExpandida, setUnidadeExpandida] = useState(null);
-  const statusGrupoPedidos = visaoConcluidos ? 'terminais' : 'abertos';
+  const [ordemPedidos, setOrdemPedidos] = useState(
+    () => vistaInicial?.ordemPedidos || { coluna: 'atualizado', direcao: 'desc' },
+  );
+  const [agruparPorUnidade, setAgruparPorUnidade] = useState(
+    () => (typeof vistaInicial?.agruparPorUnidade === 'boolean' ? vistaInicial.agruparPorUnidade : !visaoConcluidos),
+  );
+  const [unidadeExpandida, setUnidadeExpandida] = useState(() => vistaInicial?.unidadeExpandida || null);
+  const [visaoCalendario, setVisaoCalendario] = useState(() => vistaInicial?.calendario || null);
+
+  const visaoAnterior = useRef(visaoConcluidos);
+  const cargaSeq = useRef(0);
+  useEffect(() => {
+    if (visaoAnterior.current === visaoConcluidos) return;
+    visaoAnterior.current = visaoConcluidos;
+    setCompetencia(visaoConcluidos ? competenciaAtual() : '');
+    setAgruparPorUnidade(!visaoConcluidos);
+    setUnidadeExpandida(null);
+    setAba('pedidos');
+  }, [visaoConcluidos]);
 
   useEffect(() => {
-    if (visaoConcluidos) {
-      setCompetencia(competenciaAtual());
-      setAgruparPorUnidade(false);
-      return;
-    }
-    setCompetencia('');
-    setAgruparPorUnidade(true);
-    setUnidadeExpandida(null);
-  }, [visaoConcluidos]);
+    sessionStorage.setItem(CHAVE_VISTA_COMPRAS, JSON.stringify({
+      visaoConcluidos,
+      competencia,
+      aba,
+      ordemPedidos,
+      agruparPorUnidade,
+      unidadeExpandida,
+      calendario: visaoCalendario,
+    }));
+  }, [visaoConcluidos, competencia, aba, ordemPedidos, agruparPorUnidade, unidadeExpandida, visaoCalendario]);
 
   const pedidosOrdenados = useMemo(() => {
     const lista = [...(pedidos || [])];
@@ -286,10 +332,15 @@ export default function Compras() {
   };
 
   const carregar = useCallback(async () => {
+    const seq = cargaSeq.current + 1;
+    cargaSeq.current = seq;
+    const chave = chaveListaCompras(usuario?.id, competencia, statusGrupoPedidos);
+    const temCache = cacheListaCompras.chave === chave;
     setErro('');
-    setCarregando(true);
+    if (!temCache) setCarregando(true);
     try {
       const acc = await comprasAcesso();
+      if (seq !== cargaSeq.current) return;
       setAcesso(acc);
       if (!acc?.compras_ativo) {
         setPedidos([]);
@@ -301,47 +352,66 @@ export default function Compras() {
         setItensConsumo([]);
         setPatrimonio([]);
         setEconomia(null);
-        setCarregando(false);
+        cacheListaCompras.chave = '';
         return;
       }
-      const [lista, cats, fonts, catalogo] = await Promise.all([
+      const [lista, cats, fonts, catalogo, janelasResp, pacoteSede, patrimonioProjeto, pacoteMestre] = await Promise.all([
         comprasPedidos({ competencia, status_grupo: statusGrupoPedidos }),
         comprasCategorias(),
         comprasFontes(),
         comprasItensConsumo(),
+        comprasJanelas(),
+        sede
+          ? Promise.all([
+            comprasUnidades(),
+            comprasFornecedores(),
+            comprasPatrimonio(),
+            comprasEconomia(competencia),
+          ])
+          : null,
+        sede ? null : comprasPatrimonio(),
+        !sede && podeCadastrarMestre
+          ? Promise.all([comprasFornecedores(), comprasUnidades()])
+          : null,
       ]);
+      if (seq !== cargaSeq.current) return;
+      const hoje = janelasResp.hoje || '';
+      const janelasItens = janelasResp.itens;
+      const unidadesNovas = pacoteSede?.[0] || pacoteMestre?.[1] || [];
+      const fornecedoresNovos = pacoteSede?.[1] || pacoteMestre?.[0] || [];
+      const patrimonioNovo = pacoteSede?.[2] || patrimonioProjeto || [];
+      const economiaNova = pacoteSede?.[3] ?? null;
       setPedidos(lista);
       setCategorias(cats);
       setFontes(fonts);
       setItensConsumo(catalogo);
-      const janelasResp = await comprasJanelas();
-      setHojeOperacional(janelasResp.hoje || '');
-      setJanelas(janelasResp.itens);
-      if (sede) {
-        const [u, f, p, e] = await Promise.all([
-          comprasUnidades(),
-          comprasFornecedores(),
-          comprasPatrimonio(),
-          comprasEconomia(competencia),
-        ]);
-        setUnidades(u);
-        setFornecedores(f);
-        setPatrimonio(p);
-        setEconomia(e);
-      } else {
-        setPatrimonio(await comprasPatrimonio());
-        if (podeCadastrarMestre) {
-          const [f, u] = await Promise.all([comprasFornecedores(), comprasUnidades()]);
-          setFornecedores(f);
-          setUnidades(u);
-        }
-      }
+      setHojeOperacional(hoje);
+      setJanelas(janelasItens);
+      setUnidades(unidadesNovas);
+      setFornecedores(fornecedoresNovos);
+      setPatrimonio(patrimonioNovo);
+      setEconomia(economiaNova);
+      Object.assign(cacheListaCompras, {
+        chave,
+        acesso: acc,
+        pedidos: lista,
+        categorias: cats,
+        fontes: fonts,
+        itensConsumo: catalogo,
+        hoje,
+        janelas: janelasItens,
+        unidades: unidadesNovas,
+        fornecedores: fornecedoresNovos,
+        patrimonio: patrimonioNovo,
+        economia: economiaNova,
+      });
     } catch (err) {
+      if (seq !== cargaSeq.current) return;
       setErro(err.response?.data?.detail || err.message || 'Não foi possível carregar Compras.');
     } finally {
-      setCarregando(false);
+      if (seq === cargaSeq.current) setCarregando(false);
     }
-  }, [competencia, podeCadastrarMestre, sede, statusGrupoPedidos]);
+  }, [competencia, podeCadastrarMestre, sede, statusGrupoPedidos, usuario?.id]);
 
   useEffect(() => {
     carregar();
@@ -373,7 +443,7 @@ export default function Compras() {
       } else if (podeCadastrarMestre) {
         setAba(abaParam);
       }
-    } else if (visaoParam === 'concluidos' || !abaParam) {
+    } else if (visaoParam === 'concluidos') {
       setAba('pedidos');
     }
   }, [podeCadastrarMestre, searchParams, sede]);
@@ -711,6 +781,8 @@ export default function Compras() {
               <ComprasJanelaCalendario
                 janelas={janelas}
                 hoje={hojeOperacional}
+                visaoInicial={visaoCalendario}
+                onVisaoChange={setVisaoCalendario}
                 pedidos={pedidos}
                 unidades={unidades}
                 sede={sede}

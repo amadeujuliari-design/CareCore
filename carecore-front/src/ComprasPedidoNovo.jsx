@@ -12,9 +12,11 @@ import {
 import { useAuth } from './context/AuthContext';
 import {
   comprasCategorias,
+  comprasCopiarPedido,
   comprasCriarPedido,
   comprasFontes,
   comprasItensConsumo,
+  comprasPedidos,
   comprasUnidades,
 } from './services/comprasService';
 import ComprasItemTypeahead from './components/ComprasItemTypeahead';
@@ -93,6 +95,10 @@ export default function ComprasPedidoNovo() {
     observacao: '',
   });
   const [linhas, setLinhas] = useState(() => [linhaItemVazia()]);
+  const [concluidos, setConcluidos] = useState([]);
+  const [origemCopia, setOrigemCopia] = useState('');
+  const [modoCopia, setModoCopia] = useState('inteiro');
+  const [copiando, setCopiando] = useState(false);
 
   useEffect(() => {
     if (!meta) return undefined;
@@ -111,6 +117,10 @@ export default function ComprasPedidoNovo() {
         if (tipo === TIPO_CONSUMO || tipo === TIPO_HORTIFRUTI || tipo === TIPO_MANUTENCAO || tipo === TIPO_IMOBILIZADO || tipo === TIPO_SERVICO) {
           const itens = await comprasItensConsumo();
           if (alive) setItensConsumo(Array.isArray(itens) ? itens : (itens?.itens || []));
+        }
+        const lista = await comprasPedidos({ status_grupo: 'terminais', tipo });
+        if (alive) {
+          setConcluidos((Array.isArray(lista) ? lista : []).filter((pedido) => pedido.status === 'recebido'));
         }
       } catch (e) {
         if (alive) setErro(e?.response?.data?.detail || 'Não foi possível carregar o formulário.');
@@ -252,9 +262,13 @@ export default function ComprasPedidoNovo() {
           title={`Novo pedido — ${rotuloTipoPedido(tipo)}`}
           subtitle={meta.descricao}
           actions={(
-            <Link to="/compras" className="text-sm font-semibold text-slate-600 underline">
+            <button
+              type="button"
+              className="text-sm font-semibold text-slate-600 underline"
+              onClick={() => navigate(-1)}
+            >
               Voltar à lista
-            </Link>
+            </button>
           )}
         />
         <ScrollArea>
@@ -262,6 +276,73 @@ export default function ComprasPedidoNovo() {
             {erro ? (
               <div className="rounded-xl bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">{erro}</div>
             ) : null}
+
+            <SectionCard
+              title="Copiar um pedido concluído"
+              subtitle="Abre um rascunho do mês seguinte para editar. Inteiro junta de novo o que foi separado (carne, peixe, alimentação). Dividido copia só o pedido escolhido."
+            >
+              {concluidos.length === 0 ? (
+                <p className="text-sm text-slate-500">Nenhum pedido concluído deste tipo para copiar.</p>
+              ) : (
+                <div className="space-y-3">
+                  <select
+                    className={inputClass}
+                    value={origemCopia}
+                    onChange={(e) => setOrigemCopia(e.target.value)}
+                  >
+                    <option value="">Não copiar — montar do zero</option>
+                    {concluidos.map((pedido) => (
+                      <option key={pedido.id} value={pedido.id}>
+                        {pedido.competencia || 'sem mês'}
+                        {' · '}
+                        {pedido.categoria_split_nome || pedido.tipo_rotulo || rotuloTipoPedido(pedido.tipo)}
+                        {pedido.instituicao_nome ? ` · ${pedido.instituicao_nome}` : ''}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="flex flex-wrap gap-4 text-sm text-slate-700">
+                    <label className="inline-flex items-center gap-2">
+                      <input
+                        type="radio"
+                        name="modo-copia"
+                        checked={modoCopia === 'inteiro'}
+                        onChange={() => setModoCopia('inteiro')}
+                      />
+                      Inteiro, para dividir de novo no envio
+                    </label>
+                    <label className="inline-flex items-center gap-2">
+                      <input
+                        type="radio"
+                        name="modo-copia"
+                        checked={modoCopia === 'dividido'}
+                        onChange={() => setModoCopia('dividido')}
+                      />
+                      Dividido, só este pedido
+                    </label>
+                  </div>
+                  <PremiumButton
+                    type="button"
+                    disabled={!origemCopia || copiando}
+                    onClick={async () => {
+                      setErro('');
+                      setCopiando(true);
+                      try {
+                        const criado = await comprasCopiarPedido(origemCopia, modoCopia);
+                        const id = criado?.id;
+                        if (!id) throw new Error('Resposta sem id do pedido.');
+                        navigate(`/compras/pedidos/${id}`);
+                      } catch (e) {
+                        setErro(e?.response?.data?.detail || e.message || 'Não foi possível copiar o pedido.');
+                      } finally {
+                        setCopiando(false);
+                      }
+                    }}
+                  >
+                    {copiando ? 'Copiando…' : 'Criar rascunho a partir deste'}
+                  </PremiumButton>
+                </div>
+              )}
+            </SectionCard>
 
             <SectionCard title="Fonte da verba">
               <label>

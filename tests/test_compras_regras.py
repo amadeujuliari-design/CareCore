@@ -469,3 +469,20 @@ def test_infraestrutura_nao_envia_email_fornecedor():
     ) is True
     assert usuario_pode_enviar_email_compras(perfil=PERFIL_ADM_COMPRAS_SUPRIMENTOS) is True
     assert usuario_pode_enviar_email_compras(perfil="Gestor") is True
+
+
+def test_competencia_mes_seguinte_e_lado_da_timeline():
+    from compras_regras import (
+        PERFIL_ADM_COMPRAS_SUPRIMENTOS,
+        competencia_mes_seguinte,
+        lado_timeline_compras,
+        tipo_arquivo_bem_de_anexo_pedido,
+    )
+
+    assert competencia_mes_seguinte("2026-09") == "2026-10"
+    assert competencia_mes_seguinte("2026-12") == "2027-01"
+    assert lado_timeline_compras(perfil=PERFIL_ADM_COMPRAS_SUPRIMENTOS) == "suprimentos"
+    assert lado_timeline_compras(perfil="Gestor") == "projeto"
+    assert tipo_arquivo_bem_de_anexo_pedido("orcamento_assinado") == "orcamento"
+    assert tipo_arquivo_bem_de_anexo_pedido("nf_pdf") == "nota"
+    assert tipo_arquivo_bem_de_anexo_pedido("termo_doacao") == "termo_doacao"

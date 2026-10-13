@@ -10,6 +10,14 @@ export const PATRIMONIO_ORIGEM = [
   { value: 'outros', label: 'Outros' },
 ];
 
+export const PATRIMONIO_TIPO_ARQUIVO = [
+  { value: 'orcamento', label: 'Orçamento' },
+  { value: 'termo_doacao', label: 'Termo de doação' },
+  { value: 'nota', label: 'Nota' },
+  { value: 'aquisicao', label: 'Aquisição' },
+  { value: 'outro', label: 'Outro' },
+];
+
 export const PATRIMONIO_SITUACAO = [
   { value: 'bom', label: 'Bom' },
   { value: 'regular', label: 'Regular' },

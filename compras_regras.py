@@ -66,6 +66,7 @@ TIPO_ANEXO_RESPOSTA_FORNECEDOR = "resposta_fornecedor"
 TIPO_ANEXO_ORCAMENTO_ASSINADO = "orcamento_assinado"
 TIPO_ANEXO_ESPELHO = "espelho_compra"
 TIPO_ANEXO_AQUISICAO = "aquisicao_bem"
+TIPO_ANEXO_TERMO_DOACAO = "termo_doacao"
 
 TIPOS_ANEXO_PEDIDO = {
     TIPO_ANEXO_ORCAMENTO,
@@ -76,6 +77,36 @@ TIPOS_ANEXO_PEDIDO = {
     TIPO_ANEXO_ORCAMENTO_ASSINADO,
     TIPO_ANEXO_ESPELHO,
     TIPO_ANEXO_AQUISICAO,
+    TIPO_ANEXO_TERMO_DOACAO,
+}
+
+TIPOS_ANEXO_NO_BEM = frozenset({
+    TIPO_ANEXO_ORCAMENTO,
+    TIPO_ANEXO_ORCAMENTO_ASSINADO,
+    TIPO_ANEXO_NF_PDF,
+    TIPO_ANEXO_NF_XML,
+    TIPO_ANEXO_AQUISICAO,
+    TIPO_ANEXO_TERMO_DOACAO,
+})
+
+TIPO_ARQUIVO_BEM_ORCAMENTO = "orcamento"
+TIPO_ARQUIVO_BEM_TERMO = "termo_doacao"
+TIPO_ARQUIVO_BEM_NOTA = "nota"
+TIPO_ARQUIVO_BEM_AQUISICAO = "aquisicao"
+TIPO_ARQUIVO_BEM_OUTRO = "outro"
+TIPOS_ARQUIVO_BEM = frozenset({
+    TIPO_ARQUIVO_BEM_ORCAMENTO,
+    TIPO_ARQUIVO_BEM_TERMO,
+    TIPO_ARQUIVO_BEM_NOTA,
+    TIPO_ARQUIVO_BEM_AQUISICAO,
+    TIPO_ARQUIVO_BEM_OUTRO,
+})
+ROTULO_ARQUIVO_BEM = {
+    TIPO_ARQUIVO_BEM_ORCAMENTO: "Orçamento",
+    TIPO_ARQUIVO_BEM_TERMO: "Termo de doação",
+    TIPO_ARQUIVO_BEM_NOTA: "Nota",
+    TIPO_ARQUIVO_BEM_AQUISICAO: "Aquisição",
+    TIPO_ARQUIVO_BEM_OUTRO: "Outro",
 }
 
 TIPO_EVENTO_PARECER = "parecer"
@@ -392,6 +423,43 @@ def normalizar_competencia(valor: str) -> str:
 
 def competencia_de_data(dia: date) -> str:
     return f"{dia.year:04d}-{dia.month:02d}"
+
+
+def competencia_mes_seguinte(competencia: str) -> str:
+    """Mês operacional seguinte a uma competência AAAA-MM."""
+    texto = normalizar_competencia(competencia)
+    ano = int(texto[:4])
+    mes = int(texto[5:7])
+    if mes == 12:
+        return f"{ano + 1:04d}-01"
+    return f"{ano:04d}-{mes + 1:02d}"
+
+
+def lado_timeline_compras(*, perfil: str, is_manutencao: bool = False) -> str:
+    """Azul de Suprimentos/Sede ou branco do projeto na timeline."""
+    if usuario_e_sede_compras(perfil=perfil, is_manutencao=is_manutencao):
+        return "suprimentos"
+    return "projeto"
+
+
+def tipo_arquivo_bem_de_anexo_pedido(tipo: Optional[str]) -> Optional[str]:
+    chave = (tipo or "").strip().lower()
+    if chave in {TIPO_ANEXO_ORCAMENTO, TIPO_ANEXO_ORCAMENTO_ASSINADO}:
+        return TIPO_ARQUIVO_BEM_ORCAMENTO
+    if chave in {TIPO_ANEXO_NF_PDF, TIPO_ANEXO_NF_XML}:
+        return TIPO_ARQUIVO_BEM_NOTA
+    if chave == TIPO_ANEXO_AQUISICAO:
+        return TIPO_ARQUIVO_BEM_AQUISICAO
+    if chave == TIPO_ANEXO_TERMO_DOACAO:
+        return TIPO_ARQUIVO_BEM_TERMO
+    return None
+
+
+def normalizar_tipo_arquivo_bem(valor: Optional[str]) -> str:
+    chave = (valor or "").strip().lower()
+    if chave in TIPOS_ARQUIVO_BEM:
+        return chave
+    return TIPO_ARQUIVO_BEM_OUTRO
 
 
 def data_operacional(agora: Optional[datetime] = None) -> date:

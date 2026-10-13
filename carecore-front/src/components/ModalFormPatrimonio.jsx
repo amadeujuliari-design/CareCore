@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useFecharSoNoBackdrop } from '../hooks/useFecharSoNoBackdrop';
 import { CampoSelect, CampoTexto } from './UsuariosCampos';
 import { PremiumButton } from './PremiumUI';
@@ -7,6 +8,8 @@ import {
   PATRIMONIO_ORIGEM,
   PATRIMONIO_PROPRIEDADE,
   PATRIMONIO_SITUACAO,
+  PATRIMONIO_TIPO_ARQUIVO,
+  rotuloOpcao,
 } from '../utils/comprasPatrimonioUtils';
 
 export default function ModalFormPatrimonio({
@@ -19,8 +22,12 @@ export default function ModalFormPatrimonio({
   onAtualizar,
   onSalvar,
   onCancelar,
+  onBaixar,
+  onAnexar,
 }) {
   const editando = Boolean(form?.id);
+  const [tipoArquivo, setTipoArquivo] = useState('orcamento');
+  const [anexando, setAnexando] = useState(false);
   const opcoesUnidade = unidades.map((u) => ({ value: u.id, label: u.nome }));
   const { onMouseDownBackdrop, onClickBackdrop } = useFecharSoNoBackdrop(onCancelar);
 
@@ -215,6 +222,67 @@ export default function ModalFormPatrimonio({
               </div>
             </div>
           </section>
+
+          {editando && (
+            <section className="mt-4 rounded-2xl border border-slate-200 p-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Arquivos do bem</p>
+              <p className="mt-1 text-xs text-slate-500">
+                Orçamentos, termo de doação e notas que vieram da compra aparecem aqui. Também dá para anexar arquivos direto neste bem.
+              </p>
+              {(form.anexos || []).length ? (
+                <ul className="mt-3 space-y-1">
+                  {(form.anexos || []).map((anexo) => (
+                    <li key={`${anexo.origem || 'bem'}-${anexo.id}`} className="flex items-center justify-between gap-2 text-sm">
+                      <span className="min-w-0 truncate text-slate-800">
+                        <span className="mr-2 text-xs font-semibold uppercase text-slate-500">
+                          {rotuloOpcao(PATRIMONIO_TIPO_ARQUIVO, anexo.tipo)}
+                        </span>
+                        {anexo.nome_arquivo || 'Arquivo'}
+                      </span>
+                      <button
+                        type="button"
+                        className="shrink-0 text-xs font-semibold text-sky-800 underline"
+                        onClick={() => onBaixar?.(anexo)}
+                      >
+                        Baixar
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="mt-3 text-sm text-slate-500">Nenhum arquivo neste bem.</p>
+              )}
+              <div className="mt-3 grid gap-2 md:grid-cols-[12rem_1fr]">
+                <select
+                  value={tipoArquivo}
+                  onChange={(e) => setTipoArquivo(e.target.value)}
+                  className="rounded-xl border border-slate-200 px-3 py-2 text-sm"
+                  aria-label="Tipo do arquivo"
+                >
+                  {PATRIMONIO_TIPO_ARQUIVO.map((opcao) => (
+                    <option key={opcao.value} value={opcao.value}>{opcao.label}</option>
+                  ))}
+                </select>
+                <input
+                  type="file"
+                  multiple
+                  disabled={anexando}
+                  className="block w-full text-sm"
+                  onChange={async (e) => {
+                    const arquivos = Array.from(e.target.files || []);
+                    e.target.value = '';
+                    if (!arquivos.length || !onAnexar) return;
+                    setAnexando(true);
+                    try {
+                      await onAnexar(arquivos, tipoArquivo);
+                    } finally {
+                      setAnexando(false);
+                    }
+                  }}
+                />
+              </div>
+            </section>
+          )}
         </div>
 
         <div className="flex flex-wrap justify-end gap-2 border-t border-slate-100 px-5 py-4">

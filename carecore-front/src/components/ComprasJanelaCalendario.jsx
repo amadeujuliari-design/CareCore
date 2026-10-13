@@ -58,6 +58,8 @@ export default function ComprasJanelaCalendario({
   onExcluirJanela,
   onCriarRascunho,
   onAbrirPedido,
+  visaoInicial = null,
+  onVisaoChange,
 }) {
   const hojePartes = useMemo(() => {
     const [ano, mes] = String(hoje || '').split('-').map(Number);
@@ -68,7 +70,13 @@ export default function ComprasJanelaCalendario({
     };
   }, [hoje]);
 
-  const [visao, setVisao] = useState(hojePartes);
+  const [visao, setVisao] = useState(() => (
+    visaoInicial?.ano && visaoInicial?.mes ? visaoInicial : hojePartes
+  ));
+
+  useEffect(() => {
+    onVisaoChange?.(visao);
+  }, [visao, onVisaoChange]);
   const [form, setForm] = useState({
     data_inicio: '',
     data_fim: '',
