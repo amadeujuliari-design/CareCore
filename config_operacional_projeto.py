@@ -98,3 +98,9 @@ def projeto_sem_fluxo_portaria(projeto: InstituicaoDB | None) -> bool:
 def projeto_e_reencontro_pari(projeto: InstituicaoDB | None) -> bool:
     texto = _referencias_projeto(projeto)
     return any(marcador in texto for marcador in _MARCADORES_REENCONTRO_PARI)
+
+
+def projeto_descontinuado(projeto: InstituicaoDB | None) -> bool:
+    """CTA Liberdade sai da lista de projetos. O cadastro permanece no banco."""
+    texto = _referencias_projeto(projeto)
+    return "cta" in texto and "liberdade" in texto

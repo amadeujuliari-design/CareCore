@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useAuth } from './context/AuthContext';
+import { usuarioEhGlobalPuro } from './utils/rbacUtils';
 import { useConfigOperacional } from './hooks/useConfigOperacional';
 import { projetoSemFluxoPortaria } from './utils/projetoPari';
 import Sidebar from './Sidebar';
@@ -69,6 +70,7 @@ function omitirColunasFluxoSisa(colunas, linhas, omitir) {
 
 export default function ConvenioSisa() {
   const { usuario } = useAuth();
+  const consulta = usuarioEhGlobalPuro(usuario);
   const { nomeProjeto } = useConfigOperacional();
   const semPortaria = projetoSemFluxoPortaria(nomeProjeto || usuario?.projeto_nome);
   const token = localStorage.getItem('@CareCore:token');
@@ -1338,6 +1340,7 @@ export default function ConvenioSisa() {
               Relatório de presenças
             </button>
 
+            {!consulta && (
             <button
               onClick={() => setAba('importacoes')}
               className={`px-4 py-2 rounded-xl text-sm font-black ${
@@ -1348,6 +1351,7 @@ export default function ConvenioSisa() {
             >
               Importações SISA
             </button>
+            )}
           </div>
 
           {aba === 'relatorio' ? (

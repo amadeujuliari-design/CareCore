@@ -1,4 +1,5 @@
 import { usuarioOrganizacaoFinanceira } from './orgPacoteUtils.js';
+import { decodificarPayloadJwt } from './jwtUtils.js';
 
 const PERFIS_GESTAO = ['Gestor', 'Gestao', 'Gestão', 'Gerente'];
 const PERFIS_TECNICOS = ['Técnico', 'Tecnico'];
@@ -182,6 +183,7 @@ export function usuarioEscopoOrganizacao(usuario) {
 
 /** Gestor/Técnico/Administrativo com Compras marcado cadastram item como o ADM Pedidos. */
 export function usuarioPodeCadastrarMestreCompras(usuario) {
+  if (usuarioEhGlobalPuro(usuario)) return false;
   return usuarioPodeVerCompras(usuario);
 }
 
@@ -190,7 +192,23 @@ export function usuarioPodeVerCompras(usuario) {
   if (usuarioEhManutencao(usuario) || usuarioEhAdmCompras(usuario) || usuarioEhAdmPedidos(usuario)) {
     return true;
   }
+  if (usuarioEhGlobalPuro(usuario)) return true;
   return usuario.compras_modulo_ativo === true;
+}
+
+/** Global que autoriza e assina orçamento de bem e prestação de serviço. */
+export const EMAILS_GLOBAL_ASSINA_ORCAMENTO = Object.freeze([
+  'noemi@aeb-brasil.org.br',
+]);
+
+export function usuarioGlobalAssinaOrcamento(usuario) {
+  if (!usuarioEhGlobalPuro(usuario)) return false;
+  let email = String(usuario.email || '').trim().toLowerCase();
+  if (!email && typeof localStorage !== 'undefined') {
+    const token = localStorage.getItem('@CareCore:token') || localStorage.getItem('token');
+    email = String(decodificarPayloadJwt(token)?.email || '').trim().toLowerCase();
+  }
+  return EMAILS_GLOBAL_ASSINA_ORCAMENTO.includes(email);
 }
 
 export function usuarioPodeAcessarNfp(usuario) {

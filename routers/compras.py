@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -89,6 +89,8 @@ from compras_regras import (
     STATUS_AGUARDANDO_SEDE,
     TIPOS_COTACAO_PROJETO,
     usuario_e_sede_compras,
+    usuario_global_assina_orcamento,
+    usuario_global_consulta_compras,
     usuario_pode_aprovar_sede,
     usuario_pode_cadastrar_mestre_compras,
     usuario_sede_pode_ver_tipo,
@@ -97,7 +99,33 @@ from compras_regras import (
 from database import get_db
 from security import get_usuario_logado
 
-router = APIRouter(prefix="/api/compras", tags=["Compras"])
+
+def _escrita_assinatura_global(path: str) -> bool:
+    if path.endswith("/assinar-orcamento-sede") or path.endswith("/assinatura-digital"):
+        return True
+    if path.endswith("/escolher") and "/cotacoes/" in path:
+        return True
+    return path.endswith("/cotacoes/revogar-escolha")
+
+
+async def _bloquear_escrita_global(
+    request: Request,
+    usuario_atual: dict = Depends(get_usuario_logado),
+) -> None:
+    if request.method in {"GET", "HEAD", "OPTIONS"}:
+        return
+    if not usuario_global_consulta_compras(usuario_atual):
+        return
+    if _escrita_assinatura_global(request.url.path) and usuario_global_assina_orcamento(usuario_atual):
+        return
+    raise HTTPException(status_code=403, detail="Usuários globais apenas consultam o módulo Compras.")
+
+
+router = APIRouter(
+    prefix="/api/compras",
+    tags=["Compras"],
+    dependencies=[Depends(_bloquear_escrita_global)],
+)
 
 
 class PedidoItemIn(BaseModel):
@@ -323,7 +351,8 @@ async def me_acesso(
 ):
     org_id = usuario_atual.get("organizacao_id")
     ativo = await org_compras_ativo(db, org_id) if org_id else False
-    permitido = usuario_ve_modulo_compras(
+    consulta_global = usuario_global_consulta_compras(usuario_atual)
+    permitido = consulta_global and ativo or usuario_ve_modulo_compras(
         perfil=usuario_atual.get("perfil_acesso") or "",
         compras_modulo_ativo=bool(usuario_atual.get("compras_modulo_ativo")),
         is_manutencao=bool(usuario_atual.get("is_manutencao")),
@@ -343,9 +372,13 @@ async def me_acesso(
         "compras_ativo": ativo,
         "sede": sede,
         "pode_cadastrar_mestre": pode_mestre,
-        "pode_ativar": sede
-        or bool(usuario_atual.get("is_global"))
-        or (usuario_atual.get("perfil_acesso") == "Global"),
+        "pode_ativar": (
+            sede
+            or bool(usuario_atual.get("is_global"))
+            or (usuario_atual.get("perfil_acesso") == "Global")
+        ) and not usuario_global_consulta_compras(usuario_atual),
+        "consulta_global": consulta_global,
+        "pode_assinar_orcamento": usuario_global_assina_orcamento(usuario_atual),
         "compras_modulo_ativo": bool(usuario_atual.get("compras_modulo_ativo")),
         "nfp_modulo_ativo": bool(usuario_atual.get("nfp_modulo_ativo")),
         "perfil": usuario_atual.get("perfil_acesso"),
@@ -870,7 +903,7 @@ async def get_fila_assinatura_resumo(
 ):
     """Contagem de pedidos aguardando escolha/assinatura da Sede (badge do menu)."""
     await _ctx(db, usuario_atual)
-    if not usuario_pode_aprovar_sede(
+    if not usuario_global_assina_orcamento(usuario_atual) and not usuario_pode_aprovar_sede(
         perfil=str(usuario_atual.get("perfil_acesso") or ""),
         is_manutencao=bool(usuario_atual.get("is_manutencao")),
     ):
@@ -936,11 +969,11 @@ async def post_assinatura_digital(
 ):
     """Cadastra/atualiza o PDF de assinatura digital do usuário da Sede."""
     await _ctx(db, usuario_atual)
-    if not usuario_pode_aprovar_sede(
+    if not usuario_global_assina_orcamento(usuario_atual) and not usuario_pode_aprovar_sede(
         perfil=str(usuario_atual.get("perfil_acesso") or ""),
         is_manutencao=bool(usuario_atual.get("is_manutencao")),
     ):
-        raise HTTPException(status_code=403, detail="Somente ADM Compras cadastra assinatura digital.")
+        raise HTTPException(status_code=403, detail="Somente quem assina o orçamento cadastra a assinatura digital.")
     from models import UsuarioDB
     from sqlalchemy import select
     from compras_upload_utils import salvar_arquivo_compras, remover_arquivo_compras

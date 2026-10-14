@@ -46,7 +46,7 @@ from models import (
     LavanderiaAgendaDB,
     TipoIndividuoHigieneDB,
 )
-from security import bloquear_usuario_global_puro, get_usuario_logado
+from security import bloquear_usuario_global_puro, get_usuario_logado, usuario_eh_global_puro
 from tenant_scope import obter_instituicao_escopo
 from time_operacional import agora_operacional_naive
 
@@ -111,8 +111,9 @@ def _usuario_id(usuario_atual: dict) -> str | None:
     return usuario_atual.get("sub") or usuario_atual.get("id")
 
 
-async def _exigir_pari(db: AsyncSession, usuario_atual: dict) -> str:
-    bloquear_usuario_global_puro(usuario_atual)
+async def _exigir_pari(db: AsyncSession, usuario_atual: dict, *, escrita: bool = True) -> str:
+    if escrita:
+        bloquear_usuario_global_puro(usuario_atual)
     instituicao_id = obter_instituicao_escopo(usuario_atual)
     projeto = await db.get(InstituicaoDB, instituicao_id)
     if not projeto_e_reencontro_pari(projeto):
@@ -351,9 +352,10 @@ async def obter_kit(
     db: AsyncSession = Depends(get_db),
     usuario_atual: dict = Depends(get_usuario_logado),
 ):
-    instituicao_id = await _exigir_pari(db, usuario_atual)
+    instituicao_id = await _exigir_pari(db, usuario_atual, escrita=False)
     projeto = await db.get(InstituicaoDB, instituicao_id)
-    await _alinhar_perfis(db, instituicao_id)
+    if not usuario_eh_global_puro(usuario_atual):
+        await _alinhar_perfis(db, instituicao_id)
     if projeto_e_reencontro_pari(projeto):
         await _alinhar_complementos_cruzeiro(db, instituicao_id)
     tipos = (
@@ -757,7 +759,7 @@ async def prever_kit(
     db: AsyncSession = Depends(get_db),
     usuario_atual: dict = Depends(get_usuario_logado),
 ):
-    instituicao_id = await _exigir_pari(db, usuario_atual)
+    instituicao_id = await _exigir_pari(db, usuario_atual, escrita=False)
     previa, _convivente = await _previa_familia(db, instituicao_id, payload.convivente_id)
     return previa
 
@@ -910,7 +912,7 @@ async def listar_agenda(
     db: AsyncSession = Depends(get_db),
     usuario_atual: dict = Depends(get_usuario_logado),
 ):
-    instituicao_id = await _exigir_pari(db, usuario_atual)
+    instituicao_id = await _exigir_pari(db, usuario_atual, escrita=False)
     projeto = await db.get(InstituicaoDB, instituicao_id)
     periodos = _periodos_do_projeto(projeto)
     await _migrar_conjunto_compativel(db, instituicao_id, periodos)
@@ -1048,7 +1050,7 @@ async def listar_registros_lavanderia(
     db: AsyncSession = Depends(get_db),
     usuario_atual: dict = Depends(get_usuario_logado),
 ):
-    instituicao_id = await _exigir_pari(db, usuario_atual)
+    instituicao_id = await _exigir_pari(db, usuario_atual, escrita=False)
     maquinas = (MAQUINA_LAVAR, MAQUINA_SECAR, "conjunto")
     linhas = (
         await db.execute(
@@ -1283,7 +1285,7 @@ async def listar_familias(
     db: AsyncSession = Depends(get_db),
     usuario_atual: dict = Depends(get_usuario_logado),
 ):
-    instituicao_id = await _exigir_pari(db, usuario_atual)
+    instituicao_id = await _exigir_pari(db, usuario_atual, escrita=False)
     familias = (
         await db.execute(
             select(FamiliaConviventeDB).where(FamiliaConviventeDB.instituicao_id == instituicao_id)

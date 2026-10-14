@@ -63,6 +63,7 @@ export default function ComprasPatrimonioCadastro({
   unidades = [],
   categorias = [],
   sede = false,
+  podeEditar = true,
   onRecarregar,
   onMensagem,
 }) {
@@ -225,14 +226,14 @@ export default function ComprasPatrimonioCadastro({
       <SectionCard
         title="Patrimônio"
         subtitle={`${listaFiltrada.length} de ${itens.length} bens`}
-        actions={(
+        actions={podeEditar ? (
           <PremiumButton type="button" onClick={abrirNovo}>
             <span className="inline-flex items-center gap-1.5">
               <Plus size={16} />
               Novo bem
             </span>
           </PremiumButton>
-        )}
+        ) : null}
       >
         <div className="px-5 py-4">
           <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -344,6 +345,7 @@ export default function ComprasPatrimonioCadastro({
                           >
                             <Eye size={16} />
                           </button>
+                          {podeEditar && (
                           <button
                             type="button"
                             className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-800"
@@ -353,6 +355,7 @@ export default function ComprasPatrimonioCadastro({
                           >
                             <Pencil size={16} />
                           </button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -396,14 +399,14 @@ export default function ComprasPatrimonioCadastro({
       <ModalFichaPatrimonio
         item={ficha}
         onFechar={() => setFicha(null)}
-        onEditar={editar}
+        onEditar={podeEditar ? editar : undefined}
         onBaixar={(anexo) => {
           const baixar = anexo.origem === 'compra' && anexo.pedido_id
             ? comprasBaixarAnexo(anexo.pedido_id, anexo.id, anexo.nome_arquivo)
             : comprasBaixarAnexoPatrimonio(ficha.id, anexo.id, anexo.nome_arquivo);
           return baixar.catch((err) => onMensagem?.({ erro: err?.message || 'Não foi possível baixar o arquivo.' }));
         }}
-        onAnexar={async (arquivos) => {
+        onAnexar={podeEditar ? async (arquivos) => {
           if (!ficha?.id) return;
           try {
             let atual = null;
@@ -417,7 +420,7 @@ export default function ComprasPatrimonioCadastro({
           } catch (err) {
             onMensagem?.({ erro: err?.response?.data?.detail || 'Não foi possível anexar o arquivo.' });
           }
-        }}
+        } : undefined}
       />
 
       {formAberto && (

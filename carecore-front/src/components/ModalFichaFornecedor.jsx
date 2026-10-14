@@ -117,9 +117,11 @@ export default function ModalFichaFornecedor({
           <PremiumButton type="button" variant="secondary" onClick={onFechar}>
             Fechar
           </PremiumButton>
-          <PremiumButton type="button" onClick={() => onEditar?.(fornecedor)}>
+          {onEditar && (
+          <PremiumButton type="button" onClick={() => onEditar(fornecedor)}>
             Editar fornecedor
           </PremiumButton>
+          )}
         </div>
       </div>
     </div>

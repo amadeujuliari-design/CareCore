@@ -195,6 +195,19 @@ def test_compras_modulo_ativo_padrao_gestor():
     assert compras_modulo_ativo_padrao(None) is False
 
 
+def test_global_consulta_compras_sem_editar_e_noemi_assina():
+    from compras_regras import usuario_global_assina_orcamento, usuario_global_consulta_compras
+
+    global_comum = {"perfil_acesso": "Global", "is_global": True, "email": "outro@aeb-brasil.org.br"}
+    noemi = {"perfil_acesso": "Global", "is_global": True, "email": "Noemi@aeb-brasil.org.br"}
+    gestor = {"perfil_acesso": "Gestor", "is_global": True, "email": "gestor@aeb-brasil.org.br"}
+    assert usuario_global_consulta_compras(global_comum)
+    assert not usuario_global_assina_orcamento(global_comum)
+    assert usuario_global_assina_orcamento(noemi)
+    assert not usuario_global_consulta_compras(gestor)
+    assert not usuario_global_consulta_compras({"perfil_acesso": "Manutenção", "is_global": True, "is_manutencao": True})
+
+
 def test_pedir_e_aprovar():
     assert usuario_pode_pedir(perfil="ADM Pedidos", compras_modulo_ativo=False)
     assert usuario_pode_aprovar_unidade(perfil="Técnico", compras_modulo_ativo=True)

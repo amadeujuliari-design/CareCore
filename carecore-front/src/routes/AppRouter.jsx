@@ -6,6 +6,8 @@ import AlertaPresencaOperacional from '../components/AlertaPresencaOperacional';
 import ProtectedRoute from './ProtectedRoute';
 import { PERFIS_MODULO_ATIVIDADES, PERFIS_NFP_ENVIO_SEFAZ, PERFIS_NFP_GESTAO, PERFIS_NFP_LEITURA_CUPONS, PERFIS_ADM_COMPRAS_SEDE, PERFIL_ADM_GLOBAL } from '../utils/rbacUtils';
 import { deveExibirManutencaoProgramada } from '../config/manutencao';
+import { useConfigOperacional } from '../hooks/useConfigOperacional';
+import { menuOcultoNoProjeto } from '../utils/projetoPari';
 
 const Login = lazy(() => import('../Login'));
 const ManutencaoProgramada = lazy(() => import('../ManutencaoProgramada'));
@@ -73,9 +75,17 @@ const FinanceCards = lazy(() => import('../financeiro/FinanceCardsPro'));
 const FinanceInvestments = lazy(() => import('../financeiro/FinanceInvestmentsPro'));
 const FinanceSettings = lazy(() => import('../financeiro/FinanceSettingsPro'));
 
+function GuardaMenuDoProjeto() {
+  const location = useLocation();
+  const { nomeProjeto, carregando } = useConfigOperacional();
+  if (carregando || !menuOcultoNoProjeto(location.pathname, nomeProjeto)) return null;
+  return <Navigate to="/dashboard" replace />;
+}
+
 function RotasAplicacao() {
   return (
     <>
+      <GuardaMenuDoProjeto />
       <Routes>
         <Route path="/" element={<Login />} />
         <Route path="/cadastro" element={<Cadastro />} />
@@ -230,7 +240,7 @@ function RotasAplicacao() {
         <Route
           path="/ocorrencias"
           element={
-            <ProtectedRoute perfis={['Gestor', 'Técnico', 'Orientador', 'Administrativo']}>
+            <ProtectedRoute perfis={['Gestor', 'Técnico', 'Orientador', 'Administrativo', 'Global']}>
               <CentralOcorrencias />
             </ProtectedRoute>
           }
@@ -257,7 +267,7 @@ function RotasAplicacao() {
         <Route
           path="/rotina/lavanderia"
           element={
-            <ProtectedRoute perfis={['Gestor', 'Técnico', 'Orientador', 'Administrativo']}>
+            <ProtectedRoute perfis={['Gestor', 'Técnico', 'Orientador', 'Administrativo', 'Global']}>
               <Lavanderia />
             </ProtectedRoute>
           }
@@ -266,7 +276,7 @@ function RotasAplicacao() {
         <Route
           path="/rotina/kit-higiene"
           element={
-            <ProtectedRoute perfis={['Gestor', 'Técnico', 'Orientador', 'Administrativo']}>
+            <ProtectedRoute perfis={['Gestor', 'Técnico', 'Orientador', 'Administrativo', 'Global']}>
               <PariKitHigiene />
             </ProtectedRoute>
           }
@@ -275,7 +285,7 @@ function RotasAplicacao() {
         <Route
           path="/rotina/pertences-recolhidos"
           element={
-            <ProtectedRoute perfis={['Gestor', 'Técnico', 'Orientador', 'Administrativo']}>
+            <ProtectedRoute perfis={['Gestor', 'Técnico', 'Orientador', 'Administrativo', 'Global']}>
               <PertencesRecolhidos />
             </ProtectedRoute>
           }
@@ -374,7 +384,7 @@ function RotasAplicacao() {
         <Route
           path="/relatorios/cadastros-novos"
           element={
-            <ProtectedRoute perfis={['Gestor', 'Técnico', 'Orientador', 'Administrativo']}>
+            <ProtectedRoute perfis={['Gestor', 'Técnico', 'Orientador', 'Administrativo', 'Global']}>
               <RelatorioCadastrosNovos />
             </ProtectedRoute>
           }
@@ -392,7 +402,7 @@ function RotasAplicacao() {
         <Route
           path="/relatorios/presenca-ausencia"
           element={
-            <ProtectedRoute perfis={['Gestor', 'Técnico', 'Orientador', 'Administrativo']}>
+            <ProtectedRoute perfis={['Gestor', 'Técnico', 'Orientador', 'Administrativo', 'Global']}>
               <RelatorioPresencaAusencia />
             </ProtectedRoute>
           }
@@ -635,7 +645,7 @@ function RotasAplicacao() {
         <Route
           path="/convenio-sisa"
           element={
-            <ProtectedRoute perfis={['Gestor', 'Técnico', 'Administrativo']}>
+            <ProtectedRoute perfis={['Gestor', 'Técnico', 'Administrativo', 'Global']}>
               <ConvenioSisa />
             </ProtectedRoute>
           }

@@ -52,7 +52,7 @@ import {
   competenciaAtual,
   moneyCentavos,
 } from './services/comprasService';
-import { usuarioEhAdmCompras, usuarioEhManutencao, usuarioPodeCadastrarMestreCompras } from './utils/rbacUtils';
+import { usuarioEhAdmCompras, usuarioEhGlobalPuro, usuarioEhManutencao, usuarioPodeCadastrarMestreCompras } from './utils/rbacUtils';
 import { BOTOES_NOVO_PEDIDO, rotuloTipoPedido } from './utils/comprasPedidoTipos';
 import {
   progressoOrcamentosTexto,
@@ -230,6 +230,8 @@ export default function Compras() {
   const visaoConcluidos = (searchParams.get('visao') || '').trim().toLowerCase() === 'concluidos';
   const usuario = useMemo(() => usuarioSessao(), []);
   const sede = usuarioEhAdmCompras(usuario) || usuarioEhManutencao(usuario);
+  const consultaGlobal = usuarioEhGlobalPuro(usuario);
+  const visaoOrganizacao = sede || consultaGlobal;
   const podeCadastrarMestre = usuarioPodeCadastrarMestreCompras(usuario);
   const vistaInicial = useMemo(() => lerVistaCompras(visaoConcluidos), [visaoConcluidos]);
   const competenciaInicial = typeof vistaInicial?.competencia === 'string'
@@ -361,7 +363,7 @@ export default function Compras() {
         comprasFontes(),
         comprasItensConsumo(),
         comprasJanelas(),
-        sede
+        visaoOrganizacao
           ? Promise.all([
             comprasUnidades(),
             comprasFornecedores(),
@@ -369,8 +371,8 @@ export default function Compras() {
             comprasEconomia(competencia),
           ])
           : null,
-        sede ? null : comprasPatrimonio(),
-        !sede && podeCadastrarMestre
+        visaoOrganizacao ? null : comprasPatrimonio(),
+        !visaoOrganizacao && podeCadastrarMestre
           ? Promise.all([comprasFornecedores(), comprasUnidades()])
           : null,
       ]);
@@ -411,7 +413,7 @@ export default function Compras() {
     } finally {
       if (seq === cargaSeq.current) setCarregando(false);
     }
-  }, [competencia, podeCadastrarMestre, sede, statusGrupoPedidos, usuario?.id]);
+  }, [competencia, podeCadastrarMestre, statusGrupoPedidos, usuario?.id, visaoOrganizacao]);
 
   useEffect(() => {
     carregar();
@@ -437,7 +439,7 @@ export default function Compras() {
     const abaParam = (searchParams.get('aba') || '').trim().toLowerCase();
     const visaoParam = (searchParams.get('visao') || '').trim().toLowerCase();
     if (abaParam === 'fornecedores' || abaParam === 'itens' || abaParam === 'categorias') {
-      if (sede) {
+      if (sede || consultaGlobal) {
         setAba('cadastros');
         setAbaCadastro(abaParam === 'categorias' ? 'categorias' : abaParam);
       } else if (podeCadastrarMestre) {
@@ -446,21 +448,21 @@ export default function Compras() {
     } else if (visaoParam === 'concluidos') {
       setAba('pedidos');
     }
-  }, [podeCadastrarMestre, searchParams, sede]);
+  }, [consultaGlobal, podeCadastrarMestre, searchParams, sede]);
 
   const abas = [
     { id: 'pedidos', label: 'Pedidos', icon: ShoppingCart },
     { id: 'janela', label: 'Janela mensal', icon: CalendarRange },
-    ...(podeCadastrarMestre && !sede
+    ...(podeCadastrarMestre && !visaoOrganizacao
       ? [
         { id: 'fornecedores', label: 'Fornecedores', icon: Truck },
         { id: 'itens', label: 'Catálogo de itens', icon: ListChecks },
         { id: 'categorias', label: 'Categorias', icon: Tags },
       ]
       : []),
-    ...(sede ? [{ id: 'cadastros', label: 'Cadastros', icon: Truck }] : []),
+    ...(visaoOrganizacao ? [{ id: 'cadastros', label: 'Cadastros', icon: Truck }] : []),
     { id: 'patrimonio', label: 'Patrimônio', icon: Package },
-    ...(sede ? [{ id: 'economia', label: 'Economia', icon: Landmark }] : []),
+    ...(visaoOrganizacao ? [{ id: 'economia', label: 'Economia', icon: Landmark }] : []),
   ];
 
   return (
@@ -571,7 +573,7 @@ export default function Compras() {
                   </div>
                 </FilterPanel>
 
-                {!visaoConcluidos && (
+                {!visaoConcluidos && !consultaGlobal && (
                 <SectionCard title="Novo pedido">
                   <p className="mb-3 text-sm text-slate-600">
                     Escolha o tipo — cada um abre a tela certa (consumo na janela; bem, manutenção e serviço com cotação pelo projeto).
@@ -840,7 +842,7 @@ export default function Compras() {
                     setSalvandoJanela(false);
                   }
                 }}
-                onCriarRascunho={async ({ data_envio_prevista, competencia: comp }) => {
+                onCriarRascunho={consultaGlobal ? undefined : async ({ data_envio_prevista, competencia: comp }) => {
                   setErro('');
                   setOk('');
                   try {
@@ -908,7 +910,7 @@ export default function Compras() {
               />
             )}
 
-            {aba === 'cadastros' && sede && (
+            {aba === 'cadastros' && visaoOrganizacao && (
               <div className="space-y-4">
                 <div className="flex flex-wrap gap-2">
                   {[
@@ -935,7 +937,8 @@ export default function Compras() {
                   <ComprasFornecedoresCadastro
                     fornecedores={fornecedores}
                     categorias={categorias}
-                    sede={sede}
+                    sede={sede || consultaGlobal}
+                    podeEditar={!consultaGlobal}
                     onRecarregar={carregar}
                     onMensagem={({ ok: msgOk, erro: msgErro }) => {
                       if (msgOk) setOk(msgOk);
@@ -948,9 +951,9 @@ export default function Compras() {
                   <ComprasItensConsumoCadastro
                     itens={itensConsumo}
                     categorias={categorias}
-                    podeEditar
+                    podeEditar={!consultaGlobal}
                     abrirNovo={searchParams.get('novo') === '1'}
-                    sede={sede}
+                    sede={sede || consultaGlobal}
                     onRecarregar={carregar}
                     onMensagem={({ ok: msgOk, erro: msgErro }) => {
                       if (msgOk) setOk(msgOk);
@@ -963,7 +966,7 @@ export default function Compras() {
                   <ComprasCategoriasFontes
                     categorias={categorias}
                     fontes={fontes}
-                    podeEditar
+                    podeEditar={!consultaGlobal}
                     onRecarregar={carregar}
                     onMensagem={({ ok: msgOk, erro: msgErro }) => {
                       if (msgOk) {
@@ -985,7 +988,8 @@ export default function Compras() {
                 itens={patrimonio}
                 unidades={unidades}
                 categorias={categorias}
-                sede={sede}
+                sede={sede || consultaGlobal}
+                podeEditar={!consultaGlobal}
                 onRecarregar={carregar}
                 onMensagem={({ ok: msgOk, erro: msgErro }) => {
                   if (msgOk) {
@@ -1000,7 +1004,7 @@ export default function Compras() {
               />
             )}
 
-            {aba === 'economia' && sede && economia && (
+            {aba === 'economia' && visaoOrganizacao && economia && (
               <SectionCard title="Economia das cotações">
                 <p className="text-sm">
                   Pedidos: {economia.pedidos} · Escolhidas: {moneyCentavos(economia.total_escolhida_centavos)}

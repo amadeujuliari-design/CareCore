@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ArrowDown, ArrowUp, ArrowUpDown } from 'lucide-react';
 
+import { useAuth } from './context/AuthContext';
+import { usuarioEhGlobalPuro } from './utils/rbacUtils';
 import Sidebar from './Sidebar';
 import { AppShell, MainShell, PageHeader, PremiumButton, ReportActionButton, ScrollArea } from './components/PremiumUI';
 import api from './services/api';
@@ -137,6 +139,7 @@ function GradeOmo({
   pedirMudanca,
   setErro,
   travada,
+  consulta,
 }) {
   const dias = useMemo(() => {
     const lista = [];
@@ -192,19 +195,19 @@ function GradeOmo({
                 const marca = `${slot?.maquina || ''}|${slot?.inicio || ''}`;
                 const emCima = sobreLivre === marca;
                 const classe = livre
-                  ? `bg-emerald-100 text-emerald-950 border-emerald-300 ${travada ? '' : 'hover:bg-emerald-200'} ${emCima ? 'ring-2 ring-emerald-600' : ''}`
+                  ? `bg-emerald-100 text-emerald-950 border-emerald-300 ${travada || consulta ? '' : 'hover:bg-emerald-200'} ${emCima ? 'ring-2 ring-emerald-600' : ''}`
                   : emUso
                     ? 'bg-blue-100 text-blue-950 border-blue-300'
-                    : 'bg-amber-100 text-amber-950 border-amber-300 cursor-grab';
+                    : `bg-amber-100 text-amber-950 border-amber-300 ${consulta ? '' : 'cursor-grab'}`;
                 const texto = livre
                   ? 'Livre'
                   : `${slot.familia_codigo ? `${slot.familia_codigo} · ` : ''}${slot.convivente_nome}`;
                 return (
                   <td key={`${dia}-${hora}`} className="p-0">
                     <div
-                      draggable={agendado && !travada}
+                      draggable={agendado && !travada && !consulta}
                       onDragStart={(event) => {
-                        if (!agendado || travada) return;
+                        if (!agendado || travada || consulta) return;
                         event.dataTransfer.setData('text/plain', JSON.stringify({
                           convivente_id: slot.convivente_id,
                           convivente_nome: slot.convivente_nome,
@@ -213,7 +216,7 @@ function GradeOmo({
                         event.dataTransfer.effectAllowed = 'move';
                       }}
                       onDragOver={(event) => {
-                        if (travada || !livre || !slot) return;
+                        if (consulta || travada || !livre || !slot) return;
                         event.preventDefault();
                         setSobreLivre(marca);
                       }}
@@ -221,7 +224,7 @@ function GradeOmo({
                       onDrop={(event) => {
                         event.preventDefault();
                         setSobreLivre('');
-                        if (travada || !livre || !slot) return;
+                        if (consulta || travada || !livre || !slot) return;
                         try {
                           const origem = JSON.parse(event.dataTransfer.getData('text/plain') || '{}');
                           pedirMudanca(origem, slot.inicio);
@@ -230,6 +233,7 @@ function GradeOmo({
                         }
                       }}
                       onClick={() => {
+                        if (consulta) return;
                         if (travada) {
                           if (livre) setErro('A secagem entra sozinha no primeiro horário livre depois da lavagem.');
                           return;
@@ -237,15 +241,15 @@ function GradeOmo({
                         if (livre && !salvando && slot) pedirAgendamento(slot);
                       }}
                       onKeyDown={(event) => {
-                        if (event.key === 'Enter' && livre && !salvando && !travada && slot) pedirAgendamento(slot);
+                        if (event.key === 'Enter' && livre && !salvando && !travada && !consulta && slot) pedirAgendamento(slot);
                       }}
                       role="button"
                       tabIndex={emUso ? -1 : 0}
-                      className={`flex min-h-12 w-full flex-col items-start justify-center rounded-lg border px-2 py-1 text-left text-xs font-bold leading-snug ${emUso || travada ? 'cursor-default' : 'cursor-pointer'} ${classe}`}
-                      title={travada ? 'A secagem acompanha a lavagem' : livre ? `Marcar ${hora}` : agendado ? 'Arraste para mudar ou cancele se a pessoa desistiu' : texto}
+                      className={`flex min-h-12 w-full flex-col items-start justify-center rounded-lg border px-2 py-1 text-left text-xs font-bold leading-snug ${emUso || travada || consulta ? 'cursor-default' : 'cursor-pointer'} ${classe}`}
+                      title={consulta ? texto : travada ? 'A secagem acompanha a lavagem' : livre ? `Marcar ${hora}` : agendado ? 'Arraste para mudar ou cancele se a pessoa desistiu' : texto}
                     >
                       <span className="block">{emUso ? `Em uso · ${texto}` : texto}</span>
-                      {agendado && (
+                      {agendado && !consulta && (
                         <button
                           type="button"
                           disabled={salvando}
@@ -412,6 +416,8 @@ function ListaAgendamentos({
 }
 
 export default function PariLavanderia() {
+  const { usuario } = useAuth();
+  const consulta = usuarioEhGlobalPuro(usuario);
   const [inicioFaixa, setInicioFaixa] = useState(hojeISO);
   const [agenda, setAgenda] = useState([]);
   const [modelo, setModelo] = useState('conjunto');
@@ -591,7 +597,7 @@ export default function PariLavanderia() {
     setMensagem(`${nomePessoa(convivente)} selecionada. Clique num horário livre e confirme com OK.`);
   }, [conviventes]);
 
-  useLeitorUsbGlobal({ ativo: true, onCodigoLido: lerCodigo });
+  useLeitorUsbGlobal({ ativo: !consulta, onCodigoLido: lerCodigo });
 
   const exportarLista = (titulo, lista, arquivo) => {
     exportarRelatorioXlsx({
@@ -631,14 +637,16 @@ export default function PariLavanderia() {
         <PageHeader
           eyebrow="Rotina Diária"
           title="Lavanderia OMO"
-          subtitle={separado
+          subtitle={consulta
+            ? 'Consulta da grade e dos agendamentos. Sem marcar, cancelar ou mudar horário.'
+            : separado
             ? `Lavagem e secagem são grades de 45 minutos, das ${periodos?.manha_inicio || '07:00'} às ${periodos?.manha_fim || '12:15'} e das ${periodos?.tarde_inicio || '14:00'} às ${periodos?.tarde_fim || '18:30'}. Clique na lavagem; a secagem entra no primeiro horário livre depois. Cancelar um dos dois cancela o par.`
             : 'Cada horário de 1h30 vale para lavar e secar juntas. Verde está livre, âmbar está ocupado. Cancele o agendamento se a pessoa desistir: a vaga volta a ficar livre.'}
           icon="L"
         />
 
         <ScrollArea>
-        {separado && (
+        {separado && !consulta && (
           <form
             className="mb-4 rounded-2xl border border-slate-100 bg-white p-4 shadow-sm"
             onSubmit={async (event) => {
@@ -716,6 +724,7 @@ export default function PariLavanderia() {
           </PremiumButton>
         </div>
 
+        {!consulta && (
         <div className="mb-4 max-w-xl">
           <input
             value={busca}
@@ -749,6 +758,7 @@ export default function PariLavanderia() {
             </p>
           )}
         </div>
+        )}
 
         {mensagem && <p className="mb-4 rounded-xl bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-800">{mensagem}</p>}
         {erro && <p className="mb-4 rounded-xl bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">{erro}</p>}
@@ -766,6 +776,7 @@ export default function PariLavanderia() {
               pedirCancelamento={pedirCancelamento}
               pedirMudanca={pedirMudanca}
               setErro={setErro}
+              consulta={consulta}
             />
             <GradeOmo
               titulo="Secagem"
@@ -779,6 +790,7 @@ export default function PariLavanderia() {
               pedirMudanca={pedirMudanca}
               setErro={setErro}
               travada
+              consulta={consulta}
             />
           </>
         ) : (
@@ -792,6 +804,7 @@ export default function PariLavanderia() {
             pedirCancelamento={pedirCancelamento}
             pedirMudanca={pedirMudanca}
             setErro={setErro}
+            consulta={consulta}
           />
         )}
         <section className="mt-6 rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
@@ -860,7 +873,7 @@ export default function PariLavanderia() {
             limite={limiteLista}
             onExportar={(lista) => exportarLista('Agendamentos confirmados — Lavanderia OMO', lista, `lavanderia-confirmados-${hojeISO()}`)}
             onImprimir={(lista) => imprimirLista('Agendamentos confirmados — Lavanderia OMO', lista)}
-            onCancelar={pedirCancelamento}
+            onCancelar={consulta ? undefined : pedirCancelamento}
             mostrarMaquina={separado}
           />
         )}

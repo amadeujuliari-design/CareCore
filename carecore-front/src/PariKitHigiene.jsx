@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 
+import { useAuth } from './context/AuthContext';
+import { usuarioEhGlobalPuro } from './utils/rbacUtils';
 import Sidebar from './Sidebar';
 import { AppShell, MainShell, PageHeader, PremiumButton, ScrollArea } from './components/PremiumUI';
 import api from './services/api';
@@ -11,7 +13,7 @@ function detalheErro(error, fallback) {
   return typeof detalhe === 'string' ? detalhe : fallback;
 }
 
-function PerfilCard({ perfil, itens, regras, onSalvarFaixa, onIncluir, onRemover }) {
+function PerfilCard({ perfil, itens, regras, onSalvarFaixa, onIncluir, onRemover, consulta }) {
   const complemento = perfil.papel === 'complemento';
   const porFlag = complemento && perfil.gatilho === 'flag';
   const [idadeMin, setIdadeMin] = useState(perfil.idade_min ?? 0);
@@ -40,7 +42,7 @@ function PerfilCard({ perfil, itens, regras, onSalvarFaixa, onIncluir, onRemover
       </h3>
       <p className="mt-1 text-xs text-slate-500">{perfil.descricao}</p>
       {porFlag && <p className="mt-2 text-xs font-semibold text-slate-600">Entra quando Absorvente íntimo? está marcado no acolhido.</p>}
-      {!porFlag && (
+      {!porFlag && !consulta && (
       <div className="mt-3 grid grid-cols-3 gap-2">
         <label className="text-[11px] font-bold text-slate-600">
           {complemento ? 'De (meses)' : 'De'}
@@ -79,6 +81,7 @@ function PerfilCard({ perfil, itens, regras, onSalvarFaixa, onIncluir, onRemover
         </label>
       </div>
       )}
+      {!consulta && (
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <PremiumButton
           type="button"
@@ -92,20 +95,24 @@ function PerfilCard({ perfil, itens, regras, onSalvarFaixa, onIncluir, onRemover
         </PremiumButton>
         {aviso && <span className="text-xs font-bold text-emerald-700">{aviso}</span>}
       </div>
+      )}
       <ul className="mt-4 space-y-2 text-sm">
         {doPerfil.map((regra) => {
           const item = itens.find((atual) => atual.id === regra.item_id);
           return (
             <li key={regra.id} className="flex items-center justify-between rounded-xl bg-slate-50 px-3 py-2">
               <span>{regra.quantidade}× {item?.nome || 'Item'}</span>
+              {!consulta && (
               <button type="button" className="text-xs font-bold text-red-600" onClick={() => onRemover(regra.id)}>
                 Remover
               </button>
+              )}
             </li>
           );
         })}
         {doPerfil.length === 0 && <li className="text-slate-400">Nenhum item neste perfil.</li>}
       </ul>
+      {!consulta && (
       <form
         className="mt-3 flex gap-2"
         onSubmit={(event) => {
@@ -132,11 +139,12 @@ function PerfilCard({ perfil, itens, regras, onSalvarFaixa, onIncluir, onRemover
         />
         <PremiumButton type="submit">Incluir</PremiumButton>
       </form>
+      )}
     </article>
   );
 }
 
-function MembroIdade({ membro, onSalvar, cruzeiro }) {
+function MembroIdade({ membro, onSalvar, cruzeiro, consulta }) {
   const [nascimento, setNascimento] = useState(membro.nascimento || '');
   const [sexo, setSexo] = useState(membro.sexo || '');
   const [menstrua, setMenstrua] = useState(Boolean(membro.menstrua));
@@ -148,6 +156,20 @@ function MembroIdade({ membro, onSalvar, cruzeiro }) {
     setSexo(membro.sexo || '');
     setMenstrua(Boolean(membro.menstrua));
   }, [membro.id, membro.nascimento, membro.sexo, membro.menstrua]);
+
+  if (consulta) {
+    return (
+      <div className="rounded-xl border border-slate-200 bg-white p-3">
+        <p className="text-sm font-bold text-slate-900">{membro.nome}</p>
+        <p className="mt-1 text-xs text-slate-600">
+          Nascimento: {membro.nascimento || 'não informado'}
+          {' · '}
+          Sexo: {membro.sexo || 'não informado'}
+          {cruzeiro && membro.sexo !== 'masculino' ? ` · Absorvente íntimo: ${membro.menstrua ? 'sim' : 'não'}` : ''}
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-3">
@@ -208,6 +230,8 @@ function MembroIdade({ membro, onSalvar, cruzeiro }) {
 }
 
 export default function PariKitHigiene() {
+  const { usuario } = useAuth();
+  const consulta = usuarioEhGlobalPuro(usuario);
   const [catalogo, setCatalogo] = useState({ tipos: [], itens: [], regras: [], entregas: [], itens_familia: [], modelo: 'pari' });
   const [nomePerfil, setNomePerfil] = useState('');
   const [gatilhoPerfil, setGatilhoPerfil] = useState('idade');
@@ -341,7 +365,9 @@ export default function PariKitHigiene() {
         <PageHeader
           eyebrow="Rotina Diária"
           title="Kit mensal da Família"
-          subtitle="A retirada fica no topo: busque a família, salve a idade de quem estiver sem data e confirme o kit do mês. A configuração dos itens fica mais abaixo."
+          subtitle={consulta
+            ? 'Consulta do kit da família e da composição. Sem registrar retirada nem alterar itens.'
+            : 'A retirada fica no topo: busque a família, salve a idade de quem estiver sem data e confirme o kit do mês. A configuração dos itens fica mais abaixo.'}
           icon="K"
         />
         <ScrollArea>
@@ -401,7 +427,7 @@ export default function PariKitHigiene() {
               )}
               <div className="mt-3 space-y-2">
                 {(previa.membros || []).map((membro) => (
-                  <MembroIdade key={membro.id} membro={membro} onSalvar={salvarMembro} cruzeiro={catalogo.modelo === 'cruzeiro'} />
+                  <MembroIdade key={membro.id} membro={membro} onSalvar={salvarMembro} cruzeiro={catalogo.modelo === 'cruzeiro'} consulta={consulta} />
                 ))}
               </div>
               <ul className="mt-3 space-y-1">
@@ -429,7 +455,7 @@ export default function PariKitHigiene() {
                 ))}
                 {itensEntregues.length === 0 && <li className="list-none pl-0 text-slate-500">Nenhum item somado.</li>}
               </ul>
-              {!previa.ja_entregue && (
+              {!consulta && !previa.ja_entregue && (
                 <PremiumButton type="button" className="mt-4" disabled={!previa.completo || confirmando} onClick={confirmar}>
                   Registrar retirada
                 </PremiumButton>
@@ -453,6 +479,7 @@ export default function PariKitHigiene() {
         <section className="mt-6 rounded-3xl border border-slate-100 bg-white p-5 shadow-sm">
           <h2 className="text-lg font-bold text-slate-900">Itens</h2>
           <p className="mt-1 text-sm text-slate-500">O que pode entrar no kit de cada pessoa. A quantidade fica em cada perfil.</p>
+          {!consulta && (
           <form
             className="mt-4 flex gap-2"
             onSubmit={(event) => {
@@ -465,6 +492,7 @@ export default function PariKitHigiene() {
             <input value={nomeItem} onChange={(event) => setNomeItem(event.target.value)} placeholder="Novo item, por exemplo sabonete" className="min-h-11 flex-1 rounded-xl border border-slate-200 px-3 text-sm" />
             <PremiumButton type="submit" variant="secondary">Incluir item</PremiumButton>
           </form>
+          )}
           <div className="mt-3 flex flex-wrap gap-2">
             {catalogo.itens.filter((item) => item.ativo !== false).map((item) => (
               <span key={item.id} className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-700">{item.nome}</span>
@@ -476,6 +504,7 @@ export default function PariKitHigiene() {
         <section className="mt-6 rounded-3xl border border-slate-100 bg-white p-5 shadow-sm">
           <h2 className="text-lg font-bold text-slate-900">Itens da família</h2>
           <p className="mt-1 text-sm text-slate-500">Entram uma vez em cada família, na quantidade informada. Não dependem de quem mora na casa nem de quantas pessoas são.</p>
+          {!consulta && (
           <form
             className="mt-4 flex flex-wrap gap-2"
             onSubmit={async (event) => {
@@ -513,10 +542,12 @@ export default function PariKitHigiene() {
             />
             <PremiumButton type="submit" variant="secondary">Incluir item</PremiumButton>
           </form>
+          )}
           <ul className="mt-3 space-y-1 text-sm text-slate-700">
             {(catalogo.itens_familia || []).map((item) => (
               <li key={item.id} className="flex items-center justify-between gap-3 rounded-xl bg-slate-50 px-3 py-2">
                 <span className="font-semibold">{item.quantidade}× {item.nome}</span>
+                {!consulta && (
                 <button
                   type="button"
                   className="text-xs font-bold text-red-600"
@@ -533,6 +564,7 @@ export default function PariKitHigiene() {
                 >
                   Remover
                 </button>
+                )}
               </li>
             ))}
             {(catalogo.itens_familia || []).length === 0 && <li className="text-slate-400">Nenhum item da família.</li>}
@@ -546,7 +578,7 @@ export default function PariKitHigiene() {
               ? 'O perfil de base continua um só por pessoa. Os complementos somam no kit e podem cruzar a mesma idade. A opção Absorvente íntimo? liga esse complemento.'
               : 'Ajuste a idade de cada tipo e clique em Salvar idade. Uma idade não pode caber em dois perfis.'}
           </p>
-          {catalogo.modelo === 'cruzeiro' && (
+          {!consulta && catalogo.modelo === 'cruzeiro' && (
             <form
               className="mt-4 flex flex-wrap gap-2"
               onSubmit={(event) => {
@@ -587,6 +619,7 @@ export default function PariKitHigiene() {
                 onSalvarFaixa={salvarFaixa}
                 onIncluir={(tipoId, itemId, quantidade) => criar('/api/pari/kit/regras', { tipo_id: tipoId, item_id: itemId, quantidade })}
                 onRemover={(regraId) => api.delete(`/api/pari/kit/regras/${regraId}`).then(carregar).catch((error) => setErro(detalheErro(error, 'Não foi possível remover.')))}
+                consulta={consulta}
               />
             ))}
           </div>

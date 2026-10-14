@@ -26,6 +26,7 @@ import {
   usuarioPodeGestaoNfp,
   usuarioPodeVerCompras,
   usuarioPodeAcessarNfp,
+  usuarioGlobalAssinaOrcamento,
 } from '../utils/rbacUtils';
 import {
   rotaEhFinanceiro,
@@ -170,10 +171,15 @@ export default function ProtectedRoute({
     );
   }
 
+  const perfilDaRota = perfis.map(normalizarPerfil).includes(normalizarPerfil(usuario.perfil_acesso));
+  const globalAssinaNestaRota = pathname === '/compras/aguardando-assinatura'
+    && usuarioGlobalAssinaOrcamento(usuario);
+
   if (
     perfis.length > 0 &&
     usuario.is_manutencao !== true &&
-    !perfis.map(normalizarPerfil).includes(normalizarPerfil(usuario.perfil_acesso))
+    !perfilDaRota &&
+    !globalAssinaNestaRota
   ) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">

@@ -25,3 +25,37 @@ export function projetoEhJabaquara(nome) {
 export function projetoSemFluxoPortaria(nome) {
   return projetoEhReencontroPari(nome) && !projetoEhJabaquara(nome);
 }
+
+export function projetoEhSedeAeb(nome) {
+  const texto = textoProjeto(nome);
+  return texto === 'sede' || texto === 'sede aeb' || texto.startsWith('sede ');
+}
+
+/** Casas que já têm rotina, atividades e convênio próprios. */
+export function projetoTemCustomizacaoOperacional(nome) {
+  const texto = textoProjeto(nome);
+  if (projetoEhReencontroPari(nome)) return true;
+  if (texto.includes('casa porto')) return true;
+  return texto.includes('siat') || texto.includes('armenia');
+}
+
+const MENUS_SEM_CUSTOMIZACAO = ['/rotina', '/atividades', '/convenio-sisa'];
+const MENUS_SO_SEDE = ['/conviventes', '/quartos'];
+
+function caminhoDoMenu(pathname) {
+  return String(pathname || '').split('?')[0];
+}
+
+function caminhoCoberto(pathname, prefixos) {
+  const path = caminhoDoMenu(pathname);
+  return prefixos.some((prefixo) => path === prefixo || path.startsWith(`${prefixo}/`));
+}
+
+/** Rotina, Atividades e Convênio ficam só nas casas já customizadas. Na Sede, também saem Conviventes e Acomodações. */
+export function menuOcultoNoProjeto(pathname, nomeProjeto) {
+  if (!String(nomeProjeto || '').trim()) return false;
+  if (!projetoTemCustomizacaoOperacional(nomeProjeto) && caminhoCoberto(pathname, MENUS_SEM_CUSTOMIZACAO)) {
+    return true;
+  }
+  return projetoEhSedeAeb(nomeProjeto) && caminhoCoberto(pathname, MENUS_SO_SEDE);
+}

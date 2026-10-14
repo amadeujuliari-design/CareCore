@@ -2,7 +2,11 @@
 
 from types import SimpleNamespace
 
-from config_operacional_projeto import projeto_e_reencontro_pari, projeto_sem_fluxo_portaria
+from config_operacional_projeto import (
+    projeto_descontinuado,
+    projeto_e_reencontro_pari,
+    projeto_sem_fluxo_portaria,
+)
 
 
 def _projeto(nome: str):
@@ -30,3 +34,11 @@ def test_jabaquara_volta_a_ter_entrada_e_saida():
 def test_modelo_pari_nao_pega_outro_projeto():
     assert not projeto_e_reencontro_pari(_projeto("CASA PORTO"))
     assert not projeto_e_reencontro_pari(None)
+
+
+def test_cta_liberdade_sai_da_lista():
+    assert projeto_descontinuado(_projeto("CTA 17 – LIBERDADE"))
+    assert projeto_descontinuado(_projeto("CTA Liberdade"))
+    assert not projeto_descontinuado(_projeto("CTA 18 – CANINDÉ"))
+    assert not projeto_descontinuado(_projeto("SEDE AEB"))
+    assert not projeto_descontinuado(None)

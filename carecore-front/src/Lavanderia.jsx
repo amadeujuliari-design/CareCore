@@ -29,6 +29,7 @@ import { useLeitorUsbGlobal } from './hooks/useLeitorUsbGlobal';
 import { encontrarConviventePorCodigo } from './utils/conviventeIdentificacaoUtils';
 import { useConfigOperacional } from './hooks/useConfigOperacional';
 import { useAuth } from './context/AuthContext';
+import { usuarioEhGlobalPuro } from './utils/rbacUtils';
 import { projetoEhReencontroPari } from './utils/projetoPari';
 import PariLavanderia from './PariLavanderia';
 import { moduloAtivo, projetoOcultaAcomodacoes } from './config/configOperacionalDefaults';
@@ -79,6 +80,7 @@ export default function Lavanderia() {
     carregando: carregandoConfig,
   } = useConfigOperacional();
   const { usuario } = useAuth();
+  const somenteLeitura = usuarioEhGlobalPuro(usuario);
   const nomePari = nomeProjeto || usuario?.projeto_nome;
   const semControlePecas = !carregandoConfig && (
     projetoOcultaAcomodacoes(nomeProjeto)
@@ -334,7 +336,7 @@ export default function Lavanderia() {
   ]);
 
   useLeitorUsbGlobal({
-    ativo: !scannerContexto && !cancelamento,
+    ativo: !somenteLeitura && !scannerContexto && !cancelamento,
     onCodigoLido: processarLeituraGlobal,
   });
 
@@ -574,7 +576,9 @@ export default function Lavanderia() {
         <PageHeader
           eyebrow="Rotina Diária"
           title="Lavanderia"
-          subtitle="Controle de peças deixadas para lavagem/secagem, prazo de 48h e retirada conferida."
+          subtitle={somenteLeitura
+            ? 'Consulta das peças em lavagem, prazo e retiradas. Sem registro nem baixa.'
+            : 'Controle de peças deixadas para lavagem/secagem, prazo de 48h e retirada conferida.'}
           icon="L"
           actions={(
             <>
@@ -620,6 +624,7 @@ export default function Lavanderia() {
               </div>
             </div>
 
+            {!somenteLeitura && (
             <form id="lavanderia-form-entrega" onSubmit={salvarEntrega} className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
               <div className="mb-4">
                 <h2 className="text-base font-black text-gray-800">Registrar entrega na lavanderia</h2>
@@ -721,6 +726,7 @@ export default function Lavanderia() {
                 </PremiumButton>
               </div>
             </form>
+            )}
 
             <div className="rounded-2xl border border-gray-100 bg-white shadow-sm">
               <div className="flex flex-col gap-3 border-b border-gray-100 p-4 md:flex-row md:items-center md:justify-between">
@@ -902,7 +908,7 @@ export default function Lavanderia() {
                           </details>
                         )}
 
-                        {registro.status === 'Em lavanderia' || registro.status === 'Atrasado' ? (
+                        {!somenteLeitura && (registro.status === 'Em lavanderia' || registro.status === 'Atrasado') ? (
                           <div className="mt-3 flex flex-wrap gap-2">
                             <button
                               type="button"
@@ -986,7 +992,7 @@ export default function Lavanderia() {
                                 )}
                               </details>
                             )}
-                            {registro.status === 'Em lavanderia' || registro.status === 'Atrasado' ? (
+                            {!somenteLeitura && (registro.status === 'Em lavanderia' || registro.status === 'Atrasado') ? (
                               <div className="flex flex-wrap gap-2">
                                 <button
                                   type="button"

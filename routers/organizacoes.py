@@ -10,6 +10,7 @@ from sqlalchemy.future import select
 
 from database import get_db
 from config_operacional import ConfigOperacionalProjeto, config_operacional_para_resposta
+from config_operacional_projeto import projeto_descontinuado
 from config_operacional_service import (
     carregar_config_operacional_instituicao,
     salvar_config_operacional_instituicao,
@@ -314,19 +315,20 @@ async def listar_projetos_organizacao(
         resultado = await db.execute(
             select(InstituicaoDB).order_by(InstituicaoDB.nome_fantasia)
         )
-        return resultado.scalars().all()
+        projetos = resultado.scalars().all()
+    else:
+        organizacao_id = usuario_atual.get("organizacao_id")
+        if not organizacao_id:
+            return []
 
-    organizacao_id = usuario_atual.get("organizacao_id")
-    if not organizacao_id:
-        return []
+        resultado = await db.execute(
+            select(InstituicaoDB)
+            .where(InstituicaoDB.organizacao_id == organizacao_id)
+            .order_by(InstituicaoDB.nome_fantasia)
+        )
+        projetos = resultado.scalars().all()
 
-    resultado = await db.execute(
-        select(InstituicaoDB)
-        .where(InstituicaoDB.organizacao_id == organizacao_id)
-        .order_by(InstituicaoDB.nome_fantasia)
-    )
-
-    return resultado.scalars().all()
+    return [projeto for projeto in projetos if not projeto_descontinuado(projeto)]
 
 
 @router.get("/gestao-global/resumo", response_model=GestaoGlobalResumoResponse)
@@ -366,6 +368,8 @@ async def obter_resumo_gestao_global(
     resumos: list[GestaoGlobalProjetoResumo] = []
 
     for projeto in projetos:
+        if projeto_descontinuado(projeto):
+            continue
         projeto_id = projeto.id
 
         conviventes_total = await contar(

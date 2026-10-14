@@ -23,9 +23,11 @@
 | Escopo | Menu (Sidebar) | Quem vê |
 | --- | --- | --- |
 | Projeto | Compras → Pedidos e cotações, Pedidos concluídos, Catálogo de itens, Categorias, Fornecedores | Usuário com `compras_modulo_ativo` (ou ADM Pedidos / ADM Compras / Manutenção via `usuarioPodeVerCompras`) |
-| Sede | Compras → + Aguardando assinatura, Cadastros (via aba), Usuários ADM Global Compras | Global / ADM Global Compras / Suprimentos / Infraestrutura / Manutenção |
+| Sede | Compras → Pedidos, concluídos, catálogo, categorias, fornecedores, aguardando assinatura e Usuários ADM Global Compras | ADM Global Compras / Suprimentos / Infraestrutura / Manutenção. Global consulta a mesma sede, sem criar nem editar. |
 
-**Origem:** `Sidebar.jsx` (`COMPRAS_CHILDREN_PROJETO`, `montarComprasChildrenSede`), `rbacUtils.js` (`PERFIS_ADM_COMPRAS_SEDE`, `usuarioPodeVerCompras`).
+**Origem:** `Sidebar.jsx` (`COMPRAS_CHILDREN_PROJETO`, `montarComprasChildrenSede`), `rbacUtils.js` (`PERFIS_ADM_COMPRAS_SEDE`, `usuarioPodeVerCompras`, `usuarioEhGlobalPuro`).
+
+O perfil Global vê as abas Pedidos, Janela mensal, Cadastros, Patrimônio e Economia, só para consulta. Não cria pedido nem altera item, fornecedor ou bem. A fila Aguardando assinatura e o botão de posicionar assinatura ficam só para o global autorizado a assinar orçamento de bem/imobilizado e prestação de serviço. Consumo, hortifruti e manutenção continuam com Suprimentos.
 
 Tipos de novo pedido (`BOTOES_NOVO_PEDIDO` em `utils/comprasPedidoTipos.js`):
 

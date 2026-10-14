@@ -57,6 +57,7 @@ from compras_regras import (
     STATUS_REPROVADO,
     STATUS_TERMINAIS_PEDIDO,
     TIPO_CONSUMO,
+    TIPOS_COTACAO_PROJETO,
     TIPO_EVENTO_ITENS,
     TIPO_EVENTO_OBSERVACAO,
     TIPO_EVENTO_STATUS,
@@ -114,6 +115,8 @@ from compras_regras import (
     tipo_pula_aprovacao_sede,
     unidade_medida_para_pedido,
     usuario_e_sede_compras,
+    usuario_global_assina_orcamento,
+    usuario_global_consulta_compras,
     usuario_pode_aprovar_sede,
     usuario_pode_aprovar_unidade,
     usuario_pode_cadastrar_mestre_compras,
@@ -191,6 +194,13 @@ async def exigir_modulo(db: AsyncSession, usuario: dict, *, operacao: bool = Tru
     if not org_id and not usuario.get("is_manutencao"):
         raise HTTPException(status_code=400, detail="Usuário sem organização vinculada.")
     ativo = await org_compras_ativo(db, org_id) if org_id else False
+    if usuario_global_consulta_compras(usuario):
+        if not ativo:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Módulo Compras ainda não foi ativado nesta organização.",
+            )
+        return
     if not usuario_ve_modulo_compras(
         perfil=_perfil(usuario),
         compras_modulo_ativo=bool(usuario.get("compras_modulo_ativo")),
@@ -211,6 +221,8 @@ async def exigir_modulo(db: AsyncSession, usuario: dict, *, operacao: bool = Tru
 def _sede(usuario: dict) -> bool:
     from security import usuario_eh_manutencao
 
+    if usuario_global_consulta_compras(usuario):
+        return True
     return usuario_e_sede_compras(
         perfil=_perfil(usuario),
         is_manutencao=usuario_eh_manutencao(usuario),
@@ -580,6 +592,12 @@ async def serializar_pedido(
     ):
         pode_substituir = True
     payload["pode_substituir_orcamento"] = pode_substituir
+    if usuario and usuario_global_consulta_compras(usuario):
+        payload["pode_editar_itens"] = False
+        payload["pode_substituir_orcamento"] = False
+        payload["pode_excluir"] = False
+        payload["pode_reabrir"] = False
+        payload["pode_reabrir_aprovado"] = False
     return payload
 
 
@@ -801,7 +819,7 @@ async def obter_pedido(
             raise HTTPException(status_code=403, detail="Pedido da Sede (organização).")
         if pedido.instituicao_id != usuario.get("instituicao_id"):
             raise HTTPException(status_code=403, detail="Pedido de outra unidade.")
-    elif not usuario_sede_pode_ver_tipo(
+    elif not usuario_global_consulta_compras(usuario) and not usuario_sede_pode_ver_tipo(
         perfil=_perfil(usuario),
         tipo=pedido.tipo,
         is_manutencao=bool(usuario.get("is_manutencao")),
@@ -835,7 +853,7 @@ async def listar_pedidos(
                     ComprasPedidoDB.criado_por_id == _uid(usuario),
                 )
             )
-        tipos_visao = tipos_visiveis_adm_compras(
+        tipos_visao = None if usuario_global_consulta_compras(usuario) else tipos_visiveis_adm_compras(
             perfil=_perfil(usuario),
             is_manutencao=eh_manut,
         )
@@ -1641,6 +1659,12 @@ async def escolher_cotacao(
             raise HTTPException(status_code=403, detail="Sem permissão para escolher o orçamento neste projeto.")
         if pedido.instituicao_id != usuario.get("instituicao_id") and not usuario.get("is_manutencao"):
             raise HTTPException(status_code=403, detail="A escolha do orçamento é do próprio projeto.")
+    elif usuario_global_assina_orcamento(usuario):
+        if (pedido.tipo or "").strip().lower() not in TIPOS_COTACAO_PROJETO:
+            raise HTTPException(
+                status_code=403,
+                detail="Esta autorização cobre bem/imobilizado e prestação de serviço.",
+            )
     elif not usuario_pode_aprovar_sede(
         perfil=_perfil(usuario),
         is_manutencao=bool(usuario.get("is_manutencao")),
@@ -1649,7 +1673,7 @@ async def escolher_cotacao(
             status_code=403,
             detail="Somente a Sede (ADM Compras) escolhe o orçamento vencedor.",
         )
-    if not consumo_projeto and not usuario_sede_pode_ver_tipo(
+    if not consumo_projeto and not usuario_global_assina_orcamento(usuario) and not usuario_sede_pode_ver_tipo(
         perfil=_perfil(usuario),
         tipo=pedido.tipo,
         is_manutencao=bool(usuario.get("is_manutencao")),
@@ -1740,6 +1764,12 @@ async def revogar_escolha_cotacao(
             org_compras_ativo=True,
         ):
             raise HTTPException(status_code=403, detail="Sem permissão para revogar a escolha neste projeto.")
+    elif usuario_global_assina_orcamento(usuario):
+        if (pedido.tipo or "").strip().lower() not in TIPOS_COTACAO_PROJETO:
+            raise HTTPException(
+                status_code=403,
+                detail="Esta autorização cobre bem/imobilizado e prestação de serviço.",
+            )
     elif not usuario_pode_aprovar_sede(
         perfil=_perfil(usuario),
         is_manutencao=bool(usuario.get("is_manutencao")),
@@ -3607,6 +3637,8 @@ def sugestao_janela(competencia: str, *, semana: Optional[int] = None) -> dict:
 
 
 async def definir_modulo_ativo(db: AsyncSession, usuario: dict, ativo: bool) -> dict:
+    if usuario_global_consulta_compras(usuario):
+        raise HTTPException(status_code=403, detail="Usuários globais apenas consultam o módulo Compras.")
     if not (
         _sede(usuario)
         or usuario.get("is_global")

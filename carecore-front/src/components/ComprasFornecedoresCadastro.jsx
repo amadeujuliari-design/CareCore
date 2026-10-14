@@ -71,6 +71,7 @@ export default function ComprasFornecedoresCadastro({
   fornecedores = [],
   categorias = [],
   sede = false,
+  podeEditar = true,
   onRecarregar,
   onMensagem,
 }) {
@@ -344,12 +345,14 @@ export default function ComprasFornecedoresCadastro({
                 Imprimir
               </span>
             </PremiumButton>
+            {podeEditar && (
             <PremiumButton type="button" onClick={abrirNovo}>
               <span className="inline-flex items-center gap-1.5">
                 <Plus size={16} />
                 Novo fornecedor
               </span>
             </PremiumButton>
+            )}
           </div>
         )}
       >
@@ -434,6 +437,7 @@ export default function ComprasFornecedoresCadastro({
                           >
                             <Eye size={16} />
                           </button>
+                          {podeEditar && (
                           <button
                             type="button"
                             className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-800"
@@ -443,6 +447,7 @@ export default function ComprasFornecedoresCadastro({
                           >
                             <Pencil size={16} />
                           </button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -458,7 +463,7 @@ export default function ComprasFornecedoresCadastro({
         fornecedor={ficha}
         categoriaNome={ficha?.categoria_id ? (mapaCategorias[ficha.categoria_id] || '—') : ''}
         onFechar={() => setFicha(null)}
-        onEditar={editar}
+        onEditar={podeEditar ? editar : undefined}
       />
 
       {formAberto && (

@@ -40,9 +40,9 @@ import { API_ROOT } from './config/apiBase';
 import { carecoreVersaoRotulo } from './config/versao';
 import { MENU_ACOMPANHAMENTOS, MENU_CONVIVENTES } from './config/acompanhamentosConfig';
 import { acompanhamentoAtivo, moduloAtivo, projetoOcultaAcomodacoes } from './config/configOperacionalDefaults';
-import { projetoEhReencontroPari } from './utils/projetoPari';
+import { menuOcultoNoProjeto, projetoEhReencontroPari } from './utils/projetoPari';
 import { useConfigOperacional } from './hooks/useConfigOperacional';
-import { usuarioEhAdmCompras, usuarioEhAdmGlobal, usuarioEhAdmPedidos, usuarioEhAdmProducao, usuarioEhOficineiro, normalizarPerfilRbac, usuarioPodeVerCompras, usuarioPodeAcessarNfp, usuarioPodeAcessarModuloOperacional, PERFIS_ADM_COMPRAS_SEDE, PERFIL_ADM_GLOBAL, PERFIL_ADM_PRODUCAO } from './utils/rbacUtils';
+import { usuarioEhAdmCompras, usuarioEhAdmGlobal, usuarioEhAdmPedidos, usuarioEhAdmProducao, usuarioEhOficineiro, usuarioEhGlobalPuro, usuarioGlobalAssinaOrcamento, normalizarPerfilRbac, usuarioPodeVerCompras, usuarioPodeAcessarNfp, usuarioPodeAcessarModuloOperacional, PERFIS_ADM_COMPRAS_SEDE, PERFIL_ADM_GLOBAL, PERFIL_ADM_PRODUCAO } from './utils/rbacUtils';
 import { decodificarPayloadJwt } from './utils/jwtUtils';
 import { usuarioOrganizacaoFinanceira } from './utils/orgPacoteUtils';
 import FinanceSidebar from './components/FinanceSidebar';
@@ -312,7 +312,7 @@ export default function Sidebar() {
         if (ativo) setComprasModuloVisivel(false);
       });
 
-    if (ehAdmCompras || isManutencao) {
+    if (ehAdmCompras || isManutencao || usuarioGlobalAssinaOrcamento(usuarioSessao)) {
       api.get(`${API_ROOT}/compras/fila-assinatura/resumo`)
         .then((response) => {
           if (ativo) setFilaAssinaturaPendentes(Number(response.data?.pendentes) || 0);
@@ -358,7 +358,7 @@ export default function Sidebar() {
           path: '/ocorrencias',
           icon: MessageSquareWarning,
           label: 'Comunicação',
-          perfis: ['Gestor', 'Técnico', 'Orientador', 'Administrativo'],
+          perfis: ['Gestor', 'Técnico', 'Orientador', 'Administrativo', 'Global'],
           children: [
             {
               path: '/ocorrencias',
@@ -477,7 +477,7 @@ export default function Sidebar() {
           path: '/convenio-sisa',
           icon: PanelsTopLeft,
           label: 'Convênio / SISA',
-          perfis: ['Gestor', 'Técnico', 'Administrativo']
+          perfis: ['Gestor', 'Técnico', 'Administrativo', 'Global']
         },
         {
           path: '/relatorios',
@@ -847,8 +847,11 @@ export default function Sidebar() {
         nfp_modulo_ativo: usuarioSessao?.nfp_modulo_ativo,
       });
     }
+    if (item.path === '/compras/aguardando-assinatura' && usuarioGlobalAssinaOrcamento(usuarioSessao)) {
+      return true;
+    }
     if (item.escopoCompras === 'projeto') {
-      if (isManutencao || ehAdmCompras) return false;
+      if (isManutencao || ehAdmCompras || usuarioEhGlobalPuro(usuarioSessao)) return false;
       if (!usuarioPodeVerCompras({
         perfil_acesso: perfilNormalizado,
         is_manutencao: isManutencao,
@@ -884,6 +887,9 @@ export default function Sidebar() {
       return false;
     }
     if (item.somentePari && !reencontroPari) {
+      return false;
+    }
+    if (menuOcultoNoProjeto(item.path, nomeProjetoOperacional || usuarioSessao?.projeto_nome)) {
       return false;
     }
     if (item.path === '/rotina/lavanderia' && !reencontroPari && (ocultaAcomodacoesCasaPorto || (configOperacional && !moduloAtivo(configOperacional, 'lavanderia_pecas')))) {

@@ -123,6 +123,7 @@ export default function ModalFichaPatrimonio({ item, onFechar, onEditar, onAnexa
           ) : (
             <p className="mt-2 text-sm text-slate-500">Nenhum arquivo neste bem.</p>
           )}
+          {onAnexar && (
           <label className="mt-3 block text-xs font-semibold text-slate-600">
             Adicionar arquivos
             <input
@@ -137,15 +138,18 @@ export default function ModalFichaPatrimonio({ item, onFechar, onEditar, onAnexa
               }}
             />
           </label>
+          )}
         </div>
 
         <div className="mt-6 flex flex-wrap justify-end gap-2 border-t border-slate-100 pt-4">
           <PremiumButton type="button" variant="secondary" onClick={onFechar}>
             Fechar
           </PremiumButton>
-          <PremiumButton type="button" onClick={() => onEditar?.(item)}>
+          {onEditar && (
+          <PremiumButton type="button" onClick={() => onEditar(item)}>
             Editar bem
           </PremiumButton>
+          )}
         </div>
       </div>
     </div>

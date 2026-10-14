@@ -24,7 +24,7 @@ import {
   comprasUploadAssinaturaDigital,
   moneyCentavos,
 } from './services/comprasService';
-import { usuarioEhAdmCompras, usuarioEhManutencao } from './utils/rbacUtils';
+import { usuarioEhAdmCompras, usuarioEhManutencao, usuarioGlobalAssinaOrcamento } from './utils/rbacUtils';
 import { formatarDataBr } from './utils/comprasJanelaUtils';
 import { cotacoesComEscolhidaPrimeiro, rotuloTipoPedido, tipoEhCotacaoProjeto } from './utils/comprasPedidoTipos';
 
@@ -45,7 +45,7 @@ function anexosOrcamento(pedido, cotacaoId) {
 export default function ComprasAguardandoAssinatura() {
   const navigate = useNavigate();
   const usuario = useMemo(() => usuarioSessao(), []);
-  const sede = usuarioEhAdmCompras(usuario) || usuarioEhManutencao(usuario);
+  const sede = usuarioEhAdmCompras(usuario) || usuarioEhManutencao(usuario) || usuarioGlobalAssinaOrcamento(usuario);
   const [erro, setErro] = useState('');
   const [ok, setOk] = useState('');
   const [carregando, setCarregando] = useState(true);

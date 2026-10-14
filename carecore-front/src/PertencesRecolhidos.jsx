@@ -31,6 +31,7 @@ import { encontrarConviventePorCodigo } from './utils/conviventeIdentificacaoUti
 import { decodificarPayloadJwt } from './utils/jwtUtils';
 import { useConfigOperacional } from './hooks/useConfigOperacional';
 import { useAuth } from './context/AuthContext';
+import { usuarioEhGlobalPuro } from './utils/rbacUtils';
 import { projetoEhReencontroPari } from './utils/projetoPari';
 
 function formatarDataHora(valor) {
@@ -67,6 +68,7 @@ function montarDadosRelatorioPertences(registrosLista) {
 export default function PertencesRecolhidos() {
   const { nomeProjeto } = useConfigOperacional();
   const { usuario } = useAuth();
+  const somenteLeitura = usuarioEhGlobalPuro(usuario);
   const token = localStorage.getItem('@CareCore:token');
   let perfilUsuario = '';
   let usuarioMaster = false;
@@ -373,7 +375,7 @@ export default function PertencesRecolhidos() {
   ]);
 
   useLeitorUsbGlobal({
-    ativo: !scannerRetiradaAberto && !baixaAdmin && !baixaAdminLote,
+    ativo: !somenteLeitura && !scannerRetiradaAberto && !baixaAdmin && !baixaAdminLote,
     onCodigoLido: processarLeituraGlobal,
   });
 
@@ -686,7 +688,9 @@ export default function PertencesRecolhidos() {
         <PageHeader
           eyebrow="Rotina Diária"
           title="Pertences Recolhidos"
-          subtitle="Controle por quarto dos objetos esquecidos, com saldo e retirada por conviventes do próprio quarto."
+          subtitle={somenteLeitura
+            ? 'Consulta dos objetos recolhidos por quarto, com saldo e histórico. Sem registrar nem retirar.'
+            : 'Controle por quarto dos objetos esquecidos, com saldo e retirada por conviventes do próprio quarto.'}
           icon="P"
           actions={(
             <>
@@ -732,6 +736,7 @@ export default function PertencesRecolhidos() {
               </div>
             </div>
 
+            {!somenteLeitura && (
             <form onSubmit={salvarRecolha} className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
               <div className="mb-4">
                 <h2 className="text-base font-black text-gray-800">Registrar recolha do quarto</h2>
@@ -787,6 +792,7 @@ export default function PertencesRecolhidos() {
                 </PremiumButton>
               </div>
             </form>
+            )}
 
             <div className="rounded-2xl border border-gray-100 bg-white shadow-sm">
               <div className="flex flex-col gap-3 border-b border-gray-100 p-4 md:flex-row md:items-center md:justify-between">
@@ -994,7 +1000,7 @@ export default function PertencesRecolhidos() {
                           </div>
                         ) : null}
 
-                        {Number(registro.quantidade_disponivel || 0) > 0 ? (
+                        {!somenteLeitura && Number(registro.quantidade_disponivel || 0) > 0 ? (
                           <div className="mt-3 flex flex-wrap gap-2">
                             <button
                               type="button"
@@ -1052,7 +1058,7 @@ export default function PertencesRecolhidos() {
                         <tr key={registro.id} className="border-t border-gray-100">
                           {podeBaixaAdministrativa && (
                             <td className="px-4 py-3">
-                              {Number(registro.quantidade_disponivel || 0) > 0 ? (
+                              {!somenteLeitura && Number(registro.quantidade_disponivel || 0) > 0 ? (
                                 <input
                                   type="checkbox"
                                   checked={selecionados.includes(registro.id)}
@@ -1096,7 +1102,7 @@ export default function PertencesRecolhidos() {
                             )}
                           </td>
                           <td className="px-4 py-3">
-                            {Number(registro.quantidade_disponivel || 0) > 0 ? (
+                            {!somenteLeitura && Number(registro.quantidade_disponivel || 0) > 0 ? (
                               <div className="flex flex-wrap gap-2">
                                 <button
                                   type="button"

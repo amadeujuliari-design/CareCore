@@ -5,6 +5,14 @@ Inventário minucioso das telas assistenciais a partir do JSX em `carecore-front
 **Rotas:** `carecore-front/src/routes/AppRouter.jsx`  
 **Menu lateral:** `carecore-front/src/Sidebar.jsx`
 
+## Menu conforme o projeto
+
+Casas já customizadas (SIAT II Armênia, Reencontro Parí, Anhangabaú, Cruzeiro do Sul, Jabaquara e Casa Porto Seguro) mantêm o menu da casa. A Casa Porto continua sem acomodações, pertences e lavanderia de peças.
+
+Na Sede AEB e nos demais projetos, o menu esconde Rotina Diária (e o submenu), Atividades e Convênio / SISA. Só na Sede também saem Conviventes e Acomodações. CTA 17 – Liberdade não entra na lista de projetos.
+
+O perfil Global consulta lavanderia, kit, pertences, ocorrências, convênio e relatórios, sem gravar. Ajustes de totais segue só com o Gestor.
+
 ---
 
 ## Destaque — projeto sem pernoite (Casa Porto)

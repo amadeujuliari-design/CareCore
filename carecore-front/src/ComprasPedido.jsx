@@ -57,7 +57,7 @@ import {
   comprasSubmeter,
   moneyCentavos,
 } from './services/comprasService';
-import { usuarioEhAdmCompras, usuarioEhAdmPedidos, usuarioEhManutencao, usuarioPodeCadastrarMestreCompras, usuarioPodeEnviarEmailCompras } from './utils/rbacUtils';
+import { usuarioEhAdmCompras, usuarioEhAdmPedidos, usuarioEhGlobalPuro, usuarioEhManutencao, usuarioGlobalAssinaOrcamento, usuarioPodeCadastrarMestreCompras, usuarioPodeEnviarEmailCompras } from './utils/rbacUtils';
 import { formatarDataBr } from './utils/comprasJanelaUtils';
 import { formatarDataHoraBr } from './utils/dataBrasilUtils';
 import { itemConsumoPeloDetalheErro, pedidoItemUnidadeConfusa, sugerirItensConsumo, unidadeParaPedido } from './utils/comprasItensConsumoUtils';
@@ -140,6 +140,8 @@ export default function ComprasPedido() {
   const usuario = useMemo(() => usuarioSessao(), []);
   const usuarioId = usuario.id || usuario.usuario_id;
   const sede = usuarioEhAdmCompras(usuario) || usuarioEhManutencao(usuario);
+  const consultaGlobal = usuarioEhGlobalPuro(usuario);
+  const assinaOrcamento = usuarioGlobalAssinaOrcamento(usuario);
   const manutencao = usuarioEhManutencao(usuario);
   const podeDispararEmailCompras = usuarioPodeEnviarEmailCompras(usuario);
   const admPedidos = usuarioEhAdmPedidos(usuario);
@@ -303,6 +305,7 @@ export default function ComprasPedido() {
   const podeEscolherCotacao = !orcamentosTravados && (
     (sede && !consumoProjetoEscolhe
       && ['aguardando_aprovacao_sede', 'em_cotacao', 'aguardando_cotacao', 'aguardando_escolha_orcamento', 'aguardando_aprovacao_unidade'].includes(pedido.status))
+    || (assinaOrcamento && cotacaoProjeto && pedido.status === 'aguardando_aprovacao_sede')
     || (unidade && consumoProjetoEscolhe && !pedidoSede
       && ['aguardando_escolha_orcamento', 'aguardando_aprovacao_unidade'].includes(pedido.status))
   );
@@ -836,7 +839,7 @@ export default function ComprasPedido() {
                     ? 'Texto do projeto; repetido em todos os pedidos deste grupo (por categoria).'
                     : 'Visível para a Sede em todo o grupo quando o pedido for dividido por categoria.'}
                 </p>
-                {ehRascunho ? (
+                {ehRascunho && !consultaGlobal ? (
                   <div className="mt-3 space-y-2">
                     <textarea
                       className="w-full rounded-xl border border-amber-200 bg-white px-3 py-2 text-sm text-slate-900"
@@ -882,7 +885,7 @@ export default function ComprasPedido() {
                 }`}
               >
                 <p className="min-w-0 flex-1">{pedido.aviso_alteracao_itens}</p>
-                {pedido.precisa_revisar_cotacao ? (
+                {pedido.precisa_revisar_cotacao && !consultaGlobal ? (
                   <PremiumButton
                     type="button"
                     variant="secondary"
@@ -1600,7 +1603,7 @@ export default function ComprasPedido() {
               )}
             </SectionCard>
 
-            {!terminal && (
+            {!terminal && !consultaGlobal && (
               <SectionCard title="Comunicação (parecer, negativa, observação)">
                 <form
                   className="grid gap-2 md:grid-cols-4"
@@ -1723,7 +1726,7 @@ export default function ComprasPedido() {
                           )}
                         </div>
                         <div className="flex shrink-0 flex-wrap gap-2">
-                          {ev.editavel && !editando && !terminal && (
+                          {ev.editavel && !editando && !terminal && !consultaGlobal && (
                             <PremiumButton
                               variant="secondary"
                               onClick={() => setEventoEdicao({ id: ev.id, texto: ev.texto || '' })}
@@ -1731,7 +1734,7 @@ export default function ComprasPedido() {
                               Corrigir
                             </PremiumButton>
                           )}
-                          {podeOk && (
+                          {podeOk && !consultaGlobal && (
                             <PremiumButton
                               variant="secondary"
                               onClick={() => agir(() => comprasConfirmarEvento(pedido.id, ev.id), 'Confirmado.')}
@@ -2194,7 +2197,7 @@ export default function ComprasPedido() {
             <SectionCard title="Fluxo">
               <div className="flex flex-wrap gap-2">
                 {(pedido.status === 'rascunho'
-                  || (cotacaoProjeto && ['em_cotacao', 'aguardando_cotacao'].includes(pedido.status))) && (
+                  || (cotacaoProjeto && ['em_cotacao', 'aguardando_cotacao'].includes(pedido.status))) && !consultaGlobal && (
                   <PremiumButton
                     onClick={async () => {
                       setErro('');
@@ -2271,8 +2274,8 @@ export default function ComprasPedido() {
                     Aprovar e enviar ao fornecedor
                   </PremiumButton>
                 )}
-                {pedido.status === 'aguardando_aprovacao_sede' && sede && !pulaAprovacaoSede && !hortifrutiDireto && (
-                  cotacaoProjeto ? (
+                {pedido.status === 'aguardando_aprovacao_sede' && !pulaAprovacaoSede && !hortifrutiDireto && (
+                  cotacaoProjeto && (sede || assinaOrcamento) ? (
                     <PremiumButton
                       onClick={() => {
                         const escolhida = (pedido.cotacoes || []).find((c) => c.escolhida);
@@ -2297,11 +2300,11 @@ export default function ComprasPedido() {
                     >
                       Posicionar assinatura e aprovar (Sede)
                     </PremiumButton>
-                  ) : (
+                  ) : sede ? (
                     <PremiumButton onClick={() => agir(() => comprasAprovarSede(pedido.id), 'Sede aprovou.')}>
                       Aprovar na Sede
                     </PremiumButton>
-                  )
+                  ) : null
                 )}
                 {podeEnviarPedidoCompra && !emailPedidoCompraEnviado && (
                   <PremiumButton
@@ -2353,7 +2356,7 @@ export default function ComprasPedido() {
                   >
                     Excluir rascunho
                   </PremiumButton>
-                ) : !terminal ? (
+                ) : !terminal && !consultaGlobal ? (
                   <>
                     <PremiumButton
                       variant="secondary"

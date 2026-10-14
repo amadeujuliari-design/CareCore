@@ -1,6 +1,8 @@
 // =====================================================================
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useAuth } from './context/AuthContext';
+import { usuarioEhGlobalPuro } from './utils/rbacUtils';
 import axios from 'axios';
 import Sidebar from './Sidebar';
 import { AppShell, MainShell, PageHeader, PremiumButton, ReportActionButton, ScrollArea } from './components/PremiumUI';
@@ -44,6 +46,8 @@ const TAMANHO_PAGINA_OCORRENCIAS = 30;
 
 export default function CentralOcorrencias() {
   const navigate = useNavigate();
+  const { usuario } = useAuth();
+  const consulta = usuarioEhGlobalPuro(usuario);
   const [searchParams] = useSearchParams();
   const token = localStorage.getItem('@CareCore:token');
 
@@ -537,6 +541,7 @@ export default function CentralOcorrencias() {
   };
 
   const abrirFormularioNovo = () => {
+    if (consulta) return;
     setFormNovo(estadoNovoChamado);
     setBuscaPaciente('');
     setMostrarDropdownPaciente(false);
@@ -836,7 +841,7 @@ export default function CentralOcorrencias() {
           title={perfilUsuario === 'Orientador' ? 'Minhas Ocorrências' : 'Central de Ocorrências'}
           subtitle="Gestão de chamados, prioridades e andamento de casos."
           icon="!"
-          actions={(
+          actions={!consulta ? (
             <PremiumButton
               type="button"
               variant="brand"
@@ -844,7 +849,7 @@ export default function CentralOcorrencias() {
           >
             + Novo Chamado
             </PremiumButton>
-          )}
+          ) : null}
         />
 
         <ScrollArea className="pb-24">
@@ -1220,7 +1225,7 @@ export default function CentralOcorrencias() {
         </ScrollArea>
 
       {/* Barra flutuante de baixa em lote */}
-      {selecionados.length > 0 && (
+      {!consulta && selecionados.length > 0 && (
         <div className="fixed bottom-4 left-3 right-3 z-40 flex animate-fadeIn flex-col items-stretch gap-3 rounded-3xl bg-gray-900 px-4 py-4 text-white shadow-2xl sm:bottom-8 sm:left-1/2 sm:right-auto sm:-translate-x-1/2 sm:flex-row sm:items-center sm:gap-6 sm:rounded-full sm:px-6">
           <span className="text-sm font-bold bg-gray-800 px-3 py-1 rounded-full text-brand">
             {selecionados.length} selecionado(s)
@@ -1375,6 +1380,10 @@ export default function CentralOcorrencias() {
                 <div className="text-center p-3 bg-gray-50 rounded-xl border border-gray-200 text-gray-500 text-sm font-semibold">
                   Este chamado já recebeu o parecer técnico e foi encerrado.
                 </div>
+              ) : consulta ? (
+                <div className="text-center p-3 bg-gray-50 rounded-xl border border-gray-200 text-gray-500 text-sm font-semibold">
+                  Consulta do chamado. Sem nova interação.
+                </div>
               ) : (
                 <form onSubmit={handleEnviarInteracao} className="space-y-3">
                   <textarea 
@@ -1432,7 +1441,7 @@ export default function CentralOcorrencias() {
       )}
 
       {/* --- MODAL DE CRIAÇÃO DE NOVO CHAMADO --- */}
-      {modalNovoAberto && (
+      {modalNovoAberto && !consulta && (
         <div className="carecore-modal-overlay fixed inset-0 bg-gray-900/60 z-50 flex items-start justify-center p-4 sm:p-8 backdrop-blur-sm overflow-y-auto">
           <div className="carecore-modal-panel bg-white w-full max-w-2xl rounded-2xl shadow-2xl flex max-h-[calc(100vh-2rem)] flex-col my-auto relative overflow-hidden">
             

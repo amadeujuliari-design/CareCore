@@ -49,6 +49,7 @@ from compras_regras import (
     STATUS_RASCUNHO,
     STATUS_TERMINAIS_PEDIDO,
     TIPO_CONSUMO,
+    TIPOS_COTACAO_PROJETO,
     TIPO_ANEXO_AQUISICAO,
     TIPO_ANEXO_NF_PDF,
     TIPO_ANEXO_NF_XML,
@@ -82,6 +83,7 @@ from compras_regras import (
     tipo_suprimentos_aprova_e_envia,
     tipo_eh_cotacao_sede,
     usuario_e_sede_compras,
+    usuario_global_assina_orcamento,
     usuario_pode_aprovar_sede,
     lado_timeline_compras,
     tipo_arquivo_bem_de_anexo_pedido,
@@ -2203,12 +2205,18 @@ async def assinar_orcamento_e_aprovar_sede(
     height: Optional[float] = None,
 ) -> ComprasPedidoDB:
     """Ato explícito: carimba assinatura no orçamento (posição opcional) e aprova."""
-    if not usuario_pode_aprovar_sede(
+    if usuario_global_assina_orcamento(usuario):
+        if (pedido.tipo or "").strip().lower() not in TIPOS_COTACAO_PROJETO:
+            raise HTTPException(
+                status_code=403,
+                detail="Esta autorização cobre bem/imobilizado e prestação de serviço.",
+            )
+    elif not usuario_pode_aprovar_sede(
         perfil=str(usuario.get("perfil_acesso") or usuario.get("perfil") or ""),
         is_manutencao=bool(usuario.get("is_manutencao")),
     ):
         raise HTTPException(status_code=403, detail="Somente ADM Compras aprova na Sede.")
-    if not usuario_sede_pode_ver_tipo(
+    if not usuario_global_assina_orcamento(usuario) and not usuario_sede_pode_ver_tipo(
         perfil=str(usuario.get("perfil_acesso") or usuario.get("perfil") or ""),
         tipo=pedido.tipo,
         is_manutencao=bool(usuario.get("is_manutencao")),

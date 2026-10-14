@@ -654,6 +654,38 @@ def _perfil_adm_compras(perfil: str) -> str:
     return texto
 
 
+# Global que consulta Compras e também assina o orçamento de bem e serviço.
+EMAILS_GLOBAL_ASSINA_ORCAMENTO = frozenset({"noemi@aeb-brasil.org.br"})
+
+
+def _email_usuario_compras(usuario) -> str:
+    if isinstance(usuario, dict):
+        bruto = usuario.get("email")
+    else:
+        bruto = getattr(usuario, "email", None)
+    return str(bruto or "").strip().lower()
+
+
+def usuario_global_consulta_compras(usuario) -> bool:
+    """Global da organização enxerga Compras, sem operar o pedido."""
+    if not isinstance(usuario, dict) or not usuario:
+        return False
+    if usuario.get("is_manutencao") or _perfil_eh_manutencao_ops(str(usuario.get("perfil_acesso") or "")):
+        return False
+    perfil = str(usuario.get("perfil_acesso") or "").strip()
+    if usuario.get("is_master") or perfil in {"Gestor", "Gestao", "Gestão", "Gerente"}:
+        return False
+    return bool(usuario.get("is_global")) or perfil == "Global"
+
+
+def usuario_global_assina_orcamento(usuario) -> bool:
+    """Quem, entre os globais, autoriza e assina orçamento de bem e serviço."""
+    return (
+        usuario_global_consulta_compras(usuario)
+        and _email_usuario_compras(usuario) in EMAILS_GLOBAL_ASSINA_ORCAMENTO
+    )
+
+
 def usuario_ve_modulo_compras(
     *,
     perfil: str,
