@@ -244,7 +244,7 @@ File → tipo `espelho_compra`
 | Número NF | — | `nfForm.numero` |
 | R$ 0,00 | — | `nfForm.valor_reais` |
 | Insira as informações complementares de pagamento para a impressão da NF | * antes de PDF | `nfForm.observacao` |
-| Insira a senha do gestor para a assinatura eletrônica digital | * | senha do perfil Gestor; no PDF a pessoa arrasta o carimbo «Assinado Digitalmente» (nome completo, projeto e cargo Gestor) para um espaço livre, junto com o texto complementar |
+| Insira a senha do gestor para a assinatura eletrônica digital | * | senha do perfil Gestor; o PDF abre com todas as páginas e as caixas começam na última; a pessoa arrasta o carimbo «Assinado Digitalmente» (nome completo, projeto e cargo Gestor) e o texto complementar para um espaço livre, na página que quiser |
 | Arquivo NF | * | `arqNf` (.pdf/.xml/imagem) |
 | Anexar arquivos | — | um único campo, vários arquivos, tipo `aquisicao_bem` |
 
