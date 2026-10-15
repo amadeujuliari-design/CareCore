@@ -196,6 +196,7 @@ export default function Usuarios() {
   const [form, setForm] = useState(FORM_INICIAL);
   const [errosCampo, setErrosCampo] = useState({});
   const [senhaRedefinir, setSenhaRedefinir] = useState('');
+  const [assinaturaEletronicaCadastrada, setAssinaturaEletronicaCadastrada] = useState(false);
   const [erroSenhaRedefinir, setErroSenhaRedefinir] = useState('');
   const [usuarioSenha, setUsuarioSenha] = useState(null);
 
@@ -270,6 +271,10 @@ export default function Usuarios() {
       : '+ Novo ADM NFP';
   const rotuloFiltroOrg = perfisOrgDisponiveis.join(' / ');
   const regrasSenhaInicial = useMemo(() => obterRegrasSenha(form.senha), [form.senha]);
+  const regrasSenhaAssinatura = useMemo(
+    () => obterRegrasSenha(form.senha_assinatura_eletronica),
+    [form.senha_assinatura_eletronica],
+  );
   const regrasSenhaRedefinicao = useMemo(() => obterRegrasSenha(senhaRedefinir), [senhaRedefinir]);
   const exibindoApenasUsuariosAtivos = filtroAtivo === 'true';
   const totalPaginasUsuarios = Math.max(1, Math.ceil(usuarios.length / usuariosPorPagina));
@@ -450,6 +455,7 @@ export default function Usuarios() {
           ? 'Compras – Sede Infraestrutura'
           : 'Compras – Sede Suprimentos')
       : 'NFP – Créditos';
+    setAssinaturaEletronicaCadastrada(false);
     setForm({
       ...FORM_INICIAL,
       perfil_acesso: perfilInicial,
@@ -488,6 +494,7 @@ export default function Usuarios() {
         nome: usuario.nome || '',
         email: usuario.email || '',
         senha: '',
+        senha_assinatura_eletronica: '',
         perfil_acesso: usuario.perfil_acesso || 'Consulta',
         is_global: usuario.is_global === true,
         ativo: usuario.ativo !== false,
@@ -523,6 +530,7 @@ export default function Usuarios() {
         observacoes_profissionais: usuario.observacoes_profissionais || '',
       });
 
+      setAssinaturaEletronicaCadastrada(usuario.assinatura_eletronica_cadastrada === true);
       setEditandoId(usuario.id);
       setTela('form');
     } catch (error) {
@@ -751,6 +759,15 @@ export default function Usuarios() {
     ) {
       return 'Selecione o projeto do ADM Pedidos.';
     }
+    if (form.perfil_acesso === 'Gestor') {
+      const senhaAssinatura = (form.senha_assinatura_eletronica || '').trim();
+      if (senhaAssinatura && !senhaAtendePolitica(senhaAssinatura)) {
+        return 'A senha da assinatura eletrônica ainda não atende aos critérios mínimos.';
+      }
+      if (!senhaAssinatura && (!editandoId || !assinaturaEletronicaCadastrada)) {
+        return 'Defina a senha de assinatura eletrônica do gestor.';
+      }
+    }
 
     if (form.uf && !UFS.includes(form.uf)) {
       return 'UF inválida. Selecione uma UF válida.';
@@ -792,6 +809,9 @@ export default function Usuarios() {
 
     if (editandoId) {
       delete payload.senha;
+    }
+    if (payload.perfil_acesso !== 'Gestor') {
+      delete payload.senha_assinatura_eletronica;
     }
 
     return removerCamposVazios(payload);
@@ -1584,6 +1604,30 @@ export default function Usuarios() {
                       Vínculo NFP fixo deste projeto:{' '}
                       <strong>{nomeProjetoAtual || form.nfp_captador_vinculo || 'projeto atual'}</strong>
                       . Cupons lidos por este usuário vão automaticamente para este vínculo.
+                    </div>
+                  )}
+
+                  {form.perfil_acesso === 'Gestor' && (
+                    <div className="md:col-span-2 rounded-xl border border-indigo-200 bg-indigo-50/70 p-3">
+                      <CampoTexto
+                        label="Senha da assinatura eletrônica"
+                        name="senha_assinatura_eletronica"
+                        autoComplete="new-password"
+                        type="password"
+                        value={form.senha_assinatura_eletronica || ''}
+                        onChange={(v) => atualizarCampo('senha_assinatura_eletronica', v)}
+                        maxLength={72}
+                      />
+                      <p className="mt-1.5 text-[11px] text-indigo-950/80">
+                        O gestor define esta senha para assinar a nota fiscal em Compras e pode trocá-la quando quiser.
+                        O carimbo no PDF leva Assinado Digitalmente, o nome completo, o nome do projeto e o cargo Gestor.
+                        {editandoId && assinaturaEletronicaCadastrada
+                          ? ' Já existe uma senha. Preencha somente para substituir.'
+                          : ''}
+                      </p>
+                      {form.senha_assinatura_eletronica ? (
+                        <ListaRegrasSenha regras={regrasSenhaAssinatura} />
+                      ) : null}
                     </div>
                   )}
 

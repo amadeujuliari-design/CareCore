@@ -14,6 +14,7 @@ import {
   SectionCard,
 } from './components/PremiumUI';
 import {
+  comprasArquivarOrcamentoGovBr,
   comprasAssinarOrcamentoSede,
   comprasAssinaturaDigitalStatus,
   comprasBaixarAnexo,
@@ -36,6 +37,78 @@ function usuarioSessao() {
   }
 }
 
+const URL_ASSINADOR_GOVBR = 'https://assinador.iti.br/';
+
+function GovBrAssinatura({ pedido, escolhida, enviando, onErro, onOk, onEnviando, onArquivado }) {
+  const anexo = anexosOrcamento(pedido, escolhida.id).find((item) => item.tipo === 'orcamento');
+  return (
+    <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+      <p className="font-semibold text-slate-900">Assinar no portal gov.br</p>
+      <p className="mt-1 text-xs text-slate-600">
+        A assinatura é feita no site do governo, com conta prata ou ouro. Ao enviar o PDF assinado, o CareCore arquiva o arquivo e aprova o pedido.
+      </p>
+      <ol className="mt-2 list-decimal space-y-1 pl-5 text-xs leading-relaxed">
+        <li>Baixe o orçamento vencedor.</li>
+        <li>Abra o Assinador gov.br e entre com CPF e senha.</li>
+        <li>Em Assinatura de documento, envie esse PDF, marque o lugar da assinatura e confirme com o código do aplicativo gov.br.</li>
+        <li>Baixe o arquivo assinado pelo botão de download do site. Esse arquivo já é o PDF com a assinatura. Não use Imprimir nem “Salvar como PDF”: isso cria uma cópia sem a assinatura digital.</li>
+        <li>Envie o PDF assinado aqui. O pedido é aprovado nesse momento.</li>
+      </ol>
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <PremiumButton
+          variant="secondary"
+          disabled={!anexo}
+          onClick={() => {
+            if (!anexo) {
+              onErro('Este orçamento ainda não tem PDF para baixar.');
+              return;
+            }
+            comprasBaixarAnexo(pedido.id, anexo.id, anexo.nome_arquivo).catch(() => {
+              onErro('Não foi possível baixar o orçamento.');
+            });
+          }}
+        >
+          Baixar orçamento
+        </PremiumButton>
+        <a
+          href={URL_ASSINADOR_GOVBR}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-800 hover:border-slate-400"
+        >
+          Abrir Assinador gov.br
+        </a>
+        <label className="inline-flex cursor-pointer items-center rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800">
+          {enviando ? 'Enviando…' : 'Enviar PDF assinado'}
+          <input
+            type="file"
+            accept=".pdf,application/pdf"
+            className="sr-only"
+            disabled={enviando}
+            onChange={async (event) => {
+              const arquivo = event.target.files?.[0];
+              event.target.value = '';
+              if (!arquivo) return;
+              onErro('');
+              onOk('');
+              onEnviando(true);
+              try {
+                await comprasArquivarOrcamentoGovBr(pedido.id, arquivo);
+                onOk('PDF assinado no gov.br arquivado. Pedido aprovado.');
+                await onArquivado();
+              } catch (err) {
+                onErro(err.response?.data?.detail || err.message || 'Não foi possível arquivar o PDF.');
+              } finally {
+                onEnviando(false);
+              }
+            }}
+          />
+        </label>
+      </div>
+    </div>
+  );
+}
+
 function anexosOrcamento(pedido, cotacaoId) {
   return (pedido.anexos || []).filter(
     (a) => a.cotacao_id === cotacaoId && (a.tipo === 'orcamento' || a.tipo === 'orcamento_assinado'),
@@ -51,6 +124,8 @@ export default function ComprasAguardandoAssinatura() {
   const [carregando, setCarregando] = useState(true);
   const [itens, setItens] = useState([]);
   const [assinandoId, setAssinandoId] = useState('');
+  const [painelGovId, setPainelGovId] = useState('');
+  const [enviandoGovId, setEnviandoGovId] = useState('');
   const [acaoId, setAcaoId] = useState('');
   const [assinatura, setAssinatura] = useState({ cadastrada: false, nome_arquivo: null });
   const [modalAssinatura, setModalAssinatura] = useState(null);
@@ -346,8 +421,29 @@ export default function ComprasAguardandoAssinatura() {
                             >
                               {assinandoId === pedido.id ? 'Assinando…' : 'Posicionar e assinar'}
                             </PremiumButton>
+                            <PremiumButton
+                              variant="secondary"
+                              disabled={!escolhida}
+                              onClick={() => {
+                                setErro('');
+                                setPainelGovId((atual) => (atual === pedido.id ? '' : pedido.id));
+                              }}
+                            >
+                              Assinar com gov.br
+                            </PremiumButton>
                           </div>
                         </div>
+                        {painelGovId === pedido.id && escolhida && (
+                          <GovBrAssinatura
+                            pedido={pedido}
+                            escolhida={escolhida}
+                            enviando={enviandoGovId === pedido.id}
+                            onErro={setErro}
+                            onOk={setOk}
+                            onEnviando={(ativo) => setEnviandoGovId(ativo ? pedido.id : '')}
+                            onArquivado={carregar}
+                          />
+                        )}
                         <p className="mt-2 text-xs text-slate-500">
                           <Link className="font-semibold text-violet-700 underline" to={`/compras/pedidos/${pedido.id}`}>
                             Ver itens e timeline

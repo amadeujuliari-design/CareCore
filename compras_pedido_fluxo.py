@@ -15,7 +15,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from compras_itens_consumo_utils import embalagem_efetiva_pedido
 from compras_nf_xml_utils import extrair_campos_nf_xml
-from compras_assinatura_pdf import carimbar_assinatura_pdf, carimbar_texto_pdf
+from compras_assinatura_pdf import (
+    carimbar_assinatura_gestor_pdf,
+    carimbar_assinatura_pdf,
+    carimbar_texto_pdf,
+)
+from security import verificar_senha
 from compras_emails import (
     corpo_padrao_pedido_compra,
     corpo_padrao_solicitacao_cotacao,
@@ -48,6 +53,7 @@ from compras_regras import (
     STATUS_REPROVADO,
     STATUS_RASCUNHO,
     STATUS_TERMINAIS_PEDIDO,
+    perfil_adm_compras_sede,
     TIPO_CONSUMO,
     TIPOS_COTACAO_PROJETO,
     TIPO_ANEXO_AQUISICAO,
@@ -730,6 +736,123 @@ async def upload_anexo_pedido(
                 ),
             )
 
+    return anexo
+
+
+async def arquivar_orcamento_assinado_govbr(
+    db: AsyncSession,
+    usuario: dict,
+    pedido: ComprasPedidoDB,
+    *,
+    file: UploadFile,
+) -> ComprasPedidoAnexoDB:
+    """Guarda o PDF assinado no gov.br e aprova o pedido na Sede."""
+    if usuario_global_assina_orcamento(usuario):
+        if (pedido.tipo or "").strip().lower() not in TIPOS_COTACAO_PROJETO:
+            raise HTTPException(
+                status_code=403,
+                detail="Esta autorização cobre bem/imobilizado e prestação de serviço.",
+            )
+    elif not usuario_pode_aprovar_sede(
+        perfil=str(usuario.get("perfil_acesso") or usuario.get("perfil") or ""),
+        is_manutencao=bool(usuario.get("is_manutencao")),
+    ):
+        raise HTTPException(status_code=403, detail="Somente ADM Compras aprova na Sede.")
+    if not usuario_global_assina_orcamento(usuario) and not usuario_sede_pode_ver_tipo(
+        perfil=str(usuario.get("perfil_acesso") or usuario.get("perfil") or ""),
+        tipo=pedido.tipo,
+        is_manutencao=bool(usuario.get("is_manutencao")),
+    ):
+        raise HTTPException(status_code=403, detail="Pedido fora do escopo da sua classe de Compras.")
+    if not tipo_eh_cotacao_projeto(pedido.tipo):
+        raise HTTPException(
+            status_code=400,
+            detail="O arquivo do gov.br entra em orçamento de bem/imobilizado e prestação de serviço.",
+        )
+    if pedido.status != STATUS_AGUARDANDO_SEDE:
+        raise HTTPException(status_code=400, detail="Pedido não está aguardando aprovação da Sede.")
+    if not pedido.aprovado_unidade_em and not pedido_escopo_sede(getattr(pedido, "escopo_unidade", None)):
+        raise HTTPException(
+            status_code=400,
+            detail="O projeto precisa enviar o pedido à Sede antes da assinatura.",
+        )
+
+    nome = (file.filename or "").strip()
+    if not nome.lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="Envie o PDF assinado no gov.br.")
+
+    escolhida = (
+        await db.execute(
+            select(ComprasCotacaoDB).where(
+                ComprasCotacaoDB.pedido_id == pedido.id,
+                ComprasCotacaoDB.escolhida.is_(True),
+                ComprasCotacaoDB.ativa.is_(True),
+            )
+        )
+    ).scalars().first()
+    if not escolhida:
+        raise HTTPException(status_code=400, detail="Escolha o orçamento vencedor antes de arquivar o PDF.")
+
+    conteudo = await file.read()
+    if not conteudo:
+        raise HTTPException(status_code=400, detail="O arquivo está vazio.")
+
+    caminho, nome_original, tamanho, content_type = await salvar_arquivo_compras(
+        organizacao_id=pedido.organizacao_id,
+        pedido_id=pedido.id,
+        file=file,
+        conteudo=conteudo,
+    )
+    anteriores = (
+        await db.execute(
+            select(ComprasPedidoAnexoDB).where(
+                ComprasPedidoAnexoDB.pedido_id == pedido.id,
+                ComprasPedidoAnexoDB.cotacao_id == escolhida.id,
+                ComprasPedidoAnexoDB.tipo == TIPO_ANEXO_ORCAMENTO_ASSINADO,
+                ComprasPedidoAnexoDB.ativo.is_(True),
+            )
+        )
+    ).scalars().all()
+    for anterior in anteriores:
+        anterior.ativo = False
+        remover_arquivo_compras(anterior.caminho_arquivo)
+
+    agora = agora_operacional_naive()
+    anexo = ComprasPedidoAnexoDB(
+        pedido_id=pedido.id,
+        cotacao_id=escolhida.id,
+        tipo=TIPO_ANEXO_ORCAMENTO_ASSINADO,
+        nome_arquivo=nome_original,
+        caminho_arquivo=caminho,
+        content_type=content_type or "application/pdf",
+        tamanho_bytes=tamanho,
+        criado_por_id=_uid(usuario),
+    )
+    db.add(anexo)
+    await db.flush()
+
+    pedido.aprovado_sede_por_id = _uid(usuario)
+    pedido.aprovado_sede_em = agora
+    pedido.status = STATUS_APROVADO
+    pedido.atualizado_em = agora
+    assinante = (
+        usuario.get("nome") or usuario.get("nome_completo") or usuario.get("email") or "ADM Compras"
+    ).strip()
+    await registrar_evento_pedido(
+        db,
+        pedido_id=pedido.id,
+        tipo=TIPO_EVENTO_STATUS,
+        texto=(
+            f"ATO DE ASSINATURA: {assinante} arquivou o PDF assinado no gov.br "
+            f"({nome_original}) do orçamento de {escolhida.fornecedor_nome}. "
+            "Pedido aprovado na Sede."
+        ),
+        usuario_id=_uid(usuario),
+        anexo_id=anexo.id,
+        cotacao_id=escolhida.id,
+        status_anterior=STATUS_AGUARDANDO_SEDE,
+        status_novo=STATUS_APROVADO,
+    )
     return anexo
 
 
@@ -1741,6 +1864,50 @@ async def enviar_solicitacao_cotacao_fornecedores(
     }
 
 
+async def _validar_assinatura_eletronica_gestor(
+    db: AsyncSession,
+    usuario: dict,
+    pedido: ComprasPedidoDB,
+    senha: str,
+) -> tuple[UsuarioDB, str, str]:
+    """Confere a senha do gestor e devolve o nome dele e o do projeto para o carimbo."""
+    perfil = str(usuario.get("perfil_acesso") or usuario.get("perfil") or "").strip()
+    if perfil != "Gestor":
+        raise HTTPException(
+            status_code=403,
+            detail="Somente o gestor do projeto assina a nota fiscal.",
+        )
+    if (
+        pedido.instituicao_id
+        and usuario.get("instituicao_id")
+        and pedido.instituicao_id != usuario.get("instituicao_id")
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail="A assinatura da nota fiscal é do gestor deste projeto.",
+        )
+    senha_limpa = (senha or "").strip()
+    if not senha_limpa:
+        raise HTTPException(
+            status_code=400,
+            detail="Informe a senha da assinatura eletrônica do gestor.",
+        )
+    row = (
+        await db.execute(select(UsuarioDB).where(UsuarioDB.id == _uid(usuario)))
+    ).scalar_one_or_none()
+    if not row or not getattr(row, "assinatura_eletronica_senha_hash", None):
+        raise HTTPException(
+            status_code=400,
+            detail="Cadastre a senha de assinatura eletrônica no perfil do gestor, em Usuários.",
+        )
+    if not verificar_senha(senha_limpa, row.assinatura_eletronica_senha_hash):
+        raise HTTPException(status_code=400, detail="Senha da assinatura eletrônica incorreta.")
+    inst = await _dados_instituicao(db, pedido)
+    projeto = ((inst or {}).get("relatorio_nome_exibicao") or (inst or {}).get("nome") or "Projeto").strip()
+    nome = (row.nome or "Gestor").strip()
+    return row, nome, projeto
+
+
 async def registrar_nota_fiscal(
     db: AsyncSession,
     usuario: dict,
@@ -1752,6 +1919,12 @@ async def registrar_nota_fiscal(
 ) -> ComprasPedidoNotaFiscalDB:
     if pedido.status != STATUS_ENVIADO:
         raise HTTPException(status_code=400, detail="Notas fiscais só após envio ao fornecedor.")
+    _gestor_row, nome_gestor, nome_projeto = await _validar_assinatura_eletronica_gestor(
+        db,
+        usuario,
+        pedido,
+        str(payload.get("senha_assinatura_eletronica") or ""),
+    )
 
     campos = {
         "tipo_nf": (payload.get("tipo_nf") or "produto").strip().lower(),
@@ -1790,19 +1963,37 @@ async def registrar_nota_fiscal(
         if not raw:
             raise HTTPException(status_code=400, detail="Arquivo da NF está vazio.")
         texto_nf = (campos.get("observacao") or "").strip()
-        if texto_nf and ext == ".pdf":
+        if ext == ".pdf":
             try:
-                raw = carimbar_texto_pdf(
+                if texto_nf:
+                    raw = carimbar_texto_pdf(
+                        pdf_bytes=raw,
+                        texto=texto_nf,
+                        page_index=int(payload.get("carimbo_pagina") or 0),
+                        x=float(payload.get("carimbo_x") or 36),
+                        y=float(payload.get("carimbo_y") or 36),
+                        width=float(payload.get("carimbo_w") or 240),
+                        height=float(payload.get("carimbo_h") or 48),
+                    )
+                tem_posicao_assinatura = payload.get("assinatura_x") not in (None, "") and payload.get("assinatura_y") not in (None, "")
+                raw = carimbar_assinatura_gestor_pdf(
                     pdf_bytes=raw,
-                    texto=texto_nf,
-                    page_index=int(payload.get("carimbo_pagina") or 0),
-                    x=float(payload.get("carimbo_x") or 36),
-                    y=float(payload.get("carimbo_y") or 36),
-                    width=float(payload.get("carimbo_w") or 240),
-                    height=float(payload.get("carimbo_h") or 48),
+                    nome=nome_gestor,
+                    projeto=nome_projeto,
+                    page_index=int(
+                        (payload.get("assinatura_pagina") if tem_posicao_assinatura else payload.get("carimbo_pagina"))
+                        or 0
+                    ),
+                    x=float(payload["assinatura_x"]) if tem_posicao_assinatura else None,
+                    y=float(payload["assinatura_y"]) if tem_posicao_assinatura else None,
+                    width=float(payload["assinatura_w"]) if payload.get("assinatura_w") not in (None, "") else None,
+                    height=float(payload["assinatura_h"]) if payload.get("assinatura_h") not in (None, "") else None,
+                    ancora_x=None if tem_posicao_assinatura or payload.get("carimbo_x") in (None, "") else float(payload["carimbo_x"]),
+                    ancora_y=None if tem_posicao_assinatura or payload.get("carimbo_y") in (None, "") else float(payload["carimbo_y"]),
+                    ancora_h=float(payload.get("carimbo_h") or 0),
                 )
             except (TypeError, ValueError) as exc:
-                raise HTTPException(status_code=400, detail=str(exc) or "Não foi possível gravar o texto na NF.") from exc
+                raise HTTPException(status_code=400, detail=str(exc) or "Não foi possível gravar a assinatura na NF.") from exc
         if ext == ".xml":
             tipo_anexo = TIPO_ANEXO_NF_XML
             try:
@@ -1852,7 +2043,10 @@ async def registrar_nota_fiscal(
         db,
         pedido_id=pedido.id,
         tipo=TIPO_EVENTO_ANEXO,
-        texto=f"Nota fiscal registrada{f' nº {nota.numero}' if nota.numero else ''}.",
+        texto=(
+            f"Nota fiscal registrada{f' nº {nota.numero}' if nota.numero else ''}. "
+            f"Assinado Digitalmente por {nome_gestor}, gestor de {nome_projeto}."
+        ),
         usuario_id=_uid(usuario),
         anexo_id=anexo.id if anexo else None,
     )
@@ -1896,6 +2090,46 @@ async def remover_nota_fiscal(
     )
 
 
+def _uid_caixa(usuario: dict) -> str | None:
+    return (usuario.get("id") or usuario.get("sub") or usuario.get("usuario_id") or "") or None
+
+
+def _preservar_atualizacao(pedido: ComprasPedidoDB):
+    return pedido.atualizado_em
+
+
+def marcar_leitura_caixa_suprimentos(usuario: dict, pedido: ComprasPedidoDB) -> bool:
+    """Abrir um pedido concluído marca a mensagem como lida na caixa de Suprimentos."""
+    if perfil_adm_compras_sede(usuario) != "suprimentos":
+        return False
+    if (pedido.status or "") not in STATUS_TERMINAIS_PEDIDO:
+        return False
+    if getattr(pedido, "suprimentos_lida_em", None):
+        return False
+    momento = _preservar_atualizacao(pedido)
+    pedido.suprimentos_lida_em = agora_operacional_naive()
+    pedido.suprimentos_lida_por_id = _uid_caixa(usuario)
+    pedido.atualizado_em = momento
+    return True
+
+
+def registrar_impressao_nf_suprimentos(usuario: dict, pedido: ComprasPedidoDB) -> None:
+    """Registra que Suprimentos imprimiu a NF do pedido encerrado pelo projeto."""
+    if perfil_adm_compras_sede(usuario) != "suprimentos":
+        raise HTTPException(status_code=403, detail="Somente Suprimentos registra a impressão da nota fiscal.")
+    if pedido.status != STATUS_RECEBIDO:
+        raise HTTPException(
+            status_code=400,
+            detail="A impressão da NF fica disponível depois que o projeto encerra o processo.",
+        )
+    if getattr(pedido, "nf_impressa_em", None):
+        return
+    momento = _preservar_atualizacao(pedido)
+    pedido.nf_impressa_em = agora_operacional_naive()
+    pedido.nf_impressa_por_id = _uid_caixa(usuario)
+    pedido.atualizado_em = momento
+
+
 async def encerrar_pedido(
     db: AsyncSession,
     usuario: dict,
@@ -1907,6 +2141,16 @@ async def encerrar_pedido(
     notas = await _notas_pedido(db, pedido.id)
     if not notas:
         raise HTTPException(status_code=400, detail="Anexe ao menos uma nota fiscal antes de encerrar.")
+    eventos_assinatura = (
+        await db.execute(
+            select(ComprasPedidoEventoDB).where(ComprasPedidoEventoDB.pedido_id == pedido.id)
+        )
+    ).scalars().all()
+    if not any("Assinado Digitalmente" in (evento.texto or "") for evento in eventos_assinatura):
+        raise HTTPException(
+            status_code=400,
+            detail="Encerre somente depois da assinatura eletrônica do gestor na nota fiscal.",
+        )
 
     pedido.recebido_em = agora_operacional_naive()
     pedido.recebido_por_id = _uid(usuario)

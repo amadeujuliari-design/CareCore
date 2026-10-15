@@ -522,7 +522,33 @@ async def desvincular_conviventes_do_usuario_inativo(
 
 
 def usuario_para_response(usuario: UsuarioDB) -> UsuarioResponse:
-    return UsuarioResponse.model_validate(usuario)
+    resposta = UsuarioResponse.model_validate(usuario)
+    return resposta.model_copy(update={
+        "assinatura_eletronica_cadastrada": bool(
+            getattr(usuario, "assinatura_eletronica_senha_hash", None)
+        ),
+    })
+
+
+def definir_senha_assinatura_eletronica(
+    usuario: UsuarioDB,
+    senha: Optional[str],
+    *,
+    perfil: str,
+    obrigatorio_se_ausente: bool,
+) -> None:
+    """Grava o hash da senha de assinatura. Só o perfil Gestor assina documentos."""
+    if normalizar_perfil_acesso(perfil) != "Gestor":
+        usuario.assinatura_eletronica_senha_hash = None
+        return
+    if senha:
+        usuario.assinatura_eletronica_senha_hash = gerar_hash_senha(senha)
+        return
+    if obrigatorio_se_ausente and not getattr(usuario, "assinatura_eletronica_senha_hash", None):
+        raise HTTPException(
+            status_code=400,
+            detail="Defina a senha de assinatura eletrônica do gestor.",
+        )
 
 
 def usuario_para_resumo(usuario: UsuarioDB) -> UsuarioResumoResponse:
@@ -1112,6 +1138,12 @@ async def criar_usuario(
         criado_em=agora_utc(),
         criado_por_id=usuario_criador_id,
     )
+    definir_senha_assinatura_eletronica(
+        novo_usuario,
+        getattr(payload, "senha_assinatura_eletronica", None),
+        perfil=perfil_normalizado,
+        obrigatorio_se_ausente=True,
+    )
 
     db.add(novo_usuario)
 
@@ -1157,6 +1189,7 @@ async def editar_usuario(
     exigir_nao_adm_global_na_lista_projeto(usuario)
 
     dados = payload.model_dump(exclude_unset=True)
+    senha_assinatura = dados.pop("senha_assinatura_eletronica", None)
     perfil_final = normalizar_perfil_acesso(
         dados.get("perfil_acesso") or usuario.perfil_acesso
     )
@@ -1239,6 +1272,12 @@ async def editar_usuario(
         dados=dados,
         permitir_ativo=True,
         permitir_global=usuario_pode_gerenciar_globais(usuario_atual),
+    )
+    definir_senha_assinatura_eletronica(
+        usuario,
+        senha_assinatura,
+        perfil=perfil_final,
+        obrigatorio_se_ausente=True,
     )
 
     usuario.atualizado_em = agora_utc()

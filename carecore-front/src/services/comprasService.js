@@ -143,6 +143,11 @@ export async function comprasFilaAssinaturaResumo() {
   return data;
 }
 
+export async function comprasAssinaturaEletronicaGestor() {
+  const { data } = await api.get('/api/compras/assinatura-eletronica-gestor');
+  return data;
+}
+
 export async function comprasAssinaturaDigitalStatus() {
   const { data } = await api.get('/api/compras/assinatura-digital');
   return data;
@@ -164,6 +169,15 @@ export async function comprasAprovarUnidade(id) {
 
 export async function comprasAprovarSede(id) {
   const { data } = await api.post(`/api/compras/pedidos/${id}/aprovar-sede`);
+  return data;
+}
+
+export async function comprasArquivarOrcamentoGovBr(pedidoId, arquivo) {
+  const formData = new FormData();
+  formData.append('arquivo', arquivo);
+  const { data } = await api.post(`/api/compras/pedidos/${pedidoId}/orcamento-govbr`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
   return data;
 }
 
@@ -265,6 +279,11 @@ export async function comprasAnexarArquivo(id, formData) {
 
 export async function comprasRemoverNotaFiscal(pedidoId, notaId) {
   const { data } = await api.post(`/api/compras/pedidos/${pedidoId}/notas-fiscais/${notaId}/remover`);
+  return data;
+}
+
+export async function comprasRegistrarImpressaoNf(id) {
+  const { data } = await api.post(`/api/compras/pedidos/${id}/nf-impressa`);
   return data;
 }
 

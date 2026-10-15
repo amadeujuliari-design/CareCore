@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { FileText, Mail, Search, ShoppingCart } from 'lucide-react';
 
+import CampoSenha from './components/CampoSenha';
 import ComprasItemTypeahead from './components/ComprasItemTypeahead';
 import ModalFormItemConsumo from './components/ModalFormItemConsumo';
 import ModalPosicionarAssinaturaOrcamento from './components/ModalPosicionarAssinaturaOrcamento';
@@ -22,6 +23,7 @@ import {
   comprasAnexarArquivo,
   comprasAprovarSede,
   comprasAssinarOrcamentoSede,
+  comprasAssinaturaEletronicaGestor,
   comprasAprovarUnidade,
   comprasAtualizarRascunho,
   comprasBaixarAnexo,
@@ -45,6 +47,8 @@ import {
   comprasReceber,
   comprasReabrir,
   comprasReabrirAprovado,
+  comprasAbrirAnexoBlob,
+  comprasRegistrarImpressaoNf,
   comprasRegistrarNotaFiscal,
   comprasRemoverNotaFiscal,
   comprasRemoverAnexo,
@@ -57,7 +61,7 @@ import {
   comprasSubmeter,
   moneyCentavos,
 } from './services/comprasService';
-import { usuarioEhAdmCompras, usuarioEhAdmPedidos, usuarioEhGlobalPuro, usuarioEhManutencao, usuarioGlobalAssinaOrcamento, usuarioPodeCadastrarMestreCompras, usuarioPodeEnviarEmailCompras } from './utils/rbacUtils';
+import { usuarioEhAdmCompras, usuarioEhAdmComprasSuprimentos, usuarioEhAdmPedidos, usuarioEhGlobalPuro, usuarioEhManutencao, usuarioGlobalAssinaOrcamento, usuarioPodeCadastrarMestreCompras, usuarioPodeEnviarEmailCompras } from './utils/rbacUtils';
 import { formatarDataBr } from './utils/comprasJanelaUtils';
 import { formatarDataHoraBr } from './utils/dataBrasilUtils';
 import { itemConsumoPeloDetalheErro, pedidoItemUnidadeConfusa, sugerirItensConsumo, unidadeParaPedido } from './utils/comprasItensConsumoUtils';
@@ -130,6 +134,39 @@ function mascararMoedaDigitando(texto) {
   return centavosParaInput(Number(digitos));
 }
 
+function quandoOperacional(iso) {
+  if (!iso) return '';
+  const data = new Date(iso);
+  if (Number.isNaN(data.getTime())) return '';
+  return data.toLocaleString('pt-BR');
+}
+
+function imprimirUrlAnexo(url) {
+  return new Promise((resolve, reject) => {
+    const iframe = document.createElement('iframe');
+    iframe.title = 'Impressão da nota fiscal';
+    iframe.style.cssText = 'position:fixed;width:0;height:0;border:0;right:0;bottom:0';
+    iframe.src = url;
+    iframe.onload = () => {
+      try {
+        iframe.contentWindow?.focus();
+        iframe.contentWindow?.print();
+      } catch (err) {
+        iframe.remove();
+        URL.revokeObjectURL(url);
+        reject(err);
+        return;
+      }
+      window.setTimeout(() => {
+        iframe.remove();
+        URL.revokeObjectURL(url);
+        resolve();
+      }, 400);
+    };
+    document.body.appendChild(iframe);
+  });
+}
+
 function anexosDaCotacao(anexos, cotacaoId) {
   return (anexos || []).filter((item) => item.cotacao_id === cotacaoId);
 }
@@ -140,6 +177,7 @@ export default function ComprasPedido() {
   const usuario = useMemo(() => usuarioSessao(), []);
   const usuarioId = usuario.id || usuario.usuario_id;
   const sede = usuarioEhAdmCompras(usuario) || usuarioEhManutencao(usuario);
+  const caixaSuprimentos = usuarioEhAdmComprasSuprimentos(usuario);
   const consultaGlobal = usuarioEhGlobalPuro(usuario);
   const assinaOrcamento = usuarioGlobalAssinaOrcamento(usuario);
   const manutencao = usuarioEhManutencao(usuario);
@@ -174,6 +212,9 @@ export default function ComprasPedido() {
   const [arqNf, setArqNf] = useState(null);
   const [modalTextoNf, setModalTextoNf] = useState(false);
   const [carimboNf, setCarimboNf] = useState(null);
+  const [carimboAssinaturaNf, setCarimboAssinaturaNf] = useState(null);
+  const [senhaAssinaturaNf, setSenhaAssinaturaNf] = useState('');
+  const [assinaturaGestor, setAssinaturaGestor] = useState({ gestor: false, cadastrada: false });
   const [modalAssinatura, setModalAssinatura] = useState(null);
   const [modalEmail, setModalEmail] = useState(null);
   const [fornecedorEnvioId, setFornecedorEnvioId] = useState('');
@@ -216,6 +257,20 @@ export default function ComprasPedido() {
   }, [carregar]);
 
   useEffect(() => {
+    let ativo = true;
+    comprasAssinaturaEletronicaGestor()
+      .then((dados) => {
+        if (ativo) setAssinaturaGestor(dados || { gestor: false, cadastrada: false });
+      })
+      .catch(() => {
+        if (ativo) setAssinaturaGestor({ gestor: false, cadastrada: false });
+      });
+    return () => {
+      ativo = false;
+    };
+  }, [pedidoId]);
+
+  useEffect(() => {
     const aoAtualizarCatalogo = (evento) => {
       if (evento.key !== 'compras-catalogo-atualizado') return;
       carregar();
@@ -233,6 +288,39 @@ export default function ComprasPedido() {
     }, 30_000);
     return () => window.clearInterval(id);
   }, [carregar, pedidoId]);
+
+  const imprimirNfSuprimentos = async () => {
+    const notas = (pedido?.notas_fiscais || []).filter((nf) => nf.anexo_id);
+    const abertos = [];
+    try {
+      for (const nf of notas) {
+        const aberto = await comprasAbrirAnexoBlob(pedido.id, nf.anexo_id);
+        const tipo = aberto.contentType || '';
+        if (tipo === 'application/pdf' || tipo.startsWith('image/')) {
+          abertos.push(aberto);
+        } else {
+          URL.revokeObjectURL(aberto.url);
+        }
+      }
+      if (!abertos.length) {
+        setErro('Não há PDF ou imagem da nota fiscal para imprimir.');
+        return;
+      }
+      for (const aberto of abertos) {
+        await imprimirUrlAnexo(aberto.url);
+      }
+      if (!pedido.nf_impressa) {
+        const dados = await comprasRegistrarImpressaoNf(pedido.id);
+        setPedido(dados);
+      }
+      setErro('');
+      setOk(pedido.nf_impressa
+        ? 'Impressão da nota fiscal aberta novamente.'
+        : 'Nota fiscal enviada para impressão.');
+    } catch (err) {
+      setErro(err.response?.data?.detail || err.message || 'Não foi possível imprimir a nota fiscal.');
+    }
+  };
 
   const fornecedoresCotacao = useMemo(
     () => fornecedoresParaCotacaoPedido(fornecedores, categorias, pedido?.tipo),
@@ -710,6 +798,45 @@ export default function ComprasPedido() {
           icon={<ShoppingCart className="h-5 w-5" />}
           backTo="/compras"
         />
+        {(erro || ok) && (
+          <div className="shrink-0 space-y-2 px-4 pt-3 md:px-6">
+            {erro && (
+              <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800" role="alert">
+                {erro}
+              </div>
+            )}
+            {ok && (
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800" role="status">
+                {ok}
+              </div>
+            )}
+          </div>
+        )}
+        {caixaSuprimentos && pedido.status === 'recebido' && (
+          <div className="shrink-0 px-4 pt-3 md:px-6">
+            <div
+              className={`flex flex-wrap items-center justify-between gap-3 rounded-xl border px-4 py-3 text-sm ${
+                pedido.nf_impressa
+                  ? 'border-emerald-200 bg-emerald-50 text-emerald-900'
+                  : 'border-amber-200 bg-amber-50 text-amber-950'
+              }`}
+              role="status"
+            >
+              <p>
+                {pedido.nf_impressa
+                  ? `A nota fiscal deste pedido já foi impressa${pedido.nf_impressa_em ? ` em ${quandoOperacional(pedido.nf_impressa_em)}` : ''}.`
+                  : 'A nota fiscal deste pedido ainda não foi impressa.'}
+              </p>
+              <PremiumButton
+                type="button"
+                variant={pedido.nf_impressa ? 'secondary' : 'primary'}
+                onClick={imprimirNfSuprimentos}
+              >
+                {pedido.nf_impressa ? 'Imprimir novamente' : 'Imprimir NF'}
+              </PremiumButton>
+            </div>
+          </div>
+        )}
         <ScrollArea>
           <div className="space-y-4 p-4 md:p-6">
             <div className="flex flex-wrap items-center gap-2">
@@ -756,12 +883,6 @@ export default function ComprasPedido() {
                 </PremiumButton>
               </div>
             ) : null}
-            {erro && (
-              <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{erro}</div>
-            )}
-            {ok && (
-              <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">{ok}</div>
-            )}
             {Boolean((pedido.anexos || []).some((a) => a.tipo === 'orcamento_assinado')) && (
               <div className="rounded-xl border-2 border-emerald-400 bg-emerald-50 px-4 py-3 shadow-sm">
                 <p className="text-sm font-bold uppercase tracking-wide text-emerald-900">
@@ -1996,6 +2117,16 @@ export default function ComprasPedido() {
                       setErro('Selecione o arquivo da NF (PDF, XML ou imagem).');
                       return;
                     }
+                    if (!senhaAssinaturaNf.trim()) {
+                      setErro('Informe a senha da assinatura eletrônica do gestor.');
+                      return;
+                    }
+                    const ehPdfNf = /\.pdf$/i.test(arqNf.name) || arqNf.type === 'application/pdf';
+                    if (ehPdfNf && !carimboAssinaturaNf) {
+                      setErro('Posicione a assinatura digital no PDF da NF.');
+                      setModalTextoNf(true);
+                      return;
+                    }
                     const fd = new FormData();
                     Object.entries(nfForm).forEach(([chave, valor]) => {
                       if (!valor || chave === 'valor_reais') return;
@@ -2016,11 +2147,25 @@ export default function ComprasPedido() {
                       fd.append('carimbo_w', String(carimboNf.width));
                       fd.append('carimbo_h', String(carimboNf.height));
                     }
+                    if (carimboAssinaturaNf) {
+                      fd.append('assinatura_pagina', String(carimboAssinaturaNf.page ?? 0));
+                      fd.append('assinatura_x', String(carimboAssinaturaNf.x));
+                      fd.append('assinatura_y', String(carimboAssinaturaNf.y));
+                      fd.append('assinatura_w', String(carimboAssinaturaNf.width));
+                      fd.append('assinatura_h', String(carimboAssinaturaNf.height));
+                    }
+                    fd.append('senha_assinatura_eletronica', senhaAssinaturaNf);
                     fd.append('arquivo', arqNf);
-                    await agir(() => comprasRegistrarNotaFiscal(pedido.id, fd), 'Nota fiscal registrada.');
+                    const registrou = await agir(
+                      () => comprasRegistrarNotaFiscal(pedido.id, fd),
+                      'Nota fiscal registrada e assinada digitalmente.',
+                    );
+                    if (!registrou) return;
+                    setSenhaAssinaturaNf('');
                     setNfForm({ tipo_nf: 'produto', numero: '', serie: '', valor_reais: '', observacao: '' });
                     setArqNf(null);
                     setCarimboNf(null);
+                    setCarimboAssinaturaNf(null);
                   }}
                 >
                   <select
@@ -2073,6 +2218,7 @@ export default function ComprasPedido() {
                           e.target.value = '';
                           setArqNf(null);
                           setCarimboNf(null);
+                          setCarimboAssinaturaNf(null);
                           window.alert('Escreva as informações complementares de pagamento antes de escolher o arquivo da NF.');
                           return;
                         }
@@ -2083,6 +2229,7 @@ export default function ComprasPedido() {
                       }
                       setArqNf(arquivo);
                       setCarimboNf(null);
+                      setCarimboAssinaturaNf(null);
                     }}
                     className="text-xs md:col-span-2"
                   />
@@ -2090,57 +2237,56 @@ export default function ComprasPedido() {
                     <p className="text-xs text-slate-600 md:col-span-3">
                       Arquivo escolhido: {arqNf.name}
                       {carimboNf ? ' · texto posicionado' : ''}
+                      {carimboAssinaturaNf ? ' · assinatura posicionada' : ''}
                     </p>
                   ) : null}
-                  <PremiumButton type="submit">Anexar NF</PremiumButton>
+                  <div className="md:col-span-3">
+                    <label className="mb-1 block text-xs font-semibold text-slate-600" htmlFor="senha-assinatura-nf">
+                      Insira a senha do gestor para a assinatura eletrônica digital
+                    </label>
+                    <CampoSenha
+                      id="senha-assinatura-nf"
+                      name="senha_assinatura_nf"
+                      autoComplete="off"
+                      required={false}
+                      value={senhaAssinaturaNf}
+                      onChange={(e) => setSenhaAssinaturaNf(e.target.value)}
+                      placeholder="Senha cadastrada no perfil do gestor"
+                    />
+                    <p className="mt-1 text-xs text-slate-500">
+                      Confirma que o gestor está ciente do processo. No PDF, o carimbo
+                      Assinado Digitalmente entra no lugar que você escolher, com o nome completo, o projeto e o cargo Gestor.
+                      {assinaturaGestor.gestor && !assinaturaGestor.cadastrada
+                        ? ' Cadastre essa senha em Usuários antes de anexar.'
+                        : ''}
+                    </p>
+                  </div>
+                  <PremiumButton type="submit">Anexar NF Assinada</PremiumButton>
                 </form>
                 <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
-                    <p className="text-xs font-semibold text-slate-700">
-                      {pedido.tipo === 'imobilizado' ? 'Arquivos da aquisição do bem' : 'Documentos junto da nota fiscal'}
-                    </p>
-                    <p className="mt-1 text-xs text-slate-500">
-                      {pedido.tipo === 'imobilizado'
-                        ? 'Orçamentos, termo de doação e notas deste processo aparecem no bem. Anexe aqui o que ainda falta.'
-                        : 'Anexe quantos arquivos forem necessários junto da nota fiscal para encerrar o processo.'}
-                    </p>
-                    {pedido.tipo === 'imobilizado' && (
-                      <label className="mt-2 block text-xs font-semibold text-slate-700">
-                        Termo de doação
-                        <input
-                          type="file"
-                          className="mt-1 block text-xs font-normal"
-                          onChange={async (e) => {
-                            const arquivo = e.target.files?.[0];
-                            e.target.value = '';
-                            if (!arquivo) return;
+                    <label className="block text-xs font-semibold text-slate-700">
+                      Anexar arquivos
+                      <input
+                        type="file"
+                        multiple
+                        className="mt-1 block text-xs font-normal"
+                        onChange={async (e) => {
+                          const arquivos = Array.from(e.target.files || []);
+                          e.target.value = '';
+                          for (const arquivo of arquivos) {
                             const fd = new FormData();
-                            fd.append('tipo', 'termo_doacao');
+                            fd.append('tipo', 'aquisicao_bem');
                             fd.append('arquivo', arquivo);
-                            await agir(() => comprasAnexarArquivo(pedido.id, fd), 'Termo de doação anexado.');
-                          }}
-                        />
-                      </label>
-                    )}
-                    <input
-                      type="file"
-                      multiple
-                      className="mt-2 block text-xs"
-                      onChange={async (e) => {
-                        const arquivos = Array.from(e.target.files || []);
-                        e.target.value = '';
-                        for (const arquivo of arquivos) {
-                          const fd = new FormData();
-                          fd.append('tipo', 'aquisicao_bem');
-                          fd.append('arquivo', arquivo);
-                          await agir(
-                            () => comprasAnexarArquivo(pedido.id, fd),
-                            pedido.tipo === 'imobilizado' ? 'Arquivo da aquisição anexado.' : 'Documento anexado.',
-                          );
-                        }
-                      }}
-                    />
+                            await agir(() => comprasAnexarArquivo(pedido.id, fd), 'Arquivo anexado.');
+                          }
+                        }}
+                      />
+                    </label>
+                    <p className="mt-1 text-xs text-slate-500">
+                      Anexe todos os arquivos ligados a esse processo. (Menos a NF, para isso use o campo apropriado)
+                    </p>
                     <ul className="mt-2 space-y-1">
-                      {(pedido.anexos || []).filter((a) => a.tipo === 'aquisicao_bem').map((anexo) => (
+                      {(pedido.anexos || []).filter((a) => a.tipo === 'aquisicao_bem' || a.tipo === 'termo_doacao').map((anexo) => (
                         <li key={anexo.id} className="flex items-center justify-between gap-2 text-xs">
                           <span className="truncate">{anexo.nome_arquivo}</span>
                           <span className="flex shrink-0 gap-3">
@@ -2180,7 +2326,11 @@ export default function ComprasPedido() {
                       () => comprasReceber(pedido.id, { observacao: 'Recebimento confirmado.' }),
                       'Processo encerrado.',
                     )}
-                    disabled={!(pedido.notas_fiscais || []).length}
+                    disabled={
+                      !(pedido.notas_fiscais || []).length
+                      || !(pedido.eventos || []).some((ev) => String(ev.texto || '').includes('Assinado Digitalmente'))
+                    }
+                    title="Disponível depois que a nota fiscal for assinada com a senha do gestor."
                   >
                     Encerrar processo (com NF anexada)
                   </PremiumButton>
@@ -2422,11 +2572,13 @@ export default function ComprasPedido() {
           setModalTextoNf(false);
           setArqNf(null);
           setCarimboNf(null);
+          setCarimboAssinaturaNf(null);
         }}
         onConfirmar={(posicao) => {
-          setCarimboNf(posicao);
+          setCarimboNf(posicao.texto);
+          setCarimboAssinaturaNf(posicao.assinatura);
           setModalTextoNf(false);
-          setOk('Texto posicionado. Clique em Anexar NF para gravar no arquivo.');
+          setOk('Texto e assinatura posicionados. Clique em Anexar NF Assinada para gravar no arquivo.');
         }}
       />
       <ModalPosicionarAssinaturaOrcamento

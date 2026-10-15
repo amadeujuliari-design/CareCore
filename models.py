@@ -128,6 +128,8 @@ class UsuarioDB(Base):
     # PDF de assinatura digital reutilizável (ADM Compras / aprovação de orçamentos).
     assinatura_digital_caminho = Column(String, nullable=True)
     assinatura_digital_nome = Column(String, nullable=True)
+    # Senha (hash) da assinatura eletrônica de documentos do gestor do projeto.
+    assinatura_eletronica_senha_hash = Column(String, nullable=True)
 
     senha_hash = Column(String, nullable=False)
     token_version = Column(Integer, default=0, nullable=False)
@@ -2305,6 +2307,11 @@ class ComprasPedidoDB(Base):
     enviado_por_id = Column(String, ForeignKey("usuarios.id"), nullable=True)
     recebido_em = Column(DateTime, nullable=True)
     recebido_por_id = Column(String, ForeignKey("usuarios.id"), nullable=True)
+    # Caixa de Suprimentos: leitura do pedido concluído e impressão da NF.
+    suprimentos_lida_em = Column(DateTime, nullable=True)
+    suprimentos_lida_por_id = Column(String, ForeignKey("usuarios.id"), nullable=True)
+    nf_impressa_em = Column(DateTime, nullable=True)
+    nf_impressa_por_id = Column(String, ForeignKey("usuarios.id"), nullable=True)
     recebimento_observacao = Column(Text, nullable=True)
     recebimento_divergencia = Column(Boolean, default=False, nullable=False)
     cancelado_em = Column(DateTime, nullable=True)

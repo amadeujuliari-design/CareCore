@@ -43,6 +43,7 @@ export const FORM_INICIAL = {
   nome: '',
   email: '',
   senha: '',
+  senha_assinatura_eletronica: '',
   perfil_acesso: 'Consulta',
   is_global: false,
   ativo: true,

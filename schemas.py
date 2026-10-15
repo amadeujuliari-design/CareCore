@@ -702,11 +702,22 @@ class UsuarioBase(BaseModel):
 class UsuarioCreate(UsuarioBase):
     senha: str
     instituicao_id: Optional[str] = None
+    senha_assinatura_eletronica: Optional[str] = None
 
     @field_validator("senha")
     @classmethod
     def validar_senha_forte(cls, senha: str):
         return validar_senha_forte_valor(senha)
+
+    @field_validator("senha_assinatura_eletronica")
+    @classmethod
+    def validar_senha_assinatura_eletronica(cls, valor: Optional[str]):
+        if valor is None:
+            return None
+        valor = str(valor).strip()
+        if not valor:
+            return None
+        return validar_senha_forte_valor(valor)
 
 
 class UsuarioUpdate(BaseModel):
@@ -714,6 +725,7 @@ class UsuarioUpdate(BaseModel):
     email: Optional[str] = None
     perfil_acesso: Optional[str] = None
     is_global: Optional[bool] = None
+    senha_assinatura_eletronica: Optional[str] = None
 
     cpf: Optional[str] = None
     telefone: Optional[str] = None
@@ -749,6 +761,16 @@ class UsuarioUpdate(BaseModel):
     data_desligamento: Optional[date] = None
     motivo_desligamento: Optional[str] = None
     observacoes_profissionais: Optional[str] = None
+
+    @field_validator("senha_assinatura_eletronica")
+    @classmethod
+    def validar_senha_assinatura_eletronica(cls, valor: Optional[str]):
+        if valor is None:
+            return None
+        valor = str(valor).strip()
+        if not valor:
+            return None
+        return validar_senha_forte_valor(valor)
 
     @field_validator("nome")
     @classmethod
@@ -867,6 +889,7 @@ class UsuarioResponse(UsuarioBase):
     is_master: bool
     is_global: bool = False
     ativo: bool = True
+    assinatura_eletronica_cadastrada: bool = False
 
     criado_em: Optional[datetime] = None
     atualizado_em: Optional[datetime] = None

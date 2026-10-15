@@ -52,7 +52,7 @@ import {
   competenciaAtual,
   moneyCentavos,
 } from './services/comprasService';
-import { usuarioEhAdmCompras, usuarioEhGlobalPuro, usuarioEhManutencao, usuarioPodeCadastrarMestreCompras } from './utils/rbacUtils';
+import { usuarioEhAdmCompras, usuarioEhAdmComprasSuprimentos, usuarioEhGlobalPuro, usuarioEhManutencao, usuarioPodeCadastrarMestreCompras } from './utils/rbacUtils';
 import { BOTOES_NOVO_PEDIDO, rotuloTipoPedido } from './utils/comprasPedidoTipos';
 import {
   progressoOrcamentosTexto,
@@ -71,9 +71,7 @@ function usuarioSessao() {
 const COLUNAS_ORDENACAO_PEDIDOS = [
   { id: 'unidade', rotulo: 'Unidade' },
   { id: 'tipo', rotulo: 'Tipo' },
-  { id: 'grupo', rotulo: 'Grupo' },
   { id: 'categoria', rotulo: 'Objeto / categoria' },
-  { id: 'envio', rotulo: 'Envio previsto' },
   { id: 'status', rotulo: 'Status' },
   { id: 'orcamentos', rotulo: 'Orçamentos' },
   { id: 'atualizado', rotulo: 'Atualizado' },
@@ -85,12 +83,8 @@ function valorOrdenacaoPedido(pedido, coluna) {
       return String(pedido.instituicao_nome || pedido.instituicao_id || '').trim();
     case 'tipo':
       return String(pedido.tipo_rotulo || rotuloTipoPedido(pedido.tipo) || pedido.tipo || '').trim();
-    case 'grupo':
-      return String(pedido.grupo_codigo || '').trim();
     case 'categoria':
       return String(pedido.titulo || pedido.categoria_split_nome || '').trim();
-    case 'envio':
-      return String(pedido.data_envio_prevista || '');
     case 'status':
       return String(rotuloStatusPedidoLista(pedido) || pedido.status || '').trim();
     case 'orcamentos': {
@@ -112,7 +106,7 @@ function compararPedidosOrdenacao(a, b, coluna, direcao) {
   let cmp;
   if (coluna === 'orcamentos') {
     cmp = Number(va) - Number(vb);
-  } else if (coluna === 'envio' || coluna === 'atualizado') {
+  } else if (coluna === 'atualizado') {
     cmp = String(va).localeCompare(String(vb), 'pt-BR');
   } else {
     cmp = String(va).localeCompare(String(vb), 'pt-BR', { sensitivity: 'base', numeric: true });
@@ -121,6 +115,21 @@ function compararPedidosOrdenacao(a, b, coluna, direcao) {
     cmp = String(a.id || '').localeCompare(String(b.id || ''));
   }
   return direcao === 'asc' ? cmp : -cmp;
+}
+
+function SeloCaixaSuprimentos({ lida }) {
+  if (lida) {
+    return (
+      <span className="inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-600">
+        Lida
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex rounded-full bg-sky-100 px-2 py-0.5 text-[11px] font-bold text-sky-900">
+      Não lida
+    </span>
+  );
 }
 
 function chaveUnidadePedido(pedido) {
@@ -230,6 +239,7 @@ export default function Compras() {
   const visaoConcluidos = (searchParams.get('visao') || '').trim().toLowerCase() === 'concluidos';
   const usuario = useMemo(() => usuarioSessao(), []);
   const sede = usuarioEhAdmCompras(usuario) || usuarioEhManutencao(usuario);
+  const caixaSuprimentos = visaoConcluidos && usuarioEhAdmComprasSuprimentos(usuario);
   const consultaGlobal = usuarioEhGlobalPuro(usuario);
   const visaoOrganizacao = sede || consultaGlobal;
   const podeCadastrarMestre = usuarioPodeCadastrarMestreCompras(usuario);
@@ -267,9 +277,13 @@ export default function Compras() {
   const [economia, setEconomia] = useState(() => cacheVista?.economia ?? null);
   const [competencia, setCompetencia] = useState(competenciaInicial);
   const [salvandoJanela, setSalvandoJanela] = useState(false);
-  const [ordemPedidos, setOrdemPedidos] = useState(
-    () => vistaInicial?.ordemPedidos || { coluna: 'atualizado', direcao: 'desc' },
-  );
+  const [ordemPedidos, setOrdemPedidos] = useState(() => {
+    const salva = vistaInicial?.ordemPedidos;
+    if (!salva || salva.coluna === 'grupo' || salva.coluna === 'envio') {
+      return { coluna: 'atualizado', direcao: 'desc' };
+    }
+    return salva;
+  });
   const [agruparPorUnidade, setAgruparPorUnidade] = useState(
     () => (typeof vistaInicial?.agruparPorUnidade === 'boolean' ? vistaInicial.agruparPorUnidade : !visaoConcluidos),
   );
@@ -302,9 +316,16 @@ export default function Compras() {
   const pedidosOrdenados = useMemo(() => {
     const lista = [...(pedidos || [])];
     const { coluna, direcao } = ordemPedidos;
-    lista.sort((a, b) => compararPedidosOrdenacao(a, b, coluna, direcao));
+    lista.sort((a, b) => {
+      if (caixaSuprimentos) {
+        const la = a.suprimentos_lida ? 1 : 0;
+        const lb = b.suprimentos_lida ? 1 : 0;
+        if (la !== lb) return la - lb;
+      }
+      return compararPedidosOrdenacao(a, b, coluna, direcao);
+    });
     return lista;
-  }, [pedidos, ordemPedidos]);
+  }, [pedidos, ordemPedidos, caixaSuprimentos]);
 
   const gruposPorUnidade = useMemo(() => {
     if (!agruparPorUnidade) return [];
@@ -596,9 +617,14 @@ export default function Compras() {
                 <SectionCard
                   title={visaoConcluidos ? 'Pedidos concluídos' : 'Pedidos em andamento'}
                   subtitle={
-                    agruparPorUnidade
-                      ? 'Agrupado por unidade — clique na linha para expandir os pedidos daquele projeto.'
-                      : undefined
+                    [
+                      caixaSuprimentos
+                        ? `${pedidos.filter((p) => !p.suprimentos_lida).length} não lida(s) · ${pedidos.filter((p) => p.suprimentos_lida).length} lida(s)`
+                        : '',
+                      agruparPorUnidade
+                        ? 'Agrupado por unidade — clique na linha para expandir os pedidos daquele projeto.'
+                        : '',
+                    ].filter(Boolean).join(' · ') || undefined
                   }
                   actions={(
                     <PremiumButton
@@ -656,6 +682,7 @@ export default function Compras() {
                                 </th>
                               );
                             })}
+                            {caixaSuprimentos ? <th className="py-2">Caixa</th> : null}
                             <th />
                           </tr>
                         </thead>
@@ -685,34 +712,37 @@ export default function Compras() {
                                     </td>
                                     <td className="text-slate-700">{grupo.tiposRotulo || '—'}</td>
                                     <td className="text-slate-500">—</td>
-                                    <td className="text-slate-500">—</td>
-                                    <td className="text-slate-500">—</td>
                                     <td className="text-xs font-medium text-slate-700">{grupo.statusResumo || '—'}</td>
                                     <td className="tabular-nums text-slate-700">{grupo.orcamentos}</td>
                                     <td>{grupo.atualizado || '—'}</td>
+                                    {caixaSuprimentos ? (
+                                      <td className="text-xs font-semibold text-sky-900">
+                                        {grupo.itens.filter((p) => !p.suprimentos_lida).length
+                                          ? `${grupo.itens.filter((p) => !p.suprimentos_lida).length} não lida(s)`
+                                          : 'Lidas'}
+                                      </td>
+                                    ) : null}
                                     <td className="text-xs font-semibold text-slate-600">
                                       {aberto ? 'Recolher' : 'Expandir'}
                                     </td>
                                   </tr>
                                   {aberto
                                     ? grupo.itens.map((pedido) => (
-                                      <tr key={pedido.id} className="border-t border-slate-100 bg-white">
+                                      <tr
+                                        key={pedido.id}
+                                        className={`border-t border-slate-100 ${
+                                          caixaSuprimentos && !pedido.suprimentos_lida
+                                            ? 'bg-sky-50 font-semibold text-slate-900'
+                                            : 'bg-white'
+                                        }`}
+                                      >
                                         <td className="py-2 pl-8 text-slate-600">
                                           <span className="text-xs text-slate-400">↳</span>
                                           {' '}
                                           {pedido.instituicao_nome || pedido.instituicao_id || grupo.nome}
                                         </td>
                                         <td>{pedido.tipo_rotulo || rotuloTipoPedido(pedido.tipo)}</td>
-                                        <td className="whitespace-nowrap font-semibold tabular-nums text-slate-800">
-                                          {pedido.grupo_codigo || '—'}
-                                        </td>
                                         <td>{pedido.titulo || pedido.categoria_split_nome || '—'}</td>
-                                        <td>
-                                          {pedido.data_envio_prevista
-                                            ? `${pedido.data_envio_prevista.slice(8, 10)}/${pedido.data_envio_prevista.slice(5, 7)}`
-                                            : '—'}
-                                          {pedido.envio_automatico ? ' · auto' : ''}
-                                        </td>
                                         <td>
                                           <PremiumBadge variant={varianteBadgeStatusPedido(pedido.status)}>
                                             {rotuloStatusPedidoLista(pedido)}
@@ -724,6 +754,9 @@ export default function Compras() {
                                             : (pedido.qtd_orcamentos ?? 0)}
                                         </td>
                                         <td>{pedido.atualizado_em || '—'}</td>
+                                        {caixaSuprimentos ? (
+                                          <td><SeloCaixaSuprimentos lida={pedido.suprimentos_lida} /></td>
+                                        ) : null}
                                         <td>
                                           <Link
                                             className="font-semibold text-slate-800 underline"
@@ -740,19 +773,15 @@ export default function Compras() {
                               );
                             })
                             : pedidosOrdenados.map((pedido) => (
-                              <tr key={pedido.id} className="border-t border-slate-100">
+                              <tr
+                                key={pedido.id}
+                                className={`border-t border-slate-100 ${
+                                  caixaSuprimentos && !pedido.suprimentos_lida ? 'bg-sky-50 font-semibold' : ''
+                                }`}
+                              >
                                 <td className="py-2">{pedido.instituicao_nome || pedido.instituicao_id}</td>
                                 <td>{pedido.tipo_rotulo || rotuloTipoPedido(pedido.tipo)}</td>
-                                <td className="whitespace-nowrap font-semibold tabular-nums text-slate-800">
-                                  {pedido.grupo_codigo || '—'}
-                                </td>
                                 <td>{pedido.titulo || pedido.categoria_split_nome || '—'}</td>
-                                <td>
-                                  {pedido.data_envio_prevista
-                                    ? `${pedido.data_envio_prevista.slice(8, 10)}/${pedido.data_envio_prevista.slice(5, 7)}`
-                                    : '—'}
-                                  {pedido.envio_automatico ? ' · auto' : ''}
-                                </td>
                                 <td>
                                   <PremiumBadge variant={varianteBadgeStatusPedido(pedido.status)}>
                                     {rotuloStatusPedidoLista(pedido)}
@@ -764,6 +793,9 @@ export default function Compras() {
                                     : (pedido.qtd_orcamentos ?? 0)}
                                 </td>
                                 <td>{pedido.atualizado_em || '—'}</td>
+                                {caixaSuprimentos ? (
+                                  <td><SeloCaixaSuprimentos lida={pedido.suprimentos_lida} /></td>
+                                ) : null}
                                 <td>
                                   <Link className="font-semibold text-slate-800 underline" to={`/compras/pedidos/${pedido.id}`}>
                                     Abrir

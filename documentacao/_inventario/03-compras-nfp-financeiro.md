@@ -69,7 +69,7 @@ Hub do módulo: ativação, abas (pedidos, janela, cadastros, patrimônio, econo
 | Eyebrow | Organização |
 | Title | Compras **ou** Pedidos concluídos |
 | Subtitle (andamento) | Solicitação, cotação, dupla aprovação, pedido ao fornecedor e conferência na unidade. |
-| Subtitle (concluídos) | Pedidos encerrados, cancelados ou reprovados — histórico separado dos pedidos em andamento. |
+| Subtitle (concluídos) | Pedidos encerrados, cancelados ou reprovados — histórico separado dos pedidos em andamento. Para Suprimentos, a lista é caixa de correio: não lidas no topo, selo Lida / Não lida, e contagem no subtítulo. |
 
 ### Campos / filtros
 
@@ -93,7 +93,7 @@ Hub do módulo: ativação, abas (pedidos, janela, cadastros, patrimônio, econo
 
 ### Colunas da lista de pedidos
 
-Unidade · Tipo · Grupo · Objeto / categoria · Envio previsto · Status · Orçamentos · Atualizado · (ação Abrir)
+Unidade · Tipo · Objeto / categoria · Status · Orçamentos · Atualizado · Caixa (só Suprimentos em concluídos: Lida / Não lida) · (ação Abrir)
 
 ### Botões / links
 
@@ -242,10 +242,13 @@ File → tipo `espelho_compra`
 | Número NF | — | `nfForm.numero` |
 | R$ 0,00 | — | `nfForm.valor_reais` |
 | Insira as informações complementares de pagamento para a impressão da NF | * antes de PDF | `nfForm.observacao` |
+| Insira a senha do gestor para a assinatura eletrônica digital | * | senha do perfil Gestor; no PDF a pessoa arrasta o carimbo «Assinado Digitalmente» (nome completo, projeto e cargo Gestor) para um espaço livre, junto com o texto complementar |
 | Arquivo NF | * | `arqNf` (.pdf/.xml/imagem) |
-| Documentos junto da nota fiscal / Arquivos da aquisição do bem | — | tipo `aquisicao_bem` |
+| Anexar arquivos | — | um único campo, vários arquivos, tipo `aquisicao_bem` |
 
-Botões: Anexar NF · Encerrar processo (com NF anexada) · Visualizar · Baixar NF · Excluir arquivo · Excluir (documento extra)
+Botões: Anexar NF Assinada · Encerrar processo (com NF anexada) — só depois da assinatura eletrônica na NF · Visualizar · Baixar NF · Excluir arquivo · Excluir (documento extra)
+
+Para Suprimentos, ao abrir um pedido com status recebido, o aviso fixo abaixo do título diz se a NF **ainda não foi impressa** ou **já foi impressa** (com data). O botão **Imprimir NF** abre o PDF ou a imagem e, na primeira vez, grava a impressão. Abrir o pedido concluído marca a linha como lida na caixa.
 
 #### Fluxo (ações condicionais ao status)
 
@@ -280,7 +283,7 @@ Títulos: Revisar pedido de cotação · Revisar pedido de compra · Revisar ree
 
 ### Função
 
-Fila de pedidos de cotação do projeto em `aguardando_aprovacao_sede`: escolher vencedor, cadastrar PDF de assinatura, posicionar e assinar.
+Fila de pedidos de cotação do projeto em `aguardando_aprovacao_sede`: escolher vencedor, cadastrar PDF de assinatura, posicionar e assinar. Ao entrar no sistema, quem assina (global autorizado, Infraestrutura e Manutenção) vê um aviso se a fila tiver pedido; Suprimentos não recebe esse aviso.
 
 ### Campos / uploads
 
@@ -290,7 +293,7 @@ Fila de pedidos de cotação do projeto em `aguardando_aprovacao_sede`: escolher
 
 ### Botões
 
-Atualizar · Escolher · Revogar · Abrir pedido · Posicionar e assinar / Assinando… · links Orçamento:/Assinado: · Ver itens e timeline
+Atualizar · Escolher · Revogar · Abrir pedido · Posicionar e assinar / Assinando… · Assinar com gov.br (baixa o PDF, abre assinador.iti.br, arquiva o PDF assinado e aprova o pedido) · links Orçamento:/Assinado: · Ver itens e timeline
 
 Mensagem se sem perfil: «Somente ADM Compras (Sede) acessa esta fila.»
 

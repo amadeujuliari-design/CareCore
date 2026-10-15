@@ -10,6 +10,7 @@ from reportlab.pdfgen import canvas as pdf_canvas
 from PIL import Image, ImageDraw
 
 from compras_assinatura_pdf import (
+    carimbar_assinatura_gestor_pdf,
     carimbar_assinatura_pdf,
     carimbar_assinatura_no_rodape_pdf,
     _rgba_fundo_transparente,
@@ -80,6 +81,44 @@ def test_carimbar_posicao_pagina_escolhida():
 
     leitor = PdfReader(io.BytesIO(out))
     assert len(leitor.pages) == 3
+
+
+def test_carimbar_assinatura_gestor_no_pdf():
+    from pypdf import PdfReader
+
+    origem = _pdf_paginas(1, width=500.0, height=700.0)
+    saida = carimbar_assinatura_gestor_pdf(
+        pdf_bytes=origem,
+        nome="Maria Silva",
+        projeto="Reencontro Pari",
+        ancora_x=36,
+        ancora_y=40,
+        ancora_h=48,
+    )
+    assert saida.startswith(b"%PDF")
+    assert len(saida) > len(origem)
+    texto = PdfReader(io.BytesIO(saida)).pages[0].extract_text() or ""
+    assert "Assinado Digitalmente" in texto
+    assert "Maria Silva" in texto
+    assert "Gestor" in texto
+
+
+def test_carimbar_assinatura_gestor_na_posicao_escolhida():
+    from pypdf import PdfReader
+
+    origem = _pdf_paginas(1, width=500.0, height=700.0)
+    saida = carimbar_assinatura_gestor_pdf(
+        pdf_bytes=origem,
+        nome="Maria Silva",
+        projeto="Reencontro Pari",
+        x=80.0,
+        y=120.0,
+        width=220.0,
+        height=68.0,
+    )
+    assert saida.startswith(b"%PDF")
+    texto = PdfReader(io.BytesIO(saida)).pages[0].extract_text() or ""
+    assert "Assinado Digitalmente" in texto
 
 
 def test_carimbar_pagina_invalida():

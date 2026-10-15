@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from compras_itens_consumo_planilha import extrair_itens_consumo
 from compras_pedido_fluxo import (
+    arquivar_orcamento_assinado_govbr,
     assinar_orcamento_e_aprovar_sede,
     confirmar_evento_pedido,
     confirmar_revisao_itens_pedido,
@@ -22,6 +23,8 @@ from compras_pedido_fluxo import (
     liberar_cotacao_para_escolha,
     editar_texto_evento_pedido,
     registrar_comunicacao_pedido,
+    marcar_leitura_caixa_suprimentos,
+    registrar_impressao_nf_suprimentos,
     registrar_nota_fiscal,
     remover_nota_fiscal,
     reabrir_orcamento_aprovado,
@@ -102,6 +105,8 @@ from security import get_usuario_logado
 
 def _escrita_assinatura_global(path: str) -> bool:
     if path.endswith("/assinar-orcamento-sede") or path.endswith("/assinatura-digital"):
+        return True
+    if path.endswith("/orcamento-govbr"):
         return True
     if path.endswith("/escolher") and "/cotacoes/" in path:
         return True
@@ -778,6 +783,8 @@ async def get_pedido(
     await _ctx(db, usuario_atual)
     pedido = await obter_pedido(db, usuario_atual, pedido_id)
     await alinhar_status_consumo_escolhido_pelo_projeto(db, [pedido])
+    if marcar_leitura_caixa_suprimentos(usuario_atual, pedido):
+        await db.commit()
     return await serializar_pedido(db, pedido, incluir_detalhe=True, usuario=usuario_atual)
 
 
@@ -917,6 +924,27 @@ async def get_fila_assinatura_resumo(
     return {"pendentes": pendentes}
 
 
+@router.get("/assinatura-eletronica-gestor")
+async def get_assinatura_eletronica_gestor(
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    """Informa se o gestor logado já definiu a senha de assinatura de documentos."""
+    perfil = str(usuario_atual.get("perfil_acesso") or "").strip()
+    if perfil != "Gestor":
+        return {"gestor": False, "cadastrada": False}
+    from models import UsuarioDB
+    from sqlalchemy import select
+
+    row = (
+        await db.execute(select(UsuarioDB).where(UsuarioDB.id == usuario_atual.get("id")))
+    ).scalar_one_or_none()
+    return {
+        "gestor": True,
+        "cadastrada": bool(row and getattr(row, "assinatura_eletronica_senha_hash", None)),
+    }
+
+
 @router.get("/assinatura-digital")
 async def get_assinatura_digital(
     db: AsyncSession = Depends(get_db),
@@ -1004,6 +1032,21 @@ async def post_assinatura_digital(
     return {"cadastrada": True, "nome_arquivo": nome_original}
 
 
+@router.post("/pedidos/{pedido_id}/orcamento-govbr")
+async def post_orcamento_govbr(
+    pedido_id: str,
+    arquivo: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    """Arquiva o PDF assinado no portal gov.br e aprova o pedido na Sede."""
+    await _ctx(db, usuario_atual)
+    pedido = await obter_pedido(db, usuario_atual, pedido_id)
+    await arquivar_orcamento_assinado_govbr(db, usuario_atual, pedido, file=arquivo)
+    await db.commit()
+    return await serializar_pedido(db, pedido, incluir_detalhe=True, usuario=usuario_atual)
+
+
 @router.post("/pedidos/{pedido_id}/aprovar-unidade")
 async def post_aprovar_unidade(
     pedido_id: str,
@@ -1078,6 +1121,20 @@ async def post_receber(
     await _ctx(db, usuario_atual)
     pedido = await obter_pedido(db, usuario_atual, pedido_id)
     await receber_pedido(db, usuario_atual, pedido, payload.model_dump())
+    await db.commit()
+    return await serializar_pedido(db, pedido, incluir_detalhe=True, usuario=usuario_atual)
+
+
+@router.post("/pedidos/{pedido_id}/nf-impressa")
+async def post_nf_impressa(
+    pedido_id: str,
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    """Suprimentos registra que a nota fiscal do pedido encerrado foi impressa."""
+    await _ctx(db, usuario_atual)
+    pedido = await obter_pedido(db, usuario_atual, pedido_id)
+    registrar_impressao_nf_suprimentos(usuario_atual, pedido)
     await db.commit()
     return await serializar_pedido(db, pedido, incluir_detalhe=True, usuario=usuario_atual)
 
@@ -1332,6 +1389,12 @@ async def post_nota_fiscal(
     carimbo_y: Optional[float] = Form(default=None),
     carimbo_w: Optional[float] = Form(default=None),
     carimbo_h: Optional[float] = Form(default=None),
+    assinatura_pagina: Optional[int] = Form(default=0),
+    assinatura_x: Optional[float] = Form(default=None),
+    assinatura_y: Optional[float] = Form(default=None),
+    assinatura_w: Optional[float] = Form(default=None),
+    assinatura_h: Optional[float] = Form(default=None),
+    senha_assinatura_eletronica: Optional[str] = Form(default=None),
     arquivo: Optional[UploadFile] = File(default=None),
     db: AsyncSession = Depends(get_db),
     usuario_atual: dict = Depends(get_usuario_logado),
@@ -1353,6 +1416,12 @@ async def post_nota_fiscal(
         "carimbo_y": carimbo_y,
         "carimbo_w": carimbo_w,
         "carimbo_h": carimbo_h,
+        "assinatura_pagina": assinatura_pagina,
+        "assinatura_x": assinatura_x,
+        "assinatura_y": assinatura_y,
+        "assinatura_w": assinatura_w,
+        "assinatura_h": assinatura_h,
+        "senha_assinatura_eletronica": senha_assinatura_eletronica,
     }
     await registrar_nota_fiscal(db, usuario_atual, pedido, file=arquivo, conteudo_xml=None, payload=payload)
     await db.commit()

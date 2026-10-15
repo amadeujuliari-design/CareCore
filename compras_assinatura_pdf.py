@@ -313,3 +313,104 @@ def carimbar_texto_pdf(
     saida = io.BytesIO()
     escritor.write(saida)
     return saida.getvalue()
+
+
+def _escapar_pdf(texto: str) -> str:
+    return (
+        (texto or "")
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+    )
+
+
+def carimbar_assinatura_gestor_pdf(
+    *,
+    pdf_bytes: bytes,
+    nome: str,
+    projeto: str,
+    page_index: int = 0,
+    ancora_x: float | None = None,
+    ancora_y: float | None = None,
+    ancora_h: float = 0.0,
+    x: float | None = None,
+    y: float | None = None,
+    width: float | None = None,
+    height: float | None = None,
+) -> bytes:
+    """Carimbo de ciência do gestor do projeto sobre o PDF da nota fiscal."""
+    from pypdf import PdfReader, PdfWriter
+    from reportlab.lib.colors import HexColor
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.platypus import Frame, Paragraph
+    from reportlab.pdfgen import canvas as pdf_canvas
+
+    leitor = PdfReader(io.BytesIO(pdf_bytes))
+    if not leitor.pages:
+        raise ValueError("O PDF da NF não tem páginas.")
+    indice = max(0, min(int(page_index or 0), len(leitor.pages) - 1))
+    pagina = leitor.pages[indice]
+    caixa = pagina.mediabox
+    page_w = float(caixa.width)
+    page_h = float(caixa.height)
+    desenho_w = min(250.0, max(160.0, page_w - 48.0))
+    desenho_h = 68.0
+    if x is not None and y is not None:
+        desenho_w = max(120.0, min(float(width or 250.0), page_w - 8.0))
+        desenho_h = max(48.0, min(float(height or 68.0), page_h - 8.0))
+        tx = max(0.0, min(float(x), page_w - desenho_w))
+        ty = max(0.0, min(float(y), page_h - desenho_h))
+    elif ancora_x is not None and ancora_y is not None:
+        tx = max(8.0, min(float(ancora_x), page_w - desenho_w - 8.0))
+        acima = float(ancora_y) + float(ancora_h or 0) + 8.0
+        abaixo = float(ancora_y) - desenho_h - 8.0
+        if acima + desenho_h <= page_h - 8.0:
+            ty = acima
+        elif abaixo >= 8.0:
+            ty = abaixo
+        else:
+            ty = max(8.0, page_h - desenho_h - 36.0)
+    else:
+        tx = 36.0
+        ty = max(8.0, page_h - desenho_h - 36.0)
+
+    nome_limpo = (nome or "Gestor").strip()
+    projeto_limpo = (projeto or "Projeto").strip()
+    html = (
+        f"<b>Assinado Digitalmente</b><br/>{_escapar_pdf(nome_limpo)}<br/>"
+        f"{_escapar_pdf(projeto_limpo)}<br/>Cargo: Gestor"
+    )
+    buf = io.BytesIO()
+    folha = pdf_canvas.Canvas(buf, pagesize=(page_w, page_h))
+    folha.setStrokeColor(HexColor("#1e3a5f"))
+    folha.setFillColor(HexColor("#f8fafc"))
+    folha.setLineWidth(1)
+    folha.roundRect(tx, ty, desenho_w, desenho_h, 4, stroke=1, fill=1)
+    estilo = ParagraphStyle(
+        "nf_assinatura_gestor",
+        fontName="Helvetica",
+        fontSize=8,
+        leading=11,
+        textColor=HexColor("#0f172a"),
+    )
+    quadro = Frame(
+        tx + 6,
+        ty + 4,
+        desenho_w - 12,
+        desenho_h - 8,
+        showBoundary=0,
+        leftPadding=0,
+        rightPadding=0,
+        topPadding=0,
+        bottomPadding=0,
+    )
+    quadro.addFromList([Paragraph(html, estilo)], folha)
+    folha.save()
+    overlay = PdfReader(io.BytesIO(buf.getvalue()))
+    pagina.merge_page(overlay.pages[0])
+    escritor = PdfWriter()
+    for pagina_atual in leitor.pages:
+        escritor.add_page(pagina_atual)
+    saida = io.BytesIO()
+    escritor.write(saida)
+    return saida.getvalue()

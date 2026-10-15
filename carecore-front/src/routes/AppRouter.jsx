@@ -2,6 +2,7 @@ import { lazy } from 'react';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 
 import AusenciaJustificadaAlerta from '../components/AusenciaJustificadaAlerta';
+import AlertaFilaAssinatura from '../components/AlertaFilaAssinatura';
 import AlertaPresencaOperacional from '../components/AlertaPresencaOperacional';
 import ProtectedRoute from './ProtectedRoute';
 import { PERFIS_MODULO_ATIVIDADES, PERFIS_NFP_ENVIO_SEFAZ, PERFIS_NFP_GESTAO, PERFIS_NFP_LEITURA_CUPONS, PERFIS_ADM_COMPRAS_SEDE, PERFIL_ADM_GLOBAL } from '../utils/rbacUtils';
@@ -662,6 +663,7 @@ function RotasAplicacao() {
       </Routes>
       <AusenciaJustificadaAlerta />
       <AlertaPresencaOperacional />
+      <AlertaFilaAssinatura />
     </>
   );
 }
