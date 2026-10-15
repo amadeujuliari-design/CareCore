@@ -883,6 +883,24 @@ def _norm_tipo_texto(valor: Optional[str]) -> str:
     return "".join(ch for ch in bruto if not unicodedata.combining(ch))
 
 
+def rotulo_custo_fonte(tipo: Optional[str], nome: Optional[str] = None) -> Optional[str]:
+    """Convênio é custo direto; o outro tipo do pedido é custo indireto."""
+    tipo_n = (tipo or "").strip().lower()
+    nome_n = _norm_tipo_texto(nome)
+    if tipo_n == FONTE_TIPO_CUSTO_INDIRETO or "indireto" in nome_n:
+        return "Custo indireto"
+    if tipo_n == FONTE_TIPO_CONVENIO or "convenio" in nome_n:
+        return "Custo direto"
+    if tipo_n == FONTE_TIPO_EMENDA:
+        return "Emenda"
+    if tipo_n == FONTE_TIPO_PROPRIO:
+        return "Recurso próprio"
+    if tipo_n == FONTE_TIPO_DOACAO:
+        return "Doação"
+    texto = (nome or "").strip()
+    return texto or None
+
+
 def inferir_tipo_fonte(nome: Optional[str]) -> str:
     chave = _norm_tipo_texto(nome)
     if "convenio" in chave:

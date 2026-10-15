@@ -164,6 +164,8 @@ Modal embutido: `ModalFormItemConsumo` (cadastro rápido de item).
 
 Ciclo completo: itens, cotação/orçamentos, comunicação, timeline, pedido de compra, NF e encerramento, ações de fluxo.
 
+Abaixo do título, faixa fixa **Fonte da verba**: **Custo direto** (convênio) ou **Custo indireto**. A mesma faixa aparece como selo na lista de pedidos. Convênio cadastrado como fonte conta como custo direto.
+
 ### Stepper (cotação projeto)
 
 Montar · Pedir orçamento · Registrar · Sede · Assinado · Ao fornecedor · NF  

@@ -15,6 +15,7 @@ from compras_regras import (
     pedido_pronto_para_aprovacao_unidade,
     pedido_rascunho_pode_excluir,
     periodo_semana_util_mes,
+    rotulo_custo_fonte,
     rotulo_sede_relatorio,
     rotulo_unidade_relatorio,
     sugerir_segunda_semana_util,
@@ -499,3 +500,9 @@ def test_competencia_mes_seguinte_e_lado_da_timeline():
     assert tipo_arquivo_bem_de_anexo_pedido("orcamento_assinado") == "orcamento"
     assert tipo_arquivo_bem_de_anexo_pedido("nf_pdf") == "nota"
     assert tipo_arquivo_bem_de_anexo_pedido("termo_doacao") == "termo_doacao"
+
+
+def test_rotulo_custo_fonte_convenio_e_indireto():
+    assert rotulo_custo_fonte("convenio", "Convênio") == "Custo direto"
+    assert rotulo_custo_fonte("custo_indireto", "Custo indireto") == "Custo indireto"
+    assert rotulo_custo_fonte("", "Convênio municipal") == "Custo direto"

@@ -117,6 +117,20 @@ function compararPedidosOrdenacao(a, b, coluna, direcao) {
   return direcao === 'asc' ? cmp : -cmp;
 }
 
+function SeloFonteVerba({ pedido }) {
+  if (!pedido?.fonte_custo_rotulo) return null;
+  const indireto = pedido.fonte_custo_rotulo === 'Custo indireto';
+  return (
+    <span
+      className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-[11px] font-bold ${
+        indireto ? 'bg-amber-100 text-amber-950' : 'bg-sky-100 text-sky-950'
+      }`}
+    >
+      {pedido.fonte_custo_rotulo}
+    </span>
+  );
+}
+
 function SeloCaixaSuprimentos({ lida }) {
   if (lida) {
     return (
@@ -742,7 +756,10 @@ export default function Compras() {
                                           {pedido.instituicao_nome || pedido.instituicao_id || grupo.nome}
                                         </td>
                                         <td>{pedido.tipo_rotulo || rotuloTipoPedido(pedido.tipo)}</td>
-                                        <td>{pedido.titulo || pedido.categoria_split_nome || '—'}</td>
+                                        <td>
+                                          <span className="block">{pedido.titulo || pedido.categoria_split_nome || '—'}</span>
+                                          <SeloFonteVerba pedido={pedido} />
+                                        </td>
                                         <td>
                                           <PremiumBadge variant={varianteBadgeStatusPedido(pedido.status)}>
                                             {rotuloStatusPedidoLista(pedido)}
@@ -781,7 +798,10 @@ export default function Compras() {
                               >
                                 <td className="py-2">{pedido.instituicao_nome || pedido.instituicao_id}</td>
                                 <td>{pedido.tipo_rotulo || rotuloTipoPedido(pedido.tipo)}</td>
-                                <td>{pedido.titulo || pedido.categoria_split_nome || '—'}</td>
+                                <td>
+                                  <span className="block">{pedido.titulo || pedido.categoria_split_nome || '—'}</span>
+                                  <SeloFonteVerba pedido={pedido} />
+                                </td>
                                 <td>
                                   <PremiumBadge variant={varianteBadgeStatusPedido(pedido.status)}>
                                     {rotuloStatusPedidoLista(pedido)}

@@ -103,6 +103,7 @@ from compras_regras import (
     pode_criar_rascunho_consumo,
     pode_enviar_consumo,
     resumo_alteracao_itens_pedido,
+    rotulo_custo_fonte,
     rotulo_tipo_pedido,
     rotulo_unidade_relatorio,
     sequencia_grupo_codigo,
@@ -435,6 +436,9 @@ async def serializar_pedido(
         "competencia": pedido.competencia,
         "status": pedido.status,
         "fonte_recurso_id": pedido.fonte_recurso_id,
+        "fonte_recurso_nome": None,
+        "fonte_recurso_tipo": None,
+        "fonte_custo_rotulo": None,
         "observacao": pedido.observacao,
         "titulo": getattr(pedido, "titulo", None),
         "justificativa": getattr(pedido, "justificativa", None),
@@ -466,6 +470,16 @@ async def serializar_pedido(
         "criado_em": _iso(pedido.criado_em),
         "atualizado_em": _iso(pedido.atualizado_em),
     }
+    if pedido.fonte_recurso_id:
+        fonte = (
+            await db.execute(
+                select(ComprasFonteRecursoDB).where(ComprasFonteRecursoDB.id == pedido.fonte_recurso_id)
+            )
+        ).scalar_one_or_none()
+        if fonte:
+            payload["fonte_recurso_nome"] = fonte.nome
+            payload["fonte_recurso_tipo"] = fonte.tipo
+            payload["fonte_custo_rotulo"] = rotulo_custo_fonte(fonte.tipo, fonte.nome)
     qtd_orc = (
         await db.execute(
             select(func.count())
@@ -1245,6 +1259,16 @@ async def substituir_itens(
                     ),
                 )
 
+    # Duas gravações ao mesmo tempo (duplo clique, outra aba, blur da embalagem)
+    # apagavam só as linhas antigas e as duas inseriam de novo. A trava espera
+    # a primeira terminar e aí relê o que está no banco.
+    conn = await db.connection()
+    if conn.dialect.name == "postgresql":
+        await db.execute(
+            select(ComprasPedidoDB.id)
+            .where(ComprasPedidoDB.id == pedido.id)
+            .with_for_update()
+        )
     atuais = (
         await db.execute(select(ComprasPedidoItemDB).where(ComprasPedidoItemDB.pedido_id == pedido.id))
     ).scalars().all()

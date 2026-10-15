@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { FileText, Mail, Search, ShoppingCart } from 'lucide-react';
 
@@ -225,11 +225,24 @@ export default function ComprasPedido() {
   const [obsPedido, setObsPedido] = useState('');
   const [modalAnexo, setModalAnexo] = useState(null);
 
+  const pedidoRef = useRef(null);
+  useEffect(() => {
+    pedidoRef.current = pedido;
+  }, [pedido]);
+  const listaItensLocal = useRef(null);
+  const filaItens = useRef(Promise.resolve());
+  const gravandoItens = useRef(0);
+  const incluindoItem = useRef(false);
+  const [salvandoItem, setSalvandoItem] = useState(false);
+
   const carregar = useCallback(async ({ silencioso = false } = {}) => {
+    if (silencioso && gravandoItens.current > 0) return;
     if (!silencioso) setErro('');
     try {
       const dados = await comprasObterPedido(pedidoId);
+      if (silencioso && (gravandoItens.current > 0 || listaItensLocal.current)) return;
       setPedido(dados);
+      pedidoRef.current = dados;
       if (!silencioso) {
         setObsPedido(dados?.observacao || '');
       }
@@ -566,6 +579,7 @@ export default function ComprasPedido() {
   const buscaRestritaCategoria = Boolean(pedido.grupo_split_id && rotuloSplit);
 
   const payloadDasLinhas = (linhas) => (linhas || []).map((linha) => ({
+    id: linha.id || null,
     descricao: linha.descricao,
     quantidade: linha.quantidade,
     unidade_medida: linha.unidade_medida,
@@ -575,17 +589,52 @@ export default function ComprasPedido() {
     catalogo_item_id: linha.catalogo_item_id,
   }));
 
-  const linhasPedidoCom = (novo) => [...payloadDasLinhas(pedido.itens), novo];
+  const linhasItensAtuais = () => (
+    listaItensLocal.current || payloadDasLinhas(pedidoRef.current?.itens || pedido.itens)
+  );
+
+  const salvarItensPedido = (linhas, mensagemOk = '') => {
+    listaItensLocal.current = linhas;
+    gravandoItens.current += 1;
+    setSalvandoItem(true);
+    const tarefa = filaItens.current.then(async () => {
+      const id = pedidoRef.current?.id || pedido.id;
+      const dados = await comprasSalvarItens(id, linhas);
+      if (listaItensLocal.current === linhas) {
+        listaItensLocal.current = null;
+        setPedido(dados);
+        pedidoRef.current = dados;
+      }
+      if (mensagemOk) setOk(mensagemOk);
+      setErro('');
+      return true;
+    }).catch((err) => {
+      if (listaItensLocal.current === linhas) listaItensLocal.current = null;
+      const detail = err.response?.data?.detail;
+      const mensagem = typeof detail === 'string'
+        ? detail
+        : (detail?.message || err.message || 'Não foi possível salvar os itens.');
+      setErro(mensagem);
+      setOk('');
+      return false;
+    }).finally(() => {
+      gravandoItens.current = Math.max(0, gravandoItens.current - 1);
+      if (gravandoItens.current === 0) setSalvandoItem(false);
+    });
+    filaItens.current = tarefa.then(() => undefined, () => undefined);
+    return tarefa;
+  };
+
+  const linhasPedidoCom = (novo) => [...linhasItensAtuais(), novo];
 
   const marcarDesfazerItens = () => {
-    setDesfazerItens({ linhas: payloadDasLinhas(pedido.itens) });
+    setDesfazerItens({ linhas: linhasItensAtuais() });
   };
 
   const desfazerUltimaAlteracaoItens = async () => {
     if (!desfazerItens) return;
-    const linhas = desfazerItens.linhas;
-    const gravou = await agir(
-      () => comprasSalvarItens(pedido.id, linhas),
+    const gravou = await salvarItensPedido(
+      desfazerItens.linhas,
       'Última alteração nos itens foi desfeita.',
     );
     if (gravou) setDesfazerItens(null);
@@ -593,24 +642,18 @@ export default function ComprasPedido() {
 
   const retirarItem = async (itemId) => {
     marcarDesfazerItens();
-    await agir(
-      () => comprasSalvarItens(
-        pedido.id,
-        payloadDasLinhas((pedido.itens || []).filter((linha) => linha.id !== itemId)),
-      ),
+    await salvarItensPedido(
+      linhasItensAtuais().filter((linha) => linha.id !== itemId),
       'Item retirado do pedido.',
     );
   };
 
   const corrigirUnidadeItem = async (itemId) => {
     marcarDesfazerItens();
-    await agir(
-      () => comprasSalvarItens(
-        pedido.id,
-        payloadDasLinhas((pedido.itens || []).map((linha) => (
-          linha.id === itemId ? { ...linha, unidade_medida: 'un' } : linha
-        ))),
-      ),
+    await salvarItensPedido(
+      linhasItensAtuais().map((linha) => (
+        linha.id === itemId ? { ...linha, unidade_medida: 'un' } : linha
+      )),
       'Quantidade passou a ser em un (pacotes). A embalagem continua no cadastro.',
     );
   };
@@ -628,13 +671,10 @@ export default function ComprasPedido() {
       return;
     }
     marcarDesfazerItens();
-    const gravou = await agir(
-      () => comprasSalvarItens(
-        pedido.id,
-        payloadDasLinhas((pedido.itens || []).map((itemLinha) => (
-          itemLinha.id === linha.id ? { ...itemLinha, [campo]: novo || null } : itemLinha
-        ))),
-      ),
+    const gravou = await salvarItensPedido(
+      linhasItensAtuais().map((itemLinha) => (
+        itemLinha.id === linha.id ? { ...itemLinha, [campo]: novo || null } : itemLinha
+      )),
       campo === 'marca_preferencial' ? 'Marca atualizada neste pedido.' : 'Embalagem atualizada neste pedido.',
     );
     if (!gravou) return;
@@ -759,9 +799,13 @@ export default function ComprasPedido() {
       mensagemOk = 'Item incluído só neste pedido.';
     }
 
+    if (incluindoItem.current) return;
+    incluindoItem.current = true;
+    setSalvandoItem(true);
     marcarDesfazerItens();
-    const gravou = await agir(
-      () => comprasSalvarItens(pedido.id, linhasPedidoCom({
+    let gravou;
+    try {
+      gravou = await salvarItensPedido(linhasPedidoCom({
         descricao: catalogo.descricao,
         quantidade: Number(item.quantidade || 1),
         unidade_medida: (item.unidade_medida || '').trim() || unidadeParaPedido(catalogo),
@@ -769,9 +813,11 @@ export default function ComprasPedido() {
         marca_preferencial: catalogo.marca_preferencial,
         categoria_id: catalogo.categoria_id,
         catalogo_item_id: catalogo.catalogo_item_id,
-      })),
-      mensagemOk,
-    );
+      }), mensagemOk);
+    } finally {
+      incluindoItem.current = false;
+      if (gravandoItens.current === 0) setSalvandoItem(false);
+    }
     if (gravou) {
       setItem(ITEM_VAZIO);
       setCadastrarNoCatalogo(true);
@@ -798,6 +844,24 @@ export default function ComprasPedido() {
           icon={<ShoppingCart className="h-5 w-5" />}
           backTo="/compras"
         />
+        {pedido.fonte_custo_rotulo && (
+          <div className="shrink-0 px-4 pt-3 md:px-6">
+            <div
+              className={`rounded-xl border px-4 py-3 ${
+                pedido.fonte_custo_rotulo === 'Custo indireto'
+                  ? 'border-amber-300 bg-amber-50 text-amber-950'
+                  : 'border-sky-300 bg-sky-50 text-sky-950'
+              }`}
+              role="status"
+            >
+              <p className="text-xs font-bold uppercase tracking-wide">Fonte da verba</p>
+              <p className="text-lg font-black leading-tight">{pedido.fonte_custo_rotulo}</p>
+              {pedido.fonte_recurso_nome && pedido.fonte_recurso_nome !== pedido.fonte_custo_rotulo ? (
+                <p className="mt-0.5 text-sm">{pedido.fonte_recurso_nome}</p>
+              ) : null}
+            </div>
+          </div>
+        )}
         {(erro || ok) && (
           <div className="shrink-0 space-y-2 px-4 pt-3 md:px-6">
             {erro && (
@@ -1078,7 +1142,9 @@ export default function ComprasPedido() {
                     />
                   </label>
                   <div className="flex items-end md:col-span-2">
-                    <PremiumButton type="submit" className="w-full">Incluir item</PremiumButton>
+                    <PremiumButton type="submit" className="w-full" disabled={salvandoItem}>
+                      {salvandoItem ? 'Incluindo…' : 'Incluir item'}
+                    </PremiumButton>
                   </div>
                   {buscaRestritaCategoria ? (
                     <p className="md:col-span-8 text-xs text-slate-500">
@@ -1152,10 +1218,7 @@ export default function ComprasPedido() {
                   <PremiumButton
                     type="button"
                     variant="secondary"
-                    onClick={() => agir(
-                      () => comprasSalvarItens(pedido.id, payloadDasLinhas(pedido.itens)),
-                      'Rascunho salvo.',
-                    )}
+                    onClick={() => salvarItensPedido(linhasItensAtuais(), 'Rascunho salvo.')}
                   >
                     Salvar rascunho
                   </PremiumButton>
