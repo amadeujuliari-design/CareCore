@@ -5,6 +5,7 @@ from presenca_operacional import (
     STATUS_DIA_JUSTIFICADO,
     STATUS_DIA_NA,
     STATUS_DIA_PRESENTE,
+    agrupar_dias_com_refeicao,
     linha_atende_filtro_situacao_periodo,
     linha_tem_dia_elegivel_no_periodo,
     montar_status_presenca_por_dia,
@@ -336,3 +337,25 @@ def test_schema_aceita_prontuario_como_texto():
     assert payload.linhas[0].prontuario == "123"
     assert payload.filtro_situacao == "presenca_ou_justificada"
     assert payload.status_filtro == []
+
+
+def test_duas_refeicoes_no_mesmo_dia_contam_uma_presenca():
+    registros = [
+        ("pessoa", datetime(2026, 6, 10, 7, 0)),
+        ("pessoa", datetime(2026, 6, 10, 12, 0)),
+        ("pessoa", datetime(2026, 6, 11, 18, 0)),
+    ]
+    dias = agrupar_dias_com_refeicao(registros)
+    assert dias["pessoa"] == {"2026-06-10", "2026-06-11"}
+    status = montar_status_presenca_por_dia(
+        [],
+        date(2026, 6, 10),
+        date(2026, 6, 12),
+        data_entrada=date(2026, 6, 1),
+        status_convivente="Ativo",
+        ausencia_justificada_desde=None,
+        dias_presentes_refeicao=dias["pessoa"],
+    )
+    assert status["2026-06-10"] == STATUS_DIA_PRESENTE
+    assert status["2026-06-11"] == STATUS_DIA_PRESENTE
+    assert status["2026-06-12"] == STATUS_DIA_AUSENTE

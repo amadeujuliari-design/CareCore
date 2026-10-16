@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from config_operacional import ConfigOperacionalProjeto, mesclar_config_operacional, serializar_config_operacional
 from config_operacional_projeto import (
+    projeto_e_cae_i_centro,
     projeto_e_casa_porto,
     projeto_e_reencontro_pari,
     projeto_usa_defaults_siat,
@@ -36,6 +37,7 @@ async def carregar_config_operacional_instituicao(
         siat=usa_siat,
         casa_porto=projeto_e_casa_porto(projeto),
         reencontro=projeto_e_reencontro_pari(projeto),
+        cae_i_centro=projeto_e_cae_i_centro(projeto),
     )
     return config, personalizado, perfil
 
@@ -55,4 +57,5 @@ async def salvar_config_operacional_instituicao(
         siat=perfil == "siat",
         casa_porto=projeto_e_casa_porto(projeto),
         reencontro=projeto_e_reencontro_pari(projeto),
+        cae_i_centro=projeto_e_cae_i_centro(projeto),
     ), perfil

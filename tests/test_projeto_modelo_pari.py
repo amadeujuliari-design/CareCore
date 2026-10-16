@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 from config_operacional_projeto import (
     projeto_descontinuado,
+    projeto_e_cae_i_centro,
     projeto_e_reencontro_pari,
     projeto_sem_fluxo_portaria,
 )
@@ -29,6 +30,12 @@ def test_jabaquara_volta_a_ter_entrada_e_saida():
     assert projeto_sem_fluxo_portaria(_projeto("REENCONTRO PARI"))
     assert projeto_sem_fluxo_portaria(_projeto("REENCONTRO ANHANGABAÚ"))
     assert projeto_sem_fluxo_portaria(_projeto("REENCONTRO CRUZEIRO DO SUL"))
+
+
+def test_cae_i_centro_nao_bipa_entrada_e_saida():
+    assert projeto_e_cae_i_centro(_projeto("CAE I CENTRO"))
+    assert projeto_sem_fluxo_portaria(_projeto("CAE I CENTRO"))
+    assert not projeto_e_reencontro_pari(_projeto("CAE I CENTRO"))
 
 
 def test_modelo_pari_nao_pega_outro_projeto():

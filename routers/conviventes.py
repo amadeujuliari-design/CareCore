@@ -41,7 +41,11 @@ from config_operacional import (
     obter_tipos_refeicao_ativos,
     obter_tipos_rotina_validos,
 )
-from config_operacional_projeto import projeto_e_casa_porto, projeto_sem_fluxo_portaria
+from config_operacional_projeto import (
+    projeto_e_cae_i_centro,
+    projeto_e_casa_porto,
+    projeto_sem_fluxo_portaria,
+)
 from config_operacional_service import carregar_config_operacional_instituicao
 from acomodacao_tb import (
     aplicar_regras_acomodacao_tb,
@@ -5732,6 +5736,7 @@ def _item_atende_filtro_sisa(item: dict, tipo_atendimento: str | None) -> bool:
 
 
 from presenca_operacional import (
+    agrupar_dias_com_refeicao,
     calcular_dias_presenca_operacional as _calcular_dias_presenca_operacional,
     convivente_ausente_saida_ontem_sem_retorno,
     convivente_dentro_por_ultimo_fluxo,
@@ -6972,8 +6977,30 @@ async def relatorio_presenca_periodo(
     convivente_ids = [convivente.id for convivente, _ in conviventes_resultado]
     fim_datetime = datetime.combine(fim, datetime.max.time())
 
+    projeto_presenca = await db.get(InstituicaoDB, instituicao_id)
+    presenca_por_refeicao = projeto_e_cae_i_centro(projeto_presenca)
+    dias_refeicao_por_convivente: dict[str, set[str]] = {}
     movimentos_por_convivente: dict[str, list[dict]] = {}
-    if convivente_ids:
+    if presenca_por_refeicao and convivente_ids:
+        config_presenca, _, _ = await carregar_config_operacional_instituicao(db, instituicao_id)
+        tipos_refeicao_presenca = obter_tipos_refeicao_ativos(config_presenca)
+        inicio_refeicao = datetime.combine(inicio, datetime.min.time())
+        if tipos_refeicao_presenca:
+            refeicoes_resultado = await db.execute(
+                select(
+                    RegistroRotinaDB.convivente_id,
+                    RegistroRotinaDB.data_registro,
+                ).where(
+                    RegistroRotinaDB.instituicao_id == instituicao_id,
+                    RegistroRotinaDB.cancelado != True,
+                    RegistroRotinaDB.convivente_id.in_(convivente_ids),
+                    RegistroRotinaDB.tipo_registro.in_(tipos_refeicao_presenca),
+                    RegistroRotinaDB.data_registro >= inicio_refeicao,
+                    RegistroRotinaDB.data_registro <= fim_datetime,
+                )
+            )
+            dias_refeicao_por_convivente = agrupar_dias_com_refeicao(refeicoes_resultado.all())
+    elif convivente_ids:
         movimentos_resultado = await db.execute(
             select(
                 RegistroRotinaDB.convivente_id,
@@ -7032,6 +7059,11 @@ async def relatorio_presenca_periodo(
             datas_inativacao_historico=inativacoes_historico_por_convivente.get(
                 convivente.id,
                 [],
+            ),
+            dias_presentes_refeicao=(
+                dias_refeicao_por_convivente.get(convivente.id, set())
+                if presenca_por_refeicao
+                else None
             ),
         )
         totais = totais_status_presenca(status_por_dia)
@@ -7982,6 +8014,14 @@ async def relatorio_sisa_mensal(
             "retorno_rapido": retorno_rapido,
         })
 
+    instituicao_relatorio = obter_instituicao_escopo(usuario_atual)
+    projeto_relatorio = await db.get(InstituicaoDB, instituicao_relatorio)
+    presenca_por_refeicao = projeto_e_cae_i_centro(projeto_relatorio)
+    tipos_refeicao_presenca: set[str] = set()
+    if presenca_por_refeicao:
+        config_presenca, _, _ = await carregar_config_operacional_instituicao(db, instituicao_relatorio)
+        tipos_refeicao_presenca = obter_tipos_refeicao_ativos(config_presenca)
+
     convivente_ids = [convivente.id for convivente in conviventes]
     movimentos_resultado = await db.execute(
         select(
@@ -8057,21 +8097,28 @@ async def relatorio_sisa_mensal(
     for convivente in conviventes:
         regs = registros_por_convivente.get(convivente.id, [])
 
-        dias_presenca_operacional = set(_calcular_dias_presenca_operacional(
-            movimentos_por_convivente.get(convivente.id, []),
-            inicio.date(),
-            fim.date(),
-            data_primeira_vinculacao_convivente(
-                convivente.data_inclusao,
-                convivente.data_entrada,
-            ),
-            data_nova_vinculacao=convivente.data_nova_vinculacao,
-            inicio_intervalo_inativo=resolver_inicio_intervalo_inativo_reativacao(
-                convivente.data_nova_vinculacao,
-                convivente.data_inativacao,
-                inativacoes_historico_por_convivente.get(convivente.id, []),
-            ),
-        ))
+        if presenca_por_refeicao:
+            dias_presenca_operacional = {
+                r["data_registro"].date().isoformat()
+                for r in regs
+                if r["tipo_registro"] in tipos_refeicao_presenca and r.get("data_registro")
+            }
+        else:
+            dias_presenca_operacional = set(_calcular_dias_presenca_operacional(
+                movimentos_por_convivente.get(convivente.id, []),
+                inicio.date(),
+                fim.date(),
+                data_primeira_vinculacao_convivente(
+                    convivente.data_inclusao,
+                    convivente.data_entrada,
+                ),
+                data_nova_vinculacao=convivente.data_nova_vinculacao,
+                inicio_intervalo_inativo=resolver_inicio_intervalo_inativo_reativacao(
+                    convivente.data_nova_vinculacao,
+                    convivente.data_inativacao,
+                    inativacoes_historico_por_convivente.get(convivente.id, []),
+                ),
+            ))
         dias_justificados = expandir_dias_justificados(
             inicio.date(),
             fim.date(),

@@ -328,6 +328,17 @@ def classificar_presenca_dia(
     return STATUS_DIA_AUSENTE
 
 
+def agrupar_dias_com_refeicao(registros) -> dict[str, set[str]]:
+    """Um dia com várias refeições continua sendo um único dia de presença."""
+    dias: dict[str, set[str]] = {}
+    for convivente_id, data_registro in registros:
+        if data_registro is None:
+            continue
+        dia = data_registro.date() if isinstance(data_registro, datetime) else data_registro
+        dias.setdefault(str(convivente_id), set()).add(dia.isoformat())
+    return dias
+
+
 def montar_status_presenca_por_dia(
     movimentos_fluxo: list[dict],
     data_inicio: date,
@@ -340,24 +351,28 @@ def montar_status_presenca_por_dia(
     periodos_ausencia_justificada: Sequence[tuple[date, date]] | None = None,
     data_nova_vinculacao: date | None = None,
     datas_inativacao_historico: Sequence[date] | None = None,
+    dias_presentes_refeicao: set[str] | None = None,
 ) -> dict[str, str]:
     inicio_intervalo_inativo = resolver_inicio_intervalo_inativo_reativacao(
         data_nova_vinculacao,
         data_inativacao,
         datas_inativacao_historico,
     )
-    assumir_dentro_sem_fluxo = status_convivente != "Ausência justificada"
-    dias_presentes = set(
-        calcular_dias_presenca_operacional(
-            movimentos_fluxo,
-            data_inicio,
-            data_fim,
-            data_entrada,
-            assumir_dentro_sem_fluxo=assumir_dentro_sem_fluxo,
-            data_nova_vinculacao=data_nova_vinculacao,
-            inicio_intervalo_inativo=inicio_intervalo_inativo,
+    if dias_presentes_refeicao is not None:
+        dias_presentes = set(dias_presentes_refeicao)
+    else:
+        assumir_dentro_sem_fluxo = status_convivente != "Ausência justificada"
+        dias_presentes = set(
+            calcular_dias_presenca_operacional(
+                movimentos_fluxo,
+                data_inicio,
+                data_fim,
+                data_entrada,
+                assumir_dentro_sem_fluxo=assumir_dentro_sem_fluxo,
+                data_nova_vinculacao=data_nova_vinculacao,
+                inicio_intervalo_inativo=inicio_intervalo_inativo,
+            )
         )
-    )
     return {
         dia.isoformat(): classificar_presenca_dia(
             dia,

@@ -9,7 +9,7 @@ import {
   obterOpcoesInteracaoRotina,
   projetoOcultaAcomodacoes,
 } from '../config/configOperacionalDefaults.js';
-import { projetoEhReencontroPari, projetoSemFluxoPortaria } from './projetoPari.js';
+import { projetoEhCaeICentro, projetoEhReencontroPari, projetoSemFluxoPortaria } from './projetoPari.js';
 import {
   tipoRegistroAlimentacao,
   TIPOS_ROTINA_REFEICOES,
@@ -81,7 +81,9 @@ export function listarTiposRegistroFiltroRotina(_perfil, opcoes = TIPOS_REGISTRO
 }
 
 function projetoUsaListaPropria(nomeProjeto) {
-  return projetoEhReencontroPari(nomeProjeto) || projetoOcultaAcomodacoes(nomeProjeto);
+  return projetoEhReencontroPari(nomeProjeto)
+    || projetoOcultaAcomodacoes(nomeProjeto)
+    || projetoEhCaeICentro(nomeProjeto);
 }
 
 function opcoesInteracaoDoProjeto(config, nomeProjeto) {

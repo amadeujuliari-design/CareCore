@@ -11,7 +11,7 @@ import BannerSomenteLeituraGlobal from './components/BannerSomenteLeituraGlobal'
 import { AppShell, MainShell, PageHeader, PremiumButton, ScrollArea } from './components/PremiumUI';
 import { useAuth } from './context/AuthContext';
 import { projetoOcultaAcomodacoes } from './config/configOperacionalDefaults';
-import { projetoSemFluxoPortaria } from './utils/projetoPari';
+import { projetoEhCaeICentro, projetoSemFluxoPortaria } from './utils/projetoPari';
 import { API_ROOT } from './config/apiBase';
 import { useDeviceInfo } from './hooks/useDeviceInfo';
 import { useLeitorUsbGlobal } from './hooks/useLeitorUsbGlobal';
@@ -185,7 +185,9 @@ export default function RotinaDiaria() {
   const navigate = useNavigate();
   const { isGlobalPuro: somenteLeitura, usuario } = useAuth();
   const { config: configOperacional, nomeProjeto: nomeProjetoOperacional, carregando: carregandoConfig } = useConfigOperacional();
-  const semPortaria = projetoSemFluxoPortaria(nomeProjetoOperacional || usuario?.projeto_nome);
+  const nomeProjetoRotina = nomeProjetoOperacional || usuario?.projeto_nome;
+  const semPortaria = projetoSemFluxoPortaria(nomeProjetoRotina);
+  const rotinaSoRefeicoes = projetoEhCaeICentro(nomeProjetoRotina);
   const projetoSiat = configOperacional?.perfil_defaults === 'siat';
   const configInteracaoPronta = carregandoConfig ? null : configOperacional;
   const opcoesInteracaoRotina = useMemo(
@@ -1525,7 +1527,9 @@ export default function RotinaDiaria() {
           eyebrow="Rotina"
           title="Controle de Fluxo Diário"
           subtitle={
-            semPortaria
+            rotinaSoRefeicoes
+              ? 'Café da manhã, almoço, café da tarde, jantar e lanche noturno. Cada refeição fica registrada; qualquer uma no dia conta 1 presença, e mais de uma no mesmo dia não soma outra presença.'
+              : semPortaria
               ? 'Alimentação e demais interações da população acolhida.'
               : somenteLeitura
               ? 'Consulta de presença, entradas, saídas e interações do dia (somente leitura).'

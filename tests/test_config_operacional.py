@@ -133,6 +133,27 @@ def test_reencontro_fica_so_com_as_quatro_refeicoes():
     assert "Saída" in tipos
 
 
+def test_cae_i_centro_fica_so_com_as_cinco_refeicoes():
+    config = mesclar_config_operacional(
+        {
+            "interacoes_rotina": [
+                {"valor": "Banho", "label": "Banho", "grupo": "simples", "ativo": True},
+            ],
+        },
+        cae_i_centro=True,
+    )
+    nomes = [item.nome for item in config.refeicoes.itens]
+    assert nomes == [
+        "Café da manhã",
+        "Almoço",
+        "Café da tarde",
+        "Jantar",
+        "Lanche noturno",
+    ]
+    assert config.interacoes_rotina == []
+    assert obter_tipos_refeicao_ativos(config) == set(nomes)
+
+
 def test_interacao_par_customizada_entra_nos_tipos_validos():
     config = montar_config_operacional_padrao()
     config.interacoes_rotina.append(

@@ -28,6 +28,11 @@ test('sede e projeto sem customização escondem rotina, atividades e convênio'
 
   assert.equal(menuOcultoNoProjeto('/rotina/lavanderia', 'SEDE AEB'), true);
   assert.equal(menuOcultoNoProjeto('/atividades/chamada', 'CAE I CENTRO'), true);
+  assert.equal(menuOcultoNoProjeto('/rotina', 'CAE I CENTRO'), false);
+  assert.equal(menuOcultoNoProjeto('/rotina/historico', 'CAE I CENTRO'), false);
+  assert.equal(menuOcultoNoProjeto('/rotina/lavanderia', 'CAE I CENTRO'), true);
+  assert.equal(menuOcultoNoProjeto('/convenio-sisa', 'CAE I CENTRO'), true);
+  assert.equal(projetoSemFluxoPortaria('CAE I CENTRO'), true);
   assert.equal(menuOcultoNoProjeto('/convenio-sisa', 'CEI BELÉM'), true);
   assert.equal(menuOcultoNoProjeto('/conviventes', 'SEDE AEB'), true);
   assert.equal(menuOcultoNoProjeto('/quartos', 'SEDE AEB'), true);

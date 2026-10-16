@@ -90,8 +90,14 @@ def projeto_e_jabaquara(projeto: InstituicaoDB | None) -> bool:
     return "reencontro jabaquara" in _referencias_projeto(projeto)
 
 
+def projeto_e_cae_i_centro(projeto: InstituicaoDB | None) -> bool:
+    return "cae i centro" in _referencias_projeto(projeto)
+
+
 def projeto_sem_fluxo_portaria(projeto: InstituicaoDB | None) -> bool:
-    """Pari, Anhangabaú e Cruzeiro não bipam entrada e saída. O Jabaquara bipa."""
+    """Pari, Anhangabaú, Cruzeiro e CAE I Centro não bipam entrada e saída. O Jabaquara bipa."""
+    if projeto_e_cae_i_centro(projeto):
+        return True
     return projeto_e_reencontro_pari(projeto) and not projeto_e_jabaquara(projeto)
 
 

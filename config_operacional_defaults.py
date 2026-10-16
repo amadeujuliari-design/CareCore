@@ -90,7 +90,16 @@ REFEICOES_REENCONTRO = [
     {"id": "jantar", "nome": "Jantar", "inicio": "17:50", "fim": "20:30", "ativo": True},
 ]
 
+REFEICOES_CAE_I_CENTRO = [
+    {"id": "cafe", "nome": "Café da manhã", "inicio": "06:55", "fim": "08:30", "ativo": True},
+    {"id": "almoco", "nome": "Almoço", "inicio": "11:50", "fim": "14:30", "ativo": True},
+    {"id": "cafe_tarde", "nome": "Café da tarde", "inicio": "15:00", "fim": "16:30", "ativo": True},
+    {"id": "jantar", "nome": "Jantar", "inicio": "17:50", "fim": "20:30", "ativo": True},
+    {"id": "lanche", "nome": "Lanche noturno", "inicio": "21:00", "fim": "22:30", "ativo": True},
+]
+
 INTERACOES_ROTINA_REENCONTRO: list[dict] = []
+INTERACOES_ROTINA_CAE_I_CENTRO: list[dict] = []
 
 INTERACOES_ROTINA_PADRAO = [
     {"valor": "Banho", "label": "Banho", "grupo": "simples", "ativo": True},

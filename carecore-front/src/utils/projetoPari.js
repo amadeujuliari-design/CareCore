@@ -21,8 +21,13 @@ export function projetoEhJabaquara(nome) {
   return textoProjeto(nome).includes('reencontro jabaquara');
 }
 
-/** Pari, Anhangabaú e Cruzeiro não bipam entrada e saída. O Jabaquara bipa. */
+export function projetoEhCaeICentro(nome) {
+  return textoProjeto(nome).includes('cae i centro');
+}
+
+/** Pari, Anhangabaú, Cruzeiro e CAE I Centro não bipam entrada e saída. O Jabaquara bipa. */
 export function projetoSemFluxoPortaria(nome) {
+  if (projetoEhCaeICentro(nome)) return true;
   return projetoEhReencontroPari(nome) && !projetoEhJabaquara(nome);
 }
 
@@ -41,6 +46,7 @@ export function projetoTemCustomizacaoOperacional(nome) {
 
 const MENUS_SEM_CUSTOMIZACAO = ['/rotina', '/atividades', '/convenio-sisa'];
 const MENUS_SO_SEDE = ['/conviventes', '/quartos'];
+const ROTINA_VISIVEL_CAE_I_CENTRO = new Set(['/rotina', '/rotina/historico']);
 
 function caminhoDoMenu(pathname) {
   return String(pathname || '').split('?')[0];
@@ -51,9 +57,17 @@ function caminhoCoberto(pathname, prefixos) {
   return prefixos.some((prefixo) => path === prefixo || path.startsWith(`${prefixo}/`));
 }
 
-/** Rotina, Atividades e Convênio ficam só nas casas já customizadas. Na Sede, também saem Conviventes e Acomodações. */
+/** Rotina, Atividades e Convênio ficam só nas casas já customizadas. Na Sede, também saem Conviventes e Acomodações. O CAE I Centro vê só a rotina diária e o histórico. */
 export function menuOcultoNoProjeto(pathname, nomeProjeto) {
   if (!String(nomeProjeto || '').trim()) return false;
+  if (projetoEhCaeICentro(nomeProjeto)) {
+    const path = caminhoDoMenu(pathname);
+    if (caminhoCoberto(path, ['/atividades', '/convenio-sisa'])) return true;
+    if (path === '/rotina' || path.startsWith('/rotina/')) {
+      return !ROTINA_VISIVEL_CAE_I_CENTRO.has(path);
+    }
+    return false;
+  }
   if (!projetoTemCustomizacaoOperacional(nomeProjeto) && caminhoCoberto(pathname, MENUS_SEM_CUSTOMIZACAO)) {
     return true;
   }
