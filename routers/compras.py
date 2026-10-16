@@ -1597,8 +1597,20 @@ async def get_patrimonio_anexo(
 @router.get("/economia")
 async def get_economia(
     competencia: Optional[str] = Query(default=None),
+    data_inicio: Optional[str] = Query(default=None),
+    data_fim: Optional[str] = Query(default=None),
+    instituicao_id: Optional[str] = Query(default=None),
+    escopo: Optional[str] = Query(default=None),
     db: AsyncSession = Depends(get_db),
     usuario_atual: dict = Depends(get_usuario_logado),
 ):
     await _ctx(db, usuario_atual)
-    return await relatorio_economia(db, usuario_atual, competencia)
+    return await relatorio_economia(
+        db,
+        usuario_atual,
+        competencia,
+        data_inicio=data_inicio,
+        data_fim=data_fim,
+        instituicao_id=instituicao_id,
+        escopo=escopo,
+    )

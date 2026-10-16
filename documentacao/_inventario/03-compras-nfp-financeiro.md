@@ -89,7 +89,7 @@ Hub do módulo: ativação, abas (pedidos, janela, cadastros, patrimônio, econo
 | Fornecedores / Catálogo de itens / Categorias | (projeto, se `podeCadastrarMestre`) |
 | Cadastros | (sede) subabas Fornecedores, Catálogo de itens, Categorias e fontes |
 | Patrimônio | `ComprasPatrimonioCadastro` |
-| Economia | (sede) Economia das cotações |
+| Economia | Economia das cotações (projeto vê a própria unidade; ADM Global Compras vê todos e a Sede) |
 
 ### Colunas da lista de pedidos
 
@@ -447,10 +447,15 @@ Botões: Fechar · Cancelar · Incluir bem / Salvar alterações
 
 ---
 
-## 1.11 Economia das cotações (sede)
+## 1.11 Economia das cotações
 
-**Arquivo:** `Compras.jsx` (aba economia)  
-Colunas: Unidade / Sede · Competência · Tipo · Valor escolhida
+**Arquivo:** `Compras.jsx` (aba economia) e `ComprasEconomiaPainel.jsx`
+
+Filtros: período (de/até, pelo dia da aprovação) e projeto. ADM Global Compras, Global e Manutenção veem todos os projetos e a Sede e podem filtrar uma unidade. Usuário de projeto, inclusive ADM Pedidos, vê só a própria unidade.
+
+Cada projeto mostra valor cheio (cotação mais alta), valor da cotação escolhida, economia em relação à maior e em relação à média. A linha expande os pedidos, com as mesmas contas e a lista de cotações.
+
+Botões: Exportar XLSX · Imprimir. Os dois saem com o filtro aplicado, o total de cada projeto e o detalhe de cada pedido.
 
 ---
 

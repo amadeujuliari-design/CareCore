@@ -77,7 +77,9 @@ from compras_regras import (
     competencia_mes_seguinte,
     data_operacional,
     dias_liberados_janela,
+    data_referencia_economia,
     economia_centavos,
+    pedido_no_periodo_economia,
     exige_tres_cotacoes,
     hortifruti_aguardando_envio_suprimentos,
     formatar_grupo_codigo,
@@ -3600,51 +3602,171 @@ async def obter_anexo_patrimonio(db: AsyncSession, usuario: dict, patrimonio_id:
     return anexo
 
 
+def _parse_data_economia(valor: Optional[str], rotulo: str) -> Optional[date]:
+    if valor is None or not str(valor).strip():
+        return None
+    try:
+        return date.fromisoformat(str(valor).strip()[:10])
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=f"{rotulo} inválida.") from exc
+
+
 async def relatorio_economia(
     db: AsyncSession,
     usuario: dict,
     competencia: Optional[str] = None,
+    data_inicio: Optional[str] = None,
+    data_fim: Optional[str] = None,
+    instituicao_id: Optional[str] = None,
+    escopo: Optional[str] = None,
 ) -> dict:
-    exigir_sede(usuario)
+    visao_organizacao = _sede(usuario)
+    inicio = _parse_data_economia(data_inicio, "Data inicial")
+    fim = _parse_data_economia(data_fim, "Data final")
+    if inicio and fim and inicio > fim:
+        raise HTTPException(status_code=400, detail="A data inicial não pode ser depois da data final.")
+
+    escopo_filtro = (escopo or "").strip().lower()
+    instituicao_filtro = (instituicao_id or "").strip() or None
+    if not visao_organizacao:
+        instituicao_filtro = (usuario.get("instituicao_id") or "").strip() or None
+        escopo_filtro = ""
+        if not instituicao_filtro:
+            raise HTTPException(status_code=403, detail="Usuário sem projeto vinculado.")
+    elif escopo_filtro == ESCOPO_SEDE:
+        instituicao_filtro = None
+    elif escopo_filtro and escopo_filtro != ESCOPO_PROJETO:
+        raise HTTPException(status_code=400, detail="Filtro de unidade inválido.")
+
     filtros = [
         ComprasPedidoDB.organizacao_id == _org_id(usuario),
         ComprasPedidoDB.status.in_({STATUS_APROVADO, STATUS_ENVIADO, STATUS_RECEBIDO}),
     ]
     if competencia:
         filtros.append(ComprasPedidoDB.competencia == normalizar_competencia(competencia))
+    if instituicao_filtro:
+        filtros.append(ComprasPedidoDB.instituicao_id == instituicao_filtro)
+        filtros.append(ComprasPedidoDB.escopo_unidade != ESCOPO_SEDE)
+    elif escopo_filtro == ESCOPO_SEDE:
+        filtros.append(ComprasPedidoDB.escopo_unidade == ESCOPO_SEDE)
+
     pedidos = (
         await db.execute(select(ComprasPedidoDB).where(*filtros))
     ).scalars().all()
+    pedidos = [
+        pedido for pedido in pedidos
+        if pedido_no_periodo_economia(data_referencia_economia(pedido), inicio, fim)
+    ]
+    ids = [pedido.id for pedido in pedidos]
+    cotacoes_por_pedido: dict[str, list] = defaultdict(list)
+    if ids:
+        cotacoes = (
+            await db.execute(
+                select(ComprasCotacaoDB).where(ComprasCotacaoDB.pedido_id.in_(ids))
+            )
+        ).scalars().all()
+        for cotacao in cotacoes:
+            cotacoes_por_pedido[cotacao.pedido_id].append(cotacao)
+
+    nomes_instituicao = await _nomes_instituicao(
+        db,
+        [pedido.instituicao_id for pedido in pedidos if pedido.instituicao_id],
+    )
+    org_nome = await _nome_organizacao(db, _org_id(usuario))
+
     total_escolhida = 0
+    total_cheio = 0
     total_vs_maior = 0
     total_vs_media = 0
     linhas = []
     for pedido in pedidos:
-        cotacoes = await _cotacoes_do_pedido(db, pedido.id)
-        escolhida = next((c for c in cotacoes if c.escolhida), None)
+        cotacoes = cotacoes_por_pedido.get(pedido.id, [])
+        base = [c for c in cotacoes if getattr(c, "ativa", True) or c.escolhida]
+        if not base:
+            base = cotacoes
+        escolhida = next((c for c in base if c.escolhida), None)
         eco = economia_centavos(
-            [c.valor_centavos for c in cotacoes],
+            [c.valor_centavos for c in base],
             escolhida.valor_centavos if escolhida else None,
         )
-        total_escolhida += escolhida.valor_centavos if escolhida else 0
+        valor_escolhida = escolhida.valor_centavos if escolhida else 0
+        total_escolhida += valor_escolhida
+        total_cheio += eco["valor_cheio_centavos"]
         total_vs_maior += eco["economia_vs_maior_centavos"]
         total_vs_media += eco["economia_vs_media_centavos"]
+        escopo_pedido = getattr(pedido, "escopo_unidade", ESCOPO_PROJETO) or ESCOPO_PROJETO
+        sede_pedido = escopo_pedido == ESCOPO_SEDE
+        dia = data_referencia_economia(pedido)
         linhas.append({
             "pedido_id": pedido.id,
+            "titulo": (pedido.titulo or pedido.grupo_codigo or "Pedido").strip(),
             "competencia": pedido.competencia,
+            "data_referencia": dia.isoformat() if dia else None,
             "tipo": pedido.tipo,
-            "escopo_unidade": getattr(pedido, "escopo_unidade", ESCOPO_PROJETO),
-            "instituicao_id": pedido.instituicao_id,
-            "instituicao_nome": await _rotulo_unidade_pedido(db, pedido),
-            "valor_escolhida_centavos": escolhida.valor_centavos if escolhida else 0,
+            "tipo_rotulo": rotulo_tipo_pedido(pedido.tipo),
+            "escopo_unidade": escopo_pedido,
+            "grupo_chave": "sede" if sede_pedido else (pedido.instituicao_id or "projeto"),
+            "instituicao_id": None if sede_pedido else pedido.instituicao_id,
+            "instituicao_nome": rotulo_unidade_relatorio(
+                escopo_unidade=escopo_pedido,
+                instituicao_nome=nomes_instituicao.get(pedido.instituicao_id),
+                organizacao_nome=org_nome,
+            ),
+            "valor_escolhida_centavos": valor_escolhida,
+            "cotacoes": [
+                {
+                    "fornecedor_nome": c.fornecedor_nome,
+                    "valor_centavos": c.valor_centavos,
+                    "escolhida": bool(c.escolhida),
+                }
+                for c in base
+            ],
             **eco,
         })
+
+    grupos: dict[str, dict] = {}
+    for linha in linhas:
+        grupo = grupos.get(linha["grupo_chave"])
+        if grupo is None:
+            grupo = {
+                "chave": linha["grupo_chave"],
+                "nome": linha["instituicao_nome"],
+                "instituicao_id": linha["instituicao_id"],
+                "escopo_unidade": linha["escopo_unidade"],
+                "pedidos": 0,
+                "total_escolhida_centavos": 0,
+                "total_cheio_centavos": 0,
+                "economia_vs_maior_centavos": 0,
+                "economia_vs_media_centavos": 0,
+                "linhas": [],
+            }
+            grupos[linha["grupo_chave"]] = grupo
+        grupo["pedidos"] += 1
+        grupo["total_escolhida_centavos"] += linha["valor_escolhida_centavos"]
+        grupo["total_cheio_centavos"] += linha["valor_cheio_centavos"]
+        grupo["economia_vs_maior_centavos"] += linha["economia_vs_maior_centavos"]
+        grupo["economia_vs_media_centavos"] += linha["economia_vs_media_centavos"]
+        grupo["linhas"].append(linha)
+
+    projetos = sorted(
+        grupos.values(),
+        key=lambda grupo: (grupo["chave"] != "sede", grupo["nome"].lower()),
+    )
+    for grupo in projetos:
+        grupo["linhas"].sort(key=lambda linha: (linha["data_referencia"] or "", linha["titulo"]))
+
     return {
-        "competencia": competencia,
+        "visao_organizacao": visao_organizacao,
+        "data_inicio": inicio.isoformat() if inicio else None,
+        "data_fim": fim.isoformat() if fim else None,
+        "instituicao_id": instituicao_filtro,
+        "escopo": escopo_filtro or None,
         "pedidos": len(linhas),
         "total_escolhida_centavos": total_escolhida,
+        "total_cheio_centavos": total_cheio,
         "economia_vs_maior_centavos": total_vs_maior,
         "economia_vs_media_centavos": total_vs_media,
+        "projetos": projetos,
         "linhas": linhas,
     }
 

@@ -482,8 +482,19 @@ export async function comprasImportarItensConsumo(arquivo) {
   return data;
 }
 
-export async function comprasEconomia(competencia) {
-  const params = competencia ? { competencia } : {};
+export async function comprasEconomia({
+  competencia,
+  data_inicio,
+  data_fim,
+  instituicao_id,
+  escopo,
+} = {}) {
+  const params = {};
+  if (competencia) params.competencia = competencia;
+  if (data_inicio) params.data_inicio = data_inicio;
+  if (data_fim) params.data_fim = data_fim;
+  if (instituicao_id) params.instituicao_id = instituicao_id;
+  if (escopo) params.escopo = escopo;
   const { data } = await api.get('/api/compras/economia', { params });
   return data;
 }

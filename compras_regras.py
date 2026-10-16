@@ -1221,14 +1221,46 @@ def sugerir_janela_competencia(ano: int, mes: int) -> tuple[date, date]:
 def economia_centavos(valores: list[int], escolhida_centavos: Optional[int]) -> dict:
     limpos = [int(v) for v in valores if v is not None]
     if not limpos or escolhida_centavos is None:
-        return {"economia_vs_maior_centavos": 0, "economia_vs_media_centavos": 0}
+        return {
+            "valor_cheio_centavos": 0,
+            "valor_medio_centavos": 0,
+            "economia_vs_maior_centavos": 0,
+            "economia_vs_media_centavos": 0,
+        }
     maior = max(limpos)
     media = int(round(sum(limpos) / len(limpos)))
     escolhida = int(escolhida_centavos)
     return {
+        "valor_cheio_centavos": maior,
+        "valor_medio_centavos": media,
         "economia_vs_maior_centavos": max(0, maior - escolhida),
         "economia_vs_media_centavos": max(0, media - escolhida),
     }
+
+
+def data_referencia_economia(pedido) -> Optional[date]:
+    """Dia em que a economia ficou definida: aprovação da Sede, da unidade, envio ou criação."""
+    for campo in ("aprovado_sede_em", "aprovado_unidade_em", "submetido_em", "criado_em"):
+        valor = getattr(pedido, campo, None)
+        if isinstance(valor, datetime):
+            return valor.date()
+        if isinstance(valor, date):
+            return valor
+    return None
+
+
+def pedido_no_periodo_economia(
+    dia: Optional[date],
+    data_inicio: Optional[date],
+    data_fim: Optional[date],
+) -> bool:
+    if dia is None:
+        return data_inicio is None and data_fim is None
+    if data_inicio and dia < data_inicio:
+        return False
+    if data_fim and dia > data_fim:
+        return False
+    return True
 
 
 def pedido_rascunho_pode_excluir(

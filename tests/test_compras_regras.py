@@ -1,4 +1,5 @@
-from datetime import date
+from datetime import date, datetime
+from types import SimpleNamespace
 
 import pytest
 
@@ -7,7 +8,9 @@ from compras_regras import (
     compras_modulo_ativo_padrao,
     detectar_semana_util,
     dias_liberados_janela,
+    data_referencia_economia,
     economia_centavos,
+    pedido_no_periodo_economia,
     janela_consumo_aberta,
     normalizar_competencia,
     normalizar_escopo_unidade,
@@ -244,8 +247,34 @@ def test_tipos_cotacao_projeto():
 
 def test_economia():
     eco = economia_centavos([1000, 800, 900], 800)
+    assert eco["valor_cheio_centavos"] == 1000
+    assert eco["valor_medio_centavos"] == 900
     assert eco["economia_vs_maior_centavos"] == 200
     assert eco["economia_vs_media_centavos"] == 100
+    vazio = economia_centavos([], None)
+    assert vazio["valor_cheio_centavos"] == 0
+    assert vazio["economia_vs_maior_centavos"] == 0
+
+
+def test_periodo_economia():
+    pedido = SimpleNamespace(
+        aprovado_sede_em=datetime(2026, 10, 16, 9, 0),
+        aprovado_unidade_em=datetime(2026, 10, 1, 8, 0),
+        submetido_em=None,
+        criado_em=datetime(2026, 9, 1, 8, 0),
+    )
+    assert data_referencia_economia(pedido) == date(2026, 10, 16)
+    sem_sede = SimpleNamespace(
+        aprovado_sede_em=None,
+        aprovado_unidade_em=datetime(2026, 10, 1, 8, 0),
+        submetido_em=datetime(2026, 9, 20, 8, 0),
+        criado_em=datetime(2026, 9, 1, 8, 0),
+    )
+    assert data_referencia_economia(sem_sede) == date(2026, 10, 1)
+    assert pedido_no_periodo_economia(date(2026, 10, 16), date(2026, 10, 1), date(2026, 10, 16))
+    assert not pedido_no_periodo_economia(date(2026, 9, 30), date(2026, 10, 1), None)
+    assert pedido_no_periodo_economia(None, None, None)
+    assert not pedido_no_periodo_economia(None, date(2026, 10, 1), None)
 
 
 def test_escopo_sede_e_rotulo():

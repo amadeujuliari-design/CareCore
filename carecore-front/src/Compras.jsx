@@ -19,6 +19,7 @@ import ComprasCategoriasFontes from './components/ComprasCategoriasFontes';
 import ComprasFornecedoresCadastro from './components/ComprasFornecedoresCadastro';
 import ComprasItensConsumoCadastro from './components/ComprasItensConsumoCadastro';
 import ComprasJanelaCalendario from './components/ComprasJanelaCalendario';
+import ComprasEconomiaPainel from './components/ComprasEconomiaPainel';
 import ComprasPatrimonioCadastro from './components/ComprasPatrimonioCadastro';
 import Sidebar from './Sidebar';
 import {
@@ -37,7 +38,6 @@ import {
   comprasAtivarModulo,
   comprasCategorias,
   comprasCriarPedido,
-  comprasEconomia,
   comprasExcluirJanela,
   comprasFontes,
   comprasFornecedores,
@@ -50,7 +50,6 @@ import {
   comprasSalvarJanela,
   comprasUnidades,
   competenciaAtual,
-  moneyCentavos,
 } from './services/comprasService';
 import { usuarioEhAdmCompras, usuarioEhAdmComprasSuprimentos, usuarioEhGlobalPuro, usuarioEhManutencao, usuarioPodeCadastrarMestreCompras } from './utils/rbacUtils';
 import { BOTOES_NOVO_PEDIDO, rotuloTipoPedido } from './utils/comprasPedidoTipos';
@@ -288,7 +287,6 @@ export default function Compras() {
   const [fornecedores, setFornecedores] = useState(() => cacheVista?.fornecedores || []);
   const [itensConsumo, setItensConsumo] = useState(() => cacheVista?.itensConsumo || []);
   const [patrimonio, setPatrimonio] = useState(() => cacheVista?.patrimonio || []);
-  const [economia, setEconomia] = useState(() => cacheVista?.economia ?? null);
   const [competencia, setCompetencia] = useState(competenciaInicial);
   const [salvandoJanela, setSalvandoJanela] = useState(false);
   const [ordemPedidos, setOrdemPedidos] = useState(() => {
@@ -388,7 +386,6 @@ export default function Compras() {
         setFornecedores([]);
         setItensConsumo([]);
         setPatrimonio([]);
-        setEconomia(null);
         cacheListaCompras.chave = '';
         return;
       }
@@ -403,7 +400,6 @@ export default function Compras() {
             comprasUnidades(),
             comprasFornecedores(),
             comprasPatrimonio(),
-            comprasEconomia(competencia),
           ])
           : null,
         visaoOrganizacao ? null : comprasPatrimonio(),
@@ -417,7 +413,6 @@ export default function Compras() {
       const unidadesNovas = pacoteSede?.[0] || pacoteMestre?.[1] || [];
       const fornecedoresNovos = pacoteSede?.[1] || pacoteMestre?.[0] || [];
       const patrimonioNovo = pacoteSede?.[2] || patrimonioProjeto || [];
-      const economiaNova = pacoteSede?.[3] ?? null;
       setPedidos(lista);
       setCategorias(cats);
       setFontes(fonts);
@@ -427,7 +422,6 @@ export default function Compras() {
       setUnidades(unidadesNovas);
       setFornecedores(fornecedoresNovos);
       setPatrimonio(patrimonioNovo);
-      setEconomia(economiaNova);
       Object.assign(cacheListaCompras, {
         chave,
         acesso: acc,
@@ -440,7 +434,6 @@ export default function Compras() {
         unidades: unidadesNovas,
         fornecedores: fornecedoresNovos,
         patrimonio: patrimonioNovo,
-        economia: economiaNova,
       });
     } catch (err) {
       if (seq !== cargaSeq.current) return;
@@ -480,6 +473,8 @@ export default function Compras() {
       } else if (podeCadastrarMestre) {
         setAba(abaParam);
       }
+    } else if (abaParam === 'economia') {
+      setAba('economia');
     } else if (visaoParam === 'concluidos') {
       setAba('pedidos');
     }
@@ -497,7 +492,7 @@ export default function Compras() {
       : []),
     ...(visaoOrganizacao ? [{ id: 'cadastros', label: 'Cadastros', icon: Truck }] : []),
     { id: 'patrimonio', label: 'Patrimônio', icon: Package },
-    ...(visaoOrganizacao ? [{ id: 'economia', label: 'Economia', icon: Landmark }] : []),
+    { id: 'economia', label: 'Economia', icon: Landmark },
   ];
 
   return (
@@ -1056,38 +1051,12 @@ export default function Compras() {
               />
             )}
 
-            {aba === 'economia' && visaoOrganizacao && economia && (
-              <SectionCard title="Economia das cotações">
-                <p className="text-sm">
-                  Pedidos: {economia.pedidos} · Escolhidas: {moneyCentavos(economia.total_escolhida_centavos)}
-                  · vs maior: {moneyCentavos(economia.economia_vs_maior_centavos)}
-                  · vs média: {moneyCentavos(economia.economia_vs_media_centavos)}
-                </p>
-                {Array.isArray(economia.linhas) && economia.linhas.length > 0 && (
-                  <div className="mt-4 overflow-x-auto">
-                    <table className="min-w-full text-sm">
-                      <thead>
-                        <tr className="text-left text-xs uppercase text-slate-500">
-                          <th className="py-2">Unidade / Sede</th>
-                          <th>Competência</th>
-                          <th>Tipo</th>
-                          <th>Valor escolhida</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {economia.linhas.map((linha) => (
-                          <tr key={linha.pedido_id} className="border-t border-slate-100">
-                            <td className="py-2">{linha.instituicao_nome}</td>
-                            <td>{linha.competencia}</td>
-                            <td>{linha.tipo}</td>
-                            <td>{moneyCentavos(linha.valor_escolhida_centavos)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </SectionCard>
+            {aba === 'economia' && (
+              <ComprasEconomiaPainel
+                visaoOrganizacao={visaoOrganizacao}
+                unidades={unidades}
+                nomeProjeto={usuario?.projeto_nome || ''}
+              />
             )}
               </>
             )}
