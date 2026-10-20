@@ -9,7 +9,7 @@ Inventário minucioso das telas assistenciais a partir do JSX em `carecore-front
 
 Casas já customizadas (SIAT II Armênia, Reencontro Parí, Anhangabaú, Cruzeiro do Sul, Jabaquara e Casa Porto Seguro) mantêm o menu da casa. A Casa Porto continua sem acomodações, pertences e lavanderia de peças.
 
-Na Sede AEB e nos demais projetos, o menu esconde Rotina Diária (e o submenu), Atividades e Convênio / SISA. Só na Sede também saem Conviventes e Acomodações. CTA 17 – Liberdade não entra na lista de projetos.
+Na Sede AEB e nos demais projetos, o menu esconde Rotina Diária (e o submenu), Atividades e Convênio / SISA. Só na Sede também saem Conviventes e Acomodações. CTA 17 – Liberdade e CAE F Down Town não entram na lista de projetos.
 
 O CAE I CENTRO é a exceção: volta a Rotina Diária só com Registro da Rotina e Histórico da Rotina. As interações são Café da manhã, Almoço, Café da tarde, Jantar e Lanche noturno, sem entrada e saída. Cada refeição continua um registro próprio. A presença do dia conta 1 se houver qualquer uma dessas refeições; duas ou mais no mesmo dia não somam outra presença. Atividades e Convênio / SISA seguem ocultos.
 

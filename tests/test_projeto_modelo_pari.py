@@ -49,3 +49,10 @@ def test_cta_liberdade_sai_da_lista():
     assert not projeto_descontinuado(_projeto("CTA 18 – CANINDÉ"))
     assert not projeto_descontinuado(_projeto("SEDE AEB"))
     assert not projeto_descontinuado(None)
+
+
+def test_down_town_sai_da_lista():
+    assert projeto_descontinuado(_projeto("CAE F DOWN TOWN"))
+    assert projeto_descontinuado(_projeto("CAEF - DOWN TOWN"))
+    assert projeto_descontinuado(_projeto("DOWNTOWN"))
+    assert not projeto_descontinuado(_projeto("CAE I CENTRO"))

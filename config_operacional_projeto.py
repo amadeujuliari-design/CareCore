@@ -107,6 +107,8 @@ def projeto_e_reencontro_pari(projeto: InstituicaoDB | None) -> bool:
 
 
 def projeto_descontinuado(projeto: InstituicaoDB | None) -> bool:
-    """CTA Liberdade sai da lista de projetos. O cadastro permanece no banco."""
+    """CTA Liberdade e CAE F Down Town saem da lista. O cadastro permanece no banco."""
     texto = _referencias_projeto(projeto)
-    return "cta" in texto and "liberdade" in texto
+    if "cta" in texto and "liberdade" in texto:
+        return True
+    return "down town" in texto or "downtown" in texto
