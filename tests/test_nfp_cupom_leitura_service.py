@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime
 from unittest.mock import patch
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -22,6 +23,15 @@ CHAVE_OK = "35260847508411169495651090002701871160307536"
 # Mesmo padrao estrutural, DV valido e distinta da CHAVE_OK (para QR com CPF).
 CHAVE_CPF = "35260847508411169495651090002701871160307544"
 ORG = "org-nfp-leitura-test"
+# Emissao 2026-08 → SEFAZ ate 2026-10-20; leitura CareCore ate 2026-10-21.
+_AGORA_DENTRO_JANELA_CHAVE_OK = datetime(2026, 10, 10, 12, 0, 0)
+
+
+def _congelar_agora_janela():
+    return patch(
+        "nfp_cupom_leitura_service.agora_operacional_naive",
+        return_value=_AGORA_DENTRO_JANELA_CHAVE_OK,
+    )
 
 
 async def _preparar():
@@ -40,7 +50,7 @@ def test_leitura_rapida_agenda_checando_sem_bloquear_sefaz():
         engine, factory = await _preparar()
         try:
             async with factory() as session:
-                with patch("nfp_cupom_leitura_service.agendar_checagem_sefaz") as mock_agendar:
+                with patch("nfp_cupom_leitura_service.agendar_checagem_sefaz") as mock_agendar, _congelar_agora_janela():
                     out = await registrar_leitura_rapida(
                         session,
                         organizacao_id=ORG,
@@ -67,7 +77,7 @@ def test_leitura_rapida_rejeita_cpf_no_qr_imediatamente():
                 f"p={CHAVE_CPF}|3|1|01|10.00|2|04817513357|ABC"
             )
             async with factory() as session:
-                with patch("nfp_cupom_leitura_service.agendar_checagem_sefaz") as mock_agendar:
+                with patch("nfp_cupom_leitura_service.agendar_checagem_sefaz") as mock_agendar, _congelar_agora_janela():
                     out = await registrar_leitura_rapida(
                         session,
                         organizacao_id=ORG,
@@ -89,7 +99,7 @@ def test_leitura_rapida_duplicata_levanta_lookup():
         engine, factory = await _preparar()
         try:
             async with factory() as session:
-                with patch("nfp_cupom_leitura_service.agendar_checagem_sefaz"):
+                with patch("nfp_cupom_leitura_service.agendar_checagem_sefaz"), _congelar_agora_janela():
                     await registrar_leitura_rapida(
                         session,
                         organizacao_id=ORG,
@@ -118,7 +128,7 @@ def test_worker_checagem_vira_pendente_quando_sem_cpf():
         engine, factory = await _preparar()
         try:
             async with factory() as session:
-                with patch("nfp_cupom_leitura_service.agendar_checagem_sefaz"):
+                with patch("nfp_cupom_leitura_service.agendar_checagem_sefaz"), _congelar_agora_janela():
                     out = await registrar_leitura_rapida(
                         session,
                         organizacao_id=ORG,
@@ -139,7 +149,7 @@ def test_worker_checagem_vira_pendente_quando_sem_cpf():
             ), patch(
                 "nfp_cupom_leitura_service.AsyncSessionLocal",
                 factory,
-            ):
+            ), _congelar_agora_janela():
                 await _aplicar_checagem_sefaz(cupom_id)
 
             async with factory() as s2:
@@ -158,7 +168,7 @@ def test_worker_checagem_rejeita_quando_sefaz_indica_cpf():
         engine, factory = await _preparar()
         try:
             async with factory() as session:
-                with patch("nfp_cupom_leitura_service.agendar_checagem_sefaz"):
+                with patch("nfp_cupom_leitura_service.agendar_checagem_sefaz"), _congelar_agora_janela():
                     out = await registrar_leitura_rapida(
                         session,
                         organizacao_id=ORG,
@@ -179,7 +189,7 @@ def test_worker_checagem_rejeita_quando_sefaz_indica_cpf():
             ), patch(
                 "nfp_cupom_leitura_service.AsyncSessionLocal",
                 factory,
-            ):
+            ), _congelar_agora_janela():
                 await _aplicar_checagem_sefaz(cupom_id)
 
             async with factory() as s2:
@@ -289,7 +299,7 @@ def test_leitura_grava_valor_e_numero_do_qr():
                 f"p={CHAVE_OK}|3|1|05|32.90|1|1|ABC"
             )
             async with factory() as session:
-                with patch("nfp_cupom_leitura_service.agendar_checagem_sefaz"):
+                with patch("nfp_cupom_leitura_service.agendar_checagem_sefaz"), _congelar_agora_janela():
                     out = await registrar_leitura_rapida(
                         session,
                         organizacao_id=ORG,
