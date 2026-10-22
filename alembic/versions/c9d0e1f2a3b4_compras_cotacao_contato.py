@@ -1,6 +1,6 @@
 """Contato livre do fornecedor na cotacao do projeto.
 
-Revision ID: b1c2d3e4f5a6
+Revision ID: c9d0e1f2a3b4
 Revises: b0c1d2e3f4a5
 """
 
@@ -12,7 +12,7 @@ from alembic import op
 import sqlalchemy as sa
 
 
-revision: str = "b1c2d3e4f5a6"
+revision: str = "c9d0e1f2a3b4"
 down_revision: Union[str, None] = "b0c1d2e3f4a5"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
