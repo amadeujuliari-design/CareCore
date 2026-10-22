@@ -8,7 +8,7 @@ from collections import defaultdict
 from typing import Optional
 
 from fastapi import HTTPException, status
-from sqlalchemy import delete, func, or_, select, update
+from sqlalchemy import and_, delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from compras_categoria_utils import (
@@ -101,6 +101,7 @@ from compras_regras import (
     quem_registrou_escolha_vigente,
     status_depois_de_escolher_cotacao,
     pedido_rascunho_pode_excluir,
+    perfil_adm_compras_sede,
     periodo_semana_util_mes,
     pode_criar_rascunho_consumo,
     pode_enviar_consumo,
@@ -111,6 +112,10 @@ from compras_regras import (
     sequencia_grupo_codigo,
     status_janela,
     sugerir_janela_competencia,
+    DESTINO_COMPRAS_INFRAESTRUTURA,
+    DESTINO_COMPRAS_SUPRIMENTOS,
+    pedido_segue_infraestrutura,
+    corrigir_acento_quebrado,
     tipo_eh_cotacao_projeto,
     sede_exige_aprovacao_previa_unidade,
     tipo_eh_cotacao_sede,
@@ -135,6 +140,7 @@ from compras_pedido_fluxo import (
     enviar_cotacao_projeto_para_sede,
     enviar_email_fornecedor,
     extras_serializacao_pedido,
+    exigir_compra_liberada_infra,
     gerar_pedido_compra,
     ler_bytes_anexo,
     registrar_comunicacao_pedido,
@@ -239,7 +245,7 @@ def _aplicar_cabecalho_cotacao_projeto(
     obrigatorio: bool = False,
 ) -> None:
     """Aplica campos de bem/manutenção/serviço. Consumo ignora (não grava)."""
-    if not tipo_eh_cotacao_projeto(pedido.tipo):
+    if not tipo_eh_cotacao_projeto(pedido.tipo) and pedido.tipo != TIPO_MANUTENCAO:
         return
 
     if "titulo" in payload:
@@ -317,7 +323,136 @@ def exigir_cadastro_mestre_compras(usuario: dict) -> None:
     )
 
 
+async def _sanear_acentos_cadastro_compras(db: AsyncSession, organizacao_id: str) -> None:
+    """Corrige acento quebrado e some com a cópia duplicada de fonte ou categoria."""
+    fontes = list(
+        (
+            await db.execute(
+                select(ComprasFonteRecursoDB).where(
+                    ComprasFonteRecursoDB.organizacao_id == organizacao_id
+                )
+            )
+        ).scalars().all()
+    )
+    categorias = list(
+        (
+            await db.execute(
+                select(ComprasCategoriaDB).where(
+                    ComprasCategoriaDB.organizacao_id == organizacao_id
+                )
+            )
+        ).scalars().all()
+    )
+    mudou = False
+    uso_fonte = {
+        row[0]: int(row[1])
+        for row in (
+            await db.execute(
+                select(ComprasPedidoDB.fonte_recurso_id, func.count())
+                .where(
+                    ComprasPedidoDB.organizacao_id == organizacao_id,
+                    ComprasPedidoDB.fonte_recurso_id.is_not(None),
+                )
+                .group_by(ComprasPedidoDB.fonte_recurso_id)
+            )
+        ).all()
+    }
+    grupos_fonte: dict[str, list] = {}
+    for row in fontes:
+        nome = corrigir_acento_quebrado(row.nome) or row.nome
+        grupos_fonte.setdefault((nome or "").strip().lower(), []).append(row)
+    for grupo in grupos_fonte.values():
+        if len(grupo) < 2:
+            nome_certo = corrigir_acento_quebrado(grupo[0].nome) or grupo[0].nome
+            if nome_certo and nome_certo != grupo[0].nome:
+                grupo[0].nome = nome_certo
+                mudou = True
+            continue
+        grupo.sort(key=lambda item: (-uso_fonte.get(item.id, 0), 0 if item.ativo else 1, item.id))
+        keeper = grupo[0]
+        for extra in grupo[1:]:
+            await db.execute(
+                ComprasPedidoDB.__table__.update()
+                .where(ComprasPedidoDB.fonte_recurso_id == extra.id)
+                .values(fonte_recurso_id=keeper.id)
+            )
+            await db.delete(extra)
+            mudou = True
+        await db.flush()
+        nome_certo = corrigir_acento_quebrado(keeper.nome) or keeper.nome
+        if nome_certo and nome_certo != keeper.nome:
+            keeper.nome = nome_certo
+            mudou = True
+
+    refs_categoria = (
+        (ComprasItemConsumoDB, "categoria_id"),
+        (ComprasFornecedorDB, "categoria_id"),
+        (ComprasFornecedorCategoriaDB, "categoria_id"),
+        (ComprasPedidoItemDB, "categoria_id"),
+        (ComprasPatrimonioDB, "categoria_id"),
+    )
+    grupos_cat: dict[str, list] = {}
+    for row in categorias:
+        nome = corrigir_acento_quebrado(row.nome) or row.nome
+        grupos_cat.setdefault((nome or "").strip().lower(), []).append(row)
+    for grupo in grupos_cat.values():
+        if len(grupo) < 2:
+            nome_certo = corrigir_acento_quebrado(grupo[0].nome) or grupo[0].nome
+            if nome_certo and nome_certo != grupo[0].nome:
+                grupo[0].nome = nome_certo
+                mudou = True
+            continue
+        grupo.sort(key=lambda item: (0 if item.ativo else 1, item.id))
+        keeper = grupo[0]
+        for extra in grupo[1:]:
+            for modelo, coluna in refs_categoria:
+                campo = getattr(modelo, coluna)
+                if modelo is ComprasFornecedorCategoriaDB:
+                    ja_ligados = {
+                        row[0]
+                        for row in (
+                            await db.execute(
+                                select(ComprasFornecedorCategoriaDB.fornecedor_id).where(
+                                    ComprasFornecedorCategoriaDB.categoria_id == keeper.id
+                                )
+                            )
+                        ).all()
+                    }
+                    ligacoes = (
+                        await db.execute(
+                            select(ComprasFornecedorCategoriaDB).where(
+                                ComprasFornecedorCategoriaDB.categoria_id == extra.id
+                            )
+                        )
+                    ).scalars().all()
+                    for ligacao in ligacoes:
+                        if ligacao.fornecedor_id in ja_ligados:
+                            await db.delete(ligacao)
+                        else:
+                            ligacao.categoria_id = keeper.id
+                    continue
+                await db.execute(
+                    modelo.__table__.update().where(campo == extra.id).values(**{coluna: keeper.id})
+                )
+            await db.execute(
+                ComprasPedidoDB.__table__.update()
+                .where(ComprasPedidoDB.categoria_split_id == extra.id)
+                .values(categoria_split_id=keeper.id)
+            )
+            await db.delete(extra)
+            mudou = True
+        await db.flush()
+        nome_certo = corrigir_acento_quebrado(keeper.nome) or keeper.nome
+        if nome_certo and nome_certo != keeper.nome:
+            keeper.nome = nome_certo
+            mudou = True
+    await db.flush()
+    if mudou:
+        await db.commit()
+
+
 async def garantir_cadastros_padrao(db: AsyncSession, organizacao_id: str) -> None:
+    await _sanear_acentos_cadastro_compras(db, organizacao_id)
     existentes_cat = {
         (row[0] or "").strip().lower()
         for row in (
@@ -432,7 +567,10 @@ async def serializar_pedido(
         "email_adm_compras": email_adm_compras,
         "tipo": pedido.tipo,
         "tipo_rotulo": rotulo_tipo_pedido(pedido.tipo),
-        "cotacao_projeto": tipo_eh_cotacao_projeto(pedido.tipo),
+        "cotacao_projeto": pedido_segue_infraestrutura(
+            pedido.tipo,
+            getattr(pedido, "destino_compras", None),
+        ) or tipo_eh_cotacao_projeto(pedido.tipo),
         "cotacao_sede": tipo_eh_cotacao_sede(pedido.tipo),
         "pula_aprovacao_sede": tipo_pula_aprovacao_sede(pedido.tipo),
         "competencia": pedido.competencia,
@@ -442,6 +580,14 @@ async def serializar_pedido(
         "fonte_recurso_tipo": None,
         "fonte_custo_rotulo": None,
         "observacao": pedido.observacao,
+        "info_pedido": getattr(pedido, "info_pedido", None),
+        "fornecedor_pedido_nome": getattr(pedido, "fornecedor_pedido_nome", None),
+        "fornecedor_pedido_info": getattr(pedido, "fornecedor_pedido_info", None),
+        "destino_compras": getattr(pedido, "destino_compras", None),
+        "segue_infraestrutura": pedido_segue_infraestrutura(
+            pedido.tipo,
+            getattr(pedido, "destino_compras", None),
+        ),
         "titulo": getattr(pedido, "titulo", None),
         "justificativa": getattr(pedido, "justificativa", None),
         "urgencia": getattr(pedido, "urgencia", None) or URGENCIA_NORMAL,
@@ -567,6 +713,7 @@ async def serializar_pedido(
             "id": cotacao.id,
             "fornecedor_id": cotacao.fornecedor_id,
             "fornecedor_nome": cotacao.fornecedor_nome,
+            "fornecedor_contato": getattr(cotacao, "fornecedor_contato", None),
             "valor_centavos": cotacao.valor_centavos,
             "escolhida": bool(cotacao.escolhida),
             "ativa": bool(getattr(cotacao, "ativa", True)),
@@ -877,7 +1024,31 @@ async def listar_pedidos(
             perfil=_perfil(usuario),
             is_manutencao=eh_manut,
         )
-        if tipos_visao is not None:
+        classe_sede = perfil_adm_compras_sede(usuario)
+        if classe_sede == "infraestrutura":
+            filtros.append(
+                or_(
+                    ComprasPedidoDB.tipo.in_((TIPO_IMOBILIZADO, TIPO_SERVICO)),
+                    and_(
+                        ComprasPedidoDB.tipo == TIPO_MANUTENCAO,
+                        ComprasPedidoDB.destino_compras == DESTINO_COMPRAS_INFRAESTRUTURA,
+                    ),
+                )
+            )
+        elif classe_sede == "suprimentos":
+            filtros.append(
+                or_(
+                    ComprasPedidoDB.tipo.in_((TIPO_CONSUMO, TIPO_HORTIFRUTI)),
+                    and_(
+                        ComprasPedidoDB.tipo == TIPO_MANUTENCAO,
+                        or_(
+                            ComprasPedidoDB.destino_compras.is_(None),
+                            ComprasPedidoDB.destino_compras != DESTINO_COMPRAS_INFRAESTRUTURA,
+                        ),
+                    ),
+                )
+            )
+        elif tipos_visao is not None:
             filtros.append(ComprasPedidoDB.tipo.in_(tuple(tipos_visao)))
     if competencia:
         filtros.append(ComprasPedidoDB.competencia == normalizar_competencia(competencia))
@@ -1003,10 +1174,27 @@ async def criar_pedido(
         envio_automatico=bool(payload.get("envio_automatico")) if tipo == TIPO_CONSUMO else False,
     )
     _aplicar_cabecalho_cotacao_projeto(pedido, payload, obrigatorio=tipo_eh_cotacao_projeto(tipo))
+    segue_infra = pedido_segue_infraestrutura(tipo, payload.get("destino_compras"))
+    if segue_infra:
+        info = (payload.get("info_pedido") or "").strip()
+        nome_fornecedor = (payload.get("fornecedor_pedido_nome") or "").strip()
+        if not info:
+            raise HTTPException(status_code=400, detail="Informe as informações do pedido.")
+        if not nome_fornecedor:
+            raise HTTPException(status_code=400, detail="Informe o nome do fornecedor.")
+        pedido.info_pedido = info
+        pedido.fornecedor_pedido_nome = nome_fornecedor
+        pedido.fornecedor_pedido_info = (payload.get("fornecedor_pedido_info") or "").strip() or None
+        pedido.destino_compras = DESTINO_COMPRAS_INFRAESTRUTURA
+        pedido.observacao = None
+    elif tipo == TIPO_MANUTENCAO:
+        pedido.destino_compras = DESTINO_COMPRAS_SUPRIMENTOS
     db.add(pedido)
     await db.flush()
 
-    linhas = [item for item in (payload.get("itens") or []) if (item.get("descricao") or "").strip()]
+    linhas = [] if segue_infra else [
+        item for item in (payload.get("itens") or []) if (item.get("descricao") or "").strip()
+    ]
     if any(not (item.get("catalogo_item_id") or "").strip() for item in linhas):
         raise HTTPException(
             status_code=400,
@@ -1539,10 +1727,18 @@ async def atualizar_rascunho(
     if pedido.status != STATUS_RASCUNHO:
         raise HTTPException(status_code=400, detail="Só o rascunho pode ser ajustado aqui.")
 
-    if "observacao" in payload:
+    if "observacao" in payload and not pedido_segue_infraestrutura(
+        pedido.tipo, getattr(pedido, "destino_compras", None)
+    ):
         pedido.observacao = (payload.get("observacao") or "").strip() or None
+    if "info_pedido" in payload:
+        pedido.info_pedido = (payload.get("info_pedido") or "").strip() or None
+    if "fornecedor_pedido_nome" in payload:
+        pedido.fornecedor_pedido_nome = (payload.get("fornecedor_pedido_nome") or "").strip() or None
+    if "fornecedor_pedido_info" in payload:
+        pedido.fornecedor_pedido_info = (payload.get("fornecedor_pedido_info") or "").strip() or None
 
-    if tipo_eh_cotacao_projeto(pedido.tipo):
+    if tipo_eh_cotacao_projeto(pedido.tipo) or pedido.tipo == TIPO_MANUTENCAO:
         _aplicar_cabecalho_cotacao_projeto(pedido, payload, obrigatorio=False)
         pedido.atualizado_em = agora_operacional_naive()
         return pedido
@@ -1593,7 +1789,7 @@ async def registrar_cotacao(
     payload: dict,
 ) -> ComprasCotacaoDB:
     unidade_cotacao_projeto = (
-        tipo_eh_cotacao_projeto(pedido.tipo)
+        pedido_segue_infraestrutura(pedido.tipo, getattr(pedido, "destino_compras", None))
         and pedido.status in {
             STATUS_RASCUNHO,
             STATUS_AGUARDANDO_COTACAO,
@@ -1659,6 +1855,7 @@ async def registrar_cotacao(
         pedido_id=pedido.id,
         fornecedor_id=fornecedor_id or None,
         fornecedor_nome=nome,
+        fornecedor_contato=(payload.get("fornecedor_contato") or "").strip() or None,
         valor_centavos=valor,
         observacao=payload.get("observacao") or None,
         criado_por_id=_uid(usuario),
@@ -1703,11 +1900,13 @@ async def escolher_cotacao(
             status_code=403,
             detail="Somente a Sede (ADM Compras) escolhe o orçamento vencedor.",
         )
+    infra_deste = pedido_segue_infraestrutura(pedido.tipo, getattr(pedido, "destino_compras", None))
+    classe_sede = perfil_adm_compras_sede(usuario)
     if not consumo_projeto and not usuario_global_assina_orcamento(usuario) and not usuario_sede_pode_ver_tipo(
         perfil=_perfil(usuario),
         tipo=pedido.tipo,
         is_manutencao=bool(usuario.get("is_manutencao")),
-    ):
+    ) and not (infra_deste and classe_sede == "infraestrutura"):
         raise HTTPException(status_code=403, detail="Pedido fora do escopo da sua classe de Compras.")
     if pedido.status not in {
         STATUS_AGUARDANDO_SEDE,
@@ -1730,7 +1929,7 @@ async def escolher_cotacao(
     for cotacao in cotacoes:
         cotacao.escolhida = cotacao.id == cotacao_id
 
-    quem = "Projeto" if consumo_projeto else "Sede"
+    quem = "Projeto" if consumo_projeto else ("Infraestrutura" if infra_deste else "Sede")
     if anterior and anterior.id != alvo.id:
         texto = (
             f"{quem} revogou a escolha de {anterior.fornecedor_nome} e escolheu "
@@ -1768,8 +1967,12 @@ async def escolher_cotacao(
                 pedido_id=pedido.id,
                 tipo=TIPO_EVENTO_STATUS,
                 texto=(
-                    "Projeto aprovou o orçamento escolhido. "
-                    "Suprimentos pode enviar o pedido ao fornecedor."
+                    f"{quem} escolheu o orçamento. "
+                    + (
+                        "A Infraestrutura pode enviar o pedido ao fornecedor."
+                        if infra_deste
+                        else "Suprimentos pode enviar o pedido ao fornecedor."
+                    )
                 ),
                 usuario_id=_uid(usuario),
                 cotacao_id=alvo.id,
@@ -1897,6 +2100,7 @@ async def aprovar_sede(db: AsyncSession, usuario: dict, pedido: ComprasPedidoDB)
 
 
 async def enviar_fornecedor(db: AsyncSession, usuario: dict, pedido: ComprasPedidoDB) -> ComprasPedidoDB:
+    await exigir_compra_liberada_infra(db, pedido)
     if tipo_eh_cotacao_projeto(pedido.tipo):
         if not _sede(usuario):
             if not usuario_pode_pedir(
@@ -1960,6 +2164,68 @@ async def enviar_fornecedor(db: AsyncSession, usuario: dict, pedido: ComprasPedi
         usuario_id=_uid(usuario),
         status_anterior=STATUS_APROVADO,
         status_novo=STATUS_ENVIADO,
+    )
+    return pedido
+
+
+TEXTO_COMPRA_DIRETA = "Compra direta sem envio de e-mail."
+
+
+async def registrar_compra_direta(
+    db: AsyncSession,
+    usuario: dict,
+    pedido: ComprasPedidoDB,
+) -> ComprasPedidoDB:
+    """Bem, serviço ou manutenção de infraestrutura seguem sem e-mail ao fornecedor."""
+    if not pedido_segue_infraestrutura(pedido.tipo, getattr(pedido, "destino_compras", None)):
+        raise HTTPException(
+            status_code=400,
+            detail="Compra direta sem e-mail vale para bem, serviço e manutenção de infraestrutura.",
+        )
+    if not _sede(usuario):
+        if not usuario_pode_pedir(
+            perfil=_perfil(usuario),
+            compras_modulo_ativo=bool(usuario.get("compras_modulo_ativo")),
+            is_manutencao=bool(usuario.get("is_manutencao")),
+            org_compras_ativo=True,
+        ):
+            raise HTTPException(status_code=403, detail="Sem permissão para registrar a compra direta.")
+        if pedido.instituicao_id != usuario.get("instituicao_id") and not usuario.get("is_manutencao"):
+            raise HTTPException(status_code=403, detail="Compra direta só no próprio projeto.")
+    if pedido.status not in {STATUS_APROVADO, STATUS_ENVIADO}:
+        raise HTTPException(
+            status_code=400,
+            detail="A compra direta fica disponível depois da assinatura da Sede.",
+        )
+    await exigir_compra_liberada_infra(db, pedido)
+    ja_registrou = (
+        await db.execute(
+            select(ComprasPedidoEventoDB.id).where(
+                ComprasPedidoEventoDB.pedido_id == pedido.id,
+                ComprasPedidoEventoDB.texto.like(f"{TEXTO_COMPRA_DIRETA}%"),
+            )
+        )
+    ).first()
+    if ja_registrou:
+        return pedido
+    status_antes = pedido.status
+    if pedido.status == STATUS_APROVADO:
+        await gerar_pedido_compra(db, usuario, pedido)
+        pedido.status = STATUS_ENVIADO
+        pedido.enviado_em = agora_operacional_naive()
+        pedido.enviado_por_id = _uid(usuario)
+    pedido.atualizado_em = agora_operacional_naive()
+    await registrar_evento_pedido(
+        db,
+        pedido_id=pedido.id,
+        tipo=TIPO_EVENTO_STATUS,
+        texto=(
+            f"{TEXTO_COMPRA_DIRETA} "
+            "A compra segue sem mensagem ao fornecedor e o processo fica pronto para a nota fiscal."
+        ),
+        usuario_id=_uid(usuario),
+        status_anterior=status_antes,
+        status_novo=pedido.status,
     )
     return pedido
 

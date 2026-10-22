@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { FilePenLine } from 'lucide-react';
 
 import Sidebar from './Sidebar';
 import ModalPosicionarAssinaturaOrcamento from './components/ModalPosicionarAssinaturaOrcamento';
+import ModalVisualizarAnexoCompras from './components/ModalVisualizarAnexoCompras';
 import {
   AppShell,
   EmptyState,
@@ -18,16 +19,18 @@ import {
   comprasAssinarOrcamentoSede,
   comprasAssinaturaDigitalStatus,
   comprasBaixarAnexo,
+  comprasContratoAssinado,
+  comprasEnviarFilaRepresentante,
   comprasEscolherCotacao,
-  comprasObterPedido,
-  comprasPedidos,
+  comprasFilaAssinatura,
+  comprasRevisarContrato,
   comprasRevogarEscolhaCotacao,
   comprasUploadAssinaturaDigital,
   moneyCentavos,
 } from './services/comprasService';
 import { usuarioEhAdmCompras, usuarioEhManutencao, usuarioGlobalAssinaOrcamento } from './utils/rbacUtils';
 import { formatarDataBr } from './utils/comprasJanelaUtils';
-import { cotacoesComEscolhidaPrimeiro, rotuloTipoPedido, tipoEhCotacaoProjeto } from './utils/comprasPedidoTipos';
+import { cotacoesComEscolhidaPrimeiro, rotuloTipoPedido } from './utils/comprasPedidoTipos';
 
 function usuarioSessao() {
   try {
@@ -39,7 +42,7 @@ function usuarioSessao() {
 
 const URL_ASSINADOR_GOVBR = 'https://assinador.iti.br/';
 
-function GovBrAssinatura({ pedido, escolhida, enviando, onErro, onOk, onEnviando, onArquivado }) {
+function GovBrAssinatura({ pedido, escolhida, enviando, onErro, onOk, onEnviando, onArquivado, onVisualizar }) {
   const anexo = anexosOrcamento(pedido, escolhida.id).find((item) => item.tipo === 'orcamento');
   return (
     <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
@@ -54,7 +57,20 @@ function GovBrAssinatura({ pedido, escolhida, enviando, onErro, onOk, onEnviando
         <li>Baixe o arquivo assinado pelo botão de download do site. Esse arquivo já é o PDF com a assinatura. Não use Imprimir nem “Salvar como PDF”: isso cria uma cópia sem a assinatura digital.</li>
         <li>Envie o PDF assinado aqui. O pedido é aprovado nesse momento.</li>
       </ol>
-      <div className="mt-3 flex flex-wrap items-center gap-2">
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+        <PremiumButton
+          variant="secondary"
+          disabled={!anexo}
+          onClick={() => {
+            if (!anexo) {
+              onErro('Este orçamento ainda não tem PDF para visualizar.');
+              return;
+            }
+            onVisualizar?.(anexo);
+          }}
+        >
+          Visualizar
+        </PremiumButton>
         <PremiumButton
           variant="secondary"
           disabled={!anexo}
@@ -109,6 +125,101 @@ function GovBrAssinatura({ pedido, escolhida, enviando, onErro, onOk, onEnviando
   );
 }
 
+function ContratoFila({ pedido, modo, enviando, onErro, onOk, onEnviando, onPronto, onVisualizar }) {
+  const contrato = pedido.contrato || {};
+  const titulo = [pedido.titulo, pedido.instituicao_nome || 'Projeto', 'Contrato'].filter(Boolean).join(' · ');
+  return (
+    <li className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
+      <p className="text-sm font-semibold text-slate-900">{titulo}</p>
+      <p className="mt-1 text-xs text-slate-500">{contrato.nome_arquivo || 'Contrato'}</p>
+      {modo === 'infra' ? (
+        <div className="mt-3">
+          <PremiumButton
+            disabled={enviando}
+            onClick={async () => {
+              onErro('');
+              onOk('');
+              onEnviando(true);
+              try {
+                await comprasRevisarContrato(pedido.id, contrato.id);
+                onOk('Contrato enviado para a fila da Noemi.');
+                await onPronto();
+              } catch (err) {
+                onErro(err.response?.data?.detail || err.message || 'Não foi possível enviar o contrato.');
+              } finally {
+                onEnviando(false);
+              }
+            }}
+          >
+            Ok, enviar à Noemi
+          </PremiumButton>
+        </div>
+      ) : (
+        <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+          <p className="font-semibold text-slate-900">Assinar no portal gov.br</p>
+          <p className="mt-1 text-xs text-slate-600">
+            Baixe o contrato, assine no Assinador gov.br e envie aqui o PDF que o site devolve.
+          </p>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <PremiumButton
+              variant="secondary"
+              onClick={() => onVisualizar?.(contrato)}
+            >
+              Visualizar
+            </PremiumButton>
+            <PremiumButton
+              variant="secondary"
+              onClick={() => {
+                comprasBaixarAnexo(pedido.id, contrato.id, contrato.nome_arquivo).catch(() => {
+                  onErro('Não foi possível baixar o contrato.');
+                });
+              }}
+            >
+              Baixar contrato
+            </PremiumButton>
+            <a
+              href={URL_ASSINADOR_GOVBR}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-800 hover:border-slate-400"
+            >
+              Abrir Assinador gov.br
+            </a>
+            <label className="inline-flex cursor-pointer items-center rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800">
+              {enviando ? 'Enviando…' : 'Enviar PDF assinado'}
+              <input
+                type="file"
+                accept=".pdf,application/pdf"
+                className="sr-only"
+                disabled={enviando}
+                onChange={async (event) => {
+                  const arquivo = event.target.files?.[0];
+                  event.target.value = '';
+                  if (!arquivo) return;
+                  onErro('');
+                  onOk('');
+                  onEnviando(true);
+                  try {
+                    const fd = new FormData();
+                    fd.append('arquivo', arquivo);
+                    await comprasContratoAssinado(pedido.id, contrato.id, fd);
+                    onOk('Contrato assinado. O projeto foi avisado na timeline.');
+                    await onPronto();
+                  } catch (err) {
+                    onErro(err.response?.data?.detail || err.message || 'Não foi possível arquivar o contrato.');
+                  } finally {
+                    onEnviando(false);
+                  }
+                }}
+              />
+            </label>
+          </div>
+        </div>
+      )}
+    </li>
+  );
+}
+
 function anexosOrcamento(pedido, cotacaoId) {
   return (pedido.anexos || []).filter(
     (a) => a.cotacao_id === cotacaoId && (a.tipo === 'orcamento' || a.tipo === 'orcamento_assinado'),
@@ -122,43 +233,54 @@ export default function ComprasAguardandoAssinatura() {
   const [erro, setErro] = useState('');
   const [ok, setOk] = useState('');
   const [carregando, setCarregando] = useState(true);
-  const [itens, setItens] = useState([]);
+  const [fila, setFila] = useState({
+    ver_infra: false,
+    ver_representante: false,
+    orcamentos_infra: [],
+    orcamentos_representante: [],
+    contratos_infra: [],
+    contratos_representante: [],
+  });
   const [assinandoId, setAssinandoId] = useState('');
   const [painelGovId, setPainelGovId] = useState('');
   const [enviandoGovId, setEnviandoGovId] = useState('');
   const [acaoId, setAcaoId] = useState('');
   const [assinatura, setAssinatura] = useState({ cadastrada: false, nome_arquivo: null });
   const [modalAssinatura, setModalAssinatura] = useState(null);
+  const [modalAnexo, setModalAnexo] = useState(null);
+  const ocupadoRef = useRef(false);
+  useEffect(() => {
+    ocupadoRef.current = Boolean(modalAssinatura || modalAnexo || painelGovId || enviandoGovId || acaoId || assinandoId);
+  }, [modalAssinatura, modalAnexo, painelGovId, enviandoGovId, acaoId, assinandoId]);
 
-  const carregar = useCallback(async () => {
-    setErro('');
-    setCarregando(true);
+  const carregar = useCallback(async ({ silencioso = false } = {}) => {
+    if (!silencioso) {
+      setErro('');
+      setCarregando(true);
+    }
     try {
       if (!sede) {
-        setItens([]);
         return;
       }
-      const [lista, statusAssinatura] = await Promise.all([
-        comprasPedidos({ status_pedido: 'aguardando_aprovacao_sede' }),
+      const [dados, statusAssinatura] = await Promise.all([
+        comprasFilaAssinatura(),
         comprasAssinaturaDigitalStatus().catch(() => ({ cadastrada: false })),
       ]);
       setAssinatura(statusAssinatura || { cadastrada: false });
-      const filtrados = (lista || []).filter((p) => tipoEhCotacaoProjeto(p.tipo));
-      const detalhados = await Promise.all(
-        filtrados.map(async (p) => {
-          try {
-            return await comprasObterPedido(p.id);
-          } catch {
-            return p;
-          }
-        }),
-      );
-      setItens(detalhados);
+      setFila({
+        ver_infra: Boolean(dados?.ver_infra),
+        ver_representante: Boolean(dados?.ver_representante),
+        orcamentos_infra: dados?.orcamentos_infra || [],
+        orcamentos_representante: dados?.orcamentos_representante || [],
+        contratos_infra: dados?.contratos_infra || [],
+        contratos_representante: dados?.contratos_representante || [],
+      });
     } catch (err) {
-      setErro(err.response?.data?.detail || err.message || 'Não foi possível carregar a fila.');
-      setItens([]);
+      if (!silencioso) {
+        setErro(err.response?.data?.detail || err.message || 'Não foi possível carregar a fila.');
+      }
     } finally {
-      setCarregando(false);
+      if (!silencioso) setCarregando(false);
     }
   }, [sede]);
 
@@ -169,8 +291,8 @@ export default function ComprasAguardandoAssinatura() {
   useEffect(() => {
     if (!sede) return undefined;
     const id = window.setInterval(() => {
-      if (document.visibilityState === 'hidden') return;
-      carregar();
+      if (document.visibilityState === 'hidden' || ocupadoRef.current) return;
+      carregar({ silencioso: true });
     }, 30_000);
     return () => window.clearInterval(id);
   }, [carregar, sede]);
@@ -198,7 +320,9 @@ export default function ComprasAguardandoAssinatura() {
         <PageHeader
           eyebrow="Compras · Sede"
           title="Aguardando assinatura"
-          subtitle="Escolha o orçamento vencedor, assine com o seu PDF de assinatura e devolva ao projeto."
+          subtitle={fila.ver_representante && !fila.ver_infra
+            ? 'Contratos e orçamentos enviados pela Infraestrutura, para assinatura no gov.br.'
+            : 'A Infraestrutura posiciona e assina, ou envia o orçamento ao representante legal. O contrato passa pelo ok dela e depois vai para a Noemi.'}
           icon={<FilePenLine className="h-5 w-5" />}
           actions={(
             <PremiumButton variant="secondary" onClick={() => carregar()}>
@@ -217,6 +341,7 @@ export default function ComprasAguardandoAssinatura() {
               <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">{ok}</div>
             )}
 
+            {fila.ver_infra && (
             <SectionCard title="Sua assinatura digital">
               <p className="mb-3 text-sm text-slate-600">
                 O mesmo PDF é aplicado em todos os atos de assinatura sobre o orçamento escolhido.
@@ -252,18 +377,53 @@ export default function ComprasAguardandoAssinatura() {
                 />
               </label>
             </SectionCard>
+            )}
 
-            <SectionCard title={`Fila da Sede (${itens.length})`}>
+            {[
+              fila.ver_infra ? {
+                chave: 'infra',
+                titulo: 'Fila da Infraestrutura',
+                orcamentos: fila.orcamentos_infra,
+                contratos: fila.contratos_infra,
+                modo: 'infra',
+                vazio: 'Nenhum orçamento ou contrato aguardando a Infraestrutura.',
+              } : null,
+              fila.ver_representante ? {
+                chave: 'representante',
+                titulo: 'Fila do representante legal',
+                orcamentos: fila.orcamentos_representante,
+                contratos: fila.contratos_representante,
+                modo: 'representante',
+                vazio: 'Nenhum contrato ou orçamento aguardando a Noemi.',
+              } : null,
+            ].filter(Boolean).map((bloco) => (
+            <SectionCard key={bloco.chave} title={`${bloco.titulo} (${bloco.orcamentos.length + bloco.contratos.length})`}>
               {carregando ? (
                 <p className="text-sm text-slate-500">Carregando…</p>
-              ) : itens.length === 0 ? (
+              ) : (bloco.orcamentos.length + bloco.contratos.length) === 0 ? (
                 <EmptyState
-                  title="Nenhum pedido aguardando assinatura"
-                  subtitle="Quando o projeto anexar orçamentos (ou enviar à Sede), o pedido aparece aqui."
+                  title="Nenhum item nesta fila"
+                  subtitle={bloco.vazio}
                 />
               ) : (
                 <ul className="space-y-4">
-                  {itens.map((pedido) => {
+                  {bloco.contratos.map((pedido) => (
+                    <ContratoFila
+                      key={pedido.contrato?.id || pedido.id}
+                      pedido={pedido}
+                      modo={bloco.modo}
+                      enviando={acaoId === pedido.id}
+                      onErro={setErro}
+                      onOk={setOk}
+                      onEnviando={(ativo) => setAcaoId(ativo ? pedido.id : '')}
+                      onPronto={() => carregar()}
+                      onVisualizar={bloco.modo === 'representante'
+                        ? (anexo) => setModalAnexo({ pedidoId: pedido.id, anexo })
+                        : undefined}
+                    />
+                  ))}
+                  {bloco.orcamentos.map((pedido) => {
+                    const modo = bloco.modo;
                     const escolhida = (pedido.cotacoes || []).find((c) => c.escolhida);
                     const cotacoes = (pedido.cotacoes || []).filter((c) => c.ativa !== false);
                     const avisos = pedido.aviso_sede_sem_tres_orcamentos;
@@ -317,7 +477,7 @@ export default function ComprasAguardandoAssinatura() {
                                         {c.escolhida ? ' · Escolhida' : ''}
                                       </span>
                                       <div className="flex flex-wrap gap-2">
-                                        {!c.escolhida && (
+                                        {modo === 'infra' && !c.escolhida && (
                                           <PremiumButton
                                             disabled={acaoId === pedido.id}
                                             onClick={async () => {
@@ -338,7 +498,7 @@ export default function ComprasAguardandoAssinatura() {
                                             Escolher
                                           </PremiumButton>
                                         )}
-                                        {c.escolhida && (
+                                        {modo === 'infra' && c.escolhida && (
                                           <PremiumButton
                                             variant="secondary"
                                             disabled={acaoId === pedido.id}
@@ -392,48 +552,71 @@ export default function ComprasAguardandoAssinatura() {
                             >
                               Abrir pedido
                             </PremiumButton>
-                            <PremiumButton
-                              disabled={
-                                assinandoId === pedido.id
-                                || !escolhida
-                                || !assinatura.cadastrada
-                                || anexosOrcamento(pedido, escolhida?.id).filter((a) => a.tipo === 'orcamento').length === 0
-                              }
-                              onClick={() => {
-                                if (!assinatura.cadastrada) {
-                                  setErro('Cadastre o PDF da sua assinatura digital antes de assinar.');
-                                  return;
-                                }
-                                const anexoOrc = anexosOrcamento(pedido, escolhida.id)
-                                  .find((a) => a.tipo === 'orcamento');
-                                if (!anexoOrc) {
-                                  setErro('Anexe o PDF do orçamento vencedor antes de assinar.');
-                                  return;
-                                }
-                                setErro('');
-                                setOk('');
-                                setModalAssinatura({
-                                  pedidoId: pedido.id,
-                                  anexoOrcamentoId: anexoOrc.id,
-                                  fornecedorNome: escolhida.fornecedor_nome || '',
-                                });
-                              }}
-                            >
-                              {assinandoId === pedido.id ? 'Assinando…' : 'Posicionar e assinar'}
-                            </PremiumButton>
-                            <PremiumButton
-                              variant="secondary"
-                              disabled={!escolhida}
-                              onClick={() => {
-                                setErro('');
-                                setPainelGovId((atual) => (atual === pedido.id ? '' : pedido.id));
-                              }}
-                            >
-                              Assinar com gov.br
-                            </PremiumButton>
+                            {modo === 'infra' ? (
+                              <>
+                                <PremiumButton
+                                  disabled={
+                                    assinandoId === pedido.id
+                                    || !escolhida
+                                    || !assinatura.cadastrada
+                                    || anexosOrcamento(pedido, escolhida?.id).filter((a) => a.tipo === 'orcamento').length === 0
+                                  }
+                                  onClick={() => {
+                                    if (!assinatura.cadastrada) {
+                                      setErro('Cadastre o PDF da sua assinatura digital antes de assinar.');
+                                      return;
+                                    }
+                                    const anexoOrc = anexosOrcamento(pedido, escolhida.id)
+                                      .find((a) => a.tipo === 'orcamento');
+                                    if (!anexoOrc) {
+                                      setErro('Anexe o PDF do orçamento vencedor antes de assinar.');
+                                      return;
+                                    }
+                                    setErro('');
+                                    setOk('');
+                                    setModalAssinatura({
+                                      pedidoId: pedido.id,
+                                      anexoOrcamentoId: anexoOrc.id,
+                                      fornecedorNome: escolhida.fornecedor_nome || '',
+                                    });
+                                  }}
+                                >
+                                  {assinandoId === pedido.id ? 'Assinando…' : 'Posicionar e assinar'}
+                                </PremiumButton>
+                                <PremiumButton
+                                  disabled={acaoId === pedido.id || !escolhida}
+                                  onClick={async () => {
+                                    setErro('');
+                                    setOk('');
+                                    setAcaoId(pedido.id);
+                                    try {
+                                      await comprasEnviarFilaRepresentante(pedido.id);
+                                      setOk('Orçamento enviado para a fila da Noemi.');
+                                      await carregar();
+                                    } catch (err) {
+                                      setErro(err.response?.data?.detail || err.message || 'Não foi possível enviar à Noemi.');
+                                    } finally {
+                                      setAcaoId('');
+                                    }
+                                  }}
+                                >
+                                  Enviar para a fila do representante legal
+                                </PremiumButton>
+                              </>
+                            ) : (
+                              <PremiumButton
+                                disabled={!escolhida}
+                                onClick={() => {
+                                  setErro('');
+                                  setPainelGovId((atual) => (atual === pedido.id ? '' : pedido.id));
+                                }}
+                              >
+                                Assinar com gov.br
+                              </PremiumButton>
+                            )}
                           </div>
                         </div>
-                        {painelGovId === pedido.id && escolhida && (
+                        {modo === 'representante' && painelGovId === pedido.id && escolhida && (
                           <GovBrAssinatura
                             pedido={pedido}
                             escolhida={escolhida}
@@ -442,6 +625,7 @@ export default function ComprasAguardandoAssinatura() {
                             onOk={setOk}
                             onEnviando={(ativo) => setEnviandoGovId(ativo ? pedido.id : '')}
                             onArquivado={carregar}
+                            onVisualizar={(anexo) => setModalAnexo({ pedidoId: pedido.id, anexo })}
                           />
                         )}
                         <p className="mt-2 text-xs text-slate-500">
@@ -455,9 +639,17 @@ export default function ComprasAguardandoAssinatura() {
                 </ul>
               )}
             </SectionCard>
+            ))}
           </div>
         </ScrollArea>
       </MainShell>
+      <ModalVisualizarAnexoCompras
+        aberto={Boolean(modalAnexo)}
+        pedidoId={modalAnexo?.pedidoId}
+        anexo={modalAnexo?.anexo}
+        onFechar={() => setModalAnexo(null)}
+        onErro={(msg) => setErro(msg)}
+      />
       <ModalPosicionarAssinaturaOrcamento
         aberto={Boolean(modalAssinatura)}
         pedidoId={modalAssinatura?.pedidoId}

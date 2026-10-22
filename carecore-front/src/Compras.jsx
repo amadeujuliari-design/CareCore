@@ -236,14 +236,28 @@ function chaveListaCompras(usuarioId, competencia, statusGrupo) {
   return `${usuarioId || ''}|${competencia || ''}|${statusGrupo}`;
 }
 
-function lerVistaCompras(visaoConcluidos) {
+function chaveVistaCompras(usuarioId, visaoConcluidos) {
+  return `${CHAVE_VISTA_COMPRAS}:${usuarioId || 'anon'}:${visaoConcluidos ? 'ok' : 'abertos'}`;
+}
+
+function lerVistaCompras(usuarioId, visaoConcluidos) {
   try {
-    const data = JSON.parse(sessionStorage.getItem(CHAVE_VISTA_COMPRAS) || 'null');
+    const data = JSON.parse(sessionStorage.getItem(chaveVistaCompras(usuarioId, visaoConcluidos)) || 'null');
     if (!data || Boolean(data.visaoConcluidos) !== Boolean(visaoConcluidos)) return null;
+    if (data.usuarioId && data.usuarioId !== usuarioId) return null;
     return data;
   } catch {
     return null;
   }
+}
+
+function abaPermitidaCompras(id, { visaoOrganizacao, podeCadastrarMestre }) {
+  if (['pedidos', 'janela', 'patrimonio', 'economia'].includes(id)) return true;
+  if (id === 'cadastros') return Boolean(visaoOrganizacao);
+  if (['fornecedores', 'itens', 'categorias'].includes(id)) {
+    return Boolean(podeCadastrarMestre && !visaoOrganizacao);
+  }
+  return false;
 }
 
 export default function Compras() {
@@ -256,7 +270,10 @@ export default function Compras() {
   const consultaGlobal = usuarioEhGlobalPuro(usuario);
   const visaoOrganizacao = sede || consultaGlobal;
   const podeCadastrarMestre = usuarioPodeCadastrarMestreCompras(usuario);
-  const vistaInicial = useMemo(() => lerVistaCompras(visaoConcluidos), [visaoConcluidos]);
+  const vistaInicial = useMemo(
+    () => lerVistaCompras(usuario?.id, visaoConcluidos),
+    [usuario?.id, visaoConcluidos],
+  );
   const competenciaInicial = typeof vistaInicial?.competencia === 'string'
     ? vistaInicial.competencia
     : (visaoConcluidos ? competenciaAtual() : '');
@@ -268,7 +285,12 @@ export default function Compras() {
   )
     ? cacheListaCompras
     : null;
-  const [aba, setAba] = useState(() => vistaInicial?.aba || 'pedidos');
+  const [aba, setAba] = useState(() => {
+    const candidata = vistaInicial?.aba || 'pedidos';
+    return abaPermitidaCompras(candidata, { visaoOrganizacao, podeCadastrarMestre })
+      ? candidata
+      : 'pedidos';
+  });
   const [abaCadastro, setAbaCadastro] = useState('fornecedores');
   const [acesso, setAcesso] = useState(() => cacheVista?.acesso || null);
   const [erro, setErro] = useState('');
@@ -314,7 +336,21 @@ export default function Compras() {
   }, [visaoConcluidos]);
 
   useEffect(() => {
-    sessionStorage.setItem(CHAVE_VISTA_COMPRAS, JSON.stringify({
+    if (cacheListaCompras.usuarioId && cacheListaCompras.usuarioId !== usuario?.id) {
+      cacheListaCompras.chave = '';
+    }
+    cacheListaCompras.usuarioId = usuario?.id;
+  }, [usuario?.id]);
+
+  useEffect(() => {
+    if (!abaPermitidaCompras(aba, { visaoOrganizacao, podeCadastrarMestre })) {
+      setAba('pedidos');
+    }
+  }, [aba, podeCadastrarMestre, visaoOrganizacao]);
+
+  useEffect(() => {
+    sessionStorage.setItem(chaveVistaCompras(usuario?.id, visaoConcluidos), JSON.stringify({
+      usuarioId: usuario?.id || '',
       visaoConcluidos,
       competencia,
       aba,
@@ -323,7 +359,7 @@ export default function Compras() {
       unidadeExpandida,
       calendario: visaoCalendario,
     }));
-  }, [visaoConcluidos, competencia, aba, ordemPedidos, agruparPorUnidade, unidadeExpandida, visaoCalendario]);
+  }, [usuario?.id, visaoConcluidos, competencia, aba, ordemPedidos, agruparPorUnidade, unidadeExpandida, visaoCalendario]);
 
   const pedidosOrdenados = useMemo(() => {
     const lista = [...(pedidos || [])];
@@ -494,6 +530,7 @@ export default function Compras() {
     { id: 'patrimonio', label: 'Patrimônio', icon: Package },
     { id: 'economia', label: 'Economia', icon: Landmark },
   ];
+  const abaAtiva = abas.some((item) => item.id === aba) ? aba : 'pedidos';
 
   return (
     <AppShell>
@@ -512,7 +549,9 @@ export default function Compras() {
         <ScrollArea>
           <div className="space-y-4 p-4 md:p-6">
             {erro && (
-              <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{erro}</div>
+              <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+                {typeof erro === 'string' ? erro : (erro?.message || 'Não foi possível carregar Compras.')}
+              </div>
             )}
             {ok && (
               <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">{ok}</div>
@@ -559,7 +598,7 @@ export default function Compras() {
                   type="button"
                   onClick={() => setAba(item.id)}
                   className={`inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-sm font-semibold ${
-                    aba === item.id
+                    abaAtiva === item.id
                       ? 'border-slate-800 bg-slate-800 text-white'
                       : 'border-slate-200 bg-white text-slate-700'
                   }`}
@@ -571,7 +610,7 @@ export default function Compras() {
             </div>
             )}
 
-            {aba === 'pedidos' && (
+            {abaAtiva === 'pedidos' && (
               <>
                 <FilterPanel
                   title="Filtros"
@@ -826,7 +865,7 @@ export default function Compras() {
               </>
             )}
 
-            {aba === 'janela' && (
+            {abaAtiva === 'janela' && (
               <ComprasJanelaCalendario
                 janelas={janelas}
                 hoje={hojeOperacional}
@@ -909,7 +948,7 @@ export default function Compras() {
               />
             )}
 
-            {aba === 'fornecedores' && podeCadastrarMestre && !sede && (
+            {abaAtiva === 'fornecedores' && podeCadastrarMestre && !sede && (
               <ComprasFornecedoresCadastro
                 fornecedores={fornecedores}
                 categorias={categorias}
@@ -922,7 +961,7 @@ export default function Compras() {
               />
             )}
 
-            {aba === 'itens' && podeCadastrarMestre && !sede && (
+            {abaAtiva === 'itens' && podeCadastrarMestre && !sede && (
               <ComprasItensConsumoCadastro
                 itens={itensConsumo}
                 categorias={categorias}
@@ -937,7 +976,7 @@ export default function Compras() {
               />
             )}
 
-            {aba === 'categorias' && podeCadastrarMestre && !sede && (
+            {abaAtiva === 'categorias' && podeCadastrarMestre && !sede && (
               <ComprasCategoriasFontes
                 categorias={categorias}
                 fontes={fontes}
@@ -957,7 +996,7 @@ export default function Compras() {
               />
             )}
 
-            {aba === 'cadastros' && visaoOrganizacao && (
+            {abaAtiva === 'cadastros' && visaoOrganizacao && (
               <div className="space-y-4">
                 <div className="flex flex-wrap gap-2">
                   {[
@@ -1030,7 +1069,7 @@ export default function Compras() {
               </div>
             )}
 
-            {aba === 'patrimonio' && (
+            {abaAtiva === 'patrimonio' && (
               <ComprasPatrimonioCadastro
                 itens={patrimonio}
                 unidades={unidades}
@@ -1051,7 +1090,7 @@ export default function Compras() {
               />
             )}
 
-            {aba === 'economia' && (
+            {abaAtiva === 'economia' && (
               <ComprasEconomiaPainel
                 visaoOrganizacao={visaoOrganizacao}
                 unidades={unidades}

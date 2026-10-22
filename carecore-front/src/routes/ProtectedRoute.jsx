@@ -172,8 +172,10 @@ export default function ProtectedRoute({
   }
 
   const perfilDaRota = perfis.map(normalizarPerfil).includes(normalizarPerfil(usuario.perfil_acesso));
-  const globalAssinaNestaRota = pathname === '/compras/aguardando-assinatura'
-    && usuarioGlobalAssinaOrcamento(usuario);
+  const globalAssinaNestaRota = (
+    pathname === '/compras/aguardando-assinatura'
+    || pathname === '/compras/documentos-assinados'
+  ) && usuarioGlobalAssinaOrcamento(usuario);
 
   if (
     perfis.length > 0 &&

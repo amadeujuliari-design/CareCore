@@ -23,7 +23,7 @@
 | Escopo | Menu (Sidebar) | Quem vê |
 | --- | --- | --- |
 | Projeto | Compras → Pedidos e cotações, Pedidos concluídos, Catálogo de itens, Categorias, Fornecedores | Usuário com `compras_modulo_ativo` (ou ADM Pedidos / ADM Compras / Manutenção via `usuarioPodeVerCompras`) |
-| Sede | Compras → Pedidos, concluídos, catálogo, categorias, fornecedores, aguardando assinatura e Usuários ADM Global Compras | ADM Global Compras / Suprimentos / Infraestrutura / Manutenção. Global consulta a mesma sede, sem criar nem editar. |
+| Sede | Compras → Pedidos, concluídos, catálogo, categorias, fornecedores, aguardando assinatura, documentos assinados e Usuários ADM Global Compras | ADM Global Compras / Suprimentos / Infraestrutura / Manutenção. Global consulta a mesma sede, sem criar nem editar. O global autorizado a assinar (Noemi) vê a fila e Documentos assinados. |
 
 **Origem:** `Sidebar.jsx` (`COMPRAS_CHILDREN_PROJETO`, `montarComprasChildrenSede`), `rbacUtils.js` (`PERFIS_ADM_COMPRAS_SEDE`, `usuarioPodeVerCompras`, `usuarioEhGlobalPuro`).
 
@@ -36,7 +36,7 @@ Tipos de novo pedido (`BOTOES_NOVO_PEDIDO` em `utils/comprasPedidoTipos.js`):
 | `/compras/novo/consumo` | Itens de consumo | Pedido da janela mensal. A Sede Suprimentos pede os orçamentos. |
 | `/compras/novo/hortifruti` | Hortifruti | Frutas, legumes e verduras a qualquer momento. A Sede Suprimentos cota; só o projeto aprova. |
 | `/compras/novo/imobilizado` | Bem / imobilizado | Compra de bem. O projeto cota; a Sede Infraestrutura acompanha. |
-| `/compras/novo/manutencao` | Itens de manutenção | Reparos e manutenção. A Sede Suprimentos conduz a cotação. |
+| `/compras/novo/manutencao` | Itens de manutenção | Reparos. Quem conduz: Suprimentos (cotação da Sede) ou Infraestrutura (mesmo caminho de bem e serviço). |
 | `/compras/novo/servico` | Prestação de serviço | Serviços. O projeto cota; a Sede Infraestrutura acompanha. |
 
 ### Fluxo consumo (como o JSX conduz)
@@ -50,6 +50,18 @@ Tipos de novo pedido (`BOTOES_NOVO_PEDIDO` em `utils/comprasPedidoTipos.js`):
 7. Projeto anexa NF (+ documentos extras) e **Encerrar processo (com NF anexada)**.
 
 Hortifruti: seção **Cotações, Orçamentos ou Arquivos** com **Anexar arquivos**; Suprimentos pode **Aprovar e enviar ao fornecedor**.
+
+### Fluxo bem, serviço e manutenção+Infraestrutura
+
+1. Projeto cria rascunho com **Informações do pedido** (descrição, nome e dados do fornecedor, sem catálogo de item).
+2. Anexa orçamentos (quantos forem) e envia à Infraestrutura.
+3. Infraestrutura escolhe, posiciona e assina **ou** envia à fila do representante legal (Noemi).
+4. Depois da assinatura do orçamento: passo **Contrato** — anexar contrato ou **Não há contrato, seguir para a compra**. Contrato vai à Infraestrutura e, após o ok, à Noemi (gov.br).
+5. Compra: **Enviar pedido de compra por e-mail** ou **Compra direta sem envio de e-mail**.
+6. **Documentos do processo**: nota fiscal, boleto (ambos com Assinatura Digital AEB) ou arquivo relacionado. Várias NFs na mesma anexação viram um PDF; se já houver nota, exclui antes de outra.
+7. Encerrar processo com NF assinada.
+
+Ao entrar no sistema, projeto e Infraestrutura veem o modal de Compras se um contrato acabou de ser assinado (**Abrir pedido** / **Mais tarde**). Não entra no menu de Comunicação.
 
 ---
 
@@ -125,17 +137,20 @@ No topo, **Copiar um pedido concluído** abre rascunho do mês seguinte. **Intei
 | Convênio ou custo indireto * | * | Selecionar fonte | `fonte_recurso_id` | sempre |
 | Destino | — | Unidade / projeto · Sede (matriz) | `destino` | usuário sede |
 | Unidade * | * (se destino projeto) | Projeto | `instituicao_id` | sede + destino projeto |
-| Título / objeto * | * | Ex.: Troca de compressor da geladeira | `titulo` | cotação projeto (bem/serviço) |
-| Justificativa * | * | Por que esta compra/serviço é necessária | `justificativa` | cotação projeto |
-| Urgência | — | Normal · Urgente | `urgencia` | cotação projeto |
-| Data desejada * | * | data | `data_desejada` | cotação projeto |
-| Valor estimado (R$) | — | Opcional | `valor_estimado_reais` | cotação projeto |
-| Local (se diferente do projeto) | — | Endereço ou local de execução | `local_texto` | cotação projeto |
+| Quem conduz | * | Suprimentos · Infraestrutura | `destino_compras` | manutenção, no topo |
+| Título / objeto * | * | Ex.: Troca de compressor da geladeira | `titulo` | bem, serviço ou manutenção+Infraestrutura |
+| Justificativa * | * | Por que esta compra/serviço é necessária | `justificativa` | mesmo recorte |
+| Urgência | — | Normal · Urgente | `urgencia` | mesmo recorte |
+| Data desejada * | * | data | `data_desejada` | mesmo recorte |
+| Valor estimado (R$) | — | Opcional | `valor_estimado_reais` | mesmo recorte |
+| Local (se diferente do projeto) | — | Endereço ou local de execução | `local_texto` | mesmo recorte |
 | Tipo (manutenção) | — | Corretiva · Preventiva | `tipo_manutencao` | manutenção |
-| Defeito / sintoma * | * | O que está acontecendo com o equipamento | `defeito` | manutenção |
-| Descrição do escopo * | * | O que o prestador deve entregar | `escopo_servico` | serviço |
-| Observação | — | Preferências / restrições | `observacao` | sempre |
-| Item N (typeahead) | * itens catálogo | Digite/buscar no catálogo do segmento | `catalogo_item_id`, `descricao` | sempre (serviço: itens opcional agora) |
+| Defeito / sintoma * | * | O que está acontecendo com o equipamento | `defeito` | manutenção + Suprimentos |
+| Descrição detalhada / O que será comprado * | * | Texto livre do bem, serviço ou reparo | `info_pedido` | bem, serviço ou manutenção+Infraestrutura |
+| Nome do fornecedor * | * | Sem cadastro no catálogo | `fornecedor_pedido_nome` | mesmo recorte |
+| Informações adicionais do fornecedor | — | Contato, endereço | `fornecedor_pedido_info` | mesmo recorte |
+| Observação | — | Preferências / restrições | `observacao` | consumo / hortifruti / manutenção+Suprimentos |
+| Item N (typeahead) | * itens catálogo | Digite/buscar no catálogo do segmento | `catalogo_item_id`, `descricao` | consumo, hortifruti e manutenção+Suprimentos |
 | Qtd | — | quantidade | `quantidade` | linhas |
 | Unidade | — | un etc. | `unidade_medida` | linhas |
 
@@ -236,19 +251,20 @@ Registro de **Suprimentos** em azul e do **projeto** em branco. Em observação,
 
 File → tipo `espelho_compra`
 
-#### Nota fiscal e encerramento
+#### Documentos do processo (depois da compra)
 
 | Campo | Obrig. | Ligação |
 | --- | --- | --- |
-| Tipo NF | — | Produto · Serviço · Outro → `nfForm.tipo_nf` |
-| Número NF | — | `nfForm.numero` |
-| R$ 0,00 | — | `nfForm.valor_reais` |
-| Insira as informações complementares de pagamento para a impressão da NF | * antes de PDF | `nfForm.observacao` |
-| Insira a senha do gestor para a assinatura eletrônica digital | * | senha do perfil Gestor; o PDF abre com todas as páginas e as caixas começam na última; a pessoa arrasta o carimbo «Assinado Digitalmente» (nome completo, projeto e cargo Gestor) e o texto complementar para um espaço livre, na página que quiser |
-| Arquivo NF | * | `arqNf` (.pdf/.xml/imagem) |
-| Anexar arquivos | — | um único campo, vários arquivos, tipo `aquisicao_bem` |
+| Tipo de documento | * | Nota fiscal · Boleto · Arquivo relacionado → `classeDoc` |
+| Número NF | — | `nfForm.numero` (só nota fiscal) |
+| R$ 0,00 | — | `nfForm.valor_reais` (só nota fiscal) |
+| Insira as informações complementares de pagamento para a impressão da NF | * antes de PDF da nota | `nfForm.observacao` |
+| Insira a senha do gestor para a assinatura eletrônica digital | * em nota e boleto | senha do gestor; Gestor, Técnico, Administrativo e ADM Pedidos do projeto; o carimbo leva nome do gestor, projeto e cargo Gestor |
+| Arquivo | * | um ou vários PDFs de nota (o sistema junta); boleto e relacionado um a um |
 
-Botões: Anexar NF Assinada · Encerrar processo (com NF anexada) — só depois da assinatura eletrônica na NF · Visualizar · Baixar NF · Excluir arquivo · Excluir (documento extra)
+Botões: Anexar NF assinada · Anexar boleto assinado · Anexar arquivo relacionado · Encerrar processo (com NF anexada) · Visualizar · Baixar · Excluir
+
+Contrato fica no passo anterior, antes da compra. Boleto e nota exigem Assinatura Digital AEB. Relacionado não.
 
 Para Suprimentos, ao abrir um pedido com status recebido, o aviso fixo abaixo do título diz se a NF **ainda não foi impressa** ou **já foi impressa** (com data). O botão **Imprimir NF** abre o PDF ou a imagem e, na primeira vez, grava a impressão. Abrir o pedido concluído marca a linha como lida na caixa.
 
@@ -285,7 +301,13 @@ Títulos: Revisar pedido de cotação · Revisar pedido de compra · Revisar ree
 
 ### Função
 
-Fila de pedidos de cotação do projeto em `aguardando_aprovacao_sede`: escolher vencedor, cadastrar PDF de assinatura, posicionar e assinar. Ao entrar no sistema, quem assina (global autorizado, Infraestrutura e Manutenção) vê um aviso se a fila tiver pedido; Suprimentos não recebe esse aviso.
+Duas filas: Infraestrutura (orçamentos e contratos aguardando ok) e representante legal (o que a Infraestrutura enviou + contratos após o ok). A Infraestrutura pode **Posicionar e assinar** ou **Enviar para a fila do representante legal**. A Noemi vê Visualizar, assinar com gov.br e anexar o PDF assinado. Ao entrar no sistema, quem assina vê o aviso da fila; Suprimentos não recebe esse aviso.
+
+## 1.5b Documentos assinados — `/compras/documentos-assinados`
+
+**Arquivo:** `carecore-front/src/ComprasDocumentosAssinados.jsx`
+
+Lista contratos já assinados (saem da fila). Visualizar / Baixar / Abrir / Substituir o PDF, se o processo ainda não estiver encerrado.
 
 ### Campos / uploads
 

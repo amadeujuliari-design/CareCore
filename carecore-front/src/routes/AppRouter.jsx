@@ -2,6 +2,7 @@ import { lazy } from 'react';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 
 import AusenciaJustificadaAlerta from '../components/AusenciaJustificadaAlerta';
+import AlertaContratoAssinado from '../components/AlertaContratoAssinado';
 import AlertaFilaAssinatura from '../components/AlertaFilaAssinatura';
 import AlertaPresencaOperacional from '../components/AlertaPresencaOperacional';
 import ProtectedRoute from './ProtectedRoute';
@@ -65,6 +66,7 @@ const Compras = lazy(() => import('../Compras'));
 const ComprasPedido = lazy(() => import('../ComprasPedido'));
 const ComprasPedidoNovo = lazy(() => import('../ComprasPedidoNovo'));
 const ComprasAguardandoAssinatura = lazy(() => import('../ComprasAguardandoAssinatura'));
+const ComprasDocumentosAssinados = lazy(() => import('../ComprasDocumentosAssinados'));
 const FinanceDashboard = lazy(() => import('../financeiro/FinanceDashboardPro'));
 const FinanceContas = lazy(() => import('../financeiro/FinanceContasPro'));
 const FinanceExtrato = lazy(() => import('../financeiro/FinanceExtratoPro'));
@@ -482,6 +484,15 @@ function RotasAplicacao() {
         />
 
         <Route
+          path="/compras/documentos-assinados"
+          element={
+            <ProtectedRoute perfis={['Manutenção']}>
+              <ComprasDocumentosAssinados />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
           path="/compras/novo/:tipo"
           element={
             <ProtectedRoute>
@@ -664,6 +675,7 @@ function RotasAplicacao() {
       <AusenciaJustificadaAlerta />
       <AlertaPresencaOperacional />
       <AlertaFilaAssinatura />
+      <AlertaContratoAssinado />
     </>
   );
 }

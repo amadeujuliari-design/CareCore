@@ -169,6 +169,13 @@ function montarComprasChildrenSede(filaAssinaturaPendentes) {
       feature: 'compras',
       perfis: [...PERFIS_ADM_COMPRAS_SEDE, 'Manutenção'],
     },
+    {
+      path: '/compras/documentos-assinados',
+      icon: Archive,
+      label: 'Documentos assinados',
+      feature: 'compras',
+      perfis: ['Manutenção'],
+    },
     COMPRAS_CHILDREN_PROJETO[2],
     COMPRAS_CHILDREN_PROJETO[3],
     COMPRAS_CHILDREN_PROJETO[4],
@@ -847,7 +854,10 @@ export default function Sidebar() {
         nfp_modulo_ativo: usuarioSessao?.nfp_modulo_ativo,
       });
     }
-    if (item.path === '/compras/aguardando-assinatura' && usuarioGlobalAssinaOrcamento(usuarioSessao)) {
+    if (
+      (item.path === '/compras/aguardando-assinatura' || item.path === '/compras/documentos-assinados')
+      && usuarioGlobalAssinaOrcamento(usuarioSessao)
+    ) {
       return true;
     }
     if (item.escopoCompras === 'projeto') {

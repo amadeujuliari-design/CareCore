@@ -61,6 +61,7 @@ export default function ModalPosicionarTextoNf({
   aberto,
   arquivo,
   texto,
+  modo = 'nota_fiscal',
   onFechar,
   onConfirmar,
 }) {
@@ -233,13 +234,18 @@ export default function ModalPosicionarTextoNf({
     <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-900/50 p-4">
       <div className="flex max-h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl bg-white shadow-xl">
         <div className="shrink-0 px-4 pt-4">
-          <p className="text-sm font-semibold text-slate-900">Posicione o texto e a assinatura na nota fiscal</p>
+          <p className="text-sm font-semibold text-slate-900">
+            {modo === 'boleto'
+              ? 'Posicione a assinatura digital no boleto'
+              : 'Posicione o texto e a assinatura na nota fiscal'}
+          </p>
           <p className="mt-1 text-xs text-slate-500">
-            O arquivo aparece inteiro. A caixa azul é o texto complementar e a caixa escura é o carimbo
-            Assinado Digitalmente. Elas começam na última página. Arraste cada uma para um espaço livre,
-            inclusive em outra página, para o carimbo não cobrir informação já impressa.
+            {modo === 'boleto'
+              ? 'O arquivo aparece inteiro. A caixa escura é o carimbo Assinado Digitalmente. Arraste para um espaço livre, inclusive em outra página.'
+              : 'O arquivo aparece inteiro. A caixa azul é o texto complementar e a caixa escura é o carimbo Assinado Digitalmente. Elas começam na última página. Arraste cada uma para um espaço livre, inclusive em outra página, para o carimbo não cobrir informação já impressa.'}
           </p>
           {erro ? <p className="mt-2 text-sm text-rose-700">{erro}</p> : null}
+          {modo !== 'boleto' ? (
           <label className="mt-3 flex items-center gap-2 text-sm text-slate-700">
             <input
               type="checkbox"
@@ -251,6 +257,7 @@ export default function ModalPosicionarTextoNf({
             />
             Uma linha só
           </label>
+          ) : null}
         </div>
         <div className="mt-3 min-h-0 flex-1 overflow-auto px-4 pb-2">
           {total === 0 && !erro ? (
@@ -270,7 +277,7 @@ export default function ModalPosicionarTextoNf({
                     ref={(el) => { canvasRefs.current[indice] = el; }}
                     className="border border-slate-200"
                   />
-                  {metricasList[indice] && caixa.page === indice ? (
+                  {modo !== 'boleto' && metricasList[indice] && caixa.page === indice ? (
                     <div
                       className="absolute cursor-move overflow-hidden border border-sky-600 bg-sky-100/70 px-1 text-[11px] leading-tight text-slate-900"
                       style={{ left: caixa.left, top: caixa.top, width: caixa.width, height: caixa.height }}

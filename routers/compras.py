@@ -16,10 +16,14 @@ from compras_pedido_fluxo import (
     confirmar_evento_pedido,
     confirmar_revisao_itens_pedido,
     desativar_cotacao,
+    contagem_fila_assinatura,
     enviar_email_fornecedor,
+    enviar_orcamento_para_representante,
     enviar_solicitacao_cotacao_fornecedores,
     gerar_pedido_compra,
     ler_bytes_anexo,
+    listar_contratos_assinados_representante,
+    listar_alertas_contrato_assinado,
     liberar_cotacao_para_escolha,
     editar_texto_evento_pedido,
     registrar_comunicacao_pedido,
@@ -30,9 +34,14 @@ from compras_pedido_fluxo import (
     reabrir_orcamento_aprovado,
     reabrir_pedido,
     remover_anexo_pedido,
+    separar_fila_assinatura,
+    substituir_contrato_assinado,
     reprovar_pedido,
     rascunho_email_compras,
     upload_anexo_pedido,
+    liberar_contrato_infraestrutura,
+    registrar_ausencia_contrato,
+    registrar_contrato_assinado,
 )
 from compras_service import (
     alinhar_status_consumo_escolhido_pelo_projeto,
@@ -45,6 +54,7 @@ from compras_service import (
     definir_modulo_ativo,
     escolher_cotacao,
     enviar_fornecedor,
+    registrar_compra_direta,
     exigir_modulo,
     garantir_cadastros_padrao,
     listar_categorias,
@@ -108,6 +118,8 @@ def _escrita_assinatura_global(path: str) -> bool:
         return True
     if path.endswith("/orcamento-govbr"):
         return True
+    if "/contratos/" in path and (path.endswith("/assinado") or path.endswith("/substituir")):
+        return True
     if path.endswith("/escolher") and "/cotacoes/" in path:
         return True
     return path.endswith("/cotacoes/revogar-escolha")
@@ -164,6 +176,10 @@ class PedidoCreateIn(BaseModel):
     escopo_servico: Optional[str] = None
     valor_estimado_centavos: Optional[int] = None
     valor_estimado_reais: Optional[float] = None
+    info_pedido: Optional[str] = None
+    fornecedor_pedido_nome: Optional[str] = None
+    fornecedor_pedido_info: Optional[str] = None
+    destino_compras: Optional[str] = None
     itens: list[PedidoItemIn] = Field(default_factory=list)
 
 
@@ -183,6 +199,9 @@ class PedidoRascunhoIn(BaseModel):
     valor_estimado_reais: Optional[float] = None
     fonte_recurso_id: Optional[str] = None
     observacao: Optional[str] = None
+    info_pedido: Optional[str] = None
+    fornecedor_pedido_nome: Optional[str] = None
+    fornecedor_pedido_info: Optional[str] = None
 
 
 class PedidoItensIn(BaseModel):
@@ -192,6 +211,7 @@ class PedidoItensIn(BaseModel):
 class CotacaoIn(BaseModel):
     fornecedor_id: Optional[str] = None
     fornecedor_nome: Optional[str] = None
+    fornecedor_contato: Optional[str] = None
     valor_centavos: Optional[int] = None
     valor_reais: Optional[float] = None
     observacao: Optional[str] = None
@@ -915,13 +935,67 @@ async def get_fila_assinatura_resumo(
         is_manutencao=bool(usuario_atual.get("is_manutencao")),
     ):
         return {"pendentes": 0}
-    lista = await listar_pedidos(db, usuario_atual, status_filtro=STATUS_AGUARDANDO_SEDE)
-    pendentes = 0
-    for p in lista or []:
-        tipo = (p.get("tipo") if isinstance(p, dict) else "") or ""
-        if tipo in TIPOS_COTACAO_PROJETO:
-            pendentes += 1
-    return {"pendentes": pendentes}
+    separada = await separar_fila_assinatura(db, usuario_atual)
+    return {"pendentes": contagem_fila_assinatura(separada)}
+
+
+@router.get("/alertas-contrato-assinado")
+async def get_alertas_contrato_assinado(
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    await _ctx(db, usuario_atual)
+    return {"itens": await listar_alertas_contrato_assinado(db, usuario_atual)}
+
+
+@router.get("/fila-assinatura")
+async def get_fila_assinatura(
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    await _ctx(db, usuario_atual)
+    separada = await separar_fila_assinatura(db, usuario_atual)
+
+    async def serial(pedido):
+        return await serializar_pedido(db, pedido, incluir_detalhe=True, usuario=usuario_atual)
+
+    async def contratos(pares):
+        saida = []
+        for anexo, pedido in pares:
+            item = await serial(pedido)
+            item["contrato"] = {
+                "id": anexo.id,
+                "nome_arquivo": anexo.nome_arquivo,
+                "etapa_contrato": anexo.etapa_contrato,
+            }
+            saida.append(item)
+        return saida
+
+    return {
+        "ver_infra": separada["ver_infra"],
+        "ver_representante": separada["ver_representante"],
+        "orcamentos_infra": [await serial(p) for p in separada["orcamentos_infra"]] if separada["ver_infra"] else [],
+        "orcamentos_representante": [
+            await serial(p) for p in separada["orcamentos_representante"]
+        ] if separada["ver_representante"] else [],
+        "contratos_infra": await contratos(separada["contratos_infra"]) if separada["ver_infra"] else [],
+        "contratos_representante": (
+            await contratos(separada["contratos_representante"]) if separada["ver_representante"] else []
+        ),
+    }
+
+
+@router.post("/pedidos/{pedido_id}/fila-representante")
+async def post_fila_representante(
+    pedido_id: str,
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    await _ctx(db, usuario_atual)
+    pedido = await obter_pedido(db, usuario_atual, pedido_id)
+    await enviar_orcamento_para_representante(db, usuario_atual, pedido)
+    await db.commit()
+    return await serializar_pedido(db, pedido, incluir_detalhe=True, usuario=usuario_atual)
 
 
 @router.get("/assinatura-eletronica-gestor")
@@ -1111,6 +1185,32 @@ async def post_enviar(
     return await serializar_pedido(db, pedido, incluir_detalhe=True, usuario=usuario_atual)
 
 
+@router.post("/pedidos/{pedido_id}/compra-direta")
+async def post_compra_direta(
+    pedido_id: str,
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    await _ctx(db, usuario_atual)
+    pedido = await obter_pedido(db, usuario_atual, pedido_id)
+    await registrar_compra_direta(db, usuario_atual, pedido)
+    await db.commit()
+    return await serializar_pedido(db, pedido, incluir_detalhe=True, usuario=usuario_atual)
+
+
+@router.post("/pedidos/{pedido_id}/sem-contrato")
+async def post_sem_contrato(
+    pedido_id: str,
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    await _ctx(db, usuario_atual)
+    pedido = await obter_pedido(db, usuario_atual, pedido_id)
+    await registrar_ausencia_contrato(db, usuario_atual, pedido)
+    await db.commit()
+    return await serializar_pedido(db, pedido, incluir_detalhe=True, usuario=usuario_atual)
+
+
 @router.post("/pedidos/{pedido_id}/receber")
 async def post_receber(
     pedido_id: str,
@@ -1291,6 +1391,7 @@ async def post_anexo(
     tipo: str = Form(...),
     cotacao_id: Optional[str] = Form(default=None),
     substituir_anexo_id: Optional[str] = Form(default=None),
+    classe_documento: Optional[str] = Form(default=None),
     arquivo: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
     usuario_atual: dict = Depends(get_usuario_logado),
@@ -1305,7 +1406,61 @@ async def post_anexo(
         tipo=tipo,
         cotacao_id=cotacao_id,
         substituir_anexo_id=substituir_anexo_id,
+        classe_documento=classe_documento,
     )
+    await db.commit()
+    return await serializar_pedido(db, pedido, incluir_detalhe=True, usuario=usuario_atual)
+
+
+@router.post("/pedidos/{pedido_id}/contratos/{anexo_id}/revisar")
+async def post_revisar_contrato(
+    pedido_id: str,
+    anexo_id: str,
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    await _ctx(db, usuario_atual)
+    pedido = await obter_pedido(db, usuario_atual, pedido_id)
+    await liberar_contrato_infraestrutura(db, usuario_atual, pedido, anexo_id)
+    await db.commit()
+    return await serializar_pedido(db, pedido, incluir_detalhe=True, usuario=usuario_atual)
+
+
+@router.post("/pedidos/{pedido_id}/contratos/{anexo_id}/assinado")
+async def post_contrato_assinado(
+    pedido_id: str,
+    anexo_id: str,
+    arquivo: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    await _ctx(db, usuario_atual)
+    pedido = await obter_pedido(db, usuario_atual, pedido_id)
+    await registrar_contrato_assinado(db, usuario_atual, pedido, anexo_id, file=arquivo)
+    await db.commit()
+    return await serializar_pedido(db, pedido, incluir_detalhe=True, usuario=usuario_atual)
+
+
+@router.get("/documentos-assinados")
+async def get_documentos_assinados(
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    await _ctx(db, usuario_atual)
+    return await listar_contratos_assinados_representante(db, usuario_atual)
+
+
+@router.post("/pedidos/{pedido_id}/contratos/{anexo_id}/substituir")
+async def post_substituir_contrato_assinado(
+    pedido_id: str,
+    anexo_id: str,
+    arquivo: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    await _ctx(db, usuario_atual)
+    pedido = await obter_pedido(db, usuario_atual, pedido_id)
+    await substituir_contrato_assinado(db, usuario_atual, pedido, anexo_id, file=arquivo)
     await db.commit()
     return await serializar_pedido(db, pedido, incluir_detalhe=True, usuario=usuario_atual)
 
@@ -1395,7 +1550,9 @@ async def post_nota_fiscal(
     assinatura_w: Optional[float] = Form(default=None),
     assinatura_h: Optional[float] = Form(default=None),
     senha_assinatura_eletronica: Optional[str] = Form(default=None),
+    classe_documento: Optional[str] = Form(default=None),
     arquivo: Optional[UploadFile] = File(default=None),
+    arquivos: list[UploadFile] = File(default=[]),
     db: AsyncSession = Depends(get_db),
     usuario_atual: dict = Depends(get_usuario_logado),
 ):
@@ -1422,8 +1579,17 @@ async def post_nota_fiscal(
         "assinatura_w": assinatura_w,
         "assinatura_h": assinatura_h,
         "senha_assinatura_eletronica": senha_assinatura_eletronica,
+        "classe_documento": classe_documento,
     }
-    await registrar_nota_fiscal(db, usuario_atual, pedido, file=arquivo, conteudo_xml=None, payload=payload)
+    extras = []
+    for item in arquivos or []:
+        if item and item.filename:
+            bruto = await item.read()
+            if bruto:
+                extras.append(bruto)
+    await registrar_nota_fiscal(
+        db, usuario_atual, pedido, file=arquivo, conteudo_xml=None, payload=payload, pdfs_junto=extras,
+    )
     await db.commit()
     return await serializar_pedido(db, pedido, incluir_detalhe=True, usuario=usuario_atual)
 

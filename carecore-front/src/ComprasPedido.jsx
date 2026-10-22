@@ -21,6 +21,8 @@ import {
 } from './components/PremiumUI';
 import {
   comprasAnexarArquivo,
+  comprasRevisarContrato,
+  comprasContratoAssinado,
   comprasAprovarSede,
   comprasAssinarOrcamentoSede,
   comprasAssinaturaEletronicaGestor,
@@ -36,6 +38,8 @@ import {
   comprasCotacao,
   comprasDesativarCotacao,
   comprasEnviar,
+  comprasCompraDireta,
+  comprasRegistrarSemContrato,
   comprasEnviarEmailFornecedor,
   comprasEscolherCotacao,
   comprasExcluirRascunho,
@@ -61,7 +65,7 @@ import {
   comprasSubmeter,
   moneyCentavos,
 } from './services/comprasService';
-import { usuarioEhAdmCompras, usuarioEhAdmComprasSuprimentos, usuarioEhAdmPedidos, usuarioEhGlobalPuro, usuarioEhManutencao, usuarioGlobalAssinaOrcamento, usuarioPodeCadastrarMestreCompras, usuarioPodeEnviarEmailCompras } from './utils/rbacUtils';
+import { usuarioEhAdmCompras, usuarioEhAdmComprasInfraestrutura, usuarioEhAdmComprasSuprimentos, usuarioEhAdmPedidos, usuarioEhGlobalPuro, usuarioEhManutencao, usuarioGlobalAssinaOrcamento, usuarioPodeCadastrarMestreCompras, usuarioPodeEnviarEmailCompras } from './utils/rbacUtils';
 import { formatarDataBr } from './utils/comprasJanelaUtils';
 import { formatarDataHoraBr } from './utils/dataBrasilUtils';
 import { itemConsumoPeloDetalheErro, pedidoItemUnidadeConfusa, sugerirItensConsumo, unidadeParaPedido } from './utils/comprasItensConsumoUtils';
@@ -87,6 +91,7 @@ import {
   segmentoFornecedorDoTipoPedido,
   sugerirFornecedoresBusca,
   tipoEhCotacaoProjeto,
+  pedidoSegueInfraestrutura,
   tipoEhCotacaoSede,
   tipoExigeJanela,
   tipoPulaAprovacaoSede,
@@ -177,6 +182,7 @@ export default function ComprasPedido() {
   const usuario = useMemo(() => usuarioSessao(), []);
   const usuarioId = usuario.id || usuario.usuario_id;
   const sede = usuarioEhAdmCompras(usuario) || usuarioEhManutencao(usuario);
+  const infra = usuarioEhAdmComprasInfraestrutura(usuario) || usuarioEhManutencao(usuario);
   const caixaSuprimentos = usuarioEhAdmComprasSuprimentos(usuario);
   const consultaGlobal = usuarioEhGlobalPuro(usuario);
   const assinaOrcamento = usuarioGlobalAssinaOrcamento(usuario);
@@ -199,7 +205,7 @@ export default function ComprasPedido() {
   const [edicaoLinha, setEdicaoLinha] = useState({});
   const [perguntaCadastro, setPerguntaCadastro] = useState(null);
   const [desfazerItens, setDesfazerItens] = useState(null);
-  const [cotacao, setCotacao] = useState({ fornecedor_id: '', valor_reais: '', fornecedor_nome: '' });
+  const [cotacao, setCotacao] = useState({ fornecedor_id: '', valor_reais: '', fornecedor_nome: '', fornecedor_contato: '' });
   const [arqsCotacao, setArqsCotacao] = useState([]);
   const [fornecedoresCotacaoIds, setFornecedoresCotacaoIds] = useState([]);
   const [buscaFornecedorCotacao, setBuscaFornecedorCotacao] = useState('');
@@ -209,7 +215,8 @@ export default function ComprasPedido() {
   const [nfForm, setNfForm] = useState({
     tipo_nf: 'produto', numero: '', serie: '', valor_reais: '', observacao: '',
   });
-  const [arqNf, setArqNf] = useState(null);
+  const [arqsNf, setArqsNf] = useState([]);
+  const [classeDoc, setClasseDoc] = useState('nota_fiscal');
   const [modalTextoNf, setModalTextoNf] = useState(false);
   const [carimboNf, setCarimboNf] = useState(null);
   const [carimboAssinaturaNf, setCarimboAssinaturaNf] = useState(null);
@@ -389,9 +396,11 @@ export default function ComprasPedido() {
   const terminal = ['recebido', 'cancelado', 'reprovado'].includes(pedido.status);
   const ehRascunho = pedido.status === 'rascunho';
   const podeEditarItens = Boolean(pedido.pode_editar_itens);
-  const cotacaoProjeto = tipoEhCotacaoProjeto(pedido.tipo);
+  const segueInfra = Boolean(pedido.segue_infraestrutura)
+    || pedidoSegueInfraestrutura(pedido.tipo, pedido.destino_compras);
+  const cotacaoProjeto = tipoEhCotacaoProjeto(pedido.tipo) || segueInfra;
   const hortifrutiDireto = tipoSuprimentosAprovaEEnvia(pedido.tipo);
-  const cotacaoSede = tipoEhCotacaoSede(pedido.tipo) && !hortifrutiDireto;
+  const cotacaoSede = tipoEhCotacaoSede(pedido.tipo) && !hortifrutiDireto && !segueInfra;
   // Após envio ao fornecedor (ou encerrado), orçamentos ficam só leitura.
   const orcamentosTravados = ['enviado_fornecedor', 'recebido', 'cancelado', 'reprovado'].includes(pedido.status);
   const hortifrutiAberto = hortifrutiDireto && !orcamentosTravados && !terminal;
@@ -444,6 +453,28 @@ export default function ComprasPedido() {
       || (sede && consumoEscolhidoAguardandoEnvio)
     )
     && (sede || (cotacaoProjeto && unidade && !pedidoSede));
+  const orcamentoAssinadoPelaSede = ['aprovado', 'enviado_fornecedor', 'recebido'].includes(pedido.status);
+  const contratosPedido = (pedido.anexos || []).filter((a) => a.classe_documento === 'contrato');
+  const relacionadosPedido = (pedido.anexos || []).filter((a) => a.classe_documento === 'relacionado');
+  const notasFiscaisPedido = (pedido.notas_fiscais || []).filter((nf) => nf.tipo_nf !== 'boleto');
+  const boletosPedido = [
+    ...(pedido.notas_fiscais || []).filter((nf) => nf.tipo_nf === 'boleto'),
+    ...(pedido.anexos || []).filter((a) => (
+      a.classe_documento === 'boleto'
+      && !(pedido.notas_fiscais || []).some((nf) => nf.anexo_id === a.id)
+    )),
+  ];
+  const mostraPassoContrato = segueInfra && (orcamentoAssinadoPelaSede || contratosPedido.length > 0);
+  const passoContratoOk = !segueInfra || Boolean(pedido.compra_liberada);
+  const compraJaExecutada = segueInfra && Boolean(pedido.compra_executada);
+  const podeDocumentosFinais = podeEncerrar && (!segueInfra || Boolean(pedido.compra_executada));
+  const podeDecidirContrato = mostraPassoContrato
+    && !compraJaExecutada
+    && !terminal
+    && !consultaGlobal
+    && (unidade || manutencao)
+    && !pedido.contrato_pendente
+    && !pedido.contrato_assinado;
   const fornecedoresSolicitacao = (pedido.fornecedores_solicitacao || []).filter((f) => f.id);
   const idsSolicitacao = new Set(fornecedoresSolicitacao.map((f) => f.id));
   const fornecedoresOutros = fornecedoresCotacao.filter((f) => !idsSolicitacao.has(f.id));
@@ -1014,7 +1045,27 @@ export default function ComprasPedido() {
                 </dl>
               </SectionCard>
             ) : null}
-            {(ehRascunho || Boolean((pedido.observacao || '').trim())) ? (
+            {segueInfra ? (
+              <SectionCard title="Informações do pedido">
+                <dl className="grid gap-2 text-sm text-slate-700">
+                  <div>
+                    <dt className="text-xs font-semibold uppercase text-slate-500">
+                      {pedido.tipo === 'imobilizado' ? 'Descrição detalhada do bem' : 'O que será comprado'}
+                    </dt>
+                    <dd className="whitespace-pre-wrap">{pedido.info_pedido || '—'}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs font-semibold uppercase text-slate-500">Fornecedor</dt>
+                    <dd>{pedido.fornecedor_pedido_nome || '—'}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs font-semibold uppercase text-slate-500">Informações do fornecedor</dt>
+                    <dd className="whitespace-pre-wrap">{pedido.fornecedor_pedido_info || '—'}</dd>
+                  </div>
+                </dl>
+              </SectionCard>
+            ) : null}
+            {!segueInfra && (ehRascunho || Boolean((pedido.observacao || '').trim())) ? (
               <div className="rounded-xl border-2 border-amber-300 bg-amber-50 px-4 py-3 shadow-sm">
                 <p className="text-sm font-bold uppercase tracking-wide text-amber-950">
                   Observação do pedido
@@ -1094,6 +1145,7 @@ export default function ComprasPedido() {
               </div>
             )}
 
+            {!segueInfra && (
             <SectionCard title="Itens">
               <div className="px-5 py-4">
               {podeEditarItens && (
@@ -1327,6 +1379,7 @@ export default function ComprasPedido() {
               )}
               </div>
             </SectionCard>
+            )}
 
             <SectionCard title={hortifrutiDireto ? 'Cotações, Orçamentos ou Arquivos' : 'Cotações e orçamentos'}>
               <p className="mb-2 text-sm font-semibold text-slate-800">
@@ -1700,8 +1753,9 @@ export default function ComprasPedido() {
                     await agir(async () => {
                       const idsAntes = new Set((pedido.cotacoes || []).map((c) => c.id));
                       const dados = await comprasCotacao(pedido.id, {
-                        fornecedor_id: cotacao.fornecedor_id || null,
+                        fornecedor_id: segueInfra ? null : (cotacao.fornecedor_id || null),
                         fornecedor_nome: cotacao.fornecedor_nome || null,
+                        fornecedor_contato: cotacao.fornecedor_contato || null,
                         valor_centavos: centavos,
                       });
                       const novaId = dados.cotacao_criada_id
@@ -1719,16 +1773,19 @@ export default function ComprasPedido() {
                     }, arqsCotacao.length > 1
                       ? `Orçamento registrado com ${arqsCotacao.length} arquivos.`
                       : 'Orçamento registrado.');
-                    setCotacao({ fornecedor_id: '', valor_reais: '', fornecedor_nome: '' });
+                    setCotacao({ fornecedor_id: '', valor_reais: '', fornecedor_nome: '', fornecedor_contato: '' });
                     setArqsCotacao([]);
                   }}
                 >
+                  {segueInfra ? null : (
                   <input
                     value={buscaFornecedorLancamento}
                     onChange={(e) => setBuscaFornecedorLancamento(e.target.value)}
                     placeholder="Buscar na lista de fornecedores…"
                     className="rounded-xl border border-slate-200 px-3 py-2 text-sm md:col-span-5"
                   />
+                  )}
+                  {segueInfra ? null : (
                   <select
                     value={cotacao.fornecedor_id}
                     onChange={(e) => {
@@ -1759,12 +1816,22 @@ export default function ComprasPedido() {
                       </optgroup>
                     )}
                   </select>
+                  )}
                   <input
                     value={cotacao.fornecedor_nome}
                     onChange={(e) => setCotacao((a) => ({ ...a, fornecedor_nome: e.target.value }))}
-                    placeholder="Ou nome avulso"
+                    placeholder={segueInfra ? 'Nome do fornecedor' : 'Ou nome avulso'}
                     className="rounded-xl border border-slate-200 px-3 py-2 text-sm"
+                    required={segueInfra}
                   />
+                  {segueInfra ? (
+                    <input
+                      value={cotacao.fornecedor_contato}
+                      onChange={(e) => setCotacao((a) => ({ ...a, fornecedor_contato: e.target.value }))}
+                      placeholder="Contato do fornecedor"
+                      className="rounded-xl border border-slate-200 px-3 py-2 text-sm"
+                    />
+                  ) : null}
                   <input
                     value={cotacao.valor_reais}
                     onChange={(e) => setCotacao((a) => ({ ...a, valor_reais: mascararMoedaDigitando(e.target.value) }))}
@@ -1860,8 +1927,8 @@ export default function ComprasPedido() {
                     <li key={ev.id} className={`rounded-lg border px-3 py-2 ${caixa}`}>
                       <div className="flex flex-wrap items-start justify-between gap-2">
                         <div className="min-w-0 flex-1">
-                          <p className={`text-xs font-semibold uppercase ${pendente ? 'text-amber-800' : (suprimentos ? 'text-sky-800' : 'text-slate-500')}`}>
-                            {suprimentos ? 'Suprimentos' : (ev.usuario_id ? 'Projeto' : 'Sistema')}
+                          <p className={`text-xs font-semibold uppercase ${pendente ? 'text-amber-800' : (suprimentos || ev.lado === 'infraestrutura' ? 'text-sky-800' : 'text-slate-500')}`}>
+                            {ev.lado === 'infraestrutura' ? 'Infraestrutura' : (suprimentos ? 'Suprimentos' : (ev.usuario_id ? 'Projeto' : 'Sistema'))}
                             {' · '}
                             {ROTULO_EVENTO[ev.tipo] || ev.tipo}
                             {ev.criado_em ? ` · ${formatarDataHoraBr(ev.criado_em)}` : ''}
@@ -1933,6 +2000,148 @@ export default function ComprasPedido() {
                 })}
               </ul>
             </SectionCard>
+
+            {mostraPassoContrato && (
+              <SectionCard
+                title="Contrato"
+                subtitle="Se existir contrato, ele é assinado antes da compra e antes do pagamento."
+              >
+                <p className="mb-3 text-sm text-slate-600">
+                  {pedido.contrato_pendente
+                    ? 'O contrato está na fila de assinatura. A compra abre só depois que a Noemi assinar.'
+                    : pedido.contrato_assinado
+                      ? (compraJaExecutada
+                        ? 'Contrato assinado. A compra já foi executada.'
+                        : 'Contrato assinado. Agora execute a compra, por e-mail ou como compra direta sem envio de e-mail.')
+                      : pedido.sem_contrato
+                        ? 'Não há contrato. Execute a compra para abrir boleto, nota fiscal e arquivo relacionado.'
+                        : 'A Sede já assinou o orçamento. Anexe o contrato, se existir. Ele vai para a Infraestrutura e, depois do ok, para a Noemi. Se não houver contrato, registre isso para seguir com a compra.'}
+                </p>
+                {podeDecidirContrato && (
+                  <div className="mb-3 flex flex-wrap items-center gap-3">
+                    <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800">
+                      Anexar contrato
+                      <input
+                        type="file"
+                        accept=".pdf,application/pdf"
+                        className="hidden"
+                        onChange={async (e) => {
+                          const arquivo = e.target.files?.[0];
+                          e.target.value = '';
+                          if (!arquivo) return;
+                          const fd = new FormData();
+                          fd.append('tipo', 'aquisicao_bem');
+                          fd.append('classe_documento', 'contrato');
+                          fd.append('arquivo', arquivo);
+                          await agir(
+                            () => comprasAnexarArquivo(pedido.id, fd),
+                            'Contrato enviado para a revisão da Infraestrutura.',
+                          );
+                        }}
+                      />
+                    </label>
+                    {!pedido.sem_contrato && (
+                      <PremiumButton
+                        onClick={() => agir(
+                          () => comprasRegistrarSemContrato(pedido.id),
+                          'Sem contrato. A compra pode ser executada.',
+                        )}
+                      >
+                        Não há contrato, seguir para a compra
+                      </PremiumButton>
+                    )}
+                  </div>
+                )}
+                {contratosPedido.length > 0 && (
+                  <ul className="space-y-2">
+                    {contratosPedido.map((anexo) => {
+                      const assinado = anexo.etapa_contrato === 'assinado';
+                      return (
+                      <li
+                        key={anexo.id}
+                        className={`flex flex-wrap items-center justify-between gap-2 rounded-lg border px-3 py-2 ${
+                          assinado
+                            ? 'border-emerald-200 bg-emerald-50'
+                            : 'border-slate-200 bg-white'
+                        }`}
+                      >
+                        <p className="min-w-0 truncate text-xs font-medium text-slate-800">
+                          {anexo.etapa_contrato === 'aguardando_robson' ? 'Aguardando Infraestrutura · ' : ''}
+                          {anexo.etapa_contrato === 'aguardando_noemi' ? 'Aguardando Noemi · ' : ''}
+                          {assinado ? '✓ Assinado — ' : ''}
+                          {anexo.nome_arquivo || 'Arquivo'}
+                        </p>
+                        <div className="flex shrink-0 flex-wrap items-center gap-2">
+                          <button
+                            type="button"
+                            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-bold text-slate-800 hover:bg-slate-50"
+                            onClick={() => setModalAnexo(anexo)}
+                          >
+                            Visualizar
+                          </button>
+                          <button
+                            type="button"
+                            className="inline-flex items-center gap-1.5 rounded-lg bg-slate-800 px-3 py-1.5 text-xs font-bold text-white hover:bg-slate-900"
+                            onClick={() => comprasBaixarAnexo(pedido.id, anexo.id, anexo.nome_arquivo)
+                              .catch(() => setErro('Não foi possível baixar o arquivo.'))}
+                          >
+                            <FileText size={14} />
+                            Baixar
+                          </button>
+                          {anexo.etapa_contrato === 'aguardando_robson' && infra ? (
+                            <button
+                              type="button"
+                              className="rounded-lg px-2 py-1.5 text-xs font-bold text-emerald-800 hover:bg-emerald-50"
+                              onClick={() => agir(
+                                () => comprasRevisarContrato(pedido.id, anexo.id),
+                                'Contrato enviado para a assinatura da Noemi.',
+                              )}
+                            >
+                              Ok, enviar à Noemi
+                            </button>
+                          ) : null}
+                          {anexo.etapa_contrato === 'aguardando_noemi' && (assinaOrcamento || manutencao) ? (
+                            <label className="cursor-pointer rounded-lg px-2 py-1.5 text-xs font-bold text-emerald-800 hover:bg-emerald-50">
+                              Anexar contrato assinado
+                              <input
+                                type="file"
+                                accept=".pdf,application/pdf"
+                                className="hidden"
+                                onChange={async (e) => {
+                                  const arquivo = e.target.files?.[0];
+                                  e.target.value = '';
+                                  if (!arquivo) return;
+                                  const fd = new FormData();
+                                  fd.append('arquivo', arquivo);
+                                  await agir(
+                                    () => comprasContratoAssinado(pedido.id, anexo.id, fd),
+                                    'Contrato assinado. O projeto foi avisado na timeline.',
+                                  );
+                                }}
+                              />
+                            </label>
+                          ) : null}
+                          {!compraJaExecutada && !assinado && (unidade || manutencao) ? (
+                            <button
+                              type="button"
+                              className="rounded px-1.5 text-xs font-bold text-rose-700 hover:bg-rose-50"
+                              title="Remover este PDF"
+                              onClick={() => {
+                                if (!window.confirm(`Excluir "${anexo.nome_arquivo}"?`)) return;
+                                agir(() => comprasRemoverAnexo(pedido.id, anexo.id), 'Contrato excluído.');
+                              }}
+                            >
+                              ×
+                            </button>
+                          ) : null}
+                        </div>
+                      </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </SectionCard>
+            )}
 
             {emailPedidoCompraEnviado && pedidoCompra && (
               <div className="rounded-xl border-2 border-emerald-400 bg-emerald-50 px-4 py-3 shadow-sm">
@@ -2052,18 +2261,18 @@ export default function ComprasPedido() {
               </SectionCard>
             )}
 
-            {(pedido.notas_fiscais || []).length > 0 && (
+            {notasFiscaisPedido.length > 0 && (
               <div className="rounded-xl border-2 border-sky-400 bg-sky-50 px-4 py-3 shadow-sm">
                 <p className="text-sm font-bold uppercase tracking-wide text-sky-900">
                   Notas fiscais anexadas
                 </p>
                 <p className="mt-1 text-sm text-sky-800">
-                  {(pedido.notas_fiscais || []).length === 1
+                  {notasFiscaisPedido.length === 1
                     ? 'Há 1 nota fiscal neste pedido. Visualize ou baixe o arquivo.'
-                    : `Há ${(pedido.notas_fiscais || []).length} notas fiscais neste pedido. Visualize ou baixe os arquivos.`}
+                    : `Há ${notasFiscaisPedido.length} notas fiscais neste pedido. Visualize ou baixe os arquivos.`}
                 </p>
                 <ul className="mt-3 space-y-2">
-                  {pedido.notas_fiscais.map((nf) => {
+                  {notasFiscaisPedido.map((nf) => {
                     const anexo = (pedido.anexos || []).find((a) => a.id === nf.anexo_id);
                     const rotuloTipo = nf.tipo_nf === 'servico'
                       ? 'Serviço'
@@ -2167,35 +2376,62 @@ export default function ComprasPedido() {
               </SectionCard>
             )}
 
-            {podeEncerrar && (
-              <SectionCard title="Nota fiscal e encerramento">
+            {podeDocumentosFinais && (
+              <SectionCard
+                title="Documentos do processo"
+                subtitle="Escolha o tipo: nota fiscal, boleto ou arquivo relacionado. Boleto e nota fiscal exigem a Assinatura Digital AEB."
+              >
                 <p className="mb-3 text-xs text-slate-500">
-                  Anexe uma ou mais NFs (XML ou PDF). Para PDF, preencha os campos principais manualmente.
+                  Numa mesma anexação dá para incluir quantas notas forem necessárias: o sistema junta num arquivo só e aplica o texto e a assinatura em todas as páginas. Se já existir nota, exclua antes de anexar outra.
                 </p>
                 <form
                   className="grid gap-2 md:grid-cols-3"
                   onSubmit={async (e) => {
                     e.preventDefault();
-                    if (!arqNf) {
-                      setErro('Selecione o arquivo da NF (PDF, XML ou imagem).');
+                    if (classeDoc === 'relacionado') {
+                      if (!arqsNf[0]) {
+                        setErro('Selecione o arquivo relacionado.');
+                        return;
+                      }
+                      const fdRel = new FormData();
+                      fdRel.append('tipo', 'aquisicao_bem');
+                      fdRel.append('classe_documento', 'relacionado');
+                      fdRel.append('arquivo', arqsNf[0]);
+                      const okRel = await agir(() => comprasAnexarArquivo(pedido.id, fdRel), 'Arquivo relacionado anexado.');
+                      if (okRel) setArqsNf([]);
+                      return;
+                    }
+                    const jaTemNf = notasFiscaisPedido.some((nf) => nf.anexo_id);
+                    if (classeDoc === 'nota_fiscal' && jaTemNf) {
+                      setErro('Já existe nota fiscal anexada. Exclua o arquivo antes de anexar outra.');
+                      return;
+                    }
+                    if (!arqsNf.length) {
+                      setErro(classeDoc === 'boleto' ? 'Selecione o arquivo do boleto.' : 'Selecione o arquivo da nota fiscal.');
                       return;
                     }
                     if (!senhaAssinaturaNf.trim()) {
                       setErro('Informe a senha da assinatura eletrônica do gestor.');
                       return;
                     }
-                    const ehPdfNf = /\.pdf$/i.test(arqNf.name) || arqNf.type === 'application/pdf';
+                    const ehPdfNf = arqsNf.every((arquivo) => /\.pdf$/i.test(arquivo.name) || arquivo.type === 'application/pdf');
                     if (ehPdfNf && !carimboAssinaturaNf) {
-                      setErro('Posicione a assinatura digital no PDF da NF.');
+                      setErro(classeDoc === 'boleto'
+                        ? 'Posicione a assinatura digital no PDF do boleto.'
+                        : 'Posicione o texto e a assinatura digital no PDF da nota.');
                       setModalTextoNf(true);
                       return;
                     }
                     const fd = new FormData();
                     Object.entries(nfForm).forEach(([chave, valor]) => {
-                      if (!valor || chave === 'valor_reais') return;
+                      if (!valor || chave === 'valor_reais' || chave === 'tipo_nf') return;
+                      if (classeDoc === 'boleto' && (chave === 'observacao' || chave === 'numero')) return;
                       fd.append(chave, valor);
                     });
-                    if (nfForm.valor_reais) {
+                    if (classeDoc === 'nota_fiscal') {
+                      fd.append('tipo_nf', pedido.tipo === 'servico' ? 'servico' : 'produto');
+                    }
+                    if (classeDoc === 'nota_fiscal' && nfForm.valor_reais) {
                       const centavos = reaisParaCentavos(nfForm.valor_reais);
                       if (centavos == null) {
                         setErro('Valor da NF inválido. Use formato como 400,00.');
@@ -2218,171 +2454,236 @@ export default function ComprasPedido() {
                       fd.append('assinatura_h', String(carimboAssinaturaNf.height));
                     }
                     fd.append('senha_assinatura_eletronica', senhaAssinaturaNf);
-                    fd.append('arquivo', arqNf);
+                    fd.append('classe_documento', classeDoc);
+                    fd.append('arquivo', arqsNf[0]);
+                    arqsNf.slice(1).forEach((arquivo) => fd.append('arquivos', arquivo));
                     const registrou = await agir(
                       () => comprasRegistrarNotaFiscal(pedido.id, fd),
-                      'Nota fiscal registrada e assinada digitalmente.',
+                      classeDoc === 'boleto'
+                        ? 'Boleto registrado e assinado digitalmente.'
+                        : 'Nota fiscal registrada e assinada digitalmente.',
                     );
                     if (!registrou) return;
                     setSenhaAssinaturaNf('');
                     setNfForm({ tipo_nf: 'produto', numero: '', serie: '', valor_reais: '', observacao: '' });
-                    setArqNf(null);
+                    setArqsNf([]);
                     setCarimboNf(null);
                     setCarimboAssinaturaNf(null);
                   }}
                 >
-                  <select
-                    value={nfForm.tipo_nf}
-                    onChange={(e) => setNfForm((a) => ({ ...a, tipo_nf: e.target.value }))}
-                    className="rounded-xl border border-slate-200 px-3 py-2 text-sm"
-                  >
-                    <option value="produto">Produto</option>
-                    <option value="servico">Serviço</option>
-                    <option value="outro">Outro</option>
-                  </select>
-                  <input
-                    value={nfForm.numero}
-                    onChange={(e) => setNfForm((a) => ({ ...a, numero: e.target.value }))}
-                    placeholder="Número NF"
-                    className="rounded-xl border border-slate-200 px-3 py-2 text-sm"
-                  />
-                  <input
-                    value={nfForm.valor_reais}
-                    onChange={(e) => setNfForm((a) => ({ ...a, valor_reais: mascararMoedaDigitando(e.target.value) }))}
-                    placeholder="R$ 0,00"
-                    inputMode="numeric"
-                    className="rounded-xl border border-slate-200 px-3 py-2 text-sm"
-                  />
                   <label className="md:col-span-3 text-xs font-semibold text-slate-600">
-                    Insira as informações complementares de pagamento para a impressão da NF
-                    <textarea
-                      value={nfForm.observacao}
-                      readOnly={(pedido.notas_fiscais || []).some((nf) => nf.anexo_id)}
-                      onClick={() => {
-                        if ((pedido.notas_fiscais || []).some((nf) => nf.anexo_id)) {
-                          window.alert(
-                            'Para alterar o texto, exclua o arquivo anexado, importe um novo arquivo e escreva a observação de novo.',
-                          );
-                        }
+                    Tipo de documento
+                    <select
+                      value={classeDoc}
+                      onChange={(e) => {
+                        setClasseDoc(e.target.value);
+                        setArqsNf([]);
+                        setCarimboNf(null);
+                        setCarimboAssinaturaNf(null);
                       }}
-                      onChange={(e) => setNfForm((a) => ({ ...a, observacao: e.target.value }))}
-                      rows={2}
                       className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm font-normal"
-                    />
+                    >
+                      <option value="nota_fiscal">Nota fiscal</option>
+                      <option value="boleto">Boleto</option>
+                      <option value="relacionado">Arquivo relacionado ao processo</option>
+                    </select>
                   </label>
+                  {classeDoc === 'nota_fiscal' ? (
+                    <>
+                      <input
+                        value={nfForm.numero}
+                        onChange={(e) => setNfForm((a) => ({ ...a, numero: e.target.value }))}
+                        placeholder="Número NF"
+                        className="rounded-xl border border-slate-200 px-3 py-2 text-sm md:col-span-2"
+                      />
+                      <input
+                        value={nfForm.valor_reais}
+                        onChange={(e) => setNfForm((a) => ({ ...a, valor_reais: mascararMoedaDigitando(e.target.value) }))}
+                        placeholder="R$ 0,00"
+                        inputMode="numeric"
+                        className="rounded-xl border border-slate-200 px-3 py-2 text-sm"
+                      />
+                      <label className="md:col-span-3 text-xs font-semibold text-slate-600">
+                        Insira as informações complementares de pagamento para a impressão da NF
+                        <textarea
+                          value={nfForm.observacao}
+                          readOnly={notasFiscaisPedido.some((nf) => nf.anexo_id)}
+                          onClick={() => {
+                            if (notasFiscaisPedido.some((nf) => nf.anexo_id)) {
+                              window.alert(
+                                'Para alterar o texto, exclua o arquivo anexado, importe um novo arquivo e escreva a observação de novo.',
+                              );
+                            }
+                          }}
+                          onChange={(e) => setNfForm((a) => ({ ...a, observacao: e.target.value }))}
+                          rows={2}
+                          className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm font-normal"
+                        />
+                      </label>
+                    </>
+                  ) : null}
                   <input
                     type="file"
-                    accept=".pdf,.xml,.jpg,.jpeg,.png,application/pdf"
+                    multiple={classeDoc === 'nota_fiscal'}
+                    accept={classeDoc === 'relacionado' ? undefined : '.pdf,.xml,.jpg,.jpeg,.png,application/pdf'}
                     onChange={(e) => {
-                      const arquivo = e.target.files?.[0] || null;
-                      const ehPdf = arquivo && (/\.pdf$/i.test(arquivo.name) || arquivo.type === 'application/pdf');
-                      if (ehPdf) {
-                        if (!(nfForm.observacao || '').trim()) {
+                      const arquivos = Array.from(e.target.files || []);
+                      const primeiro = arquivos[0] || null;
+                      if (classeDoc === 'relacionado') {
+                        setArqsNf(primeiro ? [primeiro] : []);
+                        return;
+                      }
+                      const todosPdf = arquivos.length > 0 && arquivos.every((arquivo) => (
+                        /\.pdf$/i.test(arquivo.name) || arquivo.type === 'application/pdf'
+                      ));
+                      if (todosPdf) {
+                        if (classeDoc === 'nota_fiscal' && !(nfForm.observacao || '').trim()) {
                           e.target.value = '';
-                          setArqNf(null);
+                          setArqsNf([]);
                           setCarimboNf(null);
                           setCarimboAssinaturaNf(null);
-                          window.alert('Escreva as informações complementares de pagamento antes de escolher o arquivo da NF.');
+                          window.alert('Escreva as informações complementares de pagamento antes de escolher o arquivo.');
                           return;
                         }
                         setErro('');
-                        setArqNf(arquivo);
+                        setArqsNf(arquivos);
                         setModalTextoNf(true);
                         return;
                       }
-                      setArqNf(arquivo);
+                      setArqsNf(primeiro ? [primeiro] : []);
                       setCarimboNf(null);
                       setCarimboAssinaturaNf(null);
                     }}
-                    className="text-xs md:col-span-2"
+                    className="text-xs md:col-span-3"
                   />
-                  {arqNf ? (
+                  {arqsNf.length ? (
                     <p className="text-xs text-slate-600 md:col-span-3">
-                      Arquivo escolhido: {arqNf.name}
+                      {arqsNf.length === 1
+                        ? `Arquivo escolhido: ${arqsNf[0].name}`
+                        : `${arqsNf.length} arquivos. A posição vale para todas as páginas do PDF unido.`}
                       {carimboNf ? ' · texto posicionado' : ''}
                       {carimboAssinaturaNf ? ' · assinatura posicionada' : ''}
                     </p>
                   ) : null}
-                  <div className="md:col-span-3">
-                    <label className="mb-1 block text-xs font-semibold text-slate-600" htmlFor="senha-assinatura-nf">
-                      Insira a senha do gestor para a assinatura eletrônica digital
-                    </label>
-                    <CampoSenha
-                      id="senha-assinatura-nf"
-                      name="senha_assinatura_nf"
-                      autoComplete="off"
-                      required={false}
-                      value={senhaAssinaturaNf}
-                      onChange={(e) => setSenhaAssinaturaNf(e.target.value)}
-                      placeholder="Senha cadastrada no perfil do gestor"
-                    />
-                    <p className="mt-1 text-xs text-slate-500">
-                      Confirma que o gestor está ciente do processo. No PDF, o carimbo
-                      Assinado Digitalmente entra no lugar que você escolher, com o nome completo, o projeto e o cargo Gestor.
-                      {assinaturaGestor.gestor && !assinaturaGestor.cadastrada
-                        ? ' Cadastre essa senha em Usuários antes de anexar.'
-                        : ''}
-                    </p>
-                  </div>
-                  <PremiumButton type="submit">Anexar NF Assinada</PremiumButton>
-                </form>
-                <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
-                    <label className="block text-xs font-semibold text-slate-700">
-                      Anexar arquivos
-                      <input
-                        type="file"
-                        multiple
-                        className="mt-1 block text-xs font-normal"
-                        onChange={async (e) => {
-                          const arquivos = Array.from(e.target.files || []);
-                          e.target.value = '';
-                          for (const arquivo of arquivos) {
-                            const fd = new FormData();
-                            fd.append('tipo', 'aquisicao_bem');
-                            fd.append('arquivo', arquivo);
-                            await agir(() => comprasAnexarArquivo(pedido.id, fd), 'Arquivo anexado.');
-                          }
-                        }}
+                  {classeDoc !== 'relacionado' ? (
+                    <div className="md:col-span-3">
+                      <label className="mb-1 block text-xs font-semibold text-slate-600" htmlFor="senha-assinatura-nf">
+                        Insira a senha do gestor para a assinatura eletrônica digital
+                      </label>
+                      <CampoSenha
+                        id="senha-assinatura-nf"
+                        name="senha_assinatura_nf"
+                        autoComplete="off"
+                        required={false}
+                        value={senhaAssinaturaNf}
+                        onChange={(e) => setSenhaAssinaturaNf(e.target.value)}
+                        placeholder="Senha cadastrada no perfil do gestor"
                       />
-                    </label>
-                    <p className="mt-1 text-xs text-slate-500">
-                      Anexe todos os arquivos ligados a esse processo. (Menos a NF, para isso use o campo apropriado)
+                      <p className="mt-1 text-xs text-slate-500">
+                        Técnico e Administrativo também podem assinar, se souberem a senha do gestor.
+                        No PDF, o carimbo entra no lugar escolhido, com o nome do gestor, o projeto e o cargo Gestor.
+                        {assinaturaGestor.gestor && !assinaturaGestor.cadastrada
+                          ? ' Cadastre essa senha em Usuários antes de anexar.'
+                          : ''}
+                      </p>
+                    </div>
+                  ) : (
+                    <p className="text-xs text-slate-500 md:col-span-3">
+                      Arquivo relacionado não exige assinatura digital.
                     </p>
-                    <ul className="mt-2 space-y-1">
-                      {(pedido.anexos || []).filter((a) => a.tipo === 'aquisicao_bem' || a.tipo === 'termo_doacao').map((anexo) => (
-                        <li key={anexo.id} className="flex items-center justify-between gap-2 text-xs">
-                          <span className="truncate">{anexo.nome_arquivo}</span>
-                          <span className="flex shrink-0 gap-3">
-                            <button
-                              type="button"
-                              className="font-semibold text-slate-800 underline"
-                              onClick={() => setModalAnexo(anexo)}
-                            >
-                              Visualizar
-                            </button>
-                            <button
-                              type="button"
-                              className="font-semibold text-sky-800 underline"
-                              onClick={() => comprasBaixarAnexo(pedido.id, anexo.id, anexo.nome_arquivo)
-                                .catch(() => setErro('Não foi possível baixar o arquivo.'))}
-                            >
-                              Baixar
-                            </button>
-                            <button
-                              type="button"
-                              className="font-semibold text-rose-700 underline"
-                              onClick={() => {
-                                if (!window.confirm(`Excluir "${anexo.nome_arquivo}"?`)) return;
-                                agir(() => comprasRemoverAnexo(pedido.id, anexo.id), 'Arquivo da aquisição excluído.');
-                              }}
-                            >
-                              Excluir
-                            </button>
-                          </span>
+                  )}
+                  <PremiumButton type="submit">
+                    {classeDoc === 'boleto'
+                      ? 'Anexar boleto assinado'
+                      : classeDoc === 'relacionado'
+                        ? 'Anexar arquivo relacionado'
+                        : 'Anexar NF assinada'}
+                  </PremiumButton>
+                </form>
+                {boletosPedido.length > 0 && (
+                  <ul className="mt-4 space-y-2">
+                    {boletosPedido.map((item) => {
+                      const anexo = item.anexo_id
+                        ? (pedido.anexos || []).find((a) => a.id === item.anexo_id) || item
+                        : item;
+                      const nome = anexo?.nome_arquivo || item.nome_arquivo || 'Boleto';
+                      return (
+                        <li
+                          key={item.id}
+                          className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2"
+                        >
+                          <p className="min-w-0 truncate text-xs font-medium text-slate-800">
+                            ✓ Assinado — {nome}
+                          </p>
+                          <div className="flex shrink-0 flex-wrap items-center gap-2">
+                            {anexo?.id ? (
+                              <>
+                                <button
+                                  type="button"
+                                  className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-bold text-slate-800 hover:bg-slate-50"
+                                  onClick={() => setModalAnexo(anexo)}
+                                >
+                                  Visualizar
+                                </button>
+                                <button
+                                  type="button"
+                                  className="inline-flex items-center gap-1.5 rounded-lg bg-slate-800 px-3 py-1.5 text-xs font-bold text-white hover:bg-slate-900"
+                                  onClick={() => comprasBaixarAnexo(pedido.id, anexo.id, nome)
+                                    .catch(() => setErro('Não foi possível baixar o boleto.'))}
+                                >
+                                  <FileText size={14} />
+                                  Baixar
+                                </button>
+                              </>
+                            ) : null}
+                          </div>
                         </li>
-                      ))}
-                    </ul>
-                </div>
+                      );
+                    })}
+                  </ul>
+                )}
+                {relacionadosPedido.length > 0 && (
+                  <ul className="mt-3 space-y-2">
+                    {relacionadosPedido.map((anexo) => (
+                      <li
+                        key={anexo.id}
+                        className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2"
+                      >
+                        <p className="min-w-0 truncate text-xs font-medium text-slate-800">
+                          Relacionado — {anexo.nome_arquivo || 'Arquivo'}
+                        </p>
+                        <div className="flex shrink-0 flex-wrap items-center gap-2">
+                          <button
+                            type="button"
+                            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-bold text-slate-800 hover:bg-slate-50"
+                            onClick={() => setModalAnexo(anexo)}
+                          >
+                            Visualizar
+                          </button>
+                          <button
+                            type="button"
+                            className="inline-flex items-center gap-1.5 rounded-lg bg-slate-800 px-3 py-1.5 text-xs font-bold text-white hover:bg-slate-900"
+                            onClick={() => comprasBaixarAnexo(pedido.id, anexo.id, anexo.nome_arquivo)
+                              .catch(() => setErro('Não foi possível baixar o arquivo.'))}
+                          >
+                            <FileText size={14} />
+                            Baixar
+                          </button>
+                          <button
+                            type="button"
+                            className="rounded px-1.5 text-xs font-bold text-rose-700 hover:bg-rose-50"
+                            onClick={() => {
+                              if (!window.confirm(`Excluir "${anexo.nome_arquivo}"?`)) return;
+                              agir(() => comprasRemoverAnexo(pedido.id, anexo.id), 'Arquivo excluído.');
+                            }}
+                          >
+                            ×
+                          </button>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
                 <div className="mt-4">
                   <PremiumButton
                     onClick={() => agir(
@@ -2390,7 +2691,7 @@ export default function ComprasPedido() {
                       'Processo encerrado.',
                     )}
                     disabled={
-                      !(pedido.notas_fiscais || []).length
+                      !notasFiscaisPedido.length
                       || !(pedido.eventos || []).some((ev) => String(ev.texto || '').includes('Assinado Digitalmente'))
                     }
                     title="Disponível depois que a nota fiscal for assinada com a senha do gestor."
@@ -2519,7 +2820,7 @@ export default function ComprasPedido() {
                     </PremiumButton>
                   ) : null
                 )}
-                {podeEnviarPedidoCompra && !emailPedidoCompraEnviado && (
+                {podeEnviarPedidoCompra && passoContratoOk && !compraJaExecutada && !emailPedidoCompraEnviado && !pedido.compra_direta_sem_email && (
                   <PremiumButton
                     onClick={() => abrirModalEmail('pedido_compra')}
                   >
@@ -2527,6 +2828,16 @@ export default function ComprasPedido() {
                       <Mail size={16} />
                       Enviar pedido de compra por e-mail
                     </span>
+                  </PremiumButton>
+                )}
+                {podeEnviarPedidoCompra && segueInfra && passoContratoOk && !compraJaExecutada && !emailPedidoCompraEnviado && !pedido.compra_direta_sem_email && (
+                  <PremiumButton
+                    onClick={() => agir(
+                      () => comprasCompraDireta(pedido.id),
+                      'Compra direta registrada. O processo segue para a nota fiscal, sem e-mail ao fornecedor.',
+                    )}
+                  >
+                    Compra direta sem envio de e-mail
                   </PremiumButton>
                 )}
                 {podeReabrir && (
@@ -2629,11 +2940,12 @@ export default function ComprasPedido() {
       />
       <ModalPosicionarTextoNf
         aberto={modalTextoNf}
-        arquivo={arqNf}
+        arquivo={arqsNf[0] || null}
         texto={nfForm.observacao}
+        modo={classeDoc === 'boleto' ? 'boleto' : 'nota_fiscal'}
         onFechar={() => {
           setModalTextoNf(false);
-          setArqNf(null);
+          setArqsNf([]);
           setCarimboNf(null);
           setCarimboAssinaturaNf(null);
         }}
@@ -2641,7 +2953,9 @@ export default function ComprasPedido() {
           setCarimboNf(posicao.texto);
           setCarimboAssinaturaNf(posicao.assinatura);
           setModalTextoNf(false);
-          setOk('Texto e assinatura posicionados. Clique em Anexar NF Assinada para gravar no arquivo.');
+          setOk(classeDoc === 'boleto'
+            ? 'Assinatura posicionada. Clique em Anexar boleto assinado para gravar no arquivo.'
+            : 'Texto e assinatura posicionados. Clique em Anexar NF assinada para gravar no arquivo.');
         }}
       />
       <ModalPosicionarAssinaturaOrcamento

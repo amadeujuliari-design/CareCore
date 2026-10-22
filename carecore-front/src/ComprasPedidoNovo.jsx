@@ -34,10 +34,18 @@ import {
   rotuloTipoPedido,
   segmentoDoTipoPedido,
   tipoEhCotacaoProjeto,
+  pedidoSegueInfraestrutura,
 } from './utils/comprasPedidoTipos';
 import { unidadeParaPedido } from './utils/comprasItensConsumoUtils';
+import { centavosParaInput, reaisParaCentavos } from './utils/comprasPatrimonioUtils';
 
 const inputClass = 'w-full rounded-xl border border-slate-200 px-3 py-2 text-sm';
+
+function mascararMoedaDigitando(texto) {
+  const digitos = String(texto || '').replace(/\D/g, '');
+  if (!digitos) return '';
+  return `R$ ${centavosParaInput(Number(digitos))}`;
+}
 
 function hojeIso() {
   const d = new Date();
@@ -70,6 +78,13 @@ export default function ComprasPedidoNovo() {
   const tipo = String(tipoParam || '').toLowerCase();
   const meta = BOTOES_NOVO_PEDIDO.find((b) => b.tipo === tipo);
   const cotacaoProjeto = tipoEhCotacaoProjeto(tipo);
+  const [destinoCompras, setDestinoCompras] = useState(
+    tipo === TIPO_MANUTENCAO ? 'suprimentos' : 'infraestrutura',
+  );
+  const segueInfra = pedidoSegueInfraestrutura(
+    tipo,
+    tipo === TIPO_MANUTENCAO ? destinoCompras : 'infraestrutura',
+  );
 
   const [erro, setErro] = useState('');
   const [salvando, setSalvando] = useState(false);
@@ -93,6 +108,9 @@ export default function ComprasPedidoNovo() {
     tipo_manutencao: 'corretiva',
     escopo_servico: '',
     observacao: '',
+    info_pedido: '',
+    fornecedor_pedido_nome: '',
+    fornecedor_pedido_info: '',
   });
   const [linhas, setLinhas] = useState(() => [linhaItemVazia()]);
   const [concluidos, setConcluidos] = useState([]);
@@ -118,9 +136,11 @@ export default function ComprasPedidoNovo() {
           const itens = await comprasItensConsumo();
           if (alive) setItensConsumo(Array.isArray(itens) ? itens : (itens?.itens || []));
         }
-        const lista = await comprasPedidos({ status_grupo: 'terminais', tipo });
-        if (alive) {
-          setConcluidos((Array.isArray(lista) ? lista : []).filter((pedido) => pedido.status === 'recebido'));
+        if (tipo !== TIPO_IMOBILIZADO && tipo !== TIPO_SERVICO) {
+          const lista = await comprasPedidos({ status_grupo: 'terminais', tipo });
+          if (alive) {
+            setConcluidos((Array.isArray(lista) ? lista : []).filter((pedido) => pedido.status === 'recebido'));
+          }
         }
       } catch (e) {
         if (alive) setErro(e?.response?.data?.detail || 'Não foi possível carregar o formulário.');
@@ -176,7 +196,7 @@ export default function ComprasPedidoNovo() {
     setErro('');
     setSalvando(true);
     try {
-      const itens = linhas
+      const itens = segueInfra ? [] : linhas
         .filter((l) => (l.descricao || '').trim())
         .map((l) => ({
           descricao: l.descricao.trim(),
@@ -208,10 +228,25 @@ export default function ComprasPedidoNovo() {
 
       const payload = {
         tipo,
-        observacao: form.observacao.trim() || undefined,
+        observacao: segueInfra ? undefined : (form.observacao.trim() || undefined),
         fonte_recurso_id: form.fonte_recurso_id || undefined,
         itens,
       };
+      if (segueInfra) {
+        payload.destino_compras = 'infraestrutura';
+        payload.info_pedido = form.info_pedido.trim();
+        payload.fornecedor_pedido_nome = form.fornecedor_pedido_nome.trim();
+        payload.fornecedor_pedido_info = form.fornecedor_pedido_info.trim() || undefined;
+        if (!payload.info_pedido || !payload.fornecedor_pedido_nome) {
+          setErro(tipo === TIPO_IMOBILIZADO
+            ? 'Informe a descrição detalhada do bem e o nome do fornecedor.'
+            : 'Informe o que será comprado e o nome do fornecedor.');
+          setSalvando(false);
+          return;
+        }
+      } else if (tipo === TIPO_MANUTENCAO) {
+        payload.destino_compras = 'suprimentos';
+      }
 
       if (sede) {
         payload.escopo_unidade = form.destino === 'sede' ? 'sede' : 'projeto';
@@ -225,17 +260,23 @@ export default function ComprasPedidoNovo() {
         }
       }
 
-      if (cotacaoProjeto) {
+      if (cotacaoProjeto || (tipo === TIPO_MANUTENCAO && segueInfra)) {
         payload.titulo = form.titulo.trim();
         payload.justificativa = form.justificativa.trim();
         payload.urgencia = form.urgencia;
         payload.data_desejada = form.data_desejada;
         payload.local_texto = form.local_texto.trim() || undefined;
-        if (form.valor_estimado_reais !== '') {
-          payload.valor_estimado_reais = Number(String(form.valor_estimado_reais).replace(',', '.'));
+        if (String(form.valor_estimado_reais || '').trim()) {
+          const centavos = reaisParaCentavos(form.valor_estimado_reais);
+          if (centavos == null) {
+            setErro('Informe o valor estimado em reais, como 4.500,00.');
+            setSalvando(false);
+            return;
+          }
+          payload.valor_estimado_reais = centavos / 100;
         }
         if (tipo === TIPO_MANUTENCAO) {
-          payload.defeito = form.defeito.trim();
+          payload.defeito = form.defeito.trim() || form.info_pedido.trim();
           payload.tipo_manutencao = form.tipo_manutencao;
         }
         if (tipo === TIPO_SERVICO) {
@@ -277,6 +318,7 @@ export default function ComprasPedidoNovo() {
               <div className="rounded-xl bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">{erro}</div>
             ) : null}
 
+            {tipo === TIPO_IMOBILIZADO || tipo === TIPO_SERVICO ? null : (
             <SectionCard
               title="Copiar um pedido concluído"
               subtitle="Abre um rascunho do mês seguinte para editar. Inteiro junta de novo o que foi separado (carne, peixe, alimentação). Dividido copia só o pedido escolhido."
@@ -343,6 +385,7 @@ export default function ComprasPedidoNovo() {
                 </div>
               )}
             </SectionCard>
+            )}
 
             <SectionCard title="Fonte da verba">
               <label>
@@ -360,6 +403,47 @@ export default function ComprasPedidoNovo() {
                 </select>
               </label>
             </SectionCard>
+
+            {tipo === TIPO_MANUTENCAO ? (
+              <SectionCard title="Quem conduz">
+                <fieldset>
+                  <div className="flex flex-wrap gap-4 text-sm">
+                    <label className="inline-flex items-center gap-2">
+                      <input
+                        type="radio"
+                        name="destino_compras"
+                        checked={destinoCompras === 'suprimentos'}
+                        onChange={() => setDestinoCompras('suprimentos')}
+                      />
+                      Suprimentos
+                    </label>
+                    <label className="inline-flex items-center gap-2">
+                      <input
+                        type="radio"
+                        name="destino_compras"
+                        checked={destinoCompras === 'infraestrutura'}
+                        onChange={() => setDestinoCompras('infraestrutura')}
+                      />
+                      Infraestrutura
+                    </label>
+                  </div>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Suprimentos segue a cotação da Sede. Infraestrutura segue o mesmo caminho de bem e serviço: o projeto descreve o pedido e anexa os orçamentos.
+                  </p>
+                </fieldset>
+                <label className="mt-3 block">
+                  <span className="mb-1 block text-xs font-semibold text-slate-600">Tipo</span>
+                  <select
+                    className={inputClass}
+                    value={form.tipo_manutencao}
+                    onChange={(e) => atualizar('tipo_manutencao', e.target.value)}
+                  >
+                    <option value="corretiva">Corretiva</option>
+                    <option value="preventiva">Preventiva</option>
+                  </select>
+                </label>
+              </SectionCard>
+            ) : null}
 
             {sede ? (
               <SectionCard title="Unidade">
@@ -395,7 +479,7 @@ export default function ComprasPedidoNovo() {
               </SectionCard>
             ) : null}
 
-            {cotacaoProjeto ? (
+            {(cotacaoProjeto || (tipo === TIPO_MANUTENCAO && segueInfra)) ? (
               <SectionCard title="Cabeçalho">
                 <div className="space-y-3">
                   <label>
@@ -405,7 +489,13 @@ export default function ComprasPedidoNovo() {
                       value={form.titulo}
                       onChange={(e) => atualizar('titulo', e.target.value)}
                       required
-                      placeholder="Ex.: Troca de compressor da geladeira"
+                      placeholder={
+                        tipo === TIPO_IMOBILIZADO
+                          ? 'Digite aqui qual bem será objeto dessa compra'
+                          : tipo === TIPO_SERVICO
+                            ? 'Digite aqui qual serviço será objeto desse pedido'
+                            : 'Ex.: Troca de compressor da geladeira'
+                      }
                     />
                   </label>
                   <label>
@@ -442,13 +532,13 @@ export default function ComprasPedidoNovo() {
                       />
                     </label>
                     <label>
-                      <span className="mb-1 block text-xs font-semibold text-slate-600">Valor estimado (R$)</span>
+                      <span className="mb-1 block text-xs font-semibold text-slate-600">Valor estimado</span>
                       <input
                         className={inputClass}
                         value={form.valor_estimado_reais}
-                        onChange={(e) => atualizar('valor_estimado_reais', e.target.value)}
-                        placeholder="Opcional"
-                        inputMode="decimal"
+                        onChange={(e) => atualizar('valor_estimado_reais', mascararMoedaDigitando(e.target.value))}
+                        placeholder="R$ 0,00"
+                        inputMode="numeric"
                       />
                     </label>
                   </div>
@@ -465,32 +555,19 @@ export default function ComprasPedidoNovo() {
               </SectionCard>
             ) : null}
 
-            {tipo === TIPO_MANUTENCAO ? (
+            {tipo === TIPO_MANUTENCAO && !segueInfra ? (
               <SectionCard title="Itens de manutenção">
-                <div className="space-y-3">
-                  <label>
-                    <span className="mb-1 block text-xs font-semibold text-slate-600">Tipo</span>
-                    <select
-                      className={inputClass}
-                      value={form.tipo_manutencao}
-                      onChange={(e) => atualizar('tipo_manutencao', e.target.value)}
-                    >
-                      <option value="corretiva">Corretiva</option>
-                      <option value="preventiva">Preventiva</option>
-                    </select>
-                  </label>
-                  <label>
-                    <span className="mb-1 block text-xs font-semibold text-slate-600">Defeito / sintoma *</span>
-                    <textarea
-                      className={inputClass}
-                      rows={3}
-                      value={form.defeito}
-                      onChange={(e) => atualizar('defeito', e.target.value)}
-                      required
-                      placeholder="O que está acontecendo com o equipamento"
-                    />
-                  </label>
-                </div>
+                <label>
+                  <span className="mb-1 block text-xs font-semibold text-slate-600">Defeito / sintoma *</span>
+                  <textarea
+                    className={inputClass}
+                    rows={3}
+                    value={form.defeito}
+                    onChange={(e) => atualizar('defeito', e.target.value)}
+                    required
+                    placeholder="O que está acontecendo com o equipamento"
+                  />
+                </label>
               </SectionCard>
             ) : null}
 
@@ -510,6 +587,64 @@ export default function ComprasPedidoNovo() {
               </SectionCard>
             ) : null}
 
+            {segueInfra ? (
+              <SectionCard
+                title="Informações do pedido"
+                subtitle={
+                  tipo === TIPO_IMOBILIZADO
+                    ? 'Escreva com o máximo de informações e detalhes o bem a ser adquirido.'
+                    : tipo === TIPO_SERVICO
+                      ? 'Escreva com o máximo de informações e detalhes o serviço a ser contratado.'
+                      : 'Escreva com o máximo de informações e detalhes o que será adquirido.'
+                }
+              >
+                <div className="space-y-3">
+                  <label>
+                    <span className="mb-1 block text-xs font-semibold text-slate-600">
+                      {tipo === TIPO_IMOBILIZADO
+                        ? 'Descrição detalhada do bem *'
+                        : tipo === TIPO_SERVICO
+                          ? 'Descrição detalhada do serviço *'
+                          : 'O que será comprado *'}
+                    </span>
+                    <textarea
+                      className={inputClass}
+                      rows={4}
+                      value={form.info_pedido}
+                      onChange={(e) => atualizar('info_pedido', e.target.value)}
+                      required
+                      placeholder={
+                        tipo === TIPO_IMOBILIZADO
+                          ? 'Descrição detalhada do bem'
+                          : tipo === TIPO_SERVICO
+                            ? 'Descrição detalhada do serviço'
+                            : 'Descreva o reparo com o máximo de detalhes'
+                      }
+                    />
+                  </label>
+                  <label>
+                    <span className="mb-1 block text-xs font-semibold text-slate-600">Nome do fornecedor *</span>
+                    <input
+                      className={inputClass}
+                      value={form.fornecedor_pedido_nome}
+                      onChange={(e) => atualizar('fornecedor_pedido_nome', e.target.value)}
+                      required
+                      placeholder="Nome de quem vai fornecer"
+                    />
+                  </label>
+                  <label>
+                    <span className="mb-1 block text-xs font-semibold text-slate-600">Informações adicionais do fornecedor</span>
+                    <textarea
+                      className={inputClass}
+                      rows={3}
+                      value={form.fornecedor_pedido_info}
+                      onChange={(e) => atualizar('fornecedor_pedido_info', e.target.value)}
+                      placeholder="Contato, endereço ou outra informação"
+                    />
+                  </label>
+                </div>
+              </SectionCard>
+            ) : (
             <SectionCard
               title="Observação do pedido"
               subtitle="Opcional. Em consumo, o texto segue para todos os pedidos quando a Sede divide por categoria."
@@ -525,7 +660,9 @@ export default function ComprasPedidoNovo() {
                 />
               </label>
             </SectionCard>
+            )}
 
+            {segueInfra ? null : (
             <SectionCard title={tipo === TIPO_SERVICO ? 'Itens (opcional agora)' : 'Itens'}>
               <div className="space-y-3">
                 {linhas.map((linha, idx) => (
@@ -613,6 +750,7 @@ export default function ComprasPedidoNovo() {
                   : 'Inclua todos os itens da janela e então crie o rascunho. Ainda dá para ajustar na ficha depois.'}
               </p>
             </SectionCard>
+            )}
 
             <div className="flex flex-wrap gap-2">
               <PremiumButton type="submit" disabled={salvando}>

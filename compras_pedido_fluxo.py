@@ -19,6 +19,7 @@ from compras_assinatura_pdf import (
     carimbar_assinatura_gestor_pdf,
     carimbar_assinatura_pdf,
     carimbar_texto_pdf,
+    juntar_pdfs,
 )
 from security import verificar_senha
 from compras_emails import (
@@ -85,11 +86,20 @@ from compras_regras import (
     pedido_rascunho_pode_excluir,
     pode_reabrir_orcamento_aprovado,
     sede_pode_reabrir_aprovado,
+    CLASSE_DOC_BOLETO,
+    CLASSE_DOC_CONTRATO,
+    CLASSE_DOC_NOTA,
+    CLASSE_DOC_RELACIONADO,
+    ETAPA_CONTRATO_ASSINADO,
+    ETAPA_CONTRATO_NOEMI,
+    ETAPA_CONTRATO_ROBSON,
+    pedido_segue_infraestrutura,
     tipo_eh_cotacao_projeto,
     tipo_suprimentos_aprova_e_envia,
     tipo_eh_cotacao_sede,
     usuario_e_sede_compras,
     usuario_global_assina_orcamento,
+    usuario_ve_alerta_contrato_assinado,
     usuario_pode_aprovar_sede,
     lado_timeline_compras,
     tipo_arquivo_bem_de_anexo_pedido,
@@ -347,6 +357,137 @@ async def _notas_pedido(db: AsyncSession, pedido_id: str) -> list[ComprasPedidoN
     )
 
 
+TEXTO_SEM_CONTRATO = "Não há contrato neste pedido."
+TEXTO_COMPRA_DIRETA = "Compra direta sem envio de e-mail"
+
+
+def situacao_contrato_de_registros(pedido: ComprasPedidoDB, eventos, anexos) -> dict:
+    """Contrato, quando existe, trava a compra e o pagamento até a assinatura da Noemi."""
+    segue = pedido_segue_infraestrutura(pedido.tipo, getattr(pedido, "destino_compras", None))
+    sem_contrato = any((e.texto or "").startswith(TEXTO_SEM_CONTRATO) for e in eventos)
+    contratos = [
+        a for a in anexos
+        if (getattr(a, "classe_documento", None) or "") == CLASSE_DOC_CONTRATO
+        and getattr(a, "ativo", True)
+    ]
+    contrato_assinado = any(
+        (getattr(a, "etapa_contrato", None) or "") == ETAPA_CONTRATO_ASSINADO for a in contratos
+    )
+    contrato_pendente = any(
+        (getattr(a, "etapa_contrato", None) or "") in {ETAPA_CONTRATO_ROBSON, ETAPA_CONTRATO_NOEMI}
+        for a in contratos
+    )
+    email_ok = any(
+        e.tipo == TIPO_EVENTO_EMAIL and (e.texto or "").startswith("E-mail enviado para")
+        for e in eventos
+    )
+    compra_direta = any((e.texto or "").startswith(TEXTO_COMPRA_DIRETA) for e in eventos)
+    compra_executada = bool((email_ok and pedido.pedido_compra_anexo_id) or compra_direta)
+    if not segue:
+        return {
+            "segue": False,
+            "sem_contrato": False,
+            "contrato_assinado": False,
+            "contrato_pendente": False,
+            "compra_direta_sem_email": compra_direta,
+            "compra_liberada": True,
+            "compra_executada": pedido.status == STATUS_ENVIADO or compra_executada,
+            "motivo": None,
+        }
+    if contrato_pendente:
+        liberada = False
+        motivo = "A compra só abre depois que o contrato for assinado."
+    elif contrato_assinado or sem_contrato:
+        liberada = True
+        motivo = None
+    else:
+        liberada = False
+        motivo = "Anexe o contrato ou registre que este pedido não tem contrato."
+    return {
+        "segue": True,
+        "sem_contrato": sem_contrato,
+        "contrato_assinado": contrato_assinado,
+        "contrato_pendente": contrato_pendente,
+        "compra_direta_sem_email": compra_direta,
+        "compra_liberada": liberada,
+        "compra_executada": compra_executada,
+        "motivo": motivo,
+    }
+
+
+async def situacao_contrato_infra(db: AsyncSession, pedido: ComprasPedidoDB) -> dict:
+    eventos = await _eventos_pedido(db, pedido.id)
+    anexos = await _anexos_pedido(db, pedido.id)
+    return situacao_contrato_de_registros(pedido, eventos, anexos)
+
+
+async def exigir_compra_liberada_infra(db: AsyncSession, pedido: ComprasPedidoDB) -> None:
+    sit = await situacao_contrato_infra(db, pedido)
+    if not sit["segue"] or sit["compra_executada"]:
+        return
+    if not sit["compra_liberada"]:
+        raise HTTPException(status_code=400, detail=sit["motivo"])
+
+
+async def exigir_documentos_finais_infra(db: AsyncSession, pedido: ComprasPedidoDB) -> None:
+    sit = await situacao_contrato_infra(db, pedido)
+    if sit["segue"] and not sit["compra_executada"]:
+        raise HTTPException(
+            status_code=400,
+            detail="Boleto, nota fiscal e arquivo relacionado abrem depois que a compra for executada.",
+        )
+
+
+async def registrar_ausencia_contrato(
+    db: AsyncSession,
+    usuario: dict,
+    pedido: ComprasPedidoDB,
+) -> ComprasPedidoDB:
+    if not pedido_segue_infraestrutura(pedido.tipo, getattr(pedido, "destino_compras", None)):
+        raise HTTPException(
+            status_code=400,
+            detail="A decisão de contrato vale para bem, serviço e manutenção de infraestrutura.",
+        )
+    perfil = str(usuario.get("perfil_acesso") or usuario.get("perfil") or "")
+    sede = usuario_e_sede_compras(perfil=perfil, is_manutencao=bool(usuario.get("is_manutencao")))
+    if not sede:
+        if not usuario_pode_pedir(
+            perfil=perfil,
+            compras_modulo_ativo=bool(usuario.get("compras_modulo_ativo")),
+            is_manutencao=bool(usuario.get("is_manutencao")),
+            org_compras_ativo=True,
+        ):
+            raise HTTPException(status_code=403, detail="Sem permissão para registrar a ausência de contrato.")
+        if pedido.instituicao_id != usuario.get("instituicao_id") and not usuario.get("is_manutencao"):
+            raise HTTPException(status_code=403, detail="Essa decisão é do próprio projeto.")
+    if pedido.status not in {STATUS_APROVADO, STATUS_ENVIADO}:
+        raise HTTPException(
+            status_code=400,
+            detail="Registre o contrato depois que a Sede escolher e assinar o orçamento.",
+        )
+    sit = await situacao_contrato_infra(db, pedido)
+    if sit["compra_executada"]:
+        raise HTTPException(status_code=400, detail="A compra já foi executada.")
+    if sit["contrato_pendente"] or sit["contrato_assinado"]:
+        raise HTTPException(
+            status_code=400,
+            detail="Já existe contrato neste pedido. Exclua o arquivo antes de registrar que não há contrato.",
+        )
+    if sit["sem_contrato"]:
+        return pedido
+    await registrar_evento_pedido(
+        db,
+        pedido_id=pedido.id,
+        tipo=TIPO_EVENTO_STATUS,
+        texto=f"{TEXTO_SEM_CONTRATO} A compra pode ser executada.",
+        usuario_id=_uid(usuario),
+        status_anterior=pedido.status,
+        status_novo=pedido.status,
+    )
+    pedido.atualizado_em = agora_operacional_naive()
+    return pedido
+
+
 async def _eventos_pedido(db: AsyncSession, pedido_id: str) -> list[ComprasPedidoEventoDB]:
     return list(
         (
@@ -363,6 +504,8 @@ def _serializar_anexo(anexo: ComprasPedidoAnexoDB) -> dict:
     return {
         "id": anexo.id,
         "tipo": anexo.tipo,
+        "classe_documento": getattr(anexo, "classe_documento", None),
+        "etapa_contrato": getattr(anexo, "etapa_contrato", None),
         "nome_arquivo": anexo.nome_arquivo,
         "caminho_arquivo": anexo.caminho_arquivo,
         "content_type": anexo.content_type,
@@ -527,6 +670,7 @@ async def extras_serializacao_pedido(db: AsyncSession, pedido: ComprasPedidoDB) 
         e.tipo == TIPO_EVENTO_EMAIL and (e.texto or "").startswith("E-mail enviado para")
         for e in eventos
     )
+    sit_contrato = situacao_contrato_de_registros(pedido, eventos, anexos)
     autores = await _autores_eventos(db, [e.usuario_id for e in eventos if e.usuario_id])
     revisoes = await _revisoes_eventos(db, [e.id for e in eventos])
 
@@ -562,6 +706,12 @@ async def extras_serializacao_pedido(db: AsyncSession, pedido: ComprasPedidoDB) 
         "fechado_por_id": fechado_por,
         "pedido_compra_anexo_id": pedido.pedido_compra_anexo_id,
         "email_pedido_compra_enviado": bool(email_pedido_ok and pedido.pedido_compra_anexo_id),
+        "compra_direta_sem_email": sit_contrato["compra_direta_sem_email"],
+        "sem_contrato": sit_contrato["sem_contrato"],
+        "contrato_assinado": sit_contrato["contrato_assinado"],
+        "contrato_pendente": sit_contrato["contrato_pendente"],
+        "compra_liberada": sit_contrato["compra_liberada"],
+        "compra_executada": sit_contrato["compra_executada"],
         "pode_reabrir": pedido.status in {STATUS_REPROVADO, STATUS_CANCELADO},
         "pode_reabrir_aprovado": pode_reabrir_orcamento_aprovado(
             status=pedido.status,
@@ -643,11 +793,31 @@ async def upload_anexo_pedido(
     cotacao_id: Optional[str] = None,
     substituir_anexo_id: Optional[str] = None,
     conteudo: Optional[bytes] = None,
+    classe_documento: Optional[str] = None,
+    etapa_contrato: Optional[str] = None,
 ) -> ComprasPedidoAnexoDB:
     if pedido.status in STATUS_TERMINAIS_PEDIDO:
         raise HTTPException(status_code=400, detail="Processo encerrado não aceita novos anexos.")
     if tipo not in TIPOS_ANEXO_PEDIDO:
         raise HTTPException(status_code=400, detail="Tipo de anexo inválido.")
+    classe = (classe_documento or "").strip().lower()
+    if pedido_segue_infraestrutura(pedido.tipo, getattr(pedido, "destino_compras", None)):
+        if classe == CLASSE_DOC_CONTRATO and (etapa_contrato or "") != ETAPA_CONTRATO_ASSINADO:
+            if pedido.status not in {STATUS_APROVADO, STATUS_ENVIADO}:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Anexe o contrato depois que a Sede escolher e assinar o orçamento.",
+                )
+            sit = await situacao_contrato_infra(db, pedido)
+            if sit["compra_executada"]:
+                raise HTTPException(status_code=400, detail="O contrato é anexado antes da compra.")
+            if sit["contrato_pendente"] or sit["contrato_assinado"]:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Já existe contrato neste pedido. Exclua o atual antes de anexar outro.",
+                )
+        elif classe in {CLASSE_DOC_RELACIONADO, CLASSE_DOC_BOLETO, CLASSE_DOC_NOTA}:
+            await exigir_documentos_finais_infra(db, pedido)
 
     if conteudo is None:
         conteudo = await file.read()
@@ -677,6 +847,11 @@ async def upload_anexo_pedido(
         pedido_id=pedido.id,
         cotacao_id=cotacao_id,
         tipo=tipo,
+        classe_documento=(classe_documento or "").strip().lower() or None,
+        etapa_contrato=(
+            etapa_contrato
+            or (ETAPA_CONTRATO_ROBSON if (classe_documento or "").strip().lower() == CLASSE_DOC_CONTRATO else None)
+        ),
         nome_arquivo=nome_original,
         caminho_arquivo=caminho,
         content_type=content_type or None,
@@ -694,7 +869,15 @@ async def upload_anexo_pedido(
         db,
         pedido_id=pedido.id,
         tipo=TIPO_EVENTO_ANEXO,
-        texto=f"Arquivo anexado com sucesso ({tipo}: {nome_original}). Aguardando ok.",
+        texto=(
+            f"Contrato assinado ({nome_original})."
+            if (etapa_contrato or "") == ETAPA_CONTRATO_ASSINADO
+            else (
+                f"Contrato anexado ({nome_original}). Aguardando revisão da Infraestrutura."
+                if (classe_documento or "").strip().lower() == CLASSE_DOC_CONTRATO
+                else f"Arquivo anexado com sucesso ({tipo}: {nome_original}). Aguardando ok."
+            )
+        ),
         usuario_id=_uid(usuario),
         anexo_id=anexo.id,
         cotacao_id=cotacao_id,
@@ -704,7 +887,10 @@ async def upload_anexo_pedido(
     # Com 3 orçamentos anexados (cotação do projeto), envia automaticamente à Sede.
     if (
         tipo == TIPO_ANEXO_ORCAMENTO
-        and tipo_eh_cotacao_projeto(pedido.tipo)
+        and (
+            tipo_eh_cotacao_projeto(pedido.tipo)
+            or pedido_segue_infraestrutura(pedido.tipo, getattr(pedido, "destino_compras", None))
+        )
         and pedido.status in {STATUS_RASCUNHO, STATUS_EM_COTACAO, STATUS_AGUARDANDO_COTACAO}
     ):
         qtd = await contar_orcamentos_com_anexo(db, pedido.id)
@@ -722,6 +908,7 @@ async def upload_anexo_pedido(
     if (
         tipo == TIPO_ANEXO_ORCAMENTO
         and tipo_eh_cotacao_sede(pedido.tipo)
+        and not pedido_segue_infraestrutura(pedido.tipo, getattr(pedido, "destino_compras", None))
         and (pedido.tipo or "").strip().lower() != "consumo"
         and pedido.status in STATUS_COTACAO_SEDE_COLETANDO
     ):
@@ -747,11 +934,12 @@ async def arquivar_orcamento_assinado_govbr(
     file: UploadFile,
 ) -> ComprasPedidoAnexoDB:
     """Guarda o PDF assinado no gov.br e aprova o pedido na Sede."""
+    segue_infra = pedido_segue_infraestrutura(pedido.tipo, getattr(pedido, "destino_compras", None))
     if usuario_global_assina_orcamento(usuario):
-        if (pedido.tipo or "").strip().lower() not in TIPOS_COTACAO_PROJETO:
+        if (pedido.tipo or "").strip().lower() not in TIPOS_COTACAO_PROJETO and not segue_infra:
             raise HTTPException(
                 status_code=403,
-                detail="Esta autorização cobre bem/imobilizado e prestação de serviço.",
+                detail="Esta autorização cobre bem, serviço e manutenção de infraestrutura.",
             )
     elif not usuario_pode_aprovar_sede(
         perfil=str(usuario.get("perfil_acesso") or usuario.get("perfil") or ""),
@@ -764,10 +952,10 @@ async def arquivar_orcamento_assinado_govbr(
         is_manutencao=bool(usuario.get("is_manutencao")),
     ):
         raise HTTPException(status_code=403, detail="Pedido fora do escopo da sua classe de Compras.")
-    if not tipo_eh_cotacao_projeto(pedido.tipo):
+    if not tipo_eh_cotacao_projeto(pedido.tipo) and not segue_infra:
         raise HTTPException(
             status_code=400,
-            detail="O arquivo do gov.br entra em orçamento de bem/imobilizado e prestação de serviço.",
+            detail="O arquivo do gov.br entra em orçamento de bem, serviço ou manutenção de infraestrutura.",
         )
     if pedido.status != STATUS_AGUARDANDO_SEDE:
         raise HTTPException(status_code=400, detail="Pedido não está aguardando aprovação da Sede.")
@@ -865,7 +1053,8 @@ async def enviar_cotacao_projeto_para_sede(
     confirmar_sem_tres_orcamentos: bool = False,
 ) -> ComprasPedidoDB:
     """Projeto envia à Sede para escolha/assinatura (sem exigir orçamento escolhido)."""
-    if not tipo_eh_cotacao_projeto(pedido.tipo):
+    segue_infra = pedido_segue_infraestrutura(pedido.tipo, getattr(pedido, "destino_compras", None))
+    if not tipo_eh_cotacao_projeto(pedido.tipo) and not segue_infra:
         raise HTTPException(status_code=400, detail="Envio à Sede para assinatura vale para cotação do projeto.")
     if pedido.status not in {STATUS_RASCUNHO, STATUS_EM_COTACAO, STATUS_AGUARDANDO_COTACAO}:
         raise HTTPException(
@@ -879,7 +1068,7 @@ async def enviar_cotacao_projeto_para_sede(
             )
         ).scalars().all()
     )
-    if not itens_proj:
+    if not itens_proj and not segue_infra:
         raise HTTPException(status_code=400, detail="Inclua ao menos um item antes de enviar.")
 
     qtd_com_anexo = await contar_orcamentos_com_anexo(db, pedido.id)
@@ -1484,6 +1673,7 @@ async def enviar_email_fornecedor(
     fornecedor_id: str | None = None,
 ) -> dict:
     _exigir_envio_email_compras(usuario)
+    await exigir_compra_liberada_infra(db, pedido)
     nome_envio = None
     if fornecedor_id and tipo_suprimentos_aprova_e_envia(pedido.tipo):
         forn_envio = (
@@ -1658,7 +1848,10 @@ async def enviar_solicitacao_cotacao_fornecedores(
         perfil=perfil,
         is_manutencao=bool(usuario.get("is_manutencao")),
     )
-    cotacao_projeto = tipo_eh_cotacao_projeto(pedido.tipo)
+    cotacao_projeto = (
+        tipo_eh_cotacao_projeto(pedido.tipo)
+        or pedido_segue_infraestrutura(pedido.tipo, getattr(pedido, "destino_compras", None))
+    )
     pode_projeto = usuario_pode_pedir(
         perfil=perfil,
         compras_modulo_ativo=bool(usuario.get("compras_modulo_ativo")),
@@ -1871,16 +2064,21 @@ async def _validar_assinatura_eletronica_gestor(
     senha: str,
 ) -> tuple[UsuarioDB, str, str]:
     """Confere a senha do gestor e devolve o nome dele e o do projeto para o carimbo."""
-    perfil = str(usuario.get("perfil_acesso") or usuario.get("perfil") or "").strip()
-    if perfil != "Gestor":
+    from security import normalizar_perfil_acesso
+
+    perfil = normalizar_perfil_acesso(
+        str(usuario.get("perfil_acesso") or usuario.get("perfil") or "").strip()
+    )
+    if perfil not in {"Gestor", "Técnico", "Administrativo", "ADM Pedidos"} and not usuario.get("is_manutencao"):
         raise HTTPException(
             status_code=403,
-            detail="Somente o gestor do projeto assina a nota fiscal.",
+            detail="A assinatura digital do gestor pode ser usada pelo gestor, pelo técnico, pelo administrativo ou pelo ADM Pedidos do projeto.",
         )
     if (
         pedido.instituicao_id
         and usuario.get("instituicao_id")
         and pedido.instituicao_id != usuario.get("instituicao_id")
+        and not usuario.get("is_manutencao")
     ):
         raise HTTPException(
             status_code=403,
@@ -1892,15 +2090,33 @@ async def _validar_assinatura_eletronica_gestor(
             status_code=400,
             detail="Informe a senha da assinatura eletrônica do gestor.",
         )
-    row = (
-        await db.execute(select(UsuarioDB).where(UsuarioDB.id == _uid(usuario)))
-    ).scalar_one_or_none()
-    if not row or not getattr(row, "assinatura_eletronica_senha_hash", None):
+    gestores = list(
+        (
+            await db.execute(
+                select(UsuarioDB).where(
+                    UsuarioDB.instituicao_id == pedido.instituicao_id,
+                    UsuarioDB.perfil_acesso.in_(("Gestor", "Gestao", "Gestão")),
+                    UsuarioDB.ativo.is_(True),
+                )
+            )
+        ).scalars().all()
+    )
+    if perfil == "Gestor":
+        proprio = next((g for g in gestores if g.id == _uid(usuario)), None)
+        if proprio is None:
+            proprio = (
+                await db.execute(select(UsuarioDB).where(UsuarioDB.id == _uid(usuario)))
+            ).scalar_one_or_none()
+        if proprio:
+            gestores = [proprio] + [g for g in gestores if g.id != proprio.id]
+    com_senha = [g for g in gestores if getattr(g, "assinatura_eletronica_senha_hash", None)]
+    if not com_senha:
         raise HTTPException(
             status_code=400,
             detail="Cadastre a senha de assinatura eletrônica no perfil do gestor, em Usuários.",
         )
-    if not verificar_senha(senha_limpa, row.assinatura_eletronica_senha_hash):
+    row = next((g for g in com_senha if verificar_senha(senha_limpa, g.assinatura_eletronica_senha_hash)), None)
+    if row is None:
         raise HTTPException(status_code=400, detail="Senha da assinatura eletrônica incorreta.")
     inst = await _dados_instituicao(db, pedido)
     projeto = ((inst or {}).get("relatorio_nome_exibicao") or (inst or {}).get("nome") or "Projeto").strip()
@@ -1916,9 +2132,29 @@ async def registrar_nota_fiscal(
     file: Optional[UploadFile],
     conteudo_xml: Optional[bytes],
     payload: dict,
+    pdfs_junto: Optional[list[bytes]] = None,
 ) -> ComprasPedidoNotaFiscalDB:
     if pedido.status != STATUS_ENVIADO:
         raise HTTPException(status_code=400, detail="Notas fiscais só após envio ao fornecedor.")
+    await exigir_documentos_finais_infra(db, pedido)
+    classe_doc = (payload.get("classe_documento") or CLASSE_DOC_NOTA).strip().lower()
+    if classe_doc != "boleto":
+        ja_tem_nf = (
+            await db.execute(
+                select(ComprasPedidoNotaFiscalDB.id).where(
+                    ComprasPedidoNotaFiscalDB.pedido_id == pedido.id,
+                    ComprasPedidoNotaFiscalDB.anexo_id.isnot(None),
+                    ComprasPedidoNotaFiscalDB.tipo_nf != "boleto",
+                )
+            )
+        ).first()
+    else:
+        ja_tem_nf = None
+    if ja_tem_nf:
+        raise HTTPException(
+            status_code=400,
+            detail="Já existe nota fiscal anexada neste processo. Exclua o arquivo antes de anexar outra.",
+        )
     _gestor_row, nome_gestor, nome_projeto = await _validar_assinatura_eletronica_gestor(
         db,
         usuario,
@@ -1927,7 +2163,7 @@ async def registrar_nota_fiscal(
     )
 
     campos = {
-        "tipo_nf": (payload.get("tipo_nf") or "produto").strip().lower(),
+        "tipo_nf": "boleto" if (payload.get("classe_documento") or "").strip().lower() == "boleto" else (payload.get("tipo_nf") or "produto").strip().lower(),
         "numero": (payload.get("numero") or "").strip() or None,
         "serie": (payload.get("serie") or "").strip() or None,
         "chave_acesso": (payload.get("chave_acesso") or "").strip() or None,
@@ -1962,6 +2198,9 @@ async def registrar_nota_fiscal(
         raw = await file.read()
         if not raw:
             raise HTTPException(status_code=400, detail="Arquivo da NF está vazio.")
+        extras = [parte for parte in (pdfs_junto or []) if parte]
+        if extras and ext == ".pdf":
+            raw = juntar_pdfs([raw, *extras])
         texto_nf = (campos.get("observacao") or "").strip()
         if ext == ".pdf":
             try:
@@ -1969,6 +2208,8 @@ async def registrar_nota_fiscal(
                     raw = carimbar_texto_pdf(
                         pdf_bytes=raw,
                         texto=texto_nf,
+                        projeto=nome_projeto,
+                        todas_as_paginas=True,
                         page_index=int(payload.get("carimbo_pagina") or 0),
                         x=float(payload.get("carimbo_x") or 36),
                         y=float(payload.get("carimbo_y") or 36),
@@ -1980,6 +2221,7 @@ async def registrar_nota_fiscal(
                     pdf_bytes=raw,
                     nome=nome_gestor,
                     projeto=nome_projeto,
+                    todas_as_paginas=True,
                     page_index=int(
                         (payload.get("assinatura_pagina") if tem_posicao_assinatura else payload.get("carimbo_pagina"))
                         or 0
@@ -2284,6 +2526,41 @@ async def remover_anexo_pedido(
     ).scalar_one_or_none()
     if not anexo:
         raise HTTPException(status_code=404, detail="Anexo não encontrado.")
+    if (getattr(anexo, "classe_documento", None) or "") == CLASSE_DOC_CONTRATO:
+        if (getattr(anexo, "etapa_contrato", None) or "") == ETAPA_CONTRATO_ASSINADO:
+            raise HTTPException(status_code=400, detail="Contrato já assinado não pode ser excluído.")
+        if pedido.status not in {STATUS_APROVADO, STATUS_ENVIADO}:
+            raise HTTPException(
+                status_code=400,
+                detail="O contrato só pode ser excluído depois da assinatura do orçamento e antes da compra.",
+            )
+        sit = await situacao_contrato_infra(db, pedido)
+        if sit["compra_executada"]:
+            raise HTTPException(status_code=400, detail="A compra já foi executada. O contrato não pode mais ser excluído.")
+        perfil = str(usuario.get("perfil_acesso") or usuario.get("perfil") or "")
+        sede = usuario_e_sede_compras(perfil=perfil, is_manutencao=bool(usuario.get("is_manutencao")))
+        if not sede:
+            if not usuario_pode_pedir(
+                perfil=perfil,
+                compras_modulo_ativo=bool(usuario.get("compras_modulo_ativo")),
+                is_manutencao=bool(usuario.get("is_manutencao")),
+                org_compras_ativo=True,
+            ):
+                raise HTTPException(status_code=403, detail="Sem permissão para excluir o contrato.")
+            if pedido.instituicao_id != usuario.get("instituicao_id") and not usuario.get("is_manutencao"):
+                raise HTTPException(status_code=403, detail="A exclusão do contrato é do próprio projeto.")
+        anexo.ativo = False
+        remover_arquivo_compras(anexo.caminho_arquivo)
+        await registrar_evento_pedido(
+            db,
+            pedido_id=pedido.id,
+            tipo=TIPO_EVENTO_OBSERVACAO,
+            texto=f"Contrato excluído ({anexo.nome_arquivo}). O projeto pode anexar o arquivo correto.",
+            usuario_id=_uid(usuario),
+            aguardando_confirmacao=False,
+        )
+        pedido.atualizado_em = agora_operacional_naive()
+        return
     if anexo.tipo == TIPO_ANEXO_AQUISICAO:
         if pedido.status != STATUS_ENVIADO:
             raise HTTPException(
@@ -2393,7 +2670,10 @@ async def desativar_cotacao(
             detail="Após o envio ao fornecedor não é possível remover orçamentos. Encerre o processo ou use comunicação na timeline.",
         )
     if not sede and not (
-        tipo_eh_cotacao_projeto(pedido.tipo) and pedido.status in statuses_projeto
+        (
+            tipo_eh_cotacao_projeto(pedido.tipo)
+            or pedido_segue_infraestrutura(pedido.tipo, getattr(pedido, "destino_compras", None))
+        ) and pedido.status in statuses_projeto
     ):
         raise HTTPException(
             status_code=403,
@@ -2617,3 +2897,355 @@ async def assinar_orcamento_e_aprovar_sede(
         cotacao_id=escolhida.id,
     )
     return pedido
+
+
+async def listar_alertas_contrato_assinado(db: AsyncSession, usuario: dict) -> list[dict]:
+    """Pedidos com contrato assinado ainda sem compra — modal de Compras, não o menu de avisos."""
+    if not usuario_ve_alerta_contrato_assinado(usuario):
+        return []
+    org_id = usuario.get("organizacao_id")
+    if not org_id:
+        return []
+    filtros = [
+        ComprasPedidoDB.organizacao_id == org_id,
+        ComprasPedidoDB.status == STATUS_APROVADO,
+        ComprasPedidoAnexoDB.ativo.is_(True),
+        ComprasPedidoAnexoDB.classe_documento == CLASSE_DOC_CONTRATO,
+        ComprasPedidoAnexoDB.etapa_contrato == ETAPA_CONTRATO_ASSINADO,
+    ]
+    if perfil_adm_compras_sede(usuario) != "infraestrutura" and not usuario.get("is_manutencao"):
+        filtros.append(ComprasPedidoDB.instituicao_id == usuario.get("instituicao_id"))
+    linhas = (
+        await db.execute(
+            select(ComprasPedidoDB, ComprasPedidoAnexoDB, InstituicaoDB.nome_fantasia)
+            .join(ComprasPedidoAnexoDB, ComprasPedidoAnexoDB.pedido_id == ComprasPedidoDB.id)
+            .outerjoin(InstituicaoDB, InstituicaoDB.id == ComprasPedidoDB.instituicao_id)
+            .where(*filtros)
+            .order_by(ComprasPedidoAnexoDB.criado_em.desc())
+        )
+    ).all()
+    saida = []
+    vistos: set[str] = set()
+    for pedido, anexo, projeto in linhas:
+        if pedido.id in vistos:
+            continue
+        vistos.add(pedido.id)
+        saida.append({
+            "pedido_id": pedido.id,
+            "titulo": pedido.titulo or "Pedido",
+            "projeto": projeto or "",
+            "arquivo": anexo.nome_arquivo,
+            "assinado_em": anexo.criado_em.isoformat(sep=" ") if anexo.criado_em else None,
+        })
+    return saida
+
+
+async def liberar_contrato_infraestrutura(
+    db: AsyncSession,
+    usuario: dict,
+    pedido: ComprasPedidoDB,
+    anexo_id: str,
+) -> ComprasPedidoAnexoDB:
+    if perfil_adm_compras_sede(usuario) != "infraestrutura" and not usuario.get("is_manutencao"):
+        raise HTTPException(status_code=403, detail="A revisão do contrato é da Infraestrutura.")
+    anexo = (
+        await db.execute(
+            select(ComprasPedidoAnexoDB).where(
+                ComprasPedidoAnexoDB.id == anexo_id,
+                ComprasPedidoAnexoDB.pedido_id == pedido.id,
+            )
+        )
+    ).scalar_one_or_none()
+    if not anexo or getattr(anexo, "classe_documento", None) != CLASSE_DOC_CONTRATO:
+        raise HTTPException(status_code=404, detail="Contrato não encontrado neste pedido.")
+    if getattr(anexo, "etapa_contrato", None) != ETAPA_CONTRATO_ROBSON:
+        raise HTTPException(status_code=400, detail="Este contrato não está aguardando a Infraestrutura.")
+    anexo.etapa_contrato = ETAPA_CONTRATO_NOEMI
+    await registrar_evento_pedido(
+        db,
+        pedido_id=pedido.id,
+        tipo=TIPO_EVENTO_STATUS,
+        texto=f"Infraestrutura revisou o contrato {anexo.nome_arquivo} e enviou para a assinatura da Noemi.",
+        usuario_id=_uid(usuario),
+        anexo_id=anexo.id,
+    )
+    return anexo
+
+
+async def registrar_contrato_assinado(
+    db: AsyncSession,
+    usuario: dict,
+    pedido: ComprasPedidoDB,
+    anexo_id: str,
+    *,
+    file: UploadFile,
+) -> ComprasPedidoAnexoDB:
+    if not usuario_global_assina_orcamento(usuario) and not usuario.get("is_manutencao"):
+        raise HTTPException(status_code=403, detail="A assinatura do contrato no gov.br é da Noemi.")
+    anexo = (
+        await db.execute(
+            select(ComprasPedidoAnexoDB).where(
+                ComprasPedidoAnexoDB.id == anexo_id,
+                ComprasPedidoAnexoDB.pedido_id == pedido.id,
+            )
+        )
+    ).scalar_one_or_none()
+    if not anexo or getattr(anexo, "etapa_contrato", None) != ETAPA_CONTRATO_NOEMI:
+        raise HTTPException(status_code=400, detail="Este contrato não está aguardando a assinatura.")
+    novo = await upload_anexo_pedido(
+        db, usuario, pedido, file=file, tipo=anexo.tipo or TIPO_ANEXO_AQUISICAO,
+        classe_documento=CLASSE_DOC_CONTRATO,
+        etapa_contrato=ETAPA_CONTRATO_ASSINADO,
+    )
+    anexo.ativo = False
+    anexo.etapa_contrato = ETAPA_CONTRATO_ASSINADO
+    await registrar_evento_pedido(
+        db,
+        pedido_id=pedido.id,
+        tipo=TIPO_EVENTO_STATUS,
+        texto=f"Noemi assinou o contrato {anexo.nome_arquivo}. O processo volta para o projeto.",
+        usuario_id=_uid(usuario),
+        anexo_id=novo.id,
+    )
+    return novo
+
+
+TEXTO_FILA_REPRESENTANTE = "Enviado para a fila do representante legal."
+
+
+def _orcamento_da_infra(pedido: ComprasPedidoDB) -> bool:
+    return tipo_eh_cotacao_projeto(pedido.tipo) or pedido_segue_infraestrutura(
+        pedido.tipo, getattr(pedido, "destino_compras", None),
+    )
+
+
+def _papeis_fila_assinatura(usuario: dict) -> tuple[bool, bool]:
+    manutencao = bool(usuario.get("is_manutencao"))
+    ver_infra = perfil_adm_compras_sede(usuario) == "infraestrutura" or manutencao
+    ver_representante = usuario_global_assina_orcamento(usuario) or manutencao
+    return ver_infra, ver_representante
+
+
+async def separar_fila_assinatura(db: AsyncSession, usuario: dict) -> dict:
+    vazio = {
+        "ver_infra": False,
+        "ver_representante": False,
+        "orcamentos_infra": [],
+        "orcamentos_representante": [],
+        "contratos_infra": [],
+        "contratos_representante": [],
+    }
+    ver_infra, ver_representante = _papeis_fila_assinatura(usuario)
+    if not ver_infra and not ver_representante:
+        return vazio
+    org_id = usuario.get("organizacao_id")
+    if not org_id:
+        vazio["ver_infra"] = ver_infra
+        vazio["ver_representante"] = ver_representante
+        return vazio
+
+    candidatos = list(
+        (
+            await db.execute(
+                select(ComprasPedidoDB).where(
+                    ComprasPedidoDB.organizacao_id == org_id,
+                    ComprasPedidoDB.status == STATUS_AGUARDANDO_SEDE,
+                )
+            )
+        ).scalars().all()
+    )
+    candidatos = [p for p in candidatos if _orcamento_da_infra(p)]
+    ids = [p.id for p in candidatos]
+    enviados: set[str] = set()
+    if ids:
+        eventos = (
+            await db.execute(
+                select(ComprasPedidoEventoDB.pedido_id).where(
+                    ComprasPedidoEventoDB.pedido_id.in_(ids),
+                    ComprasPedidoEventoDB.texto.like(f"{TEXTO_FILA_REPRESENTANTE}%"),
+                )
+            )
+        ).all()
+        enviados = {row[0] for row in eventos}
+
+    orcamentos_infra = [p for p in candidatos if p.id not in enviados]
+    orcamentos_representante = [p for p in candidatos if p.id in enviados]
+
+    linhas = (
+        await db.execute(
+            select(ComprasPedidoAnexoDB, ComprasPedidoDB)
+            .join(ComprasPedidoDB, ComprasPedidoDB.id == ComprasPedidoAnexoDB.pedido_id)
+            .where(
+                ComprasPedidoDB.organizacao_id == org_id,
+                ComprasPedidoDB.status.notin_(tuple(STATUS_TERMINAIS_PEDIDO)),
+                ComprasPedidoAnexoDB.classe_documento == CLASSE_DOC_CONTRATO,
+                ComprasPedidoAnexoDB.ativo.is_(True),
+                ComprasPedidoAnexoDB.etapa_contrato.in_((ETAPA_CONTRATO_ROBSON, ETAPA_CONTRATO_NOEMI)),
+            )
+        )
+    ).all()
+    contratos_infra = [(anexo, pedido) for anexo, pedido in linhas if anexo.etapa_contrato == ETAPA_CONTRATO_ROBSON]
+    contratos_representante = [
+        (anexo, pedido) for anexo, pedido in linhas if anexo.etapa_contrato == ETAPA_CONTRATO_NOEMI
+    ]
+    return {
+        "ver_infra": ver_infra,
+        "ver_representante": ver_representante,
+        "orcamentos_infra": orcamentos_infra,
+        "orcamentos_representante": orcamentos_representante,
+        "contratos_infra": contratos_infra,
+        "contratos_representante": contratos_representante,
+    }
+
+
+def contagem_fila_assinatura(separada: dict) -> int:
+    total = 0
+    if separada.get("ver_infra"):
+        total += len(separada.get("orcamentos_infra") or [])
+        total += len(separada.get("contratos_infra") or [])
+    if separada.get("ver_representante"):
+        total += len(separada.get("orcamentos_representante") or [])
+        total += len(separada.get("contratos_representante") or [])
+    return total
+
+
+async def enviar_orcamento_para_representante(
+    db: AsyncSession,
+    usuario: dict,
+    pedido: ComprasPedidoDB,
+) -> ComprasPedidoDB:
+    if perfil_adm_compras_sede(usuario) != "infraestrutura" and not usuario.get("is_manutencao"):
+        raise HTTPException(
+            status_code=403,
+            detail="Só a Infraestrutura envia o orçamento para o representante legal.",
+        )
+    if not _orcamento_da_infra(pedido):
+        raise HTTPException(status_code=400, detail="Esse pedido não passa pela fila da Infraestrutura.")
+    if pedido.status != STATUS_AGUARDANDO_SEDE:
+        raise HTTPException(status_code=400, detail="Esse orçamento não está aguardando a Infraestrutura.")
+    cotacoes = await _cotacoes_ativas(db, pedido.id)
+    escolhida = next((c for c in cotacoes if c.escolhida), None)
+    if not escolhida:
+        raise HTTPException(status_code=400, detail="Escolha o orçamento vencedor antes de enviar à Noemi.")
+    anexo = (
+        await db.execute(
+            select(ComprasPedidoAnexoDB.id).where(
+                ComprasPedidoAnexoDB.pedido_id == pedido.id,
+                ComprasPedidoAnexoDB.cotacao_id == escolhida.id,
+                ComprasPedidoAnexoDB.tipo == TIPO_ANEXO_ORCAMENTO,
+                ComprasPedidoAnexoDB.ativo.is_(True),
+            )
+        )
+    ).first()
+    if not anexo:
+        raise HTTPException(status_code=400, detail="O orçamento vencedor precisa ter o PDF anexado.")
+    ja = (
+        await db.execute(
+            select(ComprasPedidoEventoDB.id).where(
+                ComprasPedidoEventoDB.pedido_id == pedido.id,
+                ComprasPedidoEventoDB.texto.like(f"{TEXTO_FILA_REPRESENTANTE}%"),
+            )
+        )
+    ).first()
+    if ja:
+        return pedido
+    await registrar_evento_pedido(
+        db,
+        pedido_id=pedido.id,
+        tipo=TIPO_EVENTO_STATUS,
+        texto=(
+            f"{TEXTO_FILA_REPRESENTANTE} "
+            f"Orçamento de {escolhida.fornecedor_nome} aguarda assinatura no gov.br."
+        ),
+        usuario_id=_uid(usuario),
+        cotacao_id=escolhida.id,
+        status_anterior=pedido.status,
+        status_novo=pedido.status,
+    )
+    pedido.atualizado_em = agora_operacional_naive()
+    return pedido
+
+
+async def listar_contratos_assinados_representante(db: AsyncSession, usuario: dict) -> list[dict]:
+    if not usuario_global_assina_orcamento(usuario) and not usuario.get("is_manutencao"):
+        raise HTTPException(status_code=403, detail="A lista de contratos assinados é da Noemi.")
+    org_id = usuario.get("organizacao_id")
+    if not org_id:
+        return []
+    linhas = (
+        await db.execute(
+            select(ComprasPedidoAnexoDB, ComprasPedidoDB, InstituicaoDB.nome_fantasia)
+            .join(ComprasPedidoDB, ComprasPedidoDB.id == ComprasPedidoAnexoDB.pedido_id)
+            .outerjoin(InstituicaoDB, InstituicaoDB.id == ComprasPedidoDB.instituicao_id)
+            .where(
+                ComprasPedidoDB.organizacao_id == org_id,
+                ComprasPedidoAnexoDB.classe_documento == CLASSE_DOC_CONTRATO,
+                ComprasPedidoAnexoDB.etapa_contrato == ETAPA_CONTRATO_ASSINADO,
+                ComprasPedidoAnexoDB.ativo.is_(True),
+            )
+            .order_by(ComprasPedidoAnexoDB.criado_em.desc())
+        )
+    ).all()
+    saida = []
+    for anexo, pedido, projeto in linhas:
+        saida.append({
+            "id": anexo.id,
+            "pedido_id": pedido.id,
+            "titulo": pedido.titulo,
+            "projeto": projeto or "Projeto",
+            "nome_arquivo": anexo.nome_arquivo,
+            "assinado_em": anexo.criado_em.isoformat(timespec="minutes") if anexo.criado_em else None,
+            "pode_substituir": pedido.status not in STATUS_TERMINAIS_PEDIDO,
+        })
+    return saida
+
+
+async def substituir_contrato_assinado(
+    db: AsyncSession,
+    usuario: dict,
+    pedido: ComprasPedidoDB,
+    anexo_id: str,
+    *,
+    file: UploadFile,
+) -> ComprasPedidoAnexoDB:
+    if not usuario_global_assina_orcamento(usuario) and not usuario.get("is_manutencao"):
+        raise HTTPException(status_code=403, detail="A troca do contrato assinado é da Noemi.")
+    if pedido.status in STATUS_TERMINAIS_PEDIDO:
+        raise HTTPException(
+            status_code=400,
+            detail="Processo encerrado. O contrato assinado não pode mais ser substituído.",
+        )
+    anexo = (
+        await db.execute(
+            select(ComprasPedidoAnexoDB).where(
+                ComprasPedidoAnexoDB.id == anexo_id,
+                ComprasPedidoAnexoDB.pedido_id == pedido.id,
+                ComprasPedidoAnexoDB.ativo.is_(True),
+            )
+        )
+    ).scalar_one_or_none()
+    if (
+        not anexo
+        or getattr(anexo, "classe_documento", None) != CLASSE_DOC_CONTRATO
+        or getattr(anexo, "etapa_contrato", None) != ETAPA_CONTRATO_ASSINADO
+    ):
+        raise HTTPException(status_code=404, detail="Contrato assinado não encontrado neste pedido.")
+    nome_anterior = anexo.nome_arquivo
+    novo = await upload_anexo_pedido(
+        db, usuario, pedido, file=file, tipo=anexo.tipo or TIPO_ANEXO_AQUISICAO,
+        classe_documento=CLASSE_DOC_CONTRATO,
+        etapa_contrato=ETAPA_CONTRATO_ASSINADO,
+    )
+    anexo.ativo = False
+    await registrar_evento_pedido(
+        db,
+        pedido_id=pedido.id,
+        tipo=TIPO_EVENTO_STATUS,
+        texto=(
+            f"Contrato assinado substituído ({nome_anterior} por {novo.nome_arquivo}). "
+            "O arquivo anterior estava incorreto."
+        ),
+        usuario_id=_uid(usuario),
+        anexo_id=novo.id,
+    )
+    return novo

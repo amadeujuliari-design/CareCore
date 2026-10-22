@@ -29,6 +29,25 @@ TIPOS_COTACAO_SEDE = frozenset({TIPO_CONSUMO, TIPO_HORTIFRUTI, TIPO_MANUTENCAO})
 TIPOS_VISAO_SUPRIMENTOS = frozenset({TIPO_CONSUMO, TIPO_HORTIFRUTI, TIPO_MANUTENCAO})
 TIPOS_VISAO_INFRAESTRUTURA = frozenset({TIPO_IMOBILIZADO, TIPO_SERVICO})
 
+DESTINO_COMPRAS_SUPRIMENTOS = "suprimentos"
+DESTINO_COMPRAS_INFRAESTRUTURA = "infraestrutura"
+DESTINOS_COMPRAS = (DESTINO_COMPRAS_SUPRIMENTOS, DESTINO_COMPRAS_INFRAESTRUTURA)
+
+CLASSE_DOC_CONTRATO = "contrato"
+CLASSE_DOC_BOLETO = "boleto"
+CLASSE_DOC_NOTA = "nota_fiscal"
+CLASSE_DOC_RELACIONADO = "relacionado"
+CLASSES_DOCUMENTO_PEDIDO = (
+    CLASSE_DOC_CONTRATO,
+    CLASSE_DOC_BOLETO,
+    CLASSE_DOC_NOTA,
+    CLASSE_DOC_RELACIONADO,
+)
+CLASSES_DOCUMENTO_EXIGEM_ASSINATURA = frozenset({CLASSE_DOC_BOLETO, CLASSE_DOC_NOTA})
+ETAPA_CONTRATO_ROBSON = "aguardando_robson"
+ETAPA_CONTRATO_NOEMI = "aguardando_noemi"
+ETAPA_CONTRATO_ASSINADO = "assinado"
+
 URGENCIA_NORMAL = "normal"
 URGENCIA_URGENTE = "urgente"
 URGENCIAS_PEDIDO = (URGENCIA_NORMAL, URGENCIA_URGENTE)
@@ -358,6 +377,21 @@ def rotulo_competencia_orcamento(valor: Optional[str]) -> str:
         ROTULO_COMPETENCIA_ORCAMENTO[COMPETENCIA_SEDE],
     )
 
+def corrigir_acento_quebrado(valor: Optional[str]) -> Optional[str]:
+    """Restaura texto UTF-8 lido como CP850 ou CP437 (Café e Convênio)."""
+    if not valor or ("\u251c" not in valor and "\u252c" not in valor):
+        return valor
+    for codec in ("cp850", "cp437"):
+        try:
+            corrigido = valor.encode(codec).decode("utf-8")
+        except UnicodeError:
+            continue
+        if "\u251c" in corrigido or "\u252c" in corrigido:
+            continue
+        return corrigido
+    return valor
+
+
 FONTES_PADRAO = (
     "Convênio",
     "Custo indireto",
@@ -435,8 +469,21 @@ def competencia_mes_seguinte(competencia: str) -> str:
     return f"{ano:04d}-{mes + 1:02d}"
 
 
+def pedido_segue_infraestrutura(tipo: Optional[str], destino: Optional[str] = None) -> bool:
+    """Bem, serviço e manutenção dirigida à Infraestrutura seguem o fluxo do Robson."""
+    chave = (tipo or "").strip().lower()
+    if chave in {TIPO_IMOBILIZADO, TIPO_SERVICO}:
+        return True
+    return (
+        chave == TIPO_MANUTENCAO
+        and (destino or "").strip().lower() == DESTINO_COMPRAS_INFRAESTRUTURA
+    )
+
+
 def lado_timeline_compras(*, perfil: str, is_manutencao: bool = False) -> str:
-    """Azul de Suprimentos/Sede ou branco do projeto na timeline."""
+    """Infraestrutura, Suprimentos ou projeto na timeline."""
+    if _perfil_adm_compras(perfil) == PERFIL_ADM_COMPRAS_INFRAESTRUTURA:
+        return "infraestrutura"
     if usuario_e_sede_compras(perfil=perfil, is_manutencao=is_manutencao):
         return "suprimentos"
     return "projeto"
@@ -764,6 +811,19 @@ def perfil_adm_compras_sede(usuario) -> str | None:
     if perfil_n == PERFIL_ADM_COMPRAS_SUPRIMENTOS:
         return "suprimentos"
     return None
+
+
+def usuario_ve_alerta_contrato_assinado(usuario) -> bool:
+    """Modal de Compras após a Noemi assinar: projeto e Infraestrutura, não Comunicação Interna."""
+    if not isinstance(usuario, dict) or not usuario:
+        return False
+    if usuario.get("is_manutencao") or _perfil_eh_manutencao_ops(str(usuario.get("perfil_acesso") or "")):
+        return True
+    if usuario_global_consulta_compras(usuario):
+        return False
+    if perfil_adm_compras_sede(usuario) == "suprimentos":
+        return False
+    return True
 
 
 def usuario_pode_enviar_email_compras(*, perfil: str, is_manutencao: bool = False) -> bool:

@@ -72,6 +72,16 @@ export function tipoEhCotacaoProjeto(tipo) {
   return TIPOS_COTACAO_PROJETO.has(String(tipo || '').trim().toLowerCase());
 }
 
+/** Bem, serviço, ou manutenção quando o projeto escolhe Infraestrutura. */
+export function pedidoSegueInfraestrutura(tipo, destinoCompras) {
+  const t = String(tipo || '').trim().toLowerCase();
+  if (t === TIPO_IMOBILIZADO || t === TIPO_SERVICO) return true;
+  if (t === TIPO_MANUTENCAO) {
+    return String(destinoCompras || '').trim().toLowerCase() === 'infraestrutura';
+  }
+  return false;
+}
+
 export function tipoEhCotacaoSede(tipo) {
   return TIPOS_COTACAO_SEDE.has(String(tipo || '').trim().toLowerCase());
 }
@@ -262,7 +272,7 @@ export const BOTOES_NOVO_PEDIDO = [
   {
     tipo: TIPO_MANUTENCAO,
     titulo: 'Itens de manutenção',
-    descricao: 'Reparos e manutenção. A Sede Suprimentos conduz a cotação.',
+    descricao: 'Reparos. Escolha Suprimentos (cota a Sede) ou Infraestrutura (o projeto cota, como bem).',
   },
   {
     tipo: TIPO_SERVICO,

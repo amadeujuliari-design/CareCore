@@ -143,6 +143,37 @@ export async function comprasFilaAssinaturaResumo() {
   return data;
 }
 
+export async function comprasAlertasContratoAssinado() {
+  const { data } = await api.get('/api/compras/alertas-contrato-assinado');
+  return data;
+}
+
+export async function comprasFilaAssinatura() {
+  const { data } = await api.get('/api/compras/fila-assinatura');
+  return data;
+}
+
+export async function comprasDocumentosAssinados() {
+  const { data } = await api.get('/api/compras/documentos-assinados');
+  return data;
+}
+
+export async function comprasSubstituirContratoAssinado(pedidoId, anexoId, arquivo) {
+  const formData = new FormData();
+  formData.append('arquivo', arquivo);
+  const { data } = await api.post(
+    `/api/compras/pedidos/${pedidoId}/contratos/${anexoId}/substituir`,
+    formData,
+    { headers: { 'Content-Type': 'multipart/form-data' } },
+  );
+  return data;
+}
+
+export async function comprasEnviarFilaRepresentante(id) {
+  const { data } = await api.post(`/api/compras/pedidos/${id}/fila-representante`);
+  return data;
+}
+
 export async function comprasAssinaturaEletronicaGestor() {
   const { data } = await api.get('/api/compras/assinatura-eletronica-gestor');
   return data;
@@ -215,6 +246,16 @@ export async function comprasEnviar(id) {
   return data;
 }
 
+export async function comprasCompraDireta(id) {
+  const { data } = await api.post(`/api/compras/pedidos/${id}/compra-direta`);
+  return data;
+}
+
+export async function comprasRegistrarSemContrato(id) {
+  const { data } = await api.post(`/api/compras/pedidos/${id}/sem-contrato`);
+  return data;
+}
+
 export async function comprasReceber(id, payload) {
   const { data } = await api.post(`/api/compras/pedidos/${id}/receber`, payload);
   return data;
@@ -267,6 +308,18 @@ export async function comprasConfirmarRevisaoItens(id) {
 
 export async function comprasConfirmarEvento(pedidoId, eventoId) {
   const { data } = await api.post(`/api/compras/pedidos/${pedidoId}/eventos/${eventoId}/confirmar`);
+  return data;
+}
+
+export async function comprasRevisarContrato(pedidoId, anexoId) {
+  const { data } = await api.post(`/api/compras/pedidos/${pedidoId}/contratos/${anexoId}/revisar`);
+  return data;
+}
+
+export async function comprasContratoAssinado(pedidoId, anexoId, formData) {
+  const { data } = await api.post(`/api/compras/pedidos/${pedidoId}/contratos/${anexoId}/assinado`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
   return data;
 }
 

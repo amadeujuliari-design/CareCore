@@ -23,6 +23,7 @@ from compras_regras import (
     rotulo_unidade_relatorio,
     sugerir_segunda_semana_util,
     usuario_e_sede_compras,
+    usuario_ve_alerta_contrato_assinado,
     usuario_pode_aprovar_sede,
     usuario_pode_aprovar_unidade,
     usuario_pode_enviar_email_compras,
@@ -189,6 +190,32 @@ def test_rbac_visibilidade():
     assert usuario_ve_modulo_compras(perfil="Consulta", compras_modulo_ativo=True)
     assert not usuario_ve_modulo_compras(perfil="Orientador", compras_modulo_ativo=False)
     assert usuario_ve_modulo_compras(perfil="Gestor", compras_modulo_ativo=False, is_manutencao=True)
+
+
+def test_alerta_contrato_assinado_projeto_e_infra():
+    assert usuario_ve_alerta_contrato_assinado({
+        "perfil_acesso": "ADM Global Compras Infraestrutura",
+    })
+    assert usuario_ve_alerta_contrato_assinado({
+        "perfil_acesso": "ADM Pedidos",
+        "compras_modulo_ativo": True,
+    })
+    assert usuario_ve_alerta_contrato_assinado({
+        "perfil_acesso": "Gestor",
+        "compras_modulo_ativo": True,
+    })
+    assert not usuario_ve_alerta_contrato_assinado({
+        "perfil_acesso": "ADM Global Compras Suprimentos",
+    })
+    assert not usuario_ve_alerta_contrato_assinado({
+        "perfil_acesso": "Global",
+        "is_global": True,
+        "email": "noemi@aeb-brasil.org.br",
+    })
+    assert usuario_ve_alerta_contrato_assinado({
+        "perfil_acesso": "Gestor",
+        "is_manutencao": True,
+    })
 
 
 def test_compras_modulo_ativo_padrao_gestor():
@@ -525,10 +552,30 @@ def test_competencia_mes_seguinte_e_lado_da_timeline():
     assert competencia_mes_seguinte("2026-09") == "2026-10"
     assert competencia_mes_seguinte("2026-12") == "2027-01"
     assert lado_timeline_compras(perfil=PERFIL_ADM_COMPRAS_SUPRIMENTOS) == "suprimentos"
+    assert lado_timeline_compras(perfil="ADM Global Compras Infraestrutura") == "infraestrutura"
     assert lado_timeline_compras(perfil="Gestor") == "projeto"
+    from compras_regras import pedido_segue_infraestrutura
+    assert pedido_segue_infraestrutura("imobilizado") is True
+    assert pedido_segue_infraestrutura("servico") is True
+    assert pedido_segue_infraestrutura("manutencao", "infraestrutura") is True
+    assert pedido_segue_infraestrutura("manutencao", "suprimentos") is False
+    assert pedido_segue_infraestrutura("consumo") is False
     assert tipo_arquivo_bem_de_anexo_pedido("orcamento_assinado") == "orcamento"
     assert tipo_arquivo_bem_de_anexo_pedido("nf_pdf") == "nota"
     assert tipo_arquivo_bem_de_anexo_pedido("termo_doacao") == "termo_doacao"
+
+
+def test_acento_quebrado_de_cp437_volta_ao_portugues():
+    from compras_regras import corrigir_acento_quebrado
+
+    assert corrigir_acento_quebrado("Alimenta\u251c\u00ba\u251c\u00fao") == "Alimentação"
+    assert corrigir_acento_quebrado("Conv\u251c\u00acnio") == "Convênio"
+    assert corrigir_acento_quebrado("Caf\u251c\u00ae") == "Café"
+    assert corrigir_acento_quebrado("Fil\u251c\u00ae") == "Filé"
+    assert corrigir_acento_quebrado("Manuten\u251c\u00ba\u251c\u00fao") == "Manutenção"
+    assert corrigir_acento_quebrado("Convênio") == "Convênio"
+    assert corrigir_acento_quebrado("Custo indireto") == "Custo indireto"
+    assert corrigir_acento_quebrado(None) is None
 
 
 def test_rotulo_custo_fonte_convenio_e_indireto():
