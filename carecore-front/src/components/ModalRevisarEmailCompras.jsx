@@ -72,6 +72,7 @@ export default function ModalRevisarEmailCompras({
                     ))}
                   </select>
                   <span className="mt-1 block font-normal text-slate-500">
+                    O e-mail vai para o endereço cadastrado hoje neste fornecedor.
                     O pedido segue mesmo sem orçamento anexado.
                   </span>
                 </label>

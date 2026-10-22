@@ -81,7 +81,10 @@ import {
   etapaCotacaoProjeto,
   fornecedorSemCategoria,
   fornecedoresParaCotacaoPedido,
+  hortifrutiSemOrcamentoEscolhido,
+  inferirFornecedorEnvioId,
   itensConsumoDoSplitPedido,
+  modoEmailPedeFornecedorEnvio,
   SEGMENTO_SERVICO,
   TIPO_SERVICO,
   competenciaPadraoDoSegmento,
@@ -501,6 +504,11 @@ export default function ComprasPedido() {
   const abrirModalEmail = async (modo) => {
     setErro('');
     setOk('');
+    if (hortifrutiSemOrcamentoEscolhido(pedido) && modoEmailPedeFornecedorEnvio(modo)) {
+      setFornecedorEnvioId(inferirFornecedorEnvioId(fornecedoresCotacao, pedido.eventos));
+    } else {
+      setFornecedorEnvioId('');
+    }
     setModalEmail({ modo });
     setRascunhoEmail({ assunto: '', corpo: '', aviso: '', carregando: true, erro: '' });
     try {
@@ -566,8 +574,12 @@ export default function ComprasPedido() {
         } else if (modalEmail.modo === 'pedido_compra' && !pedidoCompra) {
           await comprasGerarPedidoCompra(pedido.id);
         }
-        const semOrcamentoEscolhido = hortifrutiDireto && !(pedido.cotacoes || []).some((c) => c.escolhida);
-        if (semOrcamentoEscolhido && !fornecedorEnvioId) {
+        const semOrcamentoEscolhido = hortifrutiSemOrcamentoEscolhido(pedido);
+        if (
+          modoEmailPedeFornecedorEnvio(modalEmail.modo)
+          && semOrcamentoEscolhido
+          && !fornecedorEnvioId
+        ) {
           throw new Error('Escolha o fornecedor que vai receber o pedido.');
         }
         const res = await comprasEnviarEmailFornecedor(
@@ -2931,7 +2943,8 @@ export default function ComprasPedido() {
         onCancelar={fecharModalEmail}
         onConfirmar={confirmarEnvioEmail}
         fornecedoresEnvio={
-          hortifrutiDireto && modalEmail?.modo === 'pedido_compra' && !(pedido.cotacoes || []).some((c) => c.escolhida)
+          hortifrutiSemOrcamentoEscolhido(pedido)
+          && modoEmailPedeFornecedorEnvio(modalEmail?.modo)
             ? fornecedoresCotacao
             : null
         }

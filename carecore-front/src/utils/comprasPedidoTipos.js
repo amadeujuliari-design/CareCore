@@ -98,6 +98,34 @@ export function tipoSuprimentosAprovaEEnvia(tipo) {
   return String(tipo || '').trim().toLowerCase() === TIPO_HORTIFRUTI;
 }
 
+/** Hortifruti sem orçamento escolhido: o envio precisa do fornecedor na hora. */
+export function hortifrutiSemOrcamentoEscolhido(pedido) {
+  if (!tipoSuprimentosAprovaEEnvia(pedido?.tipo)) return false;
+  return !(pedido?.cotacoes || []).some((c) => c.escolhida);
+}
+
+export function modoEmailPedeFornecedorEnvio(modo) {
+  return modo === 'pedido_compra' || modo === 'reenvio';
+}
+
+/** Último e-mail da timeline, se ainda bater com o cadastro (depois de corrigir o endereço, a pessoa escolhe na lista). */
+export function inferirFornecedorEnvioId(fornecedores = [], eventos = []) {
+  let ultimoEmail = '';
+  for (const ev of eventos || []) {
+    const texto = String(ev?.texto || '');
+    const m = texto.match(/e-mail enviado para\s+(\S+)/i);
+    if (!m) continue;
+    ultimoEmail = m[1].replace(/[.,;>]+$/g, '').trim().toLowerCase();
+  }
+  if (!ultimoEmail) return '';
+  const hit = (fornecedores || []).find((f) => {
+    const email = String(f?.email || '').trim().toLowerCase();
+    const empresa = String(f?.email_empresa || '').trim().toLowerCase();
+    return email === ultimoEmail || empresa === ultimoEmail;
+  });
+  return hit?.id ? String(hit.id) : '';
+}
+
 export function rotuloTipoPedido(tipo) {
   const chave = String(tipo || '').trim().toLowerCase();
   return ROTULO_TIPO_PEDIDO[chave] || chave || 'Pedido';

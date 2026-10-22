@@ -290,7 +290,7 @@ Para Suprimentos, ao abrir um pedido com status recebido, o aviso fixo abaixo do
 #### Modal e-mail
 
 Títulos: Revisar pedido de cotação · Revisar pedido de compra · Revisar reenvio ao fornecedor  
-(`ModalRevisarEmailCompras.jsx`) — corpo editável; Cancelar / confirmar envio.
+(`ModalRevisarEmailCompras.jsx`) — corpo editável; Cancelar / confirmar envio. Em hortifruti sem orçamento escolhido, o envio e o reenvio pedem o fornecedor na lista; o e-mail usa o endereço cadastrado no momento.
 
 ---
 

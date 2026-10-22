@@ -6,8 +6,11 @@ import {
   cotacoesComEscolhidaPrimeiro,
   fornecedorSemCategoria,
   fornecedoresParaCotacaoPedido,
+  hortifrutiSemOrcamentoEscolhido,
+  inferirFornecedorEnvioId,
   itensConsumoDoSegmentoPedido,
   itensConsumoDoSplitPedido,
+  modoEmailPedeFornecedorEnvio,
   segmentoFornecedorDoTipoPedido,
   sugerirFornecedoresBusca,
   tipoEhCotacaoSede,
@@ -190,5 +193,50 @@ describe('sugerirFornecedoresBusca', () => {
   it('sem termo não lista ninguém (typeahead)', () => {
     assert.deepEqual(sugerirFornecedoresBusca(lista, ''), []);
     assert.deepEqual(sugerirFornecedoresBusca(lista, '  '), []);
+  });
+});
+
+describe('hortifrutiSemOrcamentoEscolhido', () => {
+  it('só hortifruti sem cotação escolhida', () => {
+    assert.equal(hortifrutiSemOrcamentoEscolhido({ tipo: 'hortifruti', cotacoes: [] }), true);
+    assert.equal(
+      hortifrutiSemOrcamentoEscolhido({ tipo: 'hortifruti', cotacoes: [{ escolhida: true }] }),
+      false,
+    );
+    assert.equal(hortifrutiSemOrcamentoEscolhido({ tipo: 'consumo', cotacoes: [] }), false);
+  });
+});
+
+describe('modoEmailPedeFornecedorEnvio', () => {
+  it('vale no primeiro envio e no reenvio, não na cotação', () => {
+    assert.equal(modoEmailPedeFornecedorEnvio('pedido_compra'), true);
+    assert.equal(modoEmailPedeFornecedorEnvio('reenvio'), true);
+    assert.equal(modoEmailPedeFornecedorEnvio('cotacao'), false);
+  });
+});
+
+describe('inferirFornecedorEnvioId', () => {
+  const fornecedores = [
+    { id: 'f1', nome: 'Hortifruti', email: 'certo@x.com' },
+    { id: 'f2', nome: 'Outro', email_empresa: 'outro@x.com' },
+  ];
+
+  it('pega o último envio se o e-mail ainda estiver no cadastro', () => {
+    assert.equal(
+      inferirFornecedorEnvioId(fornecedores, [
+        { texto: 'E-mail enviado para outro@x.com' },
+        { texto: 'E-mail enviado para certo@x.com.' },
+      ]),
+      'f1',
+    );
+  });
+
+  it('não infere depois que o e-mail do cadastro mudou', () => {
+    assert.equal(
+      inferirFornecedorEnvioId(fornecedores, [
+        { texto: 'E-mail enviado para hncomerciohortfrut@hotmail.com' },
+      ]),
+      '',
+    );
   });
 });
