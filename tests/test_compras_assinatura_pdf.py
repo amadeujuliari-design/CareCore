@@ -13,6 +13,7 @@ from compras_assinatura_pdf import (
     carimbar_assinatura_gestor_pdf,
     carimbar_assinatura_pdf,
     carimbar_assinatura_no_rodape_pdf,
+    carimbar_texto_pdf,
     _rgba_fundo_transparente,
 )
 
@@ -119,6 +120,24 @@ def test_carimbar_assinatura_gestor_na_posicao_escolhida():
     assert saida.startswith(b"%PDF")
     texto = PdfReader(io.BytesIO(saida)).pages[0].extract_text() or ""
     assert "Assinado Digitalmente" in texto
+
+
+def test_carimbar_texto_complementar_aparece_em_caixa_baixa():
+    from pypdf import PdfReader
+
+    origem = _pdf_paginas(1, width=500.0, height=700.0)
+    saida = carimbar_texto_pdf(
+        pdf_bytes=origem,
+        texto="Parcela 1 vencimento 10/11, PIX Banco do Brasil",
+        projeto="CASA PORTO SEGURO",
+        x=24.0,
+        y=8.0,
+        width=320.0,
+        height=18.0,
+    )
+    texto = PdfReader(io.BytesIO(saida)).pages[0].extract_text() or ""
+    assert "CASA PORTO SEGURO" in texto
+    assert "Parcela 1" in texto
 
 
 def test_carimbar_pagina_invalida():

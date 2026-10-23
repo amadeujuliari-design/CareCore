@@ -42,6 +42,8 @@ from compras_pedido_fluxo import (
     liberar_contrato_infraestrutura,
     registrar_ausencia_contrato,
     registrar_contrato_assinado,
+    definir_pagamento_parcelas,
+    quitar_pagamento_infra,
 )
 from compras_service import (
     alinhar_status_consumo_escolhido_pelo_projeto,
@@ -228,6 +230,10 @@ class RecebimentoIn(BaseModel):
     divergencia: bool = False
     documento_nf: Optional[str] = None
     itens: list[RecebimentoItemIn] = Field(default_factory=list)
+
+
+class PagamentoParcelasIn(BaseModel):
+    qtd_parcelas: int
 
 
 class CancelarIn(BaseModel):
@@ -1225,6 +1231,33 @@ async def post_receber(
     return await serializar_pedido(db, pedido, incluir_detalhe=True, usuario=usuario_atual)
 
 
+@router.post("/pedidos/{pedido_id}/pagamento")
+async def post_pagamento_parcelas(
+    pedido_id: str,
+    payload: PagamentoParcelasIn,
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    await _ctx(db, usuario_atual)
+    pedido = await obter_pedido(db, usuario_atual, pedido_id)
+    await definir_pagamento_parcelas(db, usuario_atual, pedido, payload.qtd_parcelas)
+    await db.commit()
+    return await serializar_pedido(db, pedido, incluir_detalhe=True, usuario=usuario_atual)
+
+
+@router.post("/pedidos/{pedido_id}/pagamento/quitar")
+async def post_pagamento_quitar(
+    pedido_id: str,
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    await _ctx(db, usuario_atual)
+    pedido = await obter_pedido(db, usuario_atual, pedido_id)
+    await quitar_pagamento_infra(db, usuario_atual, pedido)
+    await db.commit()
+    return await serializar_pedido(db, pedido, incluir_detalhe=True, usuario=usuario_atual)
+
+
 @router.post("/pedidos/{pedido_id}/nf-impressa")
 async def post_nf_impressa(
     pedido_id: str,
@@ -1392,6 +1425,7 @@ async def post_anexo(
     cotacao_id: Optional[str] = Form(default=None),
     substituir_anexo_id: Optional[str] = Form(default=None),
     classe_documento: Optional[str] = Form(default=None),
+    parcela_numero: Optional[int] = Form(default=None),
     arquivo: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
     usuario_atual: dict = Depends(get_usuario_logado),
@@ -1407,6 +1441,7 @@ async def post_anexo(
         cotacao_id=cotacao_id,
         substituir_anexo_id=substituir_anexo_id,
         classe_documento=classe_documento,
+        parcela_numero=parcela_numero,
     )
     await db.commit()
     return await serializar_pedido(db, pedido, incluir_detalhe=True, usuario=usuario_atual)
@@ -1551,6 +1586,7 @@ async def post_nota_fiscal(
     assinatura_h: Optional[float] = Form(default=None),
     senha_assinatura_eletronica: Optional[str] = Form(default=None),
     classe_documento: Optional[str] = Form(default=None),
+    parcela_numero: Optional[int] = Form(default=None),
     arquivo: Optional[UploadFile] = File(default=None),
     arquivos: list[UploadFile] = File(default=[]),
     db: AsyncSession = Depends(get_db),
@@ -1580,6 +1616,7 @@ async def post_nota_fiscal(
         "assinatura_h": assinatura_h,
         "senha_assinatura_eletronica": senha_assinatura_eletronica,
         "classe_documento": classe_documento,
+        "parcela_numero": parcela_numero,
     }
     extras = []
     for item in arquivos or []:

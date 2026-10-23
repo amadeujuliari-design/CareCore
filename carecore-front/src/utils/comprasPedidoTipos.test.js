@@ -7,6 +7,7 @@ import {
   fornecedorSemCategoria,
   fornecedoresParaCotacaoPedido,
   hortifrutiSemOrcamentoEscolhido,
+  pedidoListaEhInfraestrutura,
   inferirFornecedorEnvioId,
   itensConsumoDoSegmentoPedido,
   itensConsumoDoSplitPedido,
@@ -238,5 +239,15 @@ describe('inferirFornecedorEnvioId', () => {
       ]),
       '',
     );
+  });
+});
+
+describe('pedidoListaEhInfraestrutura', () => {
+  it('usa a flag da API ou o tipo/destino', () => {
+    assert.equal(pedidoListaEhInfraestrutura({ segue_infraestrutura: true, tipo: 'consumo' }), true);
+    assert.equal(pedidoListaEhInfraestrutura({ segue_infraestrutura: false, tipo: 'imobilizado' }), false);
+    assert.equal(pedidoListaEhInfraestrutura({ tipo: 'servico' }), true);
+    assert.equal(pedidoListaEhInfraestrutura({ tipo: 'hortifruti' }), false);
+    assert.equal(pedidoListaEhInfraestrutura({ tipo: 'manutencao', destino_compras: 'infraestrutura' }), true);
   });
 });

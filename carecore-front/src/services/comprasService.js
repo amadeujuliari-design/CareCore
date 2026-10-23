@@ -261,6 +261,16 @@ export async function comprasReceber(id, payload) {
   return data;
 }
 
+export async function comprasDefinirPagamento(id, qtdParcelas) {
+  const { data } = await api.post(`/api/compras/pedidos/${id}/pagamento`, { qtd_parcelas: qtdParcelas });
+  return data;
+}
+
+export async function comprasQuitarPagamento(id) {
+  const { data } = await api.post(`/api/compras/pedidos/${id}/pagamento/quitar`);
+  return data;
+}
+
 export async function comprasCancelar(id, motivo) {
   const { data } = await api.post(`/api/compras/pedidos/${id}/cancelar`, { motivo });
   return data;

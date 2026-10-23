@@ -278,6 +278,69 @@ def juntar_pdfs(arquivos: list[bytes]) -> bytes:
     return saida.getvalue()
 
 
+def _quebrar_linhas_pdf(texto: str, largura: float, font_size: float) -> list[str]:
+    from reportlab.pdfbase.pdfmetrics import stringWidth
+
+    linhas: list[str] = []
+    for trecho in (texto or "").split("\n"):
+        if not trecho:
+            linhas.append("")
+            continue
+        atual = ""
+        for palavra in trecho.split(" "):
+            candidato = palavra if not atual else f"{atual} {palavra}"
+            if stringWidth(candidato, "Helvetica", font_size) <= largura:
+                atual = candidato
+                continue
+            if atual:
+                linhas.append(atual)
+            if stringWidth(palavra, "Helvetica", font_size) <= largura:
+                atual = palavra
+                continue
+            buf = ""
+            for ch in palavra:
+                if stringWidth(buf + ch, "Helvetica", font_size) <= largura:
+                    buf += ch
+                else:
+                    if buf:
+                        linhas.append(buf)
+                    buf = ch
+            atual = buf
+        linhas.append(atual)
+    return linhas or [""]
+
+
+def _desenhar_texto_complementar(folha, texto: str, tx: float, ty: float, largura: float, altura: float) -> None:
+    """Desenha o texto na moldura mesmo quando a caixa é baixa demais para um Paragraph."""
+    from reportlab.lib.colors import HexColor
+
+    padding = 3.0
+    util_w = max(12.0, largura - (padding * 2))
+    util_h = max(8.0, altura - (padding * 2))
+    max_font = 9 if altura >= 22 else 8
+    escolhido = 5
+    linhas: list[str] = [texto]
+    for font_size in range(max_font, 4, -1):
+        tentativas = _quebrar_linhas_pdf(texto, util_w, font_size)
+        leading = font_size + (1 if font_size <= 6 else 2)
+        if len(tentativas) * leading <= util_h or font_size == 5:
+            escolhido = font_size
+            linhas = tentativas
+            break
+    leading = escolhido + (1 if escolhido <= 6 else 2)
+    cabem = max(1, int(util_h // leading))
+    visiveis = linhas[:cabem]
+    folha.setFillColor(HexColor("#111111"))
+    folha.setFont("Helvetica", escolhido)
+    y_texto = ty + altura - padding - escolhido
+    for linha in visiveis:
+        if y_texto < ty + 1:
+            break
+        if linha:
+            folha.drawString(tx + padding, y_texto, linha)
+        y_texto -= leading
+
+
 def carimbar_texto_pdf(
     *,
     pdf_bytes: bytes,
@@ -293,8 +356,6 @@ def carimbar_texto_pdf(
     """Grava o texto complementar dentro do PDF, com moldura. O projeto abre o texto."""
     from pypdf import PdfReader, PdfWriter
     from reportlab.lib.colors import HexColor
-    from reportlab.lib.styles import ParagraphStyle
-    from reportlab.platypus import Frame, Paragraph
     from reportlab.pdfgen import canvas as pdf_canvas
 
     conteudo = (texto or "").strip()
@@ -315,7 +376,7 @@ def carimbar_texto_pdf(
         page_w = float(caixa.width)
         page_h = float(caixa.height)
         desenho_w = max(24.0, min(float(width), page_w))
-        desenho_h = max(12.0, min(float(height), page_h))
+        desenho_h = max(16.0, min(float(height), page_h))
         tx = max(0.0, min(float(x), page_w - desenho_w))
         ty = max(0.0, min(float(y), page_h - desenho_h))
 
@@ -325,19 +386,7 @@ def carimbar_texto_pdf(
         folha.setFillColor(HexColor("#fffbeb"))
         folha.setLineWidth(1)
         folha.roundRect(tx, ty, desenho_w, desenho_h, 3, stroke=1, fill=1)
-        estilo = ParagraphStyle(
-            "nf_complemento",
-            fontName="Helvetica",
-            fontSize=8 if desenho_h < 22 else 9,
-            leading=10,
-            textColor="#111111",
-        )
-        html = conteudo.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\n", "<br/>")
-        quadro = Frame(
-            tx, ty, desenho_w, desenho_h,
-            showBoundary=0, leftPadding=4, rightPadding=4, topPadding=3, bottomPadding=2,
-        )
-        quadro.addFromList([Paragraph(html, estilo)], folha)
+        _desenhar_texto_complementar(folha, conteudo, tx, ty, desenho_w, desenho_h)
         folha.save()
         overlay = PdfReader(io.BytesIO(buf.getvalue()))
         pagina.merge_page(overlay.pages[0])

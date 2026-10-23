@@ -32,7 +32,8 @@ function limitarNaPagina(box, metricas) {
 
 function posicaoInicial(metricas, page) {
   const escala = metricas.canvasW / metricas.pageW;
-  const textoTop = Math.max(12, metricas.canvasH - 64);
+  const textoH = Math.max(52, 56 * escala);
+  const textoTop = Math.max(12, metricas.canvasH - textoH - 12);
   const carimboH = Math.max(64, 68 * escala);
   const carimboTop = Math.max(12, textoTop - carimboH - 8);
   return {
@@ -41,7 +42,7 @@ function posicaoInicial(metricas, page) {
       left: 24,
       top: textoTop,
       width: Math.min(320, metricas.canvasW - 48),
-      height: 36,
+      height: textoH,
     },
     carimbo: {
       page,
@@ -61,6 +62,7 @@ export default function ModalPosicionarTextoNf({
   aberto,
   arquivo,
   texto,
+  projeto = '',
   modo = 'nota_fiscal',
   onFechar,
   onConfirmar,
@@ -283,7 +285,9 @@ export default function ModalPosicionarTextoNf({
                       style={{ left: caixa.left, top: caixa.top, width: caixa.width, height: caixa.height }}
                       onPointerDown={(e) => iniciarArrasto('texto', caixa, e)}
                     >
-                      {texto}
+                      <span className="block whitespace-pre-wrap">
+                        {[projeto, texto].filter((parte) => String(parte || '').trim()).join('\n')}
+                      </span>
                       <button
                         type="button"
                         aria-label="Redimensionar texto"

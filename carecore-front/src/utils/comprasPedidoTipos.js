@@ -82,6 +82,11 @@ export function pedidoSegueInfraestrutura(tipo, destinoCompras) {
   return false;
 }
 
+export function pedidoListaEhInfraestrutura(pedido) {
+  if (pedido?.segue_infraestrutura != null) return Boolean(pedido.segue_infraestrutura);
+  return pedidoSegueInfraestrutura(pedido?.tipo, pedido?.destino_compras);
+}
+
 export function tipoEhCotacaoSede(tipo) {
   return TIPOS_COTACAO_SEDE.has(String(tipo || '').trim().toLowerCase());
 }

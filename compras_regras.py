@@ -37,11 +37,13 @@ CLASSE_DOC_CONTRATO = "contrato"
 CLASSE_DOC_BOLETO = "boleto"
 CLASSE_DOC_NOTA = "nota_fiscal"
 CLASSE_DOC_RELACIONADO = "relacionado"
+CLASSE_DOC_COMPROVANTE = "comprovante"
 CLASSES_DOCUMENTO_PEDIDO = (
     CLASSE_DOC_CONTRATO,
     CLASSE_DOC_BOLETO,
     CLASSE_DOC_NOTA,
     CLASSE_DOC_RELACIONADO,
+    CLASSE_DOC_COMPROVANTE,
 )
 CLASSES_DOCUMENTO_EXIGEM_ASSINATURA = frozenset({CLASSE_DOC_BOLETO, CLASSE_DOC_NOTA})
 ETAPA_CONTRATO_ROBSON = "aguardando_robson"
@@ -478,6 +480,42 @@ def pedido_segue_infraestrutura(tipo: Optional[str], destino: Optional[str] = No
         chave == TIPO_MANUTENCAO
         and (destino or "").strip().lower() == DESTINO_COMPRAS_INFRAESTRUTURA
     )
+
+
+PAGAMENTO_PARCELAS_MAX = 36
+
+
+def normalizar_qtd_parcelas_pagamento(valor) -> int:
+    try:
+        qtd = int(valor)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Informe 1 parcela (à vista) ou a quantidade de parcelas.") from exc
+    if qtd < 1 or qtd > PAGAMENTO_PARCELAS_MAX:
+        raise ValueError(f"A quantidade de parcelas deve ser entre 1 e {PAGAMENTO_PARCELAS_MAX}.")
+    return qtd
+
+
+def parcela_conta_como_paga(numero: int, docs_por_parcela: dict[int, bool], *, qtd: int) -> bool:
+    if numero < 1 or numero > int(qtd or 0):
+        return False
+    if docs_por_parcela.get(numero):
+        return True
+    if qtd == 1 and docs_por_parcela.get(0):
+        return True
+    return False
+
+
+def pagamento_infra_completo(*, qtd: Optional[int], parcelas_pagas: int, quitado: bool) -> bool:
+    if quitado:
+        return True
+    if not qtd:
+        return False
+    return int(parcelas_pagas) >= int(qtd)
+
+
+def maior_parcela_com_documento(parcelas) -> int:
+    numeros = [int(item.get("numero") or 0) for item in (parcelas or []) if item.get("paga")]
+    return max(numeros) if numeros else 0
 
 
 def lado_timeline_compras(*, perfil: str, is_manutencao: bool = False) -> str:

@@ -72,7 +72,7 @@ Ao entrar no sistema, projeto e Infraestrutura veem o modal de Compras se um con
 
 ### Função
 
-Hub do módulo: ativação, abas (pedidos, janela, cadastros, patrimônio, economia), lista de pedidos em andamento ou concluídos, atalhos para novo pedido.
+Hub do módulo: ativação, abas (pedidos, janela, cadastros, patrimônio, economia), lista de pedidos em andamento ou concluídos, atalhos para novo pedido. Na aba Pedidos a tela continua uma só: primeiro o bloco **Suprimentos** (agrupado por projeto, com expandir), depois o bloco **Infraestrutura** no mesmo padrão.
 
 ### Cabeçalho
 
@@ -262,7 +262,11 @@ File → tipo `espelho_compra`
 | Insira a senha do gestor para a assinatura eletrônica digital | * em nota e boleto | senha do gestor; Gestor, Técnico, Administrativo e ADM Pedidos do projeto; o carimbo leva nome do gestor, projeto e cargo Gestor |
 | Arquivo | * | um ou vários PDFs de nota (o sistema junta); boleto e relacionado um a um |
 
-Botões: Anexar NF assinada · Anexar boleto assinado · Anexar arquivo relacionado · Encerrar processo (com NF anexada) · Visualizar · Baixar · Excluir
+Na Infraestrutura, depois da compra: **Pagamento** à vista (1) ou em N parcelas. Cada parcela recebe NF e/ou comprovante (sem assinatura). **Todos os valores já foram pagos** pede confirmação (e avisa se ainda falta parcela sem documento) e libera o encerramento mesmo com parcela sem anexo. Se o cliente pagar em menos parcelas, **Cliente pagou em N parcelas** reduz o plano até a última com documento. Encerrar só com NF assinada e pagamento completo.
+
+**Documentos anexados** (botão em destaque, acima do formulário): NF, boleto, comprovante e arquivo relacionado no mesmo bloco. No parcelado, os arquivos da mesma parcela ficam juntos; relacionado sem parcela aparece em Arquivos do processo. Expandir mostra Visualizar, Baixar e Excluir.
+
+Botões: Anexar NF assinada · Anexar boleto assinado · Anexar comprovante · Anexar arquivo relacionado · Cliente pagou em N parcelas · Todos os valores já foram pagos · Encerrar processo · Visualizar · Baixar · Excluir
 
 Contrato fica no passo anterior, antes da compra. Boleto e nota exigem Assinatura Digital AEB. Relacionado não.
 

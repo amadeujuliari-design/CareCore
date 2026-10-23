@@ -52,7 +52,7 @@ import {
   competenciaAtual,
 } from './services/comprasService';
 import { usuarioEhAdmCompras, usuarioEhAdmComprasSuprimentos, usuarioEhGlobalPuro, usuarioEhManutencao, usuarioPodeCadastrarMestreCompras } from './utils/rbacUtils';
-import { BOTOES_NOVO_PEDIDO, rotuloTipoPedido } from './utils/comprasPedidoTipos';
+import { BOTOES_NOVO_PEDIDO, pedidoListaEhInfraestrutura, rotuloTipoPedido } from './utils/comprasPedidoTipos';
 import {
   progressoOrcamentosTexto,
   rotuloStatusPedidoLista,
@@ -227,6 +227,217 @@ function agruparPedidosPorUnidade(lista, ordem) {
   return grupos;
 }
 
+function BlocoListaPedidos({
+  lado,
+  titulo,
+  pedidosBloco,
+  carregando,
+  visaoConcluidos,
+  competencia,
+  agruparPorUnidade,
+  ordemPedidos,
+  unidadeExpandida,
+  onOrdenar,
+  onToggleUnidade,
+  caixaSuprimentos,
+}) {
+  const grupos = agruparPorUnidade ? agruparPedidosPorUnidade(pedidosBloco, ordemPedidos) : [];
+  const chaveExp = (chave) => `${lado}:${chave}`;
+  const vazio = !carregando && pedidosBloco.length === 0;
+  return (
+    <SectionCard
+      title={titulo}
+      subtitle={
+        [
+          caixaSuprimentos
+            ? `${pedidosBloco.filter((p) => !p.suprimentos_lida).length} não lida(s) · ${pedidosBloco.filter((p) => p.suprimentos_lida).length} lida(s)`
+            : '',
+          agruparPorUnidade && pedidosBloco.length
+            ? 'Agrupado por unidade — clique na linha para expandir os pedidos daquele projeto.'
+            : '',
+        ].filter(Boolean).join(' · ') || undefined
+      }
+    >
+      {carregando ? (
+        <p className="text-sm text-slate-500">Carregando…</p>
+      ) : vazio ? (
+        <EmptyState
+          title={
+            visaoConcluidos
+              ? (competencia
+                ? `Nenhum pedido de ${lado === 'infra' ? 'Infraestrutura' : 'Suprimentos'} concluído nesta competência`
+                : `Nenhum pedido de ${lado === 'infra' ? 'Infraestrutura' : 'Suprimentos'} concluído`)
+              : (competencia
+                ? `Nenhum pedido de ${lado === 'infra' ? 'Infraestrutura' : 'Suprimentos'} em andamento nesta competência`
+                : `Nenhum pedido de ${lado === 'infra' ? 'Infraestrutura' : 'Suprimentos'} em andamento`)
+          }
+        />
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="min-w-full text-sm">
+            <thead>
+              <tr className="text-left text-xs uppercase text-slate-500">
+                {COLUNAS_ORDENACAO_PEDIDOS.map((col) => {
+                  const ativo = ordemPedidos.coluna === col.id;
+                  return (
+                    <th key={col.id} className={col.id === 'unidade' ? 'py-2' : undefined}>
+                      <button
+                        type="button"
+                        onClick={() => onOrdenar(col.id)}
+                        className={`inline-flex items-center gap-1 rounded-md px-0.5 py-0.5 font-semibold uppercase tracking-wide transition hover:text-slate-800 ${
+                          ativo ? 'text-slate-800' : 'text-slate-500'
+                        }`}
+                        title={`Ordenar por ${col.rotulo}`}
+                      >
+                        {col.rotulo}
+                        {ativo ? (
+                          ordemPedidos.direcao === 'asc' ? (
+                            <ArrowUp className="h-3.5 w-3.5 text-slate-700" aria-hidden />
+                          ) : (
+                            <ArrowDown className="h-3.5 w-3.5 text-slate-700" aria-hidden />
+                          )
+                        ) : (
+                          <ArrowUpDown className="h-3.5 w-3.5 text-slate-300" aria-hidden />
+                        )}
+                      </button>
+                    </th>
+                  );
+                })}
+                {caixaSuprimentos ? <th className="py-2">Caixa</th> : null}
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {agruparPorUnidade
+                ? grupos.map((grupo) => {
+                  const aberto = unidadeExpandida === chaveExp(grupo.chave);
+                  return (
+                    <Fragment key={`${lado}-${grupo.chave}`}>
+                      <tr
+                        className="cursor-pointer border-t border-slate-200 bg-slate-50/80 hover:bg-slate-100/80"
+                        onClick={() => onToggleUnidade(chaveExp(grupo.chave))}
+                      >
+                        <td className="py-2.5">
+                          <span className="inline-flex items-center gap-1.5 font-semibold text-slate-900">
+                            {aberto ? (
+                              <ChevronDown className="h-4 w-4 shrink-0 text-slate-600" aria-hidden />
+                            ) : (
+                              <ChevronRight className="h-4 w-4 shrink-0 text-slate-500" aria-hidden />
+                            )}
+                            {grupo.nome}
+                            <span className="rounded-full bg-slate-200 px-2 py-0.5 text-[11px] font-bold tabular-nums text-slate-700">
+                              {grupo.qtd}
+                              {grupo.qtd === 1 ? ' pedido' : ' pedidos'}
+                            </span>
+                          </span>
+                        </td>
+                        <td className="text-slate-700">{grupo.tiposRotulo || '—'}</td>
+                        <td className="text-slate-500">—</td>
+                        <td className="text-xs font-medium text-slate-700">{grupo.statusResumo || '—'}</td>
+                        <td className="tabular-nums text-slate-700">{grupo.orcamentos}</td>
+                        <td>{grupo.atualizado || '—'}</td>
+                        {caixaSuprimentos ? (
+                          <td className="text-xs font-semibold text-sky-900">
+                            {grupo.itens.filter((p) => !p.suprimentos_lida).length
+                              ? `${grupo.itens.filter((p) => !p.suprimentos_lida).length} não lida(s)`
+                              : 'Lidas'}
+                          </td>
+                        ) : null}
+                        <td className="text-xs font-semibold text-slate-600">
+                          {aberto ? 'Recolher' : 'Expandir'}
+                        </td>
+                      </tr>
+                      {aberto
+                        ? grupo.itens.map((pedido) => (
+                          <tr
+                            key={pedido.id}
+                            className={`border-t border-slate-100 ${
+                              caixaSuprimentos && !pedido.suprimentos_lida
+                                ? 'bg-sky-50 font-semibold text-slate-900'
+                                : 'bg-white'
+                            }`}
+                          >
+                            <td className="py-2 pl-8 text-slate-600">
+                              <span className="text-xs text-slate-400">↳</span>
+                              {' '}
+                              {pedido.instituicao_nome || pedido.instituicao_id || grupo.nome}
+                            </td>
+                            <td>{pedido.tipo_rotulo || rotuloTipoPedido(pedido.tipo)}</td>
+                            <td>
+                              <span className="block">{pedido.titulo || pedido.categoria_split_nome || '—'}</span>
+                              <SeloFonteVerba pedido={pedido} />
+                            </td>
+                            <td>
+                              <PremiumBadge variant={varianteBadgeStatusPedido(pedido.status)}>
+                                {rotuloStatusPedidoLista(pedido)}
+                              </PremiumBadge>
+                            </td>
+                            <td className="tabular-nums text-slate-700">
+                              {(pedido.cotacao_sede || pedido.cotacao_projeto)
+                                ? (progressoOrcamentosTexto(pedido) || '—')
+                                : (pedido.qtd_orcamentos ?? 0)}
+                            </td>
+                            <td>{pedido.atualizado_em || '—'}</td>
+                            {caixaSuprimentos ? (
+                              <td><SeloCaixaSuprimentos lida={pedido.suprimentos_lida} /></td>
+                            ) : null}
+                            <td>
+                              <Link
+                                className="font-semibold text-slate-800 underline"
+                                to={`/compras/pedidos/${pedido.id}`}
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                Abrir
+                              </Link>
+                            </td>
+                          </tr>
+                        ))
+                        : null}
+                    </Fragment>
+                  );
+                })
+                : pedidosBloco.map((pedido) => (
+                  <tr
+                    key={pedido.id}
+                    className={`border-t border-slate-100 ${
+                      caixaSuprimentos && !pedido.suprimentos_lida ? 'bg-sky-50 font-semibold' : ''
+                    }`}
+                  >
+                    <td className="py-2">{pedido.instituicao_nome || pedido.instituicao_id}</td>
+                    <td>{pedido.tipo_rotulo || rotuloTipoPedido(pedido.tipo)}</td>
+                    <td>
+                      <span className="block">{pedido.titulo || pedido.categoria_split_nome || '—'}</span>
+                      <SeloFonteVerba pedido={pedido} />
+                    </td>
+                    <td>
+                      <PremiumBadge variant={varianteBadgeStatusPedido(pedido.status)}>
+                        {rotuloStatusPedidoLista(pedido)}
+                      </PremiumBadge>
+                    </td>
+                    <td className="tabular-nums text-slate-700">
+                      {(pedido.cotacao_sede || pedido.cotacao_projeto)
+                        ? (progressoOrcamentosTexto(pedido) || '—')
+                        : (pedido.qtd_orcamentos ?? 0)}
+                    </td>
+                    <td>{pedido.atualizado_em || '—'}</td>
+                    {caixaSuprimentos ? (
+                      <td><SeloCaixaSuprimentos lida={pedido.suprimentos_lida} /></td>
+                    ) : null}
+                    <td>
+                      <Link className="font-semibold text-slate-800 underline" to={`/compras/pedidos/${pedido.id}`}>
+                        Abrir
+                      </Link>
+                    </td>
+                  </tr>
+                ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </SectionCard>
+  );
+}
+
 const CHAVE_VISTA_COMPRAS = '@CareCore:compras-vista';
 
 /** Sobrevive ao Voltar: a lista volta na hora e a API atualiza por trás. */
@@ -375,10 +586,14 @@ export default function Compras() {
     return lista;
   }, [pedidos, ordemPedidos, caixaSuprimentos]);
 
-  const gruposPorUnidade = useMemo(() => {
-    if (!agruparPorUnidade) return [];
-    return agruparPedidosPorUnidade(pedidosOrdenados, ordemPedidos);
-  }, [agruparPorUnidade, pedidosOrdenados, ordemPedidos]);
+  const pedidosSuprimentos = useMemo(
+    () => pedidosOrdenados.filter((p) => !pedidoListaEhInfraestrutura(p)),
+    [pedidosOrdenados],
+  );
+  const pedidosInfraestrutura = useMemo(
+    () => pedidosOrdenados.filter((p) => pedidoListaEhInfraestrutura(p)),
+    [pedidosOrdenados],
+  );
 
   const alternarOrdenacao = (coluna) => {
     setOrdemPedidos((atual) => {
@@ -662,206 +877,44 @@ export default function Compras() {
                 </SectionCard>
                 )}
 
-                <SectionCard
-                  title={visaoConcluidos ? 'Pedidos concluídos' : 'Pedidos em andamento'}
-                  subtitle={
-                    [
-                      caixaSuprimentos
-                        ? `${pedidos.filter((p) => !p.suprimentos_lida).length} não lida(s) · ${pedidos.filter((p) => p.suprimentos_lida).length} lida(s)`
-                        : '',
-                      agruparPorUnidade
-                        ? 'Agrupado por unidade — clique na linha para expandir os pedidos daquele projeto.'
-                        : '',
-                    ].filter(Boolean).join(' · ') || undefined
-                  }
-                  actions={(
-                    <PremiumButton
-                      type="button"
-                      variant="secondary"
-                      onClick={alternarAgrupamento}
-                      disabled={carregando || pedidos.length === 0}
-                    >
-                      {agruparPorUnidade ? 'Desagrupar' : 'Agrupar por unidade'}
-                    </PremiumButton>
-                  )}
-                >
-                  {carregando ? (
-                    <p className="text-sm text-slate-500">Carregando…</p>
-                  ) : pedidos.length === 0 ? (
-                    <EmptyState
-                      title={
-                        visaoConcluidos
-                          ? (competencia
-                            ? 'Nenhum pedido concluído nesta competência'
-                            : 'Nenhum pedido concluído')
-                          : (competencia
-                            ? 'Nenhum pedido em andamento nesta competência'
-                            : 'Nenhum pedido em andamento')
-                      }
-                    />
-                  ) : (
-                    <div className="overflow-x-auto">
-                      <table className="min-w-full text-sm">
-                        <thead>
-                          <tr className="text-left text-xs uppercase text-slate-500">
-                            {COLUNAS_ORDENACAO_PEDIDOS.map((col) => {
-                              const ativo = ordemPedidos.coluna === col.id;
-                              return (
-                                <th key={col.id} className={col.id === 'unidade' ? 'py-2' : undefined}>
-                                  <button
-                                    type="button"
-                                    onClick={() => alternarOrdenacao(col.id)}
-                                    className={`inline-flex items-center gap-1 rounded-md px-0.5 py-0.5 font-semibold uppercase tracking-wide transition hover:text-slate-800 ${
-                                      ativo ? 'text-slate-800' : 'text-slate-500'
-                                    }`}
-                                    title={`Ordenar por ${col.rotulo}`}
-                                  >
-                                    {col.rotulo}
-                                    {ativo ? (
-                                      ordemPedidos.direcao === 'asc' ? (
-                                        <ArrowUp className="h-3.5 w-3.5 text-slate-700" aria-hidden />
-                                      ) : (
-                                        <ArrowDown className="h-3.5 w-3.5 text-slate-700" aria-hidden />
-                                      )
-                                    ) : (
-                                      <ArrowUpDown className="h-3.5 w-3.5 text-slate-300" aria-hidden />
-                                    )}
-                                  </button>
-                                </th>
-                              );
-                            })}
-                            {caixaSuprimentos ? <th className="py-2">Caixa</th> : null}
-                            <th />
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {agruparPorUnidade
-                            ? gruposPorUnidade.map((grupo) => {
-                              const aberto = unidadeExpandida === grupo.chave;
-                              return (
-                                <Fragment key={grupo.chave}>
-                                  <tr
-                                    className="cursor-pointer border-t border-slate-200 bg-slate-50/80 hover:bg-slate-100/80"
-                                    onClick={() => alternarExpansaoUnidade(grupo.chave)}
-                                  >
-                                    <td className="py-2.5">
-                                      <span className="inline-flex items-center gap-1.5 font-semibold text-slate-900">
-                                        {aberto ? (
-                                          <ChevronDown className="h-4 w-4 shrink-0 text-slate-600" aria-hidden />
-                                        ) : (
-                                          <ChevronRight className="h-4 w-4 shrink-0 text-slate-500" aria-hidden />
-                                        )}
-                                        {grupo.nome}
-                                        <span className="rounded-full bg-slate-200 px-2 py-0.5 text-[11px] font-bold tabular-nums text-slate-700">
-                                          {grupo.qtd}
-                                          {grupo.qtd === 1 ? ' pedido' : ' pedidos'}
-                                        </span>
-                                      </span>
-                                    </td>
-                                    <td className="text-slate-700">{grupo.tiposRotulo || '—'}</td>
-                                    <td className="text-slate-500">—</td>
-                                    <td className="text-xs font-medium text-slate-700">{grupo.statusResumo || '—'}</td>
-                                    <td className="tabular-nums text-slate-700">{grupo.orcamentos}</td>
-                                    <td>{grupo.atualizado || '—'}</td>
-                                    {caixaSuprimentos ? (
-                                      <td className="text-xs font-semibold text-sky-900">
-                                        {grupo.itens.filter((p) => !p.suprimentos_lida).length
-                                          ? `${grupo.itens.filter((p) => !p.suprimentos_lida).length} não lida(s)`
-                                          : 'Lidas'}
-                                      </td>
-                                    ) : null}
-                                    <td className="text-xs font-semibold text-slate-600">
-                                      {aberto ? 'Recolher' : 'Expandir'}
-                                    </td>
-                                  </tr>
-                                  {aberto
-                                    ? grupo.itens.map((pedido) => (
-                                      <tr
-                                        key={pedido.id}
-                                        className={`border-t border-slate-100 ${
-                                          caixaSuprimentos && !pedido.suprimentos_lida
-                                            ? 'bg-sky-50 font-semibold text-slate-900'
-                                            : 'bg-white'
-                                        }`}
-                                      >
-                                        <td className="py-2 pl-8 text-slate-600">
-                                          <span className="text-xs text-slate-400">↳</span>
-                                          {' '}
-                                          {pedido.instituicao_nome || pedido.instituicao_id || grupo.nome}
-                                        </td>
-                                        <td>{pedido.tipo_rotulo || rotuloTipoPedido(pedido.tipo)}</td>
-                                        <td>
-                                          <span className="block">{pedido.titulo || pedido.categoria_split_nome || '—'}</span>
-                                          <SeloFonteVerba pedido={pedido} />
-                                        </td>
-                                        <td>
-                                          <PremiumBadge variant={varianteBadgeStatusPedido(pedido.status)}>
-                                            {rotuloStatusPedidoLista(pedido)}
-                                          </PremiumBadge>
-                                        </td>
-                                        <td className="tabular-nums text-slate-700">
-                                          {(pedido.cotacao_sede || pedido.cotacao_projeto)
-                                            ? (progressoOrcamentosTexto(pedido) || '—')
-                                            : (pedido.qtd_orcamentos ?? 0)}
-                                        </td>
-                                        <td>{pedido.atualizado_em || '—'}</td>
-                                        {caixaSuprimentos ? (
-                                          <td><SeloCaixaSuprimentos lida={pedido.suprimentos_lida} /></td>
-                                        ) : null}
-                                        <td>
-                                          <Link
-                                            className="font-semibold text-slate-800 underline"
-                                            to={`/compras/pedidos/${pedido.id}`}
-                                            onClick={(e) => e.stopPropagation()}
-                                          >
-                                            Abrir
-                                          </Link>
-                                        </td>
-                                      </tr>
-                                    ))
-                                    : null}
-                                </Fragment>
-                              );
-                            })
-                            : pedidosOrdenados.map((pedido) => (
-                              <tr
-                                key={pedido.id}
-                                className={`border-t border-slate-100 ${
-                                  caixaSuprimentos && !pedido.suprimentos_lida ? 'bg-sky-50 font-semibold' : ''
-                                }`}
-                              >
-                                <td className="py-2">{pedido.instituicao_nome || pedido.instituicao_id}</td>
-                                <td>{pedido.tipo_rotulo || rotuloTipoPedido(pedido.tipo)}</td>
-                                <td>
-                                  <span className="block">{pedido.titulo || pedido.categoria_split_nome || '—'}</span>
-                                  <SeloFonteVerba pedido={pedido} />
-                                </td>
-                                <td>
-                                  <PremiumBadge variant={varianteBadgeStatusPedido(pedido.status)}>
-                                    {rotuloStatusPedidoLista(pedido)}
-                                  </PremiumBadge>
-                                </td>
-                                <td className="tabular-nums text-slate-700">
-                                  {(pedido.cotacao_sede || pedido.cotacao_projeto)
-                                    ? (progressoOrcamentosTexto(pedido) || '—')
-                                    : (pedido.qtd_orcamentos ?? 0)}
-                                </td>
-                                <td>{pedido.atualizado_em || '—'}</td>
-                                {caixaSuprimentos ? (
-                                  <td><SeloCaixaSuprimentos lida={pedido.suprimentos_lida} /></td>
-                                ) : null}
-                                <td>
-                                  <Link className="font-semibold text-slate-800 underline" to={`/compras/pedidos/${pedido.id}`}>
-                                    Abrir
-                                  </Link>
-                                </td>
-                              </tr>
-                            ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-                </SectionCard>
+                <div className="flex justify-end">
+                  <PremiumButton
+                    type="button"
+                    variant="secondary"
+                    onClick={alternarAgrupamento}
+                    disabled={carregando || pedidos.length === 0}
+                  >
+                    {agruparPorUnidade ? 'Desagrupar' : 'Agrupar por unidade'}
+                  </PremiumButton>
+                </div>
+                <BlocoListaPedidos
+                  lado="sup"
+                  titulo={visaoConcluidos ? 'Suprimentos — concluídos' : 'Suprimentos'}
+                  pedidosBloco={pedidosSuprimentos}
+                  carregando={carregando}
+                  visaoConcluidos={visaoConcluidos}
+                  competencia={competencia}
+                  agruparPorUnidade={agruparPorUnidade}
+                  ordemPedidos={ordemPedidos}
+                  unidadeExpandida={unidadeExpandida}
+                  onOrdenar={alternarOrdenacao}
+                  onToggleUnidade={alternarExpansaoUnidade}
+                  caixaSuprimentos={caixaSuprimentos}
+                />
+                <BlocoListaPedidos
+                  lado="infra"
+                  titulo={visaoConcluidos ? 'Infraestrutura — concluídos' : 'Infraestrutura'}
+                  pedidosBloco={pedidosInfraestrutura}
+                  carregando={carregando}
+                  visaoConcluidos={visaoConcluidos}
+                  competencia={competencia}
+                  agruparPorUnidade={agruparPorUnidade}
+                  ordemPedidos={ordemPedidos}
+                  unidadeExpandida={unidadeExpandida}
+                  onOrdenar={alternarOrdenacao}
+                  onToggleUnidade={alternarExpansaoUnidade}
+                  caixaSuprimentos={false}
+                />
               </>
             )}
 

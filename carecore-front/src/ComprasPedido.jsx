@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { FileText, Mail, Search, ShoppingCart } from 'lucide-react';
 
 import CampoSenha from './components/CampoSenha';
+import ComprasDocumentosAnexados from './components/ComprasDocumentosAnexados';
 import ComprasItemTypeahead from './components/ComprasItemTypeahead';
 import ModalFormItemConsumo from './components/ModalFormItemConsumo';
 import ModalPosicionarAssinaturaOrcamento from './components/ModalPosicionarAssinaturaOrcamento';
@@ -49,6 +50,8 @@ import {
   comprasLiberarEscolha,
   comprasObterPedido,
   comprasReceber,
+  comprasDefinirPagamento,
+  comprasQuitarPagamento,
   comprasReabrir,
   comprasReabrirAprovado,
   comprasAbrirAnexoBlob,
@@ -220,6 +223,10 @@ export default function ComprasPedido() {
   });
   const [arqsNf, setArqsNf] = useState([]);
   const [classeDoc, setClasseDoc] = useState('nota_fiscal');
+  const [modoPagamento, setModoPagamento] = useState('avista');
+  const [qtdParcelasForm, setQtdParcelasForm] = useState('2');
+  const [parcelaDoc, setParcelaDoc] = useState(1);
+  const [listaDocumentosAberta, setListaDocumentosAberta] = useState(false);
   const [modalTextoNf, setModalTextoNf] = useState(false);
   const [carimboNf, setCarimboNf] = useState(null);
   const [carimboAssinaturaNf, setCarimboAssinaturaNf] = useState(null);
@@ -255,6 +262,16 @@ export default function ComprasPedido() {
       pedidoRef.current = dados;
       if (!silencioso) {
         setObsPedido(dados?.observacao || '');
+        const qtd = Number(dados?.pagamento_qtd_parcelas || 0);
+        if (qtd > 1) {
+          setModoPagamento('parcelado');
+          setQtdParcelasForm(String(qtd));
+        } else {
+          setModoPagamento('avista');
+          setQtdParcelasForm('2');
+        }
+        const primeiraAberta = (dados?.pagamento_parcelas || []).find((p) => !p.paga);
+        setParcelaDoc(primeiraAberta?.numero || 1);
       }
       if (!silencioso) {
         const [catalogo, cats, fornecs] = await Promise.all([
@@ -458,15 +475,11 @@ export default function ComprasPedido() {
     && (sede || (cotacaoProjeto && unidade && !pedidoSede));
   const orcamentoAssinadoPelaSede = ['aprovado', 'enviado_fornecedor', 'recebido'].includes(pedido.status);
   const contratosPedido = (pedido.anexos || []).filter((a) => a.classe_documento === 'contrato');
-  const relacionadosPedido = (pedido.anexos || []).filter((a) => a.classe_documento === 'relacionado');
   const notasFiscaisPedido = (pedido.notas_fiscais || []).filter((nf) => nf.tipo_nf !== 'boleto');
-  const boletosPedido = [
-    ...(pedido.notas_fiscais || []).filter((nf) => nf.tipo_nf === 'boleto'),
-    ...(pedido.anexos || []).filter((a) => (
-      a.classe_documento === 'boleto'
-      && !(pedido.notas_fiscais || []).some((nf) => nf.anexo_id === a.id)
-    )),
-  ];
+  const maiorParcelaComDocumento = Math.max(
+    0,
+    ...(pedido.pagamento_parcelas || []).filter((p) => p.paga).map((p) => Number(p.numero) || 0),
+  );
   const mostraPassoContrato = segueInfra && (orcamentoAssinadoPelaSede || contratosPedido.length > 0);
   const passoContratoOk = !segueInfra || Boolean(pedido.compra_liberada);
   const compraJaExecutada = segueInfra && Boolean(pedido.compra_executada);
@@ -2273,99 +2286,6 @@ export default function ComprasPedido() {
               </SectionCard>
             )}
 
-            {notasFiscaisPedido.length > 0 && (
-              <div className="rounded-xl border-2 border-sky-400 bg-sky-50 px-4 py-3 shadow-sm">
-                <p className="text-sm font-bold uppercase tracking-wide text-sky-900">
-                  Notas fiscais anexadas
-                </p>
-                <p className="mt-1 text-sm text-sky-800">
-                  {notasFiscaisPedido.length === 1
-                    ? 'Há 1 nota fiscal neste pedido. Visualize ou baixe o arquivo.'
-                    : `Há ${notasFiscaisPedido.length} notas fiscais neste pedido. Visualize ou baixe os arquivos.`}
-                </p>
-                <ul className="mt-3 space-y-2">
-                  {notasFiscaisPedido.map((nf) => {
-                    const anexo = (pedido.anexos || []).find((a) => a.id === nf.anexo_id);
-                    const rotuloTipo = nf.tipo_nf === 'servico'
-                      ? 'Serviço'
-                      : nf.tipo_nf === 'outro'
-                        ? 'Outro'
-                        : 'Produto';
-                    return (
-                      <li
-                        key={nf.id}
-                        className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-sky-200 bg-white px-3 py-2.5"
-                      >
-                        <div className="min-w-0">
-                          <p className="text-sm font-semibold text-slate-900">
-                            {rotuloTipo}
-                            {' · '}
-                            NF {nf.numero || 'sem número'}
-                            {nf.valor_centavos != null ? ` · ${moneyCentavos(nf.valor_centavos)}` : ''}
-                          </p>
-                          <p className="truncate text-xs text-slate-500">
-                            {anexo?.nome_arquivo
-                              || (nf.origem_dados === 'xml' ? 'Arquivo XML' : 'Arquivo anexado')}
-                            {nf.origem_dados === 'xml' ? ' · importado do XML' : ''}
-                          </p>
-                        </div>
-                        {nf.anexo_id && anexo ? (
-                          <div className="flex shrink-0 flex-wrap gap-2">
-                            <button
-                              type="button"
-                              className="inline-flex items-center gap-1.5 rounded-lg border border-sky-300 bg-white px-3 py-2 text-xs font-bold text-sky-800 hover:bg-sky-50"
-                              onClick={() => setModalAnexo(anexo)}
-                            >
-                              Visualizar
-                            </button>
-                            <button
-                              type="button"
-                              className="inline-flex items-center gap-1.5 rounded-lg bg-sky-700 px-3 py-2 text-xs font-bold text-white hover:bg-sky-800"
-                              onClick={() => comprasBaixarAnexo(
-                                pedido.id,
-                                nf.anexo_id,
-                                anexo?.nome_arquivo || `nota-fiscal-${nf.numero || nf.id}.pdf`,
-                              ).catch(() => setErro('Não foi possível abrir o arquivo da NF.'))}
-                            >
-                              <FileText size={14} />
-                              Baixar NF
-                            </button>
-                            {podeEncerrar ? (
-                              <button
-                                type="button"
-                                className="inline-flex items-center rounded-lg border border-rose-200 px-3 py-2 text-xs font-bold text-rose-700"
-                                onClick={() => {
-                                  if (!window.confirm('Excluir esta NF para anexar outra com o texto novo?')) return;
-                                  agir(() => comprasRemoverNotaFiscal(pedido.id, nf.id), 'Nota fiscal removida.');
-                                }}
-                              >
-                                Excluir arquivo
-                              </button>
-                            ) : null}
-                          </div>
-                        ) : nf.anexo_id ? (
-                          <button
-                            type="button"
-                            className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-sky-700 px-3 py-2 text-xs font-bold text-white hover:bg-sky-800"
-                            onClick={() => comprasBaixarAnexo(
-                              pedido.id,
-                              nf.anexo_id,
-                              `nota-fiscal-${nf.numero || nf.id}.pdf`,
-                            ).catch(() => setErro('Não foi possível abrir o arquivo da NF.'))}
-                          >
-                            <FileText size={14} />
-                            Baixar NF
-                          </button>
-                        ) : (
-                          <span className="text-xs font-medium text-slate-400">Sem arquivo</span>
-                        )}
-                      </li>
-                    );
-                  })}
-                </ul>
-              </div>
-            )}
-
             {hortifrutiDireto && sede && pedido.status === 'enviado_fornecedor' && (
               <SectionCard title="Espelho da compra">
                 <p className="mb-3 text-xs text-slate-500">
@@ -2388,33 +2308,182 @@ export default function ComprasPedido() {
               </SectionCard>
             )}
 
+            {segueInfra && compraJaExecutada && !terminal && (
+              <SectionCard
+                title="Pagamento"
+                subtitle="À vista (1 pagamento) ou parcelado. Em cada parcela anexe a NF e/ou o comprovante. O processo só encerra quando todas estiverem pagas ou quando você marcar que o valor total já foi quitado."
+              >
+                {!pedido.pagamento_qtd_parcelas ? (
+                  <form
+                    className="grid gap-3 md:grid-cols-3"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      const qtd = modoPagamento === 'avista' ? 1 : Number(qtdParcelasForm);
+                      agir(
+                        () => comprasDefinirPagamento(pedido.id, qtd),
+                        qtd === 1 ? 'Pagamento à vista registrado.' : `Pagamento em ${qtd} parcelas registrado.`,
+                      );
+                    }}
+                  >
+                    <label className="flex items-center gap-2 text-sm text-slate-800">
+                      <input
+                        type="radio"
+                        name="modo_pagamento"
+                        checked={modoPagamento === 'avista'}
+                        onChange={() => setModoPagamento('avista')}
+                      />
+                      À vista (1 pagamento)
+                    </label>
+                    <label className="flex items-center gap-2 text-sm text-slate-800">
+                      <input
+                        type="radio"
+                        name="modo_pagamento"
+                        checked={modoPagamento === 'parcelado'}
+                        onChange={() => setModoPagamento('parcelado')}
+                      />
+                      Parcelado
+                    </label>
+                    {modoPagamento === 'parcelado' ? (
+                      <input
+                        type="number"
+                        min={2}
+                        max={36}
+                        value={qtdParcelasForm}
+                        onChange={(e) => setQtdParcelasForm(e.target.value)}
+                        className="rounded-xl border border-slate-200 px-3 py-2 text-sm"
+                        aria-label="Quantidade de parcelas"
+                      />
+                    ) : null}
+                    <div className="md:col-span-3">
+                      <PremiumButton type="submit">Gravar forma de pagamento</PremiumButton>
+                    </div>
+                  </form>
+                ) : (
+                  <div className="space-y-3">
+                    <p className="text-sm text-slate-800">
+                      {Number(pedido.pagamento_qtd_parcelas) === 1
+                        ? 'Pagamento à vista (1 parcela).'
+                        : `Pagamento em ${pedido.pagamento_qtd_parcelas} parcelas.`}
+                      {' '}
+                      {pedido.pagamento_quitado
+                        ? 'Todos os valores já foram marcados como pagos.'
+                        : `${pedido.pagamento_parcelas_pagas || 0} de ${pedido.pagamento_qtd_parcelas} com documento.`}
+                    </p>
+                    {Number(pedido.pagamento_qtd_parcelas) > 1 ? (
+                      <ul className="grid gap-2 sm:grid-cols-2">
+                        {(pedido.pagamento_parcelas || []).map((parcela) => (
+                          <li
+                            key={parcela.numero}
+                            className={`rounded-lg border px-3 py-2 text-sm ${
+                              parcela.paga || pedido.pagamento_quitado
+                                ? 'border-emerald-200 bg-emerald-50 text-emerald-950'
+                                : 'border-slate-200 bg-white text-slate-800'
+                            }`}
+                          >
+                            Parcela {parcela.numero}
+                            {parcela.paga
+                              ? ' · com documento'
+                              : pedido.pagamento_quitado
+                                ? ' · quitada com o restante'
+                                : ' · aguardando NF ou comprovante'}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : null}
+                    {maiorParcelaComDocumento >= 1
+                      && maiorParcelaComDocumento < Number(pedido.pagamento_qtd_parcelas || 0) ? (
+                        <PremiumButton
+                          type="button"
+                          variant="secondary"
+                          onClick={() => {
+                            const qtdAtual = Number(pedido.pagamento_qtd_parcelas || 0);
+                            if (!window.confirm(`O cliente pagou em ${maiorParcelaComDocumento} parcelas. Ajustar o pedido de ${qtdAtual} para ${maiorParcelaComDocumento}?`)) return;
+                            agir(
+                              () => comprasDefinirPagamento(pedido.id, maiorParcelaComDocumento),
+                              `Pagamento ajustado para ${maiorParcelaComDocumento} parcela${maiorParcelaComDocumento === 1 ? '' : 's'}.`,
+                            );
+                          }}
+                        >
+                          Cliente pagou em {maiorParcelaComDocumento} parcela{maiorParcelaComDocumento === 1 ? '' : 's'}
+                        </PremiumButton>
+                      ) : null}
+                    {!pedido.pagamento_completo ? (
+                      <PremiumButton
+                        variant="secondary"
+                        onClick={() => {
+                          const qtd = Number(pedido.pagamento_qtd_parcelas || 0);
+                          const pagas = Number(pedido.pagamento_parcelas_pagas || 0);
+                          const faltam = Math.max(0, qtd - pagas);
+                          const texto = faltam > 0
+                            ? `Ainda faltam ${faltam} parcela${faltam === 1 ? '' : 's'} sem NF ou comprovante.\n\nMarcar que todos os valores já foram pagos? Isso libera o encerramento sem anexar o que falta. Confirme só se não for um clique sem querer.`
+                            : 'Marcar que todos os valores deste pedido já foram pagos?';
+                          if (!window.confirm(texto)) return;
+                          agir(() => comprasQuitarPagamento(pedido.id), 'Pagamento quitado. Você já pode encerrar o processo.');
+                        }}
+                      >
+                        Todos os valores já foram pagos
+                      </PremiumButton>
+                    ) : (
+                      <p className="text-xs font-semibold text-emerald-800">
+                        Pagamento completo. Use Encerrar processo abaixo — as notas já anexadas bastam.
+                      </p>
+                    )}
+                  </div>
+                )}
+              </SectionCard>
+            )}
+
+            <ComprasDocumentosAnexados
+              pedido={pedido}
+              aberto={listaDocumentosAberta}
+              onToggle={() => setListaDocumentosAberta((atual) => !atual)}
+              podeExcluir={Boolean(podeEncerrar && !consultaGlobal && !terminal)}
+              onVisualizar={setModalAnexo}
+              onExcluirNf={(notaId) => agir(() => comprasRemoverNotaFiscal(pedido.id, notaId), 'Arquivo excluído.')}
+              onExcluirAnexo={(anexoId) => agir(() => comprasRemoverAnexo(pedido.id, anexoId), 'Arquivo excluído.')}
+              onErro={setErro}
+            />
+
             {podeDocumentosFinais && (
               <SectionCard
                 title="Documentos do processo"
-                subtitle="Escolha o tipo: nota fiscal, boleto ou arquivo relacionado. Boleto e nota fiscal exigem a Assinatura Digital AEB."
+                subtitle={segueInfra
+                  ? 'Em cada parcela: nota fiscal, boleto, comprovante de pagamento ou arquivo relacionado. Boleto e nota fiscal exigem a Assinatura Digital AEB.'
+                  : 'Escolha o tipo: nota fiscal, boleto ou arquivo relacionado. Boleto e nota fiscal exigem a Assinatura Digital AEB.'}
               >
                 <p className="mb-3 text-xs text-slate-500">
-                  Numa mesma anexação dá para incluir quantas notas forem necessárias: o sistema junta num arquivo só e aplica o texto e a assinatura em todas as páginas. Se já existir nota, exclua antes de anexar outra.
+                  {segueInfra
+                    ? 'Defina o pagamento acima. Numa mesma anexação dá para unir PDFs de nota; a posição do texto vale para todas as páginas. No parcelado, cada parcela pode ter a própria NF.'
+                    : 'Numa mesma anexação dá para incluir quantas notas forem necessárias: o sistema junta num arquivo só e aplica o texto e a assinatura em todas as páginas. Se já existir nota, exclua antes de anexar outra.'}
                 </p>
                 <form
                   className="grid gap-2 md:grid-cols-3"
                   onSubmit={async (e) => {
                     e.preventDefault();
-                    if (classeDoc === 'relacionado') {
+                    if (classeDoc === 'relacionado' || classeDoc === 'comprovante') {
                       if (!arqsNf[0]) {
-                        setErro('Selecione o arquivo relacionado.');
+                        setErro(classeDoc === 'comprovante' ? 'Selecione o comprovante.' : 'Selecione o arquivo relacionado.');
                         return;
                       }
                       const fdRel = new FormData();
                       fdRel.append('tipo', 'aquisicao_bem');
-                      fdRel.append('classe_documento', 'relacionado');
+                      fdRel.append('classe_documento', classeDoc);
                       fdRel.append('arquivo', arqsNf[0]);
-                      const okRel = await agir(() => comprasAnexarArquivo(pedido.id, fdRel), 'Arquivo relacionado anexado.');
-                      if (okRel) setArqsNf([]);
+                      if (segueInfra && pedido.pagamento_qtd_parcelas && classeDoc === 'comprovante') {
+                        fdRel.append('parcela_numero', String(parcelaDoc || 1));
+                      }
+                      const okRel = await agir(
+                        () => comprasAnexarArquivo(pedido.id, fdRel),
+                        classeDoc === 'comprovante' ? 'Comprovante anexado.' : 'Arquivo relacionado anexado.',
+                      );
+                      if (okRel) {
+                        setArqsNf([]);
+                        setListaDocumentosAberta(true);
+                      }
                       return;
                     }
                     const jaTemNf = notasFiscaisPedido.some((nf) => nf.anexo_id);
-                    if (classeDoc === 'nota_fiscal' && jaTemNf) {
+                    if (classeDoc === 'nota_fiscal' && jaTemNf && !segueInfra) {
                       setErro('Já existe nota fiscal anexada. Exclua o arquivo antes de anexar outra.');
                       return;
                     }
@@ -2467,6 +2536,9 @@ export default function ComprasPedido() {
                     }
                     fd.append('senha_assinatura_eletronica', senhaAssinaturaNf);
                     fd.append('classe_documento', classeDoc);
+                    if (segueInfra && pedido.pagamento_qtd_parcelas) {
+                      fd.append('parcela_numero', String(parcelaDoc || 1));
+                    }
                     fd.append('arquivo', arqsNf[0]);
                     arqsNf.slice(1).forEach((arquivo) => fd.append('arquivos', arquivo));
                     const registrou = await agir(
@@ -2476,6 +2548,7 @@ export default function ComprasPedido() {
                         : 'Nota fiscal registrada e assinada digitalmente.',
                     );
                     if (!registrou) return;
+                    setListaDocumentosAberta(true);
                     setSenhaAssinaturaNf('');
                     setNfForm({ tipo_nf: 'produto', numero: '', serie: '', valor_reais: '', observacao: '' });
                     setArqsNf([]);
@@ -2497,9 +2570,27 @@ export default function ComprasPedido() {
                     >
                       <option value="nota_fiscal">Nota fiscal</option>
                       <option value="boleto">Boleto</option>
+                      {segueInfra ? <option value="comprovante">Comprovante de pagamento</option> : null}
                       <option value="relacionado">Arquivo relacionado ao processo</option>
                     </select>
                   </label>
+                  {segueInfra && pedido.pagamento_qtd_parcelas && classeDoc !== 'relacionado' ? (
+                    <label className="md:col-span-3 text-xs font-semibold text-slate-600">
+                      Parcela deste documento
+                      <select
+                        value={parcelaDoc}
+                        onChange={(e) => setParcelaDoc(Number(e.target.value))}
+                        className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm font-normal"
+                      >
+                        {Array.from({ length: Number(pedido.pagamento_qtd_parcelas) }, (_, i) => i + 1).map((n) => (
+                          <option key={n} value={n}>
+                            Parcela {n}
+                            {(pedido.pagamento_parcelas || []).find((p) => p.numero === n)?.paga ? ' · já tem documento' : ''}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  ) : null}
                   {classeDoc === 'nota_fiscal' ? (
                     <>
                       <input
@@ -2519,9 +2610,9 @@ export default function ComprasPedido() {
                         Insira as informações complementares de pagamento para a impressão da NF
                         <textarea
                           value={nfForm.observacao}
-                          readOnly={notasFiscaisPedido.some((nf) => nf.anexo_id)}
+                          readOnly={!segueInfra && notasFiscaisPedido.some((nf) => nf.anexo_id)}
                           onClick={() => {
-                            if (notasFiscaisPedido.some((nf) => nf.anexo_id)) {
+                            if (!segueInfra && notasFiscaisPedido.some((nf) => nf.anexo_id)) {
                               window.alert(
                                 'Para alterar o texto, exclua o arquivo anexado, importe um novo arquivo e escreva a observação de novo.',
                               );
@@ -2537,11 +2628,11 @@ export default function ComprasPedido() {
                   <input
                     type="file"
                     multiple={classeDoc === 'nota_fiscal'}
-                    accept={classeDoc === 'relacionado' ? undefined : '.pdf,.xml,.jpg,.jpeg,.png,application/pdf'}
+                    accept={classeDoc === 'relacionado' || classeDoc === 'comprovante' ? undefined : '.pdf,.xml,.jpg,.jpeg,.png,application/pdf'}
                     onChange={(e) => {
                       const arquivos = Array.from(e.target.files || []);
                       const primeiro = arquivos[0] || null;
-                      if (classeDoc === 'relacionado') {
+                      if (classeDoc === 'relacionado' || classeDoc === 'comprovante') {
                         setArqsNf(primeiro ? [primeiro] : []);
                         return;
                       }
@@ -2577,7 +2668,7 @@ export default function ComprasPedido() {
                       {carimboAssinaturaNf ? ' · assinatura posicionada' : ''}
                     </p>
                   ) : null}
-                  {classeDoc !== 'relacionado' ? (
+                  {classeDoc !== 'relacionado' && classeDoc !== 'comprovante' ? (
                     <div className="md:col-span-3">
                       <label className="mb-1 block text-xs font-semibold text-slate-600" htmlFor="senha-assinatura-nf">
                         Insira a senha do gestor para a assinatura eletrônica digital
@@ -2609,110 +2700,44 @@ export default function ComprasPedido() {
                       ? 'Anexar boleto assinado'
                       : classeDoc === 'relacionado'
                         ? 'Anexar arquivo relacionado'
-                        : 'Anexar NF assinada'}
+                        : classeDoc === 'comprovante'
+                          ? 'Anexar comprovante'
+                          : 'Anexar NF assinada'}
                   </PremiumButton>
                 </form>
-                {boletosPedido.length > 0 && (
-                  <ul className="mt-4 space-y-2">
-                    {boletosPedido.map((item) => {
-                      const anexo = item.anexo_id
-                        ? (pedido.anexos || []).find((a) => a.id === item.anexo_id) || item
-                        : item;
-                      const nome = anexo?.nome_arquivo || item.nome_arquivo || 'Boleto';
-                      return (
-                        <li
-                          key={item.id}
-                          className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2"
-                        >
-                          <p className="min-w-0 truncate text-xs font-medium text-slate-800">
-                            ✓ Assinado — {nome}
-                          </p>
-                          <div className="flex shrink-0 flex-wrap items-center gap-2">
-                            {anexo?.id ? (
-                              <>
-                                <button
-                                  type="button"
-                                  className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-bold text-slate-800 hover:bg-slate-50"
-                                  onClick={() => setModalAnexo(anexo)}
-                                >
-                                  Visualizar
-                                </button>
-                                <button
-                                  type="button"
-                                  className="inline-flex items-center gap-1.5 rounded-lg bg-slate-800 px-3 py-1.5 text-xs font-bold text-white hover:bg-slate-900"
-                                  onClick={() => comprasBaixarAnexo(pedido.id, anexo.id, nome)
-                                    .catch(() => setErro('Não foi possível baixar o boleto.'))}
-                                >
-                                  <FileText size={14} />
-                                  Baixar
-                                </button>
-                              </>
-                            ) : null}
-                          </div>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                )}
-                {relacionadosPedido.length > 0 && (
-                  <ul className="mt-3 space-y-2">
-                    {relacionadosPedido.map((anexo) => (
-                      <li
-                        key={anexo.id}
-                        className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2"
-                      >
-                        <p className="min-w-0 truncate text-xs font-medium text-slate-800">
-                          Relacionado — {anexo.nome_arquivo || 'Arquivo'}
-                        </p>
-                        <div className="flex shrink-0 flex-wrap items-center gap-2">
-                          <button
-                            type="button"
-                            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-bold text-slate-800 hover:bg-slate-50"
-                            onClick={() => setModalAnexo(anexo)}
-                          >
-                            Visualizar
-                          </button>
-                          <button
-                            type="button"
-                            className="inline-flex items-center gap-1.5 rounded-lg bg-slate-800 px-3 py-1.5 text-xs font-bold text-white hover:bg-slate-900"
-                            onClick={() => comprasBaixarAnexo(pedido.id, anexo.id, anexo.nome_arquivo)
-                              .catch(() => setErro('Não foi possível baixar o arquivo.'))}
-                          >
-                            <FileText size={14} />
-                            Baixar
-                          </button>
-                          <button
-                            type="button"
-                            className="rounded px-1.5 text-xs font-bold text-rose-700 hover:bg-rose-50"
-                            onClick={() => {
-                              if (!window.confirm(`Excluir "${anexo.nome_arquivo}"?`)) return;
-                              agir(() => comprasRemoverAnexo(pedido.id, anexo.id), 'Arquivo excluído.');
-                            }}
-                          >
-                            ×
-                          </button>
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-                <div className="mt-4">
-                  <PremiumButton
-                    onClick={() => agir(
-                      () => comprasReceber(pedido.id, { observacao: 'Recebimento confirmado.' }),
-                      'Processo encerrado.',
-                    )}
-                    disabled={
-                      !notasFiscaisPedido.length
-                      || !(pedido.eventos || []).some((ev) => String(ev.texto || '').includes('Assinado Digitalmente'))
-                    }
-                    title="Disponível depois que a nota fiscal for assinada com a senha do gestor."
-                  >
-                    Encerrar processo (com NF anexada)
-                  </PremiumButton>
-                </div>
               </SectionCard>
             )}
+
+            {podeEncerrar && !terminal && !consultaGlobal ? (
+              <div className="rounded-2xl border-2 border-slate-900 bg-white px-4 py-4 shadow-sm">
+                <p className="mb-3 text-sm text-slate-700">
+                  {segueInfra && !pedido.pagamento_completo
+                    ? 'Para encerrar: anexe NF ou comprovante em cada parcela, ou marque que todos os valores já foram pagos.'
+                    : !notasFiscaisPedido.length
+                      ? 'Para encerrar, anexe ao menos uma nota fiscal assinada.'
+                      : 'As notas anexadas já valem para encerrar. Não é preciso NF nas parcelas que o cliente deixou de usar.'}
+                </p>
+                <PremiumButton
+                  className="w-full py-3 text-base font-black"
+                  onClick={() => agir(
+                    () => comprasReceber(pedido.id, { observacao: 'Recebimento confirmado.' }),
+                    'Processo encerrado.',
+                  )}
+                  disabled={
+                    !notasFiscaisPedido.length
+                    || !(pedido.eventos || []).some((ev) => String(ev.texto || '').includes('Assinado Digitalmente'))
+                    || (segueInfra && !pedido.pagamento_completo)
+                  }
+                  title={
+                    segueInfra && !pedido.pagamento_completo
+                      ? 'Registre cada parcela ou marque que todos os valores já foram pagos.'
+                      : 'Disponível depois que a nota fiscal for assinada com a senha do gestor.'
+                  }
+                >
+                  Encerrar processo
+                </PremiumButton>
+              </div>
+            ) : null}
 
             {pedido.aviso_sede_sem_tres_orcamentos && sede && (
               <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
@@ -2955,6 +2980,7 @@ export default function ComprasPedido() {
         aberto={modalTextoNf}
         arquivo={arqsNf[0] || null}
         texto={nfForm.observacao}
+        projeto={pedido?.instituicao_nome || ''}
         modo={classeDoc === 'boleto' ? 'boleto' : 'nota_fiscal'}
         onFechar={() => {
           setModalTextoNf(false);

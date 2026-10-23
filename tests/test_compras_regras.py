@@ -560,9 +560,67 @@ def test_competencia_mes_seguinte_e_lado_da_timeline():
     assert pedido_segue_infraestrutura("manutencao", "infraestrutura") is True
     assert pedido_segue_infraestrutura("manutencao", "suprimentos") is False
     assert pedido_segue_infraestrutura("consumo") is False
+    from compras_regras import normalizar_qtd_parcelas_pagamento, pagamento_infra_completo
+    assert normalizar_qtd_parcelas_pagamento(1) == 1
+    assert normalizar_qtd_parcelas_pagamento("4") == 4
+    try:
+        normalizar_qtd_parcelas_pagamento(0)
+        assert False
+    except ValueError:
+        pass
+    assert pagamento_infra_completo(qtd=3, parcelas_pagas=3, quitado=False) is True
+    assert pagamento_infra_completo(qtd=3, parcelas_pagas=1, quitado=False) is False
+    assert pagamento_infra_completo(qtd=3, parcelas_pagas=0, quitado=True) is True
+    assert pagamento_infra_completo(qtd=None, parcelas_pagas=0, quitado=False) is False
+    from compras_regras import maior_parcela_com_documento
+    assert maior_parcela_com_documento([
+        {"numero": 1, "paga": True},
+        {"numero": 2, "paga": True},
+        {"numero": 3, "paga": False},
+        {"numero": 4, "paga": False},
+    ]) == 2
+    assert maior_parcela_com_documento([]) == 0
+    from compras_regras import parcela_conta_como_paga
+    assert parcela_conta_como_paga(1, {1: True}, qtd=3) is True
+    assert parcela_conta_como_paga(2, {1: True}, qtd=3) is False
+    assert parcela_conta_como_paga(1, {0: True}, qtd=1) is True
+    assert parcela_conta_como_paga(1, {0: True}, qtd=3) is False
     assert tipo_arquivo_bem_de_anexo_pedido("orcamento_assinado") == "orcamento"
     assert tipo_arquivo_bem_de_anexo_pedido("nf_pdf") == "nota"
     assert tipo_arquivo_bem_de_anexo_pedido("termo_doacao") == "termo_doacao"
+
+
+def test_situacao_pagamento_infra_conta_nf_ou_comprovante():
+    from types import SimpleNamespace
+    from compras_pedido_fluxo import situacao_pagamento_de_registros
+
+    pedido = SimpleNamespace(
+        tipo="imobilizado",
+        destino_compras=None,
+        pagamento_qtd_parcelas=2,
+        pagamento_quitado_em=None,
+    )
+    notas = [
+        SimpleNamespace(tipo_nf="produto", anexo_id="a1", parcela_numero=1),
+        SimpleNamespace(tipo_nf="boleto", anexo_id="a2", parcela_numero=2),
+    ]
+    anexos = [
+        SimpleNamespace(ativo=True, classe_documento="boleto", parcela_numero=2),
+        SimpleNamespace(ativo=True, classe_documento="comprovante", parcela_numero=2),
+    ]
+    sit = situacao_pagamento_de_registros(pedido, notas, anexos)
+    assert sit["parcelas_pagas"] == 2
+    assert sit["completo"] is True
+    assert sit["parcelas"][0]["paga"] is True
+    assert sit["parcelas"][1]["paga"] is True
+
+    so_boleto = situacao_pagamento_de_registros(
+        pedido,
+        [SimpleNamespace(tipo_nf="boleto", anexo_id="b1", parcela_numero=1)],
+        [SimpleNamespace(ativo=True, classe_documento="boleto", parcela_numero=1)],
+    )
+    assert so_boleto["parcelas_pagas"] == 0
+    assert so_boleto["completo"] is False
 
 
 def test_acento_quebrado_de_cp437_volta_ao_portugues():

@@ -87,9 +87,14 @@ from compras_regras import (
     pode_reabrir_orcamento_aprovado,
     sede_pode_reabrir_aprovado,
     CLASSE_DOC_BOLETO,
+    CLASSE_DOC_COMPROVANTE,
     CLASSE_DOC_CONTRATO,
     CLASSE_DOC_NOTA,
     CLASSE_DOC_RELACIONADO,
+    normalizar_qtd_parcelas_pagamento,
+    pagamento_infra_completo,
+    parcela_conta_como_paga,
+    maior_parcela_com_documento,
     ETAPA_CONTRATO_ASSINADO,
     ETAPA_CONTRATO_NOEMI,
     ETAPA_CONTRATO_ROBSON,
@@ -434,8 +439,163 @@ async def exigir_documentos_finais_infra(db: AsyncSession, pedido: ComprasPedido
     if sit["segue"] and not sit["compra_executada"]:
         raise HTTPException(
             status_code=400,
-            detail="Boleto, nota fiscal e arquivo relacionado abrem depois que a compra for executada.",
+            detail="Boleto, nota fiscal, comprovante e arquivo relacionado abrem depois que a compra for executada.",
         )
+
+
+def _numero_parcela_doc(valor) -> int:
+    try:
+        n = int(valor)
+    except (TypeError, ValueError):
+        return 0
+    return n if n > 0 else 0
+
+
+def situacao_pagamento_de_registros(pedido: ComprasPedidoDB, notas, anexos) -> dict:
+    segue = pedido_segue_infraestrutura(pedido.tipo, getattr(pedido, "destino_compras", None))
+    qtd = getattr(pedido, "pagamento_qtd_parcelas", None)
+    quitado = bool(getattr(pedido, "pagamento_quitado_em", None))
+    if not segue:
+        return {
+            "segue": False,
+            "qtd_parcelas": None,
+            "quitado": False,
+            "completo": True,
+            "parcelas_pagas": 0,
+            "parcelas": [],
+        }
+    docs: dict[int, bool] = {}
+    for nota in notas or []:
+        if (nota.tipo_nf or "") == "boleto":
+            continue
+        if not getattr(nota, "anexo_id", None):
+            continue
+        docs[_numero_parcela_doc(getattr(nota, "parcela_numero", None))] = True
+    for anexo in anexos or []:
+        if not getattr(anexo, "ativo", True):
+            continue
+        classe = (getattr(anexo, "classe_documento", None) or "")
+        if classe not in {CLASSE_DOC_COMPROVANTE, CLASSE_DOC_NOTA}:
+            continue
+        docs[_numero_parcela_doc(getattr(anexo, "parcela_numero", None))] = True
+    parcelas = []
+    pagas = 0
+    total = int(qtd or 0)
+    for numero in range(1, total + 1):
+        paga = parcela_conta_como_paga(numero, docs, qtd=total)
+        if paga:
+            pagas += 1
+        parcelas.append({"numero": numero, "paga": paga})
+    completo = pagamento_infra_completo(qtd=qtd, parcelas_pagas=pagas, quitado=quitado)
+    return {
+        "segue": True,
+        "qtd_parcelas": qtd,
+        "quitado": quitado,
+        "completo": completo,
+        "parcelas_pagas": pagas,
+        "parcelas": parcelas,
+    }
+
+
+async def situacao_pagamento_infra(db: AsyncSession, pedido: ComprasPedidoDB) -> dict:
+    notas = await _notas_pedido(db, pedido.id)
+    anexos = await _anexos_pedido(db, pedido.id)
+    return situacao_pagamento_de_registros(pedido, notas, anexos)
+
+
+def _exigir_parcela_infra(pedido: ComprasPedidoDB, payload: dict) -> Optional[int]:
+    if not pedido_segue_infraestrutura(pedido.tipo, getattr(pedido, "destino_compras", None)):
+        return None
+    qtd = getattr(pedido, "pagamento_qtd_parcelas", None)
+    if not qtd:
+        raise HTTPException(
+            status_code=400,
+            detail="Informe se o pagamento será à vista (1 parcela) ou em quantas parcelas.",
+        )
+    bruto = payload.get("parcela_numero")
+    if bruto in (None, ""):
+        if int(qtd) == 1:
+            return 1
+        raise HTTPException(status_code=400, detail="Escolha a parcela deste pagamento.")
+    try:
+        numero = int(bruto)
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail="Parcela inválida.") from exc
+    if numero < 1 or numero > int(qtd):
+        raise HTTPException(
+            status_code=400,
+            detail=f"A parcela deve ser entre 1 e {int(qtd)}.",
+        )
+    return numero
+
+
+async def definir_pagamento_parcelas(
+    db: AsyncSession,
+    usuario: dict,
+    pedido: ComprasPedidoDB,
+    qtd_parcelas,
+) -> ComprasPedidoDB:
+    if not pedido_segue_infraestrutura(pedido.tipo, getattr(pedido, "destino_compras", None)):
+        raise HTTPException(status_code=400, detail="O pagamento parcelado vale só para Infraestrutura.")
+    sit = await situacao_contrato_infra(db, pedido)
+    if not sit["compra_executada"]:
+        raise HTTPException(status_code=400, detail="Defina o pagamento depois da compra.")
+    if pedido.status != STATUS_ENVIADO:
+        raise HTTPException(status_code=400, detail="O pagamento só se define com o pedido enviado ao fornecedor.")
+    try:
+        qtd = normalizar_qtd_parcelas_pagamento(qtd_parcelas)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    atual = await situacao_pagamento_infra(db, pedido)
+    maior = maior_parcela_com_documento(atual.get("parcelas"))
+    if maior and qtd < maior:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Já há documento na parcela {maior}. A quantidade não pode ser menor que {maior}.",
+        )
+    pedido.pagamento_qtd_parcelas = qtd
+    if qtd == 1:
+        pedido.pagamento_quitado_em = None
+    pedido.atualizado_em = agora_operacional_naive()
+    rotulo = "à vista (1 pagamento)" if qtd == 1 else f"em {qtd} parcelas"
+    await registrar_evento_pedido(
+        db,
+        pedido_id=pedido.id,
+        tipo=TIPO_EVENTO_STATUS,
+        texto=f"Pagamento definido: {rotulo}.",
+        usuario_id=_uid(usuario),
+        status_anterior=pedido.status,
+        status_novo=pedido.status,
+    )
+    return pedido
+
+
+async def quitar_pagamento_infra(
+    db: AsyncSession,
+    usuario: dict,
+    pedido: ComprasPedidoDB,
+) -> ComprasPedidoDB:
+    if not pedido_segue_infraestrutura(pedido.tipo, getattr(pedido, "destino_compras", None)):
+        raise HTTPException(status_code=400, detail="A quitação vale só para Infraestrutura.")
+    if not getattr(pedido, "pagamento_qtd_parcelas", None):
+        raise HTTPException(
+            status_code=400,
+            detail="Informe se o pagamento será à vista ou em quantas parcelas.",
+        )
+    if pedido.status != STATUS_ENVIADO:
+        raise HTTPException(status_code=400, detail="Quite o pagamento antes de encerrar, com o pedido ainda aberto.")
+    pedido.pagamento_quitado_em = agora_operacional_naive()
+    pedido.atualizado_em = agora_operacional_naive()
+    await registrar_evento_pedido(
+        db,
+        pedido_id=pedido.id,
+        tipo=TIPO_EVENTO_STATUS,
+        texto="Todos os valores deste pedido foram pagos.",
+        usuario_id=_uid(usuario),
+        status_anterior=pedido.status,
+        status_novo=pedido.status,
+    )
+    return pedido
 
 
 async def registrar_ausencia_contrato(
@@ -506,6 +666,7 @@ def _serializar_anexo(anexo: ComprasPedidoAnexoDB) -> dict:
         "tipo": anexo.tipo,
         "classe_documento": getattr(anexo, "classe_documento", None),
         "etapa_contrato": getattr(anexo, "etapa_contrato", None),
+        "parcela_numero": getattr(anexo, "parcela_numero", None),
         "nome_arquivo": anexo.nome_arquivo,
         "caminho_arquivo": anexo.caminho_arquivo,
         "content_type": anexo.content_type,
@@ -526,6 +687,7 @@ def _serializar_nota(nota: ComprasPedidoNotaFiscalDB) -> dict:
         "emitente_cnpj": nota.emitente_cnpj,
         "data_emissao": _iso(nota.data_emissao),
         "valor_centavos": nota.valor_centavos,
+        "parcela_numero": getattr(nota, "parcela_numero", None),
         "origem_dados": nota.origem_dados,
         "observacao": nota.observacao,
         "anexo_id": nota.anexo_id,
@@ -671,6 +833,7 @@ async def extras_serializacao_pedido(db: AsyncSession, pedido: ComprasPedidoDB) 
         for e in eventos
     )
     sit_contrato = situacao_contrato_de_registros(pedido, eventos, anexos)
+    sit_pag = situacao_pagamento_de_registros(pedido, notas, anexos)
     autores = await _autores_eventos(db, [e.usuario_id for e in eventos if e.usuario_id])
     revisoes = await _revisoes_eventos(db, [e.id for e in eventos])
 
@@ -712,6 +875,11 @@ async def extras_serializacao_pedido(db: AsyncSession, pedido: ComprasPedidoDB) 
         "contrato_pendente": sit_contrato["contrato_pendente"],
         "compra_liberada": sit_contrato["compra_liberada"],
         "compra_executada": sit_contrato["compra_executada"],
+        "pagamento_qtd_parcelas": sit_pag["qtd_parcelas"],
+        "pagamento_quitado": sit_pag["quitado"],
+        "pagamento_completo": sit_pag["completo"],
+        "pagamento_parcelas": sit_pag["parcelas"],
+        "pagamento_parcelas_pagas": sit_pag["parcelas_pagas"],
         "pode_reabrir": pedido.status in {STATUS_REPROVADO, STATUS_CANCELADO},
         "pode_reabrir_aprovado": pode_reabrir_orcamento_aprovado(
             status=pedido.status,
@@ -795,6 +963,7 @@ async def upload_anexo_pedido(
     conteudo: Optional[bytes] = None,
     classe_documento: Optional[str] = None,
     etapa_contrato: Optional[str] = None,
+    parcela_numero: Optional[int] = None,
 ) -> ComprasPedidoAnexoDB:
     if pedido.status in STATUS_TERMINAIS_PEDIDO:
         raise HTTPException(status_code=400, detail="Processo encerrado não aceita novos anexos.")
@@ -816,8 +985,10 @@ async def upload_anexo_pedido(
                     status_code=400,
                     detail="Já existe contrato neste pedido. Exclua o atual antes de anexar outro.",
                 )
-        elif classe in {CLASSE_DOC_RELACIONADO, CLASSE_DOC_BOLETO, CLASSE_DOC_NOTA}:
+        elif classe in {CLASSE_DOC_RELACIONADO, CLASSE_DOC_BOLETO, CLASSE_DOC_NOTA, CLASSE_DOC_COMPROVANTE}:
             await exigir_documentos_finais_infra(db, pedido)
+            if classe != CLASSE_DOC_RELACIONADO:
+                parcela_numero = _exigir_parcela_infra(pedido, {"parcela_numero": parcela_numero})
 
     if conteudo is None:
         conteudo = await file.read()
@@ -848,6 +1019,7 @@ async def upload_anexo_pedido(
         cotacao_id=cotacao_id,
         tipo=tipo,
         classe_documento=(classe_documento or "").strip().lower() or None,
+        parcela_numero=parcela_numero,
         etapa_contrato=(
             etapa_contrato
             or (ETAPA_CONTRATO_ROBSON if (classe_documento or "").strip().lower() == CLASSE_DOC_CONTRATO else None)
@@ -2138,7 +2310,9 @@ async def registrar_nota_fiscal(
         raise HTTPException(status_code=400, detail="Notas fiscais só após envio ao fornecedor.")
     await exigir_documentos_finais_infra(db, pedido)
     classe_doc = (payload.get("classe_documento") or CLASSE_DOC_NOTA).strip().lower()
-    if classe_doc != "boleto":
+    parcela_numero = _exigir_parcela_infra(pedido, payload)
+    segue_infra = pedido_segue_infraestrutura(pedido.tipo, getattr(pedido, "destino_compras", None))
+    if classe_doc != "boleto" and not segue_infra:
         ja_tem_nf = (
             await db.execute(
                 select(ComprasPedidoNotaFiscalDB.id).where(
@@ -2258,7 +2432,14 @@ async def registrar_nota_fiscal(
             except ValueError as exc:
                 raise HTTPException(status_code=400, detail=str(exc)) from exc
         anexo = await upload_anexo_pedido(
-            db, usuario, pedido, file=file, tipo=tipo_anexo, conteudo=raw,
+            db,
+            usuario,
+            pedido,
+            file=file,
+            tipo=tipo_anexo,
+            conteudo=raw,
+            classe_documento=classe_doc,
+            parcela_numero=parcela_numero,
         )
 
     nota = ComprasPedidoNotaFiscalDB(
@@ -2274,6 +2455,7 @@ async def registrar_nota_fiscal(
         valor_centavos=campos.get("valor_centavos"),
         origem_dados=campos.get("origem_dados") or "manual",
         observacao=campos.get("observacao"),
+        parcela_numero=parcela_numero,
         criado_por_id=_uid(usuario),
     )
     db.add(nota)
@@ -2381,7 +2563,17 @@ async def encerrar_pedido(
     if pedido.status != STATUS_ENVIADO:
         raise HTTPException(status_code=400, detail="Encerramento só após envio ao fornecedor.")
     notas = await _notas_pedido(db, pedido.id)
-    if not notas:
+    notas_nf = [n for n in notas if (n.tipo_nf or "") != "boleto"]
+    sit_pag = situacao_pagamento_de_registros(pedido, notas, await _anexos_pedido(db, pedido.id))
+    if sit_pag["segue"]:
+        if not notas_nf:
+            raise HTTPException(status_code=400, detail="Anexe ao menos uma nota fiscal antes de encerrar.")
+        if not sit_pag["completo"]:
+            raise HTTPException(
+                status_code=400,
+                detail="Registre o pagamento de cada parcela (NF ou comprovante) ou marque que todos os valores já foram pagos.",
+            )
+    elif not notas:
         raise HTTPException(status_code=400, detail="Anexe ao menos uma nota fiscal antes de encerrar.")
     eventos_assinatura = (
         await db.execute(
