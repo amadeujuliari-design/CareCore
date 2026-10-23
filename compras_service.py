@@ -600,6 +600,7 @@ async def serializar_pedido(
         "valor_estimado_centavos": getattr(pedido, "valor_estimado_centavos", None),
         "data_envio_prevista": pedido.data_envio_prevista.isoformat() if getattr(pedido, "data_envio_prevista", None) else None,
         "envio_automatico": bool(getattr(pedido, "envio_automatico", False)),
+        "submetido_em": _iso(getattr(pedido, "submetido_em", None)),
         "aprovado_unidade_em": _iso(pedido.aprovado_unidade_em),
         "aprovado_sede_em": _iso(pedido.aprovado_sede_em),
         "enviado_em": _iso(pedido.enviado_em),
@@ -718,6 +719,7 @@ async def serializar_pedido(
             "escolhida": bool(cotacao.escolhida),
             "ativa": bool(getattr(cotacao, "ativa", True)),
             "observacao": cotacao.observacao,
+            "criado_em": _iso(cotacao.criado_em),
         }
         for cotacao in cotacoes
         if getattr(cotacao, "ativa", True)

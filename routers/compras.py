@@ -46,6 +46,7 @@ from compras_pedido_fluxo import (
     quitar_pagamento_infra,
 )
 from compras_service import (
+    _iso,
     alinhar_status_consumo_escolhido_pelo_projeto,
     aprovar_sede,
     aprovar_unidade,
@@ -973,6 +974,7 @@ async def get_fila_assinatura(
                 "id": anexo.id,
                 "nome_arquivo": anexo.nome_arquivo,
                 "etapa_contrato": anexo.etapa_contrato,
+                "criado_em": _iso(anexo.criado_em),
             }
             saida.append(item)
         return saida

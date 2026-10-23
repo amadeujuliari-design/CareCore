@@ -305,7 +305,7 @@ Títulos: Revisar pedido de cotação · Revisar pedido de compra · Revisar ree
 
 ### Função
 
-Duas filas: Infraestrutura (orçamentos e contratos aguardando ok) e representante legal (o que a Infraestrutura enviou + contratos após o ok). A Infraestrutura pode **Posicionar e assinar** ou **Enviar para a fila do representante legal**. A Noemi vê Visualizar, assinar com gov.br e anexar o PDF assinado. Ao entrar no sistema, quem assina vê o aviso da fila; Suprimentos não recebe esse aviso.
+Duas filas: Infraestrutura (orçamentos e contratos aguardando ok) e representante legal (o que a Infraestrutura enviou + contratos após o ok). Cada fila **agrupa por unidade**, no mesmo padrão da lista de Pedidos: a linha do projeto mostra quantidade, tipo e **data/hora da última atualização**; **Expandir** / **Recolher** abre os itens. Em cada pedido e orçamento aparecem enviado em, atualizado em e a data/hora do arquivo. **Visualizar** abre o PDF/imagem no modal (sem baixar); o nome do arquivo continua servindo para baixar. A Infraestrutura pode **Posicionar e assinar** ou **Enviar para a fila do representante legal**. A Noemi vê Visualizar, assinar com gov.br e anexar o PDF assinado. Ao entrar no sistema, quem assina vê o aviso da fila; Suprimentos não recebe esse aviso.
 
 ## 1.5b Documentos assinados — `/compras/documentos-assinados`
 
@@ -321,7 +321,7 @@ Lista contratos já assinados (saem da fila). Visualizar / Baixar / Abrir / Subs
 
 ### Botões
 
-Atualizar · Escolher · Revogar · Abrir pedido · Posicionar e assinar / Assinando… · Assinar com gov.br (baixa o PDF, abre assinador.iti.br, arquiva o PDF assinado e aprova o pedido) · links Orçamento:/Assinado: · Ver itens e timeline
+Atualizar · Expandir / Recolher (por unidade) · Escolher · Revogar · Visualizar · Abrir pedido · Posicionar e assinar / Assinando… · Assinar com gov.br (baixa o PDF, abre assinador.iti.br, arquiva o PDF assinado e aprova o pedido) · links Orçamento:/Assinado:/Contrato: (download) · Ver itens e timeline
 
 Mensagem se sem perfil: «Somente ADM Compras (Sede) acessa esta fila.»
 
