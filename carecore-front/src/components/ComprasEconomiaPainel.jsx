@@ -14,6 +14,7 @@ import {
   exportarEconomia,
   imprimirEconomia,
 } from '../utils/comprasEconomiaExportPrint';
+import { CLASSE_LINHA_ORCAMENTO } from '../utils/comprasPedidoTipos';
 
 function mensagemErro(err) {
   const detalhe = err?.response?.data?.detail;
@@ -277,7 +278,10 @@ export default function ComprasEconomiaPainel({
                               {Array.isArray(linha.cotacoes) && linha.cotacoes.length > 0 && (
                                 <ul className="mt-1 text-xs text-slate-500">
                                   {linha.cotacoes.map((cotacao, indice) => (
-                                    <li key={`${linha.pedido_id}-${indice}`}>
+                                    <li
+                                      key={`${linha.pedido_id}-${indice}`}
+                                      className={`${CLASSE_LINHA_ORCAMENTO} ${cotacao.escolhida ? 'text-emerald-950' : 'text-slate-800'}`}
+                                    >
                                       {cotacao.fornecedor_nome || 'Fornecedor'}
                                       {' · '}
                                       {moneyCentavos(cotacao.valor_centavos)}

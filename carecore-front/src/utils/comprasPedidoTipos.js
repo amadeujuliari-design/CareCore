@@ -114,6 +114,9 @@ export function tipoPulaOrcamento(tipo) {
   return tipoEhEmergencia(tipo);
 }
 
+/** Linha fornecedor · valor: 3pt acima do text-sm (14px) e negrito. */
+export const CLASSE_LINHA_ORCAMENTO = 'text-[17px] font-bold leading-snug';
+
 /** Projeto troca PDF/orçamento até a Sede assinar (mesmo em Aguardando Sede). */
 export function projetoPodeTrocarOrcamento(pedido) {
   if (!pedido || tipoPulaOrcamento(pedido.tipo)) return false;

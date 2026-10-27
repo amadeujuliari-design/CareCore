@@ -31,7 +31,7 @@ import {
 import { usuarioEhAdmCompras, usuarioEhManutencao, usuarioGlobalAssinaOrcamento } from './utils/rbacUtils';
 import { formatarDataHoraBr } from './utils/dataBrasilUtils';
 import { agruparFilaAssinaturaPorUnidade } from './utils/comprasFilaAssinaturaUtils';
-import { cotacoesComEscolhidaPrimeiro, rotuloTipoPedido } from './utils/comprasPedidoTipos';
+import { CLASSE_LINHA_ORCAMENTO, cotacoesComEscolhidaPrimeiro, rotuloTipoPedido } from './utils/comprasPedidoTipos';
 
 function usuarioSessao() {
   try {
@@ -337,12 +337,18 @@ function PedidoFila({
                   }`}
                 >
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <span className={c.escolhida ? 'font-bold text-emerald-950' : ''}>
-                      {c.fornecedor_nome}
-                      {' · '}
-                      {moneyCentavos(c.valor_centavos)}
-                      {c.escolhida ? ' · Escolhida' : ''}
-                      {c.criado_em ? ` · ${dataHoraOuTraco(c.criado_em)}` : ''}
+                    <span className={c.escolhida ? 'text-emerald-950' : 'text-slate-900'}>
+                      <span className={CLASSE_LINHA_ORCAMENTO}>
+                        {c.fornecedor_nome}
+                        {' · '}
+                        {moneyCentavos(c.valor_centavos)}
+                        {c.escolhida ? ' · Escolhida' : ''}
+                      </span>
+                      {c.criado_em ? (
+                        <span className="ml-1 text-xs font-normal text-slate-500">
+                          · {dataHoraOuTraco(c.criado_em)}
+                        </span>
+                      ) : null}
                     </span>
                     <div className="flex flex-wrap gap-2">
                       {modo === 'infra' && !c.escolhida && (

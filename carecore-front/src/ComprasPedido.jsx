@@ -104,6 +104,7 @@ import {
   pedidoSegueInfraestrutura,
   tipoEhCotacaoSede,
   tipoEhEmergencia,
+  CLASSE_LINHA_ORCAMENTO,
   projetoPodeTrocarOrcamento,
   tipoExigeJanela,
   tipoPulaAprovacaoSede,
@@ -1606,7 +1607,7 @@ export default function ComprasPedido() {
                     }`}
                   >
                     <div className="flex flex-wrap items-center justify-between gap-2">
-                      <span className={c.escolhida ? 'font-bold text-emerald-950' : ''}>
+                      <span className={`${CLASSE_LINHA_ORCAMENTO} ${c.escolhida ? 'text-emerald-950' : 'text-slate-900'}`}>
                         {c.fornecedor_nome} · {moneyCentavos(c.valor_centavos)}
                         {c.escolhida ? ' · Escolhida' : ''}
                       </span>
