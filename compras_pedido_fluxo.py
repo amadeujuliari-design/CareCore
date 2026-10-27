@@ -113,6 +113,7 @@ from compras_regras import (
     pedido_na_fila_concluidos_infra,
     pedido_na_fila_nf_pagamento,
     tipo_eh_cotacao_projeto,
+    projeto_pode_trocar_orcamento,
     tipo_suprimentos_aprova_e_envia,
     tipo_eh_cotacao_sede,
     usuario_e_sede_compras,
@@ -2751,6 +2752,19 @@ async def encerrar_pedido(
     return pedido
 
 
+async def _pedido_tem_orcamento_assinado(db: AsyncSession, pedido_id: str) -> bool:
+    row = (
+        await db.execute(
+            select(ComprasPedidoAnexoDB.id).where(
+                ComprasPedidoAnexoDB.pedido_id == pedido_id,
+                ComprasPedidoAnexoDB.ativo.is_(True),
+                ComprasPedidoAnexoDB.tipo == TIPO_ANEXO_ORCAMENTO_ASSINADO,
+            ).limit(1)
+        )
+    ).first()
+    return bool(row)
+
+
 async def remover_anexo_pedido(
     db: AsyncSession,
     usuario: dict,
@@ -2835,10 +2849,17 @@ async def remover_anexo_pedido(
         STATUS_EM_COTACAO,
         STATUS_AGUARDANDO_ESCOLHA,
     }
-    if not sede and pedido.status not in statuses_projeto:
+    tem_assinado = await _pedido_tem_orcamento_assinado(db, pedido.id)
+    projeto_troca = projeto_pode_trocar_orcamento(
+        pedido.tipo,
+        getattr(pedido, "destino_compras", None),
+        pedido.status,
+        tem_orcamento_assinado=tem_assinado,
+    )
+    if not sede and not projeto_troca and pedido.status not in statuses_projeto:
         raise HTTPException(
             status_code=400,
-            detail="Só é possível remover orçamentos anexados enquanto o pedido está em cotação.",
+            detail="Só é possível remover orçamentos anexados enquanto a Sede não assinou.",
         )
     if sede and pedido.status not in {
         *statuses_projeto,
@@ -2893,11 +2914,6 @@ async def desativar_cotacao(
         perfil=(usuario.get("perfil_acesso") or usuario.get("perfil") or ""),
         is_manutencao=bool(usuario.get("is_manutencao")),
     )
-    statuses_projeto = {
-        STATUS_RASCUNHO,
-        STATUS_AGUARDANDO_COTACAO,
-        STATUS_EM_COTACAO,
-    }
     if pedido.status in STATUS_TERMINAIS_PEDIDO:
         raise HTTPException(status_code=400, detail="Processo encerrado.")
     statuses_ok_sede = {
@@ -2914,15 +2930,16 @@ async def desativar_cotacao(
             status_code=400,
             detail="Após o envio ao fornecedor não é possível remover orçamentos. Encerre o processo ou use comunicação na timeline.",
         )
-    if not sede and not (
-        (
-            tipo_eh_cotacao_projeto(pedido.tipo)
-            or pedido_segue_infraestrutura(pedido.tipo, getattr(pedido, "destino_compras", None))
-        ) and pedido.status in statuses_projeto
+    tem_assinado = await _pedido_tem_orcamento_assinado(db, pedido.id)
+    if not sede and not projeto_pode_trocar_orcamento(
+        pedido.tipo,
+        getattr(pedido, "destino_compras", None),
+        pedido.status,
+        tem_orcamento_assinado=tem_assinado,
     ):
         raise HTTPException(
             status_code=403,
-            detail="Somente a Sede (ADM Compras) ou o projeto (em cotação) podem remover orçamentos.",
+            detail="Somente a Sede (ADM Compras) ou o projeto, enquanto a Sede não assinou, podem remover orçamentos.",
         )
     cotacao = (
         await db.execute(

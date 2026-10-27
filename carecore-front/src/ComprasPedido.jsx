@@ -104,6 +104,7 @@ import {
   pedidoSegueInfraestrutura,
   tipoEhCotacaoSede,
   tipoEhEmergencia,
+  projetoPodeTrocarOrcamento,
   tipoExigeJanela,
   tipoPulaAprovacaoSede,
   tipoSuprimentosAprovaEEnvia,
@@ -428,9 +429,10 @@ export default function ComprasPedido() {
   // Após envio ao fornecedor (ou encerrado), orçamentos ficam só leitura.
   const orcamentosTravados = ['enviado_fornecedor', 'recebido', 'cancelado', 'reprovado'].includes(pedido.status);
   const hortifrutiAberto = hortifrutiDireto && !orcamentosTravados && !terminal;
+  const projetoTrocaOrcamento = Boolean(unidade && projetoPodeTrocarOrcamento(pedido));
   const podeRemoverOrcamento = !orcamentosTravados && (
     Boolean(pedido.pode_substituir_orcamento)
-    || (unidade && cotacaoProjeto && ['rascunho', 'em_cotacao', 'aguardando_cotacao'].includes(pedido.status))
+    || projetoTrocaOrcamento
     || hortifrutiAberto
   );
   const pulaAprovacaoSede = tipoPulaAprovacaoSede(pedido.tipo) || Boolean(pedido.pula_aprovacao_sede);
@@ -445,14 +447,13 @@ export default function ComprasPedido() {
   );
   const podeLancarCotacao = !orcamentosTravados && (
     (sede && cotacaoSede && !terminal)
-    || (unidade && cotacaoProjeto && ['rascunho', 'em_cotacao', 'aguardando_cotacao'].includes(pedido.status))
+    || projetoTrocaOrcamento
     || hortifrutiAberto
   );
   const podePedirCotacaoEmail = !orcamentosTravados && podeDispararEmailCompras && (
     (sede && cotacaoSede
       && ['aguardando_cotacao', 'em_cotacao', 'aguardando_escolha_orcamento', 'aguardando_aprovacao_unidade', 'aguardando_aprovacao_sede', 'aprovado'].includes(pedido.status))
-    || (unidade && cotacaoProjeto
-      && ['rascunho', 'em_cotacao', 'aguardando_cotacao'].includes(pedido.status))
+    || projetoTrocaOrcamento
   ) && !terminal;
   const podeLiberarEscolha = !orcamentosTravados
     && sede
@@ -1437,7 +1438,9 @@ export default function ComprasPedido() {
                 </p>
               ) : cotacaoProjeto && !sede ? (
                 <p className="mb-3 text-xs text-slate-500">
-                  Peça cotação por e-mail (caixa do projeto) e anexe os orçamentos recebidos (valor + PDF).
+                  {pedido.status === 'aguardando_aprovacao_sede'
+                    ? 'Enquanto a Sede não assinar, dá para remover o PDF errado e anexar o orçamento correto.'
+                    : 'Peça cotação por e-mail (caixa do projeto) e anexe os orçamentos recebidos (valor + PDF).'}
                 </p>
               ) : hortifrutiDireto ? (
                 <p className="mb-3 text-xs text-slate-500">

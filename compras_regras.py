@@ -1147,6 +1147,26 @@ def tipo_pula_orcamento(tipo: Optional[str]) -> bool:
     return tipo_eh_emergencia(tipo)
 
 
+def projeto_pode_trocar_orcamento(
+    tipo: Optional[str],
+    destino: Optional[str],
+    status: Optional[str],
+    *,
+    tem_orcamento_assinado: bool = False,
+) -> bool:
+    """Projeto troca PDF/orçamento até a Sede assinar (mesmo já em Aguardando Sede)."""
+    if tipo_pula_orcamento(tipo) or tem_orcamento_assinado:
+        return False
+    if (status or "") not in {
+        STATUS_RASCUNHO,
+        STATUS_AGUARDANDO_COTACAO,
+        STATUS_EM_COTACAO,
+        STATUS_AGUARDANDO_SEDE,
+    }:
+        return False
+    return tipo_eh_cotacao_projeto(tipo) or pedido_segue_infraestrutura(tipo, destino)
+
+
 EMAIL_NOTAS_PENDENTES = "notaspendentes@aeb-brasil.org.br"
 
 

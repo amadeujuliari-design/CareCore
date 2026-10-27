@@ -55,12 +55,13 @@ Hortifruti: seção **Cotações, Orçamentos ou Arquivos** com **Anexar arquivo
 ### Fluxo bem, serviço e manutenção+Infraestrutura
 
 1. Projeto cria rascunho com **Informações do pedido** (descrição, nome e dados do fornecedor, sem catálogo de item).
-2. Anexa orçamentos (quantos forem) e envia à Infraestrutura.
-3. Infraestrutura escolhe, posiciona e assina **ou** envia à fila do representante legal (Noemi).
-4. Depois da assinatura do orçamento: passo **Contrato** — anexar contrato ou **Não há contrato, seguir para a compra**. Contrato vai à Infraestrutura e, após o ok, à Noemi (gov.br).
-5. Compra: **Enviar pedido de compra por e-mail** ou **Compra direta sem envio de e-mail**.
-6. **Documentos do processo**: nota fiscal, boleto (ambos com Assinatura Digital AEB) ou arquivo relacionado. Várias NFs na mesma anexação viram um PDF; se já houver nota, exclui antes de outra.
-7. Encerrar processo com NF assinada.
+2. Anexa orçamentos (quantos forem) e envia à Infraestrutura. Com 3 PDFs o envio à Sede é automático.
+3. Enquanto a Sede não assinar, o projeto pode **Remover** o orçamento/PDF errado e anexar o correto (o pedido permanece em Aguardando Sede).
+4. Infraestrutura escolhe, posiciona e assina **ou** envia à fila do representante legal (Noemi).
+5. Depois da assinatura do orçamento: passo **Contrato** — anexar contrato ou **Não há contrato, seguir para a compra**. Contrato vai à Infraestrutura e, após o ok, à Noemi (gov.br).
+6. Compra: **Enviar pedido de compra por e-mail** ou **Compra direta sem envio de e-mail**.
+7. **Documentos do processo**: nota fiscal, boleto (ambos com Assinatura Digital AEB) ou arquivo relacionado. Várias NFs na mesma anexação viram um PDF; se já houver nota, exclui antes de outra.
+8. Encerrar processo com NF assinada.
 
 Ao entrar no sistema, projeto e Infraestrutura veem o modal de Compras se um contrato acabou de ser assinado (**Abrir pedido** / **Mais tarde**). Não entra no menu de Comunicação.
 

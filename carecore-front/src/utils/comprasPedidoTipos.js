@@ -114,6 +114,17 @@ export function tipoPulaOrcamento(tipo) {
   return tipoEhEmergencia(tipo);
 }
 
+/** Projeto troca PDF/orçamento até a Sede assinar (mesmo em Aguardando Sede). */
+export function projetoPodeTrocarOrcamento(pedido) {
+  if (!pedido || tipoPulaOrcamento(pedido.tipo)) return false;
+  if ((pedido.anexos || []).some((a) => a.tipo === 'orcamento_assinado')) return false;
+  const s = String(pedido.status || '').trim();
+  if (!['rascunho', 'em_cotacao', 'aguardando_cotacao', 'aguardando_aprovacao_sede'].includes(s)) {
+    return false;
+  }
+  return tipoEhCotacaoProjeto(pedido.tipo) || pedidoSegueInfraestrutura(pedido.tipo, pedido.destino_compras);
+}
+
 /** Hortifruti sem orçamento escolhido: o envio precisa do fornecedor na hora. */
 export function hortifrutiSemOrcamentoEscolhido(pedido) {
   if (!tipoSuprimentosAprovaEEnvia(pedido?.tipo)) return false;

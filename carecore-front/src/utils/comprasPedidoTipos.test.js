@@ -19,6 +19,7 @@ import {
   tipoExigeJanela,
   tipoPulaAprovacaoSede,
   tipoPulaOrcamento,
+  projetoPodeTrocarOrcamento,
 } from './comprasPedidoTipos.js';
 
 describe('cotacoesComEscolhidaPrimeiro', () => {
@@ -252,6 +253,31 @@ describe('inferirFornecedorEnvioId', () => {
         { texto: 'E-mail enviado para hncomerciohortfrut@hotmail.com' },
       ]),
       '',
+    );
+  });
+});
+
+describe('projetoPodeTrocarOrcamento', () => {
+  it('libera serviço em Aguardando Sede e trava depois da assinatura', () => {
+    assert.equal(
+      projetoPodeTrocarOrcamento({ tipo: 'servico', status: 'aguardando_aprovacao_sede', anexos: [] }),
+      true,
+    );
+    assert.equal(
+      projetoPodeTrocarOrcamento({
+        tipo: 'servico',
+        status: 'aguardando_aprovacao_sede',
+        anexos: [{ tipo: 'orcamento_assinado' }],
+      }),
+      false,
+    );
+    assert.equal(
+      projetoPodeTrocarOrcamento({ tipo: 'servico', status: 'aprovado', anexos: [] }),
+      false,
+    );
+    assert.equal(
+      projetoPodeTrocarOrcamento({ tipo: 'consumo', status: 'aguardando_aprovacao_sede', anexos: [] }),
+      false,
     );
   });
 });

@@ -704,10 +704,20 @@ def test_compras_emergencia_e_filas_infra():
         tipo_eh_emergencia,
         tipo_pula_orcamento,
         tipos_visiveis_adm_compras,
+        projeto_pode_trocar_orcamento,
+        STATUS_AGUARDANDO_SEDE,
+        STATUS_APROVADO,
+        TIPO_SERVICO,
     )
 
     assert tipo_eh_emergencia("emergencia")
     assert tipo_pula_orcamento(TIPO_EMERGENCIA)
+    assert projeto_pode_trocar_orcamento(TIPO_SERVICO, None, STATUS_AGUARDANDO_SEDE)
+    assert not projeto_pode_trocar_orcamento(
+        TIPO_SERVICO, None, STATUS_AGUARDANDO_SEDE, tem_orcamento_assinado=True,
+    )
+    assert not projeto_pode_trocar_orcamento(TIPO_SERVICO, None, STATUS_APROVADO)
+    assert not projeto_pode_trocar_orcamento(TIPO_EMERGENCIA, None, STATUS_AGUARDANDO_SEDE)
     assert aviso_cotacoes_insuficientes(0, TIPO_EMERGENCIA) is None
     assert pedido_segue_infraestrutura(TIPO_EMERGENCIA)
     assert pedido_na_fila_nf_pagamento(TIPO_EMERGENCIA, STATUS_AGUARDANDO_PAGAMENTO)

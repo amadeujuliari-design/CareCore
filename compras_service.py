@@ -123,6 +123,8 @@ from compras_regras import (
     texto_cadastro_caixa_alta,
     tipo_eh_cotacao_projeto,
     tipo_eh_emergencia,
+    projeto_pode_trocar_orcamento,
+    TIPO_ANEXO_ORCAMENTO_ASSINADO,
     sede_exige_aprovacao_previa_unidade,
     tipo_eh_cotacao_sede,
     tipo_exige_janela,
@@ -764,7 +766,7 @@ async def serializar_pedido(
         pode_itens = False
     payload["pode_editar_itens"] = pode_itens
     # Sede: pode trocar orçamentos até aprovação; após envio ao fornecedor, trava.
-    # Projeto (cotação própria): só enquanto ainda cotando.
+    # Projeto (bem/serviço/infra): também troca enquanto a Sede não assinou.
     statuses_sede_ok = {
         STATUS_RASCUNHO,
         STATUS_AGUARDANDO_COTACAO,
@@ -775,11 +777,15 @@ async def serializar_pedido(
         STATUS_APROVADO,
     }
     pode_substituir = bool(usuario and _sede(usuario) and pedido.status in statuses_sede_ok)
-    if (
-        not pode_substituir
-        and usuario
-        and tipo_eh_cotacao_projeto(pedido.tipo)
-        and pedido.status in {STATUS_RASCUNHO, STATUS_AGUARDANDO_COTACAO, STATUS_EM_COTACAO}
+    tem_orcamento_assinado = any(
+        (a.get("tipo") if isinstance(a, dict) else None) == TIPO_ANEXO_ORCAMENTO_ASSINADO
+        for a in (payload.get("anexos") or [])
+    )
+    if not pode_substituir and usuario and projeto_pode_trocar_orcamento(
+        pedido.tipo,
+        getattr(pedido, "destino_compras", None),
+        pedido.status,
+        tem_orcamento_assinado=tem_orcamento_assinado,
     ):
         pode_substituir = True
     payload["pode_substituir_orcamento"] = pode_substituir
