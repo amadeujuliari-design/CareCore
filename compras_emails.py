@@ -64,12 +64,30 @@ def sanitizar_corpo_email(texto: str | None, padrao: str) -> str:
     return limpo
 
 
-def corpo_padrao_solicitacao_cotacao(*, projeto: str, competencia: str) -> str:
+def corpo_padrao_solicitacao_cotacao(
+    *,
+    projeto: str,
+    competencia: str,
+    categoria: str = "",
+    data_br: str = "",
+) -> str:
+    cat = (categoria or "").strip()
+    quando = (data_br or competencia or "").strip()
+    linha_cat = f" Categoria: {cat}." if cat else ""
+    linha_quando = f" Data: {quando}." if quando else ""
     return (
         f"Prezado(a),\n\n"
-        f"Solicitamos cotação para o projeto {projeto} (competência {competencia}).\n"
+        f"Solicitamos cotação para o projeto {projeto}.{linha_cat}{linha_quando}\n"
         "Segue em anexo a lista de itens em PDF.\n\n"
         "Responda a este e-mail com o orçamento em PDF.\n\n"
+        "— CareCore+ / Compras AEB"
+    )
+
+
+def corpo_padrao_notas_pendentes() -> str:
+    return (
+        "Prezado(a),\n\n"
+        "Encaminho, em anexo, as notas fiscais.\n\n"
         "— CareCore+ / Compras AEB"
     )
 

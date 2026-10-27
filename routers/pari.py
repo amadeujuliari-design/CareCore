@@ -11,7 +11,12 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from config_operacional_projeto import projeto_e_casa_pari, projeto_e_reencontro_pari
+from config_operacional_projeto import (
+    projeto_e_casa_pari,
+    projeto_e_reencontro_pari,
+    projeto_lavanderia_sem_secagem,
+    projeto_usa_agenda_lavanderia,
+)
 from database import get_db
 from kit_higiene_pari import (
     COMPLEMENTOS_CRUZEIRO,
@@ -119,6 +124,20 @@ async def _exigir_pari(db: AsyncSession, usuario_atual: dict, *, escrita: bool =
     if not projeto_e_reencontro_pari(projeto):
         raise HTTPException(status_code=404, detail="Recurso disponível apenas nos projetos do modelo Reencontro Pari.")
     return instituicao_id
+
+
+async def _exigir_agenda_lavanderia(db: AsyncSession, usuario_atual: dict, *, escrita: bool = True) -> str:
+    if escrita:
+        bloquear_usuario_global_puro(usuario_atual)
+    instituicao_id = obter_instituicao_escopo(usuario_atual)
+    projeto = await db.get(InstituicaoDB, instituicao_id)
+    if not projeto_usa_agenda_lavanderia(projeto):
+        raise HTTPException(status_code=404, detail="Recurso disponível apenas nos projetos com agenda de lavanderia.")
+    return instituicao_id
+
+
+def _modelo_agenda_lavanderia(projeto: InstituicaoDB | None) -> str:
+    return "so_lavar" if projeto_lavanderia_sem_secagem(projeto) else "separado"
 
 
 def _perfil_dict(tipo: TipoIndividuoHigieneDB) -> dict:
@@ -912,10 +931,12 @@ async def listar_agenda(
     db: AsyncSession = Depends(get_db),
     usuario_atual: dict = Depends(get_usuario_logado),
 ):
-    instituicao_id = await _exigir_pari(db, usuario_atual, escrita=False)
+    instituicao_id = await _exigir_agenda_lavanderia(db, usuario_atual, escrita=False)
     projeto = await db.get(InstituicaoDB, instituicao_id)
     periodos = _periodos_do_projeto(projeto)
-    await _migrar_conjunto_compativel(db, instituicao_id, periodos)
+    modelo = _modelo_agenda_lavanderia(projeto)
+    if modelo != "so_lavar":
+        await _migrar_conjunto_compativel(db, instituicao_id, periodos)
     agora = agora_operacional_naive()
     try:
         dia = datetime.strptime(data, "%Y-%m-%d").date() if data else agora.date()
@@ -964,9 +985,10 @@ async def listar_agenda(
         )
     ).all()
     agenda = []
+    maquinas = (MAQUINA_LAVAR,) if modelo == "so_lavar" else (MAQUINA_LAVAR, MAQUINA_SECAR)
     for deslocamento in range(dias):
         dia_slot = dia + timedelta(days=deslocamento)
-        for maquina in (MAQUINA_LAVAR, MAQUINA_SECAR):
+        for maquina in maquinas:
             for inicio, fim in slots_cruzeiro(dia_slot, periodos):
                 chave = (maquina, inicio)
                 if chave in ocupados:
@@ -1006,7 +1028,7 @@ async def listar_agenda(
     return {
         "data": dia.isoformat(),
         "dias": dias,
-        "modelo": "separado",
+        "modelo": modelo,
         "periodos": periodos.como_dict(),
         "agenda": agenda,
         "fora_da_grade": {
@@ -1023,13 +1045,14 @@ async def salvar_periodos_lavanderia(
     db: AsyncSession = Depends(get_db),
     usuario_atual: dict = Depends(get_usuario_logado),
 ):
-    instituicao_id = await _exigir_pari(db, usuario_atual)
+    instituicao_id = await _exigir_agenda_lavanderia(db, usuario_atual)
     projeto = await db.get(InstituicaoDB, instituicao_id)
     try:
         periodos = validar_periodos(payload.model_dump())
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    await _migrar_conjunto_compativel(db, instituicao_id, periodos)
+    if _modelo_agenda_lavanderia(projeto) != "so_lavar":
+        await _migrar_conjunto_compativel(db, instituicao_id, periodos)
     conflitos = await _conflitos_da_grade(db, instituicao_id, periodos)
     if conflitos:
         raise HTTPException(
@@ -1050,7 +1073,7 @@ async def listar_registros_lavanderia(
     db: AsyncSession = Depends(get_db),
     usuario_atual: dict = Depends(get_usuario_logado),
 ):
-    instituicao_id = await _exigir_pari(db, usuario_atual, escrita=False)
+    instituicao_id = await _exigir_agenda_lavanderia(db, usuario_atual, escrita=False)
     maquinas = (MAQUINA_LAVAR, MAQUINA_SECAR, "conjunto")
     linhas = (
         await db.execute(
@@ -1097,7 +1120,7 @@ async def cancelar_agendamento(
     db: AsyncSession = Depends(get_db),
     usuario_atual: dict = Depends(get_usuario_logado),
 ):
-    instituicao_id = await _exigir_pari(db, usuario_atual)
+    instituicao_id = await _exigir_agenda_lavanderia(db, usuario_atual)
     registro = await db.get(LavanderiaAgendaDB, agenda_id)
     if not registro or registro.instituicao_id != instituicao_id:
         raise HTTPException(status_code=404, detail="Agendamento não encontrado.")
@@ -1133,7 +1156,9 @@ async def _par_lavanderia_cruzeiro(db: AsyncSession, registro: LavanderiaAgendaD
 
 
 async def _ler_lavanderia_cruzeiro(db: AsyncSession, instituicao_id: str, payload: LeituraLavanderia):
-    periodos = _periodos_do_projeto(await db.get(InstituicaoDB, instituicao_id))
+    projeto = await db.get(InstituicaoDB, instituicao_id)
+    periodos = _periodos_do_projeto(projeto)
+    sem_secagem = projeto_lavanderia_sem_secagem(projeto)
     convivente = await _convivente_pari(db, instituicao_id, payload.convivente_id)
     if convivente.status != "Ativo":
         raise HTTPException(status_code=400, detail="Somente convivente ativo usa a lavanderia.")
@@ -1171,7 +1196,7 @@ async def _ler_lavanderia_cruzeiro(db: AsyncSession, instituicao_id: str, payloa
     lavagem = next((item for item in vigentes if item.maquina == MAQUINA_LAVAR), None)
     if lavagem and (inicio_pedido is None or inicio_pedido == lavagem.inicio):
         secagem = next((item for item in vigentes if item.maquina == MAQUINA_SECAR), None)
-        texto_seco = f" Secagem às {_iso(secagem.inicio)[-5:]}." if secagem else ""
+        texto_seco = "" if sem_secagem else (f" Secagem às {_iso(secagem.inicio)[-5:]}." if secagem else "")
         return {
             "acao": "agendado",
             "mensagem": f"Lavagem já marcada às {_iso(lavagem.inicio)[-5:]}.{texto_seco}",
@@ -1226,6 +1251,20 @@ async def _ler_lavanderia_cruzeiro(db: AsyncSession, instituicao_id: str, payloa
         if not escolhido:
             raise HTTPException(status_code=400, detail="Não há lavagem livre nas próximas duas semanas.")
         inicio, fim = escolhido
+    await _gravar_reserva(db, instituicao_id, MAQUINA_LAVAR, inicio, fim, convivente.id)
+    if sem_secagem:
+        try:
+            await db.commit()
+        except IntegrityError:
+            await db.rollback()
+            raise HTTPException(status_code=409, detail="Esse horário acabou de ser reservado. Leia de novo.")
+        return {
+            "acao": "agendado",
+            "mensagem": f"Lavagem às {_iso(inicio)[-5:]}.",
+            "inicio": _iso(inicio),
+            "fim": _iso(fim),
+            "maquina": MAQUINA_LAVAR,
+        }
     ocupados_secar = set(
         (
             await db.execute(
@@ -1242,7 +1281,6 @@ async def _ler_lavanderia_cruzeiro(db: AsyncSession, instituicao_id: str, payloa
     if not seco:
         raise HTTPException(status_code=400, detail="Não há secagem livre nas próximas duas semanas.")
     inicio_seco, fim_seco = seco
-    await _gravar_reserva(db, instituicao_id, MAQUINA_LAVAR, inicio, fim, convivente.id)
     await _gravar_reserva(db, instituicao_id, MAQUINA_SECAR, inicio_seco, fim_seco, convivente.id)
     try:
         await db.commit()
@@ -1264,7 +1302,7 @@ async def ler_lavanderia(
     db: AsyncSession = Depends(get_db),
     usuario_atual: dict = Depends(get_usuario_logado),
 ):
-    instituicao_id = await _exigir_pari(db, usuario_atual)
+    instituicao_id = await _exigir_agenda_lavanderia(db, usuario_atual)
     return await _ler_lavanderia_cruzeiro(db, instituicao_id, payload)
 
 

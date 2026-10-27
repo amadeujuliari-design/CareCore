@@ -37,4 +37,16 @@ describe('comprasPedidoStatus', () => {
       'Enviado ao fornecedor',
     );
   });
+
+  it('rótulos da emergência e conferência de extrato', () => {
+    assert.equal(
+      rotuloStatusPedidoLista({ status: 'aguardando_pagamento' }),
+      'Aguardando pagamento',
+    );
+    assert.equal(
+      rotuloStatusPedidoLista({ status: 'aguardando_conferencia_extrato' }),
+      'Aguardando conferência do extrato',
+    );
+    assert.equal(varianteBadgeStatusPedido('aguardando_pagamento'), 'warning');
+  });
 });

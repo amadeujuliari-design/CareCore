@@ -109,10 +109,9 @@ describe('comprasItensConsumoUtils', () => {
     assert.equal(inativos.length, 1);
   });
 
-  it('busca também pela embalagem', () => {
+  it('não busca pela embalagem (só prefixo do nome)', () => {
     const lista = filtrarItensConsumo(ITENS, { busca: '5 l', status: 'ativo' });
-    assert.equal(lista.length, 1);
-    assert.equal(lista[0].id, '1');
+    assert.equal(lista.length, 0);
   });
 
   it('busca também por sinônimo', () => {

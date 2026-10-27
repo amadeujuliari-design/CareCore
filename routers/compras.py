@@ -35,6 +35,13 @@ from compras_pedido_fluxo import (
     reabrir_pedido,
     remover_anexo_pedido,
     separar_fila_assinatura,
+    listar_fila_concluidos_infra,
+    listar_fila_nf_pagamento,
+    listar_fila_extrato_projeto,
+    enviar_emergencia_para_pagamento,
+    confirmar_nf_enviada_pagamento,
+    confirmar_ok_final_infra,
+    enviar_nfs_notas_pendentes,
     substituir_contrato_assinado,
     reprovar_pedido,
     rascunho_email_compras,
@@ -231,6 +238,11 @@ class RecebimentoIn(BaseModel):
     divergencia: bool = False
     documento_nf: Optional[str] = None
     itens: list[RecebimentoItemIn] = Field(default_factory=list)
+
+
+class EmailNotasPendentesIn(BaseModel):
+    corpo: Optional[str] = None
+    substituir: bool = False
 
 
 class PagamentoParcelasIn(BaseModel):
@@ -991,6 +1003,131 @@ async def get_fila_assinatura(
             await contratos(separada["contratos_representante"]) if separada["ver_representante"] else []
         ),
     }
+
+
+@router.get("/fila-concluidos-infra/resumo")
+async def get_fila_concluidos_infra_resumo(
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    await _ctx(db, usuario_atual)
+    try:
+        pedidos = await listar_fila_concluidos_infra(db, usuario_atual)
+    except HTTPException:
+        return {"pendentes": 0}
+    return {"pendentes": len(pedidos)}
+
+
+@router.get("/fila-concluidos-infra")
+async def get_fila_concluidos_infra(
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    await _ctx(db, usuario_atual)
+    pedidos = await listar_fila_concluidos_infra(db, usuario_atual)
+    return {
+        "pedidos": [
+            await serializar_pedido(db, pedido, incluir_detalhe=True, usuario=usuario_atual)
+            for pedido in pedidos
+        ]
+    }
+
+
+@router.get("/fila-nf-pagamento/resumo")
+async def get_fila_nf_pagamento_resumo(
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    await _ctx(db, usuario_atual)
+    try:
+        pedidos = await listar_fila_nf_pagamento(db, usuario_atual)
+    except HTTPException:
+        return {"pendentes": 0}
+    return {"pendentes": len(pedidos)}
+
+
+@router.get("/fila-nf-pagamento")
+async def get_fila_nf_pagamento(
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    await _ctx(db, usuario_atual)
+    pedidos = await listar_fila_nf_pagamento(db, usuario_atual)
+    return {
+        "pedidos": [
+            await serializar_pedido(db, pedido, incluir_detalhe=True, usuario=usuario_atual)
+            for pedido in pedidos
+        ]
+    }
+
+
+@router.get("/fila-extrato/resumo")
+async def get_fila_extrato_resumo(
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    await _ctx(db, usuario_atual)
+    pedidos = await listar_fila_extrato_projeto(db, usuario_atual)
+    return {"pendentes": len(pedidos)}
+
+
+@router.post("/pedidos/{pedido_id}/enviar-pagamento")
+async def post_enviar_emergencia_pagamento(
+    pedido_id: str,
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    await _ctx(db, usuario_atual)
+    pedido = await obter_pedido(db, usuario_atual, pedido_id)
+    await enviar_emergencia_para_pagamento(db, usuario_atual, pedido)
+    await db.commit()
+    return await serializar_pedido(db, pedido, incluir_detalhe=True, usuario=usuario_atual)
+
+
+@router.post("/pedidos/{pedido_id}/confirmar-nf-pagamento")
+async def post_confirmar_nf_pagamento(
+    pedido_id: str,
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    await _ctx(db, usuario_atual)
+    pedido = await obter_pedido(db, usuario_atual, pedido_id)
+    await confirmar_nf_enviada_pagamento(db, usuario_atual, pedido)
+    await db.commit()
+    return await serializar_pedido(db, pedido, incluir_detalhe=True, usuario=usuario_atual)
+
+
+@router.post("/pedidos/{pedido_id}/ok-final-infra")
+async def post_ok_final_infra(
+    pedido_id: str,
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    await _ctx(db, usuario_atual)
+    pedido = await obter_pedido(db, usuario_atual, pedido_id)
+    await confirmar_ok_final_infra(db, usuario_atual, pedido)
+    await db.commit()
+    return await serializar_pedido(db, pedido, incluir_detalhe=True, usuario=usuario_atual)
+
+
+@router.post("/pedidos/{pedido_id}/email-notas-pendentes")
+async def post_email_notas_pendentes(
+    pedido_id: str,
+    payload: EmailNotasPendentesIn = Body(default_factory=EmailNotasPendentesIn),
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    await _ctx(db, usuario_atual)
+    pedido = await obter_pedido(db, usuario_atual, pedido_id)
+    resultado = await enviar_nfs_notas_pendentes(
+        db,
+        usuario_atual,
+        pedido,
+        corpo=payload.corpo,
+        substituir=payload.substituir,
+    )
+    await db.commit()
+    return resultado
 
 
 @router.post("/pedidos/{pedido_id}/fila-representante")

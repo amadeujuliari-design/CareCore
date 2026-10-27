@@ -38,10 +38,11 @@ Tipos de novo pedido (`BOTOES_NOVO_PEDIDO` em `utils/comprasPedidoTipos.js`):
 | `/compras/novo/imobilizado` | Bem / imobilizado | Compra de bem. O projeto cota; a Sede Infraestrutura acompanha. |
 | `/compras/novo/manutencao` | Itens de manutenção | Reparos. Quem conduz: Suprimentos (cotação da Sede) ou Infraestrutura (mesmo caminho de bem e serviço). |
 | `/compras/novo/servico` | Prestação de serviço | Serviços. O projeto cota; a Sede Infraestrutura acompanha. |
+| `/compras/novo/emergencia` | Compras emergência | Sem orçamentos. O projeto anexa a NF; a Infraestrutura envia para pagamento. |
 
 ### Fluxo consumo (como o JSX conduz)
 
-1. Projeto cria rascunho (`/compras/novo/consumo`) e envia (`Enviar pedido`) — cotação é da Sede (`TIPOS_COTACAO_SEDE`).
+1. Projeto cria rascunho (`/compras/novo/consumo`) — vale mesmo com a janela fechada ou ainda não aberta, para ir incrementando os itens. O envio (`Enviar pedido`) só na janela — cotação é da Sede (`TIPOS_COTACAO_SEDE`). Se a janela do mês já passou, o rascunho cai no mês seguinte.
 2. Suprimentos (Sede) pede cotação por e-mail e **registra orçamentos** (valor + PDF) na ficha.
 3. Eventos na timeline com `aguardando_confirmacao` exigem botão **Ok** (confirmação explícita da outra parte).
 4. Projeto **escolhe** orçamento (`Escolher`). Essa escolha já deixa o pedido `aprovado`. Se a Sede escolhe, o status continua `aguardando_aprovacao_unidade` até o projeto **Aprovar orçamento**. Pedido em que o projeto já escolheu e o status ficou em aguardando unidade passa a `aprovado` ao abrir a lista ou a ficha.
@@ -126,7 +127,7 @@ Unidade · Tipo · Objeto / categoria · Status · Orçamentos · Atualizado · 
 
 ### Função
 
-Criar rascunho do pedido conforme o tipo; redireciona para a ficha.
+Criar rascunho do pedido conforme o tipo; redireciona para a ficha. Em consumo, o rascunho pode ser salvo com a janela fechada (os itens vão sendo incrementados até o envio, que só ocorre na janela).
 
 No topo, **Copiar um pedido concluído** abre rascunho do mês seguinte. **Inteiro** junta de novo o que foi separado (carne, peixe, alimentação) para dividir no próximo envio. **Dividido** copia só o pedido escolhido.
 
@@ -217,8 +218,8 @@ Botões: Incluir item · Só neste pedido · Sim, atualizar cadastro · Usar un 
 | --- | --- |
 | Busca fornecedor (placeholder: Digite o nome ou e-mail — resultados desde a 1ª letra) | `buscaFornecedorCotacao` |
 | Checkboxes fornecedores | `fornecedoresCotacaoIds` |
-| Buscar na lista de fornecedores… | `buscaFornecedorLancamento` |
-| Fornecedor cadastrado… / Ou nome avulso | `cotacao.fornecedor_id` / `fornecedor_nome` |
+| Buscar na lista de fornecedores… | `buscaFornecedorLancamento` (não aparece em hortifruti) |
+| Fornecedor cadastrado… / Ou nome avulso | `cotacao.fornecedor_id` / `fornecedor_nome` (hortifruti: só nome opcional, sem busca na lista) |
 | R$ 0,00 | `cotacao.valor_reais` * |
 | file PDF/imagem | `arqsCotacao` |
 | + Anexar PDFs / Anexar arquivos (hortifruti) | `comprasAnexarArquivo` tipo `orcamento` |
@@ -240,6 +241,8 @@ Botão: Registrar
 #### Timeline do processo
 
 Registro de **Suprimentos** em azul e do **projeto** em branco. Em observação, parecer e negativa, **Corrigir** altera o texto e guarda o anterior em **Histórico da correção** (quem e quando). Botão **Ok** quando o evento aguarda confirmação de outro usuário. **Voltar** retorna à tela anterior, com mês, projeto e calendário como estavam.
+
+Rascunho de consumo: pode ser criado e editado fora da janela. Só o envio exige janela aberta (ou liberação da Sede).
 
 #### Envio na janela (consumo + rascunho)
 
@@ -306,6 +309,19 @@ Títulos: Revisar pedido de cotação · Revisar pedido de compra · Revisar ree
 ### Função
 
 Duas filas: Infraestrutura (orçamentos e contratos aguardando ok) e representante legal (o que a Infraestrutura enviou + contratos após o ok). Cada fila **agrupa por unidade**, no mesmo padrão da lista de Pedidos: a linha do projeto mostra quantidade, tipo e **data/hora da última atualização**; **Expandir** / **Recolher** abre os itens. Em cada pedido e orçamento aparecem enviado em, atualizado em e a data/hora do arquivo. **Visualizar** abre o PDF/imagem no modal (sem baixar); o nome do arquivo continua servindo para baixar. A Infraestrutura pode **Posicionar e assinar** ou **Enviar para a fila do representante legal**. A Noemi vê Visualizar, assinar com gov.br e anexar o PDF assinado. Ao entrar no sistema, quem assina vê o aviso da fila; Suprimentos não recebe esse aviso.
+
+## 1.5c NFs a pagar — `/compras/fila-nf-pagamento`
+
+**Arquivo:** `carecore-front/src/ComprasFilaInfra.jsx` (`modo="nf"`)  
+**Rota protegida:** ADM Global Compras Infraestrutura + Manutenção
+
+Fila das Compras emergência com NF anexada. Agrupa por unidade, no mesmo padrão de Aguardando assinatura (expandir, visualizar anexos). A Infraestrutura confirma o envio ao pagamento; o projeto é avisado para conferir o extrato e encerrar.
+
+## 1.5d Concluídos Infraestrutura — `/compras/fila-concluidos-infra`
+
+**Arquivo:** `carecore-front/src/ComprasFilaInfra.jsx` (`modo="concluidos"`)
+
+Pedidos de Infraestrutura que o projeto já encerrou (`recebido`) e ainda sem OK final. Agrupa por unidade; **OK final** tira o pedido da fila (continua em Pedidos concluídos). Pedidos **cancelados** de Infraestrutura não entram nesta visão e são apagados do banco.
 
 ## 1.5b Documentos assinados — `/compras/documentos-assinados`
 

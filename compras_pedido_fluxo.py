@@ -23,10 +23,12 @@ from compras_assinatura_pdf import (
 )
 from security import verificar_senha
 from compras_emails import (
+    corpo_padrao_notas_pendentes,
     corpo_padrao_pedido_compra,
     corpo_padrao_solicitacao_cotacao,
     metadados_assinatura,
     preparar_envio_email_compras,
+    sanitizar_corpo_email,
 )
 from compras_patrimonio_utils import reais_para_centavos
 from compras_pedido_pdf import (
@@ -51,6 +53,8 @@ from compras_regras import (
     STATUS_EM_COTACAO,
     STATUS_ENVIADO,
     STATUS_RECEBIDO,
+    STATUS_AGUARDANDO_PAGAMENTO,
+    STATUS_AGUARDANDO_EXTRATO,
     STATUS_REPROVADO,
     STATUS_RASCUNHO,
     STATUS_TERMINAIS_PEDIDO,
@@ -75,6 +79,13 @@ from compras_regras import (
     TIPO_EVENTO_PARECER,
     TIPO_EVENTO_STATUS,
     TIPO_IMOBILIZADO,
+    TIPO_EMERGENCIA,
+    EMAIL_NOTAS_PENDENTES,
+    assunto_solicitacao_cotacao,
+    categoria_email_cotacao,
+    formatar_data_br_compras,
+    tipo_eh_emergencia,
+    tipo_pula_orcamento,
     TIPOS_ANEXO_PEDIDO,
     TIPOS_EVENTO_AGUARDAM_OK,
     TIPOS_EVENTO_PEDIDO,
@@ -99,6 +110,8 @@ from compras_regras import (
     ETAPA_CONTRATO_NOEMI,
     ETAPA_CONTRATO_ROBSON,
     pedido_segue_infraestrutura,
+    pedido_na_fila_concluidos_infra,
+    pedido_na_fila_nf_pagamento,
     tipo_eh_cotacao_projeto,
     tipo_suprimentos_aprova_e_envia,
     tipo_eh_cotacao_sede,
@@ -435,6 +448,8 @@ async def exigir_compra_liberada_infra(db: AsyncSession, pedido: ComprasPedidoDB
 
 
 async def exigir_documentos_finais_infra(db: AsyncSession, pedido: ComprasPedidoDB) -> None:
+    if tipo_pula_orcamento(pedido.tipo):
+        return
     sit = await situacao_contrato_infra(db, pedido)
     if sit["segue"] and not sit["compra_executada"]:
         raise HTTPException(
@@ -504,6 +519,8 @@ async def situacao_pagamento_infra(db: AsyncSession, pedido: ComprasPedidoDB) ->
 
 
 def _exigir_parcela_infra(pedido: ComprasPedidoDB, payload: dict) -> Optional[int]:
+    if tipo_pula_orcamento(pedido.tipo):
+        return None
     if not pedido_segue_infraestrutura(pedido.tipo, getattr(pedido, "destino_compras", None)):
         return None
     qtd = getattr(pedido, "pagamento_qtd_parcelas", None)
@@ -849,7 +866,7 @@ async def extras_serializacao_pedido(db: AsyncSession, pedido: ComprasPedidoDB) 
             )
             for e in eventos
         ],
-        "aviso_cotacoes": aviso_cotacoes_insuficientes(len(cotacoes)),
+        "aviso_cotacoes": aviso_cotacoes_insuficientes(len(cotacoes), pedido.tipo),
         "aviso_alteracao_itens": aviso_alteracao,
         "precisa_revisar_cotacao": precisa_revisar,
         "pode_editar_itens": pedido_itens_podem_editar(pedido.status),
@@ -1821,8 +1838,15 @@ async def rascunho_email_compras(
     inst = await _dados_instituicao(db, pedido)
     projeto = (inst or {}).get("nome") or "projeto"
     if tipo_n == "cotacao":
-        assunto = f"Solicitação de cotação CareCore · {projeto} · {pedido.competencia}"
-        corpo = corpo_padrao_solicitacao_cotacao(projeto=projeto, competencia=pedido.competencia)
+        categoria = categoria_email_cotacao(pedido)
+        data_br = formatar_data_br_compras(data_operacional())
+        assunto = assunto_solicitacao_cotacao(projeto=projeto, categoria=categoria)
+        corpo = corpo_padrao_solicitacao_cotacao(
+            projeto=projeto,
+            competencia=data_br,
+            categoria=categoria,
+            data_br=data_br,
+        )
     else:
         cotacoes = await _cotacoes_ativas(db, pedido.id)
         escolhida = next((c for c in cotacoes if c.escolhida), None)
@@ -2146,8 +2170,15 @@ async def enviar_solicitacao_cotacao_fornecedores(
     )
     anexo_nome = f"solicitacao-cotacao-{numero}.pdf"
     projeto = (inst or {}).get("nome") or "projeto"
-    assunto = f"Solicitação de cotação CareCore · {projeto} · {pedido.competencia}"
-    padrao = corpo_padrao_solicitacao_cotacao(projeto=projeto, competencia=pedido.competencia)
+    categoria = categoria_email_cotacao(pedido)
+    data_br = formatar_data_br_compras(data_operacional())
+    assunto = assunto_solicitacao_cotacao(projeto=projeto, categoria=categoria)
+    padrao = corpo_padrao_solicitacao_cotacao(
+        projeto=projeto,
+        competencia=data_br,
+        categoria=categoria,
+        data_br=data_br,
+    )
     corpo_texto, corpo_html, imagens_inline = preparar_envio_email_compras(
         usuario=usuario,
         corpo=corpo,
@@ -2306,9 +2337,17 @@ async def registrar_nota_fiscal(
     payload: dict,
     pdfs_junto: Optional[list[bytes]] = None,
 ) -> ComprasPedidoNotaFiscalDB:
-    if pedido.status != STATUS_ENVIADO:
-        raise HTTPException(status_code=400, detail="Notas fiscais só após envio ao fornecedor.")
-    await exigir_documentos_finais_infra(db, pedido)
+    if tipo_pula_orcamento(pedido.tipo):
+        if pedido.status not in {
+            STATUS_RASCUNHO,
+            STATUS_AGUARDANDO_PAGAMENTO,
+            STATUS_AGUARDANDO_EXTRATO,
+        }:
+            raise HTTPException(status_code=400, detail="Não é mais possível anexar nota neste pedido.")
+    else:
+        if pedido.status != STATUS_ENVIADO:
+            raise HTTPException(status_code=400, detail="Notas fiscais só após envio ao fornecedor.")
+        await exigir_documentos_finais_infra(db, pedido)
     classe_doc = (payload.get("classe_documento") or CLASSE_DOC_NOTA).strip().lower()
     parcela_numero = _exigir_parcela_infra(pedido, payload)
     segue_infra = pedido_segue_infraestrutura(pedido.tipo, getattr(pedido, "destino_compras", None))
@@ -2484,7 +2523,10 @@ async def remover_nota_fiscal(
     pedido: ComprasPedidoDB,
     nota_id: str,
 ) -> None:
-    if pedido.status != STATUS_ENVIADO:
+    if tipo_pula_orcamento(pedido.tipo):
+        if pedido.status not in {STATUS_RASCUNHO, STATUS_AGUARDANDO_PAGAMENTO}:
+            raise HTTPException(status_code=400, detail="A NF só pode ser removida enquanto o pedido ainda não foi encerrado.")
+    elif pedido.status != STATUS_ENVIADO:
         raise HTTPException(status_code=400, detail="A NF só pode ser removida antes de encerrar o processo.")
     nota = (
         await db.execute(
@@ -2560,31 +2602,42 @@ async def encerrar_pedido(
     pedido: ComprasPedidoDB,
     payload: dict,
 ) -> ComprasPedidoDB:
-    if pedido.status != STATUS_ENVIADO:
+    emergencia = tipo_eh_emergencia(pedido.tipo)
+    if emergencia:
+        if pedido.status != STATUS_AGUARDANDO_EXTRATO:
+            raise HTTPException(
+                status_code=400,
+                detail="Encerramento da emergência só depois da Infraestrutura enviar a NF para pagamento e o projeto conferir o extrato.",
+            )
+    elif pedido.status != STATUS_ENVIADO:
         raise HTTPException(status_code=400, detail="Encerramento só após envio ao fornecedor.")
     notas = await _notas_pedido(db, pedido.id)
     notas_nf = [n for n in notas if (n.tipo_nf or "") != "boleto"]
-    sit_pag = situacao_pagamento_de_registros(pedido, notas, await _anexos_pedido(db, pedido.id))
-    if sit_pag["segue"]:
+    if emergencia:
         if not notas_nf:
             raise HTTPException(status_code=400, detail="Anexe ao menos uma nota fiscal antes de encerrar.")
-        if not sit_pag["completo"]:
+    else:
+        sit_pag = situacao_pagamento_de_registros(pedido, notas, await _anexos_pedido(db, pedido.id))
+        if sit_pag["segue"]:
+            if not notas_nf:
+                raise HTTPException(status_code=400, detail="Anexe ao menos uma nota fiscal antes de encerrar.")
+            if not sit_pag["completo"]:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Registre o pagamento de cada parcela (NF ou comprovante) ou marque que todos os valores já foram pagos.",
+                )
+        elif not notas:
+            raise HTTPException(status_code=400, detail="Anexe ao menos uma nota fiscal antes de encerrar.")
+        eventos_assinatura = (
+            await db.execute(
+                select(ComprasPedidoEventoDB).where(ComprasPedidoEventoDB.pedido_id == pedido.id)
+            )
+        ).scalars().all()
+        if not any("Assinado Digitalmente" in (evento.texto or "") for evento in eventos_assinatura):
             raise HTTPException(
                 status_code=400,
-                detail="Registre o pagamento de cada parcela (NF ou comprovante) ou marque que todos os valores já foram pagos.",
+                detail="Encerre somente depois da assinatura eletrônica do gestor na nota fiscal.",
             )
-    elif not notas:
-        raise HTTPException(status_code=400, detail="Anexe ao menos uma nota fiscal antes de encerrar.")
-    eventos_assinatura = (
-        await db.execute(
-            select(ComprasPedidoEventoDB).where(ComprasPedidoEventoDB.pedido_id == pedido.id)
-        )
-    ).scalars().all()
-    if not any("Assinado Digitalmente" in (evento.texto or "") for evento in eventos_assinatura):
-        raise HTTPException(
-            status_code=400,
-            detail="Encerre somente depois da assinatura eletrônica do gestor na nota fiscal.",
-        )
 
     pedido.recebido_em = agora_operacional_naive()
     pedido.recebido_por_id = _uid(usuario)
@@ -3441,3 +3494,208 @@ async def substituir_contrato_assinado(
         anexo_id=novo.id,
     )
     return novo
+
+
+def _exigir_infraestrutura(usuario: dict) -> None:
+    if perfil_adm_compras_sede(usuario) != "infraestrutura" and not usuario.get("is_manutencao"):
+        raise HTTPException(status_code=403, detail="Somente a Infraestrutura acessa esta fila.")
+
+
+async def listar_fila_concluidos_infra(db: AsyncSession, usuario: dict) -> list[ComprasPedidoDB]:
+    _exigir_infraestrutura(usuario)
+    org_id = usuario.get("organizacao_id")
+    if not org_id:
+        return []
+    rows = list(
+        (
+            await db.execute(
+                select(ComprasPedidoDB).where(
+                    ComprasPedidoDB.organizacao_id == org_id,
+                    ComprasPedidoDB.status == STATUS_RECEBIDO,
+                )
+            )
+        ).scalars().all()
+    )
+    return [
+        pedido
+        for pedido in rows
+        if pedido_na_fila_concluidos_infra(
+            tipo=pedido.tipo,
+            destino=getattr(pedido, "destino_compras", None),
+            status=pedido.status,
+            ok_final_em=getattr(pedido, "infraestrutura_ok_final_em", None),
+        )
+    ]
+
+
+async def listar_fila_nf_pagamento(db: AsyncSession, usuario: dict) -> list[ComprasPedidoDB]:
+    _exigir_infraestrutura(usuario)
+    org_id = usuario.get("organizacao_id")
+    if not org_id:
+        return []
+    rows = list(
+        (
+            await db.execute(
+                select(ComprasPedidoDB).where(
+                    ComprasPedidoDB.organizacao_id == org_id,
+                    ComprasPedidoDB.status == STATUS_AGUARDANDO_PAGAMENTO,
+                    ComprasPedidoDB.tipo == TIPO_EMERGENCIA,
+                )
+            )
+        ).scalars().all()
+    )
+    return [p for p in rows if pedido_na_fila_nf_pagamento(p.tipo, p.status)]
+
+
+async def listar_fila_extrato_projeto(db: AsyncSession, usuario: dict) -> list[ComprasPedidoDB]:
+    org_id = usuario.get("organizacao_id")
+    if not org_id:
+        return []
+    filtros = [
+        ComprasPedidoDB.organizacao_id == org_id,
+        ComprasPedidoDB.status == STATUS_AGUARDANDO_EXTRATO,
+        ComprasPedidoDB.tipo == TIPO_EMERGENCIA,
+    ]
+    if not usuario_e_sede_compras(
+        perfil=str(usuario.get("perfil_acesso") or ""),
+        is_manutencao=bool(usuario.get("is_manutencao")),
+    ):
+        filtros.append(ComprasPedidoDB.instituicao_id == usuario.get("instituicao_id"))
+    return list((await db.execute(select(ComprasPedidoDB).where(*filtros))).scalars().all())
+
+
+async def enviar_emergencia_para_pagamento(
+    db: AsyncSession,
+    usuario: dict,
+    pedido: ComprasPedidoDB,
+) -> ComprasPedidoDB:
+    if not tipo_eh_emergencia(pedido.tipo):
+        raise HTTPException(status_code=400, detail="Somente Compras emergência envia a NF direto para pagamento.")
+    if pedido.status != STATUS_RASCUNHO:
+        raise HTTPException(status_code=400, detail="A NF já foi enviada para pagamento ou o pedido não está em rascunho.")
+    notas = [n for n in await _notas_pedido(db, pedido.id) if (n.tipo_nf or "") != "boleto"]
+    if not notas:
+        raise HTTPException(status_code=400, detail="Anexe a nota fiscal antes de enviar para pagamento.")
+    anterior = pedido.status
+    pedido.status = STATUS_AGUARDANDO_PAGAMENTO
+    pedido.atualizado_em = agora_operacional_naive()
+    await registrar_evento_pedido(
+        db,
+        pedido_id=pedido.id,
+        tipo=TIPO_EVENTO_STATUS,
+        texto="NF enviada para a fila de pagamento da Infraestrutura.",
+        usuario_id=_uid(usuario),
+        status_anterior=anterior,
+        status_novo=STATUS_AGUARDANDO_PAGAMENTO,
+    )
+    return pedido
+
+
+async def confirmar_nf_enviada_pagamento(
+    db: AsyncSession,
+    usuario: dict,
+    pedido: ComprasPedidoDB,
+) -> ComprasPedidoDB:
+    _exigir_infraestrutura(usuario)
+    if not pedido_na_fila_nf_pagamento(pedido.tipo, pedido.status):
+        raise HTTPException(status_code=400, detail="Este pedido não está na fila de NFs a pagar.")
+    anterior = pedido.status
+    pedido.status = STATUS_AGUARDANDO_EXTRATO
+    pedido.nf_para_pagamento_em = agora_operacional_naive()
+    pedido.nf_para_pagamento_por_id = _uid(usuario)
+    pedido.atualizado_em = agora_operacional_naive()
+    await registrar_evento_pedido(
+        db,
+        pedido_id=pedido.id,
+        tipo=TIPO_EVENTO_STATUS,
+        texto="Infraestrutura confirmou o envio da NF para pagamento. Projeto: conferir o extrato.",
+        usuario_id=_uid(usuario),
+        status_anterior=anterior,
+        status_novo=STATUS_AGUARDANDO_EXTRATO,
+    )
+    return pedido
+
+
+async def confirmar_ok_final_infra(
+    db: AsyncSession,
+    usuario: dict,
+    pedido: ComprasPedidoDB,
+) -> ComprasPedidoDB:
+    _exigir_infraestrutura(usuario)
+    if not pedido_na_fila_concluidos_infra(
+        tipo=pedido.tipo,
+        destino=getattr(pedido, "destino_compras", None),
+        status=pedido.status,
+        ok_final_em=getattr(pedido, "infraestrutura_ok_final_em", None),
+    ):
+        raise HTTPException(status_code=400, detail="Este pedido não está na fila de concluídos da Infraestrutura.")
+    pedido.infraestrutura_ok_final_em = agora_operacional_naive()
+    pedido.infraestrutura_ok_final_por_id = _uid(usuario)
+    pedido.atualizado_em = agora_operacional_naive()
+    await registrar_evento_pedido(
+        db,
+        pedido_id=pedido.id,
+        tipo=TIPO_EVENTO_OK,
+        texto="Infraestrutura deu o OK final. Pedido sai da fila de concluídos.",
+        usuario_id=_uid(usuario),
+    )
+    return pedido
+
+
+async def enviar_nfs_notas_pendentes(
+    db: AsyncSession,
+    usuario: dict,
+    pedido: ComprasPedidoDB,
+    *,
+    corpo: str | None = None,
+    substituir: bool = False,
+) -> dict:
+    if pedido.tipo != TIPO_IMOBILIZADO:
+        raise HTTPException(status_code=400, detail="O e-mail de notas pendentes é só para bem / imobilizado.")
+    notas = [n for n in await _notas_pedido(db, pedido.id) if (n.tipo_nf or "") != "boleto"]
+    if not notas:
+        raise HTTPException(status_code=400, detail="Anexe ao menos uma nota fiscal antes de enviar o e-mail.")
+    anexos = await _anexos_pedido(db, pedido.id)
+    por_id = {a.id: a for a in anexos}
+    arquivos = []
+    for nota in notas:
+        anexo = por_id.get(nota.anexo_id) if nota.anexo_id else None
+        if not anexo:
+            continue
+        try:
+            dados, _ctype = ler_bytes_anexo(anexo.caminho_arquivo)
+        except Exception:
+            continue
+        arquivos.append((anexo.nome_arquivo or "nota.pdf", dados, anexo.content_type or "application/pdf"))
+    if not arquivos:
+        raise HTTPException(status_code=400, detail="Não foi possível ler os arquivos das notas fiscais.")
+    padrao = corpo_padrao_notas_pendentes()
+    extra = (corpo or "").strip()
+    if substituir and extra:
+        texto = sanitizar_corpo_email(extra, padrao)
+    elif extra:
+        texto = sanitizar_corpo_email(f"{padrao}\n\n{extra}", padrao)
+    else:
+        texto = padrao
+    primeiro = arquivos[0]
+    extras = arquivos[1:]
+    resultado = enviar_email_smtp_com_anexo(
+        assunto="Notas fiscais — CareCore+",
+        corpo=texto,
+        para=EMAIL_NOTAS_PENDENTES,
+        anexo_nome=primeiro[0],
+        anexo_bytes=primeiro[1],
+        anexo_content_type=primeiro[2],
+        anexos_extras=extras or None,
+    )
+    if not resultado.enviado:
+        raise HTTPException(status_code=502, detail=resultado.erro or "Não foi possível enviar o e-mail.")
+    await registrar_evento_pedido(
+        db,
+        pedido_id=pedido.id,
+        tipo=TIPO_EVENTO_EMAIL,
+        texto=f"Notas fiscais enviadas para {EMAIL_NOTAS_PENDENTES}.",
+        usuario_id=_uid(usuario),
+    )
+    return {"ok": True, "para": EMAIL_NOTAS_PENDENTES, "anexos": len(arquivos)}
+

@@ -30,7 +30,7 @@ import { encontrarConviventePorCodigo } from './utils/conviventeIdentificacaoUti
 import { useConfigOperacional } from './hooks/useConfigOperacional';
 import { useAuth } from './context/AuthContext';
 import { usuarioEhGlobalPuro } from './utils/rbacUtils';
-import { projetoEhReencontroPari } from './utils/projetoPari';
+import { projetoLavanderiaSemSecagem, projetoUsaAgendaLavanderia } from './utils/projetoPari';
 import PariLavanderia from './PariLavanderia';
 import { moduloAtivo, projetoOcultaAcomodacoes } from './config/configOperacionalDefaults';
 
@@ -82,6 +82,7 @@ export default function Lavanderia() {
   const { usuario } = useAuth();
   const somenteLeitura = usuarioEhGlobalPuro(usuario);
   const nomePari = nomeProjeto || usuario?.projeto_nome;
+  const lavanderiaSemSecagem = projetoLavanderiaSemSecagem(nomePari);
   const semControlePecas = !carregandoConfig && (
     projetoOcultaAcomodacoes(nomeProjeto)
     || configOperacional?.preset_casa_porto === true
@@ -561,7 +562,7 @@ export default function Lavanderia() {
     }
   };
 
-  if (projetoEhReencontroPari(nomePari)) {
+  if (projetoUsaAgendaLavanderia(nomePari)) {
     return <PariLavanderia />;
   }
 
@@ -578,7 +579,9 @@ export default function Lavanderia() {
           title="Lavanderia"
           subtitle={somenteLeitura
             ? 'Consulta das peças em lavagem, prazo e retiradas. Sem registro nem baixa.'
-            : 'Controle de peças deixadas para lavagem/secagem, prazo de 48h e retirada conferida.'}
+            : lavanderiaSemSecagem
+              ? 'Controle de peças deixadas para lavagem, prazo de 48h e retirada conferida.'
+              : 'Controle de peças deixadas para lavagem/secagem, prazo de 48h e retirada conferida.'}
           icon="L"
           actions={(
             <>
@@ -715,7 +718,9 @@ export default function Lavanderia() {
                     onChange={(event) => atualizarCampo('observacao_entrega', event.target.value)}
                     rows={3}
                     className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm outline-none"
-                    placeholder="Ex.: roupas deixadas para secagem, volume especial, sacola identificada..."
+                    placeholder={lavanderiaSemSecagem
+                      ? 'Ex.: volume especial, sacola identificada...'
+                      : 'Ex.: roupas deixadas para secagem, volume especial, sacola identificada...'}
                   />
                 </div>
               </div>

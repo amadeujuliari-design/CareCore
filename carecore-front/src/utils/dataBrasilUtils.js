@@ -61,6 +61,12 @@ export function formatarDataHoraBr(valor) {
   }
 }
 
+export function formatarCompetenciaBr(competencia) {
+  const texto = String(competencia || '').trim();
+  if (/^\d{4}-\d{2}$/.test(texto)) return `${texto.slice(5, 7)}/${texto.slice(0, 4)}`;
+  return texto;
+}
+
 export function parseDataIso(valor) {
   if (!valor) return null;
   const texto = String(valor).trim().slice(0, 10);

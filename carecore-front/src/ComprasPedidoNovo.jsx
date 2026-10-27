@@ -29,6 +29,7 @@ import {
   TIPO_IMOBILIZADO,
   TIPO_MANUTENCAO,
   TIPO_SERVICO,
+  TIPO_EMERGENCIA,
   competenciaPadraoDoSegmento,
   itensConsumoDoSegmentoPedido,
   rotuloTipoPedido,
@@ -244,6 +245,16 @@ export default function ComprasPedidoNovo() {
           setSalvando(false);
           return;
         }
+        if (tipo === TIPO_EMERGENCIA) {
+          const centavos = reaisParaCentavos(form.valor_estimado_reais);
+          if (centavos == null || centavos <= 0) {
+            setErro('Informe o valor total da compra.');
+            setSalvando(false);
+            return;
+          }
+          payload.valor_estimado_centavos = centavos;
+          payload.valor_estimado_reais = centavos / 100;
+        }
       } else if (tipo === TIPO_MANUTENCAO) {
         payload.destino_compras = 'suprimentos';
       }
@@ -318,7 +329,7 @@ export default function ComprasPedidoNovo() {
               <div className="rounded-xl bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">{erro}</div>
             ) : null}
 
-            {tipo === TIPO_IMOBILIZADO || tipo === TIPO_SERVICO ? null : (
+            {tipo === TIPO_IMOBILIZADO || tipo === TIPO_SERVICO || tipo === TIPO_EMERGENCIA ? null : (
             <SectionCard
               title="Copiar um pedido concluído"
               subtitle="Abre um rascunho do mês seguinte para editar. Inteiro junta de novo o que foi separado (carne, peixe, alimentação). Dividido copia só o pedido escolhido."
@@ -595,6 +606,8 @@ export default function ComprasPedidoNovo() {
                     ? 'Escreva com o máximo de informações e detalhes o bem a ser adquirido.'
                     : tipo === TIPO_SERVICO
                       ? 'Escreva com o máximo de informações e detalhes o serviço a ser contratado.'
+                      : tipo === TIPO_EMERGENCIA
+                      ? 'Informe a compra, o valor total e o fornecedor. Não há orçamentos nesta modalidade.'
                       : 'Escreva com o máximo de informações e detalhes o que será adquirido.'
                 }
               >
@@ -622,6 +635,19 @@ export default function ComprasPedidoNovo() {
                       }
                     />
                   </label>
+                  {tipo === TIPO_EMERGENCIA ? (
+                    <label>
+                      <span className="mb-1 block text-xs font-semibold text-slate-600">Valor total *</span>
+                      <input
+                        className={inputClass}
+                        value={form.valor_estimado_reais}
+                        onChange={(e) => atualizar('valor_estimado_reais', mascararMoedaDigitando(e.target.value))}
+                        placeholder="R$ 0,00"
+                        inputMode="numeric"
+                        required
+                      />
+                    </label>
+                  ) : null}
                   <label>
                     <span className="mb-1 block text-xs font-semibold text-slate-600">Nome do fornecedor *</span>
                     <input
@@ -747,7 +773,7 @@ export default function ComprasPedidoNovo() {
               <p className="mt-2 text-xs text-slate-500">
                 {cotacaoProjeto
                   ? 'Inclua os itens necessários e depois, na ficha, peça orçamento, anexe PDFs e envie à Sede.'
-                  : 'Inclua todos os itens da janela e então crie o rascunho. Ainda dá para ajustar na ficha depois.'}
+                  : 'Pode ir montando o rascunho mesmo com a janela fechada. O envio só acontece quando a janela abrir. Ainda dá para ajustar na ficha depois.'}
               </p>
             </SectionCard>
             )}

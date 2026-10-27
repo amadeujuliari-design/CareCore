@@ -11,7 +11,7 @@ import BannerSomenteLeituraGlobal from './components/BannerSomenteLeituraGlobal'
 import { AppShell, MainShell, PageHeader, PremiumButton, ScrollArea } from './components/PremiumUI';
 import { useAuth } from './context/AuthContext';
 import { projetoOcultaAcomodacoes } from './config/configOperacionalDefaults';
-import { projetoEhCaeICentro, projetoSemFluxoPortaria } from './utils/projetoPari';
+import { projetoEhCaeICentro, projetoEhCtaCaninde, projetoSemFluxoPortaria } from './utils/projetoPari';
 import { API_ROOT } from './config/apiBase';
 import { useDeviceInfo } from './hooks/useDeviceInfo';
 import { useLeitorUsbGlobal } from './hooks/useLeitorUsbGlobal';
@@ -234,6 +234,11 @@ export default function RotinaDiaria() {
   useEffect(() => {
     if (semPortaria) setTipoBipagemAutomatica('interacao');
   }, [semPortaria]);
+  useEffect(() => {
+    if (!carregandoConfig && projetoEhCtaCaninde(nomeProjetoRotina)) {
+      navigate('/rotina/lavanderia', { replace: true });
+    }
+  }, [carregandoConfig, nomeProjetoRotina, navigate]);
   const [interacaoSelecionada, setInteracaoSelecionada] = useState('Almoço');
   const [interacaoConfirmacao, setInteracaoConfirmacao] = useState(null);
   const [refeicaoExtraPendente, setRefeicaoExtraPendente] = useState(null);

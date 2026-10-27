@@ -71,6 +71,7 @@ describe('App routes contract', () => {
       '../Usuarios',
       '../Compras',
       '../ComprasPedido',
+      '../ComprasFilaInfra',
       '../NfpCreditos',
       '../NfpAgentes',
       '../NfpDoadores',

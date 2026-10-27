@@ -57,6 +57,7 @@ from compras_regras import (
     STATUS_REPROVADO,
     STATUS_TERMINAIS_PEDIDO,
     TIPO_CONSUMO,
+    TIPO_EMERGENCIA,
     TIPOS_COTACAO_PROJETO,
     TIPO_EVENTO_ITENS,
     TIPO_EVENTO_OBSERVACAO,
@@ -74,6 +75,7 @@ from compras_regras import (
     normalizar_tipo_arquivo_bem,
     tipo_arquivo_bem_de_anexo_pedido,
     competencia_de_data,
+    dia_previsto_rascunho_consumo,
     competencia_mes_seguinte,
     data_operacional,
     dias_liberados_janela,
@@ -115,8 +117,12 @@ from compras_regras import (
     DESTINO_COMPRAS_INFRAESTRUTURA,
     DESTINO_COMPRAS_SUPRIMENTOS,
     pedido_segue_infraestrutura,
+    pedido_na_fila_concluidos_infra,
+    pedido_na_fila_nf_pagamento,
     corrigir_acento_quebrado,
+    texto_cadastro_caixa_alta,
     tipo_eh_cotacao_projeto,
+    tipo_eh_emergencia,
     sede_exige_aprovacao_previa_unidade,
     tipo_eh_cotacao_sede,
     tipo_exige_janela,
@@ -165,6 +171,7 @@ from models import (
     ComprasPedidoDB,
     ComprasPedidoAnexoDB,
     ComprasPedidoEventoDB,
+    ComprasPedidoEventoRevisaoDB,
     ComprasPedidoItemDB,
     ComprasPedidoNotaFiscalDB,
     InstituicaoDB,
@@ -245,7 +252,11 @@ def _aplicar_cabecalho_cotacao_projeto(
     obrigatorio: bool = False,
 ) -> None:
     """Aplica campos de bem/manutenção/serviço. Consumo ignora (não grava)."""
-    if not tipo_eh_cotacao_projeto(pedido.tipo) and pedido.tipo != TIPO_MANUTENCAO:
+    if (
+        not tipo_eh_cotacao_projeto(pedido.tipo)
+        and pedido.tipo != TIPO_MANUTENCAO
+        and not tipo_eh_emergencia(pedido.tipo)
+    ):
         return
 
     if "titulo" in payload:
@@ -279,10 +290,10 @@ def _aplicar_cabecalho_cotacao_projeto(
         pedido.tipo_manutencao = tm
     if "escopo_servico" in payload:
         pedido.escopo_servico = (payload.get("escopo_servico") or "").strip() or None
-    if "valor_estimado_centavos" in payload:
-        ve = payload.get("valor_estimado_centavos")
-        pedido.valor_estimado_centavos = int(ve) if ve is not None and str(ve).strip() != "" else None
-    elif "valor_estimado_reais" in payload and payload.get("valor_estimado_reais") is not None:
+    ve = payload.get("valor_estimado_centavos")
+    if ve is not None and str(ve).strip() != "":
+        pedido.valor_estimado_centavos = int(ve)
+    elif payload.get("valor_estimado_reais") is not None:
         pedido.valor_estimado_centavos = int(round(float(payload["valor_estimado_reais"]) * 100))
     if "fonte_recurso_id" in payload:
         pedido.fonte_recurso_id = payload.get("fonte_recurso_id") or None
@@ -498,7 +509,7 @@ def _iso(valor: Optional[datetime | date]) -> Optional[str]:
     if valor is None:
         return None
     if isinstance(valor, datetime):
-        return valor.isoformat(sep=" ", timespec="seconds")
+        return valor.isoformat(sep=" ", timespec="minutes")
     return valor.isoformat()
 
 
@@ -609,6 +620,17 @@ async def serializar_pedido(
         "suprimentos_lida": bool(getattr(pedido, "suprimentos_lida_em", None)),
         "nf_impressa_em": _iso(getattr(pedido, "nf_impressa_em", None)),
         "nf_impressa": bool(getattr(pedido, "nf_impressa_em", None)),
+        "infraestrutura_ok_final_em": _iso(getattr(pedido, "infraestrutura_ok_final_em", None)),
+        "infraestrutura_ok_final": bool(getattr(pedido, "infraestrutura_ok_final_em", None)),
+        "nf_para_pagamento_em": _iso(getattr(pedido, "nf_para_pagamento_em", None)),
+        "na_fila_concluidos_infra": pedido_na_fila_concluidos_infra(
+            tipo=pedido.tipo,
+            destino=getattr(pedido, "destino_compras", None),
+            status=pedido.status,
+            ok_final_em=getattr(pedido, "infraestrutura_ok_final_em", None),
+        ),
+        "na_fila_nf_pagamento": pedido_na_fila_nf_pagamento(pedido.tipo, pedido.status),
+        "pula_orcamento": tipo_eh_emergencia(pedido.tipo),
         "recebimento_observacao": pedido.recebimento_observacao,
         "recebimento_divergencia": bool(pedido.recebimento_divergencia),
         "pedido_origem_id": getattr(pedido, "pedido_origem_id", None),
@@ -1007,6 +1029,7 @@ async def listar_pedidos(
     tipo: Optional[str] = None,
 ) -> list[dict]:
     filtros = [ComprasPedidoDB.organizacao_id == _org_id(usuario)]
+    classe_sede = None
     if not _sede(usuario):
         filtros.append(ComprasPedidoDB.instituicao_id == usuario.get("instituicao_id"))
     else:
@@ -1030,7 +1053,7 @@ async def listar_pedidos(
         if classe_sede == "infraestrutura":
             filtros.append(
                 or_(
-                    ComprasPedidoDB.tipo.in_((TIPO_IMOBILIZADO, TIPO_SERVICO)),
+                    ComprasPedidoDB.tipo.in_((TIPO_IMOBILIZADO, TIPO_SERVICO, TIPO_EMERGENCIA)),
                     and_(
                         ComprasPedidoDB.tipo == TIPO_MANUTENCAO,
                         ComprasPedidoDB.destino_compras == DESTINO_COMPRAS_INFRAESTRUTURA,
@@ -1059,7 +1082,10 @@ async def listar_pedidos(
     else:
         grupo = (status_grupo or "").strip().lower()
         if grupo in {"terminais", "concluidos", "encerrados"}:
-            filtros.append(ComprasPedidoDB.status.in_(tuple(STATUS_TERMINAIS_PEDIDO)))
+            if classe_sede == "infraestrutura":
+                filtros.append(ComprasPedidoDB.status.in_((STATUS_RECEBIDO, STATUS_REPROVADO)))
+            else:
+                filtros.append(ComprasPedidoDB.status.in_(tuple(STATUS_TERMINAIS_PEDIDO)))
         elif grupo in {"abertos", "andamento", "em_andamento"}:
             filtros.append(ComprasPedidoDB.status.notin_(tuple(STATUS_TERMINAIS_PEDIDO)))
     if tipo:
@@ -1093,7 +1119,7 @@ async def criar_pedido(
     if tipo not in TIPOS_PEDIDO:
         raise HTTPException(
             status_code=400,
-            detail="Tipo inválido. Use consumo, hortifruti, imobilizado, manutencao ou servico.",
+            detail="Tipo inválido. Use consumo, hortifruti, imobilizado, manutencao, servico ou emergencia.",
         )
 
     try:
@@ -1146,11 +1172,21 @@ async def criar_pedido(
         competencia = competencia or competencia_de_data(data_prevista)
     competencia = normalizar_competencia(competencia or competencia_de_data(data_operacional()))
     if tipo == TIPO_CONSUMO and data_prevista is None:
+        hoje = data_operacional()
         janela_comp = await _janela_da_competencia(db, _org_id(usuario), competencia)
-        if janela_comp:
-            hoje = data_operacional()
-            candidatos = [d for d in dias_liberados_janela(janela_comp.data_inicio, janela_comp.data_fim) if d >= hoje]
-            data_prevista = candidatos[0] if candidatos else janela_comp.data_inicio
+        data_prevista = dia_previsto_rascunho_consumo(
+            hoje=hoje,
+            data_inicio=janela_comp.data_inicio if janela_comp else None,
+            data_fim=janela_comp.data_fim if janela_comp else None,
+        )
+        if data_prevista is None:
+            competencia = competencia_mes_seguinte(competencia)
+            janela_prox = await _janela_da_competencia(db, _org_id(usuario), competencia)
+            data_prevista = dia_previsto_rascunho_consumo(
+                hoje=hoje,
+                data_inicio=janela_prox.data_inicio if janela_prox else None,
+                data_fim=janela_prox.data_fim if janela_prox else None,
+            )
     await exigir_janela_consumo(
         db,
         organizacao_id=_org_id(usuario),
@@ -1189,6 +1225,8 @@ async def criar_pedido(
         pedido.fornecedor_pedido_info = (payload.get("fornecedor_pedido_info") or "").strip() or None
         pedido.destino_compras = DESTINO_COMPRAS_INFRAESTRUTURA
         pedido.observacao = None
+        if tipo_eh_emergencia(tipo) and not pedido.valor_estimado_centavos:
+            raise HTTPException(status_code=400, detail="Informe o valor total da compra.")
     elif tipo == TIPO_MANUTENCAO:
         pedido.destino_compras = DESTINO_COMPRAS_SUPRIMENTOS
     db.add(pedido)
@@ -2342,6 +2380,89 @@ async def excluir_rascunho_pedido(db: AsyncSession, usuario: dict, pedido: Compr
     await db.delete(pedido)
 
 
+async def _apagar_pedido_compras_e_filhos(db: AsyncSession, pedido: ComprasPedidoDB) -> None:
+    """Remove pedido e registros ligados. Usado para cancelados de Infraestrutura."""
+    evento_ids = list(
+        (
+            await db.execute(
+                select(ComprasPedidoEventoDB.id).where(ComprasPedidoEventoDB.pedido_id == pedido.id)
+            )
+        ).scalars().all()
+    )
+    if evento_ids:
+        await db.execute(
+            delete(ComprasPedidoEventoRevisaoDB).where(
+                ComprasPedidoEventoRevisaoDB.evento_id.in_(evento_ids)
+            )
+        )
+    await db.execute(
+        update(ComprasPatrimonioDB)
+        .where(ComprasPatrimonioDB.pedido_id == pedido.id)
+        .values(pedido_id=None)
+    )
+    await db.execute(
+        delete(ComprasPedidoNotaFiscalDB).where(ComprasPedidoNotaFiscalDB.pedido_id == pedido.id)
+    )
+    await db.execute(
+        delete(ComprasPedidoEventoDB).where(ComprasPedidoEventoDB.pedido_id == pedido.id)
+    )
+    await db.execute(
+        delete(ComprasPedidoAnexoDB).where(ComprasPedidoAnexoDB.pedido_id == pedido.id)
+    )
+    await db.execute(delete(ComprasCotacaoDB).where(ComprasCotacaoDB.pedido_id == pedido.id))
+    await db.execute(delete(ComprasPedidoItemDB).where(ComprasPedidoItemDB.pedido_id == pedido.id))
+    await db.flush()
+    await db.delete(pedido)
+
+
+async def apagar_pedidos_cancelados_infra(db: AsyncSession, *, organizacao_id: Optional[str] = None) -> dict:
+    """Apaga de verdade os pedidos cancelados que seguem Infraestrutura."""
+    filtros = [ComprasPedidoDB.status == STATUS_CANCELADO]
+    if organizacao_id:
+        filtros.append(ComprasPedidoDB.organizacao_id == organizacao_id)
+    rows = list((await db.execute(select(ComprasPedidoDB).where(*filtros))).scalars().all())
+    apagados = []
+    for pedido in rows:
+        if not pedido_segue_infraestrutura(pedido.tipo, getattr(pedido, "destino_compras", None)):
+            continue
+        apagados.append({
+            "id": pedido.id,
+            "tipo": pedido.tipo,
+            "instituicao_id": pedido.instituicao_id,
+            "titulo": getattr(pedido, "titulo", None) or getattr(pedido, "info_pedido", None),
+        })
+        await _apagar_pedido_compras_e_filhos(db, pedido)
+    return {"apagados": len(apagados), "itens": apagados}
+
+
+async def sanitizar_cadastros_compras_caixa_alta(db: AsyncSession, *, organizacao_id: Optional[str] = None) -> dict:
+    """Força nome de item e fornecedor em caixa alta."""
+    filtros_item = []
+    filtros_forn = []
+    if organizacao_id:
+        filtros_item.append(ComprasItemConsumoDB.organizacao_id == organizacao_id)
+        filtros_forn.append(ComprasFornecedorDB.organizacao_id == organizacao_id)
+    itens = list((await db.execute(select(ComprasItemConsumoDB).where(*filtros_item) if filtros_item else select(ComprasItemConsumoDB))).scalars().all())
+    fornecedores = list((await db.execute(select(ComprasFornecedorDB).where(*filtros_forn) if filtros_forn else select(ComprasFornecedorDB))).scalars().all())
+    n_itens = 0
+    n_forn = 0
+    for item in itens:
+        nova = texto_cadastro_caixa_alta(item.descricao)
+        if nova and nova != (item.descricao or ""):
+            item.descricao = nova
+            n_itens += 1
+        if item.marca_preferencial:
+            marca = texto_cadastro_caixa_alta(item.marca_preferencial)
+            if marca != item.marca_preferencial:
+                item.marca_preferencial = marca
+    for forn in fornecedores:
+        nova = texto_cadastro_caixa_alta(forn.nome)
+        if nova and nova != (forn.nome or ""):
+            forn.nome = nova
+            n_forn += 1
+    return {"itens": n_itens, "fornecedores": n_forn}
+
+
 async def salvar_janela(
     db: AsyncSession,
     usuario: dict,
@@ -2753,7 +2874,7 @@ async def _sync_projetos_fornecedor(
 
 async def salvar_fornecedor(db: AsyncSession, usuario: dict, payload: dict, fornecedor_id: Optional[str] = None):
     exigir_cadastro_mestre_compras(usuario)
-    nome = (payload.get("nome") or "").strip()
+    nome = texto_cadastro_caixa_alta(payload.get("nome"))
     if not nome:
         raise HTTPException(status_code=400, detail="Nome do fornecedor obrigatório.")
     if fornecedor_id:

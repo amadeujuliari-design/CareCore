@@ -52,7 +52,8 @@ import {
   competenciaAtual,
 } from './services/comprasService';
 import { usuarioEhAdmCompras, usuarioEhAdmComprasSuprimentos, usuarioEhGlobalPuro, usuarioEhManutencao, usuarioPodeCadastrarMestreCompras } from './utils/rbacUtils';
-import { BOTOES_NOVO_PEDIDO, pedidoListaEhInfraestrutura, rotuloTipoPedido } from './utils/comprasPedidoTipos';
+import { formatarDataHoraBr } from './utils/dataBrasilUtils';
+import { BOTOES_NOVO_PEDIDO, pedidoListaEhInfraestrutura, rotuloTipoPedido, tipoEhEmergencia } from './utils/comprasPedidoTipos';
 import {
   progressoOrcamentosTexto,
   rotuloStatusPedidoLista,
@@ -87,6 +88,7 @@ function valorOrdenacaoPedido(pedido, coluna) {
     case 'status':
       return String(rotuloStatusPedidoLista(pedido) || pedido.status || '').trim();
     case 'orcamentos': {
+      if (pedido.pula_orcamento || tipoEhEmergencia(pedido.tipo)) return 0;
       if (pedido.cotacao_sede || pedido.cotacao_projeto) {
         return Number(pedido.orcamentos_com_anexo ?? 0);
       }
@@ -335,7 +337,7 @@ function BlocoListaPedidos({
                         <td className="text-slate-500">—</td>
                         <td className="text-xs font-medium text-slate-700">{grupo.statusResumo || '—'}</td>
                         <td className="tabular-nums text-slate-700">{grupo.orcamentos}</td>
-                        <td>{grupo.atualizado || '—'}</td>
+                        <td>{formatarDataHoraBr(grupo.atualizado) || '—'}</td>
                         {caixaSuprimentos ? (
                           <td className="text-xs font-semibold text-sky-900">
                             {grupo.itens.filter((p) => !p.suprimentos_lida).length
@@ -373,11 +375,13 @@ function BlocoListaPedidos({
                               </PremiumBadge>
                             </td>
                             <td className="tabular-nums text-slate-700">
-                              {(pedido.cotacao_sede || pedido.cotacao_projeto)
-                                ? (progressoOrcamentosTexto(pedido) || '—')
-                                : (pedido.qtd_orcamentos ?? 0)}
+                              {(pedido.pula_orcamento || tipoEhEmergencia(pedido.tipo))
+                                ? '—'
+                                : (pedido.cotacao_sede || pedido.cotacao_projeto)
+                                  ? (progressoOrcamentosTexto(pedido) || '—')
+                                  : (pedido.qtd_orcamentos ?? 0)}
                             </td>
-                            <td>{pedido.atualizado_em || '—'}</td>
+                            <td>{formatarDataHoraBr(pedido.atualizado_em) || '—'}</td>
                             {caixaSuprimentos ? (
                               <td><SeloCaixaSuprimentos lida={pedido.suprimentos_lida} /></td>
                             ) : null}
@@ -415,11 +419,13 @@ function BlocoListaPedidos({
                       </PremiumBadge>
                     </td>
                     <td className="tabular-nums text-slate-700">
-                      {(pedido.cotacao_sede || pedido.cotacao_projeto)
-                        ? (progressoOrcamentosTexto(pedido) || '—')
-                        : (pedido.qtd_orcamentos ?? 0)}
+                      {(pedido.pula_orcamento || tipoEhEmergencia(pedido.tipo))
+                        ? '—'
+                        : (pedido.cotacao_sede || pedido.cotacao_projeto)
+                          ? (progressoOrcamentosTexto(pedido) || '—')
+                          : (pedido.qtd_orcamentos ?? 0)}
                     </td>
-                    <td>{pedido.atualizado_em || '—'}</td>
+                    <td>{formatarDataHoraBr(pedido.atualizado_em) || '—'}</td>
                     {caixaSuprimentos ? (
                       <td><SeloCaixaSuprimentos lida={pedido.suprimentos_lida} /></td>
                     ) : null}

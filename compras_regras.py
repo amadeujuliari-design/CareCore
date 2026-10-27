@@ -12,12 +12,14 @@ TIPO_IMOBILIZADO = "imobilizado"
 TIPO_MANUTENCAO = "manutencao"
 TIPO_SERVICO = "servico"
 TIPO_HORTIFRUTI = "hortifruti"
+TIPO_EMERGENCIA = "emergencia"
 TIPOS_PEDIDO = (
     TIPO_CONSUMO,
     TIPO_IMOBILIZADO,
     TIPO_MANUTENCAO,
     TIPO_SERVICO,
     TIPO_HORTIFRUTI,
+    TIPO_EMERGENCIA,
 )
 
 # Cotação conduzida pelo projeto (ADM Pedidos): bem e prestação de serviço.
@@ -27,7 +29,7 @@ TIPOS_COTACAO_SEDE = frozenset({TIPO_CONSUMO, TIPO_HORTIFRUTI, TIPO_MANUTENCAO})
 
 # Visão por classe de ADM Global Compras na Sede.
 TIPOS_VISAO_SUPRIMENTOS = frozenset({TIPO_CONSUMO, TIPO_HORTIFRUTI, TIPO_MANUTENCAO})
-TIPOS_VISAO_INFRAESTRUTURA = frozenset({TIPO_IMOBILIZADO, TIPO_SERVICO})
+TIPOS_VISAO_INFRAESTRUTURA = frozenset({TIPO_IMOBILIZADO, TIPO_SERVICO, TIPO_EMERGENCIA})
 
 DESTINO_COMPRAS_SUPRIMENTOS = "suprimentos"
 DESTINO_COMPRAS_INFRAESTRUTURA = "infraestrutura"
@@ -64,6 +66,7 @@ ROTULO_TIPO_PEDIDO = {
     TIPO_MANUTENCAO: "Itens de manutenção",
     TIPO_SERVICO: "Prestação de serviço",
     TIPO_HORTIFRUTI: "Hortifruti",
+    TIPO_EMERGENCIA: "Compras emergência",
 }
 
 STATUS_RASCUNHO = "rascunho"
@@ -76,6 +79,8 @@ STATUS_AGUARDANDO_SEDE = "aguardando_aprovacao_sede"
 STATUS_APROVADO = "aprovado"
 STATUS_ENVIADO = "enviado_fornecedor"
 STATUS_RECEBIDO = "recebido"
+STATUS_AGUARDANDO_PAGAMENTO = "aguardando_pagamento"
+STATUS_AGUARDANDO_EXTRATO = "aguardando_conferencia_extrato"
 STATUS_CANCELADO = "cancelado"
 STATUS_REPROVADO = "reprovado"
 
@@ -338,7 +343,7 @@ def segmento_do_tipo_pedido(tipo: Optional[str]) -> Optional[str]:
         return SEGMENTO_IMOBILIZADO
     if t == TIPO_HORTIFRUTI:
         return SEGMENTO_HORTIFRUTI
-    if t == TIPO_SERVICO:
+    if t == TIPO_SERVICO or t == TIPO_EMERGENCIA:
         return None
     return SEGMENTO_CONSUMO
 
@@ -472,9 +477,9 @@ def competencia_mes_seguinte(competencia: str) -> str:
 
 
 def pedido_segue_infraestrutura(tipo: Optional[str], destino: Optional[str] = None) -> bool:
-    """Bem, serviço e manutenção dirigida à Infraestrutura seguem o fluxo do Robson."""
+    """Bem, serviço, emergência e manutenção dirigida à Infraestrutura seguem o fluxo do Robson."""
     chave = (tipo or "").strip().lower()
-    if chave in {TIPO_IMOBILIZADO, TIPO_SERVICO}:
+    if chave in {TIPO_IMOBILIZADO, TIPO_SERVICO, TIPO_EMERGENCIA}:
         return True
     return (
         chave == TIPO_MANUTENCAO
@@ -671,21 +676,24 @@ def pode_criar_rascunho_consumo(
     data_prevista: Optional[date],
     liberacao_projeto: bool = False,
 ) -> tuple[bool, str]:
-    if data_prevista is None:
-        return False, "Escolha no calendário o dia liberado para este rascunho."
-    if data_prevista < hoje:
-        return False, "Este dia já passou. Escolha um dia liberado ainda disponível."
+    """Rascunho pode ser montado a qualquer momento. O envio é que depende da janela."""
+    del hoje, data_inicio, data_fim, liberacao_projeto
+    if data_prevista is not None and data_prevista.weekday() >= 5:
+        return False, "Só é possível preparar rascunho em um dia útil."
+    return True, ""
+
+
+def dia_previsto_rascunho_consumo(
+    *,
+    hoje: date,
+    data_inicio: Optional[date],
+    data_fim: Optional[date],
+) -> Optional[date]:
+    """Primeiro dia liberado ainda disponível nesta janela; None se a janela já passou ou não existe."""
     if data_inicio is None or data_fim is None:
-        if liberacao_projeto:
-            return True, ""
-        return False, "A Sede ainda não publicou a janela desta competência."
-    if data_inicio <= data_prevista <= data_fim:
-        if data_prevista.weekday() >= 5:
-            return False, "Só é possível preparar rascunho em um dia útil liberado."
-        return True, ""
-    if liberacao_projeto:
-        return True, ""
-    return False, "Só é possível preparar rascunho em um dia marcado como liberado."
+        return None
+    candidatos = [d for d in dias_liberados_janela(data_inicio, data_fim) if d >= hoje]
+    return candidatos[0] if candidatos else None
 
 
 def pode_enviar_consumo(
@@ -1130,6 +1138,66 @@ def tipo_pula_aprovacao_sede(tipo: Optional[str]) -> bool:
     return False
 
 
+def tipo_eh_emergencia(tipo: Optional[str]) -> bool:
+    return (tipo or "").strip().lower() == TIPO_EMERGENCIA
+
+
+def tipo_pula_orcamento(tipo: Optional[str]) -> bool:
+    """Compras emergência: o projeto anexa a NF e envia direto para pagamento."""
+    return tipo_eh_emergencia(tipo)
+
+
+EMAIL_NOTAS_PENDENTES = "notaspendentes@aeb-brasil.org.br"
+
+
+def texto_cadastro_caixa_alta(valor: Optional[str]) -> str:
+    return re.sub(r"\s+", " ", (valor or "").strip()).upper()
+
+
+def formatar_data_br_compras(dia: date | None) -> str:
+    if dia is None:
+        return ""
+    return f"{dia.day:02d}/{dia.month:02d}/{dia.year:04d}"
+
+
+def formatar_competencia_br(competencia: Optional[str]) -> str:
+    texto = (competencia or "").strip()
+    if re.match(r"^\d{4}-\d{2}$", texto):
+        return f"{texto[5:7]}/{texto[:4]}"
+    return texto
+
+
+def categoria_email_cotacao(pedido) -> str:
+    nome = (getattr(pedido, "categoria_split_nome", None) or "").strip()
+    if nome:
+        return nome.upper()
+    return rotulo_tipo_pedido(getattr(pedido, "tipo", None)).upper()
+
+
+def assunto_solicitacao_cotacao(*, projeto: str, categoria: str, dia: date | None = None) -> str:
+    data = formatar_data_br_compras(dia or data_operacional())
+    cat = (categoria or "").strip().upper() or "COMPRAS"
+    return f"Solicitação de cotação CareCore · {projeto} · {cat} · {data}"
+
+
+def pedido_na_fila_nf_pagamento(tipo: Optional[str], status: Optional[str]) -> bool:
+    return tipo_eh_emergencia(tipo) and (status or "") == STATUS_AGUARDANDO_PAGAMENTO
+
+
+def pedido_na_fila_concluidos_infra(
+    *,
+    tipo: Optional[str],
+    destino: Optional[str],
+    status: Optional[str],
+    ok_final_em,
+) -> bool:
+    if not pedido_segue_infraestrutura(tipo, destino):
+        return False
+    if (status or "") != STATUS_RECEBIDO:
+        return False
+    return ok_final_em is None
+
+
 def tipo_suprimentos_aprova_e_envia(tipo: Optional[str]) -> bool:
     """Projeto só monta o pedido; Suprimentos aprova e envia ao fornecedor."""
     return (tipo or "").strip().lower() == TIPO_HORTIFRUTI
@@ -1245,7 +1313,9 @@ def quem_registrou_escolha_vigente(textos: list[Optional[str]]) -> Optional[str]
     return None
 
 
-def aviso_cotacoes_insuficientes(qtd_cotacoes: int) -> Optional[str]:
+def aviso_cotacoes_insuficientes(qtd_cotacoes: int, tipo: Optional[str] = None) -> Optional[str]:
+    if tipo_pula_orcamento(tipo):
+        return None
     if qtd_cotacoes >= MIN_COTACOES_RECOMENDADAS:
         return None
     faltam = MIN_COTACOES_RECOMENDADAS - qtd_cotacoes

@@ -94,6 +94,19 @@ def projeto_e_cae_i_centro(projeto: InstituicaoDB | None) -> bool:
     return "cae i centro" in _referencias_projeto(projeto)
 
 
+def projeto_e_cta_caninde(projeto: InstituicaoDB | None) -> bool:
+    return "caninde" in _referencias_projeto(projeto)
+
+
+def projeto_lavanderia_sem_secagem(projeto: InstituicaoDB | None) -> bool:
+    return projeto_e_cta_caninde(projeto)
+
+
+def projeto_usa_agenda_lavanderia(projeto: InstituicaoDB | None) -> bool:
+    """Reencontro (lavar + secar) e CTA Canindé (só lavagem)."""
+    return projeto_e_reencontro_pari(projeto) or projeto_e_cta_caninde(projeto)
+
+
 def projeto_sem_fluxo_portaria(projeto: InstituicaoDB | None) -> bool:
     """Pari, Anhangabaú, Cruzeiro e CAE I Centro não bipam entrada e saída. O Jabaquara bipa."""
     if projeto_e_cae_i_centro(projeto):

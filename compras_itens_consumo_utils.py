@@ -135,20 +135,7 @@ _RE_PERCENTUAL = re.compile(r"\d+\s*%")
 
 def _titulo_item(texto: str) -> str:
     t = re.sub(r"\s+", " ", (texto or "").strip(" -–—,;/"))
-    if not t:
-        return ""
-    letras = [c for c in t if c.isalpha()]
-    if letras and (sum(1 for c in letras if c.isupper()) / len(letras)) > 0.7:
-        pequenos = {"de", "da", "do", "das", "dos", "e", "com", "para", "em", "a", "o", "s"}
-        partes = t.lower().split()
-        out = []
-        for i, parte in enumerate(partes):
-            if i > 0 and parte in pequenos:
-                out.append(parte)
-            else:
-                out.append(parte[:1].upper() + parte[1:])
-        return " ".join(out)
-    return t
+    return t.upper() if t else ""
 
 
 def _juntar_embalagem(*partes: str) -> str:
@@ -344,6 +331,8 @@ def limpar_item_consumo(
     if not desc:
         lixo = True
     unidade = _inferir_unidade(emb, unidade_medida)
+    if marca:
+        marca = marca.upper()
     return {
         "lixo": lixo,
         "descricao": desc,

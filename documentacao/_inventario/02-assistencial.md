@@ -13,6 +13,8 @@ Na Sede AEB e nos demais projetos, o menu esconde Rotina Diária (e o submenu), 
 
 O CAE I CENTRO é a exceção: volta a Rotina Diária só com Registro da Rotina e Histórico da Rotina. As interações são Café da manhã, Almoço, Café da tarde, Jantar e Lanche noturno, sem entrada e saída. Cada refeição continua um registro próprio. A presença do dia conta 1 se houver qualquer uma dessas refeições; duas ou mais no mesmo dia não somam outra presença. Atividades e Convênio / SISA seguem ocultos.
 
+O CTA 18 – CANINDÉ (Projeto Canindé) vê **Atividades** e a **Lavanderia** em agenda de horários, só lavagem (sem secagem). Registro da Rotina, demais itens da rotina e Convênio / SISA seguem ocultos.
+
 O perfil Global consulta lavanderia, kit, pertences, ocorrências, convênio e relatórios, sem gravar. Ajustes de totais segue só com o Gestor.
 
 ---
@@ -504,6 +506,7 @@ Título **Resumo mensal**. Campos: **Mês de referência**, **Data inicial**, **
 | **Título** | Lavanderia |
 | **Subtítulo** | Controle de peças deixadas para lavagem/secagem, prazo de 48h e retirada conferida. |
 | **Casa Porto** | Menu oculto (módulo `lavanderia_pecas` false). Uso de lavanderia fica só na Rotina Diária. |
+| **CTA 18 – CANINDÉ** | Agenda de 45 minutos só com lavagem. Sem grade de secagem. |
 | **Reencontro Pari, Anhangabaú, Cruzeiro do Sul e Jabaquara** | Duas grades de 45 minutos, lavagem e secagem. No topo da tela o projeto define a manhã e a tarde. O padrão do Pari é das 5h20 às 12h e das 14h às 0h30. Anhangabaú, Cruzeiro do Sul e Jabaquara começam das 7h às 12h15 e das 14h às 18h30. Só entra o uso que cabe inteiro no período. Se a nova grade deixaria de fora um agendamento ainda pendente, o sistema lista a pessoa, a etapa e o horário e não grava até que esse uso termine ou seja cancelado e remanejado. Agendamento já encerrado não impede a mudança. A pessoa marca a lavagem; a secagem entra no primeiro horário livre que começa quando essa lavagem acaba. Arrastar a lavagem recalcula a secagem. Cancelar lavagem ou secagem cancela o par. Abaixo da grade: listas de confirmados e de realizados, com período, por página, botões para mostrar só uma delas, ordenação ao clicar na coluna, **Exportar** e **Imprimir**. Não usa controle de peças. |
 
 **Registrar entrega:** Convivente · Peças · Observação  

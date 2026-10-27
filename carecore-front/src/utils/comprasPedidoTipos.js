@@ -5,6 +5,7 @@ export const TIPO_IMOBILIZADO = 'imobilizado';
 export const TIPO_MANUTENCAO = 'manutencao';
 export const TIPO_SERVICO = 'servico';
 export const TIPO_HORTIFRUTI = 'hortifruti';
+export const TIPO_EMERGENCIA = 'emergencia';
 
 export const SEGMENTO_CONSUMO = 'consumo';
 export const SEGMENTO_MANUTENCAO = 'manutencao';
@@ -58,6 +59,7 @@ export const TIPOS_VISAO_SUPRIMENTOS = new Set([
 export const TIPOS_VISAO_INFRAESTRUTURA = new Set([
   TIPO_IMOBILIZADO,
   TIPO_SERVICO,
+  TIPO_EMERGENCIA,
 ]);
 
 export const ROTULO_TIPO_PEDIDO = {
@@ -66,6 +68,7 @@ export const ROTULO_TIPO_PEDIDO = {
   [TIPO_MANUTENCAO]: 'Itens de manutenção',
   [TIPO_SERVICO]: 'Prestação de serviço',
   [TIPO_HORTIFRUTI]: 'Hortifruti',
+  [TIPO_EMERGENCIA]: 'Compras emergência',
 };
 
 export function tipoEhCotacaoProjeto(tipo) {
@@ -75,7 +78,7 @@ export function tipoEhCotacaoProjeto(tipo) {
 /** Bem, serviço, ou manutenção quando o projeto escolhe Infraestrutura. */
 export function pedidoSegueInfraestrutura(tipo, destinoCompras) {
   const t = String(tipo || '').trim().toLowerCase();
-  if (t === TIPO_IMOBILIZADO || t === TIPO_SERVICO) return true;
+  if (t === TIPO_IMOBILIZADO || t === TIPO_SERVICO || t === TIPO_EMERGENCIA) return true;
   if (t === TIPO_MANUTENCAO) {
     return String(destinoCompras || '').trim().toLowerCase() === 'infraestrutura';
   }
@@ -101,6 +104,14 @@ export function tipoPulaAprovacaoSede() {
 
 export function tipoSuprimentosAprovaEEnvia(tipo) {
   return String(tipo || '').trim().toLowerCase() === TIPO_HORTIFRUTI;
+}
+
+export function tipoEhEmergencia(tipo) {
+  return String(tipo || '').trim().toLowerCase() === TIPO_EMERGENCIA;
+}
+
+export function tipoPulaOrcamento(tipo) {
+  return tipoEhEmergencia(tipo);
 }
 
 /** Hortifruti sem orçamento escolhido: o envio precisa do fornecedor na hora. */
@@ -183,7 +194,7 @@ export function segmentoDoTipoPedido(tipo) {
   if (t === TIPO_MANUTENCAO) return SEGMENTO_MANUTENCAO;
   if (t === TIPO_IMOBILIZADO) return SEGMENTO_IMOBILIZADO;
   if (t === TIPO_HORTIFRUTI) return SEGMENTO_HORTIFRUTI;
-  if (t === TIPO_SERVICO) return null;
+  if (t === TIPO_SERVICO || t === TIPO_EMERGENCIA) return null;
   return SEGMENTO_CONSUMO;
 }
 
@@ -269,7 +280,6 @@ export function sugerirFornecedoresBusca(fornecedores = [], busca = '', limite =
       const palavras = nome.split(/[^a-z0-9]+/).filter(Boolean);
       if (palavras.some((p) => p.startsWith(termo))) score = 1;
       else if (email.startsWith(termo)) score = 2;
-      else if (termo.length > 2 && (nome.includes(termo) || email.includes(termo))) score = 3;
     }
     if (score == null) continue;
     ranqueados.push({ f, score, nome });
@@ -311,6 +321,11 @@ export const BOTOES_NOVO_PEDIDO = [
     tipo: TIPO_SERVICO,
     titulo: 'Prestação de serviço',
     descricao: 'Serviços. O projeto cota; a Sede Infraestrutura acompanha.',
+  },
+  {
+    tipo: TIPO_EMERGENCIA,
+    titulo: 'Compras emergência',
+    descricao: 'Sem orçamentos. O projeto anexa a NF; a Infraestrutura envia para pagamento.',
   },
 ];
 

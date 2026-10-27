@@ -4,9 +4,11 @@ import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import AusenciaJustificadaAlerta from '../components/AusenciaJustificadaAlerta';
 import AlertaContratoAssinado from '../components/AlertaContratoAssinado';
 import AlertaFilaAssinatura from '../components/AlertaFilaAssinatura';
+import AlertaFilaInfra from '../components/AlertaFilaInfra';
+import AlertaFilaExtrato from '../components/AlertaFilaExtrato';
 import AlertaPresencaOperacional from '../components/AlertaPresencaOperacional';
 import ProtectedRoute from './ProtectedRoute';
-import { PERFIS_MODULO_ATIVIDADES, PERFIS_NFP_ENVIO_SEFAZ, PERFIS_NFP_GESTAO, PERFIS_NFP_LEITURA_CUPONS, PERFIS_ADM_COMPRAS_SEDE, PERFIL_ADM_GLOBAL } from '../utils/rbacUtils';
+import { PERFIS_MODULO_ATIVIDADES, PERFIS_NFP_ENVIO_SEFAZ, PERFIS_NFP_GESTAO, PERFIS_NFP_LEITURA_CUPONS, PERFIS_ADM_COMPRAS_SEDE, PERFIL_ADM_COMPRAS_INFRAESTRUTURA, PERFIL_ADM_GLOBAL } from '../utils/rbacUtils';
 import { deveExibirManutencaoProgramada } from '../config/manutencao';
 import { useConfigOperacional } from '../hooks/useConfigOperacional';
 import { menuOcultoNoProjeto } from '../utils/projetoPari';
@@ -66,6 +68,7 @@ const Compras = lazy(() => import('../Compras'));
 const ComprasPedido = lazy(() => import('../ComprasPedido'));
 const ComprasPedidoNovo = lazy(() => import('../ComprasPedidoNovo'));
 const ComprasAguardandoAssinatura = lazy(() => import('../ComprasAguardandoAssinatura'));
+const ComprasFilaInfra = lazy(() => import('../ComprasFilaInfra'));
 const ComprasDocumentosAssinados = lazy(() => import('../ComprasDocumentosAssinados'));
 const FinanceDashboard = lazy(() => import('../financeiro/FinanceDashboardPro'));
 const FinanceContas = lazy(() => import('../financeiro/FinanceContasPro'));
@@ -484,6 +487,24 @@ function RotasAplicacao() {
         />
 
         <Route
+          path="/compras/fila-nf-pagamento"
+          element={
+            <ProtectedRoute perfis={[PERFIL_ADM_COMPRAS_INFRAESTRUTURA, 'Manutenção']}>
+              <ComprasFilaInfra modo="nf" />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/compras/fila-concluidos-infra"
+          element={
+            <ProtectedRoute perfis={[PERFIL_ADM_COMPRAS_INFRAESTRUTURA, 'Manutenção']}>
+              <ComprasFilaInfra modo="concluidos" />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
           path="/compras/documentos-assinados"
           element={
             <ProtectedRoute perfis={['Manutenção']}>
@@ -675,6 +696,8 @@ function RotasAplicacao() {
       <AusenciaJustificadaAlerta />
       <AlertaPresencaOperacional />
       <AlertaFilaAssinatura />
+      <AlertaFilaInfra />
+      <AlertaFilaExtrato />
       <AlertaContratoAssinado />
     </>
   );

@@ -5,8 +5,11 @@ from types import SimpleNamespace
 from config_operacional_projeto import (
     projeto_descontinuado,
     projeto_e_cae_i_centro,
+    projeto_e_cta_caninde,
     projeto_e_reencontro_pari,
+    projeto_lavanderia_sem_secagem,
     projeto_sem_fluxo_portaria,
+    projeto_usa_agenda_lavanderia,
 )
 
 
@@ -49,6 +52,16 @@ def test_cta_liberdade_sai_da_lista():
     assert not projeto_descontinuado(_projeto("CTA 18 – CANINDÉ"))
     assert not projeto_descontinuado(_projeto("SEDE AEB"))
     assert not projeto_descontinuado(None)
+
+
+def test_cta_caninde_agenda_lavanderia_sem_secagem():
+    caninde = _projeto("CTA 18 – CANINDÉ")
+    assert projeto_e_cta_caninde(caninde)
+    assert projeto_e_cta_caninde(_projeto("Projeto Canindé"))
+    assert projeto_usa_agenda_lavanderia(caninde)
+    assert projeto_lavanderia_sem_secagem(caninde)
+    assert not projeto_e_reencontro_pari(caninde)
+    assert not projeto_usa_agenda_lavanderia(_projeto("CEI BELÉM"))
 
 
 def test_down_town_sai_da_lista():

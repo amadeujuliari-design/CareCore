@@ -66,11 +66,15 @@ import {
   comprasSalvarItens,
   comprasSolicitarCotacao,
   comprasSubmeter,
+  comprasEnviarEmergenciaPagamento,
+  comprasConfirmarNfPagamento,
+  comprasOkFinalInfra,
+  comprasEmailNotasPendentes,
   moneyCentavos,
 } from './services/comprasService';
 import { usuarioEhAdmCompras, usuarioEhAdmComprasInfraestrutura, usuarioEhAdmComprasSuprimentos, usuarioEhAdmPedidos, usuarioEhGlobalPuro, usuarioEhManutencao, usuarioGlobalAssinaOrcamento, usuarioPodeCadastrarMestreCompras, usuarioPodeEnviarEmailCompras } from './utils/rbacUtils';
 import { formatarDataBr } from './utils/comprasJanelaUtils';
-import { formatarDataHoraBr } from './utils/dataBrasilUtils';
+import { formatarCompetenciaBr, formatarDataHoraBr } from './utils/dataBrasilUtils';
 import { itemConsumoPeloDetalheErro, pedidoItemUnidadeConfusa, sugerirItensConsumo, unidadeParaPedido } from './utils/comprasItensConsumoUtils';
 import { centavosParaInput, reaisParaCentavos } from './utils/comprasPatrimonioUtils';
 import {
@@ -99,6 +103,7 @@ import {
   tipoEhCotacaoProjeto,
   pedidoSegueInfraestrutura,
   tipoEhCotacaoSede,
+  tipoEhEmergencia,
   tipoExigeJanela,
   tipoPulaAprovacaoSede,
   tipoSuprimentosAprovaEEnvia,
@@ -146,10 +151,7 @@ function mascararMoedaDigitando(texto) {
 }
 
 function quandoOperacional(iso) {
-  if (!iso) return '';
-  const data = new Date(iso);
-  if (Number.isNaN(data.getTime())) return '';
-  return data.toLocaleString('pt-BR');
+  return formatarDataHoraBr(iso);
 }
 
 function imprimirUrlAnexo(url) {
@@ -234,6 +236,7 @@ export default function ComprasPedido() {
   const [assinaturaGestor, setAssinaturaGestor] = useState({ gestor: false, cadastrada: false });
   const [modalAssinatura, setModalAssinatura] = useState(null);
   const [modalEmail, setModalEmail] = useState(null);
+  const [modalNotasPendentes, setModalNotasPendentes] = useState(null);
   const [fornecedorEnvioId, setFornecedorEnvioId] = useState('');
   const [rascunhoEmail, setRascunhoEmail] = useState({
     assunto: '', corpo: '', aviso: '', carregando: false, erro: '',
@@ -418,7 +421,8 @@ export default function ComprasPedido() {
   const podeEditarItens = Boolean(pedido.pode_editar_itens);
   const segueInfra = Boolean(pedido.segue_infraestrutura)
     || pedidoSegueInfraestrutura(pedido.tipo, pedido.destino_compras);
-  const cotacaoProjeto = tipoEhCotacaoProjeto(pedido.tipo) || segueInfra;
+  const ehEmergencia = tipoEhEmergencia(pedido.tipo);
+  const cotacaoProjeto = !ehEmergencia && (tipoEhCotacaoProjeto(pedido.tipo) || segueInfra);
   const hortifrutiDireto = tipoSuprimentosAprovaEEnvia(pedido.tipo);
   const cotacaoSede = tipoEhCotacaoSede(pedido.tipo) && !hortifrutiDireto && !segueInfra;
   // Após envio ao fornecedor (ou encerrado), orçamentos ficam só leitura.
@@ -459,7 +463,10 @@ export default function ComprasPedido() {
       pedido.tipo === 'consumo'
       || Number(pedido.orcamentos_com_anexo || 0) < Number(pedido.min_orcamentos_recomendados || 3)
     );
-  const podeEncerrar = pedido.status === 'enviado_fornecedor' && (sede || (unidade && !pedidoSede));
+  const podeEncerrar = (
+    pedido.status === 'enviado_fornecedor'
+    || (ehEmergencia && pedido.status === 'aguardando_conferencia_extrato')
+  ) && (sede || (unidade && !pedidoSede));
   const podeReabrir = pedido.pode_reabrir && pedido.fechado_por_id === usuarioId;
   const podeReabrirAprovado = sede && pedido.pode_reabrir_aprovado;
   const pedidoCompra = (pedido.anexos || []).find((a) => a.tipo === 'pedido_compra');
@@ -467,7 +474,8 @@ export default function ComprasPedido() {
   const consumoEscolhidoAguardandoEnvio = pedido.tipo === 'consumo'
     && pedido.status === 'aguardando_aprovacao_unidade'
     && (pedido.cotacoes || []).some((c) => c.escolhida);
-  const podeEnviarPedidoCompra = podeDispararEmailCompras
+  const podeEnviarPedidoCompra = !ehEmergencia
+    && podeDispararEmailCompras
     && (
       ['aprovado', 'enviado_fornecedor'].includes(pedido.status)
       || (sede && consumoEscolhidoAguardandoEnvio)
@@ -480,10 +488,14 @@ export default function ComprasPedido() {
     0,
     ...(pedido.pagamento_parcelas || []).filter((p) => p.paga).map((p) => Number(p.numero) || 0),
   );
-  const mostraPassoContrato = segueInfra && (orcamentoAssinadoPelaSede || contratosPedido.length > 0);
+  const mostraPassoContrato = segueInfra && !ehEmergencia && (orcamentoAssinadoPelaSede || contratosPedido.length > 0);
   const passoContratoOk = !segueInfra || Boolean(pedido.compra_liberada);
   const compraJaExecutada = segueInfra && Boolean(pedido.compra_executada);
-  const podeDocumentosFinais = podeEncerrar && (!segueInfra || Boolean(pedido.compra_executada));
+  const podeDocumentosFinais = ehEmergencia
+    ? ['rascunho', 'aguardando_pagamento', 'aguardando_conferencia_extrato'].includes(pedido.status)
+      && (sede || (unidade && !pedidoSede))
+      && !consultaGlobal
+    : (podeEncerrar && (!segueInfra || Boolean(pedido.compra_executada)));
   const podeDecidirContrato = mostraPassoContrato
     && !compraJaExecutada
     && !terminal
@@ -892,10 +904,12 @@ export default function ComprasPedido() {
           subtitle={[
             rotuloTipoPedido(pedido.tipo),
             rotuloStatusPedidoLista(pedido),
-            pedido.competencia,
-            typeof pedido.qtd_orcamentos === 'number'
-              ? `${pedido.qtd_orcamentos} orçamento(s)`
-              : null,
+            formatarCompetenciaBr(pedido.competencia),
+            ehEmergencia
+              ? null
+              : (typeof pedido.qtd_orcamentos === 'number'
+                ? `${pedido.qtd_orcamentos} orçamento(s)`
+                : null),
           ].filter(Boolean).join(' · ')}
           icon={<ShoppingCart className="h-5 w-5" />}
           backTo="/compras"
@@ -1079,6 +1093,12 @@ export default function ComprasPedido() {
                     </dt>
                     <dd className="whitespace-pre-wrap">{pedido.info_pedido || '—'}</dd>
                   </div>
+                  {ehEmergencia && pedido.valor_estimado_centavos != null ? (
+                    <div>
+                      <dt className="text-xs font-semibold uppercase text-slate-500">Valor total</dt>
+                      <dd>{moneyCentavos(pedido.valor_estimado_centavos)}</dd>
+                    </div>
+                  ) : null}
                   <div>
                     <dt className="text-xs font-semibold uppercase text-slate-500">Fornecedor</dt>
                     <dd>{pedido.fornecedor_pedido_nome || '—'}</dd>
@@ -1164,7 +1184,7 @@ export default function ComprasPedido() {
                 )}
               </div>
             )}
-            {pedido.aviso_cotacoes && !terminal && (
+            {pedido.aviso_cotacoes && !terminal && !ehEmergencia && (
               <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
                 {pedido.aviso_cotacoes}
               </div>
@@ -1406,6 +1426,7 @@ export default function ComprasPedido() {
             </SectionCard>
             )}
 
+            {ehEmergencia ? null : (
             <SectionCard title={hortifrutiDireto ? 'Cotações, Orçamentos ou Arquivos' : 'Cotações e orçamentos'}>
               <p className="mb-2 text-sm font-semibold text-slate-800">
                 Orçamentos anexados: {pedido.qtd_orcamentos ?? (pedido.cotacoes || []).length}
@@ -1420,7 +1441,7 @@ export default function ComprasPedido() {
                 </p>
               ) : hortifrutiDireto ? (
                 <p className="mb-3 text-xs text-slate-500">
-                  O projeto e a Sede podem anexar cotações, orçamentos ou outros arquivos. Os dois lados visualizam e baixam.
+                  O projeto e a Sede podem anexar cotações, orçamentos ou outros arquivos. Não é preciso buscar o fornecedor na lista.
                 </p>
               ) : !sede && cotacaoSede ? (
                 <p className="mb-3 text-xs text-slate-500">
@@ -1778,7 +1799,7 @@ export default function ComprasPedido() {
                     await agir(async () => {
                       const idsAntes = new Set((pedido.cotacoes || []).map((c) => c.id));
                       const dados = await comprasCotacao(pedido.id, {
-                        fornecedor_id: segueInfra ? null : (cotacao.fornecedor_id || null),
+                        fornecedor_id: (segueInfra || hortifrutiDireto) ? null : (cotacao.fornecedor_id || null),
                         fornecedor_nome: cotacao.fornecedor_nome || null,
                         fornecedor_contato: cotacao.fornecedor_contato || null,
                         valor_centavos: centavos,
@@ -1802,7 +1823,7 @@ export default function ComprasPedido() {
                     setArqsCotacao([]);
                   }}
                 >
-                  {segueInfra ? null : (
+                  {segueInfra || hortifrutiDireto ? null : (
                   <input
                     value={buscaFornecedorLancamento}
                     onChange={(e) => setBuscaFornecedorLancamento(e.target.value)}
@@ -1810,7 +1831,7 @@ export default function ComprasPedido() {
                     className="rounded-xl border border-slate-200 px-3 py-2 text-sm md:col-span-5"
                   />
                   )}
-                  {segueInfra ? null : (
+                  {segueInfra || hortifrutiDireto ? null : (
                   <select
                     value={cotacao.fornecedor_id}
                     onChange={(e) => {
@@ -1845,7 +1866,7 @@ export default function ComprasPedido() {
                   <input
                     value={cotacao.fornecedor_nome}
                     onChange={(e) => setCotacao((a) => ({ ...a, fornecedor_nome: e.target.value }))}
-                    placeholder={segueInfra ? 'Nome do fornecedor' : 'Ou nome avulso'}
+                    placeholder={hortifrutiDireto ? 'Nome do fornecedor (opcional)' : (segueInfra ? 'Nome do fornecedor' : 'Ou nome avulso')}
                     className="rounded-xl border border-slate-200 px-3 py-2 text-sm"
                     required={segueInfra}
                   />
@@ -1878,6 +1899,7 @@ export default function ComprasPedido() {
                 </form>
               )}
             </SectionCard>
+            )}
 
             {!terminal && !consultaGlobal && (
               <SectionCard title="Comunicação (parecer, negativa, observação)">
@@ -2308,7 +2330,7 @@ export default function ComprasPedido() {
               </SectionCard>
             )}
 
-            {segueInfra && compraJaExecutada && !terminal && (
+            {segueInfra && !ehEmergencia && compraJaExecutada && !terminal && (
               <SectionCard
                 title="Pagamento"
                 subtitle="À vista (1 pagamento) ou parcelado. Em cada parcela anexe a NF e/ou o comprovante. O processo só encerra quando todas estiverem pagas ou quando você marcar que o valor total já foi quitado."
@@ -2437,7 +2459,12 @@ export default function ComprasPedido() {
               pedido={pedido}
               aberto={listaDocumentosAberta}
               onToggle={() => setListaDocumentosAberta((atual) => !atual)}
-              podeExcluir={Boolean(podeEncerrar && !consultaGlobal && !terminal)}
+              podeExcluir={Boolean(
+                ((ehEmergencia && ['rascunho', 'aguardando_pagamento'].includes(pedido.status))
+                  || podeEncerrar)
+                && !consultaGlobal
+                && !terminal
+              )}
               onVisualizar={setModalAnexo}
               onExcluirNf={(notaId) => agir(() => comprasRemoverNotaFiscal(pedido.id, notaId), 'Arquivo excluído.')}
               onExcluirAnexo={(anexoId) => agir(() => comprasRemoverAnexo(pedido.id, anexoId), 'Arquivo excluído.')}
@@ -2447,14 +2474,18 @@ export default function ComprasPedido() {
             {podeDocumentosFinais && (
               <SectionCard
                 title="Documentos do processo"
-                subtitle={segueInfra
-                  ? 'Em cada parcela: nota fiscal, boleto, comprovante de pagamento ou arquivo relacionado. Boleto e nota fiscal exigem a Assinatura Digital AEB.'
-                  : 'Escolha o tipo: nota fiscal, boleto ou arquivo relacionado. Boleto e nota fiscal exigem a Assinatura Digital AEB.'}
+                subtitle={ehEmergencia
+                  ? 'Anexe a nota fiscal assinada. Não há envio ao fornecedor nem orçamentos nesta modalidade.'
+                  : segueInfra
+                    ? 'Em cada parcela: nota fiscal, boleto, comprovante de pagamento ou arquivo relacionado. Boleto e nota fiscal exigem a Assinatura Digital AEB.'
+                    : 'Escolha o tipo: nota fiscal, boleto ou arquivo relacionado. Boleto e nota fiscal exigem a Assinatura Digital AEB.'}
               >
                 <p className="mb-3 text-xs text-slate-500">
-                  {segueInfra
-                    ? 'Defina o pagamento acima. Numa mesma anexação dá para unir PDFs de nota; a posição do texto vale para todas as páginas. No parcelado, cada parcela pode ter a própria NF.'
-                    : 'Numa mesma anexação dá para incluir quantas notas forem necessárias: o sistema junta num arquivo só e aplica o texto e a assinatura em todas as páginas. Se já existir nota, exclua antes de anexar outra.'}
+                  {ehEmergencia
+                    ? 'Depois de anexar a NF, envie para a fila de pagamento da Infraestrutura.'
+                    : segueInfra
+                      ? 'Defina o pagamento acima. Numa mesma anexação dá para unir PDFs de nota; a posição do texto vale para todas as páginas. No parcelado, cada parcela pode ter a própria NF.'
+                      : 'Numa mesma anexação dá para incluir quantas notas forem necessárias: o sistema junta num arquivo só e aplica o texto e a assinatura em todas as páginas. Se já existir nota, exclua antes de anexar outra.'}
                 </p>
                 <form
                   className="grid gap-2 md:grid-cols-3"
@@ -2548,6 +2579,12 @@ export default function ComprasPedido() {
                         : 'Nota fiscal registrada e assinada digitalmente.',
                     );
                     if (!registrou) return;
+                    if (pedido.tipo === 'imobilizado' && classeDoc === 'nota_fiscal') {
+                      setModalNotasPendentes({
+                        corpo: 'Prezado(a),\n\nEncaminho, em anexo, as notas fiscais.\n\n— CareCore+ / Compras AEB',
+                        substituir: false,
+                      });
+                    }
                     setListaDocumentosAberta(true);
                     setSenhaAssinaturaNf('');
                     setNfForm({ tipo_nf: 'produto', numero: '', serie: '', valor_reais: '', observacao: '' });
@@ -2569,8 +2606,8 @@ export default function ComprasPedido() {
                       className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm font-normal"
                     >
                       <option value="nota_fiscal">Nota fiscal</option>
-                      <option value="boleto">Boleto</option>
-                      {segueInfra ? <option value="comprovante">Comprovante de pagamento</option> : null}
+                      {ehEmergencia ? null : <option value="boleto">Boleto</option>}
+                      {segueInfra && !ehEmergencia ? <option value="comprovante">Comprovante de pagamento</option> : null}
                       <option value="relacionado">Arquivo relacionado ao processo</option>
                     </select>
                   </label>
@@ -2708,10 +2745,87 @@ export default function ComprasPedido() {
               </SectionCard>
             )}
 
+            {ehEmergencia && pedido.status === 'rascunho' && !consultaGlobal ? (
+              <div className="rounded-2xl border-2 border-slate-900 bg-white px-4 py-4 shadow-sm">
+                <p className="mb-3 text-sm text-slate-700">
+                  Anexe a nota fiscal e envie para a fila de pagamento da Infraestrutura. Não há orçamentos nesta modalidade.
+                </p>
+                <PremiumButton
+                  className="w-full py-3 text-base font-black"
+                  onClick={() => agir(
+                    () => comprasEnviarEmergenciaPagamento(pedido.id),
+                    'NF enviada para a fila de pagamento da Infraestrutura.',
+                  )}
+                  disabled={!notasFiscaisPedido.length}
+                >
+                  Enviar NF para pagamento
+                </PremiumButton>
+              </div>
+            ) : null}
+
+            {ehEmergencia && pedido.status === 'aguardando_pagamento' && infra && !consultaGlobal ? (
+              <div className="rounded-2xl border-2 border-amber-400 bg-amber-50 px-4 py-4 shadow-sm">
+                <p className="mb-3 text-sm text-amber-950">
+                  Confirme depois de enviar esta NF ao pagamento. O projeto será avisado para conferir o extrato.
+                </p>
+                <PremiumButton
+                  className="w-full py-3 text-base font-black"
+                  onClick={() => agir(
+                    () => comprasConfirmarNfPagamento(pedido.id),
+                    'NF marcada como enviada para pagamento.',
+                  )}
+                >
+                  Confirmar envio ao pagamento
+                </PremiumButton>
+              </div>
+            ) : null}
+
+            {ehEmergencia && pedido.status === 'aguardando_conferencia_extrato' && !consultaGlobal ? (
+              <div className="rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-950">
+                A Infraestrutura enviou a NF para pagamento. Confira o extrato, anexe arquivos extras se precisar e encerre o processo.
+              </div>
+            ) : null}
+
+            {pedido.status === 'recebido' && pedido.na_fila_concluidos_infra && infra && !consultaGlobal ? (
+              <div className="rounded-2xl border-2 border-emerald-600 bg-white px-4 py-4 shadow-sm">
+                <p className="mb-3 text-sm text-slate-700">
+                  O projeto encerrou este pedido. Confira os anexos e dê o OK final para sair da fila.
+                </p>
+                <PremiumButton
+                  className="w-full py-3 text-base font-black"
+                  onClick={() => agir(
+                    () => comprasOkFinalInfra(pedido.id),
+                    'OK final registrado. Pedido saiu da fila da Infraestrutura.',
+                  )}
+                >
+                  OK final
+                </PremiumButton>
+              </div>
+            ) : null}
+
+            {pedido.tipo === 'imobilizado' && notasFiscaisPedido.length > 0 && !consultaGlobal ? (
+              <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                <p className="mb-2 text-sm text-slate-700">
+                  Enviar as notas fiscais para notaspendentes@aeb-brasil.org.br (opcional).
+                </p>
+                <PremiumButton
+                  variant="secondary"
+                  onClick={() => setModalNotasPendentes({
+                    corpo: 'Prezado(a),\n\nEncaminho, em anexo, as notas fiscais.\n\n— CareCore+ / Compras AEB',
+                    substituir: false,
+                  })}
+                >
+                  Enviar NFs por e-mail
+                </PremiumButton>
+              </div>
+            ) : null}
+
             {podeEncerrar && !terminal && !consultaGlobal ? (
               <div className="rounded-2xl border-2 border-slate-900 bg-white px-4 py-4 shadow-sm">
                 <p className="mb-3 text-sm text-slate-700">
-                  {segueInfra && !pedido.pagamento_completo
+                  {ehEmergencia
+                    ? 'Confira o extrato. Se precisar, anexe arquivos extras acima e encerre.'
+                    : segueInfra && !pedido.pagamento_completo
                     ? 'Para encerrar: anexe NF ou comprovante em cada parcela, ou marque que todos os valores já foram pagos.'
                     : !notasFiscaisPedido.length
                       ? 'Para encerrar, anexe ao menos uma nota fiscal assinada.'
@@ -2725,11 +2839,13 @@ export default function ComprasPedido() {
                   )}
                   disabled={
                     !notasFiscaisPedido.length
-                    || !(pedido.eventos || []).some((ev) => String(ev.texto || '').includes('Assinado Digitalmente'))
-                    || (segueInfra && !pedido.pagamento_completo)
+                    || (!ehEmergencia && !(pedido.eventos || []).some((ev) => String(ev.texto || '').includes('Assinado Digitalmente')))
+                    || (!ehEmergencia && segueInfra && !pedido.pagamento_completo)
                   }
                   title={
-                    segueInfra && !pedido.pagamento_completo
+                    ehEmergencia
+                      ? 'Disponível depois da conferência do extrato.'
+                      : segueInfra && !pedido.pagamento_completo
                       ? 'Registre cada parcela ou marque que todos os valores já foram pagos.'
                       : 'Disponível depois que a nota fiscal for assinada com a senha do gestor.'
                   }
@@ -2747,7 +2863,7 @@ export default function ComprasPedido() {
 
             <SectionCard title="Fluxo">
               <div className="flex flex-wrap gap-2">
-                {(pedido.status === 'rascunho'
+                {!ehEmergencia && (pedido.status === 'rascunho'
                   || (cotacaoProjeto && ['em_cotacao', 'aguardando_cotacao'].includes(pedido.status))) && !consultaGlobal && (
                   <PremiumButton
                     onClick={async () => {
@@ -2975,6 +3091,34 @@ export default function ComprasPedido() {
         }
         fornecedorEnvioId={fornecedorEnvioId}
         onFornecedorEnvioChange={setFornecedorEnvioId}
+      />
+      <ModalRevisarEmailCompras
+        aberto={Boolean(modalNotasPendentes)}
+        titulo="Enviar notas fiscais"
+        assunto="Notas fiscais — CareCore+"
+        corpo={modalNotasPendentes?.corpo || ''}
+        avisoAssinatura="Destino: notaspendentes@aeb-brasil.org.br. Você pode complementar o texto ou substituir o corpo inteiro. Também pode pular o envio."
+        enviando={enviandoEmail}
+        erro=""
+        onCorpoChange={(valor) => setModalNotasPendentes((atual) => (atual ? { ...atual, corpo: valor } : atual))}
+        onCancelar={() => setModalNotasPendentes(null)}
+        onConfirmar={async () => {
+          if (!modalNotasPendentes || enviandoEmail) return;
+          setEnviandoEmail(true);
+          try {
+            const padrao = 'Prezado(a),\n\nEncaminho, em anexo, as notas fiscais.\n\n— CareCore+ / Compras AEB';
+            const corpo = String(modalNotasPendentes.corpo || '').trim();
+            const substituir = Boolean(corpo && corpo !== padrao && !corpo.startsWith(padrao));
+            await comprasEmailNotasPendentes(pedido.id, { corpo, substituir });
+            setOk('Notas fiscais enviadas para notaspendentes@aeb-brasil.org.br.');
+            setModalNotasPendentes(null);
+            await carregar();
+          } catch (err) {
+            setErro(err.response?.data?.detail || err.message || 'Não foi possível enviar o e-mail.');
+          } finally {
+            setEnviandoEmail(false);
+          }
+        }}
       />
       <ModalPosicionarTextoNf
         aberto={modalTextoNf}

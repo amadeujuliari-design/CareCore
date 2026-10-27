@@ -153,6 +153,51 @@ export async function comprasFilaAssinatura() {
   return data;
 }
 
+export async function comprasFilaConcluidosInfraResumo() {
+  const { data } = await api.get('/api/compras/fila-concluidos-infra/resumo');
+  return data;
+}
+
+export async function comprasFilaConcluidosInfra() {
+  const { data } = await api.get('/api/compras/fila-concluidos-infra');
+  return data;
+}
+
+export async function comprasFilaNfPagamentoResumo() {
+  const { data } = await api.get('/api/compras/fila-nf-pagamento/resumo');
+  return data;
+}
+
+export async function comprasFilaNfPagamento() {
+  const { data } = await api.get('/api/compras/fila-nf-pagamento');
+  return data;
+}
+
+export async function comprasFilaExtratoResumo() {
+  const { data } = await api.get('/api/compras/fila-extrato/resumo');
+  return data;
+}
+
+export async function comprasEnviarEmergenciaPagamento(pedidoId) {
+  const { data } = await api.post(`/api/compras/pedidos/${pedidoId}/enviar-pagamento`);
+  return data;
+}
+
+export async function comprasConfirmarNfPagamento(pedidoId) {
+  const { data } = await api.post(`/api/compras/pedidos/${pedidoId}/confirmar-nf-pagamento`);
+  return data;
+}
+
+export async function comprasOkFinalInfra(pedidoId) {
+  const { data } = await api.post(`/api/compras/pedidos/${pedidoId}/ok-final-infra`);
+  return data;
+}
+
+export async function comprasEmailNotasPendentes(pedidoId, payload = {}) {
+  const { data } = await api.post(`/api/compras/pedidos/${pedidoId}/email-notas-pendentes`, payload);
+  return data;
+}
+
 export async function comprasDocumentosAssinados() {
   const { data } = await api.get('/api/compras/documentos-assinados');
   return data;

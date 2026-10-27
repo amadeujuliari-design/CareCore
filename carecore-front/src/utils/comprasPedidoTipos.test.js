@@ -15,8 +15,10 @@ import {
   segmentoFornecedorDoTipoPedido,
   sugerirFornecedoresBusca,
   tipoEhCotacaoSede,
+  tipoEhEmergencia,
   tipoExigeJanela,
   tipoPulaAprovacaoSede,
+  tipoPulaOrcamento,
 } from './comprasPedidoTipos.js';
 
 describe('cotacoesComEscolhidaPrimeiro', () => {
@@ -168,6 +170,13 @@ describe('fornecedoresParaCotacaoPedido', () => {
     assert.equal(tipoExigeJanela('hortifruti'), false);
     assert.equal(segmentoFornecedorDoTipoPedido('hortifruti'), 'hortifruti');
   });
+
+  it('emergência não tem orçamento nem cotação da Sede', () => {
+    assert.equal(tipoEhEmergencia('emergencia'), true);
+    assert.equal(tipoPulaOrcamento('emergencia'), true);
+    assert.equal(tipoEhCotacaoSede('emergencia'), false);
+    assert.equal(tipoPulaOrcamento('imobilizado'), false);
+  });
 });
 
 describe('sugerirFornecedoresBusca', () => {
@@ -194,6 +203,11 @@ describe('sugerirFornecedoresBusca', () => {
   it('sem termo não lista ninguém (typeahead)', () => {
     assert.deepEqual(sugerirFornecedoresBusca(lista, ''), []);
     assert.deepEqual(sugerirFornecedoresBusca(lista, '  '), []);
+  });
+
+  it('não lista nome que só contém o termo no meio', () => {
+    const ids = sugerirFornecedoresBusca(lista, 'ompras').map((f) => f.id);
+    assert.deepEqual(ids, []);
   });
 });
 

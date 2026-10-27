@@ -2313,6 +2313,10 @@ class ComprasPedidoDB(Base):
     enviado_por_id = Column(String, ForeignKey("usuarios.id"), nullable=True)
     recebido_em = Column(DateTime, nullable=True)
     recebido_por_id = Column(String, ForeignKey("usuarios.id"), nullable=True)
+    infraestrutura_ok_final_em = Column(DateTime, nullable=True)
+    infraestrutura_ok_final_por_id = Column(String, ForeignKey("usuarios.id"), nullable=True)
+    nf_para_pagamento_em = Column(DateTime, nullable=True)
+    nf_para_pagamento_por_id = Column(String, ForeignKey("usuarios.id"), nullable=True)
     # Caixa de Suprimentos: leitura do pedido concluído e impressão da NF.
     suprimentos_lida_em = Column(DateTime, nullable=True)
     suprimentos_lida_por_id = Column(String, ForeignKey("usuarios.id"), nullable=True)

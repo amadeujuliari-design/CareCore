@@ -30,6 +30,7 @@ import {
   WashingMachine,
   FilePenLine,
   Archive,
+  CheckCircle2,
 } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import logoCarecore from './assets/logo.PNG';
@@ -40,9 +41,9 @@ import { API_ROOT } from './config/apiBase';
 import { carecoreVersaoRotulo } from './config/versao';
 import { MENU_ACOMPANHAMENTOS, MENU_CONVIVENTES } from './config/acompanhamentosConfig';
 import { acompanhamentoAtivo, moduloAtivo, projetoOcultaAcomodacoes } from './config/configOperacionalDefaults';
-import { menuOcultoNoProjeto, projetoEhReencontroPari } from './utils/projetoPari';
+import { menuOcultoNoProjeto, projetoEhCtaCaninde, projetoEhReencontroPari, projetoUsaAgendaLavanderia } from './utils/projetoPari';
 import { useConfigOperacional } from './hooks/useConfigOperacional';
-import { usuarioEhAdmCompras, usuarioEhAdmGlobal, usuarioEhAdmPedidos, usuarioEhAdmProducao, usuarioEhOficineiro, usuarioEhGlobalPuro, usuarioGlobalAssinaOrcamento, normalizarPerfilRbac, usuarioPodeVerCompras, usuarioPodeAcessarNfp, usuarioPodeAcessarModuloOperacional, PERFIS_ADM_COMPRAS_SEDE, PERFIL_ADM_GLOBAL, PERFIL_ADM_PRODUCAO } from './utils/rbacUtils';
+import { usuarioEhAdmCompras, usuarioEhAdmComprasInfraestrutura, usuarioEhAdmGlobal, usuarioEhAdmPedidos, usuarioEhAdmProducao, usuarioEhOficineiro, usuarioEhGlobalPuro, usuarioGlobalAssinaOrcamento, normalizarPerfilRbac, usuarioPodeVerCompras, usuarioPodeAcessarNfp, usuarioPodeAcessarModuloOperacional, PERFIS_ADM_COMPRAS_SEDE, PERFIL_ADM_COMPRAS_INFRAESTRUTURA, PERFIL_ADM_GLOBAL, PERFIL_ADM_PRODUCAO } from './utils/rbacUtils';
 import { decodificarPayloadJwt } from './utils/jwtUtils';
 import { usuarioOrganizacaoFinanceira } from './utils/orgPacoteUtils';
 import FinanceSidebar from './components/FinanceSidebar';
@@ -154,7 +155,7 @@ const COMPRAS_CHILDREN_PROJETO = [
   },
 ];
 
-function montarComprasChildrenSede(filaAssinaturaPendentes) {
+function montarComprasChildrenSede(filaAssinaturaPendentes, filaNfPendentes = 0, filaConcluidosPendentes = 0) {
   return [
     COMPRAS_CHILDREN_PROJETO[0],
     COMPRAS_CHILDREN_PROJETO[1],
@@ -168,6 +169,28 @@ function montarComprasChildrenSede(filaAssinaturaPendentes) {
       badgeCount: filaAssinaturaPendentes,
       feature: 'compras',
       perfis: [...PERFIS_ADM_COMPRAS_SEDE, 'Manutenção'],
+    },
+    {
+      path: '/compras/fila-nf-pagamento',
+      icon: Receipt,
+      label: 'NFs a pagar',
+      labelTitle: filaNfPendentes > 0
+        ? `${filaNfPendentes} NF(s) de emergência aguardando pagamento`
+        : 'NFs a pagar',
+      badgeCount: filaNfPendentes,
+      feature: 'compras',
+      perfis: [PERFIL_ADM_COMPRAS_INFRAESTRUTURA, 'Manutenção'],
+    },
+    {
+      path: '/compras/fila-concluidos-infra',
+      icon: CheckCircle2,
+      label: 'Concluídos Infraestrutura',
+      labelTitle: filaConcluidosPendentes > 0
+        ? `${filaConcluidosPendentes} pedido(s) aguardando OK final`
+        : 'Concluídos Infraestrutura',
+      badgeCount: filaConcluidosPendentes,
+      feature: 'compras',
+      perfis: [PERFIL_ADM_COMPRAS_INFRAESTRUTURA, 'Manutenção'],
     },
     {
       path: '/compras/documentos-assinados',
@@ -199,6 +222,8 @@ export default function Sidebar() {
   const [cobrancasClienteVisivel, setCobrancasClienteVisivel] = useState(false);
   const [comprasModuloVisivel, setComprasModuloVisivel] = useState(false);
   const [filaAssinaturaPendentes, setFilaAssinaturaPendentes] = useState(0);
+  const [filaNfPendentes, setFilaNfPendentes] = useState(0);
+  const [filaConcluidosPendentes, setFilaConcluidosPendentes] = useState(0);
   const [modalSenhaAberto, setModalSenhaAberto] = useState(false);
   const [modalPasskeysAberto, setModalPasskeysAberto] = useState(false);
   const [senhaAtual, setSenhaAtual] = useState('');
@@ -331,6 +356,26 @@ export default function Sidebar() {
       setFilaAssinaturaPendentes(0);
     }
 
+    if (usuarioEhAdmComprasInfraestrutura(usuarioSessao) || isManutencao) {
+      api.get(`${API_ROOT}/compras/fila-nf-pagamento/resumo`)
+        .then((response) => {
+          if (ativo) setFilaNfPendentes(Number(response.data?.pendentes) || 0);
+        })
+        .catch(() => {
+          if (ativo) setFilaNfPendentes(0);
+        });
+      api.get(`${API_ROOT}/compras/fila-concluidos-infra/resumo`)
+        .then((response) => {
+          if (ativo) setFilaConcluidosPendentes(Number(response.data?.pendentes) || 0);
+        })
+        .catch(() => {
+          if (ativo) setFilaConcluidosPendentes(0);
+        });
+    } else {
+      setFilaNfPendentes(0);
+      setFilaConcluidosPendentes(0);
+    }
+
     return () => {
       ativo = false;
     };
@@ -399,6 +444,7 @@ export default function Sidebar() {
               path: '/rotina',
               icon: CalendarClock,
               label: 'Registro da Rotina',
+              registroDaRotina: true,
               perfis: ['Gestor', 'Técnico', 'Orientador', 'Administrativo', 'Global'],
             },
             {
@@ -575,7 +621,7 @@ export default function Sidebar() {
           label: 'Compras',
           feature: 'compras',
           escopoCompras: 'sede',
-          children: montarComprasChildrenSede(filaAssinaturaPendentes),
+          children: montarComprasChildrenSede(filaAssinaturaPendentes, filaNfPendentes, filaConcluidosPendentes),
         },
         {
           path: '/nfp',
@@ -899,10 +945,20 @@ export default function Sidebar() {
     if (item.somentePari && !reencontroPari) {
       return false;
     }
+    if (
+      item.registroDaRotina
+      && projetoEhCtaCaninde(nomeProjetoOperacional || usuarioSessao?.projeto_nome)
+    ) {
+      return false;
+    }
     if (menuOcultoNoProjeto(item.path, nomeProjetoOperacional || usuarioSessao?.projeto_nome)) {
       return false;
     }
-    if (item.path === '/rotina/lavanderia' && !reencontroPari && (ocultaAcomodacoesCasaPorto || (configOperacional && !moduloAtivo(configOperacional, 'lavanderia_pecas')))) {
+    if (
+      item.path === '/rotina/lavanderia'
+      && !projetoUsaAgendaLavanderia(nomeProjetoOperacional || usuarioSessao?.projeto_nome)
+      && (ocultaAcomodacoesCasaPorto || (configOperacional && !moduloAtivo(configOperacional, 'lavanderia_pecas')))
+    ) {
       return false;
     }
     const featurePermitida =
@@ -936,10 +992,14 @@ export default function Sidebar() {
     ...group,
     items: group.items
       .filter(usuarioPodeVerItem)
-      .map(item => ({
-        ...item,
-        children: filtrarChildrenRecursivo(item.children),
-      })),
+      .map((item) => {
+        const children = filtrarChildrenRecursivo(item.children);
+        const nomeCasa = nomeProjetoOperacional || usuarioSessao?.projeto_nome;
+        if (item.path === '/rotina' && projetoEhCtaCaninde(nomeCasa)) {
+          return { ...item, path: '/rotina/lavanderia', children };
+        }
+        return { ...item, children };
+      }),
   })).filter(group => group.items.length > 0);
 
   const isActiveItem = (item) => itemTemDescendenteAtivo(item);

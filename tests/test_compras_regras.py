@@ -114,6 +114,48 @@ def test_calendario_institucional_2026():
     assert sugerir_janela_competencia(2026, 8) == (date(2026, 8, 10), date(2026, 8, 14))
 
 
+def test_rascunho_consumo_com_janela_fechada_ou_sem_publicar():
+    from compras_regras import pode_criar_rascunho_consumo, pode_enviar_consumo
+
+    ok, _ = pode_criar_rascunho_consumo(
+        hoje=date(2026, 10, 27),
+        data_inicio=date(2026, 10, 13),
+        data_fim=date(2026, 10, 17),
+        data_prevista=date(2026, 10, 13),
+    )
+    assert ok
+    ok_sem_janela, _ = pode_criar_rascunho_consumo(
+        hoje=date(2026, 10, 27),
+        data_inicio=None,
+        data_fim=None,
+        data_prevista=None,
+    )
+    assert ok_sem_janela
+    ok_envio, msg = pode_enviar_consumo(
+        hoje=date(2026, 10, 27),
+        data_inicio=date(2026, 10, 13),
+        data_fim=date(2026, 10, 17),
+        data_prevista=date(2026, 10, 13),
+    )
+    assert not ok_envio
+    assert "encerrou" in msg.lower()
+
+
+def test_dia_previsto_rascunho_pula_janela_passada():
+    from compras_regras import dia_previsto_rascunho_consumo
+
+    assert dia_previsto_rascunho_consumo(
+        hoje=date(2026, 10, 27),
+        data_inicio=date(2026, 10, 13),
+        data_fim=date(2026, 10, 17),
+    ) is None
+    assert dia_previsto_rascunho_consumo(
+        hoje=date(2026, 10, 27),
+        data_inicio=date(2026, 11, 9),
+        data_fim=date(2026, 11, 13),
+    ) == date(2026, 11, 9)
+
+
 def test_rascunho_antes_da_janela_e_envio_no_dia():
     from compras_regras import pode_criar_rascunho_consumo, pode_enviar_consumo
 
@@ -640,3 +682,49 @@ def test_rotulo_custo_fonte_convenio_e_indireto():
     assert rotulo_custo_fonte("convenio", "Convênio") == "Custo direto"
     assert rotulo_custo_fonte("custo_indireto", "Custo indireto") == "Custo indireto"
     assert rotulo_custo_fonte("", "Convênio municipal") == "Custo direto"
+
+
+def test_compras_emergencia_e_filas_infra():
+    from datetime import date
+    from types import SimpleNamespace
+
+    from compras_regras import (
+        TIPO_EMERGENCIA,
+        TIPO_IMOBILIZADO,
+        STATUS_AGUARDANDO_PAGAMENTO,
+        STATUS_RECEBIDO,
+        assunto_solicitacao_cotacao,
+        aviso_cotacoes_insuficientes,
+        categoria_email_cotacao,
+        formatar_data_br_compras,
+        pedido_na_fila_concluidos_infra,
+        pedido_na_fila_nf_pagamento,
+        pedido_segue_infraestrutura,
+        texto_cadastro_caixa_alta,
+        tipo_eh_emergencia,
+        tipo_pula_orcamento,
+        tipos_visiveis_adm_compras,
+    )
+
+    assert tipo_eh_emergencia("emergencia")
+    assert tipo_pula_orcamento(TIPO_EMERGENCIA)
+    assert aviso_cotacoes_insuficientes(0, TIPO_EMERGENCIA) is None
+    assert pedido_segue_infraestrutura(TIPO_EMERGENCIA)
+    assert pedido_na_fila_nf_pagamento(TIPO_EMERGENCIA, STATUS_AGUARDANDO_PAGAMENTO)
+    assert not pedido_na_fila_nf_pagamento(TIPO_IMOBILIZADO, STATUS_AGUARDANDO_PAGAMENTO)
+    assert pedido_na_fila_concluidos_infra(
+        tipo=TIPO_IMOBILIZADO, destino=None, status=STATUS_RECEBIDO, ok_final_em=None,
+    )
+    assert not pedido_na_fila_concluidos_infra(
+        tipo=TIPO_IMOBILIZADO, destino=None, status=STATUS_RECEBIDO, ok_final_em=date(2026, 10, 27),
+    )
+    visao = tipos_visiveis_adm_compras(perfil="ADM Global Compras Infraestrutura")
+    assert visao is not None and TIPO_EMERGENCIA in visao
+    assert texto_cadastro_caixa_alta("  arroz tipo 1 ") == "ARROZ TIPO 1"
+    assert formatar_data_br_compras(date(2026, 10, 26)) == "26/10/2026"
+    pedido = SimpleNamespace(categoria_split_nome="Alimentação", tipo="consumo")
+    assert categoria_email_cotacao(pedido) == "ALIMENTAÇÃO"
+    assunto = assunto_solicitacao_cotacao(
+        projeto="SIAT II Armênia", categoria="Alimentação", dia=date(2026, 10, 26),
+    )
+    assert assunto == "Solicitação de cotação CareCore · SIAT II Armênia · ALIMENTAÇÃO · 26/10/2026"

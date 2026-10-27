@@ -77,16 +77,15 @@ export function digitarQuantidadeEmbalagem(valor) {
 
 export function itemConsumoBateBusca(item, termo) {
   if (!termo) return true;
-  const blob = [
-    item.descricao,
-    item.marca_preferencial,
-    item.observacao,
-    item.unidade_medida,
-    item.embalagem,
-    item.sinonimos,
-    item.categoria_nome,
-  ].join(' ');
-  return normalizarBuscaItem(blob).includes(termo);
+  const desc = normalizarBuscaItem(item.descricao);
+  if (desc.startsWith(termo)) return true;
+  const palavras = desc.split(/[^a-z0-9]+/).filter(Boolean);
+  if (palavras.some((palavra) => palavra.startsWith(termo))) return true;
+  const sinonimos = normalizarBuscaItem(item.sinonimos);
+  if (sinonimos && (sinonimos.startsWith(termo) || sinonimos.split(/[^a-z0-9]+/).some((p) => p.startsWith(termo)))) {
+    return true;
+  }
+  return false;
 }
 
 export function filtrarItensConsumo(itens = [], {
@@ -129,20 +128,6 @@ export function pontuacaoSugestaoItemConsumo(item, termo) {
     return 2;
   }
 
-  // Digitação curta: só prefixo (nome ou sinônimo).
-  if (chave.length <= 2) return null;
-
-  if (desc.includes(chave)) return 3;
-  if (sinonimos && sinonimos.includes(chave)) return 4;
-
-  const extras = normalizarBuscaItem([
-    item.marca_preferencial,
-    item.observacao,
-    item.embalagem,
-    item.categoria_nome,
-    item.unidade_medida,
-  ].join(' '));
-  if (extras.includes(chave)) return 5;
   return null;
 }
 

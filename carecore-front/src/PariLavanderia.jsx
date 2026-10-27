@@ -497,7 +497,9 @@ export default function PariLavanderia() {
     return lista;
   }, [daMaquina]);
 
-  const separado = modelo === 'separado';
+  const soLavar = modelo === 'so_lavar';
+  const separado = modelo === 'separado' || soLavar;
+  const tituloLavanderia = soLavar ? 'Lavanderia' : 'Lavanderia OMO';
 
   const reservar = useCallback(async (convivente, inicio) => {
     setSalvando(true);
@@ -536,11 +538,13 @@ export default function PariLavanderia() {
       convivente: escolhido,
       inicio: slot.inicio,
       titulo: 'Confirmar agendamento',
-      mensagem: modelo === 'separado'
+      mensagem: soLavar
+        ? `Marcar a lavagem de ${nomePessoa(escolhido)} em ${rotuloQuando(slot.inicio)}?`
+        : modelo === 'separado'
         ? `Marcar a lavagem de ${nomePessoa(escolhido)} em ${rotuloQuando(slot.inicio)}? A secagem entra no primeiro horário livre depois dessa lavagem.`
         : `Marcar ${nomePessoa(escolhido)} em ${rotuloQuando(slot.inicio)}?`,
     });
-  }, [daMaquina, escolhido, modelo]);
+  }, [daMaquina, escolhido, modelo, soLavar]);
 
   const cancelar = useCallback(async (agendaId) => {
     setSalvando(true);
@@ -565,11 +569,13 @@ export default function PariLavanderia() {
       tipo: 'cancelar',
       id: slot.id,
       titulo: 'Cancelar agendamento',
-      mensagem: modelo === 'separado'
+      mensagem: soLavar
+        ? `Cancelar ${slot.convivente_nome} em ${rotuloQuando(slot.inicio)}? O horário volta a ficar livre.`
+        : modelo === 'separado'
         ? `Cancelar ${slot.convivente_nome} em ${rotuloQuando(slot.inicio)}? A lavagem e a secagem desse par voltam a ficar livres.`
         : `Cancelar ${slot.convivente_nome} em ${rotuloQuando(slot.inicio)}? O horário volta a ficar livre.`,
     });
-  }, [modelo]);
+  }, [modelo, soLavar]);
 
   const pedirMudanca = useCallback((origem, destinoInicio) => {
     if (!origem?.convivente_id || !destinoInicio || origem.inicio === destinoInicio) return;
@@ -579,11 +585,13 @@ export default function PariLavanderia() {
       convivente: { id: origem.convivente_id, nome_completo: origem.convivente_nome },
       inicio: destinoInicio,
       titulo: 'Mudar horário',
-      mensagem: modelo === 'separado'
+      mensagem: soLavar
+        ? `Deseja mesmo mudar ${origem.convivente_nome} de ${rotuloQuando(origem.inicio)} para ${rotuloQuando(destinoInicio)}?`
+        : modelo === 'separado'
         ? `Mudar a lavagem de ${origem.convivente_nome} de ${rotuloQuando(origem.inicio)} para ${rotuloQuando(destinoInicio)}? A secagem é recalculada.`
         : `Deseja mesmo mudar ${origem.convivente_nome} de ${rotuloQuando(origem.inicio)} para ${rotuloQuando(destinoInicio)}?`,
     });
-  }, [modelo]);
+  }, [modelo, soLavar]);
 
   const lerCodigo = useCallback((lido) => {
     const convivente = encontrarConviventePorCodigo(conviventes, lido);
@@ -636,9 +644,11 @@ export default function PariLavanderia() {
       <MainShell>
         <PageHeader
           eyebrow="Rotina Diária"
-          title="Lavanderia OMO"
+          title={tituloLavanderia}
           subtitle={consulta
             ? 'Consulta da grade e dos agendamentos. Sem marcar, cancelar ou mudar horário.'
+            : soLavar
+            ? `Lavagem em grades de 45 minutos, das ${periodos?.manha_inicio || '07:00'} às ${periodos?.manha_fim || '12:15'} e das ${periodos?.tarde_inicio || '14:00'} às ${periodos?.tarde_fim || '18:30'}. Clique no horário livre para marcar. Esta unidade não tem secagem.`
             : separado
             ? `Lavagem e secagem são grades de 45 minutos, das ${periodos?.manha_inicio || '07:00'} às ${periodos?.manha_fim || '12:15'} e das ${periodos?.tarde_inicio || '14:00'} às ${periodos?.tarde_fim || '18:30'}. Clique na lavagem; a secagem entra no primeiro horário livre depois. Cancelar um dos dois cancela o par.`
             : 'Cada horário de 1h30 vale para lavar e secar juntas. Verde está livre, âmbar está ocupado. Cancele o agendamento se a pessoa desistir: a vaga volta a ficar livre.'}
@@ -778,6 +788,7 @@ export default function PariLavanderia() {
               setErro={setErro}
               consulta={consulta}
             />
+            {!soLavar && (
             <GradeOmo
               titulo="Secagem"
               duracao="45 min"
@@ -792,6 +803,7 @@ export default function PariLavanderia() {
               travada
               consulta={consulta}
             />
+            )}
           </>
         ) : (
           <GradeOmo
@@ -871,10 +883,10 @@ export default function PariLavanderia() {
             dataInicio={periodoInicio}
             dataFim={periodoFim}
             limite={limiteLista}
-            onExportar={(lista) => exportarLista('Agendamentos confirmados — Lavanderia OMO', lista, `lavanderia-confirmados-${hojeISO()}`)}
-            onImprimir={(lista) => imprimirLista('Agendamentos confirmados — Lavanderia OMO', lista)}
+            onExportar={(lista) => exportarLista(`Agendamentos confirmados — ${tituloLavanderia}`, lista, `lavanderia-confirmados-${hojeISO()}`)}
+            onImprimir={(lista) => imprimirLista(`Agendamentos confirmados — ${tituloLavanderia}`, lista)}
             onCancelar={consulta ? undefined : pedirCancelamento}
-            mostrarMaquina={separado}
+            mostrarMaquina={separado && !soLavar}
           />
         )}
         {verRealizados && (
@@ -886,9 +898,9 @@ export default function PariLavanderia() {
             dataInicio={periodoInicio}
             dataFim={periodoFim}
             limite={limiteLista}
-            onExportar={(lista) => exportarLista('Agendamentos realizados — Lavanderia OMO', lista, `lavanderia-realizados-${hojeISO()}`)}
-            onImprimir={(lista) => imprimirLista('Agendamentos realizados — Lavanderia OMO', lista)}
-            mostrarMaquina={separado}
+            onExportar={(lista) => exportarLista(`Agendamentos realizados — ${tituloLavanderia}`, lista, `lavanderia-realizados-${hojeISO()}`)}
+            onImprimir={(lista) => imprimirLista(`Agendamentos realizados — ${tituloLavanderia}`, lista)}
+            mostrarMaquina={separado && !soLavar}
           />
         )}
         {confirmacao && (

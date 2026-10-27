@@ -54,17 +54,25 @@ function statusFornecedor(fornecedor) {
   return <PremiumBadge variant="warning">Inativo</PremiumBadge>;
 }
 
-function textoBusca(fornecedor) {
-  return [
-    fornecedor.nome,
-    fornecedor.cnpj,
-    fornecedor.segmento,
-    fornecedor.contato,
-    fornecedor.telefone,
-    fornecedor.email,
-    fornecedor.email_empresa,
-    rotuloProjetosFornecedor(fornecedor),
-  ].join(' ').toLowerCase();
+function textoBuscaPrefixo(valor) {
+  return String(valor || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+}
+
+function nomeFornecedorBateBusca(fornecedor, termo) {
+  const chave = textoBuscaPrefixo(termo);
+  if (!chave) return true;
+  const nome = textoBuscaPrefixo(fornecedor.nome);
+  if (nome.startsWith(chave)) return true;
+  if (nome.split(/[^a-z0-9]+/).some((p) => p.startsWith(chave))) return true;
+  const cnpj = String(fornecedor.cnpj || '').replace(/\D/g, '');
+  const termoNum = String(termo || '').replace(/\D/g, '');
+  if (termoNum && cnpj.startsWith(termoNum)) return true;
+  const email = textoBuscaPrefixo(fornecedor.email || fornecedor.email_empresa);
+  return Boolean(email && email.startsWith(chave));
 }
 
 export default function ComprasFornecedoresCadastro({
@@ -108,7 +116,7 @@ export default function ComprasFornecedoresCadastro({
       if (filtroStatus === 'ativo' && (fornecedor.bloqueado || !fornecedor.ativo)) return false;
       if (filtroStatus === 'inativo' && (fornecedor.bloqueado || fornecedor.ativo !== false)) return false;
       if (filtroStatus === 'bloqueado' && !fornecedor.bloqueado) return false;
-      if (termo && !textoBusca(fornecedor).includes(termo)) return false;
+      if (termo && !nomeFornecedorBateBusca(fornecedor, termo)) return false;
       return true;
     });
   }, [busca, filtroStatus, fornecedores]);
