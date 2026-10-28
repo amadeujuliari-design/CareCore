@@ -12,6 +12,7 @@ export const STATUS_LABEL_PEDIDO = {
   aguardando_pagamento: 'Aguardando pagamento',
   aguardando_conferencia_extrato: 'Aguardando conferência do extrato',
   recebido: 'Encerrado',
+  imprimir_nf: 'Imprimir NF',
   cancelado: 'Cancelado',
   reprovado: 'Reprovado',
 };
@@ -34,7 +35,7 @@ export function varianteBadgeStatusPedido(status) {
   if (s === 'aguardando_escolha_orcamento') return 'info';
   if (s === 'em_cotacao' || s === 'aguardando_cotacao') return 'warning';
   if (s === 'aguardando_aprovacao_unidade' || s === 'aguardando_aprovacao_sede') return 'purple';
-  if (s === 'aguardando_pagamento' || s === 'aguardando_conferencia_extrato') return 'warning';
+  if (s === 'aguardando_pagamento' || s === 'aguardando_conferencia_extrato' || s === 'imprimir_nf') return 'warning';
   if (s === 'aprovado' || s === 'enviado_fornecedor' || s === 'recebido') return 'success';
   if (s === 'cancelado' || s === 'reprovado') return 'danger';
   return 'default';

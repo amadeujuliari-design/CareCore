@@ -106,22 +106,26 @@ export default function ModalFormPatrimonio({
                 required
                 erro={erros.descricao}
                 className="md:col-span-2"
+                caixaAlta
               />
               <CampoTexto
                 label="Nº da etiqueta"
                 value={form.numero_etiqueta}
                 onChange={(valor) => onAtualizar('numero_etiqueta', valor)}
+                caixaAlta
               />
               <CampoTexto
                 label="Localização"
                 value={form.localizacao}
                 onChange={(valor) => onAtualizar('localizacao', valor)}
                 placeholder="Sala, ADM, cozinha…"
+                caixaAlta
               />
               <CampoTexto
                 label="Departamento"
                 value={form.departamento}
                 onChange={(valor) => onAtualizar('departamento', valor)}
+                caixaAlta
               />
               <CampoSelect
                 label="Categoria (Bem / imobilizado)"
@@ -164,6 +168,7 @@ export default function ModalFormPatrimonio({
                 label="Documento (NF / recibo)"
                 value={form.documento_nf}
                 onChange={(valor) => onAtualizar('documento_nf', valor)}
+                caixaAlta
               />
               <CampoTexto
                 label="Valor da aquisição (R$)"
@@ -208,6 +213,7 @@ export default function ModalFormPatrimonio({
                     label="Motivo da baixa"
                     value={form.motivo_baixa}
                     onChange={(valor) => onAtualizar('motivo_baixa', valor)}
+                    caixaAlta
                   />
                 </>
               )}
@@ -215,9 +221,9 @@ export default function ModalFormPatrimonio({
                 <label className="mb-1 block text-xs font-semibold text-slate-600">Observações</label>
                 <textarea
                   value={form.observacao}
-                  onChange={(e) => onAtualizar('observacao', e.target.value)}
+                  onChange={(e) => onAtualizar('observacao', e.target.value.toLocaleUpperCase('pt-BR'))}
                   rows={3}
-                  className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400"
+                  className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm uppercase outline-none focus:border-slate-400"
                 />
               </div>
             </div>

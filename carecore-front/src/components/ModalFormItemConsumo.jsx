@@ -158,6 +158,7 @@ export default function ModalFormItemConsumo({
             value={form.descricao}
             onChange={(valor) => setForm((atual) => ({ ...atual, descricao: valor }))}
             required
+            caixaAlta
           />
           <CampoSelect
             label="Categoria"
@@ -198,11 +199,13 @@ export default function ModalFormItemConsumo({
               value={form.embalagem}
               onChange={(valor) => setForm((atual) => ({ ...atual, embalagem: valor }))}
               placeholder="Ex.: fardo com 12 · PCT 2 kg"
+              caixaAlta
             />
             <CampoTexto
               label="Marca preferencial"
               value={form.marca_preferencial}
               onChange={(valor) => setForm((atual) => ({ ...atual, marca_preferencial: valor }))}
+              caixaAlta
             />
             <CampoTexto
               label="Quantidade na embalagem"
@@ -224,6 +227,7 @@ export default function ModalFormItemConsumo({
             value={form.sinonimos}
             onChange={(valor) => setForm((atual) => ({ ...atual, sinonimos: valor }))}
             placeholder="Separe por vírgula. Ex.: papel toalha, toalha interfolha"
+            caixaAlta
           />
           <CampoSelect
             label="Item equivalente (opcional)"
@@ -246,6 +250,7 @@ export default function ModalFormItemConsumo({
             label="Observação"
             value={form.observacao}
             onChange={(valor) => setForm((atual) => ({ ...atual, observacao: valor }))}
+            caixaAlta
           />
           <label className="flex items-center gap-2 text-sm text-slate-700">
             <input

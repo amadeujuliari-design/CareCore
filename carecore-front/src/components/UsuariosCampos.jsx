@@ -187,6 +187,7 @@ export function CampoTexto({
     min,
     max,
     inputMode,
+    caixaAlta = false,
 }) {
   const [senhaVisivel, setSenhaVisivel] = useState(false);
   const ehSenha = type === 'password';
@@ -212,10 +213,13 @@ export function CampoTexto({
           max={max}
           inputMode={inputMode}
           onBlur={onBlur}
-          onChange={(e) => onChange(e.target.value)}
+          onChange={(e) => {
+            const bruto = e.target.value;
+            onChange(caixaAlta ? bruto.toLocaleUpperCase('pt-BR') : bruto);
+          }}
           className={`w-full rounded-xl border px-3 py-2 text-sm outline-none ${
             ehSenha ? 'pr-11' : ''
-          } ${
+          } ${caixaAlta ? 'uppercase' : ''} ${
             erro
               ? 'border-red-400 bg-red-50 focus:border-red-500'
               : 'border-slate-200 focus:border-slate-400'

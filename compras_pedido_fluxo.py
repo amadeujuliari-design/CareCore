@@ -53,6 +53,7 @@ from compras_regras import (
     STATUS_EM_COTACAO,
     STATUS_ENVIADO,
     STATUS_RECEBIDO,
+    STATUS_IMPRIMIR_NF,
     STATUS_AGUARDANDO_PAGAMENTO,
     STATUS_AGUARDANDO_EXTRATO,
     STATUS_REPROVADO,
@@ -112,6 +113,7 @@ from compras_regras import (
     pedido_segue_infraestrutura,
     pedido_na_fila_concluidos_infra,
     pedido_na_fila_nf_pagamento,
+    pedido_na_fila_nf_pagamento_suprimentos,
     tipo_eh_cotacao_projeto,
     projeto_pode_trocar_orcamento,
     tipo_suprimentos_aprova_e_envia,
@@ -216,6 +218,21 @@ def _fornecedores_solicitacao_dos_eventos(
 
 def _uid(usuario: dict) -> str:
     return str(usuario.get("id") or usuario.get("usuario_id") or "")
+
+
+def _usuario_do_projeto_anexa_nf(usuario: dict) -> bool:
+    """Gestor, técnico, administrativo ou ADM Pedidos do projeto. Sede Compras não assina NF."""
+    from security import normalizar_perfil_acesso
+
+    perfil = normalizar_perfil_acesso(
+        str(usuario.get("perfil_acesso") or usuario.get("perfil") or "").strip()
+    )
+    return bool(usuario.get("is_manutencao")) or perfil in {
+        "Gestor",
+        "Técnico",
+        "Administrativo",
+        "ADM Pedidos",
+    }
 
 
 def _iso(valor) -> Optional[str]:
@@ -1140,6 +1157,7 @@ async def arquivar_orcamento_assinado_govbr(
         perfil=str(usuario.get("perfil_acesso") or usuario.get("perfil") or ""),
         tipo=pedido.tipo,
         is_manutencao=bool(usuario.get("is_manutencao")),
+        destino=getattr(pedido, "destino_compras", None),
     ):
         raise HTTPException(status_code=403, detail="Pedido fora do escopo da sua classe de Compras.")
     if not tipo_eh_cotacao_projeto(pedido.tipo) and not segue_infra:
@@ -2273,7 +2291,7 @@ async def _validar_assinatura_eletronica_gestor(
     perfil = normalizar_perfil_acesso(
         str(usuario.get("perfil_acesso") or usuario.get("perfil") or "").strip()
     )
-    if perfil not in {"Gestor", "Técnico", "Administrativo", "ADM Pedidos"} and not usuario.get("is_manutencao"):
+    if not _usuario_do_projeto_anexa_nf(usuario):
         raise HTTPException(
             status_code=403,
             detail="A assinatura digital do gestor pode ser usada pelo gestor, pelo técnico, pelo administrativo ou pelo ADM Pedidos do projeto.",
@@ -2525,6 +2543,11 @@ async def remover_nota_fiscal(
     nota_id: str,
 ) -> None:
     if tipo_pula_orcamento(pedido.tipo):
+        if not _usuario_do_projeto_anexa_nf(usuario):
+            raise HTTPException(
+                status_code=403,
+                detail="Somente o projeto exclui a nota fiscal assinada.",
+            )
         if pedido.status not in {STATUS_RASCUNHO, STATUS_AGUARDANDO_PAGAMENTO}:
             raise HTTPException(status_code=400, detail="A NF só pode ser removida enquanto o pedido ainda não foi encerrado.")
     elif pedido.status != STATUS_ENVIADO:
@@ -2580,21 +2603,53 @@ def marcar_leitura_caixa_suprimentos(usuario: dict, pedido: ComprasPedidoDB) -> 
     return True
 
 
-def registrar_impressao_nf_suprimentos(usuario: dict, pedido: ComprasPedidoDB) -> None:
-    """Registra que Suprimentos imprimiu a NF do pedido encerrado pelo projeto."""
-    if perfil_adm_compras_sede(usuario) != "suprimentos":
-        raise HTTPException(status_code=403, detail="Somente Suprimentos registra a impressão da nota fiscal.")
-    if pedido.status != STATUS_RECEBIDO:
+def registrar_impressao_nf_suprimentos(
+    usuario: dict,
+    pedido: ComprasPedidoDB,
+    *,
+    encerrar: bool = False,
+) -> None:
+    """Registra impressão da NF. Em Imprimir NF, pode enviar o pedido para Encerrado."""
+    perfil = str(usuario.get("perfil_acesso") or usuario.get("perfil") or "")
+    if not usuario_e_sede_compras(perfil=perfil, is_manutencao=bool(usuario.get("is_manutencao"))):
+        raise HTTPException(
+            status_code=403,
+            detail="Somente Infraestrutura ou Suprimentos registram a impressão da nota fiscal.",
+        )
+    if pedido.status not in {STATUS_RECEBIDO, STATUS_IMPRIMIR_NF}:
         raise HTTPException(
             status_code=400,
             detail="A impressão da NF fica disponível depois que o projeto encerra o processo.",
         )
-    if getattr(pedido, "nf_impressa_em", None):
-        return
-    momento = _preservar_atualizacao(pedido)
-    pedido.nf_impressa_em = agora_operacional_naive()
-    pedido.nf_impressa_por_id = _uid_caixa(usuario)
-    pedido.atualizado_em = momento
+    if not getattr(pedido, "nf_impressa_em", None):
+        momento = _preservar_atualizacao(pedido)
+        pedido.nf_impressa_em = agora_operacional_naive()
+        pedido.nf_impressa_por_id = _uid_caixa(usuario)
+        pedido.atualizado_em = momento
+    if encerrar and pedido.status == STATUS_IMPRIMIR_NF:
+        pedido.status = STATUS_RECEBIDO
+        pedido.atualizado_em = agora_operacional_naive()
+
+
+async def registrar_impressao_nf_e_opcional_encerrar(
+    db: AsyncSession,
+    usuario: dict,
+    pedido: ComprasPedidoDB,
+    *,
+    encerrar: bool = False,
+) -> None:
+    anterior = pedido.status
+    registrar_impressao_nf_suprimentos(usuario, pedido, encerrar=encerrar)
+    if encerrar and anterior == STATUS_IMPRIMIR_NF and pedido.status == STATUS_RECEBIDO:
+        await registrar_evento_pedido(
+            db,
+            pedido_id=pedido.id,
+            tipo=TIPO_EVENTO_STATUS,
+            texto="Pedido encerrado após impressão da nota fiscal.",
+            usuario_id=_uid(usuario),
+            status_anterior=anterior,
+            status_novo=STATUS_RECEBIDO,
+        )
 
 
 async def encerrar_pedido(
@@ -2608,7 +2663,7 @@ async def encerrar_pedido(
         if pedido.status != STATUS_AGUARDANDO_EXTRATO:
             raise HTTPException(
                 status_code=400,
-                detail="Encerramento da emergência só depois da Infraestrutura enviar a NF para pagamento e o projeto conferir o extrato.",
+                detail="Encerramento da emergência só depois do envio da NF para pagamento e o projeto conferir o extrato.",
             )
     elif pedido.status != STATUS_ENVIADO:
         raise HTTPException(status_code=400, detail="Encerramento só após envio ao fornecedor.")
@@ -2645,7 +2700,8 @@ async def encerrar_pedido(
     pedido.recebimento_observacao = payload.get("observacao") or None
     pedido.recebimento_divergencia = bool(payload.get("divergencia"))
     anterior = pedido.status
-    pedido.status = STATUS_RECEBIDO
+    segue_infra = pedido_segue_infraestrutura(pedido.tipo, getattr(pedido, "destino_compras", None))
+    pedido.status = STATUS_IMPRIMIR_NF
     pedido.atualizado_em = agora_operacional_naive()
 
     itens_payload = {item.get("id"): item for item in (payload.get("itens") or []) if item.get("id")}
@@ -2744,10 +2800,10 @@ async def encerrar_pedido(
         db,
         pedido_id=pedido.id,
         tipo=TIPO_EVENTO_STATUS,
-        texto="Processo encerrado com nota(s) fiscal(is) anexada(s).",
+        texto="Pedido pronto para imprimir a nota fiscal.",
         usuario_id=_uid(usuario),
         status_anterior=anterior,
-        status_novo=STATUS_RECEBIDO,
+        status_novo=pedido.status,
     )
     return pedido
 
@@ -3006,6 +3062,7 @@ async def assinar_orcamento_e_aprovar_sede(
         perfil=str(usuario.get("perfil_acesso") or usuario.get("perfil") or ""),
         tipo=pedido.tipo,
         is_manutencao=bool(usuario.get("is_manutencao")),
+        destino=getattr(pedido, "destino_compras", None),
     ):
         raise HTTPException(status_code=403, detail="Pedido fora do escopo da sua classe de Compras.")
     if pedido.status != STATUS_AGUARDANDO_SEDE:
@@ -3561,7 +3618,41 @@ async def listar_fila_nf_pagamento(db: AsyncSession, usuario: dict) -> list[Comp
             )
         ).scalars().all()
     )
-    return [p for p in rows if pedido_na_fila_nf_pagamento(p.tipo, p.status)]
+    return [
+        p
+        for p in rows
+        if pedido_na_fila_nf_pagamento(p.tipo, p.status, getattr(p, "destino_compras", None))
+    ]
+
+
+def _exigir_suprimentos(usuario: dict) -> None:
+    if perfil_adm_compras_sede(usuario) != "suprimentos" and not usuario.get("is_manutencao"):
+        raise HTTPException(status_code=403, detail="Somente Suprimentos acessa esta fila.")
+
+
+async def listar_fila_nf_pagamento_suprimentos(db: AsyncSession, usuario: dict) -> list[ComprasPedidoDB]:
+    _exigir_suprimentos(usuario)
+    org_id = usuario.get("organizacao_id")
+    if not org_id:
+        return []
+    rows = list(
+        (
+            await db.execute(
+                select(ComprasPedidoDB).where(
+                    ComprasPedidoDB.organizacao_id == org_id,
+                    ComprasPedidoDB.status == STATUS_AGUARDANDO_PAGAMENTO,
+                    ComprasPedidoDB.tipo == TIPO_EMERGENCIA,
+                )
+            )
+        ).scalars().all()
+    )
+    return [
+        p
+        for p in rows
+        if pedido_na_fila_nf_pagamento_suprimentos(
+            p.tipo, p.status, getattr(p, "destino_compras", None)
+        )
+    ]
 
 
 async def listar_fila_extrato_projeto(db: AsyncSession, usuario: dict) -> list[ComprasPedidoDB]:
@@ -3588,6 +3679,11 @@ async def enviar_emergencia_para_pagamento(
 ) -> ComprasPedidoDB:
     if not tipo_eh_emergencia(pedido.tipo):
         raise HTTPException(status_code=400, detail="Somente Compras emergência envia a NF direto para pagamento.")
+    if not _usuario_do_projeto_anexa_nf(usuario):
+        raise HTTPException(
+            status_code=403,
+            detail="O projeto anexa a NF assinada e envia para a fila de pagamento.",
+        )
     if pedido.status != STATUS_RASCUNHO:
         raise HTTPException(status_code=400, detail="A NF já foi enviada para pagamento ou o pedido não está em rascunho.")
     notas = [n for n in await _notas_pedido(db, pedido.id) if (n.tipo_nf or "") != "boleto"]
@@ -3596,11 +3692,17 @@ async def enviar_emergencia_para_pagamento(
     anterior = pedido.status
     pedido.status = STATUS_AGUARDANDO_PAGAMENTO
     pedido.atualizado_em = agora_operacional_naive()
+    destino = getattr(pedido, "destino_compras", None)
+    fila = (
+        "Suprimentos"
+        if (destino or "").strip().lower() == "suprimentos"
+        else "Infraestrutura"
+    )
     await registrar_evento_pedido(
         db,
         pedido_id=pedido.id,
         tipo=TIPO_EVENTO_STATUS,
-        texto="NF enviada para a fila de pagamento da Infraestrutura.",
+        texto=f"NF enviada para a fila de pagamento de {fila}.",
         usuario_id=_uid(usuario),
         status_anterior=anterior,
         status_novo=STATUS_AGUARDANDO_PAGAMENTO,
@@ -3613,8 +3715,14 @@ async def confirmar_nf_enviada_pagamento(
     usuario: dict,
     pedido: ComprasPedidoDB,
 ) -> ComprasPedidoDB:
-    _exigir_infraestrutura(usuario)
-    if not pedido_na_fila_nf_pagamento(pedido.tipo, pedido.status):
+    destino = getattr(pedido, "destino_compras", None)
+    if pedido_na_fila_nf_pagamento_suprimentos(pedido.tipo, pedido.status, destino):
+        _exigir_suprimentos(usuario)
+        texto_evento = "Suprimentos confirmou o envio da NF para pagamento. Projeto: conferir o extrato."
+    elif pedido_na_fila_nf_pagamento(pedido.tipo, pedido.status, destino):
+        _exigir_infraestrutura(usuario)
+        texto_evento = "Infraestrutura confirmou o envio da NF para pagamento. Projeto: conferir o extrato."
+    else:
         raise HTTPException(status_code=400, detail="Este pedido não está na fila de NFs a pagar.")
     anterior = pedido.status
     pedido.status = STATUS_AGUARDANDO_EXTRATO
@@ -3625,7 +3733,7 @@ async def confirmar_nf_enviada_pagamento(
         db,
         pedido_id=pedido.id,
         tipo=TIPO_EVENTO_STATUS,
-        texto="Infraestrutura confirmou o envio da NF para pagamento. Projeto: conferir o extrato.",
+        texto=texto_evento,
         usuario_id=_uid(usuario),
         status_anterior=anterior,
         status_novo=STATUS_AGUARDANDO_EXTRATO,

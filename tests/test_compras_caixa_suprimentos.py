@@ -10,7 +10,12 @@ from compras_pedido_fluxo import (
     marcar_leitura_caixa_suprimentos,
     registrar_impressao_nf_suprimentos,
 )
-from compras_regras import PERFIL_ADM_COMPRAS_INFRAESTRUTURA, PERFIL_ADM_COMPRAS_SUPRIMENTOS
+from compras_regras import (
+    PERFIL_ADM_COMPRAS_INFRAESTRUTURA,
+    PERFIL_ADM_COMPRAS_SUPRIMENTOS,
+    STATUS_IMPRIMIR_NF,
+    STATUS_RECEBIDO,
+)
 
 
 def _pedido(**kwargs):
@@ -91,3 +96,42 @@ def test_impressao_nf_so_no_pedido_encerrado():
             _pedido(),
         )
     assert negado.value.status_code == 403
+
+    infra = _pedido()
+    registrar_impressao_nf_suprimentos(
+        {"perfil_acesso": PERFIL_ADM_COMPRAS_INFRAESTRUTURA, "id": "inf-1"},
+        infra,
+    )
+    assert infra.nf_impressa_por_id == "inf-1"
+
+
+def test_impressao_nf_em_imprimir_nf_pode_encerrar():
+    pedido = _pedido(status=STATUS_IMPRIMIR_NF)
+    registrar_impressao_nf_suprimentos(
+        {"perfil_acesso": PERFIL_ADM_COMPRAS_SUPRIMENTOS, "id": "sup-1"},
+        pedido,
+        encerrar=True,
+    )
+    assert pedido.status == STATUS_RECEBIDO
+    assert pedido.nf_impressa_por_id == "sup-1"
+
+
+def test_impressao_nf_em_imprimir_nf_sem_encerrar_mantem_status():
+    pedido = _pedido(status=STATUS_IMPRIMIR_NF)
+    registrar_impressao_nf_suprimentos(
+        {"perfil_acesso": PERFIL_ADM_COMPRAS_SUPRIMENTOS, "id": "sup-1"},
+        pedido,
+        encerrar=False,
+    )
+    assert pedido.status == STATUS_IMPRIMIR_NF
+
+
+def test_impressao_nf_infraestrutura_pode_encerrar():
+    pedido = _pedido(status=STATUS_IMPRIMIR_NF)
+    registrar_impressao_nf_suprimentos(
+        {"perfil_acesso": PERFIL_ADM_COMPRAS_INFRAESTRUTURA, "id": "inf-1"},
+        pedido,
+        encerrar=True,
+    )
+    assert pedido.status == STATUS_RECEBIDO
+    assert pedido.nf_impressa_por_id == "inf-1"

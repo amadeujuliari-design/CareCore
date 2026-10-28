@@ -49,4 +49,9 @@ describe('comprasPedidoStatus', () => {
     );
     assert.equal(varianteBadgeStatusPedido('aguardando_pagamento'), 'warning');
   });
+
+  it('rótulo Imprimir NF', () => {
+    assert.equal(rotuloStatusPedidoLista({ status: 'imprimir_nf' }), 'Imprimir NF');
+    assert.equal(varianteBadgeStatusPedido('imprimir_nf'), 'warning');
+  });
 });

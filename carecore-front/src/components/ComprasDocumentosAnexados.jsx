@@ -24,6 +24,7 @@ export default function ComprasDocumentosAnexados({
   aberto,
   onToggle,
   podeExcluir,
+  podeExcluirItem,
   onVisualizar,
   onExcluirNf,
   onExcluirAnexo,
@@ -108,7 +109,8 @@ export default function ComprasDocumentosAnexados({
                       ) : (
                         <span className="text-xs font-medium text-slate-400">Sem arquivo</span>
                       )}
-                      {podeExcluir && (item.notaId || item.anexoId) ? (
+                      {(typeof podeExcluirItem === 'function' ? podeExcluirItem(item) : podeExcluir)
+                        && (item.notaId || item.anexoId) ? (
                         <button
                           type="button"
                           className="inline-flex items-center rounded-lg border border-rose-200 px-3 py-1.5 text-xs font-bold text-rose-700 hover:bg-rose-50"

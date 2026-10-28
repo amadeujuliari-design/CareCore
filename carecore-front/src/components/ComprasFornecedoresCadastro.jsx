@@ -402,7 +402,7 @@ export default function ComprasFornecedoresCadastro({
             />
           ) : (
             <div className="overflow-x-auto">
-              <table className="min-w-full text-sm">
+              <table className="min-w-full text-sm uppercase">
                 <thead>
                   <tr className="text-left text-xs uppercase tracking-wide text-slate-500">
                     <th className="px-2 py-2">Fornecedor</th>

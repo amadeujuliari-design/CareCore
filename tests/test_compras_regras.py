@@ -699,6 +699,7 @@ def test_compras_emergencia_e_filas_infra():
         formatar_data_br_compras,
         pedido_na_fila_concluidos_infra,
         pedido_na_fila_nf_pagamento,
+        pedido_na_fila_nf_pagamento_suprimentos,
         pedido_segue_infraestrutura,
         texto_cadastro_caixa_alta,
         tipo_eh_emergencia,
@@ -720,8 +721,16 @@ def test_compras_emergencia_e_filas_infra():
     assert not projeto_pode_trocar_orcamento(TIPO_EMERGENCIA, None, STATUS_AGUARDANDO_SEDE)
     assert aviso_cotacoes_insuficientes(0, TIPO_EMERGENCIA) is None
     assert pedido_segue_infraestrutura(TIPO_EMERGENCIA)
+    assert not pedido_segue_infraestrutura(TIPO_EMERGENCIA, "suprimentos")
     assert pedido_na_fila_nf_pagamento(TIPO_EMERGENCIA, STATUS_AGUARDANDO_PAGAMENTO)
+    assert not pedido_na_fila_nf_pagamento(TIPO_EMERGENCIA, STATUS_AGUARDANDO_PAGAMENTO, "suprimentos")
     assert not pedido_na_fila_nf_pagamento(TIPO_IMOBILIZADO, STATUS_AGUARDANDO_PAGAMENTO)
+    assert pedido_na_fila_nf_pagamento_suprimentos(
+        TIPO_EMERGENCIA, STATUS_AGUARDANDO_PAGAMENTO, "suprimentos",
+    )
+    assert not pedido_na_fila_nf_pagamento_suprimentos(
+        TIPO_EMERGENCIA, STATUS_AGUARDANDO_PAGAMENTO, None,
+    )
     assert pedido_na_fila_concluidos_infra(
         tipo=TIPO_IMOBILIZADO, destino=None, status=STATUS_RECEBIDO, ok_final_em=None,
     )
@@ -730,6 +739,17 @@ def test_compras_emergencia_e_filas_infra():
     )
     visao = tipos_visiveis_adm_compras(perfil="ADM Global Compras Infraestrutura")
     assert visao is not None and TIPO_EMERGENCIA in visao
+    from compras_regras import STATUS_CONCLUIDOS_LISTA, STATUS_IMPRIMIR_NF, usuario_sede_pode_ver_tipo
+    assert STATUS_IMPRIMIR_NF in STATUS_CONCLUIDOS_LISTA
+    assert usuario_sede_pode_ver_tipo(
+        perfil="ADM Global Compras Suprimentos", tipo=TIPO_EMERGENCIA, destino="suprimentos",
+    )
+    assert not usuario_sede_pode_ver_tipo(
+        perfil="ADM Global Compras Suprimentos", tipo=TIPO_EMERGENCIA, destino="infraestrutura",
+    )
+    assert usuario_sede_pode_ver_tipo(
+        perfil="ADM Global Compras Infraestrutura", tipo=TIPO_EMERGENCIA, destino=None,
+    )
     assert texto_cadastro_caixa_alta("  arroz tipo 1 ") == "ARROZ TIPO 1"
     assert formatar_data_br_compras(date(2026, 10, 26)) == "26/10/2026"
     pedido = SimpleNamespace(categoria_split_nome="Alimentação", tipo="consumo")

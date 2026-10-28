@@ -78,6 +78,7 @@ export default function ModalFormFornecedor({
                 required
                 erro={erros.nome}
                 className="md:col-span-2"
+                caixaAlta
               />
               <div className="flex gap-2 md:col-span-2">
                 <CampoTexto
@@ -157,6 +158,7 @@ export default function ModalFormFornecedor({
                 onChange={(valor) => onAtualizar('segmento', valor)}
                 placeholder="Ex.: Alimentação seca, Material elétrico"
                 className="md:col-span-2"
+                caixaAlta
               />
             </div>
           </section>
@@ -171,6 +173,7 @@ export default function ModalFormFornecedor({
                 value={form.contato}
                 onChange={(valor) => onAtualizar('contato', valor)}
                 placeholder="Nome da pessoa de contato"
+                caixaAlta
               />
               <CampoTexto
                 label="Telefone"
@@ -217,6 +220,7 @@ export default function ModalFormFornecedor({
               erros={erros}
               onChange={onAtualizar}
               onErroChange={onErroChange}
+              caixaAlta
             />
           </section>
 

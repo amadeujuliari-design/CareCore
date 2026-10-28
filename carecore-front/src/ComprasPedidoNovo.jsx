@@ -40,7 +40,7 @@ import {
 import { unidadeParaPedido } from './utils/comprasItensConsumoUtils';
 import { centavosParaInput, reaisParaCentavos } from './utils/comprasPatrimonioUtils';
 
-const inputClass = 'w-full rounded-xl border border-slate-200 px-3 py-2 text-sm';
+const inputClass = 'w-full rounded-xl border border-slate-200 px-3 py-2 text-sm uppercase';
 
 function mascararMoedaDigitando(texto) {
   const digitos = String(texto || '').replace(/\D/g, '');
@@ -82,10 +82,8 @@ export default function ComprasPedidoNovo() {
   const [destinoCompras, setDestinoCompras] = useState(
     tipo === TIPO_MANUTENCAO ? 'suprimentos' : 'infraestrutura',
   );
-  const segueInfra = pedidoSegueInfraestrutura(
-    tipo,
-    tipo === TIPO_MANUTENCAO ? destinoCompras : 'infraestrutura',
-  );
+  const segueInfra = pedidoSegueInfraestrutura(tipo, destinoCompras);
+  const formularioDescricao = segueInfra || tipo === TIPO_EMERGENCIA;
 
   const [erro, setErro] = useState('');
   const [salvando, setSalvando] = useState(false);
@@ -197,7 +195,7 @@ export default function ComprasPedidoNovo() {
     setErro('');
     setSalvando(true);
     try {
-      const itens = segueInfra ? [] : linhas
+      const itens = formularioDescricao ? [] : linhas
         .filter((l) => (l.descricao || '').trim())
         .map((l) => ({
           descricao: l.descricao.trim(),
@@ -229,12 +227,12 @@ export default function ComprasPedidoNovo() {
 
       const payload = {
         tipo,
-        observacao: segueInfra ? undefined : (form.observacao.trim() || undefined),
+        observacao: formularioDescricao ? undefined : (form.observacao.trim() || undefined),
         fonte_recurso_id: form.fonte_recurso_id || undefined,
         itens,
       };
-      if (segueInfra) {
-        payload.destino_compras = 'infraestrutura';
+      if (formularioDescricao) {
+        payload.destino_compras = tipo === TIPO_EMERGENCIA ? destinoCompras : 'infraestrutura';
         payload.info_pedido = form.info_pedido.trim();
         payload.fornecedor_pedido_nome = form.fornecedor_pedido_nome.trim();
         payload.fornecedor_pedido_info = form.fornecedor_pedido_info.trim() || undefined;
@@ -327,6 +325,37 @@ export default function ComprasPedidoNovo() {
           <form onSubmit={criar} className="mx-auto max-w-3xl space-y-4 p-4 pb-16">
             {erro ? (
               <div className="rounded-xl bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">{erro}</div>
+            ) : null}
+
+            {tipo === TIPO_EMERGENCIA ? (
+              <SectionCard title="Quem conduz">
+                <fieldset>
+                  <p className="mb-2 text-sm font-semibold text-slate-800">Esta emergência é para Infraestrutura ou para Suprimentos?</p>
+                  <div className="flex flex-wrap gap-4 text-sm">
+                    <label className="inline-flex items-center gap-2">
+                      <input
+                        type="radio"
+                        name="destino_compras_emergencia"
+                        checked={destinoCompras === 'infraestrutura'}
+                        onChange={() => setDestinoCompras('infraestrutura')}
+                      />
+                      Infraestrutura
+                    </label>
+                    <label className="inline-flex items-center gap-2">
+                      <input
+                        type="radio"
+                        name="destino_compras_emergencia"
+                        checked={destinoCompras === 'suprimentos'}
+                        onChange={() => setDestinoCompras('suprimentos')}
+                      />
+                      Suprimentos
+                    </label>
+                  </div>
+                  <p className="mt-1 text-xs text-slate-500">
+                    O fluxo é o mesmo (sem orçamento e sem envio ao fornecedor). A NF a pagar vai para a fila da equipe escolhida.
+                  </p>
+                </fieldset>
+              </SectionCard>
             ) : null}
 
             {tipo === TIPO_IMOBILIZADO || tipo === TIPO_SERVICO || tipo === TIPO_EMERGENCIA ? null : (
@@ -598,7 +627,7 @@ export default function ComprasPedidoNovo() {
               </SectionCard>
             ) : null}
 
-            {segueInfra ? (
+            {formularioDescricao ? (
               <SectionCard
                 title="Informações do pedido"
                 subtitle={
@@ -688,7 +717,7 @@ export default function ComprasPedidoNovo() {
             </SectionCard>
             )}
 
-            {segueInfra ? null : (
+            {formularioDescricao ? null : (
             <SectionCard title={tipo === TIPO_SERVICO ? 'Itens (opcional agora)' : 'Itens'}>
               <div className="space-y-3">
                 {linhas.map((linha, idx) => (

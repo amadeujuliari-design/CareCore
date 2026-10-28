@@ -54,7 +54,9 @@ from compras_regras import (
     STATUS_ENVIADO,
     STATUS_RASCUNHO,
     STATUS_RECEBIDO,
+    STATUS_IMPRIMIR_NF,
     STATUS_REPROVADO,
+    STATUS_CONCLUIDOS_LISTA,
     STATUS_TERMINAIS_PEDIDO,
     TIPO_CONSUMO,
     TIPO_EMERGENCIA,
@@ -262,9 +264,9 @@ def _aplicar_cabecalho_cotacao_projeto(
         return
 
     if "titulo" in payload:
-        pedido.titulo = (payload.get("titulo") or "").strip() or None
+        pedido.titulo = texto_cadastro_caixa_alta(payload.get("titulo")) or None
     if "justificativa" in payload:
-        pedido.justificativa = (payload.get("justificativa") or "").strip() or None
+        pedido.justificativa = texto_cadastro_caixa_alta(payload.get("justificativa")) or None
     if "urgencia" in payload:
         urg = (payload.get("urgencia") or URGENCIA_NORMAL).strip().lower()
         if urg not in URGENCIAS_PEDIDO:
@@ -280,18 +282,18 @@ def _aplicar_cabecalho_cotacao_projeto(
         else:
             pedido.data_desejada = None
     if "local_texto" in payload:
-        pedido.local_texto = (payload.get("local_texto") or "").strip() or None
+        pedido.local_texto = texto_cadastro_caixa_alta(payload.get("local_texto")) or None
     if "patrimonio_id" in payload:
         pedido.patrimonio_id = (payload.get("patrimonio_id") or "").strip() or None
     if "defeito" in payload:
-        pedido.defeito = (payload.get("defeito") or "").strip() or None
+        pedido.defeito = texto_cadastro_caixa_alta(payload.get("defeito")) or None
     if "tipo_manutencao" in payload:
         tm = (payload.get("tipo_manutencao") or "").strip().lower() or None
         if tm and tm not in TIPOS_MANUTENCAO:
             raise HTTPException(status_code=400, detail="Tipo de manutenção inválido.")
         pedido.tipo_manutencao = tm
     if "escopo_servico" in payload:
-        pedido.escopo_servico = (payload.get("escopo_servico") or "").strip() or None
+        pedido.escopo_servico = texto_cadastro_caixa_alta(payload.get("escopo_servico")) or None
     ve = payload.get("valor_estimado_centavos")
     if ve is not None and str(ve).strip() != "":
         pedido.valor_estimado_centavos = int(ve)
@@ -1020,6 +1022,7 @@ async def obter_pedido(
         perfil=_perfil(usuario),
         tipo=pedido.tipo,
         is_manutencao=bool(usuario.get("is_manutencao")),
+        destino=getattr(pedido, "destino_compras", None),
     ):
         raise HTTPException(status_code=403, detail="Pedido fora do escopo da sua classe de Compras.")
     return pedido
@@ -1059,7 +1062,14 @@ async def listar_pedidos(
         if classe_sede == "infraestrutura":
             filtros.append(
                 or_(
-                    ComprasPedidoDB.tipo.in_((TIPO_IMOBILIZADO, TIPO_SERVICO, TIPO_EMERGENCIA)),
+                    ComprasPedidoDB.tipo.in_((TIPO_IMOBILIZADO, TIPO_SERVICO)),
+                    and_(
+                        ComprasPedidoDB.tipo == TIPO_EMERGENCIA,
+                        or_(
+                            ComprasPedidoDB.destino_compras.is_(None),
+                            ComprasPedidoDB.destino_compras != DESTINO_COMPRAS_SUPRIMENTOS,
+                        ),
+                    ),
                     and_(
                         ComprasPedidoDB.tipo == TIPO_MANUTENCAO,
                         ComprasPedidoDB.destino_compras == DESTINO_COMPRAS_INFRAESTRUTURA,
@@ -1070,6 +1080,10 @@ async def listar_pedidos(
             filtros.append(
                 or_(
                     ComprasPedidoDB.tipo.in_((TIPO_CONSUMO, TIPO_HORTIFRUTI)),
+                    and_(
+                        ComprasPedidoDB.tipo == TIPO_EMERGENCIA,
+                        ComprasPedidoDB.destino_compras == DESTINO_COMPRAS_SUPRIMENTOS,
+                    ),
                     and_(
                         ComprasPedidoDB.tipo == TIPO_MANUTENCAO,
                         or_(
@@ -1088,10 +1102,9 @@ async def listar_pedidos(
     else:
         grupo = (status_grupo or "").strip().lower()
         if grupo in {"terminais", "concluidos", "encerrados"}:
-            if classe_sede == "infraestrutura":
-                filtros.append(ComprasPedidoDB.status.in_((STATUS_RECEBIDO, STATUS_REPROVADO)))
-            else:
-                filtros.append(ComprasPedidoDB.status.in_(tuple(STATUS_TERMINAIS_PEDIDO)))
+            filtros.append(ComprasPedidoDB.status.in_(tuple(STATUS_CONCLUIDOS_LISTA)))
+        elif grupo in {"cancelados"}:
+            filtros.append(ComprasPedidoDB.status == STATUS_CANCELADO)
         elif grupo in {"abertos", "andamento", "em_andamento"}:
             filtros.append(ComprasPedidoDB.status.notin_(tuple(STATUS_TERMINAIS_PEDIDO)))
     if tipo:
@@ -1212,24 +1225,33 @@ async def criar_pedido(
         competencia=competencia,
         status=STATUS_RASCUNHO,
         fonte_recurso_id=payload.get("fonte_recurso_id") or None,
-        observacao=(payload.get("observacao") or None),
+        observacao=texto_cadastro_caixa_alta(payload.get("observacao")) or None,
         criado_por_id=_uid(usuario),
         data_envio_prevista=data_prevista if tipo == TIPO_CONSUMO else None,
         envio_automatico=bool(payload.get("envio_automatico")) if tipo == TIPO_CONSUMO else False,
     )
     _aplicar_cabecalho_cotacao_projeto(pedido, payload, obrigatorio=tipo_eh_cotacao_projeto(tipo))
     segue_infra = pedido_segue_infraestrutura(tipo, payload.get("destino_compras"))
-    if segue_infra:
-        info = (payload.get("info_pedido") or "").strip()
-        nome_fornecedor = (payload.get("fornecedor_pedido_nome") or "").strip()
+    formulario_descricao = segue_infra or tipo_eh_emergencia(tipo)
+    if formulario_descricao:
+        info = texto_cadastro_caixa_alta(payload.get("info_pedido"))
+        nome_fornecedor = texto_cadastro_caixa_alta(payload.get("fornecedor_pedido_nome"))
         if not info:
             raise HTTPException(status_code=400, detail="Informe as informações do pedido.")
         if not nome_fornecedor:
             raise HTTPException(status_code=400, detail="Informe o nome do fornecedor.")
         pedido.info_pedido = info
         pedido.fornecedor_pedido_nome = nome_fornecedor
-        pedido.fornecedor_pedido_info = (payload.get("fornecedor_pedido_info") or "").strip() or None
-        pedido.destino_compras = DESTINO_COMPRAS_INFRAESTRUTURA
+        pedido.fornecedor_pedido_info = texto_cadastro_caixa_alta(payload.get("fornecedor_pedido_info")) or None
+        if tipo_eh_emergencia(tipo):
+            destino_escolhido = (payload.get("destino_compras") or DESTINO_COMPRAS_INFRAESTRUTURA).strip().lower()
+            pedido.destino_compras = (
+                DESTINO_COMPRAS_SUPRIMENTOS
+                if destino_escolhido == DESTINO_COMPRAS_SUPRIMENTOS
+                else DESTINO_COMPRAS_INFRAESTRUTURA
+            )
+        else:
+            pedido.destino_compras = DESTINO_COMPRAS_INFRAESTRUTURA
         pedido.observacao = None
         if tipo_eh_emergencia(tipo) and not pedido.valor_estimado_centavos:
             raise HTTPException(status_code=400, detail="Informe o valor total da compra.")
@@ -1238,7 +1260,7 @@ async def criar_pedido(
     db.add(pedido)
     await db.flush()
 
-    linhas = [] if segue_infra else [
+    linhas = [] if formulario_descricao else [
         item for item in (payload.get("itens") or []) if (item.get("descricao") or "").strip()
     ]
     if any(not (item.get("catalogo_item_id") or "").strip() for item in linhas):
@@ -1256,12 +1278,12 @@ async def criar_pedido(
             ComprasPedidoItemDB(
                 pedido_id=pedido.id,
                 categoria_id=item.get("categoria_id") or None,
-                descricao=(item.get("descricao") or "").strip(),
+                descricao=texto_cadastro_caixa_alta(item.get("descricao")),
                 quantidade=float(item.get("quantidade") or 1),
                 unidade_medida=_unidade_linha_pedido(item, cat),
-                embalagem=(item.get("embalagem") or "").strip() or None,
-                marca_preferencial=item.get("marca_preferencial") or None,
-                observacao=item.get("observacao") or None,
+                embalagem=texto_cadastro_caixa_alta(item.get("embalagem")) or None,
+                marca_preferencial=texto_cadastro_caixa_alta(item.get("marca_preferencial")) or None,
+                observacao=texto_cadastro_caixa_alta(item.get("observacao")) or None,
                 catalogo_item_id=item.get("catalogo_item_id") or None,
             )
         )
@@ -1521,12 +1543,12 @@ async def substituir_itens(
             ComprasPedidoItemDB(
                 pedido_id=pedido.id,
                 categoria_id=item.get("categoria_id") or None,
-                descricao=(item.get("descricao") or "").strip(),
+                descricao=texto_cadastro_caixa_alta(item.get("descricao")),
                 quantidade=float(item.get("quantidade") or 1),
                 unidade_medida=_unidade_linha_pedido(item, cat),
-                embalagem=(item.get("embalagem") or "").strip() or None,
-                marca_preferencial=item.get("marca_preferencial") or None,
-                observacao=item.get("observacao") or None,
+                embalagem=texto_cadastro_caixa_alta(item.get("embalagem")) or None,
+                marca_preferencial=texto_cadastro_caixa_alta(item.get("marca_preferencial")) or None,
+                observacao=texto_cadastro_caixa_alta(item.get("observacao")) or None,
                 catalogo_item_id=item.get("catalogo_item_id") or None,
             )
         )
@@ -1952,6 +1974,7 @@ async def escolher_cotacao(
         perfil=_perfil(usuario),
         tipo=pedido.tipo,
         is_manutencao=bool(usuario.get("is_manutencao")),
+        destino=getattr(pedido, "destino_compras", None),
     ) and not (infra_deste and classe_sede == "infraestrutura"):
         raise HTTPException(status_code=403, detail="Pedido fora do escopo da sua classe de Compras.")
     if pedido.status not in {
@@ -2303,7 +2326,7 @@ async def cancelar_pedido(
     pedido: ComprasPedidoDB,
     motivo: Optional[str],
 ) -> ComprasPedidoDB:
-    if pedido.status in {STATUS_RECEBIDO, STATUS_CANCELADO, STATUS_REPROVADO}:
+    if pedido.status in {STATUS_RECEBIDO, STATUS_IMPRIMIR_NF, STATUS_CANCELADO, STATUS_REPROVADO}:
         raise HTTPException(status_code=400, detail="Este pedido não pode ser cancelado.")
     if not _sede(usuario):
         if _pedido_escopo_sede(pedido):
@@ -2386,6 +2409,22 @@ async def excluir_rascunho_pedido(db: AsyncSession, usuario: dict, pedido: Compr
     await db.delete(pedido)
 
 
+async def excluir_pedido_cancelado(db: AsyncSession, usuario: dict, pedido: ComprasPedidoDB) -> None:
+    """Infraestrutura e Suprimentos excluem pedidos cancelados da própria lista."""
+    if pedido.status != STATUS_CANCELADO:
+        raise HTTPException(status_code=400, detail="Só é possível excluir pedido cancelado.")
+    classe = perfil_adm_compras_sede(usuario)
+    manutencao = bool(usuario.get("is_manutencao"))
+    infra = pedido_segue_infraestrutura(pedido.tipo, getattr(pedido, "destino_compras", None))
+    if infra:
+        if classe != "infraestrutura" and not manutencao:
+            raise HTTPException(status_code=403, detail="Somente a Infraestrutura exclui cancelados desta lista.")
+    else:
+        if classe != "suprimentos" and not manutencao:
+            raise HTTPException(status_code=403, detail="Somente Suprimentos exclui cancelados desta lista.")
+    await _apagar_pedido_compras_e_filhos(db, pedido)
+
+
 async def _apagar_pedido_compras_e_filhos(db: AsyncSession, pedido: ComprasPedidoDB) -> None:
     """Remove pedido e registros ligados. Usado para cancelados de Infraestrutura."""
     evento_ids = list(
@@ -2441,32 +2480,114 @@ async def apagar_pedidos_cancelados_infra(db: AsyncSession, *, organizacao_id: O
     return {"apagados": len(apagados), "itens": apagados}
 
 
+def _aplicar_caixa_alta_campo(obj, campo: str) -> bool:
+    atual = getattr(obj, campo, None)
+    if not atual:
+        return False
+    nova = texto_cadastro_caixa_alta(atual)
+    if nova and nova != atual:
+        setattr(obj, campo, nova)
+        return True
+    return False
+
+
 async def sanitizar_cadastros_compras_caixa_alta(db: AsyncSession, *, organizacao_id: Optional[str] = None) -> dict:
-    """Força nome de item e fornecedor em caixa alta."""
-    filtros_item = []
-    filtros_forn = []
+    """Força cadastros e textos de pedidos em caixa alta."""
+    filtros_org = []
     if organizacao_id:
-        filtros_item.append(ComprasItemConsumoDB.organizacao_id == organizacao_id)
-        filtros_forn.append(ComprasFornecedorDB.organizacao_id == organizacao_id)
-    itens = list((await db.execute(select(ComprasItemConsumoDB).where(*filtros_item) if filtros_item else select(ComprasItemConsumoDB))).scalars().all())
-    fornecedores = list((await db.execute(select(ComprasFornecedorDB).where(*filtros_forn) if filtros_forn else select(ComprasFornecedorDB))).scalars().all())
-    n_itens = 0
-    n_forn = 0
-    for item in itens:
-        nova = texto_cadastro_caixa_alta(item.descricao)
-        if nova and nova != (item.descricao or ""):
-            item.descricao = nova
+        filtros_org.append(organizacao_id)
+
+    def _where(modelo, campo_org="organizacao_id"):
+        if organizacao_id:
+            return select(modelo).where(getattr(modelo, campo_org) == organizacao_id)
+        return select(modelo)
+
+    n_itens = n_forn = n_cat = n_fontes = n_pedidos = n_linhas = n_cotacoes = n_patrimonio = 0
+    for item in (await db.execute(_where(ComprasItemConsumoDB))).scalars().all():
+        mudou = _aplicar_caixa_alta_campo(item, "descricao")
+        mudou = _aplicar_caixa_alta_campo(item, "marca_preferencial") or mudou
+        mudou = _aplicar_caixa_alta_campo(item, "embalagem") or mudou
+        mudou = _aplicar_caixa_alta_campo(item, "sinonimos") or mudou
+        mudou = _aplicar_caixa_alta_campo(item, "observacao") or mudou
+        if mudou:
             n_itens += 1
-        if item.marca_preferencial:
-            marca = texto_cadastro_caixa_alta(item.marca_preferencial)
-            if marca != item.marca_preferencial:
-                item.marca_preferencial = marca
-    for forn in fornecedores:
-        nova = texto_cadastro_caixa_alta(forn.nome)
-        if nova and nova != (forn.nome or ""):
-            forn.nome = nova
+    for forn in (await db.execute(_where(ComprasFornecedorDB))).scalars().all():
+        mudou = False
+        for campo in (
+            "nome",
+            "segmento",
+            "contato",
+            "logradouro",
+            "complemento",
+            "bairro",
+            "cidade",
+            "observacao",
+        ):
+            mudou = _aplicar_caixa_alta_campo(forn, campo) or mudou
+        if mudou:
             n_forn += 1
-    return {"itens": n_itens, "fornecedores": n_forn}
+    for cat in (await db.execute(_where(ComprasCategoriaDB))).scalars().all():
+        if _aplicar_caixa_alta_campo(cat, "nome"):
+            n_cat += 1
+    for fonte in (await db.execute(_where(ComprasFonteRecursoDB))).scalars().all():
+        if _aplicar_caixa_alta_campo(fonte, "nome"):
+            n_fontes += 1
+    pedidos = list((await db.execute(_where(ComprasPedidoDB))).scalars().all())
+    ids = [p.id for p in pedidos]
+    for pedido in pedidos:
+        mudou = False
+        for campo in (
+            "titulo",
+            "info_pedido",
+            "observacao",
+            "justificativa",
+            "local_texto",
+            "defeito",
+            "escopo_servico",
+            "fornecedor_pedido_nome",
+            "fornecedor_pedido_info",
+        ):
+            mudou = _aplicar_caixa_alta_campo(pedido, campo) or mudou
+        if mudou:
+            n_pedidos += 1
+    if ids:
+        for linha in (
+            await db.execute(select(ComprasPedidoItemDB).where(ComprasPedidoItemDB.pedido_id.in_(ids)))
+        ).scalars().all():
+            mudou = _aplicar_caixa_alta_campo(linha, "descricao")
+            mudou = _aplicar_caixa_alta_campo(linha, "marca_preferencial") or mudou
+            mudou = _aplicar_caixa_alta_campo(linha, "embalagem") or mudou
+            mudou = _aplicar_caixa_alta_campo(linha, "observacao") or mudou
+            if mudou:
+                n_linhas += 1
+        for cotacao in (
+            await db.execute(select(ComprasCotacaoDB).where(ComprasCotacaoDB.pedido_id.in_(ids)))
+        ).scalars().all():
+            if _aplicar_caixa_alta_campo(cotacao, "fornecedor_nome"):
+                n_cotacoes += 1
+    for bem in (await db.execute(_where(ComprasPatrimonioDB))).scalars().all():
+        mudou = False
+        for campo in (
+            "descricao",
+            "localizacao",
+            "documento_nf",
+            "departamento",
+            "observacao",
+            "motivo_baixa",
+        ):
+            mudou = _aplicar_caixa_alta_campo(bem, campo) or mudou
+        if mudou:
+            n_patrimonio += 1
+    return {
+        "itens": n_itens,
+        "fornecedores": n_forn,
+        "categorias": n_cat,
+        "fontes": n_fontes,
+        "pedidos": n_pedidos,
+        "itens_pedido": n_linhas,
+        "cotacoes": n_cotacoes,
+        "patrimonio": n_patrimonio,
+    }
 
 
 async def salvar_janela(
@@ -3150,7 +3271,7 @@ def _recusar_nome_semelhante(*, tipo: str, nome: str, existentes: list[str]) -> 
 
 async def salvar_categoria(db: AsyncSession, usuario: dict, payload: dict, categoria_id: Optional[str] = None):
     exigir_cadastro_mestre_compras(usuario)
-    nome = (payload.get("nome") or "").strip()
+    nome = texto_cadastro_caixa_alta(payload.get("nome"))
     if not nome:
         raise HTTPException(status_code=400, detail="Nome da categoria obrigatório.")
     org_id = _org_id(usuario)

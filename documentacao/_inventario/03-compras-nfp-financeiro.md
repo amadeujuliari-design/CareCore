@@ -22,8 +22,8 @@
 
 | Escopo | Menu (Sidebar) | Quem vê |
 | --- | --- | --- |
-| Projeto | Compras → Pedidos e cotações, Pedidos concluídos, Catálogo de itens, Categorias, Fornecedores | Usuário com `compras_modulo_ativo` (ou ADM Pedidos / ADM Compras / Manutenção via `usuarioPodeVerCompras`) |
-| Sede | Compras → Pedidos, concluídos, catálogo, categorias, fornecedores, aguardando assinatura, documentos assinados e Usuários ADM Global Compras | ADM Global Compras / Suprimentos / Infraestrutura / Manutenção. Global consulta a mesma sede, sem criar nem editar. O global autorizado a assinar (Noemi) vê a fila e Documentos assinados. |
+| Projeto | Compras → Pedidos e cotações, Pedidos concluídos, Pedidos cancelados, Catálogo de itens, Categorias, Fornecedores | Usuário com `compras_modulo_ativo` (ou ADM Pedidos / ADM Compras / Manutenção via `usuarioPodeVerCompras`) |
+| Sede | Compras → Pedidos, concluídos, cancelados, catálogo, categorias, fornecedores, aguardando assinatura, NFs a pagar (Infraestrutura), NFs a pagar Suprimentos, concluídos Infraestrutura, documentos assinados e Usuários ADM Global Compras | ADM Global Compras / Suprimentos / Infraestrutura / Manutenção. Global consulta a mesma sede, sem criar nem editar. O global autorizado a assinar (Noemi) vê a fila e Documentos assinados. NFs a pagar de Infraestrutura só Infraestrutura/Manutenção; NFs a pagar Suprimentos só Suprimentos/Manutenção. |
 
 **Origem:** `Sidebar.jsx` (`COMPRAS_CHILDREN_PROJETO`, `montarComprasChildrenSede`), `rbacUtils.js` (`PERFIS_ADM_COMPRAS_SEDE`, `usuarioPodeVerCompras`, `usuarioEhGlobalPuro`).
 
@@ -38,7 +38,7 @@ Tipos de novo pedido (`BOTOES_NOVO_PEDIDO` em `utils/comprasPedidoTipos.js`):
 | `/compras/novo/imobilizado` | Bem / imobilizado | Compra de bem. O projeto cota; a Sede Infraestrutura acompanha. |
 | `/compras/novo/manutencao` | Itens de manutenção | Reparos. Quem conduz: Suprimentos (cotação da Sede) ou Infraestrutura (mesmo caminho de bem e serviço). |
 | `/compras/novo/servico` | Prestação de serviço | Serviços. O projeto cota; a Sede Infraestrutura acompanha. |
-| `/compras/novo/emergencia` | Compras emergência | Sem orçamentos. O projeto anexa a NF; a Infraestrutura envia para pagamento. |
+| `/compras/novo/emergencia` | Compras emergência | Sem orçamentos. Primeira pergunta: Infraestrutura ou Suprimentos. O projeto anexa e assina a NF; a Sede correspondente envia para pagamento. |
 
 ### Fluxo consumo (como o JSX conduz)
 
@@ -70,7 +70,7 @@ Ao entrar no sistema, projeto e Infraestrutura veem o modal de Compras se um con
 ## 1.2 Lista / hub — `/compras`
 
 **Arquivo:** `carecore-front/src/Compras.jsx`  
-**Query:** `?visao=concluidos` · `?aba=itens|categorias|fornecedores|janela|cadastros|patrimonio|economia`
+**Query:** `?visao=concluidos` · `?visao=cancelados` · `?aba=itens|categorias|fornecedores|janela|cadastros|patrimonio|economia`
 
 ### Função
 
@@ -81,9 +81,10 @@ Hub do módulo: ativação, abas (pedidos, janela, cadastros, patrimônio, econo
 | Elemento | Texto |
 | --- | --- |
 | Eyebrow | Organização |
-| Title | Compras **ou** Pedidos concluídos |
+| Title | Compras **ou** Pedidos concluídos **ou** Pedidos cancelados |
 | Subtitle (andamento) | Solicitação, cotação, dupla aprovação, pedido ao fornecedor e conferência na unidade. |
-| Subtitle (concluídos) | Pedidos encerrados, cancelados ou reprovados — histórico separado dos pedidos em andamento. Para Suprimentos, a lista é caixa de correio: não lidas no topo, selo Lida / Não lida, e contagem no subtítulo. |
+| Subtitle (concluídos) | Pedidos encerrados (inclui Imprimir NF) ou reprovados — histórico separado dos pedidos em andamento. Cancelados ficam em lista própria. Para Suprimentos, a lista é caixa de correio: não lidas no topo, selo Lida / Não lida, e contagem no subtítulo. |
+| Subtitle (cancelados) | Pedidos cancelados, separados dos concluídos. Infraestrutura e Suprimentos podem excluir os da própria lista. |
 
 ### Campos / filtros
 
@@ -92,7 +93,7 @@ Hub do módulo: ativação, abas (pedidos, janela, cadastros, patrimônio, econo
 | (input `type="month"` no FilterPanel «Filtros») | — | Competência AAAA-MM; vazio = todos os períodos. Em andamento abre sem mês | `competencia` → `comprasPedidos` |
 | Todos os períodos | — | Limpa o mês e volta a listar todas as competências | — |
 | Subtitle filtro andamento | — | Por padrão, todos os pedidos em andamento, agrupados por unidade | — |
-| Subtitle filtro concluídos | — | Competência operacional (AAAA-MM) — só pedidos encerrados/cancelados/reprovados | — |
+| Subtitle filtro concluídos | — | Competência operacional (AAAA-MM) — só pedidos encerrados (Imprimir NF / Encerrado) ou reprovados | — |
 
 ### Abas (não concluídos)
 
@@ -140,6 +141,7 @@ No topo, **Copiar um pedido concluído** abre rascunho do mês seguinte. **Intei
 | Destino | — | Unidade / projeto · Sede (matriz) | `destino` | usuário sede |
 | Unidade * | * (se destino projeto) | Projeto | `instituicao_id` | sede + destino projeto |
 | Quem conduz | * | Suprimentos · Infraestrutura | `destino_compras` | manutenção, no topo |
+| Esta emergência é para Infraestrutura ou para Suprimentos? | * | Infraestrutura · Suprimentos | `destino_compras` | tipo emergência, no topo |
 | Título / objeto * | * | Ex.: Troca de compressor da geladeira | `titulo` | bem, serviço ou manutenção+Infraestrutura |
 | Justificativa * | * | Por que esta compra/serviço é necessária | `justificativa` | mesmo recorte |
 | Urgência | — | Normal · Urgente | `urgencia` | mesmo recorte |
@@ -148,7 +150,7 @@ No topo, **Copiar um pedido concluído** abre rascunho do mês seguinte. **Intei
 | Local (se diferente do projeto) | — | Endereço ou local de execução | `local_texto` | mesmo recorte |
 | Tipo (manutenção) | — | Corretiva · Preventiva | `tipo_manutencao` | manutenção |
 | Defeito / sintoma * | * | O que está acontecendo com o equipamento | `defeito` | manutenção + Suprimentos |
-| Descrição detalhada / O que será comprado * | * | Texto livre do bem, serviço ou reparo | `info_pedido` | bem, serviço ou manutenção+Infraestrutura |
+| Descrição detalhada / O que será comprado * | * | Texto livre do bem, serviço, emergência ou reparo | `info_pedido` | bem, serviço, emergência ou manutenção+Infraestrutura |
 | Nome do fornecedor * | * | Sem cadastro no catálogo | `fornecedor_pedido_nome` | mesmo recorte |
 | Informações adicionais do fornecedor | — | Contato, endereço | `fornecedor_pedido_info` | mesmo recorte |
 | Observação | — | Preferências / restrições | `observacao` | consumo / hortifruti / manutenção+Suprimentos |
@@ -274,7 +276,11 @@ Botões: Anexar NF assinada · Anexar boleto assinado · Anexar comprovante · A
 
 Contrato fica no passo anterior, antes da compra. Boleto e nota exigem Assinatura Digital AEB. Relacionado não.
 
-Para Suprimentos, ao abrir um pedido com status recebido, o aviso fixo abaixo do título diz se a NF **ainda não foi impressa** ou **já foi impressa** (com data). O botão **Imprimir NF** abre o PDF ou a imagem e, na primeira vez, grava a impressão. Abrir o pedido concluído marca a linha como lida na caixa.
+Na emergência, **quem anexa e assina a NF é o projeto**. Infraestrutura e Suprimentos não assinam NF nesse passo; podem só anexar arquivo extra, se precisar. O projeto também anexa extra.
+
+Quando o projeto encerra, o status vai para **Imprimir NF** (concluídos). Infraestrutura e Suprimentos abrem a caixa da impressora; depois a tela pergunta se o pedido vai para **Encerrado**. Pedidos que já estavam Encerrado permanecem Encerrado.
+
+Para a Sede, ao abrir um pedido em Imprimir NF ou Encerrado, o aviso abaixo do título diz se a NF **ainda não foi impressa** ou **já foi impressa** (com data). **Imprimir NF** / **Imprimir novamente** abre o PDF ou a imagem. Abrir o pedido concluído de Suprimentos marca a linha como lida na caixa.
 
 #### Fluxo (ações condicionais ao status)
 
@@ -316,7 +322,14 @@ Duas filas: Infraestrutura (orçamentos e contratos aguardando ok) e representan
 **Arquivo:** `carecore-front/src/ComprasFilaInfra.jsx` (`modo="nf"`)  
 **Rota protegida:** ADM Global Compras Infraestrutura + Manutenção
 
-Fila das Compras emergência com NF anexada. Agrupa por unidade, no mesmo padrão de Aguardando assinatura (expandir, visualizar anexos). A Infraestrutura confirma o envio ao pagamento; o projeto é avisado para conferir o extrato e encerrar.
+Fila das Compras emergência com destino Infraestrutura e NF anexada. Agrupa por unidade, no mesmo padrão de Aguardando assinatura (expandir, visualizar anexos). A Infraestrutura confirma o envio ao pagamento; o projeto é avisado para conferir o extrato e encerrar.
+
+## 1.5c-2 NFs a pagar Suprimentos — `/compras/fila-nf-pagamento-suprimentos`
+
+**Arquivo:** `carecore-front/src/ComprasFilaInfra.jsx` (`modo="nf-suprimentos"`)  
+**Rota protegida:** ADM Global Compras Suprimentos + Manutenção
+
+Mesmo padrão da fila de NFs a pagar, só para emergência com destino Suprimentos. Suprimentos confirma o envio ao pagamento; o projeto confere o extrato e encerra.
 
 ## 1.5d Concluídos Infraestrutura — `/compras/fila-concluidos-infra`
 
@@ -372,6 +385,8 @@ Mês anterior · Próximo mês · Salvar alteração · Publicar janela · (cria
 **Arquivo:** `carecore-front/src/components/ComprasItensConsumoCadastro.jsx`  
 **Modal form:** `ModalFormItemConsumo.jsx`  
 **Modal ficha:** `ModalFichaItemConsumo.jsx`
+
+Descrição, marca, fornecedor e demais textos de cadastro e de novo pedido entram em **caixa alta**.
 
 ### Filtros lista
 

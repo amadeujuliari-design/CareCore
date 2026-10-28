@@ -286,7 +286,12 @@ export default function ModalPosicionarTextoNf({
                       onPointerDown={(e) => iniciarArrasto('texto', caixa, e)}
                     >
                       <span className="block whitespace-pre-wrap">
-                        {[projeto, texto].filter((parte) => String(parte || '').trim()).join('\n')}
+                        {String(projeto || '').trim() ? (
+                          <span className="block text-[14px] font-bold leading-tight">{projeto}</span>
+                        ) : null}
+                        {String(texto || '').trim() ? (
+                          <span className="block">{texto}</span>
+                        ) : null}
                       </span>
                       <button
                         type="button"

@@ -28,6 +28,7 @@ from compras_pedido_fluxo import (
     editar_texto_evento_pedido,
     registrar_comunicacao_pedido,
     marcar_leitura_caixa_suprimentos,
+    registrar_impressao_nf_e_opcional_encerrar,
     registrar_impressao_nf_suprimentos,
     registrar_nota_fiscal,
     remover_nota_fiscal,
@@ -37,6 +38,7 @@ from compras_pedido_fluxo import (
     separar_fila_assinatura,
     listar_fila_concluidos_infra,
     listar_fila_nf_pagamento,
+    listar_fila_nf_pagamento_suprimentos,
     listar_fila_extrato_projeto,
     enviar_emergencia_para_pagamento,
     confirmar_nf_enviada_pagamento,
@@ -60,6 +62,7 @@ from compras_service import (
     cancelar_pedido,
     copiar_pedido_concluido,
     criar_pedido,
+    excluir_pedido_cancelado,
     excluir_rascunho_pedido,
     definir_modulo_ativo,
     escolher_cotacao,
@@ -1061,6 +1064,34 @@ async def get_fila_nf_pagamento(
     }
 
 
+@router.get("/fila-nf-pagamento-suprimentos/resumo")
+async def get_fila_nf_pagamento_suprimentos_resumo(
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    await _ctx(db, usuario_atual)
+    try:
+        pedidos = await listar_fila_nf_pagamento_suprimentos(db, usuario_atual)
+    except HTTPException:
+        return {"pendentes": 0}
+    return {"pendentes": len(pedidos)}
+
+
+@router.get("/fila-nf-pagamento-suprimentos")
+async def get_fila_nf_pagamento_suprimentos(
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    await _ctx(db, usuario_atual)
+    pedidos = await listar_fila_nf_pagamento_suprimentos(db, usuario_atual)
+    return {
+        "pedidos": [
+            await serializar_pedido(db, pedido, incluir_detalhe=True, usuario=usuario_atual)
+            for pedido in pedidos
+        ]
+    }
+
+
 @router.get("/fila-extrato/resumo")
 async def get_fila_extrato_resumo(
     db: AsyncSession = Depends(get_db),
@@ -1400,13 +1431,16 @@ async def post_pagamento_quitar(
 @router.post("/pedidos/{pedido_id}/nf-impressa")
 async def post_nf_impressa(
     pedido_id: str,
+    encerrar: bool = Query(default=False),
     db: AsyncSession = Depends(get_db),
     usuario_atual: dict = Depends(get_usuario_logado),
 ):
-    """Suprimentos registra que a nota fiscal do pedido encerrado foi impressa."""
+    """Sede imprime a NF; se encerrar=true e o status for Imprimir NF, vai para Encerrado."""
     await _ctx(db, usuario_atual)
     pedido = await obter_pedido(db, usuario_atual, pedido_id)
-    registrar_impressao_nf_suprimentos(usuario_atual, pedido)
+    await registrar_impressao_nf_e_opcional_encerrar(
+        db, usuario_atual, pedido, encerrar=bool(encerrar),
+    )
     await db.commit()
     return await serializar_pedido(db, pedido, incluir_detalhe=True, usuario=usuario_atual)
 
@@ -1434,6 +1468,19 @@ async def post_excluir_rascunho(
     await _ctx(db, usuario_atual)
     pedido = await obter_pedido(db, usuario_atual, pedido_id)
     await excluir_rascunho_pedido(db, usuario_atual, pedido)
+    await db.commit()
+    return {"ok": True}
+
+
+@router.post("/pedidos/{pedido_id}/excluir-cancelado")
+async def post_excluir_cancelado(
+    pedido_id: str,
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    await _ctx(db, usuario_atual)
+    pedido = await obter_pedido(db, usuario_atual, pedido_id)
+    await excluir_pedido_cancelado(db, usuario_atual, pedido)
     await db.commit()
     return {"ok": True}
 

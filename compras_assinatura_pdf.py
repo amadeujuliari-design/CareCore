@@ -310,31 +310,62 @@ def _quebrar_linhas_pdf(texto: str, largura: float, font_size: float) -> list[st
     return linhas or [""]
 
 
-def _desenhar_texto_complementar(folha, texto: str, tx: float, ty: float, largura: float, altura: float) -> None:
-    """Desenha o texto na moldura mesmo quando a caixa é baixa demais para um Paragraph."""
+def _desenhar_texto_complementar(
+    folha,
+    texto: str,
+    tx: float,
+    ty: float,
+    largura: float,
+    altura: float,
+    *,
+    projeto: str | None = None,
+) -> None:
+    """Desenha o texto na moldura. O nome do projeto (1ª linha) fica 3pt maior e em negrito."""
     from reportlab.lib.colors import HexColor
+    from reportlab.pdfbase.pdfmetrics import stringWidth
 
-    padding = 3.0
+    caixa_baixa = altura < 22
+    padding = 2.0 if caixa_baixa else 3.0
     util_w = max(12.0, largura - (padding * 2))
     util_h = max(8.0, altura - (padding * 2))
+    nome_projeto = (projeto or "").strip()
+    resto = (texto or "").strip()
+    if nome_projeto and resto.upper().startswith(nome_projeto.upper()):
+        resto = resto[len(nome_projeto):].lstrip("\n")
     max_font = 9 if altura >= 22 else 8
     escolhido = 5
-    linhas: list[str] = [texto]
+    linhas_resto: list[str] = _quebrar_linhas_pdf(resto, util_w, max_font) if resto else []
+
+    def _metricas(font_size: int):
+        projeto_size = font_size + 3
+        leading_proj = projeto_size if caixa_baixa else projeto_size + 2
+        leading = font_size if caixa_baixa else font_size + (1 if font_size <= 6 else 2)
+        return projeto_size, leading_proj, leading
+
     for font_size in range(max_font, 4, -1):
-        tentativas = _quebrar_linhas_pdf(texto, util_w, font_size)
-        leading = font_size + (1 if font_size <= 6 else 2)
-        if len(tentativas) * leading <= util_h or font_size == 5:
+        tentativas = _quebrar_linhas_pdf(resto, util_w, font_size) if resto else []
+        projeto_size, leading_proj, leading = _metricas(font_size)
+        altura_usada = (leading_proj if nome_projeto else 0) + (len(tentativas) * leading)
+        if altura_usada <= util_h or font_size == 5:
             escolhido = font_size
-            linhas = tentativas
+            linhas_resto = tentativas
             break
-    leading = escolhido + (1 if escolhido <= 6 else 2)
-    cabem = max(1, int(util_h // leading))
-    visiveis = linhas[:cabem]
+    projeto_size, leading_proj, leading = _metricas(escolhido)
     folha.setFillColor(HexColor("#111111"))
+    y_texto = ty + altura - padding - (projeto_size if nome_projeto else escolhido)
+    if nome_projeto:
+        folha.setFont("Helvetica-Bold", projeto_size)
+        nome = nome_projeto
+        while nome and stringWidth(nome, "Helvetica-Bold", projeto_size) > util_w:
+            nome = nome[:-1]
+        if nome:
+            folha.drawString(tx + padding, y_texto, nome)
+        y_texto -= leading_proj
     folha.setFont("Helvetica", escolhido)
-    y_texto = ty + altura - padding - escolhido
-    for linha in visiveis:
-        if y_texto < ty + 1:
+    piso = ty
+    cabem_resto = max(0, int((y_texto - piso) // max(leading, 1)) + 1) if linhas_resto else 0
+    for linha in linhas_resto[:cabem_resto]:
+        if y_texto < piso:
             break
         if linha:
             folha.drawString(tx + padding, y_texto, linha)
@@ -386,7 +417,9 @@ def carimbar_texto_pdf(
         folha.setFillColor(HexColor("#fffbeb"))
         folha.setLineWidth(1)
         folha.roundRect(tx, ty, desenho_w, desenho_h, 3, stroke=1, fill=1)
-        _desenhar_texto_complementar(folha, conteudo, tx, ty, desenho_w, desenho_h)
+        _desenhar_texto_complementar(
+            folha, conteudo, tx, ty, desenho_w, desenho_h, projeto=nome_projeto,
+        )
         folha.save()
         overlay = PdfReader(io.BytesIO(buf.getvalue()))
         pagina.merge_page(overlay.pages[0])

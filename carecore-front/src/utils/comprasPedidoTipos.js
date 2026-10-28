@@ -54,6 +54,7 @@ export const TIPOS_VISAO_SUPRIMENTOS = new Set([
   TIPO_CONSUMO,
   TIPO_HORTIFRUTI,
   TIPO_MANUTENCAO,
+  TIPO_EMERGENCIA,
 ]);
 
 export const TIPOS_VISAO_INFRAESTRUTURA = new Set([
@@ -75,10 +76,13 @@ export function tipoEhCotacaoProjeto(tipo) {
   return TIPOS_COTACAO_PROJETO.has(String(tipo || '').trim().toLowerCase());
 }
 
-/** Bem, serviço, ou manutenção quando o projeto escolhe Infraestrutura. */
+/** Bem, serviço, emergência (exceto destino Suprimentos) ou manutenção da Infraestrutura. */
 export function pedidoSegueInfraestrutura(tipo, destinoCompras) {
   const t = String(tipo || '').trim().toLowerCase();
-  if (t === TIPO_IMOBILIZADO || t === TIPO_SERVICO || t === TIPO_EMERGENCIA) return true;
+  if (t === TIPO_IMOBILIZADO || t === TIPO_SERVICO) return true;
+  if (t === TIPO_EMERGENCIA) {
+    return String(destinoCompras || '').trim().toLowerCase() !== 'suprimentos';
+  }
   if (t === TIPO_MANUTENCAO) {
     return String(destinoCompras || '').trim().toLowerCase() === 'infraestrutura';
   }

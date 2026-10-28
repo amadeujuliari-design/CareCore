@@ -289,5 +289,7 @@ describe('pedidoListaEhInfraestrutura', () => {
     assert.equal(pedidoListaEhInfraestrutura({ tipo: 'servico' }), true);
     assert.equal(pedidoListaEhInfraestrutura({ tipo: 'hortifruti' }), false);
     assert.equal(pedidoListaEhInfraestrutura({ tipo: 'manutencao', destino_compras: 'infraestrutura' }), true);
+    assert.equal(pedidoListaEhInfraestrutura({ tipo: 'emergencia' }), true);
+    assert.equal(pedidoListaEhInfraestrutura({ tipo: 'emergencia', destino_compras: 'suprimentos' }), false);
   });
 });

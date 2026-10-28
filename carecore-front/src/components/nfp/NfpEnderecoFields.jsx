@@ -11,6 +11,7 @@ export default function NfpEnderecoFields({
   onChange,
   onErroChange,
   className = '',
+  caixaAlta = false,
 }) {
   const [buscandoCep, setBuscandoCep] = useState(false);
 
@@ -91,6 +92,7 @@ export default function NfpEnderecoFields({
         onChange={(valor) => atualizarCampo('logradouro', valor)}
         erro={erros.logradouro}
         className="md:col-span-2"
+        caixaAlta={caixaAlta}
       />
 
       <CampoTexto
@@ -105,6 +107,7 @@ export default function NfpEnderecoFields({
         value={form.complemento}
         onChange={(valor) => atualizarCampo('complemento', valor)}
         erro={erros.complemento}
+        caixaAlta={caixaAlta}
       />
 
       <CampoTexto
@@ -112,6 +115,7 @@ export default function NfpEnderecoFields({
         value={form.bairro}
         onChange={(valor) => atualizarCampo('bairro', valor)}
         erro={erros.bairro}
+        caixaAlta={caixaAlta}
       />
 
       <CampoTexto
@@ -119,6 +123,7 @@ export default function NfpEnderecoFields({
         value={form.cidade}
         onChange={(valor) => atualizarCampo('cidade', valor)}
         erro={erros.cidade}
+        caixaAlta={caixaAlta}
       />
 
       <CampoSelect

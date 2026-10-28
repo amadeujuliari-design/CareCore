@@ -173,6 +173,16 @@ export async function comprasFilaNfPagamento() {
   return data;
 }
 
+export async function comprasFilaNfPagamentoSuprimentosResumo() {
+  const { data } = await api.get('/api/compras/fila-nf-pagamento-suprimentos/resumo');
+  return data;
+}
+
+export async function comprasFilaNfPagamentoSuprimentos() {
+  const { data } = await api.get('/api/compras/fila-nf-pagamento-suprimentos');
+  return data;
+}
+
 export async function comprasFilaExtratoResumo() {
   const { data } = await api.get('/api/compras/fila-extrato/resumo');
   return data;
@@ -326,6 +336,11 @@ export async function comprasExcluirRascunho(id) {
   return data;
 }
 
+export async function comprasExcluirCancelado(id) {
+  const { data } = await api.post(`/api/compras/pedidos/${id}/excluir-cancelado`);
+  return data;
+}
+
 export async function comprasReprovar(id, motivo) {
   const { data } = await api.post(`/api/compras/pedidos/${id}/reprovar`, { motivo });
   return data;
@@ -390,8 +405,10 @@ export async function comprasRemoverNotaFiscal(pedidoId, notaId) {
   return data;
 }
 
-export async function comprasRegistrarImpressaoNf(id) {
-  const { data } = await api.post(`/api/compras/pedidos/${id}/nf-impressa`);
+export async function comprasRegistrarImpressaoNf(id, { encerrar = false } = {}) {
+  const { data } = await api.post(`/api/compras/pedidos/${id}/nf-impressa`, null, {
+    params: { encerrar: encerrar ? 'true' : 'false' },
+  });
   return data;
 }
 

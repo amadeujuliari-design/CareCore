@@ -156,28 +156,79 @@ function quandoOperacional(iso) {
   return formatarDataHoraBr(iso);
 }
 
-function imprimirUrlAnexo(url) {
+function imprimirUrlAnexo(url, contentType = '') {
   return new Promise((resolve, reject) => {
     const iframe = document.createElement('iframe');
     iframe.title = 'Impressão da nota fiscal';
-    iframe.style.cssText = 'position:fixed;width:0;height:0;border:0;right:0;bottom:0';
-    iframe.src = url;
-    iframe.onload = () => {
-      try {
-        iframe.contentWindow?.focus();
-        iframe.contentWindow?.print();
-      } catch (err) {
-        iframe.remove();
-        URL.revokeObjectURL(url);
-        reject(err);
+    iframe.setAttribute('aria-hidden', 'true');
+    iframe.style.cssText = 'position:fixed;left:-10000px;top:0;width:800px;height:1100px;border:0';
+    const tipo = String(contentType || '').toLowerCase();
+    const ehPdf = tipo.includes('pdf');
+    const ehImagem = tipo.startsWith('image/');
+    let avisou = false;
+    let limpou = false;
+    let loadTimer;
+    const limparIframe = () => {
+      if (limpou) return;
+      limpou = true;
+      if (loadTimer) window.clearTimeout(loadTimer);
+      iframe.remove();
+      URL.revokeObjectURL(url);
+    };
+    const avisar = (erro) => {
+      if (avisou) return;
+      avisou = true;
+      if (erro) {
+        limparIframe();
+        reject(erro);
         return;
       }
-      window.setTimeout(() => {
-        iframe.remove();
-        URL.revokeObjectURL(url);
-        resolve();
-      }, 400);
+      resolve();
     };
+    const dispararImpressao = (win) => {
+      if (!win) {
+        avisar(new Error('Não foi possível abrir a impressão da nota fiscal.'));
+        return;
+      }
+      const aoFecharDialogo = () => {
+        try {
+          win.removeEventListener?.('afterprint', aoFecharDialogo);
+        } catch {
+          /* visualizador de PDF do navegador pode não expor o evento */
+        }
+        window.removeEventListener('afterprint', aoFecharDialogo);
+        limparIframe();
+      };
+      try {
+        win.addEventListener?.('afterprint', aoFecharDialogo);
+      } catch {
+        /* visualizador de PDF do navegador pode não expor o evento */
+      }
+      window.addEventListener('afterprint', aoFecharDialogo);
+      try {
+        win.focus();
+        win.print();
+      } catch (err) {
+        avisar(err);
+        return;
+      }
+      // A caixa da impressora já está aberta. Não espera clique/foco: a pergunta
+      // de Encerrado é um modal da página e não pode usar window.confirm.
+      window.setTimeout(() => avisar(), 700);
+      window.setTimeout(limparIframe, 120000);
+    };
+    loadTimer = window.setTimeout(() => {
+      avisar(new Error('A nota fiscal demorou para abrir. Tente novamente.'));
+    }, 15000);
+    iframe.onload = () => {
+      window.clearTimeout(loadTimer);
+      window.setTimeout(() => dispararImpressao(iframe.contentWindow), ehPdf ? 700 : 250);
+    };
+    if (ehImagem) {
+      iframe.srcdoc = `<!doctype html><html><head><style>html,body{margin:0}img{max-width:100%;display:block}</style></head><body><img src="${url}" alt="Nota fiscal"/></body></html>`;
+    } else {
+      iframe.src = url;
+    }
     document.body.appendChild(iframe);
   });
 }
@@ -203,6 +254,7 @@ export default function ComprasPedido() {
   const unidade = admPedidos
     || manutencao
     || ['Gestor', 'Técnico', 'Administrativo'].includes(usuario.perfil_acesso);
+  const projetoAnexaNfAssinada = unidade && !usuarioEhAdmCompras(usuario);
   const [pedido, setPedido] = useState(null);
   const [fornecedores, setFornecedores] = useState([]);
   const [itensConsumo, setItensConsumo] = useState([]);
@@ -324,19 +376,50 @@ export default function ComprasPedido() {
     return () => window.removeEventListener('storage', aoAtualizarCatalogo);
   }, [carregar]);
 
+  const imprimindoNfRef = useRef(false);
+  const [imprimindoNf, setImprimindoNf] = useState(false);
+  const [modalEncerrarAposNf, setModalEncerrarAposNf] = useState(false);
+  const [gravandoEncerrarNf, setGravandoEncerrarNf] = useState(false);
+
   // Autocheque leve a cada 30s (status/anexos/timeline) sem recarregar catálogos.
   useEffect(() => {
     if (!pedidoId) return undefined;
     const id = window.setInterval(() => {
-      if (document.visibilityState === 'hidden') return;
+      if (document.visibilityState === 'hidden' || imprimindoNfRef.current) return;
       carregar({ silencioso: true });
     }, 30_000);
     return () => window.clearInterval(id);
   }, [carregar, pedidoId]);
 
-  const imprimirNfSuprimentos = async () => {
+  const registrarImpressaoNfSede = async (encerrar) => {
+    const atual = pedidoRef.current;
+    if (!atual?.id) return;
+    setGravandoEncerrarNf(true);
+    setErro('');
+    try {
+      const dados = await comprasRegistrarImpressaoNf(atual.id, { encerrar });
+      setPedido(dados);
+      setModalEncerrarAposNf(false);
+      setOk(encerrar
+        ? 'Nota fiscal impressa e pedido enviado para Encerrado.'
+        : (atual.status === 'imprimir_nf'
+          ? 'Nota fiscal impressa. O status permanece Imprimir NF.'
+          : 'Impressão da nota fiscal registrada.'));
+    } catch (err) {
+      setErro(err.response?.data?.detail || err.message || 'Não foi possível registrar a impressão da nota fiscal.');
+    } finally {
+      setGravandoEncerrarNf(false);
+    }
+  };
+
+  const imprimirNfSede = async () => {
+    if (imprimindoNfRef.current) return;
     const notas = (pedido?.notas_fiscais || []).filter((nf) => nf.anexo_id);
     const abertos = [];
+    imprimindoNfRef.current = true;
+    setImprimindoNf(true);
+    setErro('');
+    setOk('');
     try {
       for (const nf of notas) {
         const aberto = await comprasAbrirAnexoBlob(pedido.id, nf.anexo_id);
@@ -352,18 +435,22 @@ export default function ComprasPedido() {
         return;
       }
       for (const aberto of abertos) {
-        await imprimirUrlAnexo(aberto.url);
+        await imprimirUrlAnexo(aberto.url, aberto.contentType);
+      }
+      if (pedido.status === 'imprimir_nf') {
+        setModalEncerrarAposNf(true);
+        return;
       }
       if (!pedido.nf_impressa) {
-        const dados = await comprasRegistrarImpressaoNf(pedido.id);
-        setPedido(dados);
+        await registrarImpressaoNfSede(false);
+        return;
       }
-      setErro('');
-      setOk(pedido.nf_impressa
-        ? 'Impressão da nota fiscal aberta novamente.'
-        : 'Nota fiscal enviada para impressão.');
+      setOk('Impressão da nota fiscal aberta.');
     } catch (err) {
       setErro(err.response?.data?.detail || err.message || 'Não foi possível imprimir a nota fiscal.');
+    } finally {
+      imprimindoNfRef.current = false;
+      setImprimindoNf(false);
     }
   };
 
@@ -418,17 +505,23 @@ export default function ComprasPedido() {
   }
 
   const pedidoSede = pedido.escopo_unidade === 'sede';
-  const terminal = ['recebido', 'cancelado', 'reprovado'].includes(pedido.status);
+  const terminal = ['recebido', 'imprimir_nf', 'cancelado', 'reprovado'].includes(pedido.status);
   const ehRascunho = pedido.status === 'rascunho';
   const podeEditarItens = Boolean(pedido.pode_editar_itens);
   const segueInfra = Boolean(pedido.segue_infraestrutura)
     || pedidoSegueInfraestrutura(pedido.tipo, pedido.destino_compras);
   const ehEmergencia = tipoEhEmergencia(pedido.tipo);
+  const destEmergenciaSuprimentos = String(pedido.destino_compras || '').toLowerCase() === 'suprimentos';
+  const filaNfEmergencia = destEmergenciaSuprimentos ? 'Suprimentos' : 'Infraestrutura';
+  const podeConfirmarNfEmergencia = ehEmergencia
+    && pedido.status === 'aguardando_pagamento'
+    && !consultaGlobal
+    && (destEmergenciaSuprimentos ? (caixaSuprimentos || manutencao) : infra);
   const cotacaoProjeto = !ehEmergencia && (tipoEhCotacaoProjeto(pedido.tipo) || segueInfra);
   const hortifrutiDireto = tipoSuprimentosAprovaEEnvia(pedido.tipo);
   const cotacaoSede = tipoEhCotacaoSede(pedido.tipo) && !hortifrutiDireto && !segueInfra;
   // Após envio ao fornecedor (ou encerrado), orçamentos ficam só leitura.
-  const orcamentosTravados = ['enviado_fornecedor', 'recebido', 'cancelado', 'reprovado'].includes(pedido.status);
+  const orcamentosTravados = ['enviado_fornecedor', 'recebido', 'imprimir_nf', 'cancelado', 'reprovado'].includes(pedido.status);
   const hortifrutiAberto = hortifrutiDireto && !orcamentosTravados && !terminal;
   const projetoTrocaOrcamento = Boolean(unidade && projetoPodeTrocarOrcamento(pedido));
   const podeRemoverOrcamento = !orcamentosTravados && (
@@ -493,11 +586,22 @@ export default function ComprasPedido() {
   const mostraPassoContrato = segueInfra && !ehEmergencia && (orcamentoAssinadoPelaSede || contratosPedido.length > 0);
   const passoContratoOk = !segueInfra || Boolean(pedido.compra_liberada);
   const compraJaExecutada = segueInfra && Boolean(pedido.compra_executada);
+  const statusEmergenciaAberto = ['rascunho', 'aguardando_pagamento', 'aguardando_conferencia_extrato'].includes(pedido.status);
+  const podeAnexarNfAssinadaEmergencia = ehEmergencia
+    && projetoAnexaNfAssinada
+    && !pedidoSede
+    && !consultaGlobal
+    && statusEmergenciaAberto
+    && (pedido.status === 'rascunho' || notasFiscaisPedido.length === 0);
+  const podeAnexarArquivoExtraEmergencia = ehEmergencia
+    && !consultaGlobal
+    && !terminal
+    && statusEmergenciaAberto
+    && (sede || (unidade && !pedidoSede));
   const podeDocumentosFinais = ehEmergencia
-    ? ['rascunho', 'aguardando_pagamento', 'aguardando_conferencia_extrato'].includes(pedido.status)
-      && (sede || (unidade && !pedidoSede))
-      && !consultaGlobal
+    ? (podeAnexarNfAssinadaEmergencia || podeAnexarArquivoExtraEmergencia)
     : (podeEncerrar && (!segueInfra || Boolean(pedido.compra_executada)));
+  const classeDocEmergencia = podeAnexarNfAssinadaEmergencia ? classeDoc : 'relacionado';
   const podeDecidirContrato = mostraPassoContrato
     && !compraJaExecutada
     && !terminal
@@ -948,7 +1052,7 @@ export default function ComprasPedido() {
             )}
           </div>
         )}
-        {caixaSuprimentos && pedido.status === 'recebido' && (
+        {sede && !consultaGlobal && (pedido.status === 'recebido' || pedido.status === 'imprimir_nf') && (
           <div className="shrink-0 px-4 pt-3 md:px-6">
             <div
               className={`flex flex-wrap items-center justify-between gap-3 rounded-xl border px-4 py-3 text-sm ${
@@ -961,14 +1065,15 @@ export default function ComprasPedido() {
               <p>
                 {pedido.nf_impressa
                   ? `A nota fiscal deste pedido já foi impressa${pedido.nf_impressa_em ? ` em ${quandoOperacional(pedido.nf_impressa_em)}` : ''}.`
-                  : 'A nota fiscal deste pedido ainda não foi impressa.'}
+                  : 'Imprima a nota fiscal. Depois o sistema pergunta se o status vai para Encerrado.'}
               </p>
               <PremiumButton
                 type="button"
                 variant={pedido.nf_impressa ? 'secondary' : 'primary'}
-                onClick={imprimirNfSuprimentos}
+                onClick={imprimirNfSede}
+                disabled={imprimindoNf}
               >
-                {pedido.nf_impressa ? 'Imprimir novamente' : 'Imprimir NF'}
+                {imprimindoNf ? 'Abrindo impressão…' : (pedido.nf_impressa ? 'Imprimir novamente' : 'Imprimir NF')}
               </PremiumButton>
             </div>
           </div>
@@ -1069,7 +1174,7 @@ export default function ComprasPedido() {
             ) : null}
             {cotacaoProjeto ? (
               <SectionCard title="Cabeçalho">
-                <dl className="grid gap-2 text-sm text-slate-700 md:grid-cols-2">
+                <dl className="grid gap-2 text-sm uppercase text-slate-700 md:grid-cols-2">
                   <div><dt className="text-xs font-semibold uppercase text-slate-500">Justificativa</dt><dd>{pedido.justificativa || '—'}</dd></div>
                   <div><dt className="text-xs font-semibold uppercase text-slate-500">Urgência</dt><dd>{pedido.urgencia || 'normal'}</dd></div>
                   <div><dt className="text-xs font-semibold uppercase text-slate-500">Data desejada</dt><dd>{pedido.data_desejada ? formatarDataBr(pedido.data_desejada) : '—'}</dd></div>
@@ -1086,7 +1191,7 @@ export default function ComprasPedido() {
                 </dl>
               </SectionCard>
             ) : null}
-            {segueInfra ? (
+            {segueInfra || ehEmergencia ? (
               <SectionCard title="Informações do pedido">
                 <dl className="grid gap-2 text-sm text-slate-700">
                   <div>
@@ -1192,7 +1297,7 @@ export default function ComprasPedido() {
               </div>
             )}
 
-            {!segueInfra && (
+            {!segueInfra && !ehEmergencia && (
             <SectionCard title="Itens">
               <div className="px-5 py-4">
               {podeEditarItens && (
@@ -1328,7 +1433,7 @@ export default function ComprasPedido() {
                 <p className="text-sm text-slate-500">Nenhum item neste pedido.</p>
               ) : (
                 <div className="overflow-x-auto">
-                  <table className="min-w-full text-sm">
+                  <table className="min-w-full text-sm uppercase">
                     <thead>
                       <tr className="text-left text-xs uppercase tracking-wide text-slate-500">
                         <th className="px-2 py-2">Qtd neste pedido</th>
@@ -2463,12 +2568,16 @@ export default function ComprasPedido() {
               pedido={pedido}
               aberto={listaDocumentosAberta}
               onToggle={() => setListaDocumentosAberta((atual) => !atual)}
-              podeExcluir={Boolean(
-                ((ehEmergencia && ['rascunho', 'aguardando_pagamento'].includes(pedido.status))
-                  || podeEncerrar)
-                && !consultaGlobal
-                && !terminal
-              )}
+              podeExcluir={Boolean(!consultaGlobal && !terminal && !ehEmergencia && podeEncerrar)}
+              podeExcluirItem={ehEmergencia
+                ? (item) => {
+                  if (consultaGlobal || terminal || !statusEmergenciaAberto) return false;
+                  if (item.exclusao === 'nota') {
+                    return projetoAnexaNfAssinada && ['rascunho', 'aguardando_pagamento'].includes(pedido.status);
+                  }
+                  return Boolean(sede || (unidade && !pedidoSede));
+                }
+                : undefined}
               onVisualizar={setModalAnexo}
               onExcluirNf={(notaId) => agir(() => comprasRemoverNotaFiscal(pedido.id, notaId), 'Arquivo excluído.')}
               onExcluirAnexo={(anexoId) => agir(() => comprasRemoverAnexo(pedido.id, anexoId), 'Arquivo excluído.')}
@@ -2479,14 +2588,22 @@ export default function ComprasPedido() {
               <SectionCard
                 title="Documentos do processo"
                 subtitle={ehEmergencia
-                  ? 'Anexe a nota fiscal assinada. Não há envio ao fornecedor nem orçamentos nesta modalidade.'
+                  ? (podeAnexarNfAssinadaEmergencia
+                    ? 'Anexe a nota fiscal assinada. Se precisar, anexe também um arquivo extra. Não há envio ao fornecedor nem orçamentos nesta modalidade.'
+                    : projetoAnexaNfAssinada
+                      ? 'Se precisar, anexe um arquivo extra. A nota fiscal assinada já é do projeto.'
+                      : 'A nota fiscal assinada é do projeto. Infraestrutura e Suprimentos só anexam arquivo extra, se precisar.')
                   : segueInfra
                     ? 'Em cada parcela: nota fiscal, boleto, comprovante de pagamento ou arquivo relacionado. Boleto e nota fiscal exigem a Assinatura Digital AEB.'
                     : 'Escolha o tipo: nota fiscal, boleto ou arquivo relacionado. Boleto e nota fiscal exigem a Assinatura Digital AEB.'}
               >
                 <p className="mb-3 text-xs text-slate-500">
                   {ehEmergencia
-                    ? 'Depois de anexar a NF, envie para a fila de pagamento da Infraestrutura.'
+                    ? (podeAnexarNfAssinadaEmergencia
+                      ? `Depois de anexar a NF, envie para a fila de pagamento de ${filaNfEmergencia}. Arquivo extra não exige assinatura.`
+                      : projetoAnexaNfAssinada
+                        ? 'Se precisar, anexe um arquivo relacionado. Não exige assinatura digital.'
+                        : 'Se precisar, anexe um arquivo relacionado. Não assine NF por aqui.')
                     : segueInfra
                       ? 'Defina o pagamento acima. Numa mesma anexação dá para unir PDFs de nota; a posição do texto vale para todas as páginas. No parcelado, cada parcela pode ter a própria NF.'
                       : 'Numa mesma anexação dá para incluir quantas notas forem necessárias: o sistema junta num arquivo só e aplica o texto e a assinatura em todas as páginas. Se já existir nota, exclua antes de anexar outra.'}
@@ -2495,21 +2612,22 @@ export default function ComprasPedido() {
                   className="grid gap-2 md:grid-cols-3"
                   onSubmit={async (e) => {
                     e.preventDefault();
-                    if (classeDoc === 'relacionado' || classeDoc === 'comprovante') {
+                    const classeEnvio = ehEmergencia ? classeDocEmergencia : classeDoc;
+                    if (classeEnvio === 'relacionado' || classeEnvio === 'comprovante') {
                       if (!arqsNf[0]) {
-                        setErro(classeDoc === 'comprovante' ? 'Selecione o comprovante.' : 'Selecione o arquivo relacionado.');
+                        setErro(classeEnvio === 'comprovante' ? 'Selecione o comprovante.' : 'Selecione o arquivo relacionado.');
                         return;
                       }
                       const fdRel = new FormData();
                       fdRel.append('tipo', 'aquisicao_bem');
-                      fdRel.append('classe_documento', classeDoc);
+                      fdRel.append('classe_documento', classeEnvio);
                       fdRel.append('arquivo', arqsNf[0]);
-                      if (segueInfra && pedido.pagamento_qtd_parcelas && classeDoc === 'comprovante') {
+                      if (segueInfra && pedido.pagamento_qtd_parcelas && classeEnvio === 'comprovante') {
                         fdRel.append('parcela_numero', String(parcelaDoc || 1));
                       }
                       const okRel = await agir(
                         () => comprasAnexarArquivo(pedido.id, fdRel),
-                        classeDoc === 'comprovante' ? 'Comprovante anexado.' : 'Arquivo relacionado anexado.',
+                        classeEnvio === 'comprovante' ? 'Comprovante anexado.' : 'Arquivo relacionado anexado.',
                       );
                       if (okRel) {
                         setArqsNf([]);
@@ -2518,12 +2636,12 @@ export default function ComprasPedido() {
                       return;
                     }
                     const jaTemNf = notasFiscaisPedido.some((nf) => nf.anexo_id);
-                    if (classeDoc === 'nota_fiscal' && jaTemNf && !segueInfra) {
+                    if (classeEnvio === 'nota_fiscal' && jaTemNf && !segueInfra) {
                       setErro('Já existe nota fiscal anexada. Exclua o arquivo antes de anexar outra.');
                       return;
                     }
                     if (!arqsNf.length) {
-                      setErro(classeDoc === 'boleto' ? 'Selecione o arquivo do boleto.' : 'Selecione o arquivo da nota fiscal.');
+                      setErro(classeEnvio === 'boleto' ? 'Selecione o arquivo do boleto.' : 'Selecione o arquivo da nota fiscal.');
                       return;
                     }
                     if (!senhaAssinaturaNf.trim()) {
@@ -2597,10 +2715,15 @@ export default function ComprasPedido() {
                     setCarimboAssinaturaNf(null);
                   }}
                 >
+                  {ehEmergencia && !podeAnexarNfAssinadaEmergencia ? (
+                    <p className="md:col-span-3 text-xs font-semibold text-slate-600">
+                      Arquivo relacionado ao processo
+                    </p>
+                  ) : (
                   <label className="md:col-span-3 text-xs font-semibold text-slate-600">
                     Tipo de documento
                     <select
-                      value={classeDoc}
+                      value={ehEmergencia ? classeDocEmergencia : classeDoc}
                       onChange={(e) => {
                         setClasseDoc(e.target.value);
                         setArqsNf([]);
@@ -2615,7 +2738,8 @@ export default function ComprasPedido() {
                       <option value="relacionado">Arquivo relacionado ao processo</option>
                     </select>
                   </label>
-                  {segueInfra && pedido.pagamento_qtd_parcelas && classeDoc !== 'relacionado' ? (
+                  )}
+                  {segueInfra && pedido.pagamento_qtd_parcelas && (ehEmergencia ? classeDocEmergencia : classeDoc) !== 'relacionado' ? (
                     <label className="md:col-span-3 text-xs font-semibold text-slate-600">
                       Parcela deste documento
                       <select
@@ -2632,7 +2756,7 @@ export default function ComprasPedido() {
                       </select>
                     </label>
                   ) : null}
-                  {classeDoc === 'nota_fiscal' ? (
+                  {(ehEmergencia ? classeDocEmergencia : classeDoc) === 'nota_fiscal' ? (
                     <>
                       <input
                         value={nfForm.numero}
@@ -2668,12 +2792,13 @@ export default function ComprasPedido() {
                   ) : null}
                   <input
                     type="file"
-                    multiple={classeDoc === 'nota_fiscal'}
-                    accept={classeDoc === 'relacionado' || classeDoc === 'comprovante' ? undefined : '.pdf,.xml,.jpg,.jpeg,.png,application/pdf'}
+                    multiple={(ehEmergencia ? classeDocEmergencia : classeDoc) === 'nota_fiscal'}
+                    accept={(ehEmergencia ? classeDocEmergencia : classeDoc) === 'relacionado' || (ehEmergencia ? classeDocEmergencia : classeDoc) === 'comprovante' ? undefined : '.pdf,.xml,.jpg,.jpeg,.png,application/pdf'}
                     onChange={(e) => {
                       const arquivos = Array.from(e.target.files || []);
                       const primeiro = arquivos[0] || null;
-                      if (classeDoc === 'relacionado' || classeDoc === 'comprovante') {
+                      const classeArq = ehEmergencia ? classeDocEmergencia : classeDoc;
+                      if (classeArq === 'relacionado' || classeArq === 'comprovante') {
                         setArqsNf(primeiro ? [primeiro] : []);
                         return;
                       }
@@ -2709,7 +2834,8 @@ export default function ComprasPedido() {
                       {carimboAssinaturaNf ? ' · assinatura posicionada' : ''}
                     </p>
                   ) : null}
-                  {classeDoc !== 'relacionado' && classeDoc !== 'comprovante' ? (
+                  {(ehEmergencia ? classeDocEmergencia : classeDoc) !== 'relacionado'
+                    && (ehEmergencia ? classeDocEmergencia : classeDoc) !== 'comprovante' ? (
                     <div className="md:col-span-3">
                       <label className="mb-1 block text-xs font-semibold text-slate-600" htmlFor="senha-assinatura-nf">
                         Insira a senha do gestor para a assinatura eletrônica digital
@@ -2737,11 +2863,11 @@ export default function ComprasPedido() {
                     </p>
                   )}
                   <PremiumButton type="submit">
-                    {classeDoc === 'boleto'
+                    {(ehEmergencia ? classeDocEmergencia : classeDoc) === 'boleto'
                       ? 'Anexar boleto assinado'
-                      : classeDoc === 'relacionado'
+                      : (ehEmergencia ? classeDocEmergencia : classeDoc) === 'relacionado'
                         ? 'Anexar arquivo relacionado'
-                        : classeDoc === 'comprovante'
+                        : (ehEmergencia ? classeDocEmergencia : classeDoc) === 'comprovante'
                           ? 'Anexar comprovante'
                           : 'Anexar NF assinada'}
                   </PremiumButton>
@@ -2749,16 +2875,16 @@ export default function ComprasPedido() {
               </SectionCard>
             )}
 
-            {ehEmergencia && pedido.status === 'rascunho' && !consultaGlobal ? (
+            {ehEmergencia && pedido.status === 'rascunho' && projetoAnexaNfAssinada && !consultaGlobal ? (
               <div className="rounded-2xl border-2 border-slate-900 bg-white px-4 py-4 shadow-sm">
                 <p className="mb-3 text-sm text-slate-700">
-                  Anexe a nota fiscal e envie para a fila de pagamento da Infraestrutura. Não há orçamentos nesta modalidade.
+                  Anexe a nota fiscal e envie para a fila de pagamento de {filaNfEmergencia}. Não há orçamentos nesta modalidade.
                 </p>
                 <PremiumButton
                   className="w-full py-3 text-base font-black"
                   onClick={() => agir(
                     () => comprasEnviarEmergenciaPagamento(pedido.id),
-                    'NF enviada para a fila de pagamento da Infraestrutura.',
+                    `NF enviada para a fila de pagamento de ${filaNfEmergencia}.`,
                   )}
                   disabled={!notasFiscaisPedido.length}
                 >
@@ -2767,7 +2893,7 @@ export default function ComprasPedido() {
               </div>
             ) : null}
 
-            {ehEmergencia && pedido.status === 'aguardando_pagamento' && infra && !consultaGlobal ? (
+            {podeConfirmarNfEmergencia ? (
               <div className="rounded-2xl border-2 border-amber-400 bg-amber-50 px-4 py-4 shadow-sm">
                 <p className="mb-3 text-sm text-amber-950">
                   Confirme depois de enviar esta NF ao pagamento. O projeto será avisado para conferir o extrato.
@@ -2786,7 +2912,7 @@ export default function ComprasPedido() {
 
             {ehEmergencia && pedido.status === 'aguardando_conferencia_extrato' && !consultaGlobal ? (
               <div className="rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-950">
-                A Infraestrutura enviou a NF para pagamento. Confira o extrato, anexe arquivos extras se precisar e encerre o processo.
+                {filaNfEmergencia} enviou a NF para pagamento. Confira o extrato, anexe arquivos extras se precisar e encerre o processo.
               </div>
             ) : null}
 
@@ -3124,6 +3250,33 @@ export default function ComprasPedido() {
           }
         }}
       />
+      {modalEncerrarAposNf ? (
+        <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-900/50 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl">
+            <p className="text-base font-black text-slate-900">Mudar o status para Encerrado?</p>
+            <p className="mt-2 text-sm text-slate-600">
+              A impressão da nota fiscal já foi enviada à impressora. Isso vale para Infraestrutura e Suprimentos.
+            </p>
+            <div className="mt-4 flex flex-wrap justify-end gap-2">
+              <PremiumButton
+                type="button"
+                variant="secondary"
+                disabled={gravandoEncerrarNf}
+                onClick={() => registrarImpressaoNfSede(false)}
+              >
+                Manter Imprimir NF
+              </PremiumButton>
+              <PremiumButton
+                type="button"
+                disabled={gravandoEncerrarNf}
+                onClick={() => registrarImpressaoNfSede(true)}
+              >
+                {gravandoEncerrarNf ? 'Salvando…' : 'Sim, encerrar'}
+              </PremiumButton>
+            </div>
+          </div>
+        </div>
+      ) : null}
       <ModalPosicionarTextoNf
         aberto={modalTextoNf}
         arquivo={arqsNf[0] || null}

@@ -28,7 +28,7 @@ TIPOS_COTACAO_PROJETO = frozenset({TIPO_IMOBILIZADO, TIPO_SERVICO})
 TIPOS_COTACAO_SEDE = frozenset({TIPO_CONSUMO, TIPO_HORTIFRUTI, TIPO_MANUTENCAO})
 
 # Visão por classe de ADM Global Compras na Sede.
-TIPOS_VISAO_SUPRIMENTOS = frozenset({TIPO_CONSUMO, TIPO_HORTIFRUTI, TIPO_MANUTENCAO})
+TIPOS_VISAO_SUPRIMENTOS = frozenset({TIPO_CONSUMO, TIPO_HORTIFRUTI, TIPO_MANUTENCAO, TIPO_EMERGENCIA})
 TIPOS_VISAO_INFRAESTRUTURA = frozenset({TIPO_IMOBILIZADO, TIPO_SERVICO, TIPO_EMERGENCIA})
 
 DESTINO_COMPRAS_SUPRIMENTOS = "suprimentos"
@@ -83,6 +83,7 @@ STATUS_AGUARDANDO_PAGAMENTO = "aguardando_pagamento"
 STATUS_AGUARDANDO_EXTRATO = "aguardando_conferencia_extrato"
 STATUS_CANCELADO = "cancelado"
 STATUS_REPROVADO = "reprovado"
+STATUS_IMPRIMIR_NF = "imprimir_nf"
 
 TIPO_ANEXO_ORCAMENTO = "orcamento"
 TIPO_ANEXO_PEDIDO_PDF = "pedido_compra"
@@ -241,7 +242,14 @@ def resumo_alteracao_itens_pedido(antes: list[dict], depois: list[dict]) -> str:
 
 MIN_COTACOES_RECOMENDADAS = 3
 
-STATUS_TERMINAIS_PEDIDO = {STATUS_RECEBIDO, STATUS_CANCELADO, STATUS_REPROVADO}
+STATUS_TERMINAIS_PEDIDO = {
+    STATUS_RECEBIDO,
+    STATUS_IMPRIMIR_NF,
+    STATUS_CANCELADO,
+    STATUS_REPROVADO,
+}
+# Lista de concluídos: Imprimir NF, Encerrado e Reprovado. Cancelado tem lista própria.
+STATUS_CONCLUIDOS_LISTA = {STATUS_RECEBIDO, STATUS_IMPRIMIR_NF, STATUS_REPROVADO}
 
 ESCOPO_PROJETO = "projeto"
 ESCOPO_SEDE = "sede"
@@ -477,10 +485,12 @@ def competencia_mes_seguinte(competencia: str) -> str:
 
 
 def pedido_segue_infraestrutura(tipo: Optional[str], destino: Optional[str] = None) -> bool:
-    """Bem, serviço, emergência e manutenção dirigida à Infraestrutura seguem o fluxo do Robson."""
+    """Bem, serviço, emergência (exceto destino Suprimentos) e manutenção da Infraestrutura."""
     chave = (tipo or "").strip().lower()
-    if chave in {TIPO_IMOBILIZADO, TIPO_SERVICO, TIPO_EMERGENCIA}:
+    if chave in {TIPO_IMOBILIZADO, TIPO_SERVICO}:
         return True
+    if chave == TIPO_EMERGENCIA:
+        return (destino or "").strip().lower() != DESTINO_COMPRAS_SUPRIMENTOS
     return (
         chave == TIPO_MANUTENCAO
         and (destino or "").strip().lower() == DESTINO_COMPRAS_INFRAESTRUTURA
@@ -913,11 +923,23 @@ def usuario_sede_pode_ver_tipo(
     perfil: str,
     tipo: Optional[str],
     is_manutencao: bool = False,
+    destino: Optional[str] = None,
 ) -> bool:
     tipos = tipos_visiveis_adm_compras(perfil=perfil, is_manutencao=is_manutencao)
     if tipos is None:
         return True
-    return (tipo or "").strip().lower() in tipos
+    chave = (tipo or "").strip().lower()
+    if chave not in tipos:
+        return False
+    if chave != TIPO_EMERGENCIA:
+        return True
+    perfil_n = _perfil_adm_compras(perfil)
+    destino_n = (destino or "").strip().lower()
+    if perfil_n == PERFIL_ADM_COMPRAS_SUPRIMENTOS:
+        return destino_n == DESTINO_COMPRAS_SUPRIMENTOS
+    if perfil_n == PERFIL_ADM_COMPRAS_INFRAESTRUTURA:
+        return destino_n != DESTINO_COMPRAS_SUPRIMENTOS
+    return True
 
 
 def usuario_pode_cadastrar_mestre_compras(
@@ -1200,8 +1222,28 @@ def assunto_solicitacao_cotacao(*, projeto: str, categoria: str, dia: date | Non
     return f"Solicitação de cotação CareCore · {projeto} · {cat} · {data}"
 
 
-def pedido_na_fila_nf_pagamento(tipo: Optional[str], status: Optional[str]) -> bool:
-    return tipo_eh_emergencia(tipo) and (status or "") == STATUS_AGUARDANDO_PAGAMENTO
+def pedido_na_fila_nf_pagamento(
+    tipo: Optional[str],
+    status: Optional[str],
+    destino: Optional[str] = None,
+) -> bool:
+    return (
+        tipo_eh_emergencia(tipo)
+        and (status or "") == STATUS_AGUARDANDO_PAGAMENTO
+        and pedido_segue_infraestrutura(tipo, destino)
+    )
+
+
+def pedido_na_fila_nf_pagamento_suprimentos(
+    tipo: Optional[str],
+    status: Optional[str],
+    destino: Optional[str] = None,
+) -> bool:
+    return (
+        tipo_eh_emergencia(tipo)
+        and (status or "") == STATUS_AGUARDANDO_PAGAMENTO
+        and (destino or "").strip().lower() == DESTINO_COMPRAS_SUPRIMENTOS
+    )
 
 
 def pedido_na_fila_concluidos_infra(

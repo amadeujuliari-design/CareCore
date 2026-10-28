@@ -18,10 +18,11 @@ import {
   comprasConfirmarNfPagamento,
   comprasFilaConcluidosInfra,
   comprasFilaNfPagamento,
+  comprasFilaNfPagamentoSuprimentos,
   comprasOkFinalInfra,
   moneyCentavos,
 } from './services/comprasService';
-import { usuarioEhAdmComprasInfraestrutura, usuarioEhManutencao } from './utils/rbacUtils';
+import { usuarioEhAdmComprasInfraestrutura, usuarioEhAdmComprasSuprimentos, usuarioEhManutencao } from './utils/rbacUtils';
 import { formatarDataHoraBr } from './utils/dataBrasilUtils';
 import { agruparFilaAssinaturaPorUnidade } from './utils/comprasFilaAssinaturaUtils';
 import { rotuloTipoPedido } from './utils/comprasPedidoTipos';
@@ -45,8 +46,11 @@ function anexosPedido(pedido) {
 export default function ComprasFilaInfra({ modo }) {
   const navigate = useNavigate();
   const usuario = useMemo(() => usuarioSessao(), []);
-  const sede = usuarioEhAdmComprasInfraestrutura(usuario) || usuarioEhManutencao(usuario);
-  const ehNf = modo === 'nf';
+  const ehNfSuprimentos = modo === 'nf-suprimentos';
+  const ehNf = modo === 'nf' || ehNfSuprimentos;
+  const sede = ehNfSuprimentos
+    ? (usuarioEhAdmComprasSuprimentos(usuario) || usuarioEhManutencao(usuario))
+    : (usuarioEhAdmComprasInfraestrutura(usuario) || usuarioEhManutencao(usuario));
   const [erro, setErro] = useState('');
   const [ok, setOk] = useState('');
   const [carregando, setCarregando] = useState(true);
@@ -60,23 +64,35 @@ export default function ComprasFilaInfra({ modo }) {
     setCarregando(true);
     try {
       if (!sede) return;
-      const dados = ehNf ? await comprasFilaNfPagamento() : await comprasFilaConcluidosInfra();
+      const dados = ehNfSuprimentos
+        ? await comprasFilaNfPagamentoSuprimentos()
+        : ehNf
+          ? await comprasFilaNfPagamento()
+          : await comprasFilaConcluidosInfra();
       setPedidos(dados?.pedidos || []);
     } catch (err) {
       setErro(err.response?.data?.detail || err.message || 'Não foi possível carregar a fila.');
     } finally {
       setCarregando(false);
     }
-  }, [sede, ehNf]);
+  }, [sede, ehNf, ehNfSuprimentos]);
 
   useEffect(() => {
     carregar();
   }, [carregar]);
 
-  const titulo = ehNf ? 'NFs a pagar' : 'Pedidos concluídos (Infraestrutura)';
+  const titulo = ehNfSuprimentos
+    ? 'NFs a pagar (Suprimentos)'
+    : ehNf
+      ? 'NFs a pagar'
+      : 'Pedidos concluídos (Infraestrutura)';
   const subtitulo = ehNf
     ? 'Compras emergência com nota fiscal pronta para pagamento. Confirme depois de enviar a NF ao financeiro.'
     : 'Pedidos que o projeto encerrou. Confira os anexos e dê o OK final para sair desta fila.';
+  const eyebrow = ehNfSuprimentos ? 'Compras · Suprimentos' : 'Compras · Infraestrutura';
+  const semAcesso = ehNfSuprimentos
+    ? 'Somente Suprimentos acessa esta fila.'
+    : 'Somente a Infraestrutura acessa esta fila.';
 
   if (!sede) {
     return (
@@ -84,7 +100,7 @@ export default function ComprasFilaInfra({ modo }) {
         <Sidebar />
         <MainShell>
           <PageHeader title={titulo} backTo="/compras" icon={ehNf ? <Receipt className="h-5 w-5" /> : <CheckCircle2 className="h-5 w-5" />} />
-          <p className="p-6 text-sm text-slate-600">Somente a Infraestrutura acessa esta fila.</p>
+          <p className="p-6 text-sm text-slate-600">{semAcesso}</p>
         </MainShell>
       </AppShell>
     );
@@ -97,7 +113,7 @@ export default function ComprasFilaInfra({ modo }) {
       <Sidebar />
       <MainShell>
         <PageHeader
-          eyebrow="Compras · Infraestrutura"
+          eyebrow={eyebrow}
           title={titulo}
           subtitle={subtitulo}
           icon={ehNf ? <Receipt className="h-5 w-5" /> : <CheckCircle2 className="h-5 w-5" />}

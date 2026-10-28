@@ -8,7 +8,7 @@ import AlertaFilaInfra from '../components/AlertaFilaInfra';
 import AlertaFilaExtrato from '../components/AlertaFilaExtrato';
 import AlertaPresencaOperacional from '../components/AlertaPresencaOperacional';
 import ProtectedRoute from './ProtectedRoute';
-import { PERFIS_MODULO_ATIVIDADES, PERFIS_NFP_ENVIO_SEFAZ, PERFIS_NFP_GESTAO, PERFIS_NFP_LEITURA_CUPONS, PERFIS_ADM_COMPRAS_SEDE, PERFIL_ADM_COMPRAS_INFRAESTRUTURA, PERFIL_ADM_GLOBAL } from '../utils/rbacUtils';
+import { PERFIS_MODULO_ATIVIDADES, PERFIS_NFP_ENVIO_SEFAZ, PERFIS_NFP_GESTAO, PERFIS_NFP_LEITURA_CUPONS, PERFIS_ADM_COMPRAS_SEDE, PERFIL_ADM_COMPRAS_INFRAESTRUTURA, PERFIL_ADM_COMPRAS_SUPRIMENTOS, PERFIL_ADM_GLOBAL } from '../utils/rbacUtils';
 import { deveExibirManutencaoProgramada } from '../config/manutencao';
 import { useConfigOperacional } from '../hooks/useConfigOperacional';
 import { menuOcultoNoProjeto } from '../utils/projetoPari';
@@ -491,6 +491,15 @@ function RotasAplicacao() {
           element={
             <ProtectedRoute perfis={[PERFIL_ADM_COMPRAS_INFRAESTRUTURA, 'Manutenção']}>
               <ComprasFilaInfra modo="nf" />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/compras/fila-nf-pagamento-suprimentos"
+          element={
+            <ProtectedRoute perfis={[PERFIL_ADM_COMPRAS_SUPRIMENTOS, 'Manutenção']}>
+              <ComprasFilaInfra modo="nf-suprimentos" />
             </ProtectedRoute>
           }
         />

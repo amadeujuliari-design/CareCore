@@ -38,6 +38,7 @@ import {
   comprasAtivarModulo,
   comprasCategorias,
   comprasCriarPedido,
+  comprasExcluirCancelado,
   comprasExcluirJanela,
   comprasFontes,
   comprasFornecedores,
@@ -51,7 +52,7 @@ import {
   comprasUnidades,
   competenciaAtual,
 } from './services/comprasService';
-import { usuarioEhAdmCompras, usuarioEhAdmComprasSuprimentos, usuarioEhGlobalPuro, usuarioEhManutencao, usuarioPodeCadastrarMestreCompras } from './utils/rbacUtils';
+import { usuarioEhAdmCompras, usuarioEhAdmComprasInfraestrutura, usuarioEhAdmComprasSuprimentos, usuarioEhGlobalPuro, usuarioEhManutencao, usuarioPodeCadastrarMestreCompras } from './utils/rbacUtils';
 import { formatarDataHoraBr } from './utils/dataBrasilUtils';
 import { BOTOES_NOVO_PEDIDO, pedidoListaEhInfraestrutura, rotuloTipoPedido, tipoEhEmergencia } from './utils/comprasPedidoTipos';
 import {
@@ -235,6 +236,7 @@ function BlocoListaPedidos({
   pedidosBloco,
   carregando,
   visaoConcluidos,
+  visaoCancelados,
   competencia,
   agruparPorUnidade,
   ordemPedidos,
@@ -242,6 +244,8 @@ function BlocoListaPedidos({
   onOrdenar,
   onToggleUnidade,
   caixaSuprimentos,
+  podeExcluirCancelados,
+  onExcluirCancelado,
 }) {
   const grupos = agruparPorUnidade ? agruparPedidosPorUnidade(pedidosBloco, ordemPedidos) : [];
   const chaveExp = (chave) => `${lado}:${chave}`;
@@ -265,18 +269,22 @@ function BlocoListaPedidos({
       ) : vazio ? (
         <EmptyState
           title={
-            visaoConcluidos
+            visaoCancelados
               ? (competencia
-                ? `Nenhum pedido de ${lado === 'infra' ? 'Infraestrutura' : 'Suprimentos'} concluído nesta competência`
-                : `Nenhum pedido de ${lado === 'infra' ? 'Infraestrutura' : 'Suprimentos'} concluído`)
-              : (competencia
-                ? `Nenhum pedido de ${lado === 'infra' ? 'Infraestrutura' : 'Suprimentos'} em andamento nesta competência`
-                : `Nenhum pedido de ${lado === 'infra' ? 'Infraestrutura' : 'Suprimentos'} em andamento`)
+                ? `Nenhum pedido cancelado de ${lado === 'infra' ? 'Infraestrutura' : 'Suprimentos'} nesta competência`
+                : `Nenhum pedido cancelado de ${lado === 'infra' ? 'Infraestrutura' : 'Suprimentos'}`)
+              : visaoConcluidos
+                ? (competencia
+                  ? `Nenhum pedido de ${lado === 'infra' ? 'Infraestrutura' : 'Suprimentos'} concluído nesta competência`
+                  : `Nenhum pedido de ${lado === 'infra' ? 'Infraestrutura' : 'Suprimentos'} concluído`)
+                : (competencia
+                  ? `Nenhum pedido de ${lado === 'infra' ? 'Infraestrutura' : 'Suprimentos'} em andamento nesta competência`
+                  : `Nenhum pedido de ${lado === 'infra' ? 'Infraestrutura' : 'Suprimentos'} em andamento`)
           }
         />
       ) : (
         <div className="overflow-x-auto">
-          <table className="min-w-full text-sm">
+          <table className="min-w-full text-sm uppercase">
             <thead>
               <tr className="text-left text-xs uppercase text-slate-500">
                 {COLUNAS_ORDENACAO_PEDIDOS.map((col) => {
@@ -385,7 +393,7 @@ function BlocoListaPedidos({
                             {caixaSuprimentos ? (
                               <td><SeloCaixaSuprimentos lida={pedido.suprimentos_lida} /></td>
                             ) : null}
-                            <td>
+                            <td className="normal-case">
                               <Link
                                 className="font-semibold text-slate-800 underline"
                                 to={`/compras/pedidos/${pedido.id}`}
@@ -393,6 +401,18 @@ function BlocoListaPedidos({
                               >
                                 Abrir
                               </Link>
+                              {podeExcluirCancelados ? (
+                                <button
+                                  type="button"
+                                  className="ml-3 font-semibold text-red-700 underline"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    onExcluirCancelado?.(pedido);
+                                  }}
+                                >
+                                  Excluir
+                                </button>
+                              ) : null}
                             </td>
                           </tr>
                         ))
@@ -429,10 +449,19 @@ function BlocoListaPedidos({
                     {caixaSuprimentos ? (
                       <td><SeloCaixaSuprimentos lida={pedido.suprimentos_lida} /></td>
                     ) : null}
-                    <td>
+                    <td className="normal-case">
                       <Link className="font-semibold text-slate-800 underline" to={`/compras/pedidos/${pedido.id}`}>
                         Abrir
                       </Link>
+                      {podeExcluirCancelados ? (
+                        <button
+                          type="button"
+                          className="ml-3 font-semibold text-red-700 underline"
+                          onClick={() => onExcluirCancelado?.(pedido)}
+                        >
+                          Excluir
+                        </button>
+                      ) : null}
                     </td>
                   </tr>
                 ))}
@@ -453,14 +482,14 @@ function chaveListaCompras(usuarioId, competencia, statusGrupo) {
   return `${usuarioId || ''}|${competencia || ''}|${statusGrupo}`;
 }
 
-function chaveVistaCompras(usuarioId, visaoConcluidos) {
-  return `${CHAVE_VISTA_COMPRAS}:${usuarioId || 'anon'}:${visaoConcluidos ? 'ok' : 'abertos'}`;
+function chaveVistaCompras(usuarioId, visaoLista) {
+  return `${CHAVE_VISTA_COMPRAS}:${usuarioId || 'anon'}:${visaoLista || 'abertos'}`;
 }
 
-function lerVistaCompras(usuarioId, visaoConcluidos) {
+function lerVistaCompras(usuarioId, visaoLista) {
   try {
-    const data = JSON.parse(sessionStorage.getItem(chaveVistaCompras(usuarioId, visaoConcluidos)) || 'null');
-    if (!data || Boolean(data.visaoConcluidos) !== Boolean(visaoConcluidos)) return null;
+    const data = JSON.parse(sessionStorage.getItem(chaveVistaCompras(usuarioId, visaoLista)) || 'null');
+    if (!data || (data.visaoLista || (data.visaoConcluidos ? 'concluidos' : 'abertos')) !== visaoLista) return null;
     if (data.usuarioId && data.usuarioId !== usuarioId) return null;
     return data;
   } catch {
@@ -480,21 +509,31 @@ function abaPermitidaCompras(id, { visaoOrganizacao, podeCadastrarMestre }) {
 export default function Compras() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const visaoConcluidos = (searchParams.get('visao') || '').trim().toLowerCase() === 'concluidos';
+  const visaoParam = (searchParams.get('visao') || '').trim().toLowerCase();
+  const visaoConcluidos = visaoParam === 'concluidos';
+  const visaoCancelados = visaoParam === 'cancelados';
   const usuario = useMemo(() => usuarioSessao(), []);
   const sede = usuarioEhAdmCompras(usuario) || usuarioEhManutencao(usuario);
   const caixaSuprimentos = visaoConcluidos && usuarioEhAdmComprasSuprimentos(usuario);
+  const podeExcluirCanceladosSup = visaoCancelados && (
+    usuarioEhAdmComprasSuprimentos(usuario) || usuarioEhManutencao(usuario)
+  );
+  const podeExcluirCanceladosInfra = visaoCancelados && (
+    usuarioEhAdmComprasInfraestrutura(usuario) || usuarioEhManutencao(usuario)
+  );
   const consultaGlobal = usuarioEhGlobalPuro(usuario);
   const visaoOrganizacao = sede || consultaGlobal;
   const podeCadastrarMestre = usuarioPodeCadastrarMestreCompras(usuario);
+  const visaoLista = visaoCancelados ? 'cancelados' : (visaoConcluidos ? 'concluidos' : 'abertos');
+  const visaoHistorico = visaoConcluidos || visaoCancelados;
   const vistaInicial = useMemo(
-    () => lerVistaCompras(usuario?.id, visaoConcluidos),
-    [usuario?.id, visaoConcluidos],
+    () => lerVistaCompras(usuario?.id, visaoLista),
+    [usuario?.id, visaoLista],
   );
   const competenciaInicial = typeof vistaInicial?.competencia === 'string'
     ? vistaInicial.competencia
-    : (visaoConcluidos ? competenciaAtual() : '');
-  const statusGrupoPedidos = visaoConcluidos ? 'terminais' : 'abertos';
+    : (visaoHistorico ? competenciaAtual() : '');
+  const statusGrupoPedidos = visaoCancelados ? 'cancelados' : (visaoConcluidos ? 'terminais' : 'abertos');
   const cacheVista = cacheListaCompras.chave === chaveListaCompras(
     usuario?.id,
     competenciaInicial,
@@ -536,21 +575,21 @@ export default function Compras() {
     return salva;
   });
   const [agruparPorUnidade, setAgruparPorUnidade] = useState(
-    () => (typeof vistaInicial?.agruparPorUnidade === 'boolean' ? vistaInicial.agruparPorUnidade : !visaoConcluidos),
+    () => (typeof vistaInicial?.agruparPorUnidade === 'boolean' ? vistaInicial.agruparPorUnidade : !visaoHistorico),
   );
   const [unidadeExpandida, setUnidadeExpandida] = useState(() => vistaInicial?.unidadeExpandida || null);
   const [visaoCalendario, setVisaoCalendario] = useState(() => vistaInicial?.calendario || null);
 
-  const visaoAnterior = useRef(visaoConcluidos);
+  const visaoAnterior = useRef(visaoLista);
   const cargaSeq = useRef(0);
   useEffect(() => {
-    if (visaoAnterior.current === visaoConcluidos) return;
-    visaoAnterior.current = visaoConcluidos;
-    setCompetencia(visaoConcluidos ? competenciaAtual() : '');
-    setAgruparPorUnidade(!visaoConcluidos);
+    if (visaoAnterior.current === visaoLista) return;
+    visaoAnterior.current = visaoLista;
+    setCompetencia(visaoHistorico ? competenciaAtual() : '');
+    setAgruparPorUnidade(!visaoHistorico);
     setUnidadeExpandida(null);
     setAba('pedidos');
-  }, [visaoConcluidos]);
+  }, [visaoHistorico, visaoLista]);
 
   useEffect(() => {
     if (cacheListaCompras.usuarioId && cacheListaCompras.usuarioId !== usuario?.id) {
@@ -566,8 +605,9 @@ export default function Compras() {
   }, [aba, podeCadastrarMestre, visaoOrganizacao]);
 
   useEffect(() => {
-    sessionStorage.setItem(chaveVistaCompras(usuario?.id, visaoConcluidos), JSON.stringify({
+    sessionStorage.setItem(chaveVistaCompras(usuario?.id, visaoLista), JSON.stringify({
       usuarioId: usuario?.id || '',
+      visaoLista,
       visaoConcluidos,
       competencia,
       aba,
@@ -576,7 +616,7 @@ export default function Compras() {
       unidadeExpandida,
       calendario: visaoCalendario,
     }));
-  }, [usuario?.id, visaoConcluidos, competencia, aba, ordemPedidos, agruparPorUnidade, unidadeExpandida, visaoCalendario]);
+  }, [usuario?.id, visaoLista, visaoConcluidos, competencia, aba, ordemPedidos, agruparPorUnidade, unidadeExpandida, visaoCalendario]);
 
   const pedidosOrdenados = useMemo(() => {
     const lista = [...(pedidos || [])];
@@ -700,6 +740,22 @@ export default function Compras() {
     }
   }, [competencia, podeCadastrarMestre, statusGrupoPedidos, usuario?.id, visaoOrganizacao]);
 
+  const excluirPedidoCancelado = async (pedido) => {
+    const codigo = pedido?.id ? String(pedido.id).slice(0, 8) : '';
+    if (!window.confirm(`Excluir definitivamente o pedido cancelado ${codigo}? Esta ação não pode ser desfeita.`)) {
+      return;
+    }
+    setErro('');
+    setOk('');
+    try {
+      await comprasExcluirCancelado(pedido.id);
+      setOk('Pedido cancelado excluído.');
+      await carregar();
+    } catch (err) {
+      setErro(err.response?.data?.detail || err.message || 'Não foi possível excluir o pedido cancelado.');
+    }
+  };
+
   useEffect(() => {
     carregar();
   }, [carregar]);
@@ -732,7 +788,7 @@ export default function Compras() {
       }
     } else if (abaParam === 'economia') {
       setAba('economia');
-    } else if (visaoParam === 'concluidos') {
+    } else if (visaoParam === 'concluidos' || visaoParam === 'cancelados') {
       setAba('pedidos');
     }
   }, [consultaGlobal, podeCadastrarMestre, searchParams, sede]);
@@ -759,11 +815,13 @@ export default function Compras() {
       <MainShell>
         <PageHeader
           eyebrow="Organização"
-          title={visaoConcluidos ? 'Pedidos concluídos' : 'Compras'}
+          title={visaoCancelados ? 'Pedidos cancelados' : visaoConcluidos ? 'Pedidos concluídos' : 'Compras'}
           subtitle={
-            visaoConcluidos
-              ? 'Pedidos encerrados, cancelados ou reprovados — histórico separado dos pedidos em andamento.'
-              : 'Solicitação, cotação, dupla aprovação, pedido ao fornecedor e conferência na unidade.'
+            visaoCancelados
+              ? 'Pedidos cancelados, separados dos concluídos. Infraestrutura e Suprimentos podem excluir os da própria lista.'
+              : visaoConcluidos
+                ? 'Pedidos encerrados, em impressão de NF ou reprovados — histórico separado dos pedidos em andamento.'
+                : 'Solicitação, cotação, dupla aprovação, pedido ao fornecedor e conferência na unidade.'
           }
           icon={<ShoppingCart className="h-5 w-5" />}
         />
@@ -811,7 +869,7 @@ export default function Compras() {
 
             {acesso?.compras_ativo && (
               <>
-            {!visaoConcluidos && (
+            {!visaoHistorico && (
             <div className="flex flex-wrap gap-2">
               {abas.map((item) => (
                 <button
@@ -836,9 +894,11 @@ export default function Compras() {
                 <FilterPanel
                   title="Filtros"
                   subtitle={
-                    visaoConcluidos
-                      ? 'Competência operacional (AAAA-MM) — só pedidos encerrados/cancelados/reprovados. Vazio mostra todos os períodos.'
-                      : 'Por padrão, todos os pedidos em andamento, agrupados por unidade. Escolha um mês para ver só aquele período.'
+                    visaoCancelados
+                      ? 'Competência operacional (AAAA-MM) — só pedidos cancelados. Vazio mostra todos os períodos.'
+                      : visaoConcluidos
+                        ? 'Competência operacional (AAAA-MM) — só pedidos encerrados, em impressão de NF ou reprovados. Vazio mostra todos os períodos.'
+                        : 'Por padrão, todos os pedidos em andamento, agrupados por unidade. Escolha um mês para ver só aquele período.'
                   }
                 >
                   <div className="flex flex-wrap items-center gap-2">
@@ -863,7 +923,7 @@ export default function Compras() {
                   </div>
                 </FilterPanel>
 
-                {!visaoConcluidos && !consultaGlobal && (
+                {!visaoHistorico && !consultaGlobal && (
                 <SectionCard title="Novo pedido">
                   <p className="mb-3 text-sm text-slate-600">
                     Escolha o tipo — cada um abre a tela certa (consumo na janela; bem, manutenção e serviço com cotação pelo projeto).
@@ -895,10 +955,11 @@ export default function Compras() {
                 </div>
                 <BlocoListaPedidos
                   lado="sup"
-                  titulo={visaoConcluidos ? 'Suprimentos — concluídos' : 'Suprimentos'}
+                  titulo={visaoCancelados ? 'Suprimentos — cancelados' : visaoConcluidos ? 'Suprimentos — concluídos' : 'Suprimentos'}
                   pedidosBloco={pedidosSuprimentos}
                   carregando={carregando}
                   visaoConcluidos={visaoConcluidos}
+                  visaoCancelados={visaoCancelados}
                   competencia={competencia}
                   agruparPorUnidade={agruparPorUnidade}
                   ordemPedidos={ordemPedidos}
@@ -906,13 +967,16 @@ export default function Compras() {
                   onOrdenar={alternarOrdenacao}
                   onToggleUnidade={alternarExpansaoUnidade}
                   caixaSuprimentos={caixaSuprimentos}
+                  podeExcluirCancelados={podeExcluirCanceladosSup}
+                  onExcluirCancelado={excluirPedidoCancelado}
                 />
                 <BlocoListaPedidos
                   lado="infra"
-                  titulo={visaoConcluidos ? 'Infraestrutura — concluídos' : 'Infraestrutura'}
+                  titulo={visaoCancelados ? 'Infraestrutura — cancelados' : visaoConcluidos ? 'Infraestrutura — concluídos' : 'Infraestrutura'}
                   pedidosBloco={pedidosInfraestrutura}
                   carregando={carregando}
                   visaoConcluidos={visaoConcluidos}
+                  visaoCancelados={visaoCancelados}
                   competencia={competencia}
                   agruparPorUnidade={agruparPorUnidade}
                   ordemPedidos={ordemPedidos}
@@ -920,6 +984,8 @@ export default function Compras() {
                   onOrdenar={alternarOrdenacao}
                   onToggleUnidade={alternarExpansaoUnidade}
                   caixaSuprimentos={false}
+                  podeExcluirCancelados={podeExcluirCanceladosInfra}
+                  onExcluirCancelado={excluirPedidoCancelado}
                 />
               </>
             )}

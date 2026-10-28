@@ -30,6 +30,7 @@ import {
   WashingMachine,
   FilePenLine,
   Archive,
+  Ban,
   CheckCircle2,
 } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
@@ -43,7 +44,7 @@ import { MENU_ACOMPANHAMENTOS, MENU_CONVIVENTES } from './config/acompanhamentos
 import { acompanhamentoAtivo, moduloAtivo, projetoOcultaAcomodacoes } from './config/configOperacionalDefaults';
 import { menuOcultoNoProjeto, projetoEhCtaCaninde, projetoEhReencontroPari, projetoUsaAgendaLavanderia } from './utils/projetoPari';
 import { useConfigOperacional } from './hooks/useConfigOperacional';
-import { usuarioEhAdmCompras, usuarioEhAdmComprasInfraestrutura, usuarioEhAdmGlobal, usuarioEhAdmPedidos, usuarioEhAdmProducao, usuarioEhOficineiro, usuarioEhGlobalPuro, usuarioGlobalAssinaOrcamento, normalizarPerfilRbac, usuarioPodeVerCompras, usuarioPodeAcessarNfp, usuarioPodeAcessarModuloOperacional, PERFIS_ADM_COMPRAS_SEDE, PERFIL_ADM_COMPRAS_INFRAESTRUTURA, PERFIL_ADM_GLOBAL, PERFIL_ADM_PRODUCAO } from './utils/rbacUtils';
+import { usuarioEhAdmCompras, usuarioEhAdmComprasInfraestrutura, usuarioEhAdmComprasSuprimentos, usuarioEhAdmGlobal, usuarioEhAdmPedidos, usuarioEhAdmProducao, usuarioEhOficineiro, usuarioEhGlobalPuro, usuarioGlobalAssinaOrcamento, normalizarPerfilRbac, usuarioPodeVerCompras, usuarioPodeAcessarNfp, usuarioPodeAcessarModuloOperacional, PERFIS_ADM_COMPRAS_SEDE, PERFIL_ADM_COMPRAS_INFRAESTRUTURA, PERFIL_ADM_COMPRAS_SUPRIMENTOS, PERFIL_ADM_GLOBAL, PERFIL_ADM_PRODUCAO } from './utils/rbacUtils';
 import { decodificarPayloadJwt } from './utils/jwtUtils';
 import { usuarioOrganizacaoFinanceira } from './utils/orgPacoteUtils';
 import FinanceSidebar from './components/FinanceSidebar';
@@ -136,6 +137,12 @@ const COMPRAS_CHILDREN_PROJETO = [
     feature: 'compras',
   },
   {
+    path: '/compras?visao=cancelados',
+    icon: Ban,
+    label: 'Pedidos cancelados',
+    feature: 'compras',
+  },
+  {
     path: '/compras?aba=itens',
     icon: ClipboardList,
     label: 'Catálogo de itens',
@@ -155,10 +162,16 @@ const COMPRAS_CHILDREN_PROJETO = [
   },
 ];
 
-function montarComprasChildrenSede(filaAssinaturaPendentes, filaNfPendentes = 0, filaConcluidosPendentes = 0) {
+function montarComprasChildrenSede(
+  filaAssinaturaPendentes,
+  filaNfPendentes = 0,
+  filaConcluidosPendentes = 0,
+  filaNfSuprimentosPendentes = 0,
+) {
   return [
     COMPRAS_CHILDREN_PROJETO[0],
     COMPRAS_CHILDREN_PROJETO[1],
+    COMPRAS_CHILDREN_PROJETO[2],
     {
       path: '/compras/aguardando-assinatura',
       icon: FilePenLine,
@@ -175,11 +188,22 @@ function montarComprasChildrenSede(filaAssinaturaPendentes, filaNfPendentes = 0,
       icon: Receipt,
       label: 'NFs a pagar',
       labelTitle: filaNfPendentes > 0
-        ? `${filaNfPendentes} NF(s) de emergência aguardando pagamento`
+        ? `${filaNfPendentes} NF(s) de emergência da Infraestrutura aguardando pagamento`
         : 'NFs a pagar',
       badgeCount: filaNfPendentes,
       feature: 'compras',
       perfis: [PERFIL_ADM_COMPRAS_INFRAESTRUTURA, 'Manutenção'],
+    },
+    {
+      path: '/compras/fila-nf-pagamento-suprimentos',
+      icon: Receipt,
+      label: 'NFs a pagar Suprimentos',
+      labelTitle: filaNfSuprimentosPendentes > 0
+        ? `${filaNfSuprimentosPendentes} NF(s) de emergência de Suprimentos aguardando pagamento`
+        : 'NFs a pagar Suprimentos',
+      badgeCount: filaNfSuprimentosPendentes,
+      feature: 'compras',
+      perfis: [PERFIL_ADM_COMPRAS_SUPRIMENTOS, 'Manutenção'],
     },
     {
       path: '/compras/fila-concluidos-infra',
@@ -199,9 +223,9 @@ function montarComprasChildrenSede(filaAssinaturaPendentes, filaNfPendentes = 0,
       feature: 'compras',
       perfis: ['Manutenção'],
     },
-    COMPRAS_CHILDREN_PROJETO[2],
     COMPRAS_CHILDREN_PROJETO[3],
     COMPRAS_CHILDREN_PROJETO[4],
+    COMPRAS_CHILDREN_PROJETO[5],
     {
       path: '/usuarios',
       icon: UserRoundCog,
@@ -223,6 +247,7 @@ export default function Sidebar() {
   const [comprasModuloVisivel, setComprasModuloVisivel] = useState(false);
   const [filaAssinaturaPendentes, setFilaAssinaturaPendentes] = useState(0);
   const [filaNfPendentes, setFilaNfPendentes] = useState(0);
+  const [filaNfSuprimentosPendentes, setFilaNfSuprimentosPendentes] = useState(0);
   const [filaConcluidosPendentes, setFilaConcluidosPendentes] = useState(0);
   const [modalSenhaAberto, setModalSenhaAberto] = useState(false);
   const [modalPasskeysAberto, setModalPasskeysAberto] = useState(false);
@@ -374,6 +399,18 @@ export default function Sidebar() {
     } else {
       setFilaNfPendentes(0);
       setFilaConcluidosPendentes(0);
+    }
+
+    if (usuarioEhAdmComprasSuprimentos(usuarioSessao) || isManutencao) {
+      api.get(`${API_ROOT}/compras/fila-nf-pagamento-suprimentos/resumo`)
+        .then((response) => {
+          if (ativo) setFilaNfSuprimentosPendentes(Number(response.data?.pendentes) || 0);
+        })
+        .catch(() => {
+          if (ativo) setFilaNfSuprimentosPendentes(0);
+        });
+    } else {
+      setFilaNfSuprimentosPendentes(0);
     }
 
     return () => {
@@ -621,7 +658,12 @@ export default function Sidebar() {
           label: 'Compras',
           feature: 'compras',
           escopoCompras: 'sede',
-          children: montarComprasChildrenSede(filaAssinaturaPendentes, filaNfPendentes, filaConcluidosPendentes),
+          children: montarComprasChildrenSede(
+            filaAssinaturaPendentes,
+            filaNfPendentes,
+            filaConcluidosPendentes,
+            filaNfSuprimentosPendentes,
+          ),
         },
         {
           path: '/nfp',
