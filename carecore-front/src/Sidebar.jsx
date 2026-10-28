@@ -186,10 +186,10 @@ function montarComprasChildrenSede(
     {
       path: '/compras/fila-nf-pagamento',
       icon: Receipt,
-      label: 'NFs a pagar',
+      label: 'NFs a pagar Infraestrutura',
       labelTitle: filaNfPendentes > 0
         ? `${filaNfPendentes} NF(s) de emergência da Infraestrutura aguardando pagamento`
-        : 'NFs a pagar',
+        : 'NFs a pagar Infraestrutura',
       badgeCount: filaNfPendentes,
       feature: 'compras',
       perfis: [PERFIL_ADM_COMPRAS_INFRAESTRUTURA, 'Manutenção'],

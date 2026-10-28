@@ -23,7 +23,7 @@
 | Escopo | Menu (Sidebar) | Quem vê |
 | --- | --- | --- |
 | Projeto | Compras → Pedidos e cotações, Pedidos concluídos, Pedidos cancelados, Catálogo de itens, Categorias, Fornecedores | Usuário com `compras_modulo_ativo` (ou ADM Pedidos / ADM Compras / Manutenção via `usuarioPodeVerCompras`) |
-| Sede | Compras → Pedidos, concluídos, cancelados, catálogo, categorias, fornecedores, aguardando assinatura, NFs a pagar (Infraestrutura), NFs a pagar Suprimentos, concluídos Infraestrutura, documentos assinados e Usuários ADM Global Compras | ADM Global Compras / Suprimentos / Infraestrutura / Manutenção. Global consulta a mesma sede, sem criar nem editar. O global autorizado a assinar (Noemi) vê a fila e Documentos assinados. NFs a pagar de Infraestrutura só Infraestrutura/Manutenção; NFs a pagar Suprimentos só Suprimentos/Manutenção. |
+| Sede | Compras → Pedidos, concluídos, cancelados, catálogo, categorias, fornecedores, aguardando assinatura, NFs a pagar Infraestrutura, NFs a pagar Suprimentos, concluídos Infraestrutura, documentos assinados e Usuários ADM Global Compras | ADM Global Compras / Suprimentos / Infraestrutura / Manutenção. Global consulta a mesma sede, sem criar nem editar. O global autorizado a assinar (Noemi) vê a fila e Documentos assinados. NFs a pagar Infraestrutura só Infraestrutura/Manutenção; NFs a pagar Suprimentos só Suprimentos/Manutenção. |
 
 **Origem:** `Sidebar.jsx` (`COMPRAS_CHILDREN_PROJETO`, `montarComprasChildrenSede`), `rbacUtils.js` (`PERFIS_ADM_COMPRAS_SEDE`, `usuarioPodeVerCompras`, `usuarioEhGlobalPuro`).
 
@@ -317,7 +317,7 @@ Títulos: Revisar pedido de cotação · Revisar pedido de compra · Revisar ree
 
 Duas filas: Infraestrutura (orçamentos e contratos aguardando ok) e representante legal (o que a Infraestrutura enviou + contratos após o ok). Cada fila **agrupa por unidade**, no mesmo padrão da lista de Pedidos: a linha do projeto mostra quantidade, tipo e **data/hora da última atualização**; **Expandir** / **Recolher** abre os itens. Em cada pedido e orçamento aparecem enviado em, atualizado em e a data/hora do arquivo. **Visualizar** abre o PDF/imagem no modal (sem baixar); o nome do arquivo continua servindo para baixar. A Infraestrutura pode **Posicionar e assinar** ou **Enviar para a fila do representante legal**. A Noemi vê Visualizar, assinar com gov.br e anexar o PDF assinado. Ao entrar no sistema, quem assina vê o aviso da fila; Suprimentos não recebe esse aviso.
 
-## 1.5c NFs a pagar — `/compras/fila-nf-pagamento`
+## 1.5c NFs a pagar Infraestrutura — `/compras/fila-nf-pagamento`
 
 **Arquivo:** `carecore-front/src/ComprasFilaInfra.jsx` (`modo="nf"`)  
 **Rota protegida:** ADM Global Compras Infraestrutura + Manutenção
@@ -329,7 +329,7 @@ Fila das Compras emergência com destino Infraestrutura e NF anexada. Agrupa por
 **Arquivo:** `carecore-front/src/ComprasFilaInfra.jsx` (`modo="nf-suprimentos"`)  
 **Rota protegida:** ADM Global Compras Suprimentos + Manutenção
 
-Mesmo padrão da fila de NFs a pagar, só para emergência com destino Suprimentos. Suprimentos confirma o envio ao pagamento; o projeto confere o extrato e encerra.
+Mesmo padrão da fila de NFs a pagar Infraestrutura, só para emergência com destino Suprimentos. Suprimentos confirma o envio ao pagamento; o projeto confere o extrato e encerra.
 
 ## 1.5d Concluídos Infraestrutura — `/compras/fila-concluidos-infra`
 

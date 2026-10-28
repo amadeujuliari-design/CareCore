@@ -96,7 +96,11 @@ export default function AlertaFilaInfra() {
     : fila === 'nf-suprimentos'
       ? nfSuprimentosPendentes
       : concluidosPendentes;
-  const titulo = fila === 'nf' || fila === 'nf-suprimentos' ? 'Fila de NFs a pagar' : 'Fila de pedidos concluídos';
+  const titulo = fila === 'nf'
+    ? 'Fila de NFs a pagar Infraestrutura'
+    : fila === 'nf-suprimentos'
+      ? 'Fila de NFs a pagar Suprimentos'
+      : 'Fila de pedidos concluídos';
   const texto = fila === 'nf' || fila === 'nf-suprimentos'
     ? (pendentes === 1
       ? 'Há 1 nota fiscal de Compras emergência aguardando o envio para pagamento.'

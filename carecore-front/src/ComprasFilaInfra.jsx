@@ -82,9 +82,9 @@ export default function ComprasFilaInfra({ modo }) {
   }, [carregar]);
 
   const titulo = ehNfSuprimentos
-    ? 'NFs a pagar (Suprimentos)'
+    ? 'NFs a pagar Suprimentos'
     : ehNf
-      ? 'NFs a pagar'
+      ? 'NFs a pagar Infraestrutura'
       : 'Pedidos concluídos (Infraestrutura)';
   const subtitulo = ehNf
     ? 'Compras emergência com nota fiscal pronta para pagamento. Confirme depois de enviar a NF ao financeiro.'
