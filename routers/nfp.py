@@ -78,6 +78,7 @@ from nfp_utils import (
     cnpj_valido,
     cpf_valido,
     limpar_documento,
+    montar_paginacao_lista,
     nome_loja_para_cadastro,
     normalizar_agente_captacao,
     numero_cadastro_da_busca,
@@ -632,7 +633,7 @@ async def listar_cnpjs(
     busca: Optional[str] = None,
     captador: Optional[str] = None,
     somente_conferir: bool = False,
-    limite: int = Query(100, ge=1, le=500),
+    limite: int = Query(50, ge=1, le=2000),
     offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
     usuario_atual: dict = Depends(get_usuario_logado),
@@ -663,8 +664,12 @@ async def listar_cnpjs(
         q = q.where(NfpCnpjLojaDB.captador == captador.strip().upper())
     if somente_conferir:
         q = q.where(NfpCnpjLojaDB.cnpj_conferir.is_(True))
+    total = int(await db.scalar(select(func.count()).select_from(q.order_by(None).subquery())) or 0)
     rows = (await db.execute(q.offset(offset).limit(limite))).scalars().all()
-    return [serializar_cnpj(r) for r in rows]
+    return {
+        "itens": [serializar_cnpj(r) for r in rows],
+        "paginacao": montar_paginacao_lista(total, limite, offset),
+    }
 
 
 @router.get("/cnpjs/{cnpj_id}")
@@ -772,7 +777,7 @@ async def listar_cpfs_captados(
     busca: Optional[str] = None,
     captador: Optional[str] = None,
     ativo: Optional[bool] = None,
-    limite: int = Query(100, ge=1, le=500),
+    limite: int = Query(50, ge=1, le=2000),
     offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
     usuario_atual: dict = Depends(get_usuario_logado),
@@ -803,8 +808,12 @@ async def listar_cpfs_captados(
         q = q.where(NfpCpfCaptadoDB.captador == captador.strip().upper())
     if ativo is not None:
         q = q.where(NfpCpfCaptadoDB.ativo.is_(ativo))
+    total = int(await db.scalar(select(func.count()).select_from(q.order_by(None).subquery())) or 0)
     rows = (await db.execute(q.offset(offset).limit(limite))).scalars().all()
-    return [serializar_cpf_captado(r) for r in rows]
+    return {
+        "itens": [serializar_cpf_captado(r) for r in rows],
+        "paginacao": montar_paginacao_lista(total, limite, offset),
+    }
 
 
 @router.get("/cpfs-captados/{cpf_id}")

@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Building2 } from 'lucide-react';
 
+import { buscarTodosItensPaginados } from './utils/buscarTodosPaginados';
+
 import Sidebar from './Sidebar';
 import BannerSomenteLeituraGlobal from './components/BannerSomenteLeituraGlobal';
 import NfpEnderecoFields from './components/nfp/NfpEnderecoFields';
@@ -43,6 +45,7 @@ import {
   montarEnderecoPayload,
   opcoesAgentesCaptacao,
 } from './utils/nfpCadastroUtils';
+import { NFP_CADASTRO_PAGE_SIZE } from './utils/nfpListaPaginadaUtils';
 import { aplicarConsultaCnpjNoForm, textoAvisoConsultaCnpj } from './utils/nfpConsultaCnpjUtils';
 import { decodificarPayloadJwt } from './utils/jwtUtils';
 import { usuarioSomenteLeituraNfp } from './utils/rbacUtils';
@@ -72,6 +75,36 @@ const FORM_CPF_INICIAL = {
   ativo: true,
   observacoes: '',
 };
+
+function BarraPaginacao({ pagina, totalPaginas, total, limite, onMudar, disabled }) {
+  if (!total) return null;
+  return (
+    <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-sm text-slate-600">
+      <span>
+        {total.toLocaleString('pt-BR')} registro(s) · página {pagina} de {totalPaginas}
+        {' '}({limite}/página)
+      </span>
+      <div className="flex gap-2">
+        <button
+          type="button"
+          disabled={disabled || pagina <= 1}
+          onClick={() => onMudar(pagina - 1)}
+          className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 font-semibold disabled:opacity-40"
+        >
+          Anterior
+        </button>
+        <button
+          type="button"
+          disabled={disabled || pagina >= totalPaginas}
+          onClick={() => onMudar(pagina + 1)}
+          className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 font-semibold disabled:opacity-40"
+        >
+          Próxima
+        </button>
+      </div>
+    </div>
+  );
+}
 
 function nomeGenerico(loja = '') {
   const texto = String(loja || '').trim().toLowerCase();
@@ -121,6 +154,8 @@ export default function NfpCnpjs() {
   const [aba, setAba] = useState('cnpjs');
   const [cnpjs, setCnpjs] = useState([]);
   const [cpfs, setCpfs] = useState([]);
+  const [pagina, setPagina] = useState(1);
+  const [totalLista, setTotalLista] = useState(0);
   const [agentes, setAgentes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [salvando, setSalvando] = useState(false);
@@ -157,72 +192,125 @@ export default function NfpCnpjs() {
     }
   }, []);
 
-  const carregarCnpjs = useCallback(async () => {
+  const paramsFiltroCnpj = useCallback(() => {
+    const params = {};
+    if (busca.trim()) params.busca = busca.trim();
+    if (filtroCaptador) params.captador = filtroCaptador;
+    if (somenteConferir) params.somente_conferir = true;
+    return params;
+  }, [busca, filtroCaptador, somenteConferir]);
+
+  const paramsFiltroCpf = useCallback(() => {
+    const params = {};
+    if (busca.trim()) params.busca = busca.trim();
+    if (filtroCaptador) params.captador = filtroCaptador;
+    return params;
+  }, [busca, filtroCaptador]);
+
+  const carregarCnpjs = useCallback(async ({ paginaAlvo = 1 } = {}) => {
     setLoading(true);
     limparAlertas();
     try {
-      const params = { limite: 500 };
-      if (busca.trim()) params.busca = busca.trim();
-      if (filtroCaptador) params.captador = filtroCaptador;
-      if (somenteConferir) params.somente_conferir = true;
-      setCnpjs(await nfpListarCnpjs(params));
+      const offset = (paginaAlvo - 1) * NFP_CADASTRO_PAGE_SIZE;
+      const data = await nfpListarCnpjs({
+        ...paramsFiltroCnpj(),
+        limite: NFP_CADASTRO_PAGE_SIZE,
+        offset,
+      });
+      setCnpjs(data.itens);
+      setTotalLista(data.paginacao.total);
+      setPagina(data.paginacao.pagina || paginaAlvo);
     } catch (error) {
       setErro(erroApiNfp(error, 'Não foi possível carregar os CNPJs.'));
     } finally {
       setLoading(false);
     }
-  }, [busca, filtroCaptador, somenteConferir]);
+  }, [paramsFiltroCnpj]);
 
-  const carregarCpfs = useCallback(async () => {
+  const carregarCpfs = useCallback(async ({ paginaAlvo = 1 } = {}) => {
     setLoading(true);
     limparAlertas();
     try {
-      const params = { limite: 500 };
-      if (busca.trim()) params.busca = busca.trim();
-      if (filtroCaptador) params.captador = filtroCaptador;
-      setCpfs(await nfpListarCpfsCaptados(params));
+      const offset = (paginaAlvo - 1) * NFP_CADASTRO_PAGE_SIZE;
+      const data = await nfpListarCpfsCaptados({
+        ...paramsFiltroCpf(),
+        limite: NFP_CADASTRO_PAGE_SIZE,
+        offset,
+      });
+      setCpfs(data.itens);
+      setTotalLista(data.paginacao.total);
+      setPagina(data.paginacao.pagina || paginaAlvo);
     } catch (error) {
       setErro(erroApiNfp(error, 'Não foi possível carregar os CPFs captados.'));
     } finally {
       setLoading(false);
     }
-  }, [busca, filtroCaptador]);
+  }, [paramsFiltroCpf]);
 
   useEffect(() => {
     carregarAgentes();
   }, [carregarAgentes]);
 
   useEffect(() => {
-    if (aba === 'cnpjs') carregarCnpjs();
-    else carregarCpfs();
+    if (aba === 'cnpjs') carregarCnpjs({ paginaAlvo: 1 });
+    else carregarCpfs({ paginaAlvo: 1 });
   }, [aba, carregarCnpjs, carregarCpfs]);
+
+  const totalPaginas = Math.max(1, Math.ceil(totalLista / NFP_CADASTRO_PAGE_SIZE));
 
   const filtrosExportacao = useMemo(() => ({
     Busca: busca.trim() || '—',
     Captador: filtroCaptador || 'Todos',
     Conferir: somenteConferir ? 'Somente conferir' : 'Todos',
-    Registros: String(cnpjs.length),
-  }), [busca, filtroCaptador, somenteConferir, cnpjs.length]);
+    Registros: String(totalLista),
+  }), [busca, filtroCaptador, somenteConferir, totalLista]);
+
+  const buscarTodosCnpjsFiltro = async () => buscarTodosItensPaginados({
+    buscarPagina: async ({ limite, offset }) => {
+      const data = await nfpListarCnpjs({
+        ...paramsFiltroCnpj(),
+        limite,
+        offset,
+      });
+      return { items: data.itens, total: data.paginacao.total };
+    },
+    limitePagina: 200,
+    maxRegistros: 10000,
+  });
 
   const exportarLista = async () => {
     if (aba !== 'cnpjs') return;
     limparAlertas();
+    setLoading(true);
     try {
-      const ok = await exportarCadastroNfpCnpjs({ cnpjs, filtros: filtrosExportacao });
+      const lista = await buscarTodosCnpjsFiltro();
+      const ok = await exportarCadastroNfpCnpjs({
+        cnpjs: lista,
+        filtros: { ...filtrosExportacao, Registros: String(lista.length) },
+      });
       if (!ok) setErro('Não há CNPJs para exportar com os filtros atuais.');
     } catch (error) {
       setErro(erroApiNfp(error, 'Falha ao exportar CNPJs.'));
+    } finally {
+      setLoading(false);
     }
   };
 
   const imprimirLista = async () => {
     if (aba !== 'cnpjs') return;
     limparAlertas();
+    setLoading(true);
     try {
-      const ok = await imprimirCadastroNfpCnpjs({ cnpjs, filtros: filtrosExportacao });
+      const lista = await buscarTodosCnpjsFiltro();
+      const ok = await imprimirCadastroNfpCnpjs({
+        cnpjs: lista,
+        filtros: { ...filtrosExportacao, Registros: String(lista.length) },
+      });
       if (!ok) setErro('Não há CNPJs para imprimir com os filtros atuais.');
     } catch (error) {
       setErro(erroApiNfp(error, 'Falha ao imprimir CNPJs.'));
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -462,7 +550,7 @@ export default function NfpCnpjs() {
         <PageHeader
           eyebrow="NFP – Créditos"
           title="CNPJs / CPFs Captados por Agentes"
-          subtitle="Cadastro de estabelecimentos (CNPJ) e pessoas físicas (CPF) vinculadas a agentes captadores."
+          subtitle="Cadastro de estabelecimentos (CNPJ) e pessoas físicas (CPF) vinculadas a agentes captadores. Lista paginada (50/página); impressão e XLSX buscam o filtro inteiro."
           icon={<Building2 className="h-5 w-5" />}
           backTo="/nfp"
           backLabel="Voltar ao dashboard"
@@ -474,14 +562,14 @@ export default function NfpCnpjs() {
                     <ReportActionButton
                       type="button"
                       action="export"
-                      disabled={loading || !cnpjs.length}
+                      disabled={loading || !totalLista}
                       onClick={exportarLista}
                     >
                       Exportar XLSX
                     </ReportActionButton>
                     <ReportActionButton
                       type="button"
-                      disabled={loading || !cnpjs.length}
+                      disabled={loading || !totalLista}
                       onClick={imprimirLista}
                     >
                       Imprimir
@@ -581,11 +669,16 @@ export default function NfpCnpjs() {
                 <PremiumButton
                   type="button"
                   variant="secondary"
-                  onClick={aba === 'cpfs' ? carregarCpfs : carregarCnpjs}
+                  onClick={() => (aba === 'cpfs'
+                    ? carregarCpfs({ paginaAlvo: pagina })
+                    : carregarCnpjs({ paginaAlvo: pagina }))}
                 >
                   Atualizar
                 </PremiumButton>
               </div>
+              <p className="mb-4 text-xs text-slate-500">
+                Lista na tela: {NFP_CADASTRO_PAGE_SIZE} por página. Impressão e XLSX buscam todos os registros do filtro.
+              </p>
 
               {loading ? (
                 <div className="py-8 text-center text-sm text-slate-500">Carregando...</div>
@@ -689,6 +782,18 @@ export default function NfpCnpjs() {
                     </tbody>
                   </table>
                 </div>
+              )}
+              {!loading && (
+                <BarraPaginacao
+                  pagina={pagina}
+                  totalPaginas={totalPaginas}
+                  total={totalLista}
+                  limite={NFP_CADASTRO_PAGE_SIZE}
+                  disabled={loading}
+                  onMudar={(novaPagina) => (aba === 'cpfs'
+                    ? carregarCpfs({ paginaAlvo: novaPagina })
+                    : carregarCnpjs({ paginaAlvo: novaPagina }))}
+                />
               )}
             </section>
           )}

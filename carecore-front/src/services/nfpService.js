@@ -1,4 +1,5 @@
 import api from './api';
+import { normalizarListaPaginadaNfp } from '../utils/nfpListaPaginadaUtils';
 
 export async function nfpAcesso() {
   const { data } = await api.get('/api/nfp/me/acesso');
@@ -53,7 +54,10 @@ export async function nfpImportarDoadores(arquivo) {
 
 export async function nfpListarCnpjs(params = {}) {
   const { data } = await api.get('/api/nfp/cnpjs', { params });
-  return data;
+  return normalizarListaPaginadaNfp(data, {
+    limite: params.limite,
+    offset: params.offset,
+  });
 }
 
 export async function nfpCriarCnpj(payload) {
@@ -73,7 +77,10 @@ export async function nfpAtualizarCnpj(id, payload) {
 
 export async function nfpListarCpfsCaptados(params = {}) {
   const { data } = await api.get('/api/nfp/cpfs-captados', { params });
-  return data;
+  return normalizarListaPaginadaNfp(data, {
+    limite: params.limite,
+    offset: params.offset,
+  });
 }
 
 export async function nfpCriarCpfCaptado(payload) {

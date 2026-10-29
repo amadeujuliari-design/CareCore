@@ -380,6 +380,20 @@ def normalizar_texto_coluna(valor: str) -> str:
     return re.sub(r"\s+", " ", texto)
 
 
+def montar_paginacao_lista(total: int, limite: int, offset: int) -> dict:
+    """Metadados de lista paginada (tela 50/pagina; impressao busca o filtro inteiro)."""
+    limite_n = max(int(limite or 1), 1)
+    offset_n = max(int(offset or 0), 0)
+    total_n = max(int(total or 0), 0)
+    return {
+        "total": total_n,
+        "limite": limite_n,
+        "offset": offset_n,
+        "pagina": (offset_n // limite_n) + 1,
+        "total_paginas": max(1, (total_n + limite_n - 1) // limite_n),
+    }
+
+
 def achar_coluna(colunas: list[str], candidatos: list[str]) -> Optional[str]:
     mapa = {normalizar_texto_coluna(c): c for c in colunas}
     for cand in candidatos:

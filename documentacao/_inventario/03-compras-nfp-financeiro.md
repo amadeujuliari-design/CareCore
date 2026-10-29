@@ -637,8 +637,10 @@ CPF · Nome · Agente captador · E-mail · Telefone · Status
 
 CNPJ · Loja / nome fantasia · Razão social · Captador · Inscrição estadual · E-mail · Telefone · Status
 
-Botões: Voltar · Atualizar · + Novo CPF · + Novo CNPJ · Salvar CPF · Salvar CNPJ · Cancelar  
-Filtro: Todos os captadores
+Botões: Voltar · Atualizar · + Novo CPF · + Novo CNPJ · Salvar CPF · Salvar CNPJ · Cancelar · Exportar XLSX · Imprimir  
+Filtro: Todos os captadores · busca · somente conferir  
+
+Lista paginada (50/página), com Anterior / Próxima, no padrão dos relatórios NFP. Impressão e XLSX buscam **todos** os registros do filtro, não só a página da tela.
 
 ---
 
