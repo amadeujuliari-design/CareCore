@@ -1735,6 +1735,7 @@ async def gerar_pedido_compra(
     identidade = await _identidade_relatorio_pedido(db, pedido, org)
     logo_bytes = _logo_bytes_relatorio(identidade.get("relatorio_logo_url"))
     numero = pedido.id.split("-")[0].upper()[:8]
+    data_pedido = formatar_data_br_compras(data_operacional())
     pdf_bytes = montar_pdf_pedido_compra(
         pedido={
             "competencia": pedido.competencia,
@@ -1766,6 +1767,7 @@ async def gerar_pedido_compra(
         numero_pedido=numero,
         identidade=identidade,
         logo_bytes=logo_bytes,
+        data_pedido=data_pedido,
     )
     conteudo = pdf_bytes
     nome_arquivo = f"pedido-compra-{numero}.pdf"
@@ -2174,6 +2176,7 @@ async def enviar_solicitacao_cotacao_fornecedores(
     identidade = await _identidade_relatorio_pedido(db, pedido, org)
     logo_bytes = _logo_bytes_relatorio(identidade.get("relatorio_logo_url"))
     numero = pedido.id.split("-")[0].upper()[:8]
+    data_pedido = formatar_data_br_compras(data_operacional())
     anexo_bytes = montar_pdf_solicitacao_cotacao(
         pedido={
             "competencia": pedido.competencia,
@@ -2186,6 +2189,7 @@ async def enviar_solicitacao_cotacao_fornecedores(
         numero_pedido=numero,
         identidade=identidade,
         logo_bytes=logo_bytes,
+        data_pedido=data_pedido,
     )
     anexo_nome = f"solicitacao-cotacao-{numero}.pdf"
     projeto = (inst or {}).get("nome") or "projeto"

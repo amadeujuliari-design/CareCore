@@ -137,6 +137,16 @@ def _styles() -> dict[str, ParagraphStyle]:
             textColor=COR_MUTED,
             alignment=TA_LEFT,
         ),
+        "data_doc": ParagraphStyle(
+            "compras_data_doc",
+            parent=base["Normal"],
+            fontName="Helvetica-Bold",
+            fontSize=10,
+            leading=13,
+            textColor=COR_ACENTO,
+            alignment=TA_RIGHT,
+            spaceBefore=2,
+        ),
     }
 
 
@@ -159,13 +169,30 @@ def _logo_flowable(logo_bytes: Optional[bytes]) -> Any:
         return Paragraph("<b>AEB</b>", ParagraphStyle("logo_txt", fontName="Helvetica-Bold", fontSize=14, textColor=COR_TEXTO))
 
 
-def _cabecalho(styles: dict, *, titulo: str, subtitulo: str, identidade: Optional[dict[str, Any]], logo_bytes: Optional[bytes]):
+def _linha_data_documento(data_documento: Optional[str], rotulo: str) -> str:
+    texto = (data_documento or "").strip()
+    if not texto:
+        return ""
+    return f"{rotulo}: {texto}"
+
+
+def _cabecalho(
+    styles: dict,
+    *,
+    titulo: str,
+    subtitulo: str,
+    identidade: Optional[dict[str, Any]],
+    logo_bytes: Optional[bytes],
+    data_documento: Optional[str] = None,
+):
     nome = (identidade or {}).get("relatorio_nome_exibicao") or "AEB"
     direito = [
         Paragraph(titulo, styles["titulo"]),
         Paragraph(subtitulo, styles["sub"]),
-        Paragraph(str(nome).upper(), styles["nome_id"]),
     ]
+    if data_documento:
+        direito.append(Paragraph(data_documento, styles["data_doc"]))
+    direito.append(Paragraph(str(nome).upper(), styles["nome_id"]))
     tabela = Table(
         [[_logo_flowable(logo_bytes), direito]],
         colWidths=[55 * mm, 125 * mm],
@@ -279,6 +306,7 @@ def montar_pdf_solicitacao_cotacao(
     numero_pedido: str,
     identidade: Optional[dict[str, Any]] = None,
     logo_bytes: Optional[bytes] = None,
+    data_pedido: Optional[str] = None,
 ) -> bytes:
     styles = _styles()
     projeto = (instituicao or {}).get("nome") or pedido.get("instituicao_nome") or "Projeto"
@@ -287,6 +315,13 @@ def montar_pdf_solicitacao_cotacao(
     competencia = pedido.get("competencia") or ""
     tipo = pedido.get("tipo") or ""
     subtitulo = f"{org} · {tipo} · competência {competencia}"
+    linha_data = _linha_data_documento(data_pedido, "Data da solicitação")
+    linhas_projeto = [
+        Paragraph(str(projeto), styles["corpo_forte"]),
+        Paragraph(f"Entrega: {endereco}", styles["corpo"]),
+    ]
+    if linha_data:
+        linhas_projeto.append(Paragraph(linha_data, styles["corpo"]))
 
     story: list = [
         _cabecalho(
@@ -295,15 +330,13 @@ def montar_pdf_solicitacao_cotacao(
             subtitulo=subtitulo,
             identidade=identidade,
             logo_bytes=logo_bytes,
+            data_documento=linha_data,
         ),
         Spacer(1, 8),
         _caixa(
             styles,
             "Projeto solicitante",
-            [
-                Paragraph(str(projeto), styles["corpo_forte"]),
-                Paragraph(f"Entrega: {endereco}", styles["corpo"]),
-            ],
+            linhas_projeto,
         ),
         Spacer(1, 8),
         Paragraph(
@@ -330,6 +363,7 @@ def montar_pdf_pedido_compra(
     numero_pedido: str,
     identidade: Optional[dict[str, Any]] = None,
     logo_bytes: Optional[bytes] = None,
+    data_pedido: Optional[str] = None,
 ) -> bytes:
     styles = _styles()
     projeto = (instituicao or {}).get("nome") or pedido.get("instituicao_nome") or "Projeto"
@@ -338,10 +372,17 @@ def montar_pdf_pedido_compra(
     competencia = pedido.get("competencia") or ""
     tipo = pedido.get("tipo") or ""
     subtitulo = f"{org} · {tipo} · competência {competencia}"
+    linha_data = _linha_data_documento(data_pedido, "Data do pedido")
     fornecedor = (cotacao_escolhida or {}).get("fornecedor_nome") or "—"
     valor = "—"
     if cotacao_escolhida and cotacao_escolhida.get("valor_centavos") is not None:
         valor = _fmt_moeda_centavos(int(cotacao_escolhida.get("valor_centavos") or 0))
+    linhas_projeto = [
+        Paragraph(str(projeto), styles["corpo_forte"]),
+        Paragraph(f"Entrega: {endereco}", styles["corpo"]),
+    ]
+    if linha_data:
+        linhas_projeto.append(Paragraph(linha_data, styles["corpo"]))
 
     story: list = [
         _cabecalho(
@@ -350,15 +391,13 @@ def montar_pdf_pedido_compra(
             subtitulo=subtitulo,
             identidade=identidade,
             logo_bytes=logo_bytes,
+            data_documento=linha_data,
         ),
         Spacer(1, 8),
         _caixa(
             styles,
             "Projeto solicitante",
-            [
-                Paragraph(str(projeto), styles["corpo_forte"]),
-                Paragraph(f"Entrega: {endereco}", styles["corpo"]),
-            ],
+            linhas_projeto,
         ),
         Spacer(1, 8),
         KeepTogether(
@@ -464,6 +503,7 @@ def montar_html_pedido_compra(
     itens: list[dict[str, Any]],
     cotacao_escolhida: Optional[dict[str, Any]],
     numero_pedido: str,
+    data_pedido: Optional[str] = None,
 ) -> str:
     linhas_itens = "".join(
         f"<tr><td>{_escape_html(str(item.get('quantidade', '')))}</td>"
@@ -481,8 +521,11 @@ def montar_html_pedido_compra(
     projeto = _escape_html((instituicao or {}).get("nome") or pedido.get("instituicao_nome") or "Projeto")
     endereco = _escape_html(_endereco_projeto(instituicao))
     org = _escape_html(organizacao_nome or "AEB")
+    linha_data = _linha_data_documento(data_pedido, "Data do pedido")
+    data_html = f"<p>{_escape_html(linha_data)}</p>" if linha_data else ""
     return (
         f"<h1>Pedido de compra {_escape_html(numero_pedido)}</h1>"
+        f"{data_html}"
         f"<p>{org}</p><p>{projeto}</p><p>{endereco}</p>"
         f"<p>{fornecedor} {valor}</p><table>{linhas_itens}</table>"
     )

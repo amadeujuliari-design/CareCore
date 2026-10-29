@@ -62,12 +62,17 @@ def test_pedido_compra_mostra_embalagem():
         }],
         cotacao_escolhida=None,
         numero_pedido="ABC123",
+        data_pedido="29/10/2026",
     )
     assert "500 g" in html
     assert "Farinha de tapioca" in html
+    assert "Data do pedido: 29/10/2026" in html
 
 
 def test_solicitacao_cotacao_pdf_padrao_aeb():
+    from io import BytesIO
+    from pypdf import PdfReader
+
     pdf = montar_pdf_solicitacao_cotacao(
         pedido={"competencia": "2026-08", "tipo": "consumo"},
         instituicao={"nome": "SIAT", "cidade": "São Paulo", "uf": "SP"},
@@ -86,9 +91,12 @@ def test_solicitacao_cotacao_pdf_padrao_aeb():
             "relatorio_telefone": "(11) 0000-0000",
         },
         logo_bytes=None,
+        data_pedido="29/10/2026",
     )
     assert pdf[:4] == b"%PDF"
     assert len(pdf) > 500
+    texto = PdfReader(BytesIO(pdf)).pages[0].extract_text() or ""
+    assert "Data da solicitação: 29/10/2026" in texto
 
 
 def test_extrai_fornecedores_solicitacao_dos_eventos():
@@ -115,6 +123,9 @@ def test_extrai_fornecedores_solicitacao_dos_eventos():
 
 
 def test_pedido_compra_pdf_com_fornecedor():
+    from io import BytesIO
+    from pypdf import PdfReader
+
     pdf = montar_pdf_pedido_compra(
         pedido={"competencia": "2026-08", "tipo": "consumo"},
         instituicao={"nome": "SIAT"},
@@ -129,8 +140,11 @@ def test_pedido_compra_pdf_com_fornecedor():
         cotacao_escolhida={"fornecedor_nome": "Fornecedor Y", "valor_centavos": 12345},
         numero_pedido="PED001",
         identidade={"relatorio_nome_exibicao": "AEB"},
+        data_pedido="29/10/2026",
     )
     assert pdf[:4] == b"%PDF"
+    texto = PdfReader(BytesIO(pdf)).pages[0].extract_text() or ""
+    assert "Data do pedido: 29/10/2026" in texto
 
 
 def test_pdf_aprovacao_orcamento_sede():
