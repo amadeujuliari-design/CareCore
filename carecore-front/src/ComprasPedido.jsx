@@ -105,6 +105,9 @@ import {
   tipoEhCotacaoSede,
   tipoEhEmergencia,
   CLASSE_LINHA_ORCAMENTO,
+  anexoOrcamentoParaAssinar,
+  anexosOrcamentoParaEnvio,
+  ehOrcamentoUnificado,
   projetoPodeTrocarOrcamento,
   tipoExigeJanela,
   tipoPulaAprovacaoSede,
@@ -565,6 +568,8 @@ export default function ComprasPedido() {
   const podeReabrir = pedido.pode_reabrir && pedido.fechado_por_id === usuarioId;
   const podeReabrirAprovado = sede && pedido.pode_reabrir_aprovado;
   const pedidoCompra = (pedido.anexos || []).find((a) => a.tipo === 'pedido_compra');
+  const cotacaoVencedoraId = (pedido.cotacoes || []).find((c) => c.escolhida)?.id;
+  const orcamentosEnvio = anexosOrcamentoParaEnvio(pedido.anexos, cotacaoVencedoraId);
   const emailPedidoCompraEnviado = Boolean(pedido.email_pedido_compra_enviado);
   const consumoEscolhidoAguardandoEnvio = pedido.tipo === 'consumo'
     && pedido.status === 'aguardando_aprovacao_unidade'
@@ -724,8 +729,8 @@ export default function ComprasPedido() {
         const reenvio = modalEmail.modo === 'reenvio';
         window.alert(
           `Pedido de compra ${reenvio ? 'reenviado' : 'enviado'} com sucesso para:\n\n${res.destinatario || 'fornecedor'}${
-            res.orcamento_assinado_anexado
-              ? '\n\nO orçamento assinado pela Sede também foi anexado.'
+            res.orcamento_anexado || res.orcamento_assinado_anexado
+              ? '\n\nO orçamento do processo também foi anexado.'
               : ''
           }${reenvio ? '' : '\n\nAgora você pode baixar o PDF.'}`,
         );
@@ -1696,11 +1701,11 @@ export default function ComprasPedido() {
               )}
               {sede && cotacaoSede ? (
                 <p className="mb-2 text-xs text-slate-500">
-                  Registre o valor e os PDFs devolvidos. Pode anexar quantos arquivos forem, do mesmo fornecedor ou de vários, neste pedido.
+                  Registre o valor e os PDFs devolvidos. Pode anexar quantos arquivos forem, do mesmo fornecedor ou de vários, neste pedido. Ao escolher o vencedor, os arquivos dele viram um PDF único para assinatura e envio.
                 </p>
               ) : (
                 <p className="mb-2 text-xs text-slate-500">
-                  Pode anexar quantos orçamentos forem, de um ou de todos os fornecedores.
+                  Pode anexar quantos orçamentos forem, de um ou de todos os fornecedores. Ao escolher o vencedor, os arquivos dele viram um PDF único para assinatura e envio.
                 </p>
               )}
               <ul className="mb-3 space-y-2 text-sm">
@@ -1756,6 +1761,7 @@ export default function ComprasPedido() {
                         >
                           <p className="min-w-0 truncate text-xs font-medium text-slate-800">
                             {anexo.tipo === 'orcamento_assinado' ? '✓ Assinado — ' : ''}
+                            {ehOrcamentoUnificado(anexo) ? 'Pacote unificado do vencedor — ' : ''}
                             {anexo.nome_arquivo || 'Arquivo'}
                           </p>
                           <div className="flex shrink-0 flex-wrap items-center gap-2">
@@ -2306,12 +2312,52 @@ export default function ComprasPedido() {
                 </p>
                 <p className="mt-1 text-sm text-emerald-800">
                   E-mail enviado com sucesso ao fornecedor (pedido de compra
-                  {(pedido.anexos || []).some((a) => a.tipo === 'orcamento_assinado')
-                    ? ' + orçamento assinado pela Sede'
+                  {orcamentosEnvio.length
+                    ? (orcamentosEnvio.some((a) => a.tipo === 'orcamento_assinado')
+                      ? ' + orçamento assinado pela Sede'
+                      : ' + orçamento do processo')
                     : ''}
-                  ). Visualize ou baixe o PDF; se precisar, reenvie.
+                  ). Visualize ou baixe os PDFs; se precisar, reenvie.
                 </p>
                 <ul className="mt-3 space-y-2">
+                  {orcamentosEnvio.map((anexoOrc) => (
+                    <li
+                      key={anexoOrc.id}
+                      className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-emerald-200 bg-white px-3 py-2.5"
+                    >
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-slate-900">
+                          {anexoOrc.tipo === 'orcamento_assinado'
+                            ? 'Orçamento assinado'
+                            : 'Orçamento do processo'}
+                        </p>
+                        <p className="truncate text-xs text-slate-500">
+                          {anexoOrc.nome_arquivo || 'orcamento.pdf'}
+                        </p>
+                      </div>
+                      <div className="flex shrink-0 flex-wrap gap-2">
+                        <button
+                          type="button"
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-300 bg-white px-3 py-2 text-xs font-bold text-emerald-800 hover:bg-emerald-50"
+                          onClick={() => setModalAnexo(anexoOrc)}
+                        >
+                          Visualizar
+                        </button>
+                        <button
+                          type="button"
+                          className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-700 px-3 py-2 text-xs font-bold text-white hover:bg-emerald-800"
+                          onClick={() => comprasBaixarAnexo(
+                            pedido.id,
+                            anexoOrc.id,
+                            anexoOrc.nome_arquivo,
+                          ).catch(() => setErro('Não foi possível baixar o orçamento.'))}
+                        >
+                          <FileText size={14} />
+                          Baixar PDF
+                        </button>
+                      </div>
+                    </li>
+                  ))}
                   <li className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-emerald-200 bg-white px-3 py-2.5">
                     <div className="min-w-0">
                       <p className="text-sm font-semibold text-slate-900">PDF do pedido de compra</p>
@@ -3080,9 +3126,7 @@ export default function ComprasPedido() {
                           setErro('Escolha o orçamento vencedor antes de assinar.');
                           return;
                         }
-                        const anexoOrc = (pedido.anexos || []).find(
-                          (a) => a.cotacao_id === escolhida.id && a.tipo === 'orcamento',
-                        );
+                        const anexoOrc = anexoOrcamentoParaAssinar(pedido.anexos, escolhida.id);
                         if (!anexoOrc) {
                           setErro('Anexe o PDF do orçamento vencedor antes de assinar.');
                           return;

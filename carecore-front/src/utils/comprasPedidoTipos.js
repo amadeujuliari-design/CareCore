@@ -414,3 +414,26 @@ export function cotacoesComEscolhidaPrimeiro(cotacoes = []) {
     (a, b) => Number(Boolean(b?.escolhida)) - Number(Boolean(a?.escolhida)),
   );
 }
+
+export const PREFIXO_ORCAMENTO_UNIFICADO = 'orcamento-vencedor-unificado';
+
+export function ehOrcamentoUnificado(anexo) {
+  return String(anexo?.nome_arquivo || '').startsWith(PREFIXO_ORCAMENTO_UNIFICADO);
+}
+
+export function anexoOrcamentoParaAssinar(anexos = [], cotacaoId) {
+  const lista = (anexos || []).filter(
+    (item) => item.cotacao_id === cotacaoId && item.tipo === 'orcamento',
+  );
+  return lista.find((item) => ehOrcamentoUnificado(item)) || lista[0] || null;
+}
+
+/** Pacote que acompanha o pedido de compra no e-mail (assinado, unificado ou os PDFs ativos). */
+export function anexosOrcamentoParaEnvio(anexos = [], cotacaoId) {
+  const daCotacao = (anexos || []).filter((item) => !cotacaoId || item.cotacao_id === cotacaoId);
+  const assinados = daCotacao.filter((item) => item.tipo === 'orcamento_assinado');
+  if (assinados.length) return [assinados[assinados.length - 1]];
+  const unificados = daCotacao.filter((item) => item.tipo === 'orcamento' && ehOrcamentoUnificado(item));
+  if (unificados.length) return [unificados[unificados.length - 1]];
+  return daCotacao.filter((item) => item.tipo === 'orcamento');
+}

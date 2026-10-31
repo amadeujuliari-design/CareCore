@@ -19,6 +19,7 @@ from compras_assinatura_pdf import (
     carimbar_assinatura_gestor_pdf,
     carimbar_assinatura_pdf,
     carimbar_texto_pdf,
+    juntar_anexos_orcamento,
     juntar_pdfs,
 )
 from security import verificar_senha
@@ -67,7 +68,12 @@ from compras_regras import (
     TIPO_ANEXO_NF_XML,
     TIPOS_ANEXO_NO_BEM,
     TIPO_ANEXO_ORCAMENTO,
+    TIPO_ANEXO_ORCAMENTO_ORIGEM,
     TIPO_ANEXO_ORCAMENTO_ASSINADO,
+    PREFIXO_ORCAMENTO_UNIFICADO,
+    anexos_orcamento_para_envio,
+    eh_anexo_orcamento_unificado,
+    fontes_unificacao_orcamento,
     TIPO_ANEXO_PEDIDO_PDF,
     TIPO_ANEXO_RESPOSTA_FORNECEDOR,
     TIPO_EVENTO_ANEXO,
@@ -379,6 +385,127 @@ async def _anexos_pedido(db: AsyncSession, pedido_id: str) -> list[ComprasPedido
             )
         ).scalars().all()
     )
+
+
+async def _anexos_orcamento_da_cotacao(
+    db: AsyncSession,
+    cotacao_id: str,
+    *,
+    so_ativos: bool = False,
+) -> list[ComprasPedidoAnexoDB]:
+    filtros = [
+        ComprasPedidoAnexoDB.cotacao_id == cotacao_id,
+        ComprasPedidoAnexoDB.tipo.in_({TIPO_ANEXO_ORCAMENTO, TIPO_ANEXO_ORCAMENTO_ORIGEM}),
+    ]
+    if so_ativos:
+        filtros.append(ComprasPedidoAnexoDB.ativo.is_(True))
+    return list(
+        (
+            await db.execute(
+                select(ComprasPedidoAnexoDB)
+                .where(*filtros)
+                .order_by(ComprasPedidoAnexoDB.criado_em.asc())
+            )
+        ).scalars().all()
+    )
+
+
+async def restaurar_orcamentos_originais_cotacao(db: AsyncSession, cotacao_id: str) -> None:
+    """Devolve os PDFs separados e tira de cena o pacote unificado."""
+    if not cotacao_id:
+        return
+    for anexo in await _anexos_orcamento_da_cotacao(db, cotacao_id):
+        if anexo.tipo == TIPO_ANEXO_ORCAMENTO_ORIGEM:
+            anexo.tipo = TIPO_ANEXO_ORCAMENTO
+            anexo.ativo = True
+        elif anexo.ativo and anexo.tipo == TIPO_ANEXO_ORCAMENTO and eh_anexo_orcamento_unificado(
+            anexo.nome_arquivo
+        ):
+            anexo.ativo = False
+
+
+async def unificar_orcamentos_vencedor(
+    db: AsyncSession,
+    usuario: dict,
+    pedido: ComprasPedidoDB,
+    cotacao: ComprasCotacaoDB,
+) -> Optional[ComprasPedidoAnexoDB]:
+    """Junta os orçamentos do vencedor num PDF único que segue assinatura e envio."""
+    anexos = await _anexos_orcamento_da_cotacao(db, cotacao.id)
+    fontes = fontes_unificacao_orcamento(anexos)
+    if len(fontes) < 2:
+        return None
+
+    partes: list[tuple[bytes, str, str]] = []
+    nomes: list[str] = []
+    for anexo in fontes:
+        try:
+            bruto, tipo_lido = ler_bytes_anexo(anexo.caminho_arquivo)
+        except Exception as exc:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Não foi possível ler «{anexo.nome_arquivo}» para unir os orçamentos "
+                    f"do vencedor: {exc}"
+                ),
+            ) from exc
+        partes.append((bruto, anexo.nome_arquivo or "orcamento.pdf", tipo_lido or anexo.content_type or ""))
+        nomes.append(anexo.nome_arquivo or "arquivo")
+
+    try:
+        pdf_bytes = juntar_anexos_orcamento(partes)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    numero = pedido.id.split("-")[0].upper()[:8]
+    nome_arquivo = f"{PREFIXO_ORCAMENTO_UNIFICADO}-{numero}.pdf"
+
+    class _ArquivoGerado:
+        filename = nome_arquivo
+        content_type = "application/pdf"
+
+    caminho, nome_original, tamanho, content_type = await salvar_arquivo_compras(
+        organizacao_id=pedido.organizacao_id,
+        pedido_id=pedido.id,
+        file=_ArquivoGerado(),  # type: ignore[arg-type]
+        conteudo=pdf_bytes,
+    )
+
+    for anexo in anexos:
+        if anexo.ativo and anexo.tipo == TIPO_ANEXO_ORCAMENTO and eh_anexo_orcamento_unificado(
+            anexo.nome_arquivo
+        ):
+            anexo.ativo = False
+    for anexo in fontes:
+        anexo.tipo = TIPO_ANEXO_ORCAMENTO_ORIGEM
+        anexo.ativo = False
+
+    pacote = ComprasPedidoAnexoDB(
+        pedido_id=pedido.id,
+        cotacao_id=cotacao.id,
+        tipo=TIPO_ANEXO_ORCAMENTO,
+        nome_arquivo=nome_original,
+        caminho_arquivo=caminho,
+        content_type=content_type or "application/pdf",
+        tamanho_bytes=tamanho,
+        criado_por_id=_uid(usuario),
+    )
+    db.add(pacote)
+    await db.flush()
+    await registrar_evento_pedido(
+        db,
+        pedido_id=pedido.id,
+        tipo=TIPO_EVENTO_ANEXO,
+        texto=(
+            f"Orçamentos do vencedor {cotacao.fornecedor_nome} unidos em um PDF "
+            f"({len(fontes)} arquivos: {', '.join(nomes)})."
+        ),
+        usuario_id=_uid(usuario),
+        anexo_id=pacote.id,
+        cotacao_id=cotacao.id,
+    )
+    pedido.atualizado_em = agora_operacional_naive()
+    return pacote
 
 
 async def _notas_pedido(db: AsyncSession, pedido_id: str) -> list[ComprasPedidoNotaFiscalDB]:
@@ -1091,6 +1218,14 @@ async def upload_anexo_pedido(
     )
     pedido.atualizado_em = agora_operacional_naive()
 
+    if tipo == TIPO_ANEXO_ORCAMENTO and cotacao_id:
+        cotacao_alvo = next(
+            (c for c in await _cotacoes_ativas(db, pedido.id) if c.id == cotacao_id and c.escolhida),
+            None,
+        )
+        if cotacao_alvo:
+            await unificar_orcamentos_vencedor(db, usuario, pedido, cotacao_alvo)
+
     # Com 3 orçamentos anexados (cotação do projeto), envia automaticamente à Sede.
     if (
         tipo == TIPO_ANEXO_ORCAMENTO
@@ -1572,6 +1707,7 @@ async def reabrir_orcamento_aprovado(
     cotacoes = await _cotacoes_ativas(db, pedido.id)
     for cotacao in cotacoes:
         cotacao.escolhida = False
+        await restaurar_orcamentos_originais_cotacao(db, cotacao.id)
 
     anexos = await _anexos_pedido(db, pedido.id)
     for anexo in anexos:
@@ -1846,6 +1982,21 @@ async def _orcamento_assinado_pedido(
     ).scalars().first()
 
 
+async def _pacote_orcamento_para_email(
+    db: AsyncSession,
+    pedido: ComprasPedidoDB,
+    escolhida: Optional[ComprasCotacaoDB],
+) -> list[ComprasPedidoAnexoDB]:
+    """Orçamentos do vencedor que vão no e-mail com o pedido de compra."""
+    if not escolhida:
+        return []
+    anexos = list(await _anexos_orcamento_da_cotacao(db, escolhida.id))
+    assinado = await _orcamento_assinado_pedido(db, pedido, escolhida)
+    if assinado and all(getattr(item, "id", None) != assinado.id for item in anexos):
+        anexos.append(assinado)
+    return anexos_orcamento_para_envio(anexos)
+
+
 async def rascunho_email_compras(
     db: AsyncSession,
     usuario: dict,
@@ -1871,9 +2022,14 @@ async def rascunho_email_compras(
     else:
         cotacoes = await _cotacoes_ativas(db, pedido.id)
         escolhida = next((c for c in cotacoes if c.escolhida), None)
-        assinado = await _orcamento_assinado_pedido(db, pedido, escolhida)
+        pacote = await _pacote_orcamento_para_email(db, pedido, escolhida)
+        assinado = any(getattr(a, "tipo", None) == TIPO_ANEXO_ORCAMENTO_ASSINADO for a in pacote)
         assunto = f"Pedido de compra CareCore · {projeto} · {pedido.competencia}"
-        corpo = corpo_padrao_pedido_compra(projeto=projeto, com_orcamento_assinado=bool(assinado))
+        corpo = corpo_padrao_pedido_compra(
+            projeto=projeto,
+            com_orcamento=bool(pacote),
+            com_orcamento_assinado=assinado,
+        )
     return {
         "tipo": tipo_n,
         "assunto": assunto,
@@ -1918,6 +2074,8 @@ async def enviar_email_fornecedor(
 
     cotacoes = await _cotacoes_ativas(db, pedido.id)
     escolhida = next((c for c in cotacoes if c.escolhida), None)
+    if escolhida:
+        await unificar_orcamentos_vencedor(db, usuario, pedido, escolhida)
     email_dest = None
     if escolhida and escolhida.fornecedor_id:
         forn = (
@@ -1946,28 +2104,44 @@ async def enviar_email_fornecedor(
 
     bytes_arquivo, content_type = ler_bytes_anexo(anexo.caminho_arquivo)
     anexos_extras: list[tuple[str, bytes, str]] = []
-    orcamento_assinado = await _orcamento_assinado_pedido(db, pedido, escolhida)
-    if orcamento_assinado:
+    pacote = await _pacote_orcamento_para_email(db, pedido, escolhida)
+    if escolhida and not pacote:
+        raise HTTPException(
+            status_code=400,
+            detail="O orçamento do vencedor precisa acompanhar o pedido de compra.",
+        )
+    for extra in pacote:
         try:
-            bytes_assinado, tipo_assinado = ler_bytes_anexo(orcamento_assinado.caminho_arquivo)
-            anexos_extras.append(
-                (
-                    orcamento_assinado.nome_arquivo or "orcamento-assinado-sede.pdf",
-                    bytes_assinado,
-                    tipo_assinado
-                    or getattr(orcamento_assinado, "content_type", None)
-                    or "application/pdf",
-                )
+            bytes_extra, tipo_extra = ler_bytes_anexo(extra.caminho_arquivo)
+        except Exception as exc:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Não foi possível ler «{extra.nome_arquivo}» para enviar "
+                    f"com o pedido de compra: {exc}"
+                ),
+            ) from exc
+        anexos_extras.append(
+            (
+                extra.nome_arquivo or "orcamento.pdf",
+                bytes_extra,
+                tipo_extra
+                or getattr(extra, "content_type", None)
+                or "application/pdf",
             )
-        except Exception:  # noqa: BLE001 — pedido de compra segue mesmo se o assinado falhar
-            orcamento_assinado = None
+        )
+    orcamento_assinado = next(
+        (item for item in pacote if getattr(item, "tipo", None) == TIPO_ANEXO_ORCAMENTO_ASSINADO),
+        None,
+    )
 
     inst = await _dados_instituicao(db, pedido)
     projeto = (inst or {}).get("nome") or "projeto"
     assunto = f"Pedido de compra CareCore · {projeto} · {pedido.competencia}"
     padrao = corpo_padrao_pedido_compra(
         projeto=projeto,
-        com_orcamento_assinado=bool(anexos_extras),
+        com_orcamento=bool(anexos_extras),
+        com_orcamento_assinado=bool(orcamento_assinado),
     )
     corpo_texto, corpo_html, imagens_inline = preparar_envio_email_compras(
         usuario=usuario,
@@ -1988,7 +2162,11 @@ async def enviar_email_fornecedor(
         imagens_inline=imagens_inline or None,
     )
     if resultado.enviado:
-        extras = f" + orçamento assinado ({orcamento_assinado.nome_arquivo})." if orcamento_assinado else "."
+        if anexos_extras:
+            nomes = ", ".join(nome for nome, _b, _t in anexos_extras)
+            extras = f" + orçamento ({nomes})."
+        else:
+            extras = "."
         texto_evento = f"E-mail enviado para {email_dest}{extras}"
     else:
         texto_evento = f"Falha no e-mail: {resultado.erro}"
@@ -2004,6 +2182,7 @@ async def enviar_email_fornecedor(
         "enviado": resultado.enviado,
         "erro": resultado.erro,
         "destinatario": email_dest,
+        "orcamento_anexado": bool(anexos_extras and resultado.enviado),
         "orcamento_assinado_anexado": bool(orcamento_assinado and resultado.enviado),
     }
 
@@ -3019,7 +3198,6 @@ async def desativar_cotacao(
             select(ComprasPedidoAnexoDB).where(
                 ComprasPedidoAnexoDB.pedido_id == pedido.id,
                 ComprasPedidoAnexoDB.cotacao_id == cotacao.id,
-                ComprasPedidoAnexoDB.ativo.is_(True),
             )
         )
     ).scalars().all()
@@ -3100,6 +3278,7 @@ async def assinar_orcamento_e_aprovar_sede(
             status_code=400,
             detail="Escolha o orçamento vencedor nesta fila antes de assinar.",
         )
+    await unificar_orcamentos_vencedor(db, usuario, pedido, escolhida)
 
     anexos_orc = (
         await db.execute(
@@ -3108,7 +3287,7 @@ async def assinar_orcamento_e_aprovar_sede(
                 ComprasPedidoAnexoDB.cotacao_id == escolhida.id,
                 ComprasPedidoAnexoDB.tipo == TIPO_ANEXO_ORCAMENTO,
                 ComprasPedidoAnexoDB.ativo.is_(True),
-            )
+            ).order_by(ComprasPedidoAnexoDB.criado_em.desc())
         )
     ).scalars().all()
     if not anexos_orc:
@@ -3116,7 +3295,10 @@ async def assinar_orcamento_e_aprovar_sede(
             status_code=400,
             detail="Anexe o PDF do orçamento vencedor antes de assinar na Sede.",
         )
-    orcamento_original = anexos_orc[0]
+    orcamento_original = next(
+        (a for a in anexos_orc if eh_anexo_orcamento_unificado(a.nome_arquivo)),
+        anexos_orc[0],
+    )
 
     agora = agora_operacional_naive()
     assinante = (

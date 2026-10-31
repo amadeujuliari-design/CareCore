@@ -86,6 +86,7 @@ STATUS_REPROVADO = "reprovado"
 STATUS_IMPRIMIR_NF = "imprimir_nf"
 
 TIPO_ANEXO_ORCAMENTO = "orcamento"
+TIPO_ANEXO_ORCAMENTO_ORIGEM = "orcamento_origem"
 TIPO_ANEXO_PEDIDO_PDF = "pedido_compra"
 TIPO_ANEXO_NF_XML = "nf_xml"
 TIPO_ANEXO_NF_PDF = "nf_pdf"
@@ -94,9 +95,11 @@ TIPO_ANEXO_ORCAMENTO_ASSINADO = "orcamento_assinado"
 TIPO_ANEXO_ESPELHO = "espelho_compra"
 TIPO_ANEXO_AQUISICAO = "aquisicao_bem"
 TIPO_ANEXO_TERMO_DOACAO = "termo_doacao"
+PREFIXO_ORCAMENTO_UNIFICADO = "orcamento-vencedor-unificado"
 
 TIPOS_ANEXO_PEDIDO = {
     TIPO_ANEXO_ORCAMENTO,
+    TIPO_ANEXO_ORCAMENTO_ORIGEM,
     TIPO_ANEXO_PEDIDO_PDF,
     TIPO_ANEXO_NF_XML,
     TIPO_ANEXO_NF_PDF,
@@ -106,6 +109,56 @@ TIPOS_ANEXO_PEDIDO = {
     TIPO_ANEXO_AQUISICAO,
     TIPO_ANEXO_TERMO_DOACAO,
 }
+
+def eh_anexo_orcamento_unificado(nome_arquivo: str | None) -> bool:
+    return (nome_arquivo or "").startswith(PREFIXO_ORCAMENTO_UNIFICADO)
+
+
+def fontes_unificacao_orcamento(anexos: list) -> list:
+    """Arquivos que entram no PDF único do vencedor, na ordem em que foram anexados."""
+    origens = [a for a in anexos if getattr(a, "tipo", None) == TIPO_ANEXO_ORCAMENTO_ORIGEM]
+    novos = [
+        a
+        for a in anexos
+        if getattr(a, "ativo", True)
+        and getattr(a, "tipo", None) == TIPO_ANEXO_ORCAMENTO
+        and not eh_anexo_orcamento_unificado(getattr(a, "nome_arquivo", None))
+    ]
+    vistos: set = set()
+    saida: list = []
+    for anexo in origens + novos:
+        chave = getattr(anexo, "id", None) or id(anexo)
+        if chave in vistos:
+            continue
+        vistos.add(chave)
+        saida.append(anexo)
+    saida.sort(key=lambda item: getattr(item, "criado_em", None) or 0)
+    return saida
+
+
+def anexos_orcamento_para_envio(anexos: list) -> list:
+    """Pacote que acompanha o pedido de compra no e-mail, assinado ou não.
+
+    Prefere o orçamento assinado; senão o PDF unificado; senão os orçamentos ativos.
+    """
+    ativos = [a for a in anexos if getattr(a, "ativo", True)]
+    assinados = [a for a in ativos if getattr(a, "tipo", None) == TIPO_ANEXO_ORCAMENTO_ASSINADO]
+    if assinados:
+        assinados.sort(key=lambda item: getattr(item, "criado_em", None) or 0, reverse=True)
+        return [assinados[0]]
+    unificados = [
+        a
+        for a in ativos
+        if getattr(a, "tipo", None) == TIPO_ANEXO_ORCAMENTO
+        and eh_anexo_orcamento_unificado(getattr(a, "nome_arquivo", None))
+    ]
+    if unificados:
+        unificados.sort(key=lambda item: getattr(item, "criado_em", None) or 0, reverse=True)
+        return [unificados[0]]
+    orcs = [a for a in ativos if getattr(a, "tipo", None) == TIPO_ANEXO_ORCAMENTO]
+    orcs.sort(key=lambda item: getattr(item, "criado_em", None) or 0)
+    return orcs
+
 
 TIPOS_ANEXO_NO_BEM = frozenset({
     TIPO_ANEXO_ORCAMENTO,

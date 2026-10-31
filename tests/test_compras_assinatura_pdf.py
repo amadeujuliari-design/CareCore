@@ -10,10 +10,12 @@ from reportlab.pdfgen import canvas as pdf_canvas
 from PIL import Image, ImageDraw
 
 from compras_assinatura_pdf import (
+    anexo_bytes_como_pdf,
     carimbar_assinatura_gestor_pdf,
     carimbar_assinatura_pdf,
     carimbar_assinatura_no_rodape_pdf,
     carimbar_texto_pdf,
+    juntar_anexos_orcamento,
     _rgba_fundo_transparente,
 )
 
@@ -153,3 +155,27 @@ def test_carimbar_pagina_invalida():
             width=50,
             height=20,
         )
+
+
+def _jpeg_bytes() -> bytes:
+    img = Image.new("RGB", (80, 50), (200, 30, 30))
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG")
+    return buf.getvalue()
+
+
+def test_anexo_imagem_vira_pdf():
+    from pypdf import PdfReader
+
+    out = anexo_bytes_como_pdf(_jpeg_bytes(), nome="hortifruti.jpg", content_type="image/jpeg")
+    assert len(PdfReader(io.BytesIO(out)).pages) == 1
+
+
+def test_juntar_pdf_e_imagem_do_vencedor():
+    from pypdf import PdfReader
+
+    out = juntar_anexos_orcamento([
+        (_pdf_paginas(2), "limpeza.pdf", "application/pdf"),
+        (_jpeg_bytes(), "hortifruti.jpg", "image/jpeg"),
+    ])
+    assert len(PdfReader(io.BytesIO(out)).pages) == 3

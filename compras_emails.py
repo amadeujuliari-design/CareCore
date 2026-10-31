@@ -92,11 +92,23 @@ def corpo_padrao_notas_pendentes() -> str:
     )
 
 
-def corpo_padrao_pedido_compra(*, projeto: str, com_orcamento_assinado: bool) -> str:
-    if com_orcamento_assinado:
+def corpo_padrao_pedido_compra(
+    *,
+    projeto: str,
+    com_orcamento: bool = False,
+    com_orcamento_assinado: bool | None = None,
+) -> str:
+    tem_orcamento = bool(com_orcamento)
+    if com_orcamento_assinado is not None:
+        tem_orcamento = tem_orcamento or bool(com_orcamento_assinado)
+    if tem_orcamento:
+        extra = (
+            "aprovado/assinado pela Sede (AEB)"
+            if com_orcamento_assinado
+            else "do fornecedor escolhido"
+        )
         return (
-            f"Segue em anexo o pedido de compra do {projeto} e o orçamento "
-            "aprovado/assinado pela Sede (AEB).\n\n"
+            f"Segue em anexo o pedido de compra do {projeto} e o orçamento {extra}.\n\n"
             "Endereço de entrega conforme documento do pedido.\n\n"
             "— CareCore+ / Compras"
         )

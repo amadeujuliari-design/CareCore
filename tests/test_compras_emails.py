@@ -73,7 +73,10 @@ def test_corpo_editado_escapa_html_e_respeita_limite():
 
 def test_textos_padrao_pedido_compra():
     com_assinado = corpo_padrao_pedido_compra(projeto="AEB Sede", com_orcamento_assinado=True)
-    sem_assinado = corpo_padrao_pedido_compra(projeto="AEB Sede", com_orcamento_assinado=False)
+    com_pacote = corpo_padrao_pedido_compra(projeto="AEB Sede", com_orcamento=True)
+    sem_orcamento = corpo_padrao_pedido_compra(projeto="AEB Sede", com_orcamento=False)
     assert "orçamento" in com_assinado.lower()
-    assert "orçamento" not in sem_assinado.lower()
-    assert "AEB Sede" in sem_assinado
+    assert "orçamento" in com_pacote.lower()
+    assert "fornecedor escolhido" in com_pacote.lower()
+    assert "orçamento" not in sem_orcamento.lower()
+    assert "AEB Sede" in sem_orcamento

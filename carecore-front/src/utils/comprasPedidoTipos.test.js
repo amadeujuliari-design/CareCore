@@ -3,7 +3,10 @@ import { describe, it } from 'node:test';
 
 import {
   chaveSplitCategoriaPedido,
+  anexoOrcamentoParaAssinar,
+  anexosOrcamentoParaEnvio,
   cotacoesComEscolhidaPrimeiro,
+  ehOrcamentoUnificado,
   fornecedorSemCategoria,
   fornecedoresParaCotacaoPedido,
   hortifrutiSemOrcamentoEscolhido,
@@ -30,6 +33,28 @@ describe('cotacoesComEscolhidaPrimeiro', () => {
       { id: 'c', escolhida: false },
     ]);
     assert.equal(lista[0].id, 'b');
+  });
+});
+
+describe('orcamento unificado do vencedor', () => {
+  it('reconhece o pacote e prefere ele na assinatura', () => {
+    assert.equal(ehOrcamentoUnificado({ nome_arquivo: 'orcamento-vencedor-unificado-ABC.pdf' }), true);
+    assert.equal(ehOrcamentoUnificado({ nome_arquivo: 'cotacao-limpeza.pdf' }), false);
+    const escolhido = anexoOrcamentoParaAssinar([
+      { id: '1', cotacao_id: 'v', tipo: 'orcamento', nome_arquivo: 'limpeza.pdf' },
+      { id: '2', cotacao_id: 'v', tipo: 'orcamento', nome_arquivo: 'orcamento-vencedor-unificado-X.pdf' },
+    ], 'v');
+    assert.equal(escolhido.id, '2');
+  });
+
+  it('no e-mail prefere assinado, senão o unificado', () => {
+    const anexos = [
+      { id: '1', cotacao_id: 'v', tipo: 'orcamento', nome_arquivo: 'parte.pdf' },
+      { id: '2', cotacao_id: 'v', tipo: 'orcamento', nome_arquivo: 'orcamento-vencedor-unificado-X.pdf' },
+      { id: '3', cotacao_id: 'v', tipo: 'orcamento_assinado', nome_arquivo: 'assinado.pdf' },
+    ];
+    assert.equal(anexosOrcamentoParaEnvio(anexos, 'v')[0].id, '3');
+    assert.equal(anexosOrcamentoParaEnvio(anexos.slice(0, 2), 'v')[0].id, '2');
   });
 });
 

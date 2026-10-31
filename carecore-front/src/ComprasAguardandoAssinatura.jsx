@@ -31,7 +31,7 @@ import {
 import { usuarioEhAdmCompras, usuarioEhManutencao, usuarioGlobalAssinaOrcamento } from './utils/rbacUtils';
 import { formatarDataHoraBr } from './utils/dataBrasilUtils';
 import { agruparFilaAssinaturaPorUnidade } from './utils/comprasFilaAssinaturaUtils';
-import { CLASSE_LINHA_ORCAMENTO, cotacoesComEscolhidaPrimeiro, rotuloTipoPedido } from './utils/comprasPedidoTipos';
+import { anexoOrcamentoParaAssinar, CLASSE_LINHA_ORCAMENTO, cotacoesComEscolhidaPrimeiro, ehOrcamentoUnificado, rotuloTipoPedido } from './utils/comprasPedidoTipos';
 
 function usuarioSessao() {
   try {
@@ -44,7 +44,7 @@ function usuarioSessao() {
 const URL_ASSINADOR_GOVBR = 'https://assinador.iti.br/';
 
 function GovBrAssinatura({ pedido, escolhida, enviando, onErro, onOk, onEnviando, onArquivado, onVisualizar }) {
-  const anexo = anexosOrcamento(pedido, escolhida.id).find((item) => item.tipo === 'orcamento');
+  const anexo = anexoOrcamentoParaAssinar(pedido.anexos, escolhida.id);
   return (
     <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
       <p className="font-semibold text-slate-900">Assinar no portal gov.br</p>
@@ -403,7 +403,13 @@ function PedidoFila({
                         key={anexo.id}
                         pedidoId={pedido.id}
                         anexo={anexo}
-                        rotulo={anexo.tipo === 'orcamento_assinado' ? 'Assinado' : 'Orçamento'}
+                        rotulo={
+                          anexo.tipo === 'orcamento_assinado'
+                            ? 'Assinado'
+                            : ehOrcamentoUnificado(anexo)
+                              ? 'Pacote unificado'
+                              : 'Orçamento'
+                        }
                         onVisualizar={onVisualizar}
                         onErro={onErro}
                       />
@@ -438,8 +444,7 @@ function PedidoFila({
                     onErro('Cadastre o PDF da sua assinatura digital antes de assinar.');
                     return;
                   }
-                  const anexoOrc = anexosOrcamento(pedido, escolhida.id)
-                    .find((a) => a.tipo === 'orcamento');
+                  const anexoOrc = anexoOrcamentoParaAssinar(pedido.anexos, escolhida.id);
                   if (!anexoOrc) {
                     onErro('Anexe o PDF do orçamento vencedor antes de assinar.');
                     return;

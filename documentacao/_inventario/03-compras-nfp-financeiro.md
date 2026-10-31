@@ -45,9 +45,9 @@ Tipos de novo pedido (`BOTOES_NOVO_PEDIDO` em `utils/comprasPedidoTipos.js`):
 1. Projeto cria rascunho (`/compras/novo/consumo`) — vale mesmo com a janela fechada ou ainda não aberta, para ir incrementando os itens. O envio (`Enviar pedido`) só na janela — cotação é da Sede (`TIPOS_COTACAO_SEDE`). Se a janela do mês já passou, o rascunho cai no mês seguinte.
 2. Suprimentos (Sede) pede cotação por e-mail e **registra orçamentos** (valor + PDF) na ficha.
 3. Eventos na timeline com `aguardando_confirmacao` exigem botão **Ok** (confirmação explícita da outra parte).
-4. Projeto **escolhe** orçamento (`Escolher`). Essa escolha já deixa o pedido `aprovado`. Se a Sede escolhe, o status continua `aguardando_aprovacao_unidade` até o projeto **Aprovar orçamento**. Pedido em que o projeto já escolheu e o status ficou em aguardando unidade passa a `aprovado` ao abrir a lista ou a ficha.
+4. Projeto **escolhe** orçamento (`Escolher`). Se o vencedor tem mais de um PDF, o sistema une os arquivos num PDF único (`orcamento-vencedor-unificado-….pdf`) que segue assinatura e envio. Essa escolha já deixa o pedido `aprovado`. Se a Sede escolhe, o status continua `aguardando_aprovacao_unidade` até o projeto **Aprovar orçamento**. Pedido em que o projeto já escolheu e o status ficou em aguardando unidade passa a `aprovado` ao abrir a lista ou a ficha. Revogar a escolha devolve os PDFs separados.
 5. Enquanto o pedido está `aprovado` e o e-mail de compra ainda não foi enviado, a Sede pode **Reabrir orçamento aprovado** (motivo obrigatório). A escolha vencedora e a aprovação são desfeitas e o pedido volta para `aguardando_escolha_orcamento`.
-6. Suprimentos **Enviar pedido de compra por e-mail**. O PDF `pedido-compra-….pdf` inclui a **Data do pedido** (dia do envio), em qualquer categoria.
+6. Suprimentos **Enviar pedido de compra por e-mail**. O PDF `pedido-compra-….pdf` inclui a **Data do pedido** (dia do envio), em qualquer categoria. O e-mail leva sempre o pedido de compra **e** o orçamento do vencedor (pacote unificado, ou o assinado pela Sede se já houver carimbo). Envio vale com ou sem assinatura.
 7. Projeto anexa NF (+ documentos extras) e **Encerrar processo (com NF anexada)**.
 
 Hortifruti: seção **Cotações, Orçamentos ou Arquivos** com **Anexar arquivos**; Suprimentos pode **Aprovar e enviar ao fornecedor**.
@@ -57,9 +57,9 @@ Hortifruti: seção **Cotações, Orçamentos ou Arquivos** com **Anexar arquivo
 1. Projeto cria rascunho com **Informações do pedido** (descrição, nome e dados do fornecedor, sem catálogo de item).
 2. Anexa orçamentos (quantos forem) e envia à Infraestrutura. Com 3 PDFs o envio à Sede é automático.
 3. Enquanto a Sede não assinar, o projeto pode **Remover** o orçamento/PDF errado e anexar o correto (o pedido permanece em Aguardando Sede).
-4. Infraestrutura escolhe, posiciona e assina **ou** envia à fila do representante legal (Noemi).
+4. Infraestrutura escolhe, posiciona e assina **ou** envia à fila do representante legal (Noemi). A escolha com vários PDFs do mesmo fornecedor gera o pacote unificado; a assinatura e o e-mail usam esse arquivo.
 5. Depois da assinatura do orçamento: passo **Contrato** — anexar contrato ou **Não há contrato, seguir para a compra**. Contrato vai à Infraestrutura e, após o ok, à Noemi (gov.br).
-6. Compra: **Enviar pedido de compra por e-mail** ou **Compra direta sem envio de e-mail**. O PDF do pedido traz a data do envio.
+6. Compra: **Enviar pedido de compra por e-mail** ou **Compra direta sem envio de e-mail**. O PDF do pedido traz a data do envio. No e-mail, o orçamento do vencedor (unificado ou assinado) acompanha o pedido de compra, com ou sem carimbo da Sede.
 7. **Documentos do processo**: nota fiscal, boleto (ambos com Assinatura Digital AEB) ou arquivo relacionado. Várias NFs na mesma anexação viram um PDF; se já houver nota, exclui antes de outra.
 8. Encerrar processo com NF assinada.
 
@@ -225,7 +225,7 @@ Botões: Incluir item · Só neste pedido · Sim, atualizar cadastro · Usar un 
 | Fornecedor cadastrado… / Ou nome avulso | `cotacao.fornecedor_id` / `fornecedor_nome` (hortifruti: só nome opcional, sem busca na lista) |
 | R$ 0,00 | `cotacao.valor_reais` * |
 | file PDF/imagem | `arqsCotacao` |
-| + Anexar PDFs / Anexar arquivos (hortifruti) | `comprasAnexarArquivo` tipo `orcamento` |
+| + Anexar PDFs / Anexar arquivos (hortifruti) | `comprasAnexarArquivo` tipo `orcamento` (vários arquivos no mesmo fornecedor; ao escolher o vencedor viram `orcamento-vencedor-unificado`) |
 
 Botões: Enviar pedido de cotação · Escolher · Revogar escolha · Remover · Visualizar · Baixar · × · Registrar orçamento recebido · Retirar (seleção e-mail)
 
@@ -304,7 +304,7 @@ Para a Sede, ao abrir um pedido em Imprimir NF ou Encerrado, o aviso abaixo do t
 #### Modal e-mail
 
 Títulos: Revisar pedido de cotação · Revisar pedido de compra · Revisar reenvio ao fornecedor  
-(`ModalRevisarEmailCompras.jsx`) — corpo editável; Cancelar / confirmar envio. Em hortifruti sem orçamento escolhido, o envio e o reenvio pedem o fornecedor na lista; o e-mail usa o endereço cadastrado no momento. O PDF anexado ao fornecedor (pedido de compra e solicitação de cotação) traz a data do envio.
+(`ModalRevisarEmailCompras.jsx`) — corpo editável; Cancelar / confirmar envio. Em hortifruti sem orçamento escolhido, o envio e o reenvio pedem o fornecedor na lista; o e-mail usa o endereço cadastrado no momento. O PDF anexado ao fornecedor (pedido de compra e solicitação de cotação) traz a data do envio. No pedido de compra, o orçamento do vencedor vai no mesmo e-mail — assinado se já carimbado, senão o pacote unificado.
 
 ---
 

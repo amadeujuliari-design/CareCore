@@ -158,6 +158,8 @@ from compras_pedido_fluxo import (
     registrar_nota_fiscal,
     reabrir_pedido,
     reprovar_pedido,
+    restaurar_orcamentos_originais_cotacao,
+    unificar_orcamentos_vencedor,
     upload_anexo_pedido,
 )
 from models import (
@@ -2017,6 +2019,9 @@ async def escolher_cotacao(
         usuario_id=_uid(usuario),
         cotacao_id=alvo.id,
     )
+    if anterior and anterior.id != alvo.id:
+        await restaurar_orcamentos_originais_cotacao(db, anterior.id)
+    await unificar_orcamentos_vencedor(db, usuario, pedido, alvo)
 
     status_antes = pedido.status
     status_novo = status_depois_de_escolher_cotacao(
@@ -2097,6 +2102,7 @@ async def revogar_escolha_cotacao(
         raise HTTPException(status_code=400, detail="Não há orçamento escolhido para revogar.")
     for cotacao in cotacoes:
         cotacao.escolhida = False
+    await restaurar_orcamentos_originais_cotacao(db, anterior.id)
     await registrar_evento_pedido(
         db,
         pedido_id=pedido.id,

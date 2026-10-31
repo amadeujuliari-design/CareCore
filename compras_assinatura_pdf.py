@@ -278,6 +278,65 @@ def juntar_pdfs(arquivos: list[bytes]) -> bytes:
     return saida.getvalue()
 
 
+def anexo_bytes_como_pdf(
+    conteudo: bytes,
+    *,
+    nome: str = "",
+    content_type: str = "",
+) -> bytes:
+    """Devolve PDF: o arquivo original ou uma página A4 com a imagem."""
+    if not conteudo:
+        raise ValueError("Arquivo de orçamento vazio.")
+    nome_l = (nome or "").lower()
+    ct = (content_type or "").lower()
+    if nome_l.endswith(".pdf") or "pdf" in ct:
+        return conteudo
+
+    from PIL import Image
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.utils import ImageReader
+    from reportlab.pdfgen import canvas as pdf_canvas
+
+    img = Image.open(io.BytesIO(conteudo))
+    if img.mode not in ("RGB", "L"):
+        img = img.convert("RGB")
+    pw, ph = A4
+    margem = 36.0
+    max_w, max_h = pw - 2 * margem, ph - 2 * margem
+    iw, ih = img.size
+    if iw <= 0 or ih <= 0:
+        raise ValueError("Imagem de orçamento inválida.")
+    escala = min(max_w / iw, max_h / ih)
+    w, h = iw * escala, ih * escala
+    buf_img = io.BytesIO()
+    img.save(buf_img, format="JPEG", quality=90)
+    buf_img.seek(0)
+    saida = io.BytesIO()
+    cnv = pdf_canvas.Canvas(saida, pagesize=A4)
+    cnv.drawImage(
+        ImageReader(buf_img),
+        (pw - w) / 2.0,
+        (ph - h) / 2.0,
+        width=w,
+        height=h,
+    )
+    cnv.save()
+    return saida.getvalue()
+
+
+def juntar_anexos_orcamento(partes: list[tuple[bytes, str, str]]) -> bytes:
+    """Junta PDFs e imagens de orçamento num único PDF, na ordem enviada."""
+    if not partes:
+        raise ValueError("Nenhum orçamento para juntar.")
+    pdfs = [
+        anexo_bytes_como_pdf(bruto, nome=nome, content_type=tipo)
+        for bruto, nome, tipo in partes
+    ]
+    if len(pdfs) == 1:
+        return pdfs[0]
+    return juntar_pdfs(pdfs)
+
+
 def _quebrar_linhas_pdf(texto: str, largura: float, font_size: float) -> list[str]:
     from reportlab.pdfbase.pdfmetrics import stringWidth
 
