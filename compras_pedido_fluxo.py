@@ -2624,7 +2624,7 @@ async def registrar_nota_fiscal(
                         pdf_bytes=raw,
                         texto=texto_nf,
                         projeto=nome_projeto,
-                        todas_as_paginas=True,
+                        # Só na página em que o usuário posicionou (em geral a última).
                         page_index=int(payload.get("carimbo_pagina") or 0),
                         x=float(payload.get("carimbo_x") or 36),
                         y=float(payload.get("carimbo_y") or 36),
@@ -2636,7 +2636,7 @@ async def registrar_nota_fiscal(
                     pdf_bytes=raw,
                     nome=nome_gestor,
                     projeto=nome_projeto,
-                    todas_as_paginas=True,
+                    # Só na página posicionada — não repetir nas demais (cobria o conteúdo).
                     page_index=int(
                         (payload.get("assinatura_pagina") if tem_posicao_assinatura else payload.get("carimbo_pagina"))
                         or 0

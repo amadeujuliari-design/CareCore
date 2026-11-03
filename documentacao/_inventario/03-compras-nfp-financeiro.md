@@ -265,7 +265,7 @@ File → tipo `espelho_compra`
 | Número NF | — | `nfForm.numero` (só nota fiscal) |
 | R$ 0,00 | — | `nfForm.valor_reais` (só nota fiscal) |
 | Insira as informações complementares de pagamento para a impressão da NF | * antes de PDF da nota | `nfForm.observacao` |
-| Insira a senha do gestor para a assinatura eletrônica digital | * em nota e boleto | senha do gestor; Gestor, Técnico, Administrativo e ADM Pedidos do projeto; o carimbo leva nome do gestor, projeto e cargo Gestor |
+| Insira a senha do gestor para a assinatura eletrônica digital | * em nota e boleto | senha do gestor; Gestor, Técnico, Administrativo e ADM Pedidos do projeto; o carimbo leva nome do gestor, projeto e cargo Gestor. Em PDF com várias páginas, texto complementar e assinatura saem **só na página em que o usuário posicionou** (em geral a última), sem repetir nas demais. |
 | Arquivo | * | um ou vários PDFs de nota (o sistema junta); boleto e relacionado um a um |
 
 Na Infraestrutura, depois da compra: **Pagamento** à vista (1) ou em N parcelas. Cada parcela recebe NF e/ou comprovante (sem assinatura). **Todos os valores já foram pagos** pede confirmação (e avisa se ainda falta parcela sem documento) e libera o encerramento mesmo com parcela sem anexo. Se o cliente pagar em menos parcelas, **Cliente pagou em N parcelas** reduz o plano até a última com documento. Encerrar só com NF assinada e pagamento completo.

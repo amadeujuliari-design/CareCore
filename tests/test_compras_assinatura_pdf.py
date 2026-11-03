@@ -142,6 +142,43 @@ def test_carimbar_texto_complementar_aparece_em_caixa_baixa():
     assert "Parcela 1" in texto
 
 
+def test_carimbo_nf_so_na_pagina_escolhida_em_pdf_multipagina():
+    """Texto e assinatura do gestor não se repetem em todas as páginas."""
+    from pypdf import PdfReader
+
+    origem = _pdf_paginas(3, width=500.0, height=700.0)
+    com_texto = carimbar_texto_pdf(
+        pdf_bytes=origem,
+        texto="Informacao complementar da NF",
+        projeto="CASA PORTO SEGURO",
+        page_index=2,
+        x=24.0,
+        y=40.0,
+        width=280.0,
+        height=36.0,
+    )
+    saida = carimbar_assinatura_gestor_pdf(
+        pdf_bytes=com_texto,
+        nome="Gestor Casa Porto",
+        projeto="CASA PORTO SEGURO",
+        page_index=2,
+        x=80.0,
+        y=120.0,
+        width=220.0,
+        height=68.0,
+    )
+    paginas = PdfReader(io.BytesIO(saida)).pages
+    assert len(paginas) == 3
+    textos = [(paginas[i].extract_text() or "") for i in range(3)]
+    assert "Informacao complementar" not in textos[0]
+    assert "Assinado Digitalmente" not in textos[0]
+    assert "Informacao complementar" not in textos[1]
+    assert "Assinado Digitalmente" not in textos[1]
+    assert "Informacao complementar" in textos[2]
+    assert "Assinado Digitalmente" in textos[2]
+    assert "Gestor Casa Porto" in textos[2]
+
+
 def test_carimbar_pagina_invalida():
     orc = _pdf_paginas(1)
     sig = _pdf_assinatura_com_imagem()

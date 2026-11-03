@@ -243,8 +243,8 @@ export default function ModalPosicionarTextoNf({
           </p>
           <p className="mt-1 text-xs text-slate-500">
             {modo === 'boleto'
-              ? 'O arquivo aparece inteiro. A caixa escura é o carimbo Assinado Digitalmente. Arraste para um espaço livre, inclusive em outra página.'
-              : 'O arquivo aparece inteiro. A caixa azul é o texto complementar e a caixa escura é o carimbo Assinado Digitalmente. Elas começam na última página. Arraste cada uma para um espaço livre, inclusive em outra página, para o carimbo não cobrir informação já impressa.'}
+              ? 'O arquivo aparece inteiro. A caixa escura é o carimbo Assinado Digitalmente. Começa na última página — arraste para um espaço livre. O carimbo sai só nessa página, não nas demais.'
+              : 'O arquivo aparece inteiro. A caixa azul é o texto complementar e a caixa escura é o carimbo Assinado Digitalmente. Começam na última página — arraste cada uma para um espaço livre. Texto e assinatura saem só nas páginas em que você deixou as caixas, sem repetir nas demais.'}
           </p>
           {erro ? <p className="mt-2 text-sm text-rose-700">{erro}</p> : null}
           {modo !== 'boleto' ? (
