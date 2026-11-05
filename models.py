@@ -2322,6 +2322,9 @@ class ComprasPedidoDB(Base):
     suprimentos_lida_por_id = Column(String, ForeignKey("usuarios.id"), nullable=True)
     nf_impressa_em = Column(DateTime, nullable=True)
     nf_impressa_por_id = Column(String, ForeignKey("usuarios.id"), nullable=True)
+    # Caixa "A pagar": aberto na fila (estilo e-mail lido) sem sair da contagem.
+    a_pagar_lida_em = Column(DateTime, nullable=True)
+    a_pagar_lida_por_id = Column(String, ForeignKey("usuarios.id"), nullable=True)
     recebimento_observacao = Column(Text, nullable=True)
     recebimento_divergencia = Column(Boolean, default=False, nullable=False)
     cancelado_em = Column(DateTime, nullable=True)
@@ -2415,10 +2418,13 @@ class ComprasPedidoNotaFiscalDB(Base):
     emitente_nome = Column(String, nullable=True)
     emitente_cnpj = Column(String, nullable=True)
     data_emissao = Column(Date, nullable=True)
+    data_pagamento = Column(Date, nullable=True)
     valor_centavos = Column(Integer, nullable=True)
     parcela_numero = Column(Integer, nullable=True)
     origem_dados = Column(String, nullable=False, default="manual")
     observacao = Column(Text, nullable=True)
+    assinada_em = Column(DateTime, nullable=True)
+    assinada_por_id = Column(String, ForeignKey("usuarios.id"), nullable=True)
     criado_por_id = Column(String, ForeignKey("usuarios.id"), nullable=True)
     criado_em = Column(DateTime, default=agora_operacional_naive)
 

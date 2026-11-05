@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   ArrowDown,
   ArrowUp,
@@ -246,10 +246,16 @@ function BlocoListaPedidos({
   caixaSuprimentos,
   podeExcluirCancelados,
   onExcluirCancelado,
+  estadoVoltaPedido,
 }) {
   const grupos = agruparPorUnidade ? agruparPedidosPorUnidade(pedidosBloco, ordemPedidos) : [];
   const chaveExp = (chave) => `${lado}:${chave}`;
   const vazio = !carregando && pedidosBloco.length === 0;
+  const stateAbrir = (chaveUnidade) => (
+    typeof estadoVoltaPedido === 'function'
+      ? estadoVoltaPedido(chaveUnidade)
+      : estadoVoltaPedido
+  );
   return (
     <SectionCard
       title={titulo}
@@ -397,6 +403,7 @@ function BlocoListaPedidos({
                               <Link
                                 className="font-semibold text-slate-800 underline"
                                 to={`/compras/pedidos/${pedido.id}`}
+                                state={stateAbrir(chaveExp(grupo.chave))}
                                 onClick={(e) => e.stopPropagation()}
                               >
                                 Abrir
@@ -450,7 +457,11 @@ function BlocoListaPedidos({
                       <td><SeloCaixaSuprimentos lida={pedido.suprimentos_lida} /></td>
                     ) : null}
                     <td className="normal-case">
-                      <Link className="font-semibold text-slate-800 underline" to={`/compras/pedidos/${pedido.id}`}>
+                      <Link
+                        className="font-semibold text-slate-800 underline"
+                        to={`/compras/pedidos/${pedido.id}`}
+                        state={stateAbrir(null)}
+                      >
                         Abrir
                       </Link>
                       {podeExcluirCancelados ? (
@@ -508,11 +519,17 @@ function abaPermitidaCompras(id, { visaoOrganizacao, podeCadastrarMestre }) {
 
 export default function Compras() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams] = useSearchParams();
   const visaoParam = (searchParams.get('visao') || '').trim().toLowerCase();
   const visaoConcluidos = visaoParam === 'concluidos';
   const visaoCancelados = visaoParam === 'cancelados';
   const usuario = useMemo(() => usuarioSessao(), []);
+  const origemListaCompras = `${location.pathname}${location.search || ''}`;
+  const estadoVoltaPedido = useCallback((chaveUnidade) => ({
+    from: origemListaCompras,
+    unidadeExpandida: chaveUnidade || '',
+  }), [origemListaCompras]);
   const sede = usuarioEhAdmCompras(usuario) || usuarioEhManutencao(usuario);
   const caixaSuprimentos = visaoConcluidos && usuarioEhAdmComprasSuprimentos(usuario);
   const podeExcluirCanceladosSup = visaoCancelados && (
@@ -577,7 +594,9 @@ export default function Compras() {
   const [agruparPorUnidade, setAgruparPorUnidade] = useState(
     () => (typeof vistaInicial?.agruparPorUnidade === 'boolean' ? vistaInicial.agruparPorUnidade : !visaoHistorico),
   );
-  const [unidadeExpandida, setUnidadeExpandida] = useState(() => vistaInicial?.unidadeExpandida || null);
+  const [unidadeExpandida, setUnidadeExpandida] = useState(
+    () => location.state?.unidadeExpandida || vistaInicial?.unidadeExpandida || null,
+  );
   const [visaoCalendario, setVisaoCalendario] = useState(() => vistaInicial?.calendario || null);
 
   const visaoAnterior = useRef(visaoLista);
@@ -590,6 +609,13 @@ export default function Compras() {
     setUnidadeExpandida(null);
     setAba('pedidos');
   }, [visaoHistorico, visaoLista]);
+
+  useEffect(() => {
+    const chave = String(location.state?.unidadeExpandida || '').trim();
+    if (!chave) return;
+    setUnidadeExpandida(chave);
+    setAgruparPorUnidade(true);
+  }, [location.state]);
 
   useEffect(() => {
     if (cacheListaCompras.usuarioId && cacheListaCompras.usuarioId !== usuario?.id) {
@@ -933,6 +959,7 @@ export default function Compras() {
                       <Link
                         key={botao.tipo}
                         to={`/compras/novo/${botao.tipo}`}
+                        state={estadoVoltaPedido(null)}
                         className="flex min-h-[7.5rem] flex-col rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:border-slate-400 hover:shadow"
                       >
                         <span className="text-sm font-black text-slate-900">{botao.titulo}</span>
@@ -969,6 +996,7 @@ export default function Compras() {
                   caixaSuprimentos={caixaSuprimentos}
                   podeExcluirCancelados={podeExcluirCanceladosSup}
                   onExcluirCancelado={excluirPedidoCancelado}
+                  estadoVoltaPedido={estadoVoltaPedido}
                 />
                 <BlocoListaPedidos
                   lado="infra"
@@ -986,6 +1014,7 @@ export default function Compras() {
                   caixaSuprimentos={false}
                   podeExcluirCancelados={podeExcluirCanceladosInfra}
                   onExcluirCancelado={excluirPedidoCancelado}
+                  estadoVoltaPedido={estadoVoltaPedido}
                 />
               </>
             )}
@@ -1064,12 +1093,12 @@ export default function Compras() {
                       escopo_unidade: sede ? 'sede' : 'projeto',
                     });
                     setOk('Rascunho criado. Complete os itens e, se quiser, marque o envio automático.');
-                    navigate(`/compras/pedidos/${criado.id}`);
+                    navigate(`/compras/pedidos/${criado.id}`, { state: estadoVoltaPedido(null) });
                   } catch (err) {
                     setErro(err.response?.data?.detail || 'Não foi possível criar o rascunho.');
                   }
                 }}
-                onAbrirPedido={(id) => navigate(`/compras/pedidos/${id}`)}
+                onAbrirPedido={(id) => navigate(`/compras/pedidos/${id}`, { state: estadoVoltaPedido(unidadeExpandida) })}
               />
             )}
 

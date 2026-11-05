@@ -85,6 +85,19 @@ def test_carimbar_posicao_pagina_escolhida():
     leitor = PdfReader(io.BytesIO(out))
     assert len(leitor.pages) == 3
 
+    def _bytes_conteudo(pagina):
+        contents = pagina.get_contents()
+        if contents is None:
+            return 0
+        if isinstance(contents, list):
+            return sum(len(parte.get_data()) for parte in contents)
+        return len(contents.get_data())
+
+    # Carimbo da Sede (Robson) só na página posicionada — não cobre as demais.
+    tamanhos = [_bytes_conteudo(pagina) for pagina in leitor.pages]
+    assert tamanhos[1] > tamanhos[0]
+    assert tamanhos[1] > tamanhos[2]
+
 
 def test_carimbar_assinatura_gestor_no_pdf():
     from pypdf import PdfReader

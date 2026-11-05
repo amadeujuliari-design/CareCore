@@ -153,16 +153,6 @@ export async function comprasFilaAssinatura() {
   return data;
 }
 
-export async function comprasFilaConcluidosInfraResumo() {
-  const { data } = await api.get('/api/compras/fila-concluidos-infra/resumo');
-  return data;
-}
-
-export async function comprasFilaConcluidosInfra() {
-  const { data } = await api.get('/api/compras/fila-concluidos-infra');
-  return data;
-}
-
 export async function comprasFilaNfPagamentoResumo() {
   const { data } = await api.get('/api/compras/fila-nf-pagamento/resumo');
   return data;
@@ -198,8 +188,8 @@ export async function comprasConfirmarNfPagamento(pedidoId) {
   return data;
 }
 
-export async function comprasOkFinalInfra(pedidoId) {
-  const { data } = await api.post(`/api/compras/pedidos/${pedidoId}/ok-final-infra`);
+export async function comprasReabrirAPagar(pedidoId) {
+  const { data } = await api.post(`/api/compras/pedidos/${pedidoId}/reabrir-a-pagar`);
   return data;
 }
 
@@ -419,6 +409,16 @@ export async function comprasRegistrarNotaFiscal(id, formData) {
   return data;
 }
 
+/** Assina NF já anexada (sem reenviar o arquivo). */
+export async function comprasAssinarNotaFiscal(pedidoId, notaId, formData) {
+  const { data } = await api.post(
+    `/api/compras/pedidos/${pedidoId}/notas-fiscais/${notaId}/assinar`,
+    formData,
+    { headers: { 'Content-Type': 'multipart/form-data' } },
+  );
+  return data;
+}
+
 export async function comprasGerarPedidoCompra(id) {
   const { data } = await api.post(`/api/compras/pedidos/${id}/gerar-pedido-compra`);
   return data;
@@ -461,12 +461,23 @@ export function urlAnexoPedido(pedidoId, anexoId) {
 }
 
 /** Abre o anexo em blob (pré-visualização). Não dispara download. */
+async function _erroAbrirAnexo(resposta) {
+  try {
+    const corpo = await resposta.json();
+    const detalhe = String(corpo?.detail || '').trim();
+    if (detalhe) return new Error(detalhe);
+  } catch {
+    /* corpo não-JSON */
+  }
+  return new Error('Não foi possível abrir o arquivo.');
+}
+
 export async function comprasAbrirAnexoBlob(pedidoId, anexoId) {
   const token = localStorage.getItem('@CareCore:token') || localStorage.getItem('token');
   const resposta = await fetch(urlAnexoPedido(pedidoId, anexoId), {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
   });
-  if (!resposta.ok) throw new Error('Não foi possível abrir o arquivo.');
+  if (!resposta.ok) throw await _erroAbrirAnexo(resposta);
   const buffer = await resposta.arrayBuffer();
   const headerTipo = (resposta.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
   const contentType = _inferirContentTypeAnexo(buffer, headerTipo);
@@ -484,7 +495,7 @@ export async function comprasBaixarAnexo(pedidoId, anexoId, nomeArquivo) {
   const resposta = await fetch(urlAnexoPedido(pedidoId, anexoId), {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
   });
-  if (!resposta.ok) throw new Error('Não foi possível abrir o arquivo.');
+  if (!resposta.ok) throw await _erroAbrirAnexo(resposta);
   const buffer = await resposta.arrayBuffer();
   const headerTipo = (resposta.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
   const contentType = _inferirContentTypeAnexo(buffer, headerTipo);

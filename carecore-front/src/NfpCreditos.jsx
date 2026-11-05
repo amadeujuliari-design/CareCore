@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { Building2, Receipt, UserRoundCog, Users } from 'lucide-react';
 
 import Sidebar from './Sidebar';
@@ -19,6 +19,11 @@ import {
 } from './services/nfpService';
 import { nfpRelatorioRateioConsolidado } from './services/relatorioNfpService';
 import { erroApiNfp, formatarCNPJ } from './utils/nfpCadastroUtils';
+import {
+  lerVistaDashboardNfp,
+  nfpEstadoVolta,
+  salvarVistaDashboardNfp,
+} from './utils/nfpNavegacaoUtils';
 import { formatarCPF } from './utils/usuariosUtils';
 import { decodificarPayloadJwt } from './utils/jwtUtils';
 import { usuarioSomenteLeituraNfp } from './utils/rbacUtils';
@@ -109,6 +114,8 @@ function CampoArquivo({ label, onChange, accept = '.xlsx,.xls,.csv', multiple = 
 }
 
 export default function NfpCreditos() {
+  const location = useLocation();
+  const vistaSalva = useMemo(() => lerVistaDashboardNfp(), []);
   const somenteLeitura = useMemo(() => {
     try {
       const token = localStorage.getItem('@CareCore:token');
@@ -117,9 +124,19 @@ export default function NfpCreditos() {
       return false;
     }
   }, []);
-  const [aba, setAba] = useState('dashboard');
-  const [competencia, setCompetencia] = useState('');
-  const [agente, setAgente] = useState(''); // '' = Todos
+  const [aba, setAba] = useState(
+    () => location.state?.nfpAba || vistaSalva?.aba || 'dashboard',
+  );
+  const [competencia, setCompetencia] = useState(
+    () => location.state?.nfpCompetencia || vistaSalva?.competencia || '',
+  );
+  const [agente, setAgente] = useState(
+    () => (location.state?.nfpAgente != null ? location.state.nfpAgente : (vistaSalva?.agente ?? '')),
+  ); // '' = Todos
+  const estadoVoltaFilha = useMemo(
+    () => nfpEstadoVolta(location, { nfpAba: aba, nfpCompetencia: competencia, nfpAgente: agente }),
+    [location, aba, competencia, agente],
+  );
   const [resumo, setResumo] = useState(null);
   const [rateio, setRateio] = useState([]);
   const [batimentos, setBatimentos] = useState([]);
@@ -171,8 +188,23 @@ export default function NfpCreditos() {
   }, []);
 
   useEffect(() => {
-    carregarDashboard();
+    carregarDashboard(competencia || undefined, agente === '' ? undefined : agente);
   }, [carregarDashboard]);
+
+  useEffect(() => {
+    const st = location.state || {};
+    if (!st.nfpAba && st.nfpCompetencia == null && st.nfpAgente == null) return;
+    if (st.nfpAba) setAba(st.nfpAba);
+    if (st.nfpAgente != null) setAgente(st.nfpAgente);
+    if (st.nfpCompetencia) {
+      setCompetencia(st.nfpCompetencia);
+      carregarDashboard(st.nfpCompetencia, st.nfpAgente === '' ? undefined : st.nfpAgente);
+    }
+  }, [location.state, carregarDashboard]);
+
+  useEffect(() => {
+    salvarVistaDashboardNfp({ aba, competencia, agente });
+  }, [aba, competencia, agente]);
 
   useEffect(() => {
     if (somenteLeitura && aba === 'importacoes') {
@@ -361,6 +393,7 @@ export default function NfpCreditos() {
                   <div className="grid gap-3 md:grid-cols-3">
                     <Link
                       to="/nfp/cadastro/agentes"
+                      state={estadoVoltaFilha}
                       className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-slate-400"
                     >
                       <UserRoundCog className="h-5 w-5 text-slate-600" />
@@ -371,6 +404,7 @@ export default function NfpCreditos() {
                     </Link>
                     <Link
                       to="/nfp/cadastro/doadores"
+                      state={estadoVoltaFilha}
                       className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-slate-400"
                     >
                       <Users className="h-5 w-5 text-slate-600" />
@@ -381,6 +415,7 @@ export default function NfpCreditos() {
                     </Link>
                     <Link
                       to="/nfp/cadastro/cnpjs"
+                      state={estadoVoltaFilha}
                       className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-slate-400"
                     >
                       <Building2 className="h-5 w-5 text-slate-600" />
@@ -391,6 +426,7 @@ export default function NfpCreditos() {
                     </Link>
                     <Link
                       to="/nfp/relatorios"
+                      state={estadoVoltaFilha}
                       className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-slate-400"
                     >
                       <Receipt className="h-5 w-5 text-slate-600" />

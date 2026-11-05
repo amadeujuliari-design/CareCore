@@ -117,7 +117,14 @@ export function PremiumBadge({ children, variant = 'default' }) {
     warning: 'bg-amber-50 text-amber-700 border-amber-100',
     danger: 'bg-rose-50 text-rose-700 border-rose-100',
     info: 'bg-blue-50 text-blue-700 border-blue-100',
-    purple: 'bg-violet-50 text-violet-700 border-violet-100'
+    purple: 'bg-violet-50 text-violet-700 border-violet-100',
+    orange: 'bg-orange-50 text-orange-800 border-orange-200',
+    sky: 'bg-sky-50 text-sky-800 border-sky-200',
+    cyan: 'bg-cyan-50 text-cyan-800 border-cyan-200',
+    teal: 'bg-teal-50 text-teal-800 border-teal-200',
+    indigo: 'bg-indigo-50 text-indigo-800 border-indigo-200',
+    fuchsia: 'bg-fuchsia-50 text-fuchsia-800 border-fuchsia-200',
+    lime: 'bg-lime-50 text-lime-800 border-lime-200',
   };
 
   return (
@@ -154,7 +161,7 @@ export function MainShell({ children }) {
   );
 }
 
-export function PageHeader({ eyebrow, title, subtitle, icon, actions, backTo, backLabel = 'Voltar' }) {
+export function PageHeader({ eyebrow, title, subtitle, icon, actions, backTo, backState, backLabel = 'Voltar' }) {
   return (
     <header className="carecore-page-header-fixed px-5 py-3">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
@@ -162,6 +169,7 @@ export function PageHeader({ eyebrow, title, subtitle, icon, actions, backTo, ba
           {backTo && (
             <Link
               to={backTo}
+              state={backState}
               className="mb-1 inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500 transition hover:text-slate-800"
             >
               <ArrowLeft className="h-3.5 w-3.5" />

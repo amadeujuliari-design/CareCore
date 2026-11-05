@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import {
   AppShell,
@@ -72,6 +72,18 @@ function linhaItemVazia() {
 export default function ComprasPedidoNovo() {
   const { tipo: tipoParam } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
+  const voltarPara = (() => {
+    const from = String(location.state?.from || '').trim();
+    if (
+      (from === '/compras' || from.startsWith('/compras?') || from.startsWith('/compras/'))
+      && !from.startsWith('/compras/pedidos/')
+      && !from.startsWith('/compras/novo/')
+    ) {
+      return from;
+    }
+    return '/compras';
+  })();
   const { usuario } = useAuth();
   const sede = Boolean(usuario?.is_manutencao)
     || ['ADM Compras', 'ADM Global', 'Global'].includes(usuario?.perfil_acesso);
@@ -315,7 +327,7 @@ export default function ComprasPedidoNovo() {
             <button
               type="button"
               className="text-sm font-semibold text-slate-600 underline"
-              onClick={() => navigate(-1)}
+              onClick={() => navigate(voltarPara)}
             >
               Voltar à lista
             </button>

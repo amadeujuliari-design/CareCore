@@ -11,6 +11,7 @@ import {
   fornecedoresParaCotacaoPedido,
   hortifrutiSemOrcamentoEscolhido,
   pedidoListaEhInfraestrutura,
+  pedidoProjetoEscolheOrcamento,
   inferirFornecedorEnvioId,
   itensConsumoDoSegmentoPedido,
   itensConsumoDoSplitPedido,
@@ -202,6 +203,15 @@ describe('fornecedoresParaCotacaoPedido', () => {
     assert.equal(tipoPulaOrcamento('emergencia'), true);
     assert.equal(tipoEhCotacaoSede('emergencia'), false);
     assert.equal(tipoPulaOrcamento('imobilizado'), false);
+  });
+
+  it('projeto escolhe vencedor em consumo e manutenção+Suprimentos', () => {
+    assert.equal(pedidoProjetoEscolheOrcamento('consumo'), true);
+    assert.equal(pedidoProjetoEscolheOrcamento('manutencao', 'suprimentos'), true);
+    assert.equal(pedidoProjetoEscolheOrcamento('manutencao', null), true);
+    assert.equal(pedidoProjetoEscolheOrcamento('manutencao', 'infraestrutura'), false);
+    assert.equal(pedidoProjetoEscolheOrcamento('hortifruti'), false);
+    assert.equal(pedidoProjetoEscolheOrcamento('imobilizado'), false);
   });
 });
 

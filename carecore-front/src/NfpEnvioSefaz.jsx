@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import { Download, Send } from 'lucide-react';
 
 import Sidebar from './Sidebar';
@@ -12,6 +13,7 @@ import {
   nfpEnvioSefazStatus,
 } from './services/nfpService';
 import { erroApiNfp } from './utils/nfpCadastroUtils';
+import { nfpVoltarPara, nfpVoltarState } from './utils/nfpNavegacaoUtils';
 import { decodificarPayloadJwt } from './utils/jwtUtils';
 import {
   usuarioPodeOperarEnvioSefaz,
@@ -25,6 +27,9 @@ const AGENTE_ZIP_URL = '/downloads/agente-nfp-robo.zip';
 const AGENTE_META_URL = '/downloads/agente-nfp-robo.json';
 
 export default function NfpEnvioSefaz() {
+  const location = useLocation();
+  const voltarPara = useMemo(() => nfpVoltarPara(location), [location]);
+  const voltarState = useMemo(() => nfpVoltarState(location), [location]);
   const usuario = useMemo(() => {
     try {
       const token = localStorage.getItem('@CareCore:token');
@@ -171,7 +176,8 @@ export default function NfpEnvioSefaz() {
             title="Envio SEFAZ"
             subtitle="Sem permissão para esta tela."
             icon={<Send className="h-5 w-5" />}
-            backTo="/nfp"
+            backTo={voltarPara}
+            backState={voltarState}
             backLabel="Voltar ao dashboard"
           />
         </MainShell>
@@ -192,7 +198,8 @@ export default function NfpEnvioSefaz() {
           title="Envio SEFAZ"
           subtitle="No CareCore online, baixe o agente em cada PC da Sede. O Chrome e o login ficam locais; a fila/reserva vem da API."
           icon={<Send className="h-5 w-5" />}
-          backTo="/nfp"
+          backTo={voltarPara}
+          backState={voltarState}
           backLabel="Voltar ao dashboard"
           actions={(
             <PremiumButton type="button" variant="secondary" disabled={loading} onClick={carregar}>

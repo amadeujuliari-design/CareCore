@@ -47,7 +47,8 @@ CLASSES_DOCUMENTO_PEDIDO = (
     CLASSE_DOC_RELACIONADO,
     CLASSE_DOC_COMPROVANTE,
 )
-CLASSES_DOCUMENTO_EXIGEM_ASSINATURA = frozenset({CLASSE_DOC_BOLETO, CLASSE_DOC_NOTA})
+# Boleto continua exigindo assinatura na anexação. NF do projeto pode anexar sem assinar.
+CLASSES_DOCUMENTO_EXIGEM_ASSINATURA = frozenset({CLASSE_DOC_BOLETO})
 ETAPA_CONTRATO_ROBSON = "aguardando_robson"
 ETAPA_CONTRATO_NOEMI = "aguardando_noemi"
 ETAPA_CONTRATO_ASSINADO = "assinado"
@@ -84,6 +85,29 @@ STATUS_AGUARDANDO_EXTRATO = "aguardando_conferencia_extrato"
 STATUS_CANCELADO = "cancelado"
 STATUS_REPROVADO = "reprovado"
 STATUS_IMPRIMIR_NF = "imprimir_nf"
+# Compras emergência: antes da fila A pagar (não usa rascunho).
+STATUS_AGUARDANDO_NF = "aguardando_nf"
+STATUS_AGUARDANDO_ASSINATURA_NF = "aguardando_assinatura_nf"
+
+# Projeto ainda trata a NF (legado rascunho incluso). Sede não lista esses até A pagar.
+STATUS_EMERGENCIA_PROJETO_NF = frozenset(
+    {
+        STATUS_AGUARDANDO_NF,
+        STATUS_AGUARDANDO_ASSINATURA_NF,
+        STATUS_RASCUNHO,
+    }
+)
+STATUS_OCULTOS_LISTA_SEDE = frozenset(
+    {
+        STATUS_RASCUNHO,
+        STATUS_AGUARDANDO_NF,
+        STATUS_AGUARDANDO_ASSINATURA_NF,
+    }
+)
+
+
+def status_emergencia_projeto_nf(status: Optional[str]) -> bool:
+    return (status or "").strip() in STATUS_EMERGENCIA_PROJETO_NF
 
 TIPO_ANEXO_ORCAMENTO = "orcamento"
 TIPO_ANEXO_ORCAMENTO_ORIGEM = "orcamento_origem"
@@ -978,16 +1002,30 @@ def usuario_sede_pode_ver_tipo(
     is_manutencao: bool = False,
     destino: Optional[str] = None,
 ) -> bool:
+    """Escopo por classe de ADM Compras — alinhado ao filtro da lista de pedidos.
+
+    Manutenção muda de caixa pelo destino: Infraestrutura só vê destino Infra;
+    Suprimentos vê as demais (incl. destino vazio).
+    """
     tipos = tipos_visiveis_adm_compras(perfil=perfil, is_manutencao=is_manutencao)
     if tipos is None:
         return True
     chave = (tipo or "").strip().lower()
+    perfil_n = _perfil_adm_compras(perfil)
+    destino_n = (destino or "").strip().lower()
+
+    # Manutenção não entra em TIPOS_VISAO_INFRAESTRUTURA, mas o destino decide a caixa.
+    if chave == TIPO_MANUTENCAO:
+        if perfil_n == PERFIL_ADM_COMPRAS_INFRAESTRUTURA:
+            return destino_n == DESTINO_COMPRAS_INFRAESTRUTURA
+        if perfil_n == PERFIL_ADM_COMPRAS_SUPRIMENTOS:
+            return destino_n != DESTINO_COMPRAS_INFRAESTRUTURA
+        return chave in tipos
+
     if chave not in tipos:
         return False
     if chave != TIPO_EMERGENCIA:
         return True
-    perfil_n = _perfil_adm_compras(perfil)
-    destino_n = (destino or "").strip().lower()
     if perfil_n == PERFIL_ADM_COMPRAS_SUPRIMENTOS:
         return destino_n == DESTINO_COMPRAS_SUPRIMENTOS
     if perfil_n == PERFIL_ADM_COMPRAS_INFRAESTRUTURA:
@@ -1280,9 +1318,9 @@ def pedido_na_fila_nf_pagamento(
     status: Optional[str],
     destino: Optional[str] = None,
 ) -> bool:
+    """A pagar Infraestrutura: NF assinada de qualquer tipo que segue a Infra."""
     return (
-        tipo_eh_emergencia(tipo)
-        and (status or "") == STATUS_AGUARDANDO_PAGAMENTO
+        (status or "") == STATUS_AGUARDANDO_PAGAMENTO
         and pedido_segue_infraestrutura(tipo, destino)
     )
 
@@ -1292,25 +1330,24 @@ def pedido_na_fila_nf_pagamento_suprimentos(
     status: Optional[str],
     destino: Optional[str] = None,
 ) -> bool:
+    """A pagar Suprimentos: NF assinada de pedidos que não seguem a Infra."""
     return (
-        tipo_eh_emergencia(tipo)
-        and (status or "") == STATUS_AGUARDANDO_PAGAMENTO
-        and (destino or "").strip().lower() == DESTINO_COMPRAS_SUPRIMENTOS
+        (status or "") == STATUS_AGUARDANDO_PAGAMENTO
+        and not pedido_segue_infraestrutura(tipo, destino)
     )
 
 
-def pedido_na_fila_concluidos_infra(
-    *,
+def pedido_pode_enviar_nf_para_a_pagar(
     tipo: Optional[str],
-    destino: Optional[str],
     status: Optional[str],
-    ok_final_em,
 ) -> bool:
-    if not pedido_segue_infraestrutura(tipo, destino):
-        return False
-    if (status or "") != STATUS_RECEBIDO:
-        return False
-    return ok_final_em is None
+    """Status em que a NF assinada dispara (ou reenvia) a fila A pagar."""
+    st = (status or "").strip().lower()
+    if st == STATUS_ENVIADO:
+        return True
+    if tipo_eh_emergencia(tipo) and status_emergencia_projeto_nf(st):
+        return True
+    return False
 
 
 def tipo_suprimentos_aprova_e_envia(tipo: Optional[str]) -> bool:
@@ -1367,20 +1404,37 @@ def pedido_pronto_para_aprovacao_unidade(tipo: str, qtd_cotacoes: int, tem_escol
     return True
 
 
+def pedido_projeto_escolhe_orcamento(
+    tipo: Optional[str],
+    destino: Optional[str] = None,
+) -> bool:
+    """Quem marca o vencedor é o projeto (não a Sede).
+
+    Vale para consumo e para itens de manutenção com destino Suprimentos.
+    Manutenção da Infraestrutura continua com a Sede Infra escolhendo.
+    """
+    chave = (tipo or "").strip().lower()
+    if chave == TIPO_CONSUMO:
+        return True
+    if chave == TIPO_MANUTENCAO:
+        return not pedido_segue_infraestrutura(chave, destino)
+    return False
+
+
 def status_depois_de_escolher_cotacao(
     tipo: Optional[str],
     *,
     projeto_escolheu: bool,
     status_atual: Optional[str],
+    destino: Optional[str] = None,
 ) -> Optional[str]:
     """Próximo status ao marcar o orçamento vencedor.
 
-    No consumo, a escolha feita pelo projeto já vale como aprovação da unidade:
-    Suprimentos pode enviar o pedido ao fornecedor. Se a Sede escolhe, o pedido
-    continua aguardando o ok do projeto.
+    Em consumo e manutenção+Suprimentos, a escolha do projeto já vale como
+    aprovação da unidade: Suprimentos pode enviar ao fornecedor. Se a Sede
+    escolhe nesses tipos, o pedido continua aguardando o ok do projeto.
     """
-    tipo_norm = (tipo or "").strip().lower()
-    if projeto_escolheu and tipo_norm == TIPO_CONSUMO:
+    if projeto_escolheu and pedido_projeto_escolhe_orcamento(tipo, destino):
         return STATUS_APROVADO
     if not tipo_eh_cotacao_sede(tipo):
         return None
@@ -1390,7 +1444,7 @@ def status_depois_de_escolher_cotacao(
         STATUS_AGUARDANDO_ESCOLHA,
     }:
         return None
-    if tipo_norm == TIPO_CONSUMO or tipo_pula_aprovacao_sede(tipo):
+    if pedido_projeto_escolhe_orcamento(tipo, destino) or tipo_pula_aprovacao_sede(tipo):
         return STATUS_AGUARDANDO_UNIDADE
     return STATUS_AGUARDANDO_SEDE
 
@@ -1400,10 +1454,11 @@ def consumo_escolha_libera_envio_suprimentos(
     status: Optional[str],
     *,
     tem_escolhida: bool,
+    destino: Optional[str] = None,
 ) -> bool:
-    """Pedido de consumo já escolhido pelo projeto e ainda parado em aguardando unidade."""
+    """Pedido em que o projeto escolhe, já com vencedor, ainda em aguardando unidade."""
     return (
-        (tipo or "").strip().lower() == TIPO_CONSUMO
+        pedido_projeto_escolhe_orcamento(tipo, destino)
         and (status or "") == STATUS_AGUARDANDO_UNIDADE
         and bool(tem_escolhida)
     )
@@ -1554,9 +1609,10 @@ def pedido_rascunho_pode_excluir(
     qtd_eventos: int,
     qtd_notas: int,
 ) -> bool:
-    """Rascunho sem tramitação da outra parte: some da lista, sem cancelar com motivo."""
+    """Rascunho / emergência sem NF: some da lista, sem cancelar com motivo."""
+    status_ok = status in {STATUS_RASCUNHO, STATUS_AGUARDANDO_NF}
     return (
-        status == STATUS_RASCUNHO
+        status_ok
         and int(qtd_cotacoes or 0) == 0
         and int(qtd_anexos or 0) == 0
         and int(qtd_eventos or 0) == 0

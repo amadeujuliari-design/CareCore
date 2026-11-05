@@ -23,7 +23,7 @@
 | Escopo | Menu (Sidebar) | Quem vê |
 | --- | --- | --- |
 | Projeto | Compras → Pedidos e cotações, Pedidos concluídos, Pedidos cancelados, Catálogo de itens, Categorias, Fornecedores | Usuário com `compras_modulo_ativo` (ou ADM Pedidos / ADM Compras / Manutenção via `usuarioPodeVerCompras`) |
-| Sede | Compras → Pedidos, concluídos, cancelados, catálogo, categorias, fornecedores, aguardando assinatura, NFs a pagar Infraestrutura, NFs a pagar Suprimentos, concluídos Infraestrutura, documentos assinados e Usuários ADM Global Compras | ADM Global Compras / Suprimentos / Infraestrutura / Manutenção. Global consulta a mesma sede, sem criar nem editar. O global autorizado a assinar (Noemi) vê a fila e Documentos assinados. NFs a pagar Infraestrutura só Infraestrutura/Manutenção; NFs a pagar Suprimentos só Suprimentos/Manutenção. |
+| Sede | Compras → Pedidos, concluídos, cancelados, catálogo, categorias, fornecedores, aguardando assinatura, **A pagar** Infraestrutura, **A pagar** Suprimentos, concluídos Infraestrutura, documentos assinados e Usuários ADM Global Compras | ADM Global Compras / Suprimentos / Infraestrutura / Manutenção. Global consulta a mesma sede, sem criar nem editar. O global autorizado a assinar (Noemi) vê a fila e Documentos assinados. A pagar Infraestrutura só Infraestrutura/Manutenção; A pagar Suprimentos só Suprimentos/Manutenção. NF do projeto pode ser anexada sem assinatura (fica parado até assinar). Data de pagamento obrigatória na NF. Imprimir em A pagar conclui o pedido. Projeto só opera Compras em dias úteis 8h–18h. |
 
 **Origem:** `Sidebar.jsx` (`COMPRAS_CHILDREN_PROJETO`, `montarComprasChildrenSede`), `rbacUtils.js` (`PERFIS_ADM_COMPRAS_SEDE`, `usuarioPodeVerCompras`, `usuarioEhGlobalPuro`).
 
@@ -36,16 +36,16 @@ Tipos de novo pedido (`BOTOES_NOVO_PEDIDO` em `utils/comprasPedidoTipos.js`):
 | `/compras/novo/consumo` | Itens de consumo | Pedido da janela mensal. A Sede Suprimentos pede os orçamentos. |
 | `/compras/novo/hortifruti` | Hortifruti | Frutas, legumes e verduras a qualquer momento. A Sede Suprimentos cota; só o projeto aprova. |
 | `/compras/novo/imobilizado` | Bem / imobilizado | Compra de bem. O projeto cota; a Sede Infraestrutura acompanha. |
-| `/compras/novo/manutencao` | Itens de manutenção | Reparos. Quem conduz: Suprimentos (cotação da Sede) ou Infraestrutura (mesmo caminho de bem e serviço). |
+| `/compras/novo/manutencao` | Itens de manutenção | Reparos. Destino Suprimentos: Sede cota; **projeto escolhe** o vencedor (como consumo). Destino Infraestrutura: mesmo caminho de bem e serviço (Infra escolhe e assina). |
 | `/compras/novo/servico` | Prestação de serviço | Serviços. O projeto cota; a Sede Infraestrutura acompanha. |
-| `/compras/novo/emergencia` | Compras emergência | Sem orçamentos. Primeira pergunta: Infraestrutura ou Suprimentos. O projeto anexa e assina a NF; a Sede correspondente envia para pagamento. |
+| `/compras/novo/emergencia` | Compras emergência | Sem orçamentos. Primeira pergunta: Infraestrutura ou Suprimentos. Status inicial **Aguardando NF**; com NF anexada sem assinatura → **Aguardando assinatura da NF**; após assinar, vai para A pagar da Sede correspondente. |
 
 ### Fluxo consumo (como o JSX conduz)
 
 1. Projeto cria rascunho (`/compras/novo/consumo`) — vale mesmo com a janela fechada ou ainda não aberta, para ir incrementando os itens. O envio (`Enviar pedido`) só na janela — cotação é da Sede (`TIPOS_COTACAO_SEDE`). Se a janela do mês já passou, o rascunho cai no mês seguinte.
 2. Suprimentos (Sede) pede cotação por e-mail e **registra orçamentos** (valor + PDF) na ficha.
 3. Eventos na timeline com `aguardando_confirmacao` exigem botão **Ok** (confirmação explícita da outra parte).
-4. Projeto **escolhe** orçamento (`Escolher`). Se o vencedor tem mais de um PDF, o sistema une os arquivos num PDF único (`orcamento-vencedor-unificado-….pdf`) que segue assinatura e envio. Essa escolha já deixa o pedido `aprovado`. Se a Sede escolhe, o status continua `aguardando_aprovacao_unidade` até o projeto **Aprovar orçamento**. Pedido em que o projeto já escolheu e o status ficou em aguardando unidade passa a `aprovado` ao abrir a lista ou a ficha. Revogar a escolha devolve os PDFs separados.
+4. Projeto **escolhe** orçamento (`Escolher`) — vale para **consumo** e para **itens de manutenção com destino Suprimentos**. Se o vencedor tem mais de um PDF, o sistema une os arquivos num PDF único (`orcamento-vencedor-unificado-….pdf`) que segue assinatura e envio. Essa escolha já deixa o pedido `aprovado`. Se a Sede escolhe nesses tipos, o status continua `aguardando_aprovacao_unidade` até o projeto **Aprovar orçamento**. Pedido em que o projeto já escolheu e o status ficou em aguardando unidade passa a `aprovado` ao abrir a lista ou a ficha. Revogar a escolha devolve os PDFs separados. Em **hortifruti**, quem escolhe o vencedor é Suprimentos.
 5. Enquanto o pedido está `aprovado` e o e-mail de compra ainda não foi enviado, a Sede pode **Reabrir orçamento aprovado** (motivo obrigatório). A escolha vencedora e a aprovação são desfeitas e o pedido volta para `aguardando_escolha_orcamento`.
 6. Suprimentos **Enviar pedido de compra por e-mail**. O PDF `pedido-compra-….pdf` inclui a **Data do pedido** (dia do envio), em qualquer categoria. O e-mail leva sempre o pedido de compra **e** o orçamento do vencedor (pacote unificado, ou o assinado pela Sede se já houver carimbo). Envio vale com ou sem assinatura.
 7. Projeto anexa NF (+ documentos extras) e **Encerrar processo (com NF anexada)**.
@@ -233,6 +233,8 @@ O orçamento **Escolhida** fica no topo da lista, em negrito e com fundo verde, 
 
 #### Comunicação (parecer, negativa, observação)
 
+Visível no andamento para projeto e Sede. Em **Imprimir NF / Encerrado / cancelado / reprovado**, o bloco continua só para **Infraestrutura e Suprimentos** (e Manutenção), que podem registrar na timeline a qualquer momento; o projeto não.
+
 | Campo | Opções / placeholder | Ligação |
 | --- | --- | --- |
 | select tipo | Observação · Parecer · Negativa | `comunicacao.tipo` |
@@ -276,7 +278,7 @@ Botões: Anexar NF assinada · Anexar boleto assinado · Anexar comprovante · A
 
 Contrato fica no passo anterior, antes da compra. Boleto e nota exigem Assinatura Digital AEB. Relacionado não.
 
-Na emergência, **quem anexa e assina a NF é o projeto**. Infraestrutura e Suprimentos não assinam NF nesse passo; podem só anexar arquivo extra, se precisar. O projeto também anexa extra.
+Na emergência, **quem anexa e assina a NF é o projeto**. Sem NF o status é **Aguardando NF**; com NF anexada e ainda sem assinatura, **Aguardando assinatura da NF** — aí o projeto assina o PDF já anexado (senha + posicionar carimbo), sem anexar de novo. A assinatura (ou anexo já assinado) envia para a fila A pagar. Infraestrutura e Suprimentos não assinam NF nesse passo; podem só anexar arquivo extra, se precisar. O projeto também anexa extra.
 
 Quando o projeto encerra, o status vai para **Imprimir NF** (concluídos). Infraestrutura e Suprimentos abrem a caixa da impressora; depois a tela pergunta se o pedido vai para **Encerrado**. Pedidos que já estavam Encerrado permanecem Encerrado.
 
@@ -315,27 +317,23 @@ Títulos: Revisar pedido de cotação · Revisar pedido de compra · Revisar ree
 
 ### Função
 
-Duas filas: Infraestrutura (orçamentos e contratos aguardando ok) e representante legal (o que a Infraestrutura enviou + contratos após o ok). Cada fila **agrupa por unidade**, no mesmo padrão da lista de Pedidos: a linha do projeto mostra quantidade, tipo e **data/hora da última atualização**; **Expandir** / **Recolher** abre os itens. Em cada pedido e orçamento aparecem enviado em, atualizado em e a data/hora do arquivo. **Visualizar** abre o PDF/imagem no modal (sem baixar); o nome do arquivo continua servindo para baixar. A Infraestrutura pode **Posicionar e assinar** ou **Enviar para a fila do representante legal**. A Noemi vê Visualizar, assinar com gov.br e anexar o PDF assinado. Ao entrar no sistema, quem assina vê o aviso da fila; Suprimentos não recebe esse aviso.
+Duas filas: Infraestrutura (orçamentos e contratos aguardando ok) e representante legal (o que a Infraestrutura enviou + contratos após o ok). Cada fila **agrupa por unidade**, no mesmo padrão da lista de Pedidos: a linha do projeto mostra quantidade, tipo e **data/hora da última atualização**; **Expandir** / **Recolher** abre os itens. Em cada pedido e orçamento aparecem enviado em, atualizado em e a data/hora do arquivo. **Visualizar** abre o PDF/imagem no modal (sem baixar); o nome do arquivo continua servindo para baixar. A Infraestrutura pode **Posicionar e assinar** (PDF inteiro na tela; **uma** assinatura arrastável para a página desejada — não se repete nas demais) ou **Enviar para a fila do representante legal**. A Noemi vê Visualizar, assinar com gov.br e anexar o PDF assinado. Ao entrar no sistema, quem assina vê o aviso da fila; Suprimentos não recebe esse aviso.
 
 ## 1.5c NFs a pagar Infraestrutura — `/compras/fila-nf-pagamento`
 
 **Arquivo:** `carecore-front/src/ComprasFilaInfra.jsx` (`modo="nf"`)  
 **Rota protegida:** ADM Global Compras Infraestrutura + Manutenção
 
-Fila das Compras emergência com destino Infraestrutura e NF anexada. Agrupa por unidade, no mesmo padrão de Aguardando assinatura (expandir, visualizar anexos). A Infraestrutura confirma o envio ao pagamento; o projeto é avisado para conferir o extrato e encerrar.
+Fila de pedidos com **NF assinada** que seguem a Infraestrutura (emergência, bem, serviço, manutenção da Infra). Agrupa por unidade, no mesmo padrão de Aguardando assinatura (expandir, visualizar anexos). Dentro da unidade, ordena pela data de pagamento (vencidos e **hoje** no topo). Pagamento hoje ganha destaque bege. Pedidos não abertos ficam em negrito. Imprimir a NF conclui e manda para **Pedidos concluídos**.
 
 ## 1.5c-2 NFs a pagar Suprimentos — `/compras/fila-nf-pagamento-suprimentos`
 
 **Arquivo:** `carecore-front/src/ComprasFilaInfra.jsx` (`modo="nf-suprimentos"`)  
 **Rota protegida:** ADM Global Compras Suprimentos + Manutenção
 
-Mesmo padrão da fila de NFs a pagar Infraestrutura, só para emergência com destino Suprimentos. Suprimentos confirma o envio ao pagamento; o projeto confere o extrato e encerra.
+Mesmo padrão da fila A pagar Infraestrutura, para pedidos que **não** seguem a Infra (emergência destino Suprimentos, hortifruti, manutenção Suprimentos, etc.). Imprimir a NF conclui.
 
-## 1.5d Concluídos Infraestrutura — `/compras/fila-concluidos-infra`
-
-**Arquivo:** `carecore-front/src/ComprasFilaInfra.jsx` (`modo="concluidos"`)
-
-Pedidos de Infraestrutura que o projeto já encerrou (`recebido`) e ainda sem OK final. Agrupa por unidade; **OK final** tira o pedido da fila (continua em Pedidos concluídos). Pedidos **cancelados** de Infraestrutura não entram nesta visão e são apagados do banco.
+A antiga fila **Concluídos Infraestrutura** (OK final) foi removida: o encerramento operacional é a impressão em A pagar; a lista geral fica em Pedidos → Concluídos. A rota `/compras/fila-concluidos-infra` redireciona para essa visão.
 
 ## 1.5b Documentos assinados — `/compras/documentos-assinados`
 

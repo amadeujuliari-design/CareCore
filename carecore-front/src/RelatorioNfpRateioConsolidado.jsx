@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import { FileBarChart } from 'lucide-react';
 
 import Sidebar from './Sidebar';
@@ -14,6 +15,7 @@ import DireitosReservadosAviso from './components/DireitosReservadosAviso';
 import { nfpAcesso } from './services/nfpService';
 import { nfpRelatorioRateioConsolidado } from './services/relatorioNfpService';
 import { exportarRelatorioXlsx } from './utils/exportarRelatorioXlsx';
+import { nfpVoltarPara, nfpVoltarState } from './utils/nfpNavegacaoUtils';
 import { buscarIdentidadeRelatoriosOrganizacao } from './utils/relatorioIdentidadePrint';
 import { imprimirRelatorioNfpRateioConsolidado } from './utils/relatorioNfpPrint';
 import {
@@ -31,6 +33,9 @@ function competenciaAtual() {
 }
 
 export default function RelatorioNfpRateioConsolidado() {
+  const location = useLocation();
+  const voltarPara = useMemo(() => nfpVoltarPara(location, '/nfp/relatorios'), [location]);
+  const voltarState = useMemo(() => nfpVoltarState(location), [location]);
   const [competenciaInicio, setCompetenciaInicio] = useState(competenciaAtual());
   const [competenciaFim, setCompetenciaFim] = useState(competenciaAtual());
   const [agente, setAgente] = useState('');
@@ -100,7 +105,8 @@ export default function RelatorioNfpRateioConsolidado() {
           title="Rateio consolidado"
           subtitle="Totais por competência e ranking por agente, com identidade visual e exportação XLSX."
           icon={<FileBarChart className="h-5 w-5" />}
-          backTo="/nfp/relatorios"
+          backTo={voltarPara}
+          backState={voltarState}
           backLabel="Voltar aos relatórios"
           actions={(
             <div className="flex flex-wrap gap-2">

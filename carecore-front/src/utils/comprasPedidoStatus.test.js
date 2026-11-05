@@ -38,20 +38,46 @@ describe('comprasPedidoStatus', () => {
     );
   });
 
-  it('rótulos da emergência e conferência de extrato', () => {
-    assert.equal(
-      rotuloStatusPedidoLista({ status: 'aguardando_pagamento' }),
-      'Aguardando pagamento',
-    );
+  it('rótulos e cores distintas da emergência', () => {
+    assert.equal(rotuloStatusPedidoLista({ status: 'aguardando_nf' }), 'Aguardando NF');
+    assert.equal(rotuloStatusPedidoLista({ status: 'aguardando_assinatura_nf' }), 'Aguardando assinatura da NF');
+    assert.equal(rotuloStatusPedidoLista({ status: 'aguardando_pagamento' }), 'Aguardando pagamento');
     assert.equal(
       rotuloStatusPedidoLista({ status: 'aguardando_conferencia_extrato' }),
       'Aguardando conferência do extrato',
     );
-    assert.equal(varianteBadgeStatusPedido('aguardando_pagamento'), 'warning');
+    assert.equal(varianteBadgeStatusPedido('aguardando_nf'), 'cyan');
+    assert.equal(varianteBadgeStatusPedido('aguardando_assinatura_nf'), 'fuchsia');
+    assert.equal(varianteBadgeStatusPedido('aguardando_pagamento'), 'orange');
+    assert.equal(varianteBadgeStatusPedido('aguardando_conferencia_extrato'), 'lime');
   });
 
   it('rótulo Imprimir NF', () => {
     assert.equal(rotuloStatusPedidoLista({ status: 'imprimir_nf' }), 'Imprimir NF');
-    assert.equal(varianteBadgeStatusPedido('imprimir_nf'), 'warning');
+    assert.equal(varianteBadgeStatusPedido('imprimir_nf'), 'sky');
+  });
+
+  it('mesmo status sempre a mesma cor', () => {
+    const mapa = {
+      rascunho: 'default',
+      aguardando_nf: 'cyan',
+      aguardando_assinatura_nf: 'fuchsia',
+      aguardando_cotacao: 'warning',
+      em_cotacao: 'warning',
+      aguardando_escolha_orcamento: 'info',
+      aguardando_aprovacao_unidade: 'purple',
+      aguardando_aprovacao_sede: 'indigo',
+      aprovado: 'success',
+      enviado_fornecedor: 'teal',
+      aguardando_pagamento: 'orange',
+      aguardando_conferencia_extrato: 'lime',
+      imprimir_nf: 'sky',
+      recebido: 'success',
+      cancelado: 'danger',
+      reprovado: 'danger',
+    };
+    for (const [status, variante] of Object.entries(mapa)) {
+      assert.equal(varianteBadgeStatusPedido(status), variante, status);
+    }
   });
 });

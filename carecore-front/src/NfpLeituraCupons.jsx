@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import { CheckCircle2, Lock, LockOpen, Minus, Plus, QrCode } from 'lucide-react';
 
 import Sidebar from './Sidebar';
@@ -23,6 +24,7 @@ import {
   extrairChaveNfpDeLeitura,
   registrarCupomNfpTratado,
 } from './utils/leituraCodigoUtils';
+import { nfpVoltarPara, nfpVoltarState } from './utils/nfpNavegacaoUtils';
 import { decodificarPayloadJwt } from './utils/jwtUtils';
 import { usuarioEhAdmProducao, usuarioSomenteLeituraNfp, vinculoEhSede } from './utils/rbacUtils';
 
@@ -167,6 +169,9 @@ function mensagemFlashLeitura(cupom, checagem) {
 const PAGE_SIZE = 50;
 
 export default function NfpLeituraCupons() {
+  const location = useLocation();
+  const voltarPara = useMemo(() => nfpVoltarPara(location), [location]);
+  const voltarState = useMemo(() => nfpVoltarState(location), [location]);
   const sessao = useMemo(() => {
     try {
       const token = localStorage.getItem('@CareCore:token');
@@ -624,7 +629,8 @@ export default function NfpLeituraCupons() {
           title="Leitura de Cupons"
           subtitle="Escolha leitura do QR ou inserção dos dados do cupom. O QR passa pela SEFAZ; os dados entram direto na fila do robô."
           icon={<QrCode className="h-5 w-5" />}
-          backTo="/nfp"
+          backTo={voltarPara}
+          backState={voltarState}
         />
         <ScrollArea>
           <div className="mx-auto flex w-full min-w-0 max-w-6xl flex-col gap-3 px-4 pb-10 pt-2">

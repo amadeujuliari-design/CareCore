@@ -506,11 +506,7 @@ function RotasAplicacao() {
 
         <Route
           path="/compras/fila-concluidos-infra"
-          element={
-            <ProtectedRoute perfis={[PERFIL_ADM_COMPRAS_INFRAESTRUTURA, 'Manutenção']}>
-              <ComprasFilaInfra modo="concluidos" />
-            </ProtectedRoute>
-          }
+          element={<Navigate to="/compras?visao=concluidos" replace />}
         />
 
         <Route

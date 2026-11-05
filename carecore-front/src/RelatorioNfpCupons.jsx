@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import { FileBarChart } from 'lucide-react';
 
 import Sidebar from './Sidebar';
@@ -14,6 +15,7 @@ import DireitosReservadosAviso from './components/DireitosReservadosAviso';
 import { nfpAcesso } from './services/nfpService';
 import { nfpRelatorioCupons } from './services/relatorioNfpService';
 import { exportarRelatorioXlsx } from './utils/exportarRelatorioXlsx';
+import { nfpVoltarPara, nfpVoltarState } from './utils/nfpNavegacaoUtils';
 import { buscarIdentidadeRelatoriosOrganizacao } from './utils/relatorioIdentidadePrint';
 import { imprimirRelatorioNfpCupons } from './utils/relatorioNfpPrint';
 import {
@@ -71,6 +73,9 @@ function BarraPaginacao({ pagina, totalPaginas, total, limite, onMudar, disabled
 }
 
 export default function RelatorioNfpCupons() {
+  const location = useLocation();
+  const voltarPara = useMemo(() => nfpVoltarPara(location, '/nfp/relatorios'), [location]);
+  const voltarState = useMemo(() => nfpVoltarState(location), [location]);
   const [dataInicio, setDataInicio] = useState(inicioMesAtual);
   const [dataFim, setDataFim] = useState(() => dataLocalISO());
   const [captador, setCaptador] = useState('');
@@ -292,7 +297,8 @@ export default function RelatorioNfpCupons() {
           title="Cupons lidos / fila / enviados"
           subtitle="Totais no banco; detalhe paginado (50/página) para manter a tela fluida com alto volume."
           icon={<FileBarChart className="h-5 w-5" />}
-          backTo="/nfp/relatorios"
+          backTo={voltarPara}
+          backState={voltarState}
           backLabel="Voltar aos relatórios"
           actions={(
             <div className="flex flex-wrap gap-2">

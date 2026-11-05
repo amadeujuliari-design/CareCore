@@ -31,7 +31,6 @@ import {
   FilePenLine,
   Archive,
   Ban,
-  CheckCircle2,
 } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import logoCarecore from './assets/logo.PNG';
@@ -165,7 +164,6 @@ const COMPRAS_CHILDREN_PROJETO = [
 function montarComprasChildrenSede(
   filaAssinaturaPendentes,
   filaNfPendentes = 0,
-  filaConcluidosPendentes = 0,
   filaNfSuprimentosPendentes = 0,
 ) {
   return [
@@ -186,10 +184,10 @@ function montarComprasChildrenSede(
     {
       path: '/compras/fila-nf-pagamento',
       icon: Receipt,
-      label: 'NFs a pagar Infraestrutura',
+      label: 'A pagar Infraestrutura',
       labelTitle: filaNfPendentes > 0
-        ? `${filaNfPendentes} NF(s) de emergência da Infraestrutura aguardando pagamento`
-        : 'NFs a pagar Infraestrutura',
+        ? `${filaNfPendentes} NF(s) da Infraestrutura aguardando pagamento`
+        : 'A pagar Infraestrutura',
       badgeCount: filaNfPendentes,
       feature: 'compras',
       perfis: [PERFIL_ADM_COMPRAS_INFRAESTRUTURA, 'Manutenção'],
@@ -197,24 +195,13 @@ function montarComprasChildrenSede(
     {
       path: '/compras/fila-nf-pagamento-suprimentos',
       icon: Receipt,
-      label: 'NFs a pagar Suprimentos',
+      label: 'A pagar Suprimentos',
       labelTitle: filaNfSuprimentosPendentes > 0
-        ? `${filaNfSuprimentosPendentes} NF(s) de emergência de Suprimentos aguardando pagamento`
-        : 'NFs a pagar Suprimentos',
+        ? `${filaNfSuprimentosPendentes} NF(s) de Suprimentos aguardando pagamento`
+        : 'A pagar Suprimentos',
       badgeCount: filaNfSuprimentosPendentes,
       feature: 'compras',
       perfis: [PERFIL_ADM_COMPRAS_SUPRIMENTOS, 'Manutenção'],
-    },
-    {
-      path: '/compras/fila-concluidos-infra',
-      icon: CheckCircle2,
-      label: 'Concluídos Infraestrutura',
-      labelTitle: filaConcluidosPendentes > 0
-        ? `${filaConcluidosPendentes} pedido(s) aguardando OK final`
-        : 'Concluídos Infraestrutura',
-      badgeCount: filaConcluidosPendentes,
-      feature: 'compras',
-      perfis: [PERFIL_ADM_COMPRAS_INFRAESTRUTURA, 'Manutenção'],
     },
     {
       path: '/compras/documentos-assinados',
@@ -248,7 +235,6 @@ export default function Sidebar() {
   const [filaAssinaturaPendentes, setFilaAssinaturaPendentes] = useState(0);
   const [filaNfPendentes, setFilaNfPendentes] = useState(0);
   const [filaNfSuprimentosPendentes, setFilaNfSuprimentosPendentes] = useState(0);
-  const [filaConcluidosPendentes, setFilaConcluidosPendentes] = useState(0);
   const [modalSenhaAberto, setModalSenhaAberto] = useState(false);
   const [modalPasskeysAberto, setModalPasskeysAberto] = useState(false);
   const [senhaAtual, setSenhaAtual] = useState('');
@@ -389,16 +375,8 @@ export default function Sidebar() {
         .catch(() => {
           if (ativo) setFilaNfPendentes(0);
         });
-      api.get(`${API_ROOT}/compras/fila-concluidos-infra/resumo`)
-        .then((response) => {
-          if (ativo) setFilaConcluidosPendentes(Number(response.data?.pendentes) || 0);
-        })
-        .catch(() => {
-          if (ativo) setFilaConcluidosPendentes(0);
-        });
     } else {
       setFilaNfPendentes(0);
-      setFilaConcluidosPendentes(0);
     }
 
     if (usuarioEhAdmComprasSuprimentos(usuarioSessao) || isManutencao) {
@@ -661,7 +639,6 @@ export default function Sidebar() {
           children: montarComprasChildrenSede(
             filaAssinaturaPendentes,
             filaNfPendentes,
-            filaConcluidosPendentes,
             filaNfSuprimentosPendentes,
           ),
         },

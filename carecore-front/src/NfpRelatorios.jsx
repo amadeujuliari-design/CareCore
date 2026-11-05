@@ -1,12 +1,19 @@
-import { Link } from 'react-router-dom';
+import { useMemo } from 'react';
+import { Link, useLocation } from 'react-router-dom';
 import { FileBarChart } from 'lucide-react';
 
 import Sidebar from './Sidebar';
 import { AppShell, MainShell, PageHeader, ScrollArea } from './components/PremiumUI';
 import DireitosReservadosAviso from './components/DireitosReservadosAviso';
 import { NFP_RELATORIOS_CATALOGO } from './utils/relatorioNfpUtils';
+import { nfpEstadoVolta, nfpVoltarPara, nfpVoltarState } from './utils/nfpNavegacaoUtils';
 
 export default function NfpRelatorios() {
+  const location = useLocation();
+  const voltarPara = useMemo(() => nfpVoltarPara(location), [location]);
+  const voltarState = useMemo(() => nfpVoltarState(location), [location]);
+  const estadoVoltaFilha = useMemo(() => nfpEstadoVolta(location), [location]);
+
   return (
     <AppShell>
       <Sidebar />
@@ -16,7 +23,8 @@ export default function NfpRelatorios() {
           title="Central de relatórios"
           subtitle="Consolidados e analíticos do módulo NFP, com identidade visual CareCore+ e exportação XLSX."
           icon={<FileBarChart className="h-5 w-5" />}
-          backTo="/nfp"
+          backTo={voltarPara}
+          backState={voltarState}
           backLabel="Voltar ao dashboard"
         />
         <ScrollArea>
@@ -26,6 +34,7 @@ export default function NfpRelatorios() {
               <Link
                 key={item.id}
                 to={item.path}
+                state={estadoVoltaFilha}
                 className="rounded-3xl border border-slate-100 bg-white p-5 shadow-sm transition hover:border-slate-300"
               >
                 <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">

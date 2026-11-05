@@ -2,7 +2,6 @@ import { useCallback, useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 
 import {
-  comprasFilaConcluidosInfraResumo,
   comprasFilaNfPagamentoResumo,
   comprasFilaNfPagamentoSuprimentosResumo,
 } from '../services/comprasService';
@@ -35,10 +34,8 @@ export default function AlertaFilaInfra() {
   const navigate = useNavigate();
   const [nfPendentes, setNfPendentes] = useState(0);
   const [nfSuprimentosPendentes, setNfSuprimentosPendentes] = useState(0);
-  const [concluidosPendentes, setConcluidosPendentes] = useState(0);
   const [ignorarNf, setIgnorarNf] = useState(null);
   const [ignorarNfSuprimentos, setIgnorarNfSuprimentos] = useState(null);
-  const [ignorarConcluidos, setIgnorarConcluidos] = useState(null);
 
   const carregar = useCallback(async () => {
     const token = obterTokenLocal();
@@ -48,7 +45,6 @@ export default function AlertaFilaInfra() {
     if (!token || location.pathname === '/' || document.hidden || (!veInfra && !veSup)) {
       setNfPendentes(0);
       setNfSuprimentosPendentes(0);
-      setConcluidosPendentes(0);
       return;
     }
     setIgnorarNf(sessionStorage.getItem(chaveAlerta(token, 'nf')) == null
@@ -57,21 +53,15 @@ export default function AlertaFilaInfra() {
     setIgnorarNfSuprimentos(sessionStorage.getItem(chaveAlerta(token, 'nf-suprimentos')) == null
       ? null
       : Number(sessionStorage.getItem(chaveAlerta(token, 'nf-suprimentos'))));
-    setIgnorarConcluidos(sessionStorage.getItem(chaveAlerta(token, 'concluidos')) == null
-      ? null
-      : Number(sessionStorage.getItem(chaveAlerta(token, 'concluidos'))));
     try {
-      const [nf, concluidos, nfSup] = await Promise.all([
+      const [nf, nfSup] = await Promise.all([
         veInfra ? comprasFilaNfPagamentoResumo() : Promise.resolve({ pendentes: 0 }),
-        veInfra ? comprasFilaConcluidosInfraResumo() : Promise.resolve({ pendentes: 0 }),
         veSup ? comprasFilaNfPagamentoSuprimentosResumo() : Promise.resolve({ pendentes: 0 }),
       ]);
       setNfPendentes(Number(nf?.pendentes) || 0);
-      setConcluidosPendentes(Number(concluidos?.pendentes) || 0);
       setNfSuprimentosPendentes(Number(nfSup?.pendentes) || 0);
     } catch {
       setNfPendentes(0);
-      setConcluidosPendentes(0);
       setNfSuprimentosPendentes(0);
     }
   }, [location.pathname]);
@@ -82,45 +72,28 @@ export default function AlertaFilaInfra() {
 
   const naFilaNf = location.pathname === '/compras/fila-nf-pagamento';
   const naFilaNfSup = location.pathname === '/compras/fila-nf-pagamento-suprimentos';
-  const naFilaConcluidos = location.pathname === '/compras/fila-concluidos-infra';
   const mostrarNf = nfPendentes > 0 && !naFilaNf && !(ignorarNf !== null && nfPendentes <= ignorarNf);
   const mostrarNfSup = nfSuprimentosPendentes > 0 && !naFilaNfSup
     && !(ignorarNfSuprimentos !== null && nfSuprimentosPendentes <= ignorarNfSuprimentos);
-  const mostrarConcluidos = concluidosPendentes > 0 && !naFilaConcluidos && !(ignorarConcluidos !== null && concluidosPendentes <= ignorarConcluidos);
 
-  if (!mostrarNf && !mostrarNfSup && !mostrarConcluidos) return null;
+  if (!mostrarNf && !mostrarNfSup) return null;
 
-  const fila = mostrarNf ? 'nf' : (mostrarNfSup ? 'nf-suprimentos' : 'concluidos');
-  const pendentes = fila === 'nf'
-    ? nfPendentes
-    : fila === 'nf-suprimentos'
-      ? nfSuprimentosPendentes
-      : concluidosPendentes;
-  const titulo = fila === 'nf'
-    ? 'Fila de NFs a pagar Infraestrutura'
-    : fila === 'nf-suprimentos'
-      ? 'Fila de NFs a pagar Suprimentos'
-      : 'Fila de pedidos concluídos';
-  const texto = fila === 'nf' || fila === 'nf-suprimentos'
-    ? (pendentes === 1
-      ? 'Há 1 nota fiscal de Compras emergência aguardando o envio para pagamento.'
-      : `Há ${pendentes} notas fiscais de Compras emergência aguardando o envio para pagamento.`)
-    : (pendentes === 1
-      ? 'Há 1 pedido encerrado aguardando o OK final da Infraestrutura.'
-      : `Há ${pendentes} pedidos encerrados aguardando o OK final da Infraestrutura.`);
+  const fila = mostrarNf ? 'nf' : 'nf-suprimentos';
+  const pendentes = fila === 'nf' ? nfPendentes : nfSuprimentosPendentes;
+  const titulo = fila === 'nf' ? 'A pagar — Infraestrutura' : 'A pagar — Suprimentos';
+  const texto = pendentes === 1
+    ? 'Há 1 pedido em A pagar aguardando revisão e impressão para o financeiro.'
+    : `Há ${pendentes} pedidos em A pagar aguardando revisão e impressão para o financeiro.`;
   const destino = fila === 'nf'
     ? '/compras/fila-nf-pagamento'
-    : fila === 'nf-suprimentos'
-      ? '/compras/fila-nf-pagamento-suprimentos'
-      : '/compras/fila-concluidos-infra';
+    : '/compras/fila-nf-pagamento-suprimentos';
   const eyebrow = fila === 'nf-suprimentos' ? 'Compras · Suprimentos' : 'Compras · Infraestrutura';
 
   const fechar = () => {
     const token = obterTokenLocal();
     sessionStorage.setItem(chaveAlerta(token, fila), String(pendentes));
     if (fila === 'nf') setIgnorarNf(pendentes);
-    else if (fila === 'nf-suprimentos') setIgnorarNfSuprimentos(pendentes);
-    else setIgnorarConcluidos(pendentes);
+    else setIgnorarNfSuprimentos(pendentes);
   };
 
   return (

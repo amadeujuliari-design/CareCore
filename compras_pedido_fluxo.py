@@ -59,6 +59,10 @@ from compras_regras import (
     STATUS_AGUARDANDO_EXTRATO,
     STATUS_REPROVADO,
     STATUS_RASCUNHO,
+    STATUS_AGUARDANDO_NF,
+    STATUS_AGUARDANDO_ASSINATURA_NF,
+    STATUS_EMERGENCIA_PROJETO_NF,
+    status_emergencia_projeto_nf,
     STATUS_TERMINAIS_PEDIDO,
     perfil_adm_compras_sede,
     TIPO_CONSUMO,
@@ -109,6 +113,7 @@ from compras_regras import (
     CLASSE_DOC_CONTRATO,
     CLASSE_DOC_NOTA,
     CLASSE_DOC_RELACIONADO,
+    CLASSES_DOCUMENTO_EXIGEM_ASSINATURA,
     normalizar_qtd_parcelas_pagamento,
     pagamento_infra_completo,
     parcela_conta_como_paga,
@@ -117,10 +122,11 @@ from compras_regras import (
     ETAPA_CONTRATO_NOEMI,
     ETAPA_CONTRATO_ROBSON,
     pedido_segue_infraestrutura,
-    pedido_na_fila_concluidos_infra,
     pedido_na_fila_nf_pagamento,
     pedido_na_fila_nf_pagamento_suprimentos,
+    pedido_pode_enviar_nf_para_a_pagar,
     tipo_eh_cotacao_projeto,
+    pedido_projeto_escolhe_orcamento,
     projeto_pode_trocar_orcamento,
     tipo_suprimentos_aprova_e_envia,
     tipo_eh_cotacao_sede,
@@ -848,11 +854,14 @@ def _serializar_nota(nota: ComprasPedidoNotaFiscalDB) -> dict:
         "emitente_nome": nota.emitente_nome,
         "emitente_cnpj": nota.emitente_cnpj,
         "data_emissao": _iso(nota.data_emissao),
+        "data_pagamento": _iso(getattr(nota, "data_pagamento", None)),
         "valor_centavos": nota.valor_centavos,
         "parcela_numero": getattr(nota, "parcela_numero", None),
         "origem_dados": nota.origem_dados,
         "observacao": nota.observacao,
         "anexo_id": nota.anexo_id,
+        "assinada_em": _iso(getattr(nota, "assinada_em", None)),
+        "assinada": bool(getattr(nota, "assinada_em", None)),
         "criado_em": _iso(nota.criado_em),
     }
 
@@ -1128,7 +1137,17 @@ async def upload_anexo_pedido(
     parcela_numero: Optional[int] = None,
 ) -> ComprasPedidoAnexoDB:
     if pedido.status in STATUS_TERMINAIS_PEDIDO:
-        raise HTTPException(status_code=400, detail="Processo encerrado não aceita novos anexos.")
+        # Concluídos: Infra/Suprimentos podem anexar comprovante de pagamento.
+        classe_ok = (classe_documento or "").strip().lower() in {
+            CLASSE_DOC_COMPROVANTE,
+            CLASSE_DOC_RELACIONADO,
+        }
+        perfil = str(usuario.get("perfil_acesso") or usuario.get("perfil") or "")
+        sede_ok = usuario_e_sede_compras(
+            perfil=perfil, is_manutencao=bool(usuario.get("is_manutencao"))
+        )
+        if not (sede_ok and classe_ok):
+            raise HTTPException(status_code=400, detail="Processo encerrado não aceita novos anexos.")
     if tipo not in TIPOS_ANEXO_PEDIDO:
         raise HTTPException(status_code=400, detail="Tipo de anexo inválido.")
     classe = (classe_documento or "").strip().lower()
@@ -1246,12 +1265,15 @@ async def upload_anexo_pedido(
             )
 
     # Cotação da Sede: com 3 PDFs anexados, libera a fase de escolha do vencedor.
-    # Consumo não avança sozinho: Suprimentos dá ok para o projeto escolher.
+    # Consumo e manutenção+Suprimentos não avançam sozinhos: Suprimentos dá ok
+    # para o projeto escolher.
     if (
         tipo == TIPO_ANEXO_ORCAMENTO
         and tipo_eh_cotacao_sede(pedido.tipo)
         and not pedido_segue_infraestrutura(pedido.tipo, getattr(pedido, "destino_compras", None))
-        and (pedido.tipo or "").strip().lower() != "consumo"
+        and not pedido_projeto_escolhe_orcamento(
+            pedido.tipo, getattr(pedido, "destino_compras", None)
+        )
         and pedido.status in STATUS_COTACAO_SEDE_COLETANDO
     ):
         qtd = await contar_orcamentos_com_anexo(db, pedido.id)
@@ -1521,7 +1543,11 @@ async def registrar_comunicacao_pedido(
     cotacao_id: Optional[str] = None,
 ) -> ComprasPedidoEventoDB:
     if pedido.status in STATUS_TERMINAIS_PEDIDO:
-        raise HTTPException(status_code=400, detail="Processo encerrado.")
+        perfil = str(usuario.get("perfil_acesso") or usuario.get("perfil") or "")
+        if not usuario_e_sede_compras(
+            perfil=perfil, is_manutencao=bool(usuario.get("is_manutencao"))
+        ):
+            raise HTTPException(status_code=400, detail="Processo encerrado.")
     if tipo not in {TIPO_EVENTO_PARECER, TIPO_EVENTO_NEGATIVA, TIPO_EVENTO_OBSERVACAO}:
         raise HTTPException(status_code=400, detail="Tipo de comunicação inválido.")
     mensagem = (texto or "").strip()
@@ -2541,15 +2567,21 @@ async def registrar_nota_fiscal(
 ) -> ComprasPedidoNotaFiscalDB:
     if tipo_pula_orcamento(pedido.tipo):
         if pedido.status not in {
+            STATUS_AGUARDANDO_NF,
+            STATUS_AGUARDANDO_ASSINATURA_NF,
             STATUS_RASCUNHO,
             STATUS_AGUARDANDO_PAGAMENTO,
             STATUS_AGUARDANDO_EXTRATO,
         }:
             raise HTTPException(status_code=400, detail="Não é mais possível anexar nota neste pedido.")
     else:
-        if pedido.status != STATUS_ENVIADO:
-            raise HTTPException(status_code=400, detail="Notas fiscais só após envio ao fornecedor.")
-        await exigir_documentos_finais_infra(db, pedido)
+        if pedido.status not in {STATUS_ENVIADO, STATUS_AGUARDANDO_PAGAMENTO}:
+            raise HTTPException(
+                status_code=400,
+                detail="Notas fiscais só após envio ao fornecedor (ou enquanto o pedido está em A pagar).",
+            )
+        if pedido.status == STATUS_ENVIADO:
+            await exigir_documentos_finais_infra(db, pedido)
     classe_doc = (payload.get("classe_documento") or CLASSE_DOC_NOTA).strip().lower()
     parcela_numero = _exigir_parcela_infra(pedido, payload)
     segue_infra = pedido_segue_infraestrutura(pedido.tipo, getattr(pedido, "destino_compras", None))
@@ -2570,15 +2602,31 @@ async def registrar_nota_fiscal(
             status_code=400,
             detail="Já existe nota fiscal anexada neste processo. Exclua o arquivo antes de anexar outra.",
         )
-    _gestor_row, nome_gestor, nome_projeto = await _validar_assinatura_eletronica_gestor(
-        db,
-        usuario,
-        pedido,
-        str(payload.get("senha_assinatura_eletronica") or ""),
-    )
+    classe_doc_norm = (payload.get("classe_documento") or CLASSE_DOC_NOTA).strip().lower()
+    exige_assinatura = classe_doc_norm in CLASSES_DOCUMENTO_EXIGEM_ASSINATURA or classe_doc_norm == "boleto"
+    senha_assinatura = str(payload.get("senha_assinatura_eletronica") or "").strip()
+    assinar_agora = bool(senha_assinatura) or exige_assinatura
+    nome_gestor = ""
+    nome_projeto = ""
+    gestor_row = None
+    if assinar_agora:
+        gestor_row, nome_gestor, nome_projeto = await _validar_assinatura_eletronica_gestor(
+            db,
+            usuario,
+            pedido,
+            senha_assinatura,
+        )
+    else:
+        if not _usuario_do_projeto_anexa_nf(usuario):
+            raise HTTPException(
+                status_code=403,
+                detail="Somente o projeto anexa a nota fiscal.",
+            )
+        inst = await _dados_instituicao(db, pedido)
+        nome_projeto = ((inst or {}).get("relatorio_nome_exibicao") or (inst or {}).get("nome") or "Projeto").strip()
 
     campos = {
-        "tipo_nf": "boleto" if (payload.get("classe_documento") or "").strip().lower() == "boleto" else (payload.get("tipo_nf") or "produto").strip().lower(),
+        "tipo_nf": "boleto" if classe_doc_norm == "boleto" else (payload.get("tipo_nf") or "produto").strip().lower(),
         "numero": (payload.get("numero") or "").strip() or None,
         "serie": (payload.get("serie") or "").strip() or None,
         "chave_acesso": (payload.get("chave_acesso") or "").strip() or None,
@@ -2605,6 +2653,16 @@ async def registrar_nota_fiscal(
             campos["data_emissao"] = date.fromisoformat(str(payload["data_emissao"])[:10])
         except ValueError as exc:
             raise HTTPException(status_code=400, detail="Data de emissão da NF inválida.") from exc
+    if payload.get("data_pagamento"):
+        try:
+            campos["data_pagamento"] = date.fromisoformat(str(payload["data_pagamento"])[:10])
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="Data de pagamento da NF inválida.") from exc
+    elif classe_doc_norm == CLASSE_DOC_NOTA:
+        raise HTTPException(
+            status_code=400,
+            detail="Informe a data de pagamento (dia em que a NF deve ser paga).",
+        )
 
     tipo_anexo = TIPO_ANEXO_NF_PDF
     anexo = None
@@ -2631,24 +2689,25 @@ async def registrar_nota_fiscal(
                         width=float(payload.get("carimbo_w") or 240),
                         height=float(payload.get("carimbo_h") or 48),
                     )
-                tem_posicao_assinatura = payload.get("assinatura_x") not in (None, "") and payload.get("assinatura_y") not in (None, "")
-                raw = carimbar_assinatura_gestor_pdf(
-                    pdf_bytes=raw,
-                    nome=nome_gestor,
-                    projeto=nome_projeto,
-                    # Só na página posicionada — não repetir nas demais (cobria o conteúdo).
-                    page_index=int(
-                        (payload.get("assinatura_pagina") if tem_posicao_assinatura else payload.get("carimbo_pagina"))
-                        or 0
-                    ),
-                    x=float(payload["assinatura_x"]) if tem_posicao_assinatura else None,
-                    y=float(payload["assinatura_y"]) if tem_posicao_assinatura else None,
-                    width=float(payload["assinatura_w"]) if payload.get("assinatura_w") not in (None, "") else None,
-                    height=float(payload["assinatura_h"]) if payload.get("assinatura_h") not in (None, "") else None,
-                    ancora_x=None if tem_posicao_assinatura or payload.get("carimbo_x") in (None, "") else float(payload["carimbo_x"]),
-                    ancora_y=None if tem_posicao_assinatura or payload.get("carimbo_y") in (None, "") else float(payload["carimbo_y"]),
-                    ancora_h=float(payload.get("carimbo_h") or 0),
-                )
+                if assinar_agora:
+                    tem_posicao_assinatura = payload.get("assinatura_x") not in (None, "") and payload.get("assinatura_y") not in (None, "")
+                    raw = carimbar_assinatura_gestor_pdf(
+                        pdf_bytes=raw,
+                        nome=nome_gestor,
+                        projeto=nome_projeto,
+                        # Só na página posicionada — não repetir nas demais (cobria o conteúdo).
+                        page_index=int(
+                            (payload.get("assinatura_pagina") if tem_posicao_assinatura else payload.get("carimbo_pagina"))
+                            or 0
+                        ),
+                        x=float(payload["assinatura_x"]) if tem_posicao_assinatura else None,
+                        y=float(payload["assinatura_y"]) if tem_posicao_assinatura else None,
+                        width=float(payload["assinatura_w"]) if payload.get("assinatura_w") not in (None, "") else None,
+                        height=float(payload["assinatura_h"]) if payload.get("assinatura_h") not in (None, "") else None,
+                        ancora_x=None if tem_posicao_assinatura or payload.get("carimbo_x") in (None, "") else float(payload["carimbo_x"]),
+                        ancora_y=None if tem_posicao_assinatura or payload.get("carimbo_y") in (None, "") else float(payload["carimbo_y"]),
+                        ancora_h=float(payload.get("carimbo_h") or 0),
+                    )
             except (TypeError, ValueError) as exc:
                 raise HTTPException(status_code=400, detail=str(exc) or "Não foi possível gravar a assinatura na NF.") from exc
         if ext == ".xml":
@@ -2683,6 +2742,7 @@ async def registrar_nota_fiscal(
             parcela_numero=parcela_numero,
         )
 
+    agora = agora_operacional_naive()
     nota = ComprasPedidoNotaFiscalDB(
         pedido_id=pedido.id,
         anexo_id=anexo.id if anexo else None,
@@ -2693,10 +2753,13 @@ async def registrar_nota_fiscal(
         emitente_nome=campos.get("emitente_nome"),
         emitente_cnpj=campos.get("emitente_cnpj"),
         data_emissao=campos.get("data_emissao"),
+        data_pagamento=campos.get("data_pagamento"),
         valor_centavos=campos.get("valor_centavos"),
         origem_dados=campos.get("origem_dados") or "manual",
         observacao=campos.get("observacao"),
         parcela_numero=parcela_numero,
+        assinada_em=agora if assinar_agora else None,
+        assinada_por_id=_uid(usuario) if assinar_agora else None,
         criado_por_id=_uid(usuario),
     )
     db.add(nota)
@@ -2704,18 +2767,46 @@ async def registrar_nota_fiscal(
     if anexo:
         anexo.nota_fiscal_id = nota.id
 
+    if assinar_agora:
+        texto_evento = (
+            f"Nota fiscal registrada{f' nº {nota.numero}' if nota.numero else ''}. "
+            f"Assinado Digitalmente por {nome_gestor}, gestor de {nome_projeto}."
+        )
+    else:
+        texto_evento = (
+            f"Nota fiscal registrada{f' nº {nota.numero}' if nota.numero else ''} "
+            "sem assinatura digital. Aguardando assinatura do gestor para seguir o fluxo."
+        )
+        if campos.get("data_pagamento"):
+            texto_evento += f" Data de pagamento: {campos['data_pagamento'].strftime('%d/%m/%Y')}."
     await registrar_evento_pedido(
         db,
         pedido_id=pedido.id,
         tipo=TIPO_EVENTO_ANEXO,
-        texto=(
-            f"Nota fiscal registrada{f' nº {nota.numero}' if nota.numero else ''}. "
-            f"Assinado Digitalmente por {nome_gestor}, gestor de {nome_projeto}."
-        ),
+        texto=texto_evento,
         usuario_id=_uid(usuario),
         anexo_id=anexo.id if anexo else None,
     )
-    pedido.atualizado_em = agora_operacional_naive()
+    pedido.atualizado_em = agora
+    if (
+        assinar_agora
+        and pedido_pode_enviar_nf_para_a_pagar(pedido.tipo, pedido.status)
+        and await _pedido_pronto_enviar_a_pagar(db, pedido)
+    ):
+        await enviar_nf_para_pagamento(db, usuario, pedido)
+    elif tipo_eh_emergencia(pedido.tipo) and status_emergencia_projeto_nf(pedido.status) and not assinar_agora:
+        anterior = pedido.status
+        if pedido.status != STATUS_AGUARDANDO_ASSINATURA_NF:
+            pedido.status = STATUS_AGUARDANDO_ASSINATURA_NF
+            await registrar_evento_pedido(
+                db,
+                pedido_id=pedido.id,
+                tipo=TIPO_EVENTO_STATUS,
+                texto="Nota fiscal anexada. Aguardando assinatura digital da NF.",
+                usuario_id=_uid(usuario),
+                status_anterior=anterior,
+                status_novo=STATUS_AGUARDANDO_ASSINATURA_NF,
+            )
     return nota
 
 
@@ -2731,7 +2822,12 @@ async def remover_nota_fiscal(
                 status_code=403,
                 detail="Somente o projeto exclui a nota fiscal assinada.",
             )
-        if pedido.status not in {STATUS_RASCUNHO, STATUS_AGUARDANDO_PAGAMENTO}:
+        if pedido.status not in {
+            STATUS_AGUARDANDO_NF,
+            STATUS_AGUARDANDO_ASSINATURA_NF,
+            STATUS_RASCUNHO,
+            STATUS_AGUARDANDO_PAGAMENTO,
+        }:
             raise HTTPException(status_code=400, detail="A NF só pode ser removida enquanto o pedido ainda não foi encerrado.")
     elif pedido.status != STATUS_ENVIADO:
         raise HTTPException(status_code=400, detail="A NF só pode ser removida antes de encerrar o processo.")
@@ -2754,6 +2850,7 @@ async def remover_nota_fiscal(
         if anexo:
             anexo.ativo = False
     await db.delete(nota)
+    await db.flush()
     await registrar_evento_pedido(
         db,
         pedido_id=pedido.id,
@@ -2761,6 +2858,8 @@ async def remover_nota_fiscal(
         texto="Nota fiscal removida para nova inclusão.",
         usuario_id=_uid(usuario),
     )
+    if tipo_eh_emergencia(pedido.tipo):
+        await _sincronizar_status_emergencia_apos_nf(db, usuario, pedido)
 
 
 def _uid_caixa(usuario: dict) -> str | None:
@@ -2792,25 +2891,29 @@ def registrar_impressao_nf_suprimentos(
     *,
     encerrar: bool = False,
 ) -> None:
-    """Registra impressão da NF. Em Imprimir NF, pode enviar o pedido para Encerrado."""
+    """Registra impressão da NF. Em A pagar, impressão encerra automaticamente."""
     perfil = str(usuario.get("perfil_acesso") or usuario.get("perfil") or "")
     if not usuario_e_sede_compras(perfil=perfil, is_manutencao=bool(usuario.get("is_manutencao"))):
         raise HTTPException(
             status_code=403,
             detail="Somente Infraestrutura ou Suprimentos registram a impressão da nota fiscal.",
         )
-    if pedido.status not in {STATUS_RECEBIDO, STATUS_IMPRIMIR_NF}:
+    if pedido.status not in {STATUS_RECEBIDO, STATUS_IMPRIMIR_NF, STATUS_AGUARDANDO_PAGAMENTO}:
         raise HTTPException(
             status_code=400,
-            detail="A impressão da NF fica disponível depois que o projeto encerra o processo.",
+            detail="A impressão da NF fica disponível em A pagar ou em pedidos já concluídos.",
         )
     if not getattr(pedido, "nf_impressa_em", None):
         momento = _preservar_atualizacao(pedido)
         pedido.nf_impressa_em = agora_operacional_naive()
         pedido.nf_impressa_por_id = _uid_caixa(usuario)
         pedido.atualizado_em = momento
-    if encerrar and pedido.status == STATUS_IMPRIMIR_NF:
+    # Nova regra: imprimir em A pagar já conclui.
+    if pedido.status == STATUS_AGUARDANDO_PAGAMENTO or (encerrar and pedido.status == STATUS_IMPRIMIR_NF):
         pedido.status = STATUS_RECEBIDO
+        if not getattr(pedido, "recebido_em", None):
+            pedido.recebido_em = agora_operacional_naive()
+            pedido.recebido_por_id = _uid_caixa(usuario)
         pedido.atualizado_em = agora_operacional_naive()
 
 
@@ -2823,12 +2926,17 @@ async def registrar_impressao_nf_e_opcional_encerrar(
 ) -> None:
     anterior = pedido.status
     registrar_impressao_nf_suprimentos(usuario, pedido, encerrar=encerrar)
-    if encerrar and anterior == STATUS_IMPRIMIR_NF and pedido.status == STATUS_RECEBIDO:
+    if anterior != pedido.status and pedido.status == STATUS_RECEBIDO:
+        await garantir_patrimonio_imobilizado_apos_conclusao(db, pedido)
         await registrar_evento_pedido(
             db,
             pedido_id=pedido.id,
             tipo=TIPO_EVENTO_STATUS,
-            texto="Pedido encerrado após impressão da nota fiscal.",
+            texto=(
+                "Pedido concluído após impressão do documento para pagamento."
+                if anterior == STATUS_AGUARDANDO_PAGAMENTO
+                else "Pedido encerrado após impressão da nota fiscal."
+            ),
             usuario_id=_uid(usuario),
             status_anterior=anterior,
             status_novo=STATUS_RECEBIDO,
@@ -2883,8 +2991,6 @@ async def encerrar_pedido(
     pedido.recebimento_observacao = payload.get("observacao") or None
     pedido.recebimento_divergencia = bool(payload.get("divergencia"))
     anterior = pedido.status
-    segue_infra = pedido_segue_infraestrutura(pedido.tipo, getattr(pedido, "destino_compras", None))
-    pedido.status = STATUS_IMPRIMIR_NF
     pedido.atualizado_em = agora_operacional_naive()
 
     itens_payload = {item.get("id"): item for item in (payload.get("itens") or []) if item.get("id")}
@@ -2901,84 +3007,29 @@ async def encerrar_pedido(
             if dados.get("validade_lote"):
                 item.validade_lote = date.fromisoformat(str(dados["validade_lote"]))
 
-    doc_nf = notas[0].numero or notas[0].chave_acesso
+    # Não emergência: após NF assinada o pedido vai a A pagar (sede imprime e conclui).
+    if not emergencia:
+        pedido.status = STATUS_AGUARDANDO_PAGAMENTO
+        pedido.a_pagar_lida_em = None
+        pedido.a_pagar_lida_por_id = None
+        destino = getattr(pedido, "destino_compras", None)
+        fila = (
+            "Suprimentos"
+            if not pedido_segue_infraestrutura(pedido.tipo, destino)
+            else "Infraestrutura"
+        )
+        await registrar_evento_pedido(
+            db,
+            pedido_id=pedido.id,
+            tipo=TIPO_EVENTO_STATUS,
+            texto=f"Pedido enviado para a fila A pagar ({fila}).",
+            usuario_id=_uid(usuario),
+            status_anterior=anterior,
+            status_novo=STATUS_AGUARDANDO_PAGAMENTO,
+        )
+        return pedido
 
-    if pedido.tipo == TIPO_IMOBILIZADO:
-        existentes = (
-            await db.execute(
-                select(ComprasPatrimonioDB.id).where(ComprasPatrimonioDB.pedido_id == pedido.id)
-            )
-        ).scalars().all()
-        if not existentes:
-            itens = (
-                await db.execute(
-                    select(ComprasPedidoItemDB).where(ComprasPedidoItemDB.pedido_id == pedido.id)
-                )
-            ).scalars().all()
-            cotacoes = await _cotacoes_ativas(db, pedido.id)
-            escolhida = next((c for c in cotacoes if c.escolhida), None)
-            valor_item = None
-            if escolhida and itens:
-                valor_item = int(escolhida.valor_centavos / max(len(itens), 1))
-            escopo = getattr(pedido, "escopo_unidade", ESCOPO_PROJETO) or ESCOPO_PROJETO
-            inst_id = None if pedido_escopo_sede(escopo) else pedido.instituicao_id
-            agora = agora_operacional_naive()
-            propriedade = PATRIMONIO_PROPRIEDADE_AEB
-            if pedido.fonte_recurso_id:
-                fonte = (
-                    await db.execute(
-                        select(ComprasFonteRecursoDB).where(
-                            ComprasFonteRecursoDB.id == pedido.fonte_recurso_id
-                        )
-                    )
-                ).scalar_one_or_none()
-                if fonte and (fonte.tipo or "") == FONTE_TIPO_CONVENIO:
-                    propriedade = PATRIMONIO_PROPRIEDADE_PUBLICO
-            for item in itens:
-                bem = ComprasPatrimonioDB(
-                    organizacao_id=pedido.organizacao_id,
-                    instituicao_id=inst_id,
-                    pedido_id=pedido.id,
-                    pedido_item_id=item.id,
-                    categoria_id=item.categoria_id,
-                    descricao=item.descricao,
-                    documento_nf=doc_nf,
-                    valor_centavos=valor_item,
-                    origem=PATRIMONIO_ORIGEM_COMPRA,
-                    propriedade=propriedade,
-                    situacao=PATRIMONIO_SITUACAO_BOM,
-                    escopo_unidade=escopo,
-                    data_aquisicao=data_operacional(),
-                    criado_em=agora,
-                    atualizado_em=agora,
-                )
-                db.add(bem)
-                await db.flush()
-                anexos_pedido = await _anexos_pedido(db, pedido.id)
-                ids_nf = {n.anexo_id for n in notas if n.anexo_id}
-                vistos = set()
-                for anexo_nf in anexos_pedido:
-                    if not anexo_nf.ativo:
-                        continue
-                    if anexo_nf.id not in ids_nf and anexo_nf.tipo not in TIPOS_ANEXO_NO_BEM:
-                        continue
-                    chave = anexo_nf.caminho_arquivo or anexo_nf.id
-                    if chave in vistos:
-                        continue
-                    vistos.add(chave)
-                    db.add(
-                        ComprasPatrimonioAnexoDB(
-                            patrimonio_id=bem.id,
-                            nome_arquivo=anexo_nf.nome_arquivo,
-                            caminho_arquivo=anexo_nf.caminho_arquivo,
-                            content_type=anexo_nf.content_type,
-                            tamanho_bytes=anexo_nf.tamanho_bytes,
-                            tipo=tipo_arquivo_bem_de_anexo_pedido(anexo_nf.tipo) or "nota",
-                            ativo=True,
-                            criado_em=agora,
-                        )
-                    )
-
+    pedido.status = STATUS_IMPRIMIR_NF
     await registrar_evento_pedido(
         db,
         pedido_id=pedido.id,
@@ -2989,6 +3040,95 @@ async def encerrar_pedido(
         status_novo=pedido.status,
     )
     return pedido
+
+
+async def garantir_patrimonio_imobilizado_apos_conclusao(
+    db: AsyncSession,
+    pedido: ComprasPedidoDB,
+) -> None:
+    """Cria bens patrimoniais ao concluir imobilizado (impressão em A pagar)."""
+    if pedido.tipo != TIPO_IMOBILIZADO:
+        return
+    existentes = (
+        await db.execute(
+            select(ComprasPatrimonioDB.id).where(ComprasPatrimonioDB.pedido_id == pedido.id)
+        )
+    ).scalars().all()
+    if existentes:
+        return
+    notas = await _notas_pedido(db, pedido.id)
+    notas_nf = [n for n in notas if (n.tipo_nf or "") != "boleto"]
+    if not notas_nf:
+        return
+    doc_nf = notas_nf[0].numero or notas_nf[0].chave_acesso
+    itens = (
+        await db.execute(
+            select(ComprasPedidoItemDB).where(ComprasPedidoItemDB.pedido_id == pedido.id)
+        )
+    ).scalars().all()
+    cotacoes = await _cotacoes_ativas(db, pedido.id)
+    escolhida = next((c for c in cotacoes if c.escolhida), None)
+    valor_item = None
+    if escolhida and itens:
+        valor_item = int(escolhida.valor_centavos / max(len(itens), 1))
+    escopo = getattr(pedido, "escopo_unidade", ESCOPO_PROJETO) or ESCOPO_PROJETO
+    inst_id = None if pedido_escopo_sede(escopo) else pedido.instituicao_id
+    agora = agora_operacional_naive()
+    propriedade = PATRIMONIO_PROPRIEDADE_AEB
+    if pedido.fonte_recurso_id:
+        fonte = (
+            await db.execute(
+                select(ComprasFonteRecursoDB).where(
+                    ComprasFonteRecursoDB.id == pedido.fonte_recurso_id
+                )
+            )
+        ).scalar_one_or_none()
+        if fonte and (fonte.tipo or "") == FONTE_TIPO_CONVENIO:
+            propriedade = PATRIMONIO_PROPRIEDADE_PUBLICO
+    for item in itens:
+        bem = ComprasPatrimonioDB(
+            organizacao_id=pedido.organizacao_id,
+            instituicao_id=inst_id,
+            pedido_id=pedido.id,
+            pedido_item_id=item.id,
+            categoria_id=item.categoria_id,
+            descricao=item.descricao,
+            documento_nf=doc_nf,
+            valor_centavos=valor_item,
+            origem=PATRIMONIO_ORIGEM_COMPRA,
+            propriedade=propriedade,
+            situacao=PATRIMONIO_SITUACAO_BOM,
+            escopo_unidade=escopo,
+            data_aquisicao=data_operacional(),
+            criado_em=agora,
+            atualizado_em=agora,
+        )
+        db.add(bem)
+        await db.flush()
+        anexos_pedido = await _anexos_pedido(db, pedido.id)
+        ids_nf = {n.anexo_id for n in notas_nf if n.anexo_id}
+        vistos = set()
+        for anexo_nf in anexos_pedido:
+            if not anexo_nf.ativo:
+                continue
+            if anexo_nf.id not in ids_nf and anexo_nf.tipo not in TIPOS_ANEXO_NO_BEM:
+                continue
+            chave = anexo_nf.caminho_arquivo or anexo_nf.id
+            if chave in vistos:
+                continue
+            vistos.add(chave)
+            db.add(
+                ComprasPatrimonioAnexoDB(
+                    patrimonio_id=bem.id,
+                    nome_arquivo=anexo_nf.nome_arquivo,
+                    caminho_arquivo=anexo_nf.caminho_arquivo,
+                    content_type=anexo_nf.content_type,
+                    tamanho_bytes=anexo_nf.tamanho_bytes,
+                    tipo=tipo_arquivo_bem_de_anexo_pedido(anexo_nf.tipo) or "nota",
+                    ativo=True,
+                    criado_em=agora,
+                )
+            )
 
 
 async def _pedido_tem_orcamento_assinado(db: AsyncSession, pedido_id: str) -> bool:
@@ -3229,11 +3369,14 @@ async def assinar_orcamento_e_aprovar_sede(
     height: Optional[float] = None,
 ) -> ComprasPedidoDB:
     """Ato explícito: carimba assinatura no orçamento (posição opcional) e aprova."""
+    destino = getattr(pedido, "destino_compras", None)
+    segue_infra = pedido_segue_infraestrutura(pedido.tipo, destino)
     if usuario_global_assina_orcamento(usuario):
-        if (pedido.tipo or "").strip().lower() not in TIPOS_COTACAO_PROJETO:
+        # Bem/serviço e também manutenção (ou emergência) com destino Infraestrutura.
+        if (pedido.tipo or "").strip().lower() not in TIPOS_COTACAO_PROJETO and not segue_infra:
             raise HTTPException(
                 status_code=403,
-                detail="Esta autorização cobre bem/imobilizado e prestação de serviço.",
+                detail="Esta autorização cobre bem/imobilizado, prestação de serviço e pedidos da Infraestrutura.",
             )
     elif not usuario_pode_aprovar_sede(
         perfil=str(usuario.get("perfil_acesso") or usuario.get("perfil") or ""),
@@ -3244,7 +3387,7 @@ async def assinar_orcamento_e_aprovar_sede(
         perfil=str(usuario.get("perfil_acesso") or usuario.get("perfil") or ""),
         tipo=pedido.tipo,
         is_manutencao=bool(usuario.get("is_manutencao")),
-        destino=getattr(pedido, "destino_compras", None),
+        destino=destino,
     ):
         raise HTTPException(status_code=403, detail="Pedido fora do escopo da sua classe de Compras.")
     if pedido.status != STATUS_AGUARDANDO_SEDE:
@@ -3761,33 +3904,6 @@ def _exigir_infraestrutura(usuario: dict) -> None:
         raise HTTPException(status_code=403, detail="Somente a Infraestrutura acessa esta fila.")
 
 
-async def listar_fila_concluidos_infra(db: AsyncSession, usuario: dict) -> list[ComprasPedidoDB]:
-    _exigir_infraestrutura(usuario)
-    org_id = usuario.get("organizacao_id")
-    if not org_id:
-        return []
-    rows = list(
-        (
-            await db.execute(
-                select(ComprasPedidoDB).where(
-                    ComprasPedidoDB.organizacao_id == org_id,
-                    ComprasPedidoDB.status == STATUS_RECEBIDO,
-                )
-            )
-        ).scalars().all()
-    )
-    return [
-        pedido
-        for pedido in rows
-        if pedido_na_fila_concluidos_infra(
-            tipo=pedido.tipo,
-            destino=getattr(pedido, "destino_compras", None),
-            status=pedido.status,
-            ok_final_em=getattr(pedido, "infraestrutura_ok_final_em", None),
-        )
-    ]
-
-
 async def listar_fila_nf_pagamento(db: AsyncSession, usuario: dict) -> list[ComprasPedidoDB]:
     _exigir_infraestrutura(usuario)
     org_id = usuario.get("organizacao_id")
@@ -3799,7 +3915,6 @@ async def listar_fila_nf_pagamento(db: AsyncSession, usuario: dict) -> list[Comp
                 select(ComprasPedidoDB).where(
                     ComprasPedidoDB.organizacao_id == org_id,
                     ComprasPedidoDB.status == STATUS_AGUARDANDO_PAGAMENTO,
-                    ComprasPedidoDB.tipo == TIPO_EMERGENCIA,
                 )
             )
         ).scalars().all()
@@ -3827,7 +3942,6 @@ async def listar_fila_nf_pagamento_suprimentos(db: AsyncSession, usuario: dict) 
                 select(ComprasPedidoDB).where(
                     ComprasPedidoDB.organizacao_id == org_id,
                     ComprasPedidoDB.status == STATUS_AGUARDANDO_PAGAMENTO,
-                    ComprasPedidoDB.tipo == TIPO_EMERGENCIA,
                 )
             )
         ).scalars().all()
@@ -3858,37 +3972,312 @@ async def listar_fila_extrato_projeto(db: AsyncSession, usuario: dict) -> list[C
     return list((await db.execute(select(ComprasPedidoDB).where(*filtros))).scalars().all())
 
 
-async def enviar_emergencia_para_pagamento(
+def _nota_esta_assinada(nota: ComprasPedidoNotaFiscalDB) -> bool:
+    return bool(getattr(nota, "assinada_em", None))
+
+
+async def assinar_nota_fiscal_pendente(
+    db: AsyncSession,
+    usuario: dict,
+    pedido: ComprasPedidoDB,
+    nota_id: str,
+    *,
+    file: Optional[UploadFile],
+    payload: dict,
+) -> ComprasPedidoNotaFiscalDB:
+    """Aplica a assinatura digital em NF já anexada sem assinatura."""
+    nota = (
+        await db.execute(
+            select(ComprasPedidoNotaFiscalDB).where(
+                ComprasPedidoNotaFiscalDB.id == nota_id,
+                ComprasPedidoNotaFiscalDB.pedido_id == pedido.id,
+            )
+        )
+    ).scalar_one_or_none()
+    if not nota:
+        raise HTTPException(status_code=404, detail="Nota fiscal não encontrada.")
+    if (nota.tipo_nf or "") == "boleto":
+        raise HTTPException(status_code=400, detail="Use o fluxo de boleto para assinar este documento.")
+    if _nota_esta_assinada(nota):
+        raise HTTPException(status_code=400, detail="Esta nota fiscal já está assinada.")
+    if not nota.anexo_id:
+        raise HTTPException(status_code=400, detail="A nota fiscal não tem PDF anexado.")
+
+    _gestor_row, nome_gestor, nome_projeto = await _validar_assinatura_eletronica_gestor(
+        db,
+        usuario,
+        pedido,
+        str(payload.get("senha_assinatura_eletronica") or ""),
+    )
+    anexo = (
+        await db.execute(
+            select(ComprasPedidoAnexoDB).where(ComprasPedidoAnexoDB.id == nota.anexo_id)
+        )
+    ).scalar_one_or_none()
+    if not anexo:
+        raise HTTPException(status_code=404, detail="Arquivo da NF não encontrado.")
+
+    if file and file.filename:
+        raw = await file.read()
+    else:
+        raw, _ct = ler_bytes_anexo(anexo.caminho_arquivo)
+    if not raw:
+        raise HTTPException(status_code=400, detail="Não foi possível ler o PDF da nota para assinar.")
+
+    texto_nf = (nota.observacao or "").strip()
+    try:
+        if texto_nf and payload.get("carimbo_x") not in (None, ""):
+            raw = carimbar_texto_pdf(
+                pdf_bytes=raw,
+                texto=texto_nf,
+                projeto=nome_projeto,
+                page_index=int(payload.get("carimbo_pagina") or 0),
+                x=float(payload.get("carimbo_x") or 36),
+                y=float(payload.get("carimbo_y") or 36),
+                width=float(payload.get("carimbo_w") or 240),
+                height=float(payload.get("carimbo_h") or 48),
+            )
+        tem_posicao_assinatura = payload.get("assinatura_x") not in (None, "") and payload.get("assinatura_y") not in (None, "")
+        raw = carimbar_assinatura_gestor_pdf(
+            pdf_bytes=raw,
+            nome=nome_gestor,
+            projeto=nome_projeto,
+            page_index=int(
+                (payload.get("assinatura_pagina") if tem_posicao_assinatura else payload.get("carimbo_pagina"))
+                or 0
+            ),
+            x=float(payload["assinatura_x"]) if tem_posicao_assinatura else None,
+            y=float(payload["assinatura_y"]) if tem_posicao_assinatura else None,
+            width=float(payload["assinatura_w"]) if payload.get("assinatura_w") not in (None, "") else None,
+            height=float(payload["assinatura_h"]) if payload.get("assinatura_h") not in (None, "") else None,
+            ancora_x=None if tem_posicao_assinatura or payload.get("carimbo_x") in (None, "") else float(payload["carimbo_x"]),
+            ancora_y=None if tem_posicao_assinatura or payload.get("carimbo_y") in (None, "") else float(payload["carimbo_y"]),
+            ancora_h=float(payload.get("carimbo_h") or 0),
+        )
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc) or "Não foi possível gravar a assinatura na NF.") from exc
+
+    caminho = (anexo.caminho_arquivo or "").strip().replace("\\", "/")
+    if caminho.startswith("/storage/") or caminho.startswith("storage/"):
+        from storage_uploads import upload_supabase_storage
+
+        parsed = extrair_bucket_caminho_storage(caminho.lstrip("/"))
+        if not parsed:
+            raise HTTPException(status_code=400, detail="Caminho do PDF inválido no storage.")
+        _bucket, rel = parsed
+        upload_supabase_storage(rel, raw, content_type="application/pdf")
+    else:
+        rel = caminho
+        if rel.startswith("/uploads/"):
+            rel = rel[len("/uploads/"):]
+        elif rel.startswith("uploads/"):
+            rel = rel[len("uploads/"):]
+        destino = Path(__file__).resolve().parent / "uploads" / rel
+        destino.parent.mkdir(parents=True, exist_ok=True)
+        destino.write_bytes(raw)
+
+    agora = agora_operacional_naive()
+    nota.assinada_em = agora
+    nota.assinada_por_id = _uid(usuario)
+    if payload.get("data_pagamento") and not getattr(nota, "data_pagamento", None):
+        try:
+            nota.data_pagamento = date.fromisoformat(str(payload["data_pagamento"])[:10])
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="Data de pagamento inválida.") from exc
+
+    await registrar_evento_pedido(
+        db,
+        pedido_id=pedido.id,
+        tipo=TIPO_EVENTO_ANEXO,
+        texto=(
+            f"Nota fiscal{f' nº {nota.numero}' if nota.numero else ''} "
+            f"assinada digitalmente por {nome_gestor}, gestor de {nome_projeto}."
+        ),
+        usuario_id=_uid(usuario),
+        anexo_id=anexo.id,
+    )
+    pedido.atualizado_em = agora
+
+    if (
+        pedido_pode_enviar_nf_para_a_pagar(pedido.tipo, pedido.status)
+        and await _pedido_pronto_enviar_a_pagar(db, pedido)
+    ):
+        await enviar_nf_para_pagamento(db, usuario, pedido)
+    return nota
+
+
+async def _pedido_pronto_enviar_a_pagar(db: AsyncSession, pedido: ComprasPedidoDB) -> bool:
+    """Emergência: basta NF assinada. Demais: parcelas/docs completos quando aplicável."""
+    if tipo_eh_emergencia(pedido.tipo):
+        return True
+    notas = await _notas_pedido(db, pedido.id)
+    notas_nf = [n for n in notas if (n.tipo_nf or "") != "boleto"]
+    if not notas_nf or any(not _nota_esta_assinada(n) for n in notas_nf):
+        return False
+    sit = situacao_pagamento_de_registros(pedido, notas, await _anexos_pedido(db, pedido.id))
+    if sit.get("segue") and not sit.get("completo"):
+        return False
+    return True
+
+
+async def _sincronizar_status_emergencia_apos_nf(
+    db: AsyncSession,
+    usuario: dict,
+    pedido: ComprasPedidoDB,
+) -> None:
+    """Após remover NF: volta para aguardando NF ou aguardando assinatura."""
+    if not tipo_eh_emergencia(pedido.tipo):
+        return
+    if pedido.status not in STATUS_EMERGENCIA_PROJETO_NF | {STATUS_AGUARDANDO_PAGAMENTO}:
+        return
+    notas = [n for n in await _notas_pedido(db, pedido.id) if (n.tipo_nf or "") != "boleto"]
+    anterior = pedido.status
+    if not notas:
+        novo = STATUS_AGUARDANDO_NF
+        if pedido.status == STATUS_AGUARDANDO_PAGAMENTO:
+            pedido.nf_para_pagamento_em = None
+            pedido.nf_para_pagamento_por_id = None
+            pedido.a_pagar_lida_em = None
+            pedido.a_pagar_lida_por_id = None
+    elif any(not _nota_esta_assinada(n) for n in notas):
+        novo = STATUS_AGUARDANDO_ASSINATURA_NF
+        if pedido.status == STATUS_AGUARDANDO_PAGAMENTO:
+            pedido.nf_para_pagamento_em = None
+            pedido.nf_para_pagamento_por_id = None
+            pedido.a_pagar_lida_em = None
+            pedido.a_pagar_lida_por_id = None
+    else:
+        # NF(s) restantes já assinadas: mantém A pagar ou o status pré-envio atual.
+        return
+    if novo == anterior:
+        return
+    pedido.status = novo
+    pedido.atualizado_em = agora_operacional_naive()
+    if novo == STATUS_AGUARDANDO_NF:
+        texto = "Sem nota fiscal anexada. Aguardando NF."
+    else:
+        texto = "Aguardando assinatura digital da NF."
+    await registrar_evento_pedido(
+        db,
+        pedido_id=pedido.id,
+        tipo=TIPO_EVENTO_STATUS,
+        texto=texto,
+        usuario_id=_uid(usuario),
+        status_anterior=anterior,
+        status_novo=novo,
+    )
+
+
+async def enviar_nf_para_pagamento(
     db: AsyncSession,
     usuario: dict,
     pedido: ComprasPedidoDB,
 ) -> ComprasPedidoDB:
-    if not tipo_eh_emergencia(pedido.tipo):
-        raise HTTPException(status_code=400, detail="Somente Compras emergência envia a NF direto para pagamento.")
-    if not _usuario_do_projeto_anexa_nf(usuario):
+    """NF assinada → A pagar (qualquer tipo). Mantém alias de emergência no router."""
+    if (pedido.status or "") == STATUS_AGUARDANDO_PAGAMENTO:
+        return pedido
+    if not pedido_pode_enviar_nf_para_a_pagar(pedido.tipo, pedido.status):
+        raise HTTPException(
+            status_code=400,
+            detail="A NF já foi enviada para pagamento ou o pedido não está pronto para a fila A pagar.",
+        )
+    if tipo_eh_emergencia(pedido.tipo) and not _usuario_do_projeto_anexa_nf(usuario):
         raise HTTPException(
             status_code=403,
-            detail="O projeto anexa a NF assinada e envia para a fila de pagamento.",
+            detail="O projeto anexa a NF e, após a assinatura, envia para a fila A pagar.",
         )
-    if pedido.status != STATUS_RASCUNHO:
-        raise HTTPException(status_code=400, detail="A NF já foi enviada para pagamento ou o pedido não está em rascunho.")
+    if not tipo_eh_emergencia(pedido.tipo) and not (
+        _usuario_do_projeto_anexa_nf(usuario)
+        or usuario_e_sede_compras(
+            perfil=str(usuario.get("perfil_acesso") or usuario.get("perfil") or ""),
+            is_manutencao=bool(usuario.get("is_manutencao")),
+        )
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail="Somente o projeto ou a sede envia a NF assinada para A pagar.",
+        )
     notas = [n for n in await _notas_pedido(db, pedido.id) if (n.tipo_nf or "") != "boleto"]
     if not notas:
         raise HTTPException(status_code=400, detail="Anexe a nota fiscal antes de enviar para pagamento.")
+    pendentes = [n for n in notas if not _nota_esta_assinada(n)]
+    if pendentes:
+        raise HTTPException(
+            status_code=400,
+            detail="Aguarde a assinatura digital da nota fiscal antes de enviar para A pagar.",
+        )
+    sem_data = [n for n in notas if not getattr(n, "data_pagamento", None)]
+    if sem_data:
+        raise HTTPException(
+            status_code=400,
+            detail="Informe a data de pagamento na nota fiscal antes de enviar para A pagar.",
+        )
     anterior = pedido.status
     pedido.status = STATUS_AGUARDANDO_PAGAMENTO
+    pedido.a_pagar_lida_em = None
+    pedido.a_pagar_lida_por_id = None
     pedido.atualizado_em = agora_operacional_naive()
     destino = getattr(pedido, "destino_compras", None)
     fila = (
         "Suprimentos"
-        if (destino or "").strip().lower() == "suprimentos"
+        if not pedido_segue_infraestrutura(pedido.tipo, destino)
         else "Infraestrutura"
     )
     await registrar_evento_pedido(
         db,
         pedido_id=pedido.id,
         tipo=TIPO_EVENTO_STATUS,
-        texto=f"NF enviada para a fila de pagamento de {fila}.",
+        texto=f"NF assinada enviada para a fila A pagar ({fila}).",
+        usuario_id=_uid(usuario),
+        status_anterior=anterior,
+        status_novo=STATUS_AGUARDANDO_PAGAMENTO,
+    )
+    return pedido
+
+
+# Compatibilidade com imports/rotas antigas
+enviar_emergencia_para_pagamento = enviar_nf_para_pagamento
+
+
+async def marcar_leitura_a_pagar(usuario: dict, pedido: ComprasPedidoDB) -> bool:
+    """Abriu o pedido na fila A pagar → sai do negrito; contagem do aviso permanece."""
+    if (pedido.status or "") != STATUS_AGUARDANDO_PAGAMENTO:
+        return False
+    if getattr(pedido, "a_pagar_lida_em", None):
+        return False
+    perfil = str(usuario.get("perfil_acesso") or usuario.get("perfil") or "")
+    if not usuario_e_sede_compras(perfil=perfil, is_manutencao=bool(usuario.get("is_manutencao"))):
+        return False
+    momento = _preservar_atualizacao(pedido)
+    pedido.a_pagar_lida_em = agora_operacional_naive()
+    pedido.a_pagar_lida_por_id = _uid_caixa(usuario)
+    pedido.atualizado_em = momento
+    return True
+
+
+async def reabrir_pedido_a_pagar(
+    db: AsyncSession,
+    usuario: dict,
+    pedido: ComprasPedidoDB,
+) -> ComprasPedidoDB:
+    """Reabre pedido concluído de volta para A pagar (problema no pagamento)."""
+    perfil = str(usuario.get("perfil_acesso") or usuario.get("perfil") or "")
+    if not usuario_e_sede_compras(perfil=perfil, is_manutencao=bool(usuario.get("is_manutencao"))):
+        raise HTTPException(status_code=403, detail="Somente Infraestrutura ou Suprimentos reabre para A pagar.")
+    if (pedido.status or "") not in {STATUS_RECEBIDO, STATUS_IMPRIMIR_NF, STATUS_AGUARDANDO_EXTRATO}:
+        raise HTTPException(status_code=400, detail="Só é possível reabrir pedidos já concluídos ou em conferência.")
+    anterior = pedido.status
+    pedido.status = STATUS_AGUARDANDO_PAGAMENTO
+    pedido.a_pagar_lida_em = None
+    pedido.a_pagar_lida_por_id = None
+    pedido.nf_impressa_em = None
+    pedido.nf_impressa_por_id = None
+    pedido.atualizado_em = agora_operacional_naive()
+    await registrar_evento_pedido(
+        db,
+        pedido_id=pedido.id,
+        tipo=TIPO_EVENTO_STATUS,
+        texto="Pedido reaberto para a fila A pagar.",
         usuario_id=_uid(usuario),
         status_anterior=anterior,
         status_novo=STATUS_AGUARDANDO_PAGAMENTO,
@@ -3923,32 +4312,6 @@ async def confirmar_nf_enviada_pagamento(
         usuario_id=_uid(usuario),
         status_anterior=anterior,
         status_novo=STATUS_AGUARDANDO_EXTRATO,
-    )
-    return pedido
-
-
-async def confirmar_ok_final_infra(
-    db: AsyncSession,
-    usuario: dict,
-    pedido: ComprasPedidoDB,
-) -> ComprasPedidoDB:
-    _exigir_infraestrutura(usuario)
-    if not pedido_na_fila_concluidos_infra(
-        tipo=pedido.tipo,
-        destino=getattr(pedido, "destino_compras", None),
-        status=pedido.status,
-        ok_final_em=getattr(pedido, "infraestrutura_ok_final_em", None),
-    ):
-        raise HTTPException(status_code=400, detail="Este pedido não está na fila de concluídos da Infraestrutura.")
-    pedido.infraestrutura_ok_final_em = agora_operacional_naive()
-    pedido.infraestrutura_ok_final_por_id = _uid(usuario)
-    pedido.atualizado_em = agora_operacional_naive()
-    await registrar_evento_pedido(
-        db,
-        pedido_id=pedido.id,
-        tipo=TIPO_EVENTO_OK,
-        texto="Infraestrutura deu o OK final. Pedido sai da fila de concluídos.",
-        usuario_id=_uid(usuario),
     )
     return pedido
 

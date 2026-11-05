@@ -132,7 +132,9 @@ export default function AlertaContratoAssinado() {
             onClick={() => {
               const id = String(atual.pedido_id);
               fechar(id);
-              navigate(`/compras/pedidos/${id}`);
+              navigate(`/compras/pedidos/${id}`, {
+                state: { from: `${location.pathname}${location.search || ''}` },
+              });
             }}
             className="rounded-xl bg-violet-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-violet-800"
           >

@@ -94,6 +94,16 @@ export function pedidoListaEhInfraestrutura(pedido) {
   return pedidoSegueInfraestrutura(pedido?.tipo, pedido?.destino_compras);
 }
 
+/** Consumo e manutenção+Suprimentos: o projeto marca o orçamento vencedor. */
+export function pedidoProjetoEscolheOrcamento(tipo, destinoCompras) {
+  const t = String(tipo || '').trim().toLowerCase();
+  if (t === TIPO_CONSUMO) return true;
+  if (t === TIPO_MANUTENCAO) {
+    return !pedidoSegueInfraestrutura(t, destinoCompras);
+  }
+  return false;
+}
+
 export function tipoEhCotacaoSede(tipo) {
   return TIPOS_COTACAO_SEDE.has(String(tipo || '').trim().toLowerCase());
 }
@@ -333,7 +343,7 @@ export const BOTOES_NOVO_PEDIDO = [
   {
     tipo: TIPO_MANUTENCAO,
     titulo: 'Itens de manutenção',
-    descricao: 'Reparos. Escolha Suprimentos (cota a Sede) ou Infraestrutura (o projeto cota, como bem).',
+    descricao: 'Reparos. Suprimentos (Sede cota; projeto escolhe) ou Infraestrutura (projeto cota, como bem).',
   },
   {
     tipo: TIPO_SERVICO,

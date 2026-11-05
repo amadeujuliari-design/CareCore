@@ -685,34 +685,40 @@ def test_rotulo_custo_fonte_convenio_e_indireto():
 
 
 def test_compras_emergencia_e_filas_infra():
-    from datetime import date
     from types import SimpleNamespace
 
     from compras_regras import (
         TIPO_EMERGENCIA,
         TIPO_IMOBILIZADO,
+        TIPO_MANUTENCAO,
         STATUS_AGUARDANDO_PAGAMENTO,
         STATUS_RECEBIDO,
         assunto_solicitacao_cotacao,
         aviso_cotacoes_insuficientes,
         categoria_email_cotacao,
         formatar_data_br_compras,
-        pedido_na_fila_concluidos_infra,
         pedido_na_fila_nf_pagamento,
         pedido_na_fila_nf_pagamento_suprimentos,
+        pedido_pode_enviar_nf_para_a_pagar,
         pedido_segue_infraestrutura,
         texto_cadastro_caixa_alta,
         tipo_eh_emergencia,
         tipo_pula_orcamento,
         tipos_visiveis_adm_compras,
         projeto_pode_trocar_orcamento,
+        status_emergencia_projeto_nf,
         STATUS_AGUARDANDO_SEDE,
+        STATUS_AGUARDANDO_NF,
+        STATUS_AGUARDANDO_ASSINATURA_NF,
         STATUS_APROVADO,
         TIPO_SERVICO,
     )
 
     assert tipo_eh_emergencia("emergencia")
     assert tipo_pula_orcamento(TIPO_EMERGENCIA)
+    assert status_emergencia_projeto_nf(STATUS_AGUARDANDO_NF)
+    assert status_emergencia_projeto_nf(STATUS_AGUARDANDO_ASSINATURA_NF)
+    assert not status_emergencia_projeto_nf("aguardando_pagamento")
     assert projeto_pode_trocar_orcamento(TIPO_SERVICO, None, STATUS_AGUARDANDO_SEDE)
     assert not projeto_pode_trocar_orcamento(
         TIPO_SERVICO, None, STATUS_AGUARDANDO_SEDE, tem_orcamento_assinado=True,
@@ -724,19 +730,16 @@ def test_compras_emergencia_e_filas_infra():
     assert not pedido_segue_infraestrutura(TIPO_EMERGENCIA, "suprimentos")
     assert pedido_na_fila_nf_pagamento(TIPO_EMERGENCIA, STATUS_AGUARDANDO_PAGAMENTO)
     assert not pedido_na_fila_nf_pagamento(TIPO_EMERGENCIA, STATUS_AGUARDANDO_PAGAMENTO, "suprimentos")
-    assert not pedido_na_fila_nf_pagamento(TIPO_IMOBILIZADO, STATUS_AGUARDANDO_PAGAMENTO)
+    assert pedido_na_fila_nf_pagamento(TIPO_IMOBILIZADO, STATUS_AGUARDANDO_PAGAMENTO)
     assert pedido_na_fila_nf_pagamento_suprimentos(
         TIPO_EMERGENCIA, STATUS_AGUARDANDO_PAGAMENTO, "suprimentos",
     )
     assert not pedido_na_fila_nf_pagamento_suprimentos(
         TIPO_EMERGENCIA, STATUS_AGUARDANDO_PAGAMENTO, None,
     )
-    assert pedido_na_fila_concluidos_infra(
-        tipo=TIPO_IMOBILIZADO, destino=None, status=STATUS_RECEBIDO, ok_final_em=None,
-    )
-    assert not pedido_na_fila_concluidos_infra(
-        tipo=TIPO_IMOBILIZADO, destino=None, status=STATUS_RECEBIDO, ok_final_em=date(2026, 10, 27),
-    )
+    assert pedido_pode_enviar_nf_para_a_pagar(TIPO_IMOBILIZADO, "enviado_fornecedor")
+    assert pedido_pode_enviar_nf_para_a_pagar(TIPO_EMERGENCIA, STATUS_AGUARDANDO_NF)
+    assert not pedido_pode_enviar_nf_para_a_pagar(TIPO_IMOBILIZADO, STATUS_RECEBIDO)
     visao = tipos_visiveis_adm_compras(perfil="ADM Global Compras Infraestrutura")
     assert visao is not None and TIPO_EMERGENCIA in visao
     from compras_regras import STATUS_CONCLUIDOS_LISTA, STATUS_IMPRIMIR_NF, usuario_sede_pode_ver_tipo
@@ -749,6 +752,26 @@ def test_compras_emergencia_e_filas_infra():
     )
     assert usuario_sede_pode_ver_tipo(
         perfil="ADM Global Compras Infraestrutura", tipo=TIPO_EMERGENCIA, destino=None,
+    )
+    assert usuario_sede_pode_ver_tipo(
+        perfil="ADM Global Compras Infraestrutura",
+        tipo=TIPO_MANUTENCAO,
+        destino="infraestrutura",
+    )
+    assert not usuario_sede_pode_ver_tipo(
+        perfil="ADM Global Compras Infraestrutura",
+        tipo=TIPO_MANUTENCAO,
+        destino="suprimentos",
+    )
+    assert usuario_sede_pode_ver_tipo(
+        perfil="ADM Global Compras Suprimentos",
+        tipo=TIPO_MANUTENCAO,
+        destino="suprimentos",
+    )
+    assert not usuario_sede_pode_ver_tipo(
+        perfil="ADM Global Compras Suprimentos",
+        tipo=TIPO_MANUTENCAO,
+        destino="infraestrutura",
     )
     assert texto_cadastro_caixa_alta("  arroz tipo 1 ") == "ARROZ TIPO 1"
     assert formatar_data_br_compras(date(2026, 10, 26)) == "26/10/2026"

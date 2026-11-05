@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { ChevronDown, ChevronRight, Eye, FilePenLine } from 'lucide-react';
 
 import Sidebar from './Sidebar';
@@ -291,6 +291,7 @@ function PedidoFila({
   onVisualizar,
   onCarregar,
   navigate,
+  estadoVoltaPedido,
 }) {
   const escolhida = (pedido.cotacoes || []).find((c) => c.escolhida);
   const cotacoes = (pedido.cotacoes || []).filter((c) => c.ativa !== false);
@@ -426,7 +427,7 @@ function PedidoFila({
         <div className="flex flex-wrap gap-2">
           <PremiumButton
             variant="secondary"
-            onClick={() => navigate(`/compras/pedidos/${pedido.id}`)}
+            onClick={() => navigate(`/compras/pedidos/${pedido.id}`, { state: estadoVoltaPedido })}
           >
             Abrir pedido
           </PremiumButton>
@@ -506,7 +507,11 @@ function PedidoFila({
         />
       )}
       <p className="mt-2 text-xs text-slate-500">
-        <Link className="font-semibold text-violet-700 underline" to={`/compras/pedidos/${pedido.id}`}>
+        <Link
+          className="font-semibold text-violet-700 underline"
+          to={`/compras/pedidos/${pedido.id}`}
+          state={estadoVoltaPedido}
+        >
           Ver itens e timeline
         </Link>
       </p>
@@ -516,7 +521,12 @@ function PedidoFila({
 
 export default function ComprasAguardandoAssinatura() {
   const navigate = useNavigate();
+  const location = useLocation();
   const usuario = useMemo(() => usuarioSessao(), []);
+  const estadoVoltaPedido = useCallback((chaveUnidade) => ({
+    from: location.pathname,
+    unidadeExpandida: chaveUnidade || '',
+  }), [location.pathname]);
   const sede = usuarioEhAdmCompras(usuario) || usuarioEhManutencao(usuario) || usuarioGlobalAssinaOrcamento(usuario);
   const [erro, setErro] = useState('');
   const [ok, setOk] = useState('');
@@ -536,7 +546,13 @@ export default function ComprasAguardandoAssinatura() {
   const [assinatura, setAssinatura] = useState({ cadastrada: false, nome_arquivo: null });
   const [modalAssinatura, setModalAssinatura] = useState(null);
   const [modalAnexo, setModalAnexo] = useState(null);
-  const [unidadeExpandida, setUnidadeExpandida] = useState('');
+  const [unidadeExpandida, setUnidadeExpandida] = useState(
+    () => String(location.state?.unidadeExpandida || '').trim(),
+  );
+  useEffect(() => {
+    const chave = String(location.state?.unidadeExpandida || '').trim();
+    if (chave) setUnidadeExpandida(chave);
+  }, [location.state]);
   const ocupadoRef = useRef(false);
   useEffect(() => {
     ocupadoRef.current = Boolean(modalAssinatura || modalAnexo || painelGovId || enviandoGovId || acaoId || assinandoId);
@@ -771,6 +787,7 @@ export default function ComprasAguardandoAssinatura() {
                                   onVisualizar={(anexo) => setModalAnexo({ pedidoId: pedido.id, anexo })}
                                   onCarregar={carregar}
                                   navigate={navigate}
+                                  estadoVoltaPedido={estadoVoltaPedido(chaveExp)}
                                 />
                               )
                             ))}

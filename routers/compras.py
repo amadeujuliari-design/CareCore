@@ -32,17 +32,18 @@ from compras_pedido_fluxo import (
     registrar_impressao_nf_suprimentos,
     registrar_nota_fiscal,
     remover_nota_fiscal,
+    assinar_nota_fiscal_pendente,
+    marcar_leitura_a_pagar,
+    reabrir_pedido_a_pagar,
     reabrir_orcamento_aprovado,
     reabrir_pedido,
     remover_anexo_pedido,
     separar_fila_assinatura,
-    listar_fila_concluidos_infra,
     listar_fila_nf_pagamento,
     listar_fila_nf_pagamento_suprimentos,
     listar_fila_extrato_projeto,
     enviar_emergencia_para_pagamento,
     confirmar_nf_enviada_pagamento,
-    confirmar_ok_final_infra,
     enviar_nfs_notas_pendentes,
     substituir_contrato_assinado,
     reprovar_pedido,
@@ -386,6 +387,11 @@ class ModuloIn(BaseModel):
 
 async def _ctx(db: AsyncSession, usuario: dict) -> None:
     await exigir_modulo(db, usuario)
+    from compras_horario_projeto import usuario_projeto_bloqueado_horario_compras
+
+    bloqueio = usuario_projeto_bloqueado_horario_compras(usuario)
+    if bloqueio:
+        raise HTTPException(status_code=403, detail=bloqueio)
     org_id = usuario.get("organizacao_id")
     if org_id:
         await garantir_cadastros_padrao(db, org_id)
@@ -825,7 +831,12 @@ async def get_pedido(
     await _ctx(db, usuario_atual)
     pedido = await obter_pedido(db, usuario_atual, pedido_id)
     await alinhar_status_consumo_escolhido_pelo_projeto(db, [pedido])
+    mudou = False
     if marcar_leitura_caixa_suprimentos(usuario_atual, pedido):
+        mudou = True
+    if await marcar_leitura_a_pagar(usuario_atual, pedido):
+        mudou = True
+    if mudou:
         await db.commit()
     return await serializar_pedido(db, pedido, incluir_detalhe=True, usuario=usuario_atual)
 
@@ -1008,31 +1019,37 @@ async def get_fila_assinatura(
     }
 
 
-@router.get("/fila-concluidos-infra/resumo")
-async def get_fila_concluidos_infra_resumo(
-    db: AsyncSession = Depends(get_db),
-    usuario_atual: dict = Depends(get_usuario_logado),
-):
-    await _ctx(db, usuario_atual)
-    try:
-        pedidos = await listar_fila_concluidos_infra(db, usuario_atual)
-    except HTTPException:
-        return {"pendentes": 0}
-    return {"pendentes": len(pedidos)}
+async def _resumo_fila_a_pagar(db: AsyncSession, pedidos: list, usuario: dict | None = None) -> dict:
+    from time_operacional import agora_operacional_naive
 
+    hoje = agora_operacional_naive().date()
+    serializados = [
+        await serializar_pedido(db, pedido, incluir_detalhe=True, usuario=usuario)
+        for pedido in pedidos
+    ]
 
-@router.get("/fila-concluidos-infra")
-async def get_fila_concluidos_infra(
-    db: AsyncSession = Depends(get_db),
-    usuario_atual: dict = Depends(get_usuario_logado),
-):
-    await _ctx(db, usuario_atual)
-    pedidos = await listar_fila_concluidos_infra(db, usuario_atual)
-    return {
-        "pedidos": [
-            await serializar_pedido(db, pedido, incluir_detalhe=True, usuario=usuario_atual)
-            for pedido in pedidos
+    def chave_pagamento(item: dict):
+        datas = [
+            n.get("data_pagamento")
+            for n in (item.get("notas_fiscais") or [])
+            if n.get("data_pagamento") and (n.get("tipo_nf") or "") != "boleto"
         ]
+        return min(datas) if datas else "9999-99-99"
+
+    serializados.sort(key=lambda p: (chave_pagamento(p), p.get("atualizado_em") or ""))
+    vencem_hoje = 0
+    for item in serializados:
+        datas = [
+            n.get("data_pagamento")
+            for n in (item.get("notas_fiscais") or [])
+            if n.get("data_pagamento") and (n.get("tipo_nf") or "") != "boleto"
+        ]
+        if any(d == hoje.isoformat() for d in datas):
+            vencem_hoje += 1
+    return {
+        "pendentes": len(serializados),
+        "vencem_hoje": vencem_hoje,
+        "pedidos": serializados,
     }
 
 
@@ -1045,8 +1062,9 @@ async def get_fila_nf_pagamento_resumo(
     try:
         pedidos = await listar_fila_nf_pagamento(db, usuario_atual)
     except HTTPException:
-        return {"pendentes": 0}
-    return {"pendentes": len(pedidos)}
+        return {"pendentes": 0, "vencem_hoje": 0}
+    resumo = await _resumo_fila_a_pagar(db, pedidos, usuario_atual)
+    return {"pendentes": resumo["pendentes"], "vencem_hoje": resumo["vencem_hoje"]}
 
 
 @router.get("/fila-nf-pagamento")
@@ -1056,12 +1074,8 @@ async def get_fila_nf_pagamento(
 ):
     await _ctx(db, usuario_atual)
     pedidos = await listar_fila_nf_pagamento(db, usuario_atual)
-    return {
-        "pedidos": [
-            await serializar_pedido(db, pedido, incluir_detalhe=True, usuario=usuario_atual)
-            for pedido in pedidos
-        ]
-    }
+    resumo = await _resumo_fila_a_pagar(db, pedidos, usuario_atual)
+    return {"pedidos": resumo["pedidos"], "vencem_hoje": resumo["vencem_hoje"]}
 
 
 @router.get("/fila-nf-pagamento-suprimentos/resumo")
@@ -1073,8 +1087,9 @@ async def get_fila_nf_pagamento_suprimentos_resumo(
     try:
         pedidos = await listar_fila_nf_pagamento_suprimentos(db, usuario_atual)
     except HTTPException:
-        return {"pendentes": 0}
-    return {"pendentes": len(pedidos)}
+        return {"pendentes": 0, "vencem_hoje": 0}
+    resumo = await _resumo_fila_a_pagar(db, pedidos, usuario_atual)
+    return {"pendentes": resumo["pendentes"], "vencem_hoje": resumo["vencem_hoje"]}
 
 
 @router.get("/fila-nf-pagamento-suprimentos")
@@ -1084,12 +1099,8 @@ async def get_fila_nf_pagamento_suprimentos(
 ):
     await _ctx(db, usuario_atual)
     pedidos = await listar_fila_nf_pagamento_suprimentos(db, usuario_atual)
-    return {
-        "pedidos": [
-            await serializar_pedido(db, pedido, incluir_detalhe=True, usuario=usuario_atual)
-            for pedido in pedidos
-        ]
-    }
+    resumo = await _resumo_fila_a_pagar(db, pedidos, usuario_atual)
+    return {"pedidos": resumo["pedidos"], "vencem_hoje": resumo["vencem_hoje"]}
 
 
 @router.get("/fila-extrato/resumo")
@@ -1121,6 +1132,7 @@ async def post_confirmar_nf_pagamento(
     db: AsyncSession = Depends(get_db),
     usuario_atual: dict = Depends(get_usuario_logado),
 ):
+    """Legado: confirmação antiga. Preferir impressão em A pagar, que já conclui."""
     await _ctx(db, usuario_atual)
     pedido = await obter_pedido(db, usuario_atual, pedido_id)
     await confirmar_nf_enviada_pagamento(db, usuario_atual, pedido)
@@ -1128,15 +1140,15 @@ async def post_confirmar_nf_pagamento(
     return await serializar_pedido(db, pedido, incluir_detalhe=True, usuario=usuario_atual)
 
 
-@router.post("/pedidos/{pedido_id}/ok-final-infra")
-async def post_ok_final_infra(
+@router.post("/pedidos/{pedido_id}/reabrir-a-pagar")
+async def post_reabrir_a_pagar(
     pedido_id: str,
     db: AsyncSession = Depends(get_db),
     usuario_atual: dict = Depends(get_usuario_logado),
 ):
     await _ctx(db, usuario_atual)
     pedido = await obter_pedido(db, usuario_atual, pedido_id)
-    await confirmar_ok_final_infra(db, usuario_atual, pedido)
+    await reabrir_pedido_a_pagar(db, usuario_atual, pedido)
     await db.commit()
     return await serializar_pedido(db, pedido, incluir_detalhe=True, usuario=usuario_atual)
 
@@ -1758,6 +1770,7 @@ async def post_nota_fiscal(
     emitente_nome: Optional[str] = Form(default=None),
     emitente_cnpj: Optional[str] = Form(default=None),
     data_emissao: Optional[str] = Form(default=None),
+    data_pagamento: Optional[str] = Form(default=None),
     valor_reais: Optional[str] = Form(default=None),
     observacao: Optional[str] = Form(default=None),
     carimbo_pagina: Optional[int] = Form(default=0),
@@ -1788,6 +1801,7 @@ async def post_nota_fiscal(
         "emitente_nome": emitente_nome,
         "emitente_cnpj": emitente_cnpj,
         "data_emissao": data_emissao,
+        "data_pagamento": data_pagamento,
         "valor_reais": valor_reais,
         "observacao": observacao,
         "carimbo_pagina": carimbo_pagina,
@@ -1812,6 +1826,49 @@ async def post_nota_fiscal(
                 extras.append(bruto)
     await registrar_nota_fiscal(
         db, usuario_atual, pedido, file=arquivo, conteudo_xml=None, payload=payload, pdfs_junto=extras,
+    )
+    await db.commit()
+    return await serializar_pedido(db, pedido, incluir_detalhe=True, usuario=usuario_atual)
+
+
+@router.post("/pedidos/{pedido_id}/notas-fiscais/{nota_id}/assinar")
+async def post_assinar_nota_fiscal(
+    pedido_id: str,
+    nota_id: str,
+    senha_assinatura_eletronica: Optional[str] = Form(default=None),
+    data_pagamento: Optional[str] = Form(default=None),
+    carimbo_pagina: Optional[int] = Form(default=0),
+    carimbo_x: Optional[float] = Form(default=None),
+    carimbo_y: Optional[float] = Form(default=None),
+    carimbo_w: Optional[float] = Form(default=None),
+    carimbo_h: Optional[float] = Form(default=None),
+    assinatura_pagina: Optional[int] = Form(default=0),
+    assinatura_x: Optional[float] = Form(default=None),
+    assinatura_y: Optional[float] = Form(default=None),
+    assinatura_w: Optional[float] = Form(default=None),
+    assinatura_h: Optional[float] = Form(default=None),
+    arquivo: Optional[UploadFile] = File(default=None),
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    await _ctx(db, usuario_atual)
+    pedido = await obter_pedido(db, usuario_atual, pedido_id)
+    payload = {
+        "senha_assinatura_eletronica": senha_assinatura_eletronica,
+        "data_pagamento": data_pagamento,
+        "carimbo_pagina": carimbo_pagina,
+        "carimbo_x": carimbo_x,
+        "carimbo_y": carimbo_y,
+        "carimbo_w": carimbo_w,
+        "carimbo_h": carimbo_h,
+        "assinatura_pagina": assinatura_pagina,
+        "assinatura_x": assinatura_x,
+        "assinatura_y": assinatura_y,
+        "assinatura_w": assinatura_w,
+        "assinatura_h": assinatura_h,
+    }
+    await assinar_nota_fiscal_pendente(
+        db, usuario_atual, pedido, nota_id, file=arquivo, payload=payload,
     )
     await db.commit()
     return await serializar_pedido(db, pedido, incluir_detalhe=True, usuario=usuario_atual)

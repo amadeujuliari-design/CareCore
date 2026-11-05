@@ -1,6 +1,8 @@
 """Fase Pronto para escolher — cotação da Sede."""
 
 from compras_regras import (
+    DESTINO_COMPRAS_INFRAESTRUTURA,
+    DESTINO_COMPRAS_SUPRIMENTOS,
     MIN_COTACOES_RECOMENDADAS,
     STATUS_AGUARDANDO_ESCOLHA,
     STATUS_AGUARDANDO_SEDE,
@@ -10,20 +12,24 @@ from compras_regras import (
     STATUS_EM_COTACAO,
     TIPO_CONSUMO,
     TIPO_HORTIFRUTI,
+    TIPO_MANUTENCAO,
     consumo_escolha_libera_envio_suprimentos,
+    pedido_projeto_escolhe_orcamento,
     quem_registrou_escolha_vigente,
     status_depois_de_escolher_cotacao,
     tipo_eh_cotacao_sede,
-    tipo_pula_aprovacao_sede,
 )
 
 
-def status_apos_escolha_sede(tipo: str) -> str:
+def status_apos_escolha_sede(tipo: str, destino=None) -> str:
     """Espelha a regra de escolher_cotacao para tipos de cotação da Sede."""
     assert tipo_eh_cotacao_sede(tipo)
-    if tipo == TIPO_CONSUMO or tipo_pula_aprovacao_sede(tipo):
-        return STATUS_AGUARDANDO_UNIDADE
-    return STATUS_AGUARDANDO_SEDE
+    return status_depois_de_escolher_cotacao(
+        tipo,
+        projeto_escolheu=False,
+        status_atual=STATUS_AGUARDANDO_ESCOLHA,
+        destino=destino,
+    )
 
 
 def test_status_aguardando_escolha_definido():
@@ -36,6 +42,15 @@ def test_status_aguardando_escolha_definido():
 def test_hortifruti_apos_escolha_vai_para_sede():
     assert status_apos_escolha_sede(TIPO_HORTIFRUTI) == STATUS_AGUARDANDO_SEDE
     assert status_apos_escolha_sede(TIPO_CONSUMO) == STATUS_AGUARDANDO_UNIDADE
+    assert status_apos_escolha_sede(TIPO_MANUTENCAO, DESTINO_COMPRAS_SUPRIMENTOS) == STATUS_AGUARDANDO_UNIDADE
+
+
+def test_projeto_escolhe_consumo_e_manutencao_suprimentos():
+    assert pedido_projeto_escolhe_orcamento(TIPO_CONSUMO)
+    assert pedido_projeto_escolhe_orcamento(TIPO_MANUTENCAO, DESTINO_COMPRAS_SUPRIMENTOS)
+    assert pedido_projeto_escolhe_orcamento(TIPO_MANUTENCAO, None)
+    assert not pedido_projeto_escolhe_orcamento(TIPO_MANUTENCAO, DESTINO_COMPRAS_INFRAESTRUTURA)
+    assert not pedido_projeto_escolhe_orcamento(TIPO_HORTIFRUTI)
 
 
 def test_projeto_ao_escolher_consumo_libera_envio():
@@ -44,10 +59,22 @@ def test_projeto_ao_escolher_consumo_libera_envio():
         projeto_escolheu=True,
         status_atual=STATUS_AGUARDANDO_ESCOLHA,
     ) == STATUS_APROVADO
+    assert status_depois_de_escolher_cotacao(
+        TIPO_MANUTENCAO,
+        projeto_escolheu=True,
+        status_atual=STATUS_AGUARDANDO_ESCOLHA,
+        destino=DESTINO_COMPRAS_SUPRIMENTOS,
+    ) == STATUS_APROVADO
     assert consumo_escolha_libera_envio_suprimentos(
         TIPO_CONSUMO,
         STATUS_AGUARDANDO_UNIDADE,
         tem_escolhida=True,
+    )
+    assert consumo_escolha_libera_envio_suprimentos(
+        TIPO_MANUTENCAO,
+        STATUS_AGUARDANDO_UNIDADE,
+        tem_escolhida=True,
+        destino=DESTINO_COMPRAS_SUPRIMENTOS,
     )
     assert not consumo_escolha_libera_envio_suprimentos(
         TIPO_CONSUMO,
@@ -91,4 +118,10 @@ def test_sede_ao_escolher_consumo_ainda_aguarda_projeto():
         TIPO_CONSUMO,
         projeto_escolheu=False,
         status_atual=STATUS_AGUARDANDO_ESCOLHA,
+    ) == STATUS_AGUARDANDO_UNIDADE
+    assert status_depois_de_escolher_cotacao(
+        TIPO_MANUTENCAO,
+        projeto_escolheu=False,
+        status_atual=STATUS_AGUARDANDO_ESCOLHA,
+        destino=DESTINO_COMPRAS_SUPRIMENTOS,
     ) == STATUS_AGUARDANDO_UNIDADE

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { Archive } from 'lucide-react';
 
 import Sidebar from './Sidebar';
@@ -21,6 +21,8 @@ import {
 import { formatarDataHoraBr } from './utils/dataBrasilUtils';
 
 export default function ComprasDocumentosAssinados() {
+  const location = useLocation();
+  const estadoVoltaPedido = { from: location.pathname };
   const [erro, setErro] = useState('');
   const [ok, setOk] = useState('');
   const [carregando, setCarregando] = useState(true);
@@ -112,6 +114,7 @@ export default function ComprasDocumentosAssinados() {
                         </PremiumButton>
                         <Link
                           to={`/compras/pedidos/${item.pedido_id}`}
+                          state={estadoVoltaPedido}
                           className="inline-flex items-center rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-800 hover:border-slate-400"
                         >
                           Abrir pedido

@@ -6,6 +6,7 @@ import {
   chaveUnidadeFila,
   dataReferenciaFila,
   nomeUnidadeFila,
+  ordenarItensFilaAPagar,
 } from './comprasFilaAssinaturaUtils.js';
 
 describe('chave e nome da unidade na fila', () => {
@@ -65,5 +66,31 @@ describe('agruparFilaAssinaturaPorUnidade', () => {
       dataReferenciaFila({ submetido_em: '2026-10-20 08:15:00' }),
       '2026-10-20 08:15:00',
     );
+  });
+});
+
+describe('ordenarItensFilaAPagar', () => {
+  it('coloca pagamento de hoje/atrasado antes do futuro', () => {
+    const ordenados = ordenarItensFilaAPagar([
+      {
+        id: 'futuro',
+        a_pagar_lida: true,
+        atualizado_em: '2026-11-05 12:00:00',
+        notas_fiscais: [{ tipo_nf: 'produto', data_pagamento: '2026-11-08' }],
+      },
+      {
+        id: 'hoje',
+        a_pagar_lida: false,
+        atualizado_em: '2026-11-05 11:00:00',
+        notas_fiscais: [{ tipo_nf: 'produto', data_pagamento: '2026-11-05' }],
+      },
+      {
+        id: 'atrasado',
+        a_pagar_lida: true,
+        atualizado_em: '2026-11-04 10:00:00',
+        notas_fiscais: [{ tipo_nf: 'produto', data_pagamento: '2026-11-04' }],
+      },
+    ]);
+    assert.deepEqual(ordenados.map((p) => p.id), ['atrasado', 'hoje', 'futuro']);
   });
 });

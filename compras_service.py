@@ -53,6 +53,9 @@ from compras_regras import (
     STATUS_EM_COTACAO,
     STATUS_ENVIADO,
     STATUS_RASCUNHO,
+    STATUS_AGUARDANDO_NF,
+    STATUS_AGUARDANDO_ASSINATURA_NF,
+    STATUS_OCULTOS_LISTA_SEDE,
     STATUS_RECEBIDO,
     STATUS_IMPRIMIR_NF,
     STATUS_REPROVADO,
@@ -102,6 +105,7 @@ from compras_regras import (
     pedido_itens_podem_editar,
     consumo_escolha_libera_envio_suprimentos,
     pedido_pronto_para_aprovacao_unidade,
+    pedido_projeto_escolhe_orcamento,
     quem_registrou_escolha_vigente,
     status_depois_de_escolher_cotacao,
     pedido_rascunho_pode_excluir,
@@ -119,7 +123,6 @@ from compras_regras import (
     DESTINO_COMPRAS_INFRAESTRUTURA,
     DESTINO_COMPRAS_SUPRIMENTOS,
     pedido_segue_infraestrutura,
-    pedido_na_fila_concluidos_infra,
     pedido_na_fila_nf_pagamento,
     corrigir_acento_quebrado,
     texto_cadastro_caixa_alta,
@@ -626,16 +629,16 @@ async def serializar_pedido(
         "suprimentos_lida": bool(getattr(pedido, "suprimentos_lida_em", None)),
         "nf_impressa_em": _iso(getattr(pedido, "nf_impressa_em", None)),
         "nf_impressa": bool(getattr(pedido, "nf_impressa_em", None)),
+        "a_pagar_lida_em": _iso(getattr(pedido, "a_pagar_lida_em", None)),
+        "a_pagar_lida": bool(getattr(pedido, "a_pagar_lida_em", None)),
         "infraestrutura_ok_final_em": _iso(getattr(pedido, "infraestrutura_ok_final_em", None)),
         "infraestrutura_ok_final": bool(getattr(pedido, "infraestrutura_ok_final_em", None)),
         "nf_para_pagamento_em": _iso(getattr(pedido, "nf_para_pagamento_em", None)),
-        "na_fila_concluidos_infra": pedido_na_fila_concluidos_infra(
-            tipo=pedido.tipo,
-            destino=getattr(pedido, "destino_compras", None),
-            status=pedido.status,
-            ok_final_em=getattr(pedido, "infraestrutura_ok_final_em", None),
+        "na_fila_concluidos_infra": False,
+        "na_fila_nf_pagamento": pedido_na_fila_nf_pagamento(
+            pedido.tipo, pedido.status, getattr(pedido, "destino_compras", None)
         ),
-        "na_fila_nf_pagamento": pedido_na_fila_nf_pagamento(pedido.tipo, pedido.status),
+        "na_fila_a_pagar": (pedido.status or "") == "aguardando_pagamento",
         "pula_orcamento": tipo_eh_emergencia(pedido.tipo),
         "recebimento_observacao": pedido.recebimento_observacao,
         "recebimento_divergencia": bool(pedido.recebimento_divergencia),
@@ -1044,7 +1047,7 @@ async def listar_pedidos(
     if not _sede(usuario):
         filtros.append(ComprasPedidoDB.instituicao_id == usuario.get("instituicao_id"))
     else:
-        # Sede: esconde rascunhos do projeto (só após envio).
+        # Sede: esconde rascunho / emergência ainda no projeto (só após A pagar).
         # Manutenção vê todos; quem criou o rascunho na Sede também vê o próprio.
         from security import usuario_eh_manutencao
 
@@ -1052,7 +1055,7 @@ async def listar_pedidos(
         if not status_filtro and not eh_manut:
             filtros.append(
                 or_(
-                    ComprasPedidoDB.status != STATUS_RASCUNHO,
+                    ComprasPedidoDB.status.notin_(tuple(STATUS_OCULTOS_LISTA_SEDE)),
                     ComprasPedidoDB.criado_por_id == _uid(usuario),
                 )
             )
@@ -1219,13 +1222,14 @@ async def criar_pedido(
         para_rascunho=True,
     )
 
+    status_inicial = STATUS_AGUARDANDO_NF if tipo_eh_emergencia(tipo) else STATUS_RASCUNHO
     pedido = ComprasPedidoDB(
         organizacao_id=_org_id(usuario),
         instituicao_id=instituicao_id,
         escopo_unidade=escopo,
         tipo=tipo,
         competencia=competencia,
-        status=STATUS_RASCUNHO,
+        status=status_inicial,
         fonte_recurso_id=payload.get("fonte_recurso_id") or None,
         observacao=texto_cadastro_caixa_alta(payload.get("observacao")) or None,
         criado_por_id=_uid(usuario),
@@ -1289,13 +1293,17 @@ async def criar_pedido(
                 catalogo_item_id=item.get("catalogo_item_id") or None,
             )
         )
+    if tipo_eh_emergencia(tipo):
+        texto_criacao = "Pedido de emergência criado. Aguardando nota fiscal."
+    else:
+        texto_criacao = "Rascunho criado."
     await registrar_evento_pedido(
         db,
         pedido_id=pedido.id,
         tipo=TIPO_EVENTO_STATUS,
-        texto="Rascunho criado.",
+        texto=texto_criacao,
         usuario_id=_uid(usuario),
-        status_novo=STATUS_RASCUNHO,
+        status_novo=status_inicial,
         aguardando_confirmacao=False,
     )
     return pedido
@@ -1944,9 +1952,10 @@ async def escolher_cotacao(
     pedido: ComprasPedidoDB,
     cotacao_id: str,
 ) -> ComprasPedidoDB:
-    """Sede escolhe o vencedor. Em consumo, o projeto escolhe depois do ok de Suprimentos."""
-    consumo_projeto = (pedido.tipo or "").strip().lower() == TIPO_CONSUMO and not _sede(usuario)
-    if consumo_projeto:
+    """Sede escolhe o vencedor. Em consumo e manutenção+Suprimentos, o projeto escolhe."""
+    destino = getattr(pedido, "destino_compras", None)
+    projeto_escolhe = pedido_projeto_escolhe_orcamento(pedido.tipo, destino) and not _sede(usuario)
+    if projeto_escolhe:
         if not usuario_pode_aprovar_unidade(
             perfil=_perfil(usuario),
             compras_modulo_ativo=bool(usuario.get("compras_modulo_ativo")),
@@ -1957,10 +1966,13 @@ async def escolher_cotacao(
         if pedido.instituicao_id != usuario.get("instituicao_id") and not usuario.get("is_manutencao"):
             raise HTTPException(status_code=403, detail="A escolha do orçamento é do próprio projeto.")
     elif usuario_global_assina_orcamento(usuario):
-        if (pedido.tipo or "").strip().lower() not in TIPOS_COTACAO_PROJETO:
+        if (
+            (pedido.tipo or "").strip().lower() not in TIPOS_COTACAO_PROJETO
+            and not pedido_segue_infraestrutura(pedido.tipo, destino)
+        ):
             raise HTTPException(
                 status_code=403,
-                detail="Esta autorização cobre bem/imobilizado e prestação de serviço.",
+                detail="Esta autorização cobre bem/imobilizado, prestação de serviço e pedidos da Infraestrutura.",
             )
     elif not usuario_pode_aprovar_sede(
         perfil=_perfil(usuario),
@@ -1970,13 +1982,13 @@ async def escolher_cotacao(
             status_code=403,
             detail="Somente a Sede (ADM Compras) escolhe o orçamento vencedor.",
         )
-    infra_deste = pedido_segue_infraestrutura(pedido.tipo, getattr(pedido, "destino_compras", None))
+    infra_deste = pedido_segue_infraestrutura(pedido.tipo, destino)
     classe_sede = perfil_adm_compras_sede(usuario)
-    if not consumo_projeto and not usuario_global_assina_orcamento(usuario) and not usuario_sede_pode_ver_tipo(
+    if not projeto_escolhe and not usuario_global_assina_orcamento(usuario) and not usuario_sede_pode_ver_tipo(
         perfil=_perfil(usuario),
         tipo=pedido.tipo,
         is_manutencao=bool(usuario.get("is_manutencao")),
-        destino=getattr(pedido, "destino_compras", None),
+        destino=destino,
     ) and not (infra_deste and classe_sede == "infraestrutura"):
         raise HTTPException(status_code=403, detail="Pedido fora do escopo da sua classe de Compras.")
     if pedido.status not in {
@@ -2000,7 +2012,7 @@ async def escolher_cotacao(
     for cotacao in cotacoes:
         cotacao.escolhida = cotacao.id == cotacao_id
 
-    quem = "Projeto" if consumo_projeto else ("Infraestrutura" if infra_deste else "Sede")
+    quem = "Projeto" if projeto_escolhe else ("Infraestrutura" if infra_deste else "Sede")
     if anterior and anterior.id != alvo.id:
         texto = (
             f"{quem} revogou a escolha de {anterior.fornecedor_nome} e escolheu "
@@ -2026,11 +2038,12 @@ async def escolher_cotacao(
     status_antes = pedido.status
     status_novo = status_depois_de_escolher_cotacao(
         pedido.tipo,
-        projeto_escolheu=consumo_projeto,
+        projeto_escolheu=projeto_escolhe,
         status_atual=status_antes,
+        destino=destino,
     )
     if status_novo and status_novo != status_antes:
-        if status_novo == STATUS_APROVADO and consumo_projeto:
+        if status_novo == STATUS_APROVADO and projeto_escolhe:
             agora_escolha = agora_operacional_naive()
             pedido.aprovado_unidade_por_id = _uid(usuario)
             pedido.aprovado_unidade_em = agora_escolha
@@ -2062,8 +2075,9 @@ async def revogar_escolha_cotacao(
     usuario: dict,
     pedido: ComprasPedidoDB,
 ) -> ComprasPedidoDB:
-    consumo_projeto = (pedido.tipo or "").strip().lower() == TIPO_CONSUMO and not _sede(usuario)
-    if consumo_projeto:
+    destino = getattr(pedido, "destino_compras", None)
+    projeto_escolhe = pedido_projeto_escolhe_orcamento(pedido.tipo, destino) and not _sede(usuario)
+    if projeto_escolhe:
         if not usuario_pode_aprovar_unidade(
             perfil=_perfil(usuario),
             compras_modulo_ativo=bool(usuario.get("compras_modulo_ativo")),
@@ -2072,10 +2086,13 @@ async def revogar_escolha_cotacao(
         ):
             raise HTTPException(status_code=403, detail="Sem permissão para revogar a escolha neste projeto.")
     elif usuario_global_assina_orcamento(usuario):
-        if (pedido.tipo or "").strip().lower() not in TIPOS_COTACAO_PROJETO:
+        if (
+            (pedido.tipo or "").strip().lower() not in TIPOS_COTACAO_PROJETO
+            and not pedido_segue_infraestrutura(pedido.tipo, destino)
+        ):
             raise HTTPException(
                 status_code=403,
-                detail="Esta autorização cobre bem/imobilizado e prestação de serviço.",
+                detail="Esta autorização cobre bem/imobilizado, prestação de serviço e pedidos da Infraestrutura.",
             )
     elif not usuario_pode_aprovar_sede(
         perfil=_perfil(usuario),
@@ -2090,7 +2107,7 @@ async def revogar_escolha_cotacao(
     if (
         pedido.status == STATUS_AGUARDANDO_UNIDADE
         and not tipo_pula_aprovacao_sede(pedido.tipo)
-        and (pedido.tipo or "").strip().lower() != TIPO_CONSUMO
+        and not pedido_projeto_escolhe_orcamento(pedido.tipo, destino)
     ):
         raise HTTPException(
             status_code=400,
@@ -2108,7 +2125,7 @@ async def revogar_escolha_cotacao(
         pedido_id=pedido.id,
         tipo=TIPO_EVENTO_OBSERVACAO,
         texto=(
-            f"{'Projeto' if consumo_projeto else 'Sede'} revogou a escolha do orçamento "
+            f"{'Projeto' if projeto_escolhe else 'Sede'} revogou a escolha do orçamento "
             f"({anterior.fornecedor_nome}). Escolha outro para seguir o fluxo."
         ),
         usuario_id=_uid(usuario),
@@ -2198,6 +2215,7 @@ async def enviar_fornecedor(db: AsyncSession, usuario: dict, pedido: ComprasPedi
             pedido.tipo,
             pedido.status,
             tem_escolhida=any(c.escolhida for c in cotacoes_ativas),
+            destino=getattr(pedido, "destino_compras", None),
         ) and quem_registrou_escolha_vigente([texto for texto, _uid_ev in pares_escolha]) == "projeto":
             # Pedidos em que o projeto já escolheu e o status ficou em aguardando unidade.
             status_antes = pedido.status
@@ -2221,7 +2239,9 @@ async def enviar_fornecedor(db: AsyncSession, usuario: dict, pedido: ComprasPedi
                 detalhe = "Envio ao fornecedor só após assinatura/aprovação da Sede."
             elif tipo_pula_aprovacao_sede(pedido.tipo):
                 detalhe = "Envio ao fornecedor só após a aprovação da unidade."
-            elif (pedido.tipo or "").strip().lower() == TIPO_CONSUMO:
+            elif pedido_projeto_escolhe_orcamento(
+                pedido.tipo, getattr(pedido, "destino_compras", None)
+            ):
                 detalhe = "Envio ao fornecedor só depois que o projeto escolher o orçamento."
             else:
                 detalhe = "Envio ao fornecedor só após as duas aprovações."
@@ -2339,8 +2359,16 @@ async def cancelar_pedido(
             raise HTTPException(status_code=403, detail="Sem permissão para cancelar.")
         if pedido.instituicao_id != usuario.get("instituicao_id"):
             raise HTTPException(status_code=403, detail="Sem permissão para cancelar.")
-    if not _sede(usuario) and pedido.status not in {STATUS_RASCUNHO, STATUS_AGUARDANDO_COTACAO}:
-        raise HTTPException(status_code=403, detail="A unidade só cancela rascunho ou pedido ainda sem cotação.")
+    if not _sede(usuario) and pedido.status not in {
+        STATUS_RASCUNHO,
+        STATUS_AGUARDANDO_NF,
+        STATUS_AGUARDANDO_ASSINATURA_NF,
+        STATUS_AGUARDANDO_COTACAO,
+    }:
+        raise HTTPException(
+            status_code=403,
+            detail="A unidade só cancela rascunho, emergência antes do pagamento ou pedido ainda sem cotação.",
+        )
     texto = (motivo or "").strip()
     if not texto:
         raise HTTPException(status_code=400, detail="Informe o motivo do cancelamento.")

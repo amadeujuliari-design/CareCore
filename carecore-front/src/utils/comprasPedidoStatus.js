@@ -2,6 +2,8 @@
 
 export const STATUS_LABEL_PEDIDO = {
   rascunho: 'Rascunho',
+  aguardando_nf: 'Aguardando NF',
+  aguardando_assinatura_nf: 'Aguardando assinatura da NF',
   aguardando_cotacao: 'Aguardando cotação',
   em_cotacao: 'Em cotação',
   aguardando_escolha_orcamento: 'Pronto para escolher',
@@ -29,16 +31,33 @@ export function statusMostraProgressoOrcamentos(status) {
   return STATUS_COM_PROGRESSO_ORCAMENTOS.has(String(status || ''));
 }
 
+/**
+ * Cor do badge por status (fonte única lista + ficha).
+ * Mesmo status → mesma cor em todo o módulo Compras.
+ */
+const VARIANTE_BADGE_STATUS_PEDIDO = {
+  rascunho: 'default',
+  aguardando_nf: 'cyan',
+  aguardando_assinatura_nf: 'fuchsia',
+  aguardando_cotacao: 'warning',
+  em_cotacao: 'warning',
+  aguardando_escolha_orcamento: 'info',
+  aguardando_aprovacao_unidade: 'purple',
+  aguardando_aprovacao_sede: 'indigo',
+  aprovado: 'success',
+  enviado_fornecedor: 'teal',
+  aguardando_pagamento: 'orange',
+  aguardando_conferencia_extrato: 'lime',
+  imprimir_nf: 'sky',
+  recebido: 'success',
+  cancelado: 'danger',
+  reprovado: 'danger',
+};
+
 /** variant do PremiumBadge */
 export function varianteBadgeStatusPedido(status) {
   const s = String(status || '');
-  if (s === 'aguardando_escolha_orcamento') return 'info';
-  if (s === 'em_cotacao' || s === 'aguardando_cotacao') return 'warning';
-  if (s === 'aguardando_aprovacao_unidade' || s === 'aguardando_aprovacao_sede') return 'purple';
-  if (s === 'aguardando_pagamento' || s === 'aguardando_conferencia_extrato' || s === 'imprimir_nf') return 'warning';
-  if (s === 'aprovado' || s === 'enviado_fornecedor' || s === 'recebido') return 'success';
-  if (s === 'cancelado' || s === 'reprovado') return 'danger';
-  return 'default';
+  return VARIANTE_BADGE_STATUS_PEDIDO[s] || 'default';
 }
 
 /**

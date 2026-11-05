@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import { Users } from 'lucide-react';
 
 import Sidebar from './Sidebar';
@@ -37,6 +38,12 @@ import {
   montarEnderecoPayload,
   opcoesAgentesCaptacao,
 } from './utils/nfpCadastroUtils';
+import {
+  lerVistaCadastroNfp,
+  nfpVoltarPara,
+  nfpVoltarState,
+  salvarVistaCadastroNfp,
+} from './utils/nfpNavegacaoUtils';
 import { decodificarPayloadJwt } from './utils/jwtUtils';
 import { usuarioSomenteLeituraNfp } from './utils/rbacUtils';
 
@@ -68,6 +75,10 @@ function montarFormDoador(registro = {}) {
 }
 
 export default function NfpDoadores() {
+  const location = useLocation();
+  const vistaSalva = useMemo(() => lerVistaCadastroNfp(location.pathname), [location.pathname]);
+  const voltarPara = useMemo(() => nfpVoltarPara(location), [location]);
+  const voltarState = useMemo(() => nfpVoltarState(location), [location]);
   const somenteLeitura = useMemo(() => {
     try {
       const token = localStorage.getItem('@CareCore:token');
@@ -84,7 +95,7 @@ export default function NfpDoadores() {
   const [sucesso, setSucesso] = useState('');
   const [tela, setTela] = useState('lista');
   const [editandoId, setEditandoId] = useState(null);
-  const [busca, setBusca] = useState('');
+  const [busca, setBusca] = useState(() => vistaSalva?.busca || '');
   const [form, setForm] = useState(FORM_INICIAL);
   const [errosCampo, setErrosCampo] = useState({});
 
@@ -129,6 +140,10 @@ export default function NfpDoadores() {
   useEffect(() => {
     carregarDoadores();
   }, [carregarDoadores]);
+
+  useEffect(() => {
+    salvarVistaCadastroNfp(location.pathname, { busca });
+  }, [location.pathname, busca]);
 
   const filtrosExportacao = useMemo(() => ({
     Busca: busca.trim() || '—',
@@ -274,7 +289,8 @@ export default function NfpDoadores() {
           title="Doadores"
           subtitle="Doadores diretos AEB (doação automática): sincronizados das planilhas e editáveis aqui."
           icon={<Users className="h-5 w-5" />}
-          backTo="/nfp"
+          backTo={voltarPara}
+          backState={voltarState}
           backLabel="Voltar ao dashboard"
           actions={(
             tela === 'lista' ? (

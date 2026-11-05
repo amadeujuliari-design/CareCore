@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import { Target } from 'lucide-react';
 
 import Sidebar from './Sidebar';
@@ -12,6 +13,7 @@ import {
   nfpSugerirMetasRateio,
 } from './services/nfpService';
 import { erroApiNfp } from './utils/nfpCadastroUtils';
+import { nfpVoltarPara, nfpVoltarState } from './utils/nfpNavegacaoUtils';
 import { decodificarPayloadJwt } from './utils/jwtUtils';
 import { usuarioSomenteLeituraNfp } from './utils/rbacUtils';
 import { buscarIdentidadeRelatoriosOrganizacao } from './utils/relatorioIdentidadePrint';
@@ -94,6 +96,9 @@ function resolverBatimento(dados) {
 }
 
 export default function NfpMetas() {
+  const location = useLocation();
+  const voltarPara = useMemo(() => nfpVoltarPara(location), [location]);
+  const voltarState = useMemo(() => nfpVoltarState(location), [location]);
   const somenteLeitura = useMemo(() => {
     try {
       const token = localStorage.getItem('@CareCore:token');
@@ -347,7 +352,8 @@ export default function NfpMetas() {
           title="Metas / Rateio mensal"
           subtitle="Competência = mês de pagamento; Ref. crédito = mês SEFAZ (em geral 4 meses antes). Campos digitáveis salvam e recalculam ao sair do campo."
           icon={<Target className="h-5 w-5" />}
-          backTo="/nfp"
+          backTo={voltarPara}
+          backState={voltarState}
           backLabel="Voltar ao dashboard"
           actions={(
             <div className="flex flex-wrap gap-2">

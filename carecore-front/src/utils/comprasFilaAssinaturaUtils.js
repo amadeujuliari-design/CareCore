@@ -21,6 +21,34 @@ export function dataReferenciaFila(pedido) {
   );
 }
 
+/** Menor data de pagamento das NFs do pedido (AAAA-MM-DD). */
+export function dataPagamentoFilaAPagar(pedido) {
+  const datas = (pedido?.notas_fiscais || [])
+    .filter((n) => n?.data_pagamento && n.tipo_nf !== 'boleto')
+    .map((n) => String(n.data_pagamento).slice(0, 10))
+    .filter(Boolean)
+    .sort();
+  return datas[0] || '';
+}
+
+/**
+ * Ordena A pagar: vencidos e hoje primeiro (data crescente),
+ * depois futuros; no empate, não lidos antes.
+ */
+export function compararPedidosFilaAPagar(a, b) {
+  const da = dataPagamentoFilaAPagar(a) || '9999-99-99';
+  const db = dataPagamentoFilaAPagar(b) || '9999-99-99';
+  if (da !== db) return da.localeCompare(db);
+  const lidaA = a?.a_pagar_lida ? 1 : 0;
+  const lidaB = b?.a_pagar_lida ? 1 : 0;
+  if (lidaA !== lidaB) return lidaA - lidaB;
+  return String(dataReferenciaFila(b)).localeCompare(String(dataReferenciaFila(a)));
+}
+
+export function ordenarItensFilaAPagar(itens = []) {
+  return [...(itens || [])].sort(compararPedidosFilaAPagar);
+}
+
 /** Junta contratos e orçamentos da fila e agrupa por unidade, como a lista de Pedidos. */
 export function agruparFilaAssinaturaPorUnidade(orcamentos = [], contratos = []) {
   const itens = [

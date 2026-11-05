@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import { FileBarChart } from 'lucide-react';
 
 import Sidebar from './Sidebar';
@@ -17,6 +18,7 @@ import {
   nfpOrigensRateio,
   nfpRelatorioRateioDetalhado,
 } from './services/relatorioNfpService';
+import { nfpVoltarPara, nfpVoltarState } from './utils/nfpNavegacaoUtils';
 import { buscarIdentidadeRelatoriosOrganizacao } from './utils/relatorioIdentidadePrint';
 import { formatarCNPJ } from './utils/nfpCadastroUtils';
 import { imprimirRelatorioNfpRateioDetalhado } from './utils/relatorioNfpPrint';
@@ -91,6 +93,9 @@ function BarraPaginacao({ pagina, totalPaginas, total, limite, onMudar, disabled
 }
 
 export default function RelatorioNfpRateioDetalhado() {
+  const location = useLocation();
+  const voltarPara = useMemo(() => nfpVoltarPara(location, '/nfp/relatorios'), [location]);
+  const voltarState = useMemo(() => nfpVoltarState(location), [location]);
   const [competencia, setCompetencia] = useState(competenciaAtual());
   const [agente, setAgente] = useState('');
   const [origem, setOrigem] = useState('');
@@ -284,7 +289,8 @@ export default function RelatorioNfpRateioDetalhado() {
           title="Rateio detalhado"
           subtitle="Agrupado ou sem agrupar, com paginação. Exportar gera XLSX completo no servidor (CNPJ como texto)."
           icon={<FileBarChart className="h-5 w-5" />}
-          backTo="/nfp/relatorios"
+          backTo={voltarPara}
+          backState={voltarState}
           backLabel="Voltar aos relatórios"
           actions={(
             <div className="flex flex-wrap gap-2">

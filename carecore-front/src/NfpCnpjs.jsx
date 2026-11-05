@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import { Building2 } from 'lucide-react';
 
 import { buscarTodosItensPaginados } from './utils/buscarTodosPaginados';
@@ -47,6 +48,12 @@ import {
 } from './utils/nfpCadastroUtils';
 import { NFP_CADASTRO_PAGE_SIZE } from './utils/nfpListaPaginadaUtils';
 import { aplicarConsultaCnpjNoForm, textoAvisoConsultaCnpj } from './utils/nfpConsultaCnpjUtils';
+import {
+  lerVistaCadastroNfp,
+  nfpVoltarPara,
+  nfpVoltarState,
+  salvarVistaCadastroNfp,
+} from './utils/nfpNavegacaoUtils';
 import { decodificarPayloadJwt } from './utils/jwtUtils';
 import { usuarioSomenteLeituraNfp } from './utils/rbacUtils';
 
@@ -143,6 +150,10 @@ function montarFormCpf(registro = {}) {
 }
 
 export default function NfpCnpjs() {
+  const location = useLocation();
+  const vistaSalva = useMemo(() => lerVistaCadastroNfp(location.pathname), [location.pathname]);
+  const voltarPara = useMemo(() => nfpVoltarPara(location), [location]);
+  const voltarState = useMemo(() => nfpVoltarState(location), [location]);
   const somenteLeitura = useMemo(() => {
     try {
       const token = localStorage.getItem('@CareCore:token');
@@ -151,7 +162,7 @@ export default function NfpCnpjs() {
       return false;
     }
   }, []);
-  const [aba, setAba] = useState('cnpjs');
+  const [aba, setAba] = useState(() => vistaSalva?.aba || 'cnpjs');
   const [cnpjs, setCnpjs] = useState([]);
   const [cpfs, setCpfs] = useState([]);
   const [pagina, setPagina] = useState(1);
@@ -163,9 +174,9 @@ export default function NfpCnpjs() {
   const [sucesso, setSucesso] = useState('');
   const [tela, setTela] = useState('lista');
   const [editandoId, setEditandoId] = useState(null);
-  const [busca, setBusca] = useState('');
-  const [filtroCaptador, setFiltroCaptador] = useState('');
-  const [somenteConferir, setSomenteConferir] = useState(false);
+  const [busca, setBusca] = useState(() => vistaSalva?.busca || '');
+  const [filtroCaptador, setFiltroCaptador] = useState(() => vistaSalva?.filtroCaptador || '');
+  const [somenteConferir, setSomenteConferir] = useState(() => Boolean(vistaSalva?.somenteConferir));
   const [formCnpj, setFormCnpj] = useState(FORM_CNPJ_INICIAL);
   const [formCpf, setFormCpf] = useState(FORM_CPF_INICIAL);
   const [errosCampo, setErrosCampo] = useState({});
@@ -255,6 +266,15 @@ export default function NfpCnpjs() {
     if (aba === 'cnpjs') carregarCnpjs({ paginaAlvo: 1 });
     else carregarCpfs({ paginaAlvo: 1 });
   }, [aba, carregarCnpjs, carregarCpfs]);
+
+  useEffect(() => {
+    salvarVistaCadastroNfp(location.pathname, {
+      aba,
+      busca,
+      filtroCaptador,
+      somenteConferir,
+    });
+  }, [location.pathname, aba, busca, filtroCaptador, somenteConferir]);
 
   const totalPaginas = Math.max(1, Math.ceil(totalLista / NFP_CADASTRO_PAGE_SIZE));
 
@@ -552,7 +572,8 @@ export default function NfpCnpjs() {
           title="CNPJs / CPFs Captados por Agentes"
           subtitle="Cadastro de estabelecimentos (CNPJ) e pessoas físicas (CPF) vinculadas a agentes captadores. Lista paginada (50/página); impressão e XLSX buscam o filtro inteiro."
           icon={<Building2 className="h-5 w-5" />}
-          backTo="/nfp"
+          backTo={voltarPara}
+          backState={voltarState}
           backLabel="Voltar ao dashboard"
           actions={(
             tela === 'lista' ? (

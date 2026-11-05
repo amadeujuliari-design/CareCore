@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import { UserRoundCog } from 'lucide-react';
 
 import Sidebar from './Sidebar';
@@ -39,6 +40,12 @@ import {
   parsePercentual,
   percentualValido,
 } from './utils/nfpCadastroUtils';
+import {
+  lerVistaCadastroNfp,
+  nfpVoltarPara,
+  nfpVoltarState,
+  salvarVistaCadastroNfp,
+} from './utils/nfpNavegacaoUtils';
 import { decodificarPayloadJwt } from './utils/jwtUtils';
 import { usuarioSomenteLeituraNfp } from './utils/rbacUtils';
 
@@ -78,6 +85,10 @@ function montarFormAgente(registro = {}) {
 }
 
 export default function NfpAgentes() {
+  const location = useLocation();
+  const vistaSalva = useMemo(() => lerVistaCadastroNfp(location.pathname), [location.pathname]);
+  const voltarPara = useMemo(() => nfpVoltarPara(location), [location]);
+  const voltarState = useMemo(() => nfpVoltarState(location), [location]);
   const somenteLeitura = useMemo(() => {
     try {
       const token = localStorage.getItem('@CareCore:token');
@@ -93,8 +104,10 @@ export default function NfpAgentes() {
   const [sucesso, setSucesso] = useState('');
   const [tela, setTela] = useState('lista');
   const [editandoId, setEditandoId] = useState(null);
-  const [busca, setBusca] = useState('');
-  const [filtroAtivo, setFiltroAtivo] = useState('');
+  const [busca, setBusca] = useState(() => vistaSalva?.busca || '');
+  const [filtroAtivo, setFiltroAtivo] = useState(() => (
+    vistaSalva?.filtroAtivo != null ? vistaSalva.filtroAtivo : ''
+  ));
   const [form, setForm] = useState(FORM_INICIAL);
   const [errosCampo, setErrosCampo] = useState({});
 
@@ -123,6 +136,10 @@ export default function NfpAgentes() {
   useEffect(() => {
     carregarAgentes();
   }, [carregarAgentes]);
+
+  useEffect(() => {
+    salvarVistaCadastroNfp(location.pathname, { busca, filtroAtivo });
+  }, [location.pathname, busca, filtroAtivo]);
 
   const filtrosExportacao = useMemo(() => ({
     Busca: busca.trim() || '—',
@@ -307,7 +324,8 @@ export default function NfpAgentes() {
           title="Agentes captadores"
           subtitle="Cadastro de agentes de captação, percentual de rateio e endereço."
           icon={<UserRoundCog className="h-5 w-5" />}
-          backTo="/nfp"
+          backTo={voltarPara}
+          backState={voltarState}
           backLabel="Voltar ao dashboard"
           actions={(
             <div className="flex flex-wrap gap-2">

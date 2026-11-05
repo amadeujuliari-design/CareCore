@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, CheckCircle2, FileUp, RefreshCw, Send } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 
 import Sidebar from './Sidebar';
 import BannerConferenciaNfpPrazo from './components/BannerConferenciaNfpPrazo';
@@ -13,6 +13,7 @@ import {
   nfpConferenciaResumo,
 } from './services/nfpService';
 import { erroApiNfp } from './utils/nfpCadastroUtils';
+import { nfpEstadoVolta, nfpVoltarPara, nfpVoltarState } from './utils/nfpNavegacaoUtils';
 import { decodificarPayloadJwt } from './utils/jwtUtils';
 import { usuarioPodeGestaoNfp, usuarioSomenteLeituraNfp } from './utils/rbacUtils';
 
@@ -37,6 +38,10 @@ function classeSituacao(situacao) {
 }
 
 export default function NfpConferenciaSefaz() {
+  const location = useLocation();
+  const voltarPara = useMemo(() => nfpVoltarPara(location), [location]);
+  const voltarState = useMemo(() => nfpVoltarState(location), [location]);
+  const estadoVoltaEnvio = useMemo(() => nfpEstadoVolta(location), [location]);
   const usuario = useMemo(() => {
     try {
       const token = localStorage.getItem('@CareCore:token');
@@ -168,6 +173,9 @@ export default function NfpConferenciaSefaz() {
           <PageHeader
             title="Conferência pré-prazo SEFAZ"
             subtitle="Batimento Pedidos × cupons antes do dia 20. Cruza CNPJ + número SAT + valor quando disponível."
+            backTo={voltarPara}
+            backState={voltarState}
+            backLabel="Voltar ao dashboard"
           />
 
           <BannerConferenciaNfpPrazo aviso={aviso} usuario={usuario} />
@@ -366,6 +374,7 @@ export default function NfpConferenciaSefaz() {
                   </p>
                   <Link
                     to="/nfp/envio-sefaz"
+                    state={estadoVoltaEnvio}
                     className="mt-3 inline-flex items-center gap-2 font-semibold text-sky-800 underline"
                   >
                     <Send className="h-4 w-4" />
