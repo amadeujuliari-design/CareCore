@@ -144,14 +144,14 @@ def carimbar_assinatura_pdf(
         raise RuntimeError("Biblioteca pypdf não instalada.") from exc
 
     try:
-        orc = PdfReader(io.BytesIO(orcamento_bytes))
+        writer = PdfWriter(clone_from=io.BytesIO(orcamento_bytes))
     except Exception as exc:
         raise ValueError(f"Não foi possível ler o orçamento PDF: {exc}") from exc
 
-    if not orc.pages:
+    if not writer.pages:
         raise ValueError("O orçamento PDF não tem páginas.")
 
-    total_paginas = len(orc.pages)
+    total_paginas = len(writer.pages)
     if page_index is None:
         alvo_idx = total_paginas - 1
     else:
@@ -180,44 +180,41 @@ def carimbar_assinatura_pdf(
         img_h = float(sig_page.mediabox.height)
         png_bytes = b""
 
-    writer = PdfWriter()
-    for idx, page in enumerate(orc.pages):
-        if idx == alvo_idx:
-            page_w = float(page.mediabox.width)
-            page_h = float(page.mediabox.height)
-            tx, ty, desenho_w, desenho_h = _dimensoes_carimbo(
-                page_w=page_w,
-                page_h=page_h,
-                img_w=img_w,
-                img_h=img_h,
-                x=x,
-                y=y,
-                width=width,
-                height=height,
-                margem_inferior_pt=margem_inferior_pt,
-                margem_lateral_pt=margem_lateral_pt,
-                altura_max_fracao=altura_max_fracao,
-            )
+    page = writer.pages[alvo_idx]
+    page_w = float(page.mediabox.width)
+    page_h = float(page.mediabox.height)
+    tx, ty, desenho_w, desenho_h = _dimensoes_carimbo(
+        page_w=page_w,
+        page_h=page_h,
+        img_w=img_w,
+        img_h=img_h,
+        x=x,
+        y=y,
+        width=width,
+        height=height,
+        margem_inferior_pt=margem_inferior_pt,
+        margem_lateral_pt=margem_lateral_pt,
+        altura_max_fracao=altura_max_fracao,
+    )
 
-            if usar_transparencia:
-                overlay_bytes = _overlay_pdf_png(png_bytes, desenho_w, desenho_h)
-                overlay_page = PdfReader(io.BytesIO(overlay_bytes)).pages[0]
-                transform = Transformation().translate(tx, ty)
-                try:
-                    page.merge_transformed_page(overlay_page, transform, over=True)
-                except TypeError:
-                    page.merge_transformed_page(overlay_page, transform)
-            else:
-                escala_x = desenho_w / max(img_w, 1.0)
-                escala_y = desenho_h / max(img_h, 1.0)
-                transform = Transformation().scale(sx=escala_x, sy=escala_y).translate(tx, ty)
-                try:
-                    page.merge_transformed_page(sig_page, transform, over=True)
-                except TypeError:
-                    page.merge_transformed_page(sig_page, transform)
-                except AttributeError:
-                    page.merge_page(sig_page)
-        writer.add_page(page)
+    if usar_transparencia:
+        overlay_bytes = _overlay_pdf_png(png_bytes, desenho_w, desenho_h)
+        overlay_page = PdfReader(io.BytesIO(overlay_bytes)).pages[0]
+        transform = Transformation().translate(tx, ty)
+        try:
+            page.merge_transformed_page(overlay_page, transform, over=True)
+        except TypeError:
+            page.merge_transformed_page(overlay_page, transform)
+    else:
+        escala_x = desenho_w / max(img_w, 1.0)
+        escala_y = desenho_h / max(img_h, 1.0)
+        transform = Transformation().scale(sx=escala_x, sy=escala_y).translate(tx, ty)
+        try:
+            page.merge_transformed_page(sig_page, transform, over=True)
+        except TypeError:
+            page.merge_transformed_page(sig_page, transform)
+        except AttributeError:
+            page.merge_page(sig_page)
 
     out = io.BytesIO()
     writer.write(out)
@@ -454,14 +451,14 @@ def carimbar_texto_pdf(
         conteudo = f"{nome_projeto}\n{conteudo}".strip()
     if not conteudo:
         return pdf_bytes
-    leitor = PdfReader(io.BytesIO(pdf_bytes))
-    if not leitor.pages:
+    escritor = PdfWriter(clone_from=io.BytesIO(pdf_bytes))
+    if not escritor.pages:
         raise ValueError("O PDF da NF não tem páginas.")
-    indices = range(len(leitor.pages)) if todas_as_paginas else (
-        max(0, min(int(page_index or 0), len(leitor.pages) - 1)),
+    indices = range(len(escritor.pages)) if todas_as_paginas else (
+        max(0, min(int(page_index or 0), len(escritor.pages) - 1)),
     )
     for indice in indices:
-        pagina = leitor.pages[indice]
+        pagina = escritor.pages[indice]
         caixa = pagina.mediabox
         page_w = float(caixa.width)
         page_h = float(caixa.height)
@@ -482,9 +479,6 @@ def carimbar_texto_pdf(
         folha.save()
         overlay = PdfReader(io.BytesIO(buf.getvalue()))
         pagina.merge_page(overlay.pages[0])
-    escritor = PdfWriter()
-    for pagina_atual in leitor.pages:
-        escritor.add_page(pagina_atual)
     saida = io.BytesIO()
     escritor.write(saida)
     return saida.getvalue()
@@ -521,14 +515,14 @@ def carimbar_assinatura_gestor_pdf(
     from reportlab.platypus import Frame, Paragraph
     from reportlab.pdfgen import canvas as pdf_canvas
 
-    leitor = PdfReader(io.BytesIO(pdf_bytes))
-    if not leitor.pages:
+    escritor = PdfWriter(clone_from=io.BytesIO(pdf_bytes))
+    if not escritor.pages:
         raise ValueError("O PDF da NF não tem páginas.")
-    indices = range(len(leitor.pages)) if todas_as_paginas else (
-        max(0, min(int(page_index or 0), len(leitor.pages) - 1)),
+    indices = range(len(escritor.pages)) if todas_as_paginas else (
+        max(0, min(int(page_index or 0), len(escritor.pages) - 1)),
     )
     for indice in indices:
-        pagina = leitor.pages[indice]
+        pagina = escritor.pages[indice]
         caixa = pagina.mediabox
         page_w = float(caixa.width)
         page_h = float(caixa.height)
@@ -587,9 +581,6 @@ def carimbar_assinatura_gestor_pdf(
         folha.save()
         overlay = PdfReader(io.BytesIO(buf.getvalue()))
         pagina.merge_page(overlay.pages[0])
-    escritor = PdfWriter()
-    for pagina_atual in leitor.pages:
-        escritor.add_page(pagina_atual)
     saida = io.BytesIO()
     escritor.write(saida)
     return saida.getvalue()
