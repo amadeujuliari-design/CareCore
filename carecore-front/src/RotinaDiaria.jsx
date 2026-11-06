@@ -11,7 +11,7 @@ import BannerSomenteLeituraGlobal from './components/BannerSomenteLeituraGlobal'
 import { AppShell, MainShell, PageHeader, PremiumButton, ScrollArea } from './components/PremiumUI';
 import { useAuth } from './context/AuthContext';
 import { projetoOcultaAcomodacoes } from './config/configOperacionalDefaults';
-import { projetoEhCaeICentro, projetoEhCtaCaninde, projetoSemFluxoPortaria } from './utils/projetoPari';
+import { projetoEhCtaCaninde, projetoRotinaSoRefeicoes, projetoSemFluxoPortaria } from './utils/projetoPari';
 import { API_ROOT } from './config/apiBase';
 import { useDeviceInfo } from './hooks/useDeviceInfo';
 import { useLeitorUsbGlobal } from './hooks/useLeitorUsbGlobal';
@@ -187,7 +187,7 @@ export default function RotinaDiaria() {
   const { config: configOperacional, nomeProjeto: nomeProjetoOperacional, carregando: carregandoConfig } = useConfigOperacional();
   const nomeProjetoRotina = nomeProjetoOperacional || usuario?.projeto_nome;
   const semPortaria = projetoSemFluxoPortaria(nomeProjetoRotina);
-  const rotinaSoRefeicoes = projetoEhCaeICentro(nomeProjetoRotina);
+  const rotinaSoRefeicoes = projetoRotinaSoRefeicoes(nomeProjetoRotina);
   const projetoSiat = configOperacional?.perfil_defaults === 'siat';
   const configInteracaoPronta = carregandoConfig ? null : configOperacional;
   const opcoesInteracaoRotina = useMemo(

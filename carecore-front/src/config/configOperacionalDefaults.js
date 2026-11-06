@@ -1,4 +1,4 @@
-import { projetoEhCaeICentro, projetoEhReencontroPari } from '../utils/projetoPari';
+import { projetoEhReencontroPari, projetoRotinaSoRefeicoes } from '../utils/projetoPari';
 import {
   TERMO_COMPROMISSO_TEXTO,
   TERMO_LGPD_SUBTITULO,
@@ -222,7 +222,7 @@ export const REFEICOES_CAE_I_CENTRO = [
 ];
 
 export function aplicarPresetCaeICentro(config, nomeProjeto) {
-  if (!projetoEhCaeICentro(nomeProjeto)) return config;
+  if (!projetoRotinaSoRefeicoes(nomeProjeto)) return config;
   const base = config || montarConfigOperacionalPadrao();
   return {
     ...base,

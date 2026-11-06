@@ -129,3 +129,6 @@ carecore-site/scripts/gerar-tabela-precos-xlsx.py
 
 # Laboratório local (não versionar)
 teste_reconhecimento_facial/
+
+.vercel
+.env*

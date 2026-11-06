@@ -42,7 +42,7 @@ from config_operacional import (
     obter_tipos_rotina_validos,
 )
 from config_operacional_projeto import (
-    projeto_e_cae_i_centro,
+    projeto_rotina_so_refeicoes,
     projeto_e_casa_porto,
     projeto_sem_fluxo_portaria,
 )
@@ -6978,7 +6978,7 @@ async def relatorio_presenca_periodo(
     fim_datetime = datetime.combine(fim, datetime.max.time())
 
     projeto_presenca = await db.get(InstituicaoDB, instituicao_id)
-    presenca_por_refeicao = projeto_e_cae_i_centro(projeto_presenca)
+    presenca_por_refeicao = projeto_rotina_so_refeicoes(projeto_presenca)
     dias_refeicao_por_convivente: dict[str, set[str]] = {}
     movimentos_por_convivente: dict[str, list[dict]] = {}
     if presenca_por_refeicao and convivente_ids:
@@ -8016,7 +8016,7 @@ async def relatorio_sisa_mensal(
 
     instituicao_relatorio = obter_instituicao_escopo(usuario_atual)
     projeto_relatorio = await db.get(InstituicaoDB, instituicao_relatorio)
-    presenca_por_refeicao = projeto_e_cae_i_centro(projeto_relatorio)
+    presenca_por_refeicao = projeto_rotina_so_refeicoes(projeto_relatorio)
     tipos_refeicao_presenca: set[str] = set()
     if presenca_por_refeicao:
         config_presenca, _, _ = await carregar_config_operacional_instituicao(db, instituicao_relatorio)

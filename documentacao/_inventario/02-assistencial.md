@@ -11,7 +11,7 @@ Casas já customizadas (SIAT II Armênia, Reencontro Parí, Anhangabaú, Cruzeir
 
 Na Sede AEB e nos demais projetos, o menu esconde Rotina Diária (e o submenu), Atividades e Convênio / SISA. Só na Sede também saem Conviventes e Acomodações. CTA 17 – Liberdade e CAE F Down Town não entram na lista de projetos.
 
-O CAE I CENTRO é a exceção: volta a Rotina Diária só com Registro da Rotina e Histórico da Rotina. As interações são Café da manhã, Almoço, Café da tarde, Jantar e Lanche noturno, sem entrada e saída. Cada refeição continua um registro próprio. A presença do dia conta 1 se houver qualquer uma dessas refeições; duas ou mais no mesmo dia não somam outra presença. Atividades e Convênio / SISA seguem ocultos.
+O CAE I CENTRO e o CAE F PAULICEIA são a exceção: voltam a Rotina Diária só com Registro da Rotina e Histórico da Rotina. As interações são Café da manhã, Almoço, Café da tarde, Jantar e Lanche noturno, sem entrada e saída. Cada refeição continua um registro próprio. A presença do dia conta 1 se houver qualquer uma dessas refeições; duas ou mais no mesmo dia não somam outra presença. Atividades e Convênio / SISA seguem ocultos.
 
 O CTA 18 – CANINDÉ (Projeto Canindé) vê **Atividades** e a **Lavanderia** em agenda de horários, só lavagem (sem secagem). Registro da Rotina, demais itens da rotina e Convênio / SISA seguem ocultos.
 

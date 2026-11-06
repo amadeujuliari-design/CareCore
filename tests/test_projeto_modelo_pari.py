@@ -4,10 +4,12 @@ from types import SimpleNamespace
 
 from config_operacional_projeto import (
     projeto_descontinuado,
+    projeto_e_cae_f_pauliceia,
     projeto_e_cae_i_centro,
     projeto_e_cta_caninde,
     projeto_e_reencontro_pari,
     projeto_lavanderia_sem_secagem,
+    projeto_rotina_so_refeicoes,
     projeto_sem_fluxo_portaria,
     projeto_usa_agenda_lavanderia,
 )
@@ -39,6 +41,15 @@ def test_cae_i_centro_nao_bipa_entrada_e_saida():
     assert projeto_e_cae_i_centro(_projeto("CAE I CENTRO"))
     assert projeto_sem_fluxo_portaria(_projeto("CAE I CENTRO"))
     assert not projeto_e_reencontro_pari(_projeto("CAE I CENTRO"))
+
+
+def test_pauliceia_rotina_so_refeicoes():
+    pauliceia = _projeto("CAE F PAULICEIA")
+    assert projeto_e_cae_f_pauliceia(pauliceia)
+    assert projeto_rotina_so_refeicoes(pauliceia)
+    assert projeto_sem_fluxo_portaria(pauliceia)
+    assert not projeto_e_cae_i_centro(pauliceia)
+    assert not projeto_e_reencontro_pari(pauliceia)
 
 
 def test_modelo_pari_nao_pega_outro_projeto():

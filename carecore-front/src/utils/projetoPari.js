@@ -25,6 +25,16 @@ export function projetoEhCaeICentro(nome) {
   return textoProjeto(nome).includes('cae i centro');
 }
 
+/** CAE F Pauliceia — mesma rotina só-refeições do CAE I Centro. */
+export function projetoEhCaeFPauliceia(nome) {
+  return textoProjeto(nome).includes('pauliceia');
+}
+
+/** CAE I Centro e CAE F Pauliceia: registro/histórico da rotina só com refeições. */
+export function projetoRotinaSoRefeicoes(nome) {
+  return projetoEhCaeICentro(nome) || projetoEhCaeFPauliceia(nome);
+}
+
 /** CTA 18 – CANINDÉ / Projeto Canindé: Atividades e lavanderia de peças, sem secagem. */
 export function projetoEhCtaCaninde(nome) {
   const texto = textoProjeto(nome);
@@ -39,9 +49,9 @@ export function projetoUsaAgendaLavanderia(nome) {
   return projetoEhReencontroPari(nome) || projetoEhCtaCaninde(nome);
 }
 
-/** Pari, Anhangabaú, Cruzeiro e CAE I Centro não bipam entrada e saída. O Jabaquara bipa. */
+/** Pari, Anhangabaú, Cruzeiro, CAE I Centro e Pauliceia não bipam entrada e saída. O Jabaquara bipa. */
 export function projetoSemFluxoPortaria(nome) {
-  if (projetoEhCaeICentro(nome)) return true;
+  if (projetoRotinaSoRefeicoes(nome)) return true;
   return projetoEhReencontroPari(nome) && !projetoEhJabaquara(nome);
 }
 
@@ -60,7 +70,7 @@ export function projetoTemCustomizacaoOperacional(nome) {
 
 const MENUS_SEM_CUSTOMIZACAO = ['/rotina', '/atividades', '/convenio-sisa'];
 const MENUS_SO_SEDE = ['/conviventes', '/quartos'];
-const ROTINA_VISIVEL_CAE_I_CENTRO = new Set(['/rotina', '/rotina/historico']);
+const ROTINA_VISIVEL_SO_REFEICOES = new Set(['/rotina', '/rotina/historico']);
 const ROTINA_VISIVEL_CTA_CANINDE = new Set(['/rotina', '/rotina/lavanderia']);
 
 function caminhoDoMenu(pathname) {
@@ -72,14 +82,14 @@ function caminhoCoberto(pathname, prefixos) {
   return prefixos.some((prefixo) => path === prefixo || path.startsWith(`${prefixo}/`));
 }
 
-/** Rotina, Atividades e Convênio ficam só nas casas já customizadas. Na Sede, também saem Conviventes e Acomodações. O CAE I Centro vê só a rotina diária e o histórico. O CTA Canindé vê Atividades e Lavanderia (sem secagem). */
+/** Rotina, Atividades e Convênio ficam só nas casas já customizadas. Na Sede, também saem Conviventes e Acomodações. CAE I Centro e Pauliceia veem só a rotina diária e o histórico. O CTA Canindé vê Atividades e Lavanderia (sem secagem). */
 export function menuOcultoNoProjeto(pathname, nomeProjeto) {
   if (!String(nomeProjeto || '').trim()) return false;
-  if (projetoEhCaeICentro(nomeProjeto)) {
+  if (projetoRotinaSoRefeicoes(nomeProjeto)) {
     const path = caminhoDoMenu(pathname);
     if (caminhoCoberto(path, ['/atividades', '/convenio-sisa'])) return true;
     if (path === '/rotina' || path.startsWith('/rotina/')) {
-      return !ROTINA_VISIVEL_CAE_I_CENTRO.has(path);
+      return !ROTINA_VISIVEL_SO_REFEICOES.has(path);
     }
     return false;
   }
