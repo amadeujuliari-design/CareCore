@@ -12,6 +12,7 @@ from config_operacional_projeto import (
     projeto_rotina_so_refeicoes,
     projeto_sem_fluxo_portaria,
     projeto_usa_agenda_lavanderia,
+    projeto_usa_familias,
 )
 
 
@@ -48,8 +49,11 @@ def test_pauliceia_rotina_so_refeicoes():
     assert projeto_e_cae_f_pauliceia(pauliceia)
     assert projeto_rotina_so_refeicoes(pauliceia)
     assert projeto_sem_fluxo_portaria(pauliceia)
+    assert projeto_usa_familias(pauliceia)
     assert not projeto_e_cae_i_centro(pauliceia)
     assert not projeto_e_reencontro_pari(pauliceia)
+    assert projeto_usa_familias(_projeto("REENCONTRO PARI"))
+    assert not projeto_usa_familias(_projeto("CEI BELÉM"))
 
 
 def test_modelo_pari_nao_pega_outro_projeto():

@@ -12,6 +12,7 @@ import {
   projetoSemFluxoPortaria,
   projetoTemCustomizacaoOperacional,
   projetoUsaAgendaLavanderia,
+  projetoUsaFamilias,
 } from './projetoPari.js';
 
 test('modelo do PARI vale para Anhangabaú, Cruzeiro do Sul e Jabaquara', () => {
@@ -39,6 +40,9 @@ test('sede e projeto sem customização escondem rotina, atividades e convênio'
   assert.equal(menuOcultoNoProjeto('/convenio-sisa', 'CAE I CENTRO'), true);
   assert.equal(projetoSemFluxoPortaria('CAE I CENTRO'), true);
   assert.equal(projetoEhCaeFPauliceia('CAE F PAULICEIA'), true);
+  assert.equal(projetoUsaFamilias('CAE F PAULICEIA'), true);
+  assert.equal(projetoUsaFamilias('REENCONTRO PARI'), true);
+  assert.equal(projetoUsaFamilias('CEI BELÉM'), false);
   assert.equal(projetoRotinaSoRefeicoes('CAE F PAULICEIA'), true);
   assert.equal(menuOcultoNoProjeto('/rotina', 'CAE F PAULICEIA'), false);
   assert.equal(menuOcultoNoProjeto('/rotina/historico', 'CAE F PAULICEIA'), false);

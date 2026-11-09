@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from config_operacional_projeto import (
     projeto_e_casa_pari,
     projeto_e_reencontro_pari,
+    projeto_usa_familias,
     projeto_lavanderia_sem_secagem,
     projeto_usa_agenda_lavanderia,
 )
@@ -123,6 +124,19 @@ async def _exigir_pari(db: AsyncSession, usuario_atual: dict, *, escrita: bool =
     projeto = await db.get(InstituicaoDB, instituicao_id)
     if not projeto_e_reencontro_pari(projeto):
         raise HTTPException(status_code=404, detail="Recurso disponível apenas nos projetos do modelo Reencontro Pari.")
+    return instituicao_id
+
+
+async def _exigir_familias(db: AsyncSession, usuario_atual: dict, *, escrita: bool = True) -> str:
+    if escrita:
+        bloquear_usuario_global_puro(usuario_atual)
+    instituicao_id = obter_instituicao_escopo(usuario_atual)
+    projeto = await db.get(InstituicaoDB, instituicao_id)
+    if not projeto_usa_familias(projeto):
+        raise HTTPException(
+            status_code=404,
+            detail="Recurso disponível apenas nos projetos com vínculo familiar (Reencontro Pari e Pauliceia).",
+        )
     return instituicao_id
 
 
@@ -1323,7 +1337,7 @@ async def listar_familias(
     db: AsyncSession = Depends(get_db),
     usuario_atual: dict = Depends(get_usuario_logado),
 ):
-    instituicao_id = await _exigir_pari(db, usuario_atual, escrita=False)
+    instituicao_id = await _exigir_familias(db, usuario_atual, escrita=False)
     familias = (
         await db.execute(
             select(FamiliaConviventeDB).where(FamiliaConviventeDB.instituicao_id == instituicao_id)
@@ -1370,7 +1384,7 @@ async def vincular_familia(
     db: AsyncSession = Depends(get_db),
     usuario_atual: dict = Depends(get_usuario_logado),
 ):
-    instituicao_id = await _exigir_pari(db, usuario_atual)
+    instituicao_id = await _exigir_familias(db, usuario_atual)
     convivente = await _convivente_pari(db, instituicao_id, payload.convivente_id)
     if payload.nova:
         codigos = (

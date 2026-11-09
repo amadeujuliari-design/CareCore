@@ -63,7 +63,7 @@ import {
 import { consultarCep } from './services/cepService';
 import { useConfigOperacional } from './hooks/useConfigOperacional';
 import api from './services/api';
-import { projetoEhReencontroPari } from './utils/projetoPari';
+import { projetoUsaFamilias } from './utils/projetoPari';
 
 const BNMP_PORTAL_URL = 'https://portalbnmp.cnj.jus.br/#/captcha/';
 const TIPO_DOC_CONSULTA_BNMP = 'Consulta BNMP';
@@ -74,7 +74,7 @@ export default function Conviventes() {
   const deviceInfo = useDeviceInfo();
   const { payload: usuarioPayload, perfilUsuario, idUsuarioLogado } = useTokenIdentity(token);
   const { config: configOperacional, nomeProjeto } = useConfigOperacional();
-  const projetoPari = projetoEhReencontroPari(nomeProjeto);
+  const projetoPari = projetoUsaFamilias(nomeProjeto);
 
   // Dados Principais
   const [conviventes, setConviventes] = useState([]);

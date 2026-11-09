@@ -98,6 +98,11 @@ def projeto_e_cae_f_pauliceia(projeto: InstituicaoDB | None) -> bool:
     return "pauliceia" in _referencias_projeto(projeto)
 
 
+def projeto_usa_familias(projeto: InstituicaoDB | None) -> bool:
+    """Reencontro Pari e CAE F Pauliceia: vínculo familiar e navegação entre membros."""
+    return projeto_e_reencontro_pari(projeto) or projeto_e_cae_f_pauliceia(projeto)
+
+
 def projeto_rotina_so_refeicoes(projeto: InstituicaoDB | None) -> bool:
     """CAE I Centro e CAE F Pauliceia: presença por refeição, sem bip de entrada/saída."""
     return projeto_e_cae_i_centro(projeto) or projeto_e_cae_f_pauliceia(projeto)

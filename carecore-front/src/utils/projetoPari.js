@@ -30,6 +30,11 @@ export function projetoEhCaeFPauliceia(nome) {
   return textoProjeto(nome).includes('pauliceia');
 }
 
+/** Reencontro Pari e Pauliceia: vínculo familiar e navegação entre membros na ficha. */
+export function projetoUsaFamilias(nome) {
+  return projetoEhReencontroPari(nome) || projetoEhCaeFPauliceia(nome);
+}
+
 /** CAE I Centro e CAE F Pauliceia: registro/histórico da rotina só com refeições. */
 export function projetoRotinaSoRefeicoes(nome) {
   return projetoEhCaeICentro(nome) || projetoEhCaeFPauliceia(nome);

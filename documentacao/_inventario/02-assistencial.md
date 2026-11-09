@@ -13,6 +13,8 @@ Na Sede AEB e nos demais projetos, o menu esconde Rotina Diária (e o submenu), 
 
 O CAE I CENTRO e o CAE F PAULICEIA são a exceção: voltam a Rotina Diária só com Registro da Rotina e Histórico da Rotina. As interações são Café da manhã, Almoço, Café da tarde, Jantar e Lanche noturno, sem entrada e saída. Cada refeição continua um registro próprio. A presença do dia conta 1 se houver qualquer uma dessas refeições; duas ou mais no mesmo dia não somam outra presença. Atividades e Convênio / SISA seguem ocultos.
 
+O CAE F PAULICEIA também opera com **famílias** no mesmo padrão do Reencontro Pari: cada quarto é um núcleo familiar (`F001`…); no topo da ficha do convivente aparecem os demais membros para navegação; acomodações seguem os quartos da composição familiar.
+
 O CTA 18 – CANINDÉ (Projeto Canindé) vê **Atividades** e a **Lavanderia** em agenda de horários, só lavagem (sem secagem). Registro da Rotina, demais itens da rotina e Convênio / SISA seguem ocultos.
 
 O perfil Global consulta lavanderia, kit, pertences, ocorrências, convênio e relatórios, sem gravar. Ajustes de totais segue só com o Gestor.
