@@ -1760,6 +1760,35 @@ async def post_remover_anexo(
     return await serializar_pedido(db, pedido, incluir_detalhe=True, usuario=usuario_atual)
 
 
+@router.post("/pdf/juntar")
+async def post_juntar_pdfs_nf(
+    arquivos: list[UploadFile] = File(default=[]),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    """Une PDFs na ordem enviada para pré-visualizar/posicionar carimbos no pacote final."""
+    from compras_assinatura_pdf import juntar_pdfs
+
+    _ = usuario_atual
+    partes: list[bytes] = []
+    for item in arquivos or []:
+        if not item or not item.filename:
+            continue
+        bruto = await item.read()
+        if bruto:
+            partes.append(bruto)
+    if not partes:
+        raise HTTPException(status_code=400, detail="Selecione ao menos um PDF.")
+    try:
+        raw = partes[0] if len(partes) == 1 else juntar_pdfs(partes)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc) or "Não foi possível unir os PDFs.") from exc
+    return Response(
+        content=raw,
+        media_type="application/pdf",
+        headers={"Content-Disposition": 'inline; filename="nf-unificada.pdf"'},
+    )
+
+
 @router.post("/pedidos/{pedido_id}/notas-fiscais")
 async def post_nota_fiscal(
     pedido_id: str,
@@ -1783,6 +1812,8 @@ async def post_nota_fiscal(
     assinatura_y: Optional[float] = Form(default=None),
     assinatura_w: Optional[float] = Form(default=None),
     assinatura_h: Optional[float] = Form(default=None),
+    carimbos_texto_json: Optional[str] = Form(default=None),
+    carimbos_assinatura_json: Optional[str] = Form(default=None),
     senha_assinatura_eletronica: Optional[str] = Form(default=None),
     classe_documento: Optional[str] = Form(default=None),
     parcela_numero: Optional[int] = Form(default=None),
@@ -1814,6 +1845,8 @@ async def post_nota_fiscal(
         "assinatura_y": assinatura_y,
         "assinatura_w": assinatura_w,
         "assinatura_h": assinatura_h,
+        "carimbos_texto_json": carimbos_texto_json,
+        "carimbos_assinatura_json": carimbos_assinatura_json,
         "senha_assinatura_eletronica": senha_assinatura_eletronica,
         "classe_documento": classe_documento,
         "parcela_numero": parcela_numero,
@@ -1847,6 +1880,8 @@ async def post_assinar_nota_fiscal(
     assinatura_y: Optional[float] = Form(default=None),
     assinatura_w: Optional[float] = Form(default=None),
     assinatura_h: Optional[float] = Form(default=None),
+    carimbos_texto_json: Optional[str] = Form(default=None),
+    carimbos_assinatura_json: Optional[str] = Form(default=None),
     arquivo: Optional[UploadFile] = File(default=None),
     db: AsyncSession = Depends(get_db),
     usuario_atual: dict = Depends(get_usuario_logado),
@@ -1866,6 +1901,8 @@ async def post_assinar_nota_fiscal(
         "assinatura_y": assinatura_y,
         "assinatura_w": assinatura_w,
         "assinatura_h": assinatura_h,
+        "carimbos_texto_json": carimbos_texto_json,
+        "carimbos_assinatura_json": carimbos_assinatura_json,
     }
     await assinar_nota_fiscal_pendente(
         db, usuario_atual, pedido, nota_id, file=arquivo, payload=payload,

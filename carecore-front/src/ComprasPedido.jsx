@@ -60,6 +60,7 @@ import {
   comprasBlobAnexo,
   comprasRegistrarImpressaoNf,
   comprasRegistrarNotaFiscal,
+  comprasJuntarPdfs,
   comprasRemoverNotaFiscal,
   comprasRemoverAnexo,
   comprasRascunhoEmail,
@@ -157,6 +158,43 @@ function mascararMoedaDigitando(texto) {
   const digitos = String(texto || '').replace(/\D/g, '');
   if (!digitos) return '';
   return centavosParaInput(Number(digitos));
+}
+
+function listaPosicoesCarimbo(valor) {
+  if (Array.isArray(valor)) return valor.filter(Boolean);
+  return valor ? [valor] : [];
+}
+
+/** Envia posições por página (JSON) e mantém o 1º item nos campos legados. */
+function appendPosicoesCarimboNf(fd, textos, assinaturas) {
+  const listaTexto = listaPosicoesCarimbo(textos);
+  const listaAssinatura = listaPosicoesCarimbo(assinaturas);
+  if (listaTexto.length) {
+    fd.append('carimbos_texto_json', JSON.stringify(listaTexto));
+    const t = listaTexto[0];
+    fd.append('carimbo_pagina', String(t.page ?? 0));
+    fd.append('carimbo_x', String(t.x));
+    fd.append('carimbo_y', String(t.y));
+    fd.append('carimbo_w', String(t.width));
+    fd.append('carimbo_h', String(t.height));
+  }
+  if (listaAssinatura.length) {
+    fd.append('carimbos_assinatura_json', JSON.stringify(listaAssinatura));
+    const a = listaAssinatura[0];
+    fd.append('assinatura_pagina', String(a.page ?? 0));
+    fd.append('assinatura_x', String(a.x));
+    fd.append('assinatura_y', String(a.y));
+    fd.append('assinatura_w', String(a.width));
+    fd.append('assinatura_h', String(a.height));
+  }
+}
+
+async function unirPdfsNfParaPosicionar(arquivos) {
+  const lista = Array.isArray(arquivos) ? arquivos.filter(Boolean) : [];
+  if (!lista.length) {
+    throw new Error('Selecione o arquivo da nota fiscal.');
+  }
+  return comprasJuntarPdfs(lista);
 }
 
 function quandoOperacional(iso) {
@@ -308,8 +346,11 @@ export default function ComprasPedido() {
   const [listaDocumentosAberta, setListaDocumentosAberta] = useState(false);
   const [modalTextoNf, setModalTextoNf] = useState(false);
   const [modoAssinarNfExistente, setModoAssinarNfExistente] = useState(false);
-  const [carimboNf, setCarimboNf] = useState(null);
-  const [carimboAssinaturaNf, setCarimboAssinaturaNf] = useState(null);
+  const [carimboNf, setCarimboNf] = useState([]);
+  const [carimboAssinaturaNf, setCarimboAssinaturaNf] = useState([]);
+  /** PDF único (originais unidos) para o modal de posicionamento bater com o arquivo final. */
+  const [pdfNfUnido, setPdfNfUnido] = useState(null);
+  const [unindoPdfsNf, setUnindoPdfsNf] = useState(false);
   const [senhaAssinaturaNf, setSenhaAssinaturaNf] = useState('');
   const [assinaturaGestor, setAssinaturaGestor] = useState({ gestor: false, cadastrada: false });
   const [modalAssinatura, setModalAssinatura] = useState(null);
@@ -2751,8 +2792,8 @@ export default function ComprasPedido() {
                         ? 'Se precisar, anexe um arquivo relacionado. Não exige assinatura digital.'
                         : 'Se precisar, anexe um arquivo relacionado. Não assine NF por aqui.')
                     : segueInfra
-                      ? 'Defina o pagamento acima. Numa mesma anexação dá para unir PDFs de nota; texto e assinatura saem só na página em que você posicionar. No parcelado, cada NF assinada com data vai para A pagar na hora. Enquanto a Sede não imprimir, dá para excluir e reanexar a NF.'
-                      : 'Numa mesma anexação dá para incluir quantas notas forem necessárias: o sistema junta num arquivo só. Texto e assinatura saem só na página posicionada. Enquanto a Sede não imprimir, exclua a NF errada e anexe a correta.'}
+                      ? 'Defina o pagamento acima. Numa mesma anexação dá para unir PDFs de nota; em várias páginas, posicione texto e assinatura página a página. No parcelado, cada NF assinada com data vai para A pagar na hora. Enquanto a Sede não imprimir, dá para excluir e reanexar a NF.'
+                      : 'Numa mesma anexação dá para incluir quantas notas forem necessárias: o sistema junta num arquivo só. Em PDF com várias páginas, posicione texto e assinatura página a página (pode remover de alguma, mas não de todas). Enquanto a Sede não imprimir, exclua a NF errada e anexe a correta.'}
                 </p>
                 <form
                   className="grid gap-2 md:grid-cols-3"
@@ -2802,16 +2843,34 @@ export default function ComprasPedido() {
                       return;
                     }
                     const ehPdfNf = arqsNf.every((arquivo) => /\.pdf$/i.test(arquivo.name) || arquivo.type === 'application/pdf');
-                    if (ehPdfNf && querAssinar && !carimboAssinaturaNf) {
+                    if (ehPdfNf && querAssinar && !listaPosicoesCarimbo(carimboAssinaturaNf).length) {
                       setErro(classeDoc === 'boleto'
                         ? 'Posicione a assinatura digital no PDF do boleto.'
                         : 'Posicione o texto e a assinatura digital no PDF da nota.');
-                      setModalTextoNf(true);
+                      try {
+                        setUnindoPdfsNf(true);
+                        const unido = pdfNfUnido || await unirPdfsNfParaPosicionar(arqsNf);
+                        setPdfNfUnido(unido);
+                        setModalTextoNf(true);
+                      } catch (err) {
+                        setErro(err?.message || 'Não foi possível unir os PDFs para posicionar.');
+                      } finally {
+                        setUnindoPdfsNf(false);
+                      }
                       return;
                     }
-                    if (ehPdfNf && classeEnvioAssinatura === 'nota_fiscal' && !carimboNf && (nfForm.observacao || '').trim()) {
+                    if (ehPdfNf && classeEnvioAssinatura === 'nota_fiscal' && !listaPosicoesCarimbo(carimboNf).length && (nfForm.observacao || '').trim()) {
                       setErro('Posicione o texto complementar no PDF da nota (ou abra o posicionamento).');
-                      setModalTextoNf(true);
+                      try {
+                        setUnindoPdfsNf(true);
+                        const unido = pdfNfUnido || await unirPdfsNfParaPosicionar(arqsNf);
+                        setPdfNfUnido(unido);
+                        setModalTextoNf(true);
+                      } catch (err) {
+                        setErro(err?.message || 'Não foi possível unir os PDFs para posicionar.');
+                      } finally {
+                        setUnindoPdfsNf(false);
+                      }
                       return;
                     }
                     const fd = new FormData();
@@ -2831,20 +2890,11 @@ export default function ComprasPedido() {
                       }
                       fd.append('valor_reais', String(centavos / 100));
                     }
-                    if (carimboNf) {
-                      fd.append('carimbo_pagina', String(carimboNf.page ?? 0));
-                      fd.append('carimbo_x', String(carimboNf.x));
-                      fd.append('carimbo_y', String(carimboNf.y));
-                      fd.append('carimbo_w', String(carimboNf.width));
-                      fd.append('carimbo_h', String(carimboNf.height));
-                    }
-                    if (querAssinar && carimboAssinaturaNf) {
-                      fd.append('assinatura_pagina', String(carimboAssinaturaNf.page ?? 0));
-                      fd.append('assinatura_x', String(carimboAssinaturaNf.x));
-                      fd.append('assinatura_y', String(carimboAssinaturaNf.y));
-                      fd.append('assinatura_w', String(carimboAssinaturaNf.width));
-                      fd.append('assinatura_h', String(carimboAssinaturaNf.height));
-                    }
+                    appendPosicoesCarimboNf(
+                      fd,
+                      carimboNf,
+                      querAssinar ? carimboAssinaturaNf : [],
+                    )
                     if (querAssinar) {
                       fd.append('senha_assinatura_eletronica', senhaAssinaturaNf);
                     }
@@ -2852,8 +2902,13 @@ export default function ComprasPedido() {
                     if (segueInfra && pedido.pagamento_qtd_parcelas) {
                       fd.append('parcela_numero', String(parcelaDoc || 1));
                     }
-                    fd.append('arquivo', arqsNf[0]);
-                    arqsNf.slice(1).forEach((arquivo) => fd.append('arquivos', arquivo));
+                    // Se o carimbo foi posicionado no PDF unido, envia o mesmo arquivo (senão as páginas não batem).
+                    if (pdfNfUnido) {
+                      fd.append('arquivo', pdfNfUnido);
+                    } else {
+                      fd.append('arquivo', arqsNf[0]);
+                      arqsNf.slice(1).forEach((arquivo) => fd.append('arquivos', arquivo));
+                    }
                     const registrou = await agir(
                       () => comprasRegistrarNotaFiscal(pedido.id, fd),
                       classeDoc === 'boleto'
@@ -2871,8 +2926,9 @@ export default function ComprasPedido() {
                     setSenhaAssinaturaNf('');
                     setNfForm({ tipo_nf: 'produto', numero: '', serie: '', valor_reais: '', observacao: '', data_pagamento: '' });
                     setArqsNf([]);
-                    setCarimboNf(null);
-                    setCarimboAssinaturaNf(null);
+                    setPdfNfUnido(null);
+                    setCarimboNf([]);
+                    setCarimboAssinaturaNf([]);
                   }}
                 >
                   {ehEmergencia && !podeAnexarNfAssinadaEmergencia ? (
@@ -2887,8 +2943,9 @@ export default function ComprasPedido() {
                       onChange={(e) => {
                         setClasseDoc(e.target.value);
                         setArqsNf([]);
-                        setCarimboNf(null);
-                        setCarimboAssinaturaNf(null);
+                        setPdfNfUnido(null);
+                        setCarimboNf([]);
+                        setCarimboAssinaturaNf([]);
                       }}
                       className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm font-normal"
                     >
@@ -2963,12 +3020,13 @@ export default function ComprasPedido() {
                     type="file"
                     multiple={(ehEmergencia ? classeDocEmergencia : classeDoc) === 'nota_fiscal'}
                     accept={(ehEmergencia ? classeDocEmergencia : classeDoc) === 'relacionado' || (ehEmergencia ? classeDocEmergencia : classeDoc) === 'comprovante' ? undefined : '.pdf,.xml,.jpg,.jpeg,.png,application/pdf'}
-                    onChange={(e) => {
+                    onChange={async (e) => {
                       const arquivos = Array.from(e.target.files || []);
                       const primeiro = arquivos[0] || null;
                       const classeArq = ehEmergencia ? classeDocEmergencia : classeDoc;
                       if (classeArq === 'relacionado' || classeArq === 'comprovante') {
                         setArqsNf(primeiro ? [primeiro] : []);
+                        setPdfNfUnido(null);
                         return;
                       }
                       const todosPdf = arquivos.length > 0 && arquivos.every((arquivo) => (
@@ -2978,29 +3036,52 @@ export default function ComprasPedido() {
                         if (classeDoc === 'nota_fiscal' && !(nfForm.observacao || '').trim()) {
                           e.target.value = '';
                           setArqsNf([]);
-                          setCarimboNf(null);
-                          setCarimboAssinaturaNf(null);
+                          setPdfNfUnido(null);
+                          setCarimboNf([]);
+                          setCarimboAssinaturaNf([]);
                           window.alert('Escreva as informações complementares de pagamento antes de escolher o arquivo.');
                           return;
                         }
                         setErro('');
                         setArqsNf(arquivos);
-                        setModalTextoNf(true);
+                        setCarimboNf([]);
+                        setCarimboAssinaturaNf([]);
+                        setUnindoPdfsNf(true);
+                        try {
+                          const unido = await unirPdfsNfParaPosicionar(arquivos);
+                          setPdfNfUnido(unido);
+                          setModalTextoNf(true);
+                        } catch (err) {
+                          setPdfNfUnido(null);
+                          setErro(err?.message || 'Não foi possível unir os PDFs para posicionar.');
+                        } finally {
+                          setUnindoPdfsNf(false);
+                        }
                         return;
                       }
                       setArqsNf(primeiro ? [primeiro] : []);
-                      setCarimboNf(null);
-                      setCarimboAssinaturaNf(null);
+                      setPdfNfUnido(null);
+                      setCarimboNf([]);
+                      setCarimboAssinaturaNf([]);
                     }}
                     className="text-xs md:col-span-3"
                   />
+                  {unindoPdfsNf ? (
+                    <p className="text-xs font-semibold text-sky-800 md:col-span-3">
+                      Unindo {arqsNf.length || ''} PDF(s) para posicionar em todas as páginas…
+                    </p>
+                  ) : null}
                   {arqsNf.length ? (
                     <p className="text-xs text-slate-600 md:col-span-3">
                       {arqsNf.length === 1
                         ? `Arquivo escolhido: ${arqsNf[0].name}`
-                        : `${arqsNf.length} arquivos. Texto e assinatura saem só na página posicionada do PDF unido.`}
-                      {carimboNf ? ' · texto posicionado' : ''}
-                      {carimboAssinaturaNf ? ' · assinatura posicionada' : ''}
+                        : `${arqsNf.length} arquivos unidos em um PDF. Posicione texto e assinatura em cada página do pacote.`}
+                      {listaPosicoesCarimbo(carimboNf).length
+                        ? ` · texto em ${listaPosicoesCarimbo(carimboNf).length} pág.`
+                        : ''}
+                      {listaPosicoesCarimbo(carimboAssinaturaNf).length
+                        ? ` · assinatura em ${listaPosicoesCarimbo(carimboAssinaturaNf).length} pág.`
+                        : ''}
                     </p>
                   ) : null}
                   {(ehEmergencia ? classeDocEmergencia : classeDoc) !== 'relacionado'
@@ -3084,9 +3165,9 @@ export default function ComprasPedido() {
                     placeholder="Senha cadastrada no perfil do gestor"
                   />
                 </div>
-                {carimboAssinaturaNf ? (
+                {listaPosicoesCarimbo(carimboAssinaturaNf).length ? (
                   <p className="mb-3 text-xs font-semibold text-fuchsia-800">
-                    Assinatura posicionada no PDF. Confirme abaixo para gravar.
+                    Assinatura posicionada em {listaPosicoesCarimbo(carimboAssinaturaNf).length} página(s). Confirme abaixo para gravar.
                   </p>
                 ) : null}
                 <div className="flex flex-col gap-2 sm:flex-row">
@@ -3112,6 +3193,7 @@ export default function ComprasPedido() {
                           { type: blob.type || 'application/pdf' },
                         );
                         setArqsNf([file]);
+                        setPdfNfUnido(file);
                         setModoAssinarNfExistente(true);
                         setNfForm((a) => ({
                           ...a,
@@ -3124,18 +3206,18 @@ export default function ComprasPedido() {
                       }
                     }}
                   >
-                    {carimboAssinaturaNf ? 'Reposicionar assinatura de novo' : 'Posicionar assinatura no PDF'}
+                    {listaPosicoesCarimbo(carimboAssinaturaNf).length ? 'Reposicionar assinatura de novo' : 'Posicionar assinatura no PDF'}
                   </PremiumButton>
                   <PremiumButton
                     type="button"
                     className="flex-1 py-3 text-base font-black"
-                    disabled={!carimboAssinaturaNf}
+                    disabled={!listaPosicoesCarimbo(carimboAssinaturaNf).length}
                     onClick={async () => {
                       if (!senhaAssinaturaNf.trim()) {
                         setErro('Informe a senha da assinatura eletrônica do gestor.');
                         return;
                       }
-                      if (!carimboAssinaturaNf) {
+                      if (!listaPosicoesCarimbo(carimboAssinaturaNf).length) {
                         setErro('Posicione a assinatura digital no PDF da nota.');
                         return;
                       }
@@ -3149,27 +3231,17 @@ export default function ComprasPedido() {
                       if (!notaPendenteAssinatura.data_pagamento) {
                         fd.append('data_pagamento', dataPag);
                       }
-                      if (carimboNf) {
-                        fd.append('carimbo_pagina', String(carimboNf.page ?? 0));
-                        fd.append('carimbo_x', String(carimboNf.x));
-                        fd.append('carimbo_y', String(carimboNf.y));
-                        fd.append('carimbo_w', String(carimboNf.width));
-                        fd.append('carimbo_h', String(carimboNf.height));
-                      }
-                      fd.append('assinatura_pagina', String(carimboAssinaturaNf.page ?? 0));
-                      fd.append('assinatura_x', String(carimboAssinaturaNf.x));
-                      fd.append('assinatura_y', String(carimboAssinaturaNf.y));
-                      fd.append('assinatura_w', String(carimboAssinaturaNf.width));
-                      fd.append('assinatura_h', String(carimboAssinaturaNf.height));
+                      appendPosicoesCarimboNf(fd, carimboNf, carimboAssinaturaNf);
                       const okAssinou = await agir(
                         () => comprasAssinarNotaFiscal(pedido.id, notaPendenteAssinatura.id, fd),
                         `NF assinada e enviada para a fila A pagar de ${filaNfEmergencia}.`,
                       );
                       if (!okAssinou) return;
                       setSenhaAssinaturaNf('');
-                      setCarimboNf(null);
-                      setCarimboAssinaturaNf(null);
+                      setCarimboNf([]);
+                      setCarimboAssinaturaNf([]);
                       setArqsNf([]);
+                      setPdfNfUnido(null);
                       setModoAssinarNfExistente(false);
                     }}
                   >
@@ -3566,7 +3638,7 @@ export default function ComprasPedido() {
       ) : null}
       <ModalPosicionarTextoNf
         aberto={modalTextoNf}
-        arquivo={arqsNf[0] || null}
+        arquivo={pdfNfUnido || arqsNf[0] || null}
         texto={nfForm.observacao}
         projeto={pedido?.instituicao_nome || ''}
         modo={classeDoc === 'boleto' && !modoAssinarNfExistente ? 'boleto' : 'nota_fiscal'}
@@ -3574,24 +3646,28 @@ export default function ComprasPedido() {
           setModalTextoNf(false);
           if (modoAssinarNfExistente) {
             setArqsNf([]);
+            setPdfNfUnido(null);
             setModoAssinarNfExistente(false);
             return;
           }
           setArqsNf([]);
-          setCarimboNf(null);
-          setCarimboAssinaturaNf(null);
+          setPdfNfUnido(null);
+          setCarimboNf([]);
+          setCarimboAssinaturaNf([]);
         }}
         onConfirmar={(posicao) => {
-          setCarimboNf(posicao.texto);
-          setCarimboAssinaturaNf(posicao.assinatura);
+          const textos = listaPosicoesCarimbo(posicao.textos?.length ? posicao.textos : posicao.texto);
+          const assinaturas = listaPosicoesCarimbo(posicao.assinaturas?.length ? posicao.assinaturas : posicao.assinatura);
+          setCarimboNf(textos);
+          setCarimboAssinaturaNf(assinaturas);
           setModalTextoNf(false);
           if (modoAssinarNfExistente) {
-            setOk('Assinatura posicionada. Clique em Assinar NF e enviar para pagamento.');
+            setOk(`Assinatura posicionada em ${assinaturas.length} página(s). Clique em Assinar NF e enviar para pagamento.`);
             return;
           }
           setOk(classeDoc === 'boleto'
-            ? 'Assinatura posicionada. Clique em Anexar boleto assinado para gravar no arquivo.'
-            : 'Texto e assinatura posicionados. Clique em Anexar NF assinada para gravar no arquivo.');
+            ? `Assinatura posicionada em ${assinaturas.length} página(s). Clique em Anexar boleto assinado para gravar no arquivo.`
+            : `Texto em ${textos.length} e assinatura em ${assinaturas.length} página(s). Clique em Anexar NF assinada para gravar no arquivo.`);
         }}
       />
       <ModalPosicionarAssinaturaOrcamento

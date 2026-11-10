@@ -409,6 +409,33 @@ export async function comprasRegistrarNotaFiscal(id, formData) {
   return data;
 }
 
+/** Une PDFs na mesma ordem do backend (para posicionar texto/assinatura em todas as páginas). */
+export async function comprasJuntarPdfs(arquivos) {
+  const lista = Array.isArray(arquivos) ? arquivos.filter(Boolean) : [];
+  if (!lista.length) {
+    throw new Error('Selecione ao menos um PDF.');
+  }
+  if (lista.length === 1) return lista[0];
+  const fd = new FormData();
+  lista.forEach((arquivo) => fd.append('arquivos', arquivo));
+  const { data } = await api.post('/api/compras/pdf/juntar', fd, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    responseType: 'blob',
+  });
+  const blob = data instanceof Blob ? data : new Blob([data], { type: 'application/pdf' });
+  if (blob.type && blob.type.includes('json')) {
+    const texto = await blob.text();
+    let detalhe = 'Não foi possível unir os PDFs.';
+    try {
+      detalhe = JSON.parse(texto)?.detail || detalhe;
+    } catch {
+      /* ignore */
+    }
+    throw new Error(detalhe);
+  }
+  return new File([blob], 'nf-unificada.pdf', { type: 'application/pdf' });
+}
+
 /** Assina NF já anexada (sem reenviar o arquivo). */
 export async function comprasAssinarNotaFiscal(pedidoId, notaId, formData) {
   const { data } = await api.post(

@@ -16,11 +16,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from compras_itens_consumo_utils import embalagem_efetiva_pedido
 from compras_nf_xml_utils import extrair_campos_nf_xml
 from compras_assinatura_pdf import (
+    aplicar_carimbos_assinatura_gestor_nf,
+    aplicar_carimbos_texto_nf,
     carimbar_assinatura_gestor_pdf,
     carimbar_assinatura_pdf,
     carimbar_texto_pdf,
     juntar_anexos_orcamento,
     juntar_pdfs,
+    parse_posicoes_carimbo,
 )
 from security import verificar_senha
 from compras_emails import (
@@ -2713,37 +2716,52 @@ async def registrar_nota_fiscal(
         texto_nf = (campos.get("observacao") or "").strip()
         if ext == ".pdf":
             try:
-                if texto_nf:
-                    raw = carimbar_texto_pdf(
+                posicoes_texto = parse_posicoes_carimbo(
+                    payload,
+                    chave_json="carimbos_texto_json",
+                    pagina="carimbo_pagina",
+                    x="carimbo_x",
+                    y="carimbo_y",
+                    w="carimbo_w",
+                    h="carimbo_h",
+                )
+                posicoes_assinatura = parse_posicoes_carimbo(
+                    payload,
+                    chave_json="carimbos_assinatura_json",
+                    pagina="assinatura_pagina",
+                    x="assinatura_x",
+                    y="assinatura_y",
+                    w="assinatura_w",
+                    h="assinatura_h",
+                )
+                if texto_nf and posicoes_texto:
+                    raw = aplicar_carimbos_texto_nf(
                         pdf_bytes=raw,
                         texto=texto_nf,
                         projeto=nome_projeto,
-                        # Só na página em que o usuário posicionou (em geral a última).
-                        page_index=int(payload.get("carimbo_pagina") or 0),
-                        x=float(payload.get("carimbo_x") or 36),
-                        y=float(payload.get("carimbo_y") or 36),
-                        width=float(payload.get("carimbo_w") or 240),
-                        height=float(payload.get("carimbo_h") or 48),
+                        posicoes=posicoes_texto,
                     )
                 if assinar_agora:
-                    tem_posicao_assinatura = payload.get("assinatura_x") not in (None, "") and payload.get("assinatura_y") not in (None, "")
-                    raw = carimbar_assinatura_gestor_pdf(
-                        pdf_bytes=raw,
-                        nome=nome_gestor,
-                        projeto=nome_projeto,
-                        # Só na página posicionada — não repetir nas demais (cobria o conteúdo).
-                        page_index=int(
-                            (payload.get("assinatura_pagina") if tem_posicao_assinatura else payload.get("carimbo_pagina"))
-                            or 0
-                        ),
-                        x=float(payload["assinatura_x"]) if tem_posicao_assinatura else None,
-                        y=float(payload["assinatura_y"]) if tem_posicao_assinatura else None,
-                        width=float(payload["assinatura_w"]) if payload.get("assinatura_w") not in (None, "") else None,
-                        height=float(payload["assinatura_h"]) if payload.get("assinatura_h") not in (None, "") else None,
-                        ancora_x=None if tem_posicao_assinatura or payload.get("carimbo_x") in (None, "") else float(payload["carimbo_x"]),
-                        ancora_y=None if tem_posicao_assinatura or payload.get("carimbo_y") in (None, "") else float(payload["carimbo_y"]),
-                        ancora_h=float(payload.get("carimbo_h") or 0),
-                    )
+                    if posicoes_assinatura:
+                        raw = aplicar_carimbos_assinatura_gestor_nf(
+                            pdf_bytes=raw,
+                            nome=nome_gestor,
+                            projeto=nome_projeto,
+                            posicoes=posicoes_assinatura,
+                        )
+                    else:
+                        # Fallback legado: ancora perto do texto se não veio posição de assinatura.
+                        raw = carimbar_assinatura_gestor_pdf(
+                            pdf_bytes=raw,
+                            nome=nome_gestor,
+                            projeto=nome_projeto,
+                            page_index=int(payload.get("carimbo_pagina") or 0),
+                            x=None,
+                            y=None,
+                            ancora_x=None if payload.get("carimbo_x") in (None, "") else float(payload["carimbo_x"]),
+                            ancora_y=None if payload.get("carimbo_y") in (None, "") else float(payload["carimbo_y"]),
+                            ancora_h=float(payload.get("carimbo_h") or 0),
+                        )
             except (TypeError, ValueError) as exc:
                 raise HTTPException(status_code=400, detail=str(exc) or "Não foi possível gravar a assinatura na NF.") from exc
         if ext == ".xml":
@@ -4081,34 +4099,50 @@ async def assinar_nota_fiscal_pendente(
 
     texto_nf = (nota.observacao or "").strip()
     try:
-        if texto_nf and payload.get("carimbo_x") not in (None, ""):
-            raw = carimbar_texto_pdf(
+        posicoes_texto = parse_posicoes_carimbo(
+            payload,
+            chave_json="carimbos_texto_json",
+            pagina="carimbo_pagina",
+            x="carimbo_x",
+            y="carimbo_y",
+            w="carimbo_w",
+            h="carimbo_h",
+        )
+        posicoes_assinatura = parse_posicoes_carimbo(
+            payload,
+            chave_json="carimbos_assinatura_json",
+            pagina="assinatura_pagina",
+            x="assinatura_x",
+            y="assinatura_y",
+            w="assinatura_w",
+            h="assinatura_h",
+        )
+        if texto_nf and posicoes_texto:
+            raw = aplicar_carimbos_texto_nf(
                 pdf_bytes=raw,
                 texto=texto_nf,
                 projeto=nome_projeto,
-                page_index=int(payload.get("carimbo_pagina") or 0),
-                x=float(payload.get("carimbo_x") or 36),
-                y=float(payload.get("carimbo_y") or 36),
-                width=float(payload.get("carimbo_w") or 240),
-                height=float(payload.get("carimbo_h") or 48),
+                posicoes=posicoes_texto,
             )
-        tem_posicao_assinatura = payload.get("assinatura_x") not in (None, "") and payload.get("assinatura_y") not in (None, "")
-        raw = carimbar_assinatura_gestor_pdf(
-            pdf_bytes=raw,
-            nome=nome_gestor,
-            projeto=nome_projeto,
-            page_index=int(
-                (payload.get("assinatura_pagina") if tem_posicao_assinatura else payload.get("carimbo_pagina"))
-                or 0
-            ),
-            x=float(payload["assinatura_x"]) if tem_posicao_assinatura else None,
-            y=float(payload["assinatura_y"]) if tem_posicao_assinatura else None,
-            width=float(payload["assinatura_w"]) if payload.get("assinatura_w") not in (None, "") else None,
-            height=float(payload["assinatura_h"]) if payload.get("assinatura_h") not in (None, "") else None,
-            ancora_x=None if tem_posicao_assinatura or payload.get("carimbo_x") in (None, "") else float(payload["carimbo_x"]),
-            ancora_y=None if tem_posicao_assinatura or payload.get("carimbo_y") in (None, "") else float(payload["carimbo_y"]),
-            ancora_h=float(payload.get("carimbo_h") or 0),
-        )
+        if posicoes_assinatura:
+            raw = aplicar_carimbos_assinatura_gestor_nf(
+                pdf_bytes=raw,
+                nome=nome_gestor,
+                projeto=nome_projeto,
+                posicoes=posicoes_assinatura,
+            )
+        else:
+            raw = carimbar_assinatura_gestor_pdf(
+                pdf_bytes=raw,
+                nome=nome_gestor,
+                projeto=nome_projeto,
+                page_index=int(payload.get("carimbo_pagina") or 0),
+                x=None,
+                y=None,
+                ancora_x=None if payload.get("carimbo_x") in (None, "") else float(payload["carimbo_x"]),
+                ancora_y=None if payload.get("carimbo_y") in (None, "") else float(payload["carimbo_y"]),
+                ancora_h=float(payload.get("carimbo_h") or 0),
+            )
     except (TypeError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc) or "Não foi possível gravar a assinatura na NF.") from exc
 

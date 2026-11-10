@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import io
-from typing import Optional, Tuple
+import json
+from typing import Any, Optional, Tuple
 
 
 def valor_centavos_para_texto(centavos: Optional[int]) -> str:
@@ -584,3 +585,118 @@ def carimbar_assinatura_gestor_pdf(
     saida = io.BytesIO()
     escritor.write(saida)
     return saida.getvalue()
+
+
+def _float_ou_none(valor: Any) -> Optional[float]:
+    if valor in (None, ""):
+        return None
+    try:
+        return float(valor)
+    except (TypeError, ValueError):
+        return None
+
+
+def _int_pagina(valor: Any, padrao: int = 0) -> int:
+    try:
+        return int(valor)
+    except (TypeError, ValueError):
+        return padrao
+
+
+def parse_posicoes_carimbo(
+    payload: dict,
+    *,
+    chave_json: str,
+    pagina: str,
+    x: str,
+    y: str,
+    w: str,
+    h: str,
+) -> list[dict]:
+    """Lê lista JSON de posições por página, com fallback para um único carimbo legado."""
+    bruto = payload.get(chave_json)
+    lista: list[Any] = []
+    if bruto not in (None, ""):
+        if isinstance(bruto, str):
+            try:
+                carregado = json.loads(bruto)
+            except json.JSONDecodeError as exc:
+                raise ValueError("Posições do carimbo inválidas.") from exc
+        else:
+            carregado = bruto
+        if isinstance(carregado, dict):
+            lista = [carregado]
+        elif isinstance(carregado, list):
+            lista = carregado
+        else:
+            raise ValueError("Posições do carimbo inválidas.")
+    elif payload.get(x) not in (None, ""):
+        lista = [{
+            "page": payload.get(pagina) or 0,
+            "x": payload.get(x),
+            "y": payload.get(y),
+            "width": payload.get(w),
+            "height": payload.get(h),
+        }]
+    saida: list[dict] = []
+    for item in lista:
+        if not isinstance(item, dict):
+            continue
+        fx = _float_ou_none(item.get("x"))
+        fy = _float_ou_none(item.get("y"))
+        if fx is None or fy is None:
+            continue
+        saida.append({
+            "page": _int_pagina(item.get("page"), 0),
+            "x": fx,
+            "y": fy,
+            "width": _float_ou_none(item.get("width")),
+            "height": _float_ou_none(item.get("height")),
+        })
+    return saida
+
+
+def aplicar_carimbos_texto_nf(
+    *,
+    pdf_bytes: bytes,
+    texto: str,
+    projeto: str | None,
+    posicoes: list[dict],
+) -> bytes:
+    raw = pdf_bytes
+    for pos in posicoes:
+        raw = carimbar_texto_pdf(
+            pdf_bytes=raw,
+            texto=texto,
+            projeto=projeto,
+            page_index=int(pos["page"]),
+            x=float(pos["x"]),
+            y=float(pos["y"]),
+            width=float(pos["width"] or 240),
+            height=float(pos["height"] or 48),
+            todas_as_paginas=False,
+        )
+    return raw
+
+
+def aplicar_carimbos_assinatura_gestor_nf(
+    *,
+    pdf_bytes: bytes,
+    nome: str,
+    projeto: str,
+    posicoes: list[dict],
+) -> bytes:
+    raw = pdf_bytes
+    for pos in posicoes:
+        raw = carimbar_assinatura_gestor_pdf(
+            pdf_bytes=raw,
+            nome=nome,
+            projeto=projeto,
+            page_index=int(pos["page"]),
+            x=float(pos["x"]),
+            y=float(pos["y"]),
+            width=float(pos["width"] or 250) if pos.get("width") is not None else None,
+            height=float(pos["height"] or 68) if pos.get("height") is not None else None,
+            todas_as_paginas=False,
+        )
+    return raw

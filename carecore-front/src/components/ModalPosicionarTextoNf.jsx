@@ -37,14 +37,14 @@ function posicaoInicial(metricas, page) {
   const carimboH = Math.max(64, 68 * escala);
   const carimboTop = Math.max(12, textoTop - carimboH - 8);
   return {
-    caixa: {
+    texto: {
       page,
       left: 24,
       top: textoTop,
       width: Math.min(320, metricas.canvasW - 48),
       height: textoH,
     },
-    carimbo: {
+    assinatura: {
       page,
       left: 24,
       top: carimboTop,
@@ -55,8 +55,9 @@ function posicaoInicial(metricas, page) {
 }
 
 /**
- * Posiciona o texto complementar e o carimbo da assinatura digital sobre o PDF da NF.
- * Todas as páginas ficam visíveis; as caixas começam na última.
+ * Posiciona texto complementar e assinatura por página, de forma independente.
+ * Em cada página dá para manter ou remover cada caixa; no total o documento
+ * precisa ter ao menos um texto e uma assinatura (NF) ou uma assinatura (boleto).
  */
 export default function ModalPosicionarTextoNf({
   aberto,
@@ -70,12 +71,14 @@ export default function ModalPosicionarTextoNf({
   const canvasRefs = useRef([]);
   const paginaRefs = useRef([]);
   const pdfRef = useRef(null);
-  const carimboRef = useRef(null);
+  const scrollAlvoRef = useRef(null);
   const dragRef = useRef(null);
   const [total, setTotal] = useState(0);
   const [metricasList, setMetricasList] = useState([]);
-  const [caixa, setCaixa] = useState({ page: 0, left: 40, top: 40, width: 280, height: 36 });
-  const [carimbo, setCarimbo] = useState({ page: 0, left: 16, top: 16, width: 220, height: 72 });
+  /** @type {[Record<number, object|null>, Function]} */
+  const [textos, setTextos] = useState({});
+  /** @type {[Record<number, object|null>, Function]} */
+  const [assinaturas, setAssinaturas] = useState({});
   const [erro, setErro] = useState('');
   const [linhaUnica, setLinhaUnica] = useState(false);
 
@@ -83,11 +86,15 @@ export default function ModalPosicionarTextoNf({
     if (!aberto || !arquivo) {
       setTotal(0);
       setMetricasList([]);
+      setTextos({});
+      setAssinaturas({});
       return undefined;
     }
     let cancelado = false;
     setTotal(0);
     setMetricasList([]);
+    setTextos({});
+    setAssinaturas({});
     setErro('');
     (async () => {
       try {
@@ -133,11 +140,16 @@ export default function ModalPosicionarTextoNf({
           });
         }
         if (cancelado || lista.length !== total) return;
-        const ultima = lista.length - 1;
-        const inicial = posicaoInicial(lista[ultima], ultima);
+        const iniTexto = {};
+        const iniAssinatura = {};
+        lista.forEach((metricas, indice) => {
+          const inicial = posicaoInicial(metricas, indice);
+          if (modo !== 'boleto') iniTexto[indice] = inicial.texto;
+          iniAssinatura[indice] = inicial.assinatura;
+        });
         setMetricasList(lista);
-        setCaixa(inicial.caixa);
-        setCarimbo(inicial.carimbo);
+        setTextos(iniTexto);
+        setAssinaturas(iniAssinatura);
         setErro('');
       } catch (err) {
         if (cancelado || err?.name === 'RenderingCancelledException') return;
@@ -148,53 +160,43 @@ export default function ModalPosicionarTextoNf({
       cancelado = true;
       tarefa?.cancel?.();
     };
-  }, [aberto, total]);
+  }, [aberto, total, modo]);
 
   useEffect(() => {
     if (!aberto || metricasList.length === 0) return undefined;
     const id = window.requestAnimationFrame(() => {
-      carimboRef.current?.scrollIntoView({ block: 'center', inline: 'nearest' });
+      scrollAlvoRef.current?.scrollIntoView({ block: 'center', inline: 'nearest' });
     });
     return () => window.cancelAnimationFrame(id);
   }, [aberto, metricasList]);
 
   useEffect(() => {
     if (!aberto) return undefined;
-    const paginaSobPonteiro = (clientX, clientY) => {
-      for (let indice = 0; indice < paginaRefs.current.length; indice += 1) {
-        const el = paginaRefs.current[indice];
-        if (!el || !metricasList[indice]) continue;
-        const rect = el.getBoundingClientRect();
-        if (clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom) {
-          return { index: indice, localX: clientX - rect.left, localY: clientY - rect.top };
-        }
-      }
-      return null;
-    };
     const mover = (e) => {
       const drag = dragRef.current;
       if (!drag || metricasList.length === 0) return;
-      const aplicar = drag.alvo === 'assinatura' ? setCarimbo : setCaixa;
+      const page = drag.page;
+      const metricas = metricasList[page];
+      if (!metricas) return;
+      const aplicar = drag.alvo === 'assinatura' ? setAssinaturas : setTextos;
       if (drag.tipo === 'resize') {
-        const metricas = metricasList[drag.origem.page] || metricasList[0];
         const width = Math.max(80, drag.origem.width + (e.clientX - drag.startX));
         const height = linhaUnica && drag.alvo === 'texto'
           ? drag.origem.height
           : Math.max(18, drag.origem.height + (e.clientY - drag.startY));
-        aplicar(limitarNaPagina({
+        const proximo = limitarNaPagina({
           ...drag.origem,
+          page,
           width,
           height,
-        }, metricas));
+        }, metricas);
+        aplicar((atual) => ({ ...atual, [page]: proximo }));
         return;
       }
-      const sob = paginaSobPonteiro(e.clientX, e.clientY);
-      const page = sob ? sob.index : drag.origem.page;
-      const metricas = metricasList[page];
-      if (!metricas) return;
-      const left = sob ? sob.localX - drag.offsetX : drag.origem.left + (e.clientX - drag.startX);
-      const top = sob ? sob.localY - drag.offsetY : drag.origem.top + (e.clientY - drag.startY);
-      aplicar(limitarNaPagina({ ...drag.origem, page, left, top }, metricas));
+      const left = drag.origem.left + (e.clientX - drag.startX);
+      const top = drag.origem.top + (e.clientY - drag.startY);
+      const proximo = limitarNaPagina({ ...drag.origem, page, left, top }, metricas);
+      aplicar((atual) => ({ ...atual, [page]: proximo }));
     };
     const soltar = () => { dragRef.current = null; };
     window.addEventListener('pointermove', mover);
@@ -207,29 +209,83 @@ export default function ModalPosicionarTextoNf({
 
   if (!aberto) return null;
 
+  const listaTextos = Object.values(textos).filter(Boolean);
+  const listaAssinaturas = Object.values(assinaturas).filter(Boolean);
+
   const confirmar = () => {
-    const metricasTexto = metricasList[caixa.page ?? 0];
-    const metricasAssinatura = metricasList[carimbo.page ?? 0];
-    if (!metricasTexto || !metricasAssinatura) return;
-    const alturaTexto = linhaUnica ? Math.max(14, caixa.height * 0.7) : caixa.height;
+    if (modo === 'boleto') {
+      if (listaAssinaturas.length < 1) {
+        setErro('Mantenha a assinatura em pelo menos uma página.');
+        return;
+      }
+    } else if (listaTextos.length < 1 || listaAssinaturas.length < 1) {
+      setErro('O documento precisa de dados adicionais e assinatura em pelo menos uma página cada.');
+      return;
+    }
+    const textosPdf = listaTextos.map((box) => {
+      const metricas = metricasList[box.page ?? 0];
+      const alturaTexto = linhaUnica ? Math.max(14, box.height * 0.7) : box.height;
+      return caixaPdf(box, metricas, alturaTexto);
+    });
+    const assinaturasPdf = listaAssinaturas.map((box) => {
+      const metricas = metricasList[box.page ?? 0];
+      return caixaPdf(box, metricas);
+    });
     onConfirmar?.({
-      texto: caixaPdf(caixa, metricasTexto, alturaTexto),
-      assinatura: caixaPdf(carimbo, metricasAssinatura),
+      textos: textosPdf,
+      assinaturas: assinaturasPdf,
+      // Compatível com quem ainda lê um único carimbo.
+      texto: textosPdf[0] || null,
+      assinatura: assinaturasPdf[0] || null,
     });
   };
 
   const iniciarArrasto = (alvo, box, e) => {
-    const el = paginaRefs.current[box.page ?? 0];
-    const rect = el?.getBoundingClientRect();
+    e.preventDefault();
     dragRef.current = {
       alvo,
       tipo: 'mover',
+      page: box.page ?? 0,
       startX: e.clientX,
       startY: e.clientY,
       origem: { ...box },
-      offsetX: rect ? e.clientX - rect.left - box.left : 0,
-      offsetY: rect ? e.clientY - rect.top - box.top : 0,
     };
+  };
+
+  const incluirTexto = (indice) => {
+    const metricas = metricasList[indice];
+    if (!metricas) return;
+    const inicial = posicaoInicial(metricas, indice);
+    setTextos((atual) => ({ ...atual, [indice]: inicial.texto }));
+    setErro('');
+  };
+
+  const incluirAssinatura = (indice) => {
+    const metricas = metricasList[indice];
+    if (!metricas) return;
+    const inicial = posicaoInicial(metricas, indice);
+    setAssinaturas((atual) => ({ ...atual, [indice]: inicial.assinatura }));
+    setErro('');
+  };
+
+  const removerTexto = (indice) => {
+    const restantes = listaTextos.filter((box) => (box.page ?? 0) !== indice);
+    if (modo !== 'boleto' && restantes.length < 1) {
+      setErro('Não é possível remover os dados adicionais de todas as páginas.');
+      return;
+    }
+    setTextos((atual) => ({ ...atual, [indice]: null }));
+    setErro('');
+  };
+
+  const removerAssinatura = (indice) => {
+    const restantes = listaAssinaturas.filter((box) => (box.page ?? 0) !== indice);
+    if (restantes.length < 1) {
+      setErro('Não é possível remover a assinatura de todas as páginas.');
+      return;
+    }
+    setAssinaturas((atual) => ({ ...atual, [indice]: null }));
+    setErro('');
   };
 
   return (
@@ -243,22 +299,30 @@ export default function ModalPosicionarTextoNf({
           </p>
           <p className="mt-1 text-xs text-slate-500">
             {modo === 'boleto'
-              ? 'O arquivo aparece inteiro. A caixa escura é o carimbo Assinado Digitalmente. Começa na última página — arraste para um espaço livre. O carimbo sai só nessa página, não nas demais.'
-              : 'O arquivo aparece inteiro. A caixa azul é o texto complementar e a caixa escura é o carimbo Assinado Digitalmente. Começam na última página — arraste cada uma para um espaço livre. Texto e assinatura saem só nas páginas em que você deixou as caixas, sem repetir nas demais.'}
+              ? 'Cada página tem a própria assinatura. Arraste na página desejada. Dá para remover de uma página, mas o boleto precisa ficar com assinatura em pelo menos uma.'
+              : 'Cada página tem posição própria de dados adicionais (azul) e assinatura (escura). Ajuste página a página. Pode remover de uma página, mas o documento precisa manter ao menos um texto e uma assinatura.'}
           </p>
           {erro ? <p className="mt-2 text-sm text-rose-700">{erro}</p> : null}
           {modo !== 'boleto' ? (
-          <label className="mt-3 flex items-center gap-2 text-sm text-slate-700">
-            <input
-              type="checkbox"
-              checked={linhaUnica}
-              onChange={(e) => {
-                setLinhaUnica(e.target.checked);
-                if (e.target.checked) setCaixa((atual) => ({ ...atual, height: 22 }));
-              }}
-            />
-            Uma linha só
-          </label>
+            <label className="mt-3 flex items-center gap-2 text-sm text-slate-700">
+              <input
+                type="checkbox"
+                checked={linhaUnica}
+                onChange={(e) => {
+                  setLinhaUnica(e.target.checked);
+                  if (e.target.checked) {
+                    setTextos((atual) => {
+                      const proximo = { ...atual };
+                      Object.keys(proximo).forEach((chave) => {
+                        if (proximo[chave]) proximo[chave] = { ...proximo[chave], height: 22 };
+                      });
+                      return proximo;
+                    });
+                  }
+                }}
+              />
+              Uma linha só
+            </label>
           ) : null}
         </div>
         <div className="mt-3 min-h-0 flex-1 overflow-auto px-4 pb-2">
@@ -266,66 +330,122 @@ export default function ModalPosicionarTextoNf({
             <p className="text-sm text-slate-500">Abrindo as páginas da nota…</p>
           ) : null}
           <div className="space-y-4">
-            {Array.from({ length: total }, (_, indice) => (
-              <div key={indice}>
-                <p className="mb-1 text-xs font-semibold text-slate-500">
-                  Página {indice + 1} de {total}
-                </p>
-                <div
-                  ref={(el) => { paginaRefs.current[indice] = el; }}
-                  className="relative inline-block"
-                >
-                  <canvas
-                    ref={(el) => { canvasRefs.current[indice] = el; }}
-                    className="border border-slate-200"
-                  />
-                  {modo !== 'boleto' && metricasList[indice] && caixa.page === indice ? (
-                    <div
-                      className="absolute cursor-move overflow-hidden border border-sky-600 bg-sky-100/70 px-1 text-[11px] leading-tight text-slate-900"
-                      style={{ left: caixa.left, top: caixa.top, width: caixa.width, height: caixa.height }}
-                      onPointerDown={(e) => iniciarArrasto('texto', caixa, e)}
-                    >
-                      <span className="block whitespace-pre-wrap">
-                        {String(projeto || '').trim() ? (
-                          <span className="block text-[14px] font-bold leading-tight">{projeto}</span>
-                        ) : null}
-                        {String(texto || '').trim() ? (
-                          <span className="block">{texto}</span>
-                        ) : null}
-                      </span>
+            {Array.from({ length: total }, (_, indice) => {
+              const caixaTexto = textos[indice] || null;
+              const caixaAssinatura = assinaturas[indice] || null;
+              const ultimaComAssinatura = listaAssinaturas.length
+                ? Math.max(...listaAssinaturas.map((b) => b.page ?? 0))
+                : total - 1;
+              return (
+                <div key={indice}>
+                  <div className="mb-1 flex flex-wrap items-center gap-2">
+                    <p className="text-xs font-semibold text-slate-500">
+                      Página {indice + 1} de {total}
+                    </p>
+                    {modo !== 'boleto' ? (
+                      caixaTexto ? (
+                        <button
+                          type="button"
+                          className="rounded border border-slate-200 px-2 py-0.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-50"
+                          onClick={() => removerTexto(indice)}
+                        >
+                          Remover dados adicionais
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          className="rounded border border-sky-200 bg-sky-50 px-2 py-0.5 text-[11px] font-semibold text-sky-800 hover:bg-sky-100"
+                          onClick={() => incluirTexto(indice)}
+                        >
+                          Incluir dados adicionais
+                        </button>
+                      )
+                    ) : null}
+                    {caixaAssinatura ? (
                       <button
                         type="button"
-                        aria-label="Redimensionar texto"
-                        className="absolute bottom-0 right-0 h-3 w-3 cursor-se-resize bg-sky-700"
-                        onPointerDown={(e) => {
-                          e.stopPropagation();
-                          dragRef.current = {
-                            alvo: 'texto',
-                            tipo: 'resize',
-                            startX: e.clientX,
-                            startY: e.clientY,
-                            origem: { ...caixa },
-                          };
+                        className="rounded border border-slate-200 px-2 py-0.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-50"
+                        onClick={() => removerAssinatura(indice)}
+                      >
+                        Remover assinatura
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        className="rounded border border-slate-700 bg-slate-800 px-2 py-0.5 text-[11px] font-semibold text-white hover:bg-slate-700"
+                        onClick={() => incluirAssinatura(indice)}
+                      >
+                        Incluir assinatura
+                      </button>
+                    )}
+                  </div>
+                  <div
+                    ref={(el) => { paginaRefs.current[indice] = el; }}
+                    className="relative inline-block"
+                  >
+                    <canvas
+                      ref={(el) => { canvasRefs.current[indice] = el; }}
+                      className="border border-slate-200"
+                    />
+                    {modo !== 'boleto' && metricasList[indice] && caixaTexto ? (
+                      <div
+                        className="absolute cursor-move overflow-hidden border border-sky-600 bg-sky-100/70 px-1 text-[11px] leading-tight text-slate-900"
+                        style={{
+                          left: caixaTexto.left,
+                          top: caixaTexto.top,
+                          width: caixaTexto.width,
+                          height: caixaTexto.height,
                         }}
-                      />
-                    </div>
-                  ) : null}
-                  {metricasList[indice] && carimbo.page === indice ? (
-                    <div
-                      ref={carimboRef}
-                      className="absolute z-10 cursor-move overflow-hidden rounded border border-slate-800 bg-slate-50/90 px-1.5 py-1 text-[10px] leading-tight text-slate-900"
-                      style={{ left: carimbo.left, top: carimbo.top, width: carimbo.width, height: carimbo.height }}
-                      onPointerDown={(e) => iniciarArrasto('assinatura', carimbo, e)}
-                    >
-                      <span className="block font-bold">Assinado Digitalmente</span>
-                      <span className="block">Nome do gestor</span>
-                      <span className="block">Nome do projeto</span>
-                      <span className="block">Cargo: Gestor</span>
-                    </div>
-                  ) : null}
+                        onPointerDown={(e) => iniciarArrasto('texto', caixaTexto, e)}
+                      >
+                        <span className="block whitespace-pre-wrap">
+                          {String(projeto || '').trim() ? (
+                            <span className="block text-[14px] font-bold leading-tight">{projeto}</span>
+                          ) : null}
+                          {String(texto || '').trim() ? (
+                            <span className="block">{texto}</span>
+                          ) : null}
+                        </span>
+                        <button
+                          type="button"
+                          aria-label="Redimensionar texto"
+                          className="absolute bottom-0 right-0 h-3 w-3 cursor-se-resize bg-sky-700"
+                          onPointerDown={(e) => {
+                            e.stopPropagation();
+                            dragRef.current = {
+                              alvo: 'texto',
+                              tipo: 'resize',
+                              page: indice,
+                              startX: e.clientX,
+                              startY: e.clientY,
+                              origem: { ...caixaTexto },
+                            };
+                          }}
+                        />
+                      </div>
+                    ) : null}
+                    {metricasList[indice] && caixaAssinatura ? (
+                      <div
+                        ref={indice === ultimaComAssinatura ? scrollAlvoRef : undefined}
+                        className="absolute z-10 cursor-move overflow-hidden rounded border border-slate-800 bg-slate-50/90 px-1.5 py-1 text-[10px] leading-tight text-slate-900"
+                        style={{
+                          left: caixaAssinatura.left,
+                          top: caixaAssinatura.top,
+                          width: caixaAssinatura.width,
+                          height: caixaAssinatura.height,
+                        }}
+                        onPointerDown={(e) => iniciarArrasto('assinatura', caixaAssinatura, e)}
+                      >
+                        <span className="block font-bold">Assinado Digitalmente</span>
+                        <span className="block">Nome do gestor</span>
+                        <span className="block">Nome do projeto</span>
+                        <span className="block">Cargo: Gestor</span>
+                      </div>
+                    ) : null}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
         <div className="flex shrink-0 justify-end gap-2 border-t border-slate-100 px-4 py-3">
