@@ -784,6 +784,32 @@ def test_compras_emergencia_e_filas_infra():
     assert not pedido_pode_corrigir_nf(status=STATUS_RECEBIDO, tipo=TIPO_SERVICO)
     assert not pedido_pode_corrigir_nf(status=STATUS_IMPRIMIR_NF, tipo=TIPO_SERVICO)
     assert pedido_pode_corrigir_nf(status=STATUS_AGUARDANDO_NF, tipo=TIPO_EMERGENCIA)
+
+    from compras_regras import (
+        pedido_pode_corrigir_contrato,
+        ETAPA_CONTRATO_ROBSON,
+        ETAPA_CONTRATO_ASSINADO,
+    )
+    assert pedido_pode_corrigir_contrato(
+        status=STATUS_AGUARDANDO_ESCOLHA,
+        compra_executada=False,
+        etapa_contrato=ETAPA_CONTRATO_ROBSON,
+    )
+    assert pedido_pode_corrigir_contrato(
+        status=STATUS_AGUARDANDO_SEDE,
+        compra_executada=False,
+        etapa_contrato=ETAPA_CONTRATO_ROBSON,
+    )
+    assert not pedido_pode_corrigir_contrato(
+        status=STATUS_ENVIADO,
+        compra_executada=True,
+        etapa_contrato=ETAPA_CONTRATO_ROBSON,
+    )
+    assert not pedido_pode_corrigir_contrato(
+        status=STATUS_APROVADO,
+        compra_executada=False,
+        etapa_contrato=ETAPA_CONTRATO_ASSINADO,
+    )
     assert aviso_cotacoes_insuficientes(0, TIPO_EMERGENCIA) is None
     assert pedido_segue_infraestrutura(TIPO_EMERGENCIA)
     assert not pedido_segue_infraestrutura(TIPO_EMERGENCIA, "suprimentos")

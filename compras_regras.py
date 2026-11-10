@@ -1483,10 +1483,17 @@ def status_depois_de_escolher_cotacao(
     Em consumo e manutenção+Suprimentos, a escolha do projeto já vale como
     aprovação da unidade: Suprimentos pode enviar ao fornecedor. Se a Sede
     escolhe nesses tipos, o pedido continua aguardando o ok do projeto.
+
+    Em bem/serviço/infra, após reabertura (`aguardando_escolha_orcamento`),
+    a escolha da Sede volta para assinatura (`aguardando_aprovacao_sede`).
     """
     if projeto_escolheu and pedido_projeto_escolhe_orcamento(tipo, destino):
         return STATUS_APROVADO
     if not tipo_eh_cotacao_sede(tipo):
+        if (status_atual or "") == STATUS_AGUARDANDO_ESCOLHA and (
+            tipo_eh_cotacao_projeto(tipo) or pedido_segue_infraestrutura(tipo, destino)
+        ):
+            return STATUS_AGUARDANDO_SEDE
         return None
     if (status_atual or "") not in {
         STATUS_AGUARDANDO_COTACAO,
@@ -1497,6 +1504,23 @@ def status_depois_de_escolher_cotacao(
     if pedido_projeto_escolhe_orcamento(tipo, destino) or tipo_pula_aprovacao_sede(tipo):
         return STATUS_AGUARDANDO_UNIDADE
     return STATUS_AGUARDANDO_SEDE
+
+
+def pedido_pode_corrigir_contrato(
+    *,
+    status: Optional[str],
+    compra_executada: bool = False,
+    etapa_contrato: Optional[str] = None,
+) -> bool:
+    """Contrato não assinado pode ser excluído/reanexado enquanto a compra não rodou."""
+    if compra_executada:
+        return False
+    if (etapa_contrato or "") == ETAPA_CONTRATO_ASSINADO:
+        return False
+    st = (status or "").strip().lower()
+    if st in {STATUS_RECEBIDO, STATUS_IMPRIMIR_NF, STATUS_CANCELADO, STATUS_REPROVADO}:
+        return False
+    return True
 
 
 def consumo_escolha_libera_envio_suprimentos(

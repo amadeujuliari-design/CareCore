@@ -125,3 +125,24 @@ def test_sede_ao_escolher_consumo_ainda_aguarda_projeto():
         status_atual=STATUS_AGUARDANDO_ESCOLHA,
         destino=DESTINO_COMPRAS_SUPRIMENTOS,
     ) == STATUS_AGUARDANDO_UNIDADE
+
+
+def test_infra_apos_reabertura_escolha_volta_para_assinatura():
+    from compras_regras import STATUS_AGUARDANDO_SEDE, TIPO_SERVICO, TIPO_IMOBILIZADO
+
+    assert status_depois_de_escolher_cotacao(
+        TIPO_SERVICO,
+        projeto_escolheu=False,
+        status_atual=STATUS_AGUARDANDO_ESCOLHA,
+    ) == STATUS_AGUARDANDO_SEDE
+    assert status_depois_de_escolher_cotacao(
+        TIPO_IMOBILIZADO,
+        projeto_escolheu=False,
+        status_atual=STATUS_AGUARDANDO_ESCOLHA,
+    ) == STATUS_AGUARDANDO_SEDE
+    # Já na sede: escolha não muda o status (continua aguardando assinatura).
+    assert status_depois_de_escolher_cotacao(
+        TIPO_SERVICO,
+        projeto_escolheu=False,
+        status_atual=STATUS_AGUARDANDO_SEDE,
+    ) is None

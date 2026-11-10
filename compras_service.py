@@ -2067,6 +2067,17 @@ async def escolher_cotacao(
                 status_anterior=status_antes,
                 status_novo=status_novo,
             )
+        elif status_novo == STATUS_AGUARDANDO_SEDE:
+            await registrar_evento_pedido(
+                db,
+                pedido_id=pedido.id,
+                tipo=TIPO_EVENTO_STATUS,
+                texto=f"{quem} escolheu o orçamento. Aguardando assinatura da Sede.",
+                usuario_id=_uid(usuario),
+                cotacao_id=alvo.id,
+                status_anterior=status_antes,
+                status_novo=status_novo,
+            )
     pedido.atualizado_em = agora_operacional_naive()
     return pedido
 
@@ -2100,10 +2111,14 @@ async def revogar_escolha_cotacao(
         is_manutencao=bool(usuario.get("is_manutencao")),
     ):
         raise HTTPException(status_code=403, detail="Somente a Sede pode revogar a escolha.")
-    if pedido.status not in {STATUS_AGUARDANDO_SEDE, STATUS_AGUARDANDO_UNIDADE}:
+    if pedido.status not in {
+        STATUS_AGUARDANDO_SEDE,
+        STATUS_AGUARDANDO_UNIDADE,
+        STATUS_AGUARDANDO_ESCOLHA,
+    }:
         raise HTTPException(
             status_code=400,
-            detail="Só é possível revogar enquanto o pedido aguarda aprovação após a escolha.",
+            detail="Só é possível revogar enquanto o pedido aguarda escolha ou aprovação após a escolha.",
         )
     if (
         pedido.status == STATUS_AGUARDANDO_UNIDADE
@@ -2132,7 +2147,8 @@ async def revogar_escolha_cotacao(
         usuario_id=_uid(usuario),
         cotacao_id=anterior.id,
     )
-    if tipo_eh_cotacao_sede(pedido.tipo):
+    # Volta à escolha: consumo/hortifruti e também bem/serviço após reabertura.
+    if tipo_eh_cotacao_sede(pedido.tipo) or pedido.status == STATUS_AGUARDANDO_SEDE:
         pedido.status = STATUS_AGUARDANDO_ESCOLHA
     pedido.atualizado_em = agora_operacional_naive()
     return pedido

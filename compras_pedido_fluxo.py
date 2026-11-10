@@ -129,6 +129,7 @@ from compras_regras import (
     pedido_na_fila_nf_pagamento_suprimentos,
     pedido_pode_enviar_nf_para_a_pagar,
     pedido_pode_corrigir_nf,
+    pedido_pode_corrigir_contrato,
     tipo_eh_cotacao_projeto,
     pedido_projeto_escolhe_orcamento,
     projeto_pode_trocar_orcamento,
@@ -798,14 +799,25 @@ async def registrar_ausencia_contrato(
             raise HTTPException(status_code=403, detail="Sem permissão para registrar a ausência de contrato.")
         if pedido.instituicao_id != usuario.get("instituicao_id") and not usuario.get("is_manutencao"):
             raise HTTPException(status_code=403, detail="Essa decisão é do próprio projeto.")
-    if pedido.status not in {STATUS_APROVADO, STATUS_ENVIADO}:
+    sit = await situacao_contrato_infra(db, pedido)
+    if not pedido_pode_corrigir_contrato(
+        status=pedido.status,
+        compra_executada=bool(sit.get("compra_executada")),
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="Registre o contrato depois que a Sede escolher o orçamento e antes da compra.",
+        )
+    if pedido.status not in {
+        STATUS_APROVADO,
+        STATUS_ENVIADO,
+        STATUS_AGUARDANDO_ESCOLHA,
+        STATUS_AGUARDANDO_SEDE,
+    }:
         raise HTTPException(
             status_code=400,
             detail="Registre o contrato depois que a Sede escolher e assinar o orçamento.",
         )
-    sit = await situacao_contrato_infra(db, pedido)
-    if sit["compra_executada"]:
-        raise HTTPException(status_code=400, detail="A compra já foi executada.")
     if sit["contrato_pendente"] or sit["contrato_assinado"]:
         raise HTTPException(
             status_code=400,
@@ -1163,14 +1175,26 @@ async def upload_anexo_pedido(
     classe = (classe_documento or "").strip().lower()
     if pedido_segue_infraestrutura(pedido.tipo, getattr(pedido, "destino_compras", None)):
         if classe == CLASSE_DOC_CONTRATO and (etapa_contrato or "") != ETAPA_CONTRATO_ASSINADO:
-            if pedido.status not in {STATUS_APROVADO, STATUS_ENVIADO}:
+            sit = await situacao_contrato_infra(db, pedido)
+            if not pedido_pode_corrigir_contrato(
+                status=pedido.status,
+                compra_executada=bool(sit.get("compra_executada")),
+            ):
+                raise HTTPException(
+                    status_code=400,
+                    detail="Anexe o contrato depois que a Sede escolher o orçamento e antes da compra.",
+                )
+            # Primeira anexação: exige orçamento já assinado/aprovado. Correção (reabertura) permite nos status abertos.
+            if pedido.status not in {
+                STATUS_APROVADO,
+                STATUS_ENVIADO,
+                STATUS_AGUARDANDO_ESCOLHA,
+                STATUS_AGUARDANDO_SEDE,
+            }:
                 raise HTTPException(
                     status_code=400,
                     detail="Anexe o contrato depois que a Sede escolher e assinar o orçamento.",
                 )
-            sit = await situacao_contrato_infra(db, pedido)
-            if sit["compra_executada"]:
-                raise HTTPException(status_code=400, detail="O contrato é anexado antes da compra.")
             if sit["contrato_pendente"] or sit["contrato_assinado"]:
                 raise HTTPException(
                     status_code=400,
@@ -3190,16 +3214,19 @@ async def remover_anexo_pedido(
     if not anexo:
         raise HTTPException(status_code=404, detail="Anexo não encontrado.")
     if (getattr(anexo, "classe_documento", None) or "") == CLASSE_DOC_CONTRATO:
-        if (getattr(anexo, "etapa_contrato", None) or "") == ETAPA_CONTRATO_ASSINADO:
-            raise HTTPException(status_code=400, detail="Contrato já assinado não pode ser excluído.")
-        if pedido.status not in {STATUS_APROVADO, STATUS_ENVIADO}:
+        sit = await situacao_contrato_infra(db, pedido)
+        if not pedido_pode_corrigir_contrato(
+            status=pedido.status,
+            compra_executada=bool(sit.get("compra_executada")),
+            etapa_contrato=getattr(anexo, "etapa_contrato", None),
+        ):
             raise HTTPException(
                 status_code=400,
-                detail="O contrato só pode ser excluído depois da assinatura do orçamento e antes da compra.",
+                detail=(
+                    "Contrato assinado ou compra já executada não podem ser excluídos. "
+                    "Enquanto a compra não rodou, exclua o PDF errado e anexe o correto."
+                ),
             )
-        sit = await situacao_contrato_infra(db, pedido)
-        if sit["compra_executada"]:
-            raise HTTPException(status_code=400, detail="A compra já foi executada. O contrato não pode mais ser excluído.")
         perfil = str(usuario.get("perfil_acesso") or usuario.get("perfil") or "")
         sede = usuario_e_sede_compras(perfil=perfil, is_manutencao=bool(usuario.get("is_manutencao")))
         if not sede:
@@ -3218,7 +3245,10 @@ async def remover_anexo_pedido(
             db,
             pedido_id=pedido.id,
             tipo=TIPO_EVENTO_OBSERVACAO,
-            texto=f"Contrato excluído ({anexo.nome_arquivo}). O projeto pode anexar o arquivo correto.",
+            texto=(
+                f"Contrato excluído ({anexo.nome_arquivo}). "
+                "Projeto ou Sede pode anexar o arquivo correto."
+            ),
             usuario_id=_uid(usuario),
             aguardando_confirmacao=False,
         )

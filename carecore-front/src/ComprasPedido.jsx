@@ -613,7 +613,11 @@ export default function ComprasPedido() {
     0,
     ...(pedido.pagamento_parcelas || []).filter((p) => p.paga).map((p) => Number(p.numero) || 0),
   );
-  const mostraPassoContrato = segueInfra && !ehEmergencia && (orcamentoAssinadoPelaSede || contratosPedido.length > 0);
+  const mostraPassoContrato = segueInfra && !ehEmergencia && (
+    orcamentoAssinadoPelaSede
+    || contratosPedido.length > 0
+    || ['aguardando_escolha_orcamento', 'aguardando_aprovacao_sede'].includes(pedido.status)
+  );
   const passoContratoOk = !segueInfra || Boolean(pedido.compra_liberada);
   const compraJaExecutada = segueInfra && Boolean(pedido.compra_executada);
   const statusEmergenciaPrePagamento = [
@@ -660,9 +664,14 @@ export default function ComprasPedido() {
     && !compraJaExecutada
     && !terminal
     && !consultaGlobal
-    && (unidade || manutencao)
+    && (unidade || manutencao || infra || sede)
     && !pedido.contrato_pendente
     && !pedido.contrato_assinado;
+  const podeExcluirContrato = mostraPassoContrato
+    && !compraJaExecutada
+    && !terminal
+    && !consultaGlobal
+    && (unidade || manutencao || infra || sede);
   const fornecedoresSolicitacao = (pedido.fornecedores_solicitacao || []).filter((f) => f.id);
   const idsSolicitacao = new Set(fornecedoresSolicitacao.map((f) => f.id));
   const fornecedoresOutros = fornecedoresCotacao.filter((f) => !idsSolicitacao.has(f.id));
@@ -2244,14 +2253,14 @@ export default function ComprasPedido() {
               >
                 <p className="mb-3 text-sm text-slate-600">
                   {pedido.contrato_pendente
-                    ? 'O contrato está na fila de assinatura. A compra abre só depois que a Noemi assinar.'
+                    ? 'O contrato está na fila de assinatura. Se estiver errado, use Excluir e anexe o correto (enquanto a compra não tiver sido feita). A compra abre só depois que a Noemi assinar.'
                     : pedido.contrato_assinado
                       ? (compraJaExecutada
                         ? 'Contrato assinado. A compra já foi executada.'
                         : 'Contrato assinado. Agora execute a compra, por e-mail ou como compra direta sem envio de e-mail.')
                       : pedido.sem_contrato
                         ? 'Não há contrato. Execute a compra para abrir boleto, nota fiscal e arquivo relacionado.'
-                        : 'A Sede já assinou o orçamento. Anexe o contrato, se existir. Ele vai para a Infraestrutura e, depois do ok, para a Noemi. Se não houver contrato, registre isso para seguir com a compra.'}
+                        : 'Anexe o contrato, se existir (projeto ou Sede). Ele vai para a Infraestrutura e, depois do ok, para a Noemi. Se não houver contrato, registre isso para seguir com a compra.'}
                 </p>
                 {podeDecidirContrato && (
                   <div className="mb-3 flex flex-wrap items-center gap-3">
@@ -2357,7 +2366,7 @@ export default function ComprasPedido() {
                               />
                             </label>
                           ) : null}
-                          {!compraJaExecutada && !assinado && (unidade || manutencao) ? (
+                          {podeExcluirContrato && !assinado ? (
                             <button
                               type="button"
                               className="inline-flex items-center rounded-lg border border-rose-200 px-3 py-1.5 text-xs font-bold text-rose-700 hover:bg-rose-50"
