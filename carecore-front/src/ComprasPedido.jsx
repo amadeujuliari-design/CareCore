@@ -1854,14 +1854,14 @@ export default function ComprasPedido() {
                             {!terminal && podeRemoverOrcamento && anexo.tipo !== 'orcamento_assinado' && (
                               <button
                                 type="button"
-                                className="rounded px-1.5 text-xs font-bold text-rose-700 hover:bg-rose-50"
-                                title="Remover este PDF"
+                                className="inline-flex items-center rounded-lg border border-rose-200 px-3 py-1.5 text-xs font-bold text-rose-700 hover:bg-rose-50"
+                                title="Excluir este PDF"
                                 onClick={async () => {
-                                  if (!window.confirm(`Remover o arquivo ${anexo.nome_arquivo}?`)) return;
+                                  if (!window.confirm(`Excluir "${anexo.nome_arquivo}"?`)) return;
                                   await agir(() => comprasRemoverAnexo(pedido.id, anexo.id), 'Anexo removido.');
                                 }}
                               >
-                                ×
+                                Excluir
                               </button>
                             )}
                           </div>
@@ -1928,14 +1928,14 @@ export default function ComprasPedido() {
                           {!terminal && podeRemoverOrcamento && (
                             <button
                               type="button"
-                              className="rounded px-1.5 text-xs font-bold text-rose-700 hover:bg-rose-50"
-                              title="Remover este arquivo"
+                              className="inline-flex items-center rounded-lg border border-rose-200 px-3 py-1.5 text-xs font-bold text-rose-700 hover:bg-rose-50"
+                              title="Excluir este arquivo"
                               onClick={async () => {
-                                if (!window.confirm(`Remover o arquivo ${anexo.nome_arquivo}?`)) return;
+                                if (!window.confirm(`Excluir "${anexo.nome_arquivo}"?`)) return;
                                 await agir(() => comprasRemoverAnexo(pedido.id, anexo.id), 'Anexo removido.');
                               }}
                             >
-                              ×
+                              Excluir
                             </button>
                           )}
                         </div>
@@ -2360,14 +2360,14 @@ export default function ComprasPedido() {
                           {!compraJaExecutada && !assinado && (unidade || manutencao) ? (
                             <button
                               type="button"
-                              className="rounded px-1.5 text-xs font-bold text-rose-700 hover:bg-rose-50"
-                              title="Remover este PDF"
+                              className="inline-flex items-center rounded-lg border border-rose-200 px-3 py-1.5 text-xs font-bold text-rose-700 hover:bg-rose-50"
+                              title="Excluir este contrato"
                               onClick={() => {
                                 if (!window.confirm(`Excluir "${anexo.nome_arquivo}"?`)) return;
                                 agir(() => comprasRemoverAnexo(pedido.id, anexo.id), 'Contrato excluído.');
                               }}
                             >
-                              ×
+                              Excluir
                             </button>
                           ) : null}
                         </div>

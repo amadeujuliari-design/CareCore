@@ -227,7 +227,7 @@ Botões: Incluir item · Só neste pedido · Sim, atualizar cadastro · Usar un 
 | file PDF/imagem | `arqsCotacao` |
 | + Anexar PDFs / Anexar arquivos (hortifruti) | `comprasAnexarArquivo` tipo `orcamento` (vários arquivos no mesmo fornecedor; ao escolher o vencedor viram `orcamento-vencedor-unificado`) |
 
-Botões: Enviar pedido de cotação · Escolher · Revogar escolha · Remover · Visualizar · Baixar · × · Registrar orçamento recebido · Retirar (seleção e-mail)
+Botões: Enviar pedido de cotação · Escolher · Revogar escolha · Remover · Visualizar · Baixar · Excluir · Registrar orçamento recebido · Retirar (seleção e-mail)
 
 O orçamento **Escolhida** fica no topo da lista, em negrito e com fundo verde, para a Sede e para o projeto.
 
