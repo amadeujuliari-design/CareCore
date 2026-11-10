@@ -131,15 +131,38 @@ export function tipoPulaOrcamento(tipo) {
 /** Linha fornecedor · valor: 3pt acima do text-sm (14px) e negrito. */
 export const CLASSE_LINHA_ORCAMENTO = 'text-[17px] font-bold leading-snug';
 
-/** Projeto troca PDF/orçamento até a Sede assinar (mesmo em Aguardando Sede). */
+/** Projeto troca PDF/orçamento até a Sede assinar (e de novo se a Sede reabrir). */
 export function projetoPodeTrocarOrcamento(pedido) {
   if (!pedido || tipoPulaOrcamento(pedido.tipo)) return false;
   if ((pedido.anexos || []).some((a) => a.tipo === 'orcamento_assinado')) return false;
   const s = String(pedido.status || '').trim();
-  if (!['rascunho', 'em_cotacao', 'aguardando_cotacao', 'aguardando_aprovacao_sede'].includes(s)) {
+  if (![
+    'rascunho',
+    'em_cotacao',
+    'aguardando_cotacao',
+    'aguardando_escolha_orcamento',
+    'aguardando_aprovacao_sede',
+  ].includes(s)) {
     return false;
   }
   return tipoEhCotacaoProjeto(pedido.tipo) || pedidoSegueInfraestrutura(pedido.tipo, pedido.destino_compras);
+}
+
+/** NF pode ser excluída/reanexada enquanto a Sede ainda não imprimiu. */
+export function pedidoPodeCorrigirNf(pedido) {
+  if (!pedido || pedido.nf_impressa || pedido.nf_impressa_em) return false;
+  const s = String(pedido.status || '').trim();
+  if (['recebido', 'imprimir_nf', 'cancelado', 'reprovado'].includes(s)) return false;
+  if (tipoEhEmergencia(pedido.tipo)) {
+    return [
+      'aguardando_nf',
+      'aguardando_assinatura_nf',
+      'rascunho',
+      'aguardando_pagamento',
+      'aguardando_conferencia_extrato',
+    ].includes(s);
+  }
+  return ['enviado_fornecedor', 'aguardando_pagamento'].includes(s);
 }
 
 /** Hortifruti sem orçamento escolhido: o envio precisa do fornecedor na hora. */

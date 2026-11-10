@@ -1290,17 +1290,41 @@ def projeto_pode_trocar_orcamento(
     *,
     tem_orcamento_assinado: bool = False,
 ) -> bool:
-    """Projeto troca PDF/orçamento até a Sede assinar (mesmo já em Aguardando Sede)."""
+    """Projeto troca PDF/orçamento até a Sede assinar (e de novo se a Sede reabrir)."""
     if tipo_pula_orcamento(tipo) or tem_orcamento_assinado:
         return False
     if (status or "") not in {
         STATUS_RASCUNHO,
         STATUS_AGUARDANDO_COTACAO,
         STATUS_EM_COTACAO,
+        STATUS_AGUARDANDO_ESCOLHA,
         STATUS_AGUARDANDO_SEDE,
     }:
         return False
     return tipo_eh_cotacao_projeto(tipo) or pedido_segue_infraestrutura(tipo, destino)
+
+
+def pedido_pode_corrigir_nf(
+    *,
+    status: Optional[str],
+    nf_impressa_em=None,
+    tipo: Optional[str] = None,
+) -> bool:
+    """NF pode ser excluída/reanexada enquanto a Sede ainda não imprimiu."""
+    if nf_impressa_em:
+        return False
+    st = (status or "").strip().lower()
+    if st in {STATUS_RECEBIDO, STATUS_IMPRIMIR_NF, STATUS_CANCELADO, STATUS_REPROVADO}:
+        return False
+    if tipo_eh_emergencia(tipo):
+        return st in {
+            STATUS_AGUARDANDO_NF,
+            STATUS_AGUARDANDO_ASSINATURA_NF,
+            STATUS_RASCUNHO,
+            STATUS_AGUARDANDO_PAGAMENTO,
+            STATUS_AGUARDANDO_EXTRATO,
+        }
+    return st in {STATUS_ENVIADO, STATUS_AGUARDANDO_PAGAMENTO}
 
 
 EMAIL_NOTAS_PENDENTES = "notaspendentes@aeb-brasil.org.br"

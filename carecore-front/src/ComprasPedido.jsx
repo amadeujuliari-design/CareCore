@@ -112,6 +112,7 @@ import {
   anexosOrcamentoParaEnvio,
   ehOrcamentoUnificado,
   projetoPodeTrocarOrcamento,
+  pedidoPodeCorrigirNf,
   tipoExigeJanela,
   tipoPulaAprovacaoSede,
   tipoSuprimentosAprovaEEnvia,
@@ -2694,21 +2695,26 @@ export default function ComprasPedido() {
               pedido={pedido}
               aberto={listaDocumentosAberta}
               onToggle={() => setListaDocumentosAberta((atual) => !atual)}
-              podeExcluir={Boolean(!consultaGlobal && !terminal && !ehEmergencia && podeDocumentosPosCompra)}
+              podeExcluir={Boolean(
+                !consultaGlobal
+                && !terminal
+                && !ehEmergencia
+                && podeDocumentosPosCompra
+                && pedidoPodeCorrigirNf(pedido),
+              )}
               podeExcluirItem={ehEmergencia
                 ? (item) => {
                   if (consultaGlobal || terminal || !statusEmergenciaAberto) return false;
                   if (item.exclusao === 'nota') {
-                    return projetoAnexaNfAssinada && [
-                      'aguardando_nf',
-                      'aguardando_assinatura_nf',
-                      'rascunho',
-                      'aguardando_pagamento',
-                    ].includes(pedido.status);
+                    return Boolean(projetoAnexaNfAssinada && pedidoPodeCorrigirNf(pedido));
                   }
                   return Boolean(sede || (unidade && !pedidoSede));
                 }
-                : undefined}
+                : (item) => {
+                  if (consultaGlobal || terminal || !podeDocumentosPosCompra) return false;
+                  if (item.exclusao === 'nota') return pedidoPodeCorrigirNf(pedido);
+                  return true;
+                }}
               onVisualizar={setModalAnexo}
               onExcluirNf={(notaId) => agir(() => comprasRemoverNotaFiscal(pedido.id, notaId), 'Arquivo excluído.')}
               onExcluirAnexo={(anexoId) => agir(() => comprasRemoverAnexo(pedido.id, anexoId), 'Arquivo excluído.')}
@@ -2736,8 +2742,8 @@ export default function ComprasPedido() {
                         ? 'Se precisar, anexe um arquivo relacionado. Não exige assinatura digital.'
                         : 'Se precisar, anexe um arquivo relacionado. Não assine NF por aqui.')
                     : segueInfra
-                      ? 'Defina o pagamento acima. Numa mesma anexação dá para unir PDFs de nota; texto e assinatura saem só na página em que você posicionar. No parcelado, cada NF assinada com data vai para A pagar na hora.'
-                      : 'Numa mesma anexação dá para incluir quantas notas forem necessárias: o sistema junta num arquivo só. Texto e assinatura saem só na página posicionada. Se já existir nota, exclua antes de anexar outra.'}
+                      ? 'Defina o pagamento acima. Numa mesma anexação dá para unir PDFs de nota; texto e assinatura saem só na página em que você posicionar. No parcelado, cada NF assinada com data vai para A pagar na hora. Enquanto a Sede não imprimir, dá para excluir e reanexar a NF.'
+                      : 'Numa mesma anexação dá para incluir quantas notas forem necessárias: o sistema junta num arquivo só. Texto e assinatura saem só na página posicionada. Enquanto a Sede não imprimir, exclua a NF errada e anexe a correta.'}
                 </p>
                 <form
                   className="grid gap-2 md:grid-cols-3"

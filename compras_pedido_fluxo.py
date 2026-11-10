@@ -128,6 +128,7 @@ from compras_regras import (
     pedido_na_fila_nf_pagamento,
     pedido_na_fila_nf_pagamento_suprimentos,
     pedido_pode_enviar_nf_para_a_pagar,
+    pedido_pode_corrigir_nf,
     tipo_eh_cotacao_projeto,
     pedido_projeto_escolhe_orcamento,
     projeto_pode_trocar_orcamento,
@@ -1762,7 +1763,8 @@ async def reabrir_orcamento_aprovado(
         tipo=TIPO_EVENTO_STATUS,
         texto=(
             f"Sede reabriu o orçamento aprovado. Motivo: {texto}. "
-            "O processo voltou para a escolha do orçamento vencedor e precisa de nova aprovação."
+            "O processo voltou para a escolha do orçamento vencedor; "
+            "o projeto pode corrigir/excluir/anexar orçamentos e a Sede precisa escolher e assinar de novo."
         ),
         usuario_id=_uid(usuario),
         status_anterior=anterior,
@@ -2312,6 +2314,7 @@ async def enviar_solicitacao_cotacao_fornecedores(
         STATUS_RASCUNHO,
         STATUS_AGUARDANDO_COTACAO,
         STATUS_EM_COTACAO,
+        STATUS_AGUARDANDO_ESCOLHA,
         STATUS_AGUARDANDO_UNIDADE,
         STATUS_AGUARDANDO_SEDE,
     }
@@ -2831,17 +2834,14 @@ async def remover_nota_fiscal(
                 status_code=403,
                 detail="Somente o projeto exclui a nota fiscal assinada.",
             )
-        if pedido.status not in {
-            STATUS_AGUARDANDO_NF,
-            STATUS_AGUARDANDO_ASSINATURA_NF,
-            STATUS_RASCUNHO,
-            STATUS_AGUARDANDO_PAGAMENTO,
-        }:
-            raise HTTPException(status_code=400, detail="A NF só pode ser removida enquanto o pedido ainda não foi encerrado.")
-    elif pedido.status not in {STATUS_ENVIADO, STATUS_AGUARDANDO_PAGAMENTO}:
+    if not pedido_pode_corrigir_nf(
+        status=pedido.status,
+        nf_impressa_em=getattr(pedido, "nf_impressa_em", None),
+        tipo=pedido.tipo,
+    ):
         raise HTTPException(
             status_code=400,
-            detail="A NF só pode ser removida enquanto o pedido está enviado ou em A pagar.",
+            detail="A NF só pode ser removida enquanto a Sede ainda não imprimiu o documento.",
         )
     nota = (
         await db.execute(

@@ -729,12 +729,17 @@ def test_rotulo_custo_fonte_convenio_e_indireto():
 def test_compras_emergencia_e_filas_infra():
     from types import SimpleNamespace
 
+    from datetime import datetime
+
     from compras_regras import (
         TIPO_EMERGENCIA,
         TIPO_IMOBILIZADO,
         TIPO_MANUTENCAO,
         STATUS_AGUARDANDO_PAGAMENTO,
         STATUS_RECEBIDO,
+        STATUS_ENVIADO,
+        STATUS_IMPRIMIR_NF,
+        STATUS_AGUARDANDO_ESCOLHA,
         assunto_solicitacao_cotacao,
         aviso_cotacoes_insuficientes,
         categoria_email_cotacao,
@@ -742,6 +747,7 @@ def test_compras_emergencia_e_filas_infra():
         pedido_na_fila_nf_pagamento,
         pedido_na_fila_nf_pagamento_suprimentos,
         pedido_pode_enviar_nf_para_a_pagar,
+        pedido_pode_corrigir_nf,
         pedido_segue_infraestrutura,
         texto_cadastro_caixa_alta,
         tipo_eh_emergencia,
@@ -762,11 +768,22 @@ def test_compras_emergencia_e_filas_infra():
     assert status_emergencia_projeto_nf(STATUS_AGUARDANDO_ASSINATURA_NF)
     assert not status_emergencia_projeto_nf("aguardando_pagamento")
     assert projeto_pode_trocar_orcamento(TIPO_SERVICO, None, STATUS_AGUARDANDO_SEDE)
+    assert projeto_pode_trocar_orcamento(TIPO_SERVICO, None, STATUS_AGUARDANDO_ESCOLHA)
     assert not projeto_pode_trocar_orcamento(
         TIPO_SERVICO, None, STATUS_AGUARDANDO_SEDE, tem_orcamento_assinado=True,
     )
     assert not projeto_pode_trocar_orcamento(TIPO_SERVICO, None, STATUS_APROVADO)
     assert not projeto_pode_trocar_orcamento(TIPO_EMERGENCIA, None, STATUS_AGUARDANDO_SEDE)
+    assert pedido_pode_corrigir_nf(status=STATUS_ENVIADO, tipo=TIPO_SERVICO)
+    assert pedido_pode_corrigir_nf(status=STATUS_AGUARDANDO_PAGAMENTO, tipo=TIPO_SERVICO)
+    assert not pedido_pode_corrigir_nf(
+        status=STATUS_AGUARDANDO_PAGAMENTO,
+        tipo=TIPO_SERVICO,
+        nf_impressa_em=datetime(2026, 11, 10, 12, 0, 0),
+    )
+    assert not pedido_pode_corrigir_nf(status=STATUS_RECEBIDO, tipo=TIPO_SERVICO)
+    assert not pedido_pode_corrigir_nf(status=STATUS_IMPRIMIR_NF, tipo=TIPO_SERVICO)
+    assert pedido_pode_corrigir_nf(status=STATUS_AGUARDANDO_NF, tipo=TIPO_EMERGENCIA)
     assert aviso_cotacoes_insuficientes(0, TIPO_EMERGENCIA) is None
     assert pedido_segue_infraestrutura(TIPO_EMERGENCIA)
     assert not pedido_segue_infraestrutura(TIPO_EMERGENCIA, "suprimentos")

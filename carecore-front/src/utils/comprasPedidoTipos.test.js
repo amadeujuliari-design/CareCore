@@ -24,6 +24,7 @@ import {
   tipoPulaAprovacaoSede,
   tipoPulaOrcamento,
   projetoPodeTrocarOrcamento,
+  pedidoPodeCorrigirNf,
 } from './comprasPedidoTipos.js';
 
 describe('cotacoesComEscolhidaPrimeiro', () => {
@@ -313,6 +314,54 @@ describe('projetoPodeTrocarOrcamento', () => {
     assert.equal(
       projetoPodeTrocarOrcamento({ tipo: 'consumo', status: 'aguardando_aprovacao_sede', anexos: [] }),
       false,
+    );
+  });
+
+  it('libera de novo quando a Sede reabre (aguardando escolha)', () => {
+    assert.equal(
+      projetoPodeTrocarOrcamento({
+        tipo: 'servico',
+        status: 'aguardando_escolha_orcamento',
+        anexos: [],
+      }),
+      true,
+    );
+    assert.equal(
+      projetoPodeTrocarOrcamento({
+        tipo: 'imobilizado',
+        status: 'aguardando_escolha_orcamento',
+        anexos: [{ tipo: 'orcamento_assinado' }],
+      }),
+      false,
+    );
+  });
+});
+
+describe('pedidoPodeCorrigirNf', () => {
+  it('permite corrigir até a impressão e trava depois', () => {
+    assert.equal(
+      pedidoPodeCorrigirNf({ tipo: 'servico', status: 'enviado_fornecedor' }),
+      true,
+    );
+    assert.equal(
+      pedidoPodeCorrigirNf({ tipo: 'servico', status: 'aguardando_pagamento' }),
+      true,
+    );
+    assert.equal(
+      pedidoPodeCorrigirNf({
+        tipo: 'servico',
+        status: 'aguardando_pagamento',
+        nf_impressa: true,
+      }),
+      false,
+    );
+    assert.equal(
+      pedidoPodeCorrigirNf({ tipo: 'servico', status: 'recebido' }),
+      false,
+    );
+    assert.equal(
+      pedidoPodeCorrigirNf({ tipo: 'emergencia', status: 'aguardando_nf' }),
+      true,
     );
   });
 });

@@ -1872,6 +1872,7 @@ async def registrar_cotacao(
             STATUS_RASCUNHO,
             STATUS_AGUARDANDO_COTACAO,
             STATUS_EM_COTACAO,
+            STATUS_AGUARDANDO_ESCOLHA,
             STATUS_AGUARDANDO_UNIDADE,
             STATUS_AGUARDANDO_SEDE,
         }
