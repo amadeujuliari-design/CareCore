@@ -270,7 +270,7 @@ File → tipo `espelho_compra`
 | Insira a senha do gestor para a assinatura eletrônica digital | * em nota e boleto | senha do gestor; Gestor, Técnico, Administrativo e ADM Pedidos do projeto; o carimbo leva nome do gestor, projeto e cargo Gestor. Em PDF com várias páginas, texto complementar e assinatura saem **só na página em que o usuário posicionou** (em geral a última), sem repetir nas demais. |
 | Arquivo | * | um ou vários PDFs de nota (o sistema junta); boleto e relacionado um a um |
 
-Na Infraestrutura, depois da compra: **Pagamento** à vista (1) ou em N parcelas. Cada parcela recebe NF e/ou comprovante (sem assinatura). **Todos os valores já foram pagos** pede confirmação (e avisa se ainda falta parcela sem documento) e libera o encerramento mesmo com parcela sem anexo. Se o cliente pagar em menos parcelas, **Cliente pagou em N parcelas** reduz o plano até a última com documento. Encerrar só com NF assinada e pagamento completo.
+Na Infraestrutura, depois da compra: **Pagamento** à vista (1) ou em N parcelas. Cada parcela recebe NF e/ou comprovante; NF e boleto exigem Assinatura Digital AEB e data de pagamento. **Cada NF assinada com data** entra imediatamente em **A pagar**; com o pedido já na fila, uma nova parcela **reabre** o item (volta a não lido). O pedido permanece editável em A pagar (anexar, assinar, quitar). **Todos os valores já foram pagos** pede confirmação (e avisa se ainda falta parcela sem documento) e libera a conclusão mesmo com parcela sem anexo. Se o cliente pagar em menos parcelas, **Cliente pagou em N parcelas** reduz o plano até a última com documento. Imprimir em A pagar **só conclui** quando o pagamento estiver completo (todas as parcelas com documento ou quitado).
 
 **Documentos anexados** (botão em destaque, acima do formulário): NF, boleto, comprovante e arquivo relacionado no mesmo bloco. No parcelado, os arquivos da mesma parcela ficam juntos; relacionado sem parcela aparece em Arquivos do processo. Expandir mostra Visualizar, Baixar e Excluir.
 
@@ -324,14 +324,14 @@ Duas filas: Infraestrutura (orçamentos e contratos aguardando ok) e representan
 **Arquivo:** `carecore-front/src/ComprasFilaInfra.jsx` (`modo="nf"`)  
 **Rota protegida:** ADM Global Compras Infraestrutura + Manutenção
 
-Fila de pedidos com **NF assinada** que seguem a Infraestrutura (emergência, bem, serviço, manutenção da Infra). Agrupa por unidade, no mesmo padrão de Aguardando assinatura (expandir, visualizar anexos). Dentro da unidade, ordena pela data de pagamento (vencidos e **hoje** no topo). Pagamento hoje ganha destaque bege. Pedidos não abertos ficam em negrito. Imprimir a NF conclui e manda para **Pedidos concluídos**.
+Fila de pedidos com **NF assinada** que seguem a Infraestrutura (emergência, bem, serviço, manutenção da Infra). Agrupa por unidade, no mesmo padrão de Aguardando assinatura (expandir, visualizar anexos). Dentro da unidade, ordena pela data de pagamento (vencidos e **hoje** no topo). Pagamento hoje ganha destaque bege. Pedidos não abertos ficam em negrito. No parcelado, cada NF com data reentra na fila; **Imprimir NF** só conclui (e manda para **Pedidos concluídos**) quando todas as parcelas tiverem documento ou o pagamento estiver quitado.
 
 ## 1.5c-2 NFs a pagar Suprimentos — `/compras/fila-nf-pagamento-suprimentos`
 
 **Arquivo:** `carecore-front/src/ComprasFilaInfra.jsx` (`modo="nf-suprimentos"`)  
 **Rota protegida:** ADM Global Compras Suprimentos + Manutenção
 
-Mesmo padrão da fila A pagar Infraestrutura, para pedidos que **não** seguem a Infra (emergência destino Suprimentos, hortifruti, manutenção Suprimentos, etc.). Imprimir a NF conclui.
+Mesmo padrão da fila A pagar Infraestrutura, para pedidos que **não** seguem a Infra (emergência destino Suprimentos, hortifruti, manutenção Suprimentos, etc.). Imprimir a NF conclui (parcelado Infra não entra nesta fila).
 
 A antiga fila **Concluídos Infraestrutura** (OK final) foi removida: o encerramento operacional é a impressão em A pagar; a lista geral fica em Pedidos → Concluídos. A rota `/compras/fila-concluidos-infra` redireciona para essa visão.
 

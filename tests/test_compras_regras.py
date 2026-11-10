@@ -665,6 +665,48 @@ def test_situacao_pagamento_infra_conta_nf_ou_comprovante():
     assert so_boleto["completo"] is False
 
 
+def test_nf_parcela_pronta_para_a_pagar_e_conclusao():
+    from datetime import date, datetime
+    from types import SimpleNamespace
+
+    from compras_regras import (
+        nota_fiscal_pronta_para_a_pagar,
+        pedido_tem_nf_pronta_para_a_pagar,
+        pode_concluir_a_pagar_com_pagamento,
+    )
+
+    pronta = SimpleNamespace(
+        tipo_nf="produto",
+        assinada_em=datetime(2026, 11, 10, 10, 0, 0),
+        data_pagamento=date(2026, 11, 15),
+    )
+    sem_data = SimpleNamespace(
+        tipo_nf="produto",
+        assinada_em=datetime(2026, 11, 10, 10, 0, 0),
+        data_pagamento=None,
+    )
+    sem_assinatura = SimpleNamespace(
+        tipo_nf="produto",
+        assinada_em=None,
+        data_pagamento=date(2026, 11, 15),
+    )
+    boleto = SimpleNamespace(
+        tipo_nf="boleto",
+        assinada_em=datetime(2026, 11, 10, 10, 0, 0),
+        data_pagamento=date(2026, 11, 15),
+    )
+    assert nota_fiscal_pronta_para_a_pagar(pronta) is True
+    assert nota_fiscal_pronta_para_a_pagar(sem_data) is False
+    assert nota_fiscal_pronta_para_a_pagar(sem_assinatura) is False
+    assert nota_fiscal_pronta_para_a_pagar(boleto) is False
+    # Uma parcela pronta basta para entrar/reentrar em A pagar, mesmo com outra incompleta.
+    assert pedido_tem_nf_pronta_para_a_pagar([pronta, sem_assinatura]) is True
+    assert pedido_tem_nf_pronta_para_a_pagar([sem_data, boleto]) is False
+    assert pode_concluir_a_pagar_com_pagamento(segue=False, completo=False) is True
+    assert pode_concluir_a_pagar_com_pagamento(segue=True, completo=False) is False
+    assert pode_concluir_a_pagar_com_pagamento(segue=True, completo=True) is True
+
+
 def test_acento_quebrado_de_cp437_volta_ao_portugues():
     from compras_regras import corrigir_acento_quebrado
 
@@ -738,6 +780,7 @@ def test_compras_emergencia_e_filas_infra():
         TIPO_EMERGENCIA, STATUS_AGUARDANDO_PAGAMENTO, None,
     )
     assert pedido_pode_enviar_nf_para_a_pagar(TIPO_IMOBILIZADO, "enviado_fornecedor")
+    assert pedido_pode_enviar_nf_para_a_pagar(TIPO_IMOBILIZADO, STATUS_AGUARDANDO_PAGAMENTO)
     assert pedido_pode_enviar_nf_para_a_pagar(TIPO_EMERGENCIA, STATUS_AGUARDANDO_NF)
     assert not pedido_pode_enviar_nf_para_a_pagar(TIPO_IMOBILIZADO, STATUS_RECEBIDO)
     visao = tipos_visiveis_adm_compras(perfil="ADM Global Compras Infraestrutura")

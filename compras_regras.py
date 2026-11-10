@@ -605,6 +605,29 @@ def pagamento_infra_completo(*, qtd: Optional[int], parcelas_pagas: int, quitado
     return int(parcelas_pagas) >= int(qtd)
 
 
+def nota_fiscal_pronta_para_a_pagar(nota) -> bool:
+    """NF (não boleto) com assinatura digital e data de pagamento."""
+    if (getattr(nota, "tipo_nf", None) or "") == "boleto":
+        return False
+    if not getattr(nota, "assinada_em", None):
+        return False
+    if not getattr(nota, "data_pagamento", None):
+        return False
+    return True
+
+
+def pedido_tem_nf_pronta_para_a_pagar(notas) -> bool:
+    """Basta uma NF assinada com data para entrar (ou reentrar) em A pagar."""
+    return any(nota_fiscal_pronta_para_a_pagar(n) for n in (notas or []))
+
+
+def pode_concluir_a_pagar_com_pagamento(*, segue: bool, completo: bool) -> bool:
+    """Parcelado Infra: só conclui A pagar quando todas as parcelas têm documento (ou quitado)."""
+    if not segue:
+        return True
+    return bool(completo)
+
+
 def maior_parcela_com_documento(parcelas) -> int:
     numeros = [int(item.get("numero") or 0) for item in (parcelas or []) if item.get("paga")]
     return max(numeros) if numeros else 0
@@ -1344,6 +1367,9 @@ def pedido_pode_enviar_nf_para_a_pagar(
     """Status em que a NF assinada dispara (ou reenvia) a fila A pagar."""
     st = (status or "").strip().lower()
     if st == STATUS_ENVIADO:
+        return True
+    # Já em A pagar: nova parcela/NF reentra na fila (negrito / não lida).
+    if st == STATUS_AGUARDANDO_PAGAMENTO:
         return True
     if tipo_eh_emergencia(tipo) and status_emergencia_projeto_nf(st):
         return True

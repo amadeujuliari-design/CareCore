@@ -581,6 +581,10 @@ export default function ComprasPedido() {
       projetoEscolheOrcamento
       || Number(pedido.orcamentos_com_anexo || 0) < Number(pedido.min_orcamentos_recomendados || 3)
     );
+  const podeDocumentosPosCompra = (
+    pedido.status === 'enviado_fornecedor'
+    || pedido.status === 'aguardando_pagamento'
+  ) && (sede || (unidade && !pedidoSede));
   const podeEncerrar = (
     pedido.status === 'enviado_fornecedor'
     || (ehEmergencia && pedido.status === 'aguardando_conferencia_extrato')
@@ -627,7 +631,11 @@ export default function ComprasPedido() {
     && !consultaGlobal
     && (
       (ehEmergencia && projetoAnexaNfAssinada && statusEmergenciaPrePagamento)
-      || (!ehEmergencia && pedido.status === 'enviado_fornecedor' && (unidade || sede))
+      || (
+        !ehEmergencia
+        && ['enviado_fornecedor', 'aguardando_pagamento'].includes(pedido.status)
+        && (unidade || sede)
+      )
     );
   const todasNfAssinadas = notasFiscaisPedido.length > 0
     && notasFiscaisPedido.every((nf) => nf.assinada || nf.assinada_em);
@@ -645,7 +653,7 @@ export default function ComprasPedido() {
     && (sede || (unidade && !pedidoSede));
   const podeDocumentosFinais = ehEmergencia
     ? (podeAnexarNfAssinadaEmergencia || podeAnexarArquivoExtraEmergencia)
-    : (podeEncerrar && (!segueInfra || Boolean(pedido.compra_executada)));
+    : (podeDocumentosPosCompra && (!segueInfra || Boolean(pedido.compra_executada)));
   const classeDocEmergencia = podeAnexarNfAssinadaEmergencia ? classeDoc : 'relacionado';
   const podeDecidirContrato = mostraPassoContrato
     && !compraJaExecutada
@@ -1110,7 +1118,11 @@ export default function ComprasPedido() {
             >
               <p>
                 {pedido.status === 'aguardando_pagamento'
-                  ? 'A pagar: ao imprimir a NF/documento para pagamento, o pedido vai automaticamente para Concluídos.'
+                  ? (
+                    segueInfra && pedido.pagamento_qtd_parcelas > 1 && !pedido.pagamento_completo
+                      ? 'A pagar: imprima a NF desta parcela. O pedido só conclui quando todas as parcelas tiverem NF/comprovante (ou quando o projeto marcar que todos os valores já foram pagos).'
+                      : 'A pagar: ao imprimir a NF/documento para pagamento, o pedido vai automaticamente para Concluídos.'
+                  )
                   : pedido.nf_impressa
                     ? `A nota fiscal deste pedido já foi impressa${pedido.nf_impressa_em ? ` em ${quandoOperacional(pedido.nf_impressa_em)}` : ''}.`
                     : 'Imprima a nota fiscal. Depois o sistema pergunta se o status vai para Encerrado.'}
@@ -2549,7 +2561,7 @@ export default function ComprasPedido() {
             {segueInfra && !ehEmergencia && compraJaExecutada && !terminal && (
               <SectionCard
                 title="Pagamento"
-                subtitle="À vista (1 pagamento) ou parcelado. Em cada parcela anexe a NF e/ou o comprovante. O processo só encerra quando todas estiverem pagas ou quando você marcar que o valor total já foi quitado."
+                subtitle="À vista (1 pagamento) ou parcelado. Cada NF assinada com data de pagamento vai para A pagar na hora; nova parcela reabre a fila. O pedido só conclui quando todas as parcelas tiverem documento ou quando você marcar que o valor total já foi quitado."
               >
                 {!pedido.pagamento_qtd_parcelas ? (
                   <form
@@ -2656,14 +2668,21 @@ export default function ComprasPedido() {
                             ? `Ainda faltam ${faltam} parcela${faltam === 1 ? '' : 's'} sem NF ou comprovante.\n\nMarcar que todos os valores já foram pagos? Isso libera o encerramento sem anexar o que falta. Confirme só se não for um clique sem querer.`
                             : 'Marcar que todos os valores deste pedido já foram pagos?';
                           if (!window.confirm(texto)) return;
-                          agir(() => comprasQuitarPagamento(pedido.id), 'Pagamento quitado. Você já pode encerrar o processo.');
+                          agir(
+                            () => comprasQuitarPagamento(pedido.id),
+                            pedido.status === 'aguardando_pagamento'
+                              ? 'Pagamento quitado. A Sede já pode imprimir e concluir em A pagar.'
+                              : 'Pagamento quitado. Você já pode encerrar o processo.',
+                          );
                         }}
                       >
                         Todos os valores já foram pagos
                       </PremiumButton>
                     ) : (
                       <p className="text-xs font-semibold text-emerald-800">
-                        Pagamento completo. Use Encerrar processo abaixo — as notas já anexadas bastam.
+                        {pedido.status === 'aguardando_pagamento'
+                          ? 'Pagamento completo. A Sede pode imprimir a NF em A pagar para concluir.'
+                          : 'Pagamento completo. Use Encerrar processo abaixo — as notas já anexadas bastam.'}
                       </p>
                     )}
                   </div>
@@ -2675,7 +2694,7 @@ export default function ComprasPedido() {
               pedido={pedido}
               aberto={listaDocumentosAberta}
               onToggle={() => setListaDocumentosAberta((atual) => !atual)}
-              podeExcluir={Boolean(!consultaGlobal && !terminal && !ehEmergencia && podeEncerrar)}
+              podeExcluir={Boolean(!consultaGlobal && !terminal && !ehEmergencia && podeDocumentosPosCompra)}
               podeExcluirItem={ehEmergencia
                 ? (item) => {
                   if (consultaGlobal || terminal || !statusEmergenciaAberto) return false;
@@ -2717,7 +2736,7 @@ export default function ComprasPedido() {
                         ? 'Se precisar, anexe um arquivo relacionado. Não exige assinatura digital.'
                         : 'Se precisar, anexe um arquivo relacionado. Não assine NF por aqui.')
                     : segueInfra
-                      ? 'Defina o pagamento acima. Numa mesma anexação dá para unir PDFs de nota; texto e assinatura saem só na página em que você posicionar. No parcelado, cada parcela pode ter a própria NF.'
+                      ? 'Defina o pagamento acima. Numa mesma anexação dá para unir PDFs de nota; texto e assinatura saem só na página em que você posicionar. No parcelado, cada NF assinada com data vai para A pagar na hora.'
                       : 'Numa mesma anexação dá para incluir quantas notas forem necessárias: o sistema junta num arquivo só. Texto e assinatura saem só na página posicionada. Se já existir nota, exclua antes de anexar outra.'}
                 </p>
                 <form

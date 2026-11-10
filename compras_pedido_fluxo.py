@@ -118,6 +118,9 @@ from compras_regras import (
     pagamento_infra_completo,
     parcela_conta_como_paga,
     maior_parcela_com_documento,
+    nota_fiscal_pronta_para_a_pagar,
+    pedido_tem_nf_pronta_para_a_pagar,
+    pode_concluir_a_pagar_com_pagamento,
     ETAPA_CONTRATO_ASSINADO,
     ETAPA_CONTRATO_NOEMI,
     ETAPA_CONTRATO_ROBSON,
@@ -708,8 +711,11 @@ async def definir_pagamento_parcelas(
     sit = await situacao_contrato_infra(db, pedido)
     if not sit["compra_executada"]:
         raise HTTPException(status_code=400, detail="Defina o pagamento depois da compra.")
-    if pedido.status != STATUS_ENVIADO:
-        raise HTTPException(status_code=400, detail="O pagamento só se define com o pedido enviado ao fornecedor.")
+    if pedido.status not in {STATUS_ENVIADO, STATUS_AGUARDANDO_PAGAMENTO}:
+        raise HTTPException(
+            status_code=400,
+            detail="O pagamento só se define com o pedido enviado ao fornecedor ou em A pagar.",
+        )
     try:
         qtd = normalizar_qtd_parcelas_pagamento(qtd_parcelas)
     except ValueError as exc:
@@ -750,8 +756,11 @@ async def quitar_pagamento_infra(
             status_code=400,
             detail="Informe se o pagamento será à vista ou em quantas parcelas.",
         )
-    if pedido.status != STATUS_ENVIADO:
-        raise HTTPException(status_code=400, detail="Quite o pagamento antes de encerrar, com o pedido ainda aberto.")
+    if pedido.status not in {STATUS_ENVIADO, STATUS_AGUARDANDO_PAGAMENTO}:
+        raise HTTPException(
+            status_code=400,
+            detail="Quite o pagamento com o pedido enviado ao fornecedor ou ainda em A pagar.",
+        )
     pedido.pagamento_quitado_em = agora_operacional_naive()
     pedido.atualizado_em = agora_operacional_naive()
     await registrar_evento_pedido(
@@ -2829,8 +2838,11 @@ async def remover_nota_fiscal(
             STATUS_AGUARDANDO_PAGAMENTO,
         }:
             raise HTTPException(status_code=400, detail="A NF só pode ser removida enquanto o pedido ainda não foi encerrado.")
-    elif pedido.status != STATUS_ENVIADO:
-        raise HTTPException(status_code=400, detail="A NF só pode ser removida antes de encerrar o processo.")
+    elif pedido.status not in {STATUS_ENVIADO, STATUS_AGUARDANDO_PAGAMENTO}:
+        raise HTTPException(
+            status_code=400,
+            detail="A NF só pode ser removida enquanto o pedido está enviado ou em A pagar.",
+        )
     nota = (
         await db.execute(
             select(ComprasPedidoNotaFiscalDB).where(
@@ -2924,6 +2936,19 @@ async def registrar_impressao_nf_e_opcional_encerrar(
     *,
     encerrar: bool = False,
 ) -> None:
+    if (pedido.status or "") == STATUS_AGUARDANDO_PAGAMENTO:
+        sit = await situacao_pagamento_infra(db, pedido)
+        if not pode_concluir_a_pagar_com_pagamento(
+            segue=bool(sit.get("segue")),
+            completo=bool(sit.get("completo")),
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Não é possível concluir: ainda há parcela sem NF ou comprovante. "
+                    "Anexe o documento da parcela restante ou marque que todos os valores já foram pagos."
+                ),
+            )
     anterior = pedido.status
     registrar_impressao_nf_suprimentos(usuario, pedido, encerrar=encerrar)
     if anterior != pedido.status and pedido.status == STATUS_RECEBIDO:
@@ -4107,17 +4132,11 @@ async def assinar_nota_fiscal_pendente(
 
 
 async def _pedido_pronto_enviar_a_pagar(db: AsyncSession, pedido: ComprasPedidoDB) -> bool:
-    """Emergência: basta NF assinada. Demais: parcelas/docs completos quando aplicável."""
+    """Basta uma NF assinada com data de pagamento (parcela a parcela). Emergência: assinatura basta."""
     if tipo_eh_emergencia(pedido.tipo):
         return True
     notas = await _notas_pedido(db, pedido.id)
-    notas_nf = [n for n in notas if (n.tipo_nf or "") != "boleto"]
-    if not notas_nf or any(not _nota_esta_assinada(n) for n in notas_nf):
-        return False
-    sit = situacao_pagamento_de_registros(pedido, notas, await _anexos_pedido(db, pedido.id))
-    if sit.get("segue") and not sit.get("completo"):
-        return False
-    return True
+    return pedido_tem_nf_pronta_para_a_pagar(notas)
 
 
 async def _sincronizar_status_emergencia_apos_nf(
@@ -4173,9 +4192,8 @@ async def enviar_nf_para_pagamento(
     usuario: dict,
     pedido: ComprasPedidoDB,
 ) -> ComprasPedidoDB:
-    """NF assinada → A pagar (qualquer tipo). Mantém alias de emergência no router."""
-    if (pedido.status or "") == STATUS_AGUARDANDO_PAGAMENTO:
-        return pedido
+    """NF assinada com data → A pagar. Nova parcela reentra na fila sem sair do status."""
+    reentrada = (pedido.status or "") == STATUS_AGUARDANDO_PAGAMENTO
     if not pedido_pode_enviar_nf_para_a_pagar(pedido.tipo, pedido.status):
         raise HTTPException(
             status_code=400,
@@ -4200,34 +4218,43 @@ async def enviar_nf_para_pagamento(
     notas = [n for n in await _notas_pedido(db, pedido.id) if (n.tipo_nf or "") != "boleto"]
     if not notas:
         raise HTTPException(status_code=400, detail="Anexe a nota fiscal antes de enviar para pagamento.")
-    pendentes = [n for n in notas if not _nota_esta_assinada(n)]
-    if pendentes:
+    if tipo_eh_emergencia(pedido.tipo):
+        pendentes = [n for n in notas if not _nota_esta_assinada(n)]
+        if pendentes:
+            raise HTTPException(
+                status_code=400,
+                detail="Aguarde a assinatura digital da nota fiscal antes de enviar para A pagar.",
+            )
+    elif not any(nota_fiscal_pronta_para_a_pagar(n) for n in notas):
         raise HTTPException(
             status_code=400,
-            detail="Aguarde a assinatura digital da nota fiscal antes de enviar para A pagar.",
-        )
-    sem_data = [n for n in notas if not getattr(n, "data_pagamento", None)]
-    if sem_data:
-        raise HTTPException(
-            status_code=400,
-            detail="Informe a data de pagamento na nota fiscal antes de enviar para A pagar.",
+            detail=(
+                "Assine a nota fiscal e informe a data de pagamento "
+                "antes de enviar para A pagar."
+            ),
         )
     anterior = pedido.status
+    agora = agora_operacional_naive()
     pedido.status = STATUS_AGUARDANDO_PAGAMENTO
     pedido.a_pagar_lida_em = None
     pedido.a_pagar_lida_por_id = None
-    pedido.atualizado_em = agora_operacional_naive()
+    pedido.atualizado_em = agora
     destino = getattr(pedido, "destino_compras", None)
     fila = (
         "Suprimentos"
         if not pedido_segue_infraestrutura(pedido.tipo, destino)
         else "Infraestrutura"
     )
+    texto = (
+        f"Nova NF/parcela reenviada para a fila A pagar ({fila})."
+        if reentrada
+        else f"NF assinada enviada para a fila A pagar ({fila})."
+    )
     await registrar_evento_pedido(
         db,
         pedido_id=pedido.id,
         tipo=TIPO_EVENTO_STATUS,
-        texto=f"NF assinada enviada para a fila A pagar ({fila}).",
+        texto=texto,
         usuario_id=_uid(usuario),
         status_anterior=anterior,
         status_novo=STATUS_AGUARDANDO_PAGAMENTO,

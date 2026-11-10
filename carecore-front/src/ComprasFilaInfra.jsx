@@ -229,7 +229,8 @@ export default function ComprasFilaInfra({ modo }) {
                                       Abrir pedido
                                     </PremiumButton>
                                     <p className="text-xs text-slate-600">
-                                      Abra o pedido e use <strong>Imprimir NF</strong> para concluir e enviar ao financeiro.
+                                      Abra o pedido e use <strong>Imprimir NF</strong> para pagar.
+                                      No parcelado, a conclusão só ocorre quando todas as parcelas tiverem documento.
                                     </p>
                                   </div>
                                   <p className="mt-2 text-xs text-slate-500">
