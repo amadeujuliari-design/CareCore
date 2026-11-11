@@ -42,6 +42,7 @@ test('sede e projeto sem customização escondem rotina, atividades e convênio'
   assert.equal(projetoEhCaeFPauliceia('CAE F PAULICEIA'), true);
   assert.equal(projetoUsaFamilias('CAE F PAULICEIA'), true);
   assert.equal(projetoUsaFamilias('REENCONTRO PARI'), true);
+  assert.equal(projetoUsaFamilias('CTA 18 – CANINDÉ'), true);
   assert.equal(projetoUsaFamilias('CEI BELÉM'), false);
   assert.equal(projetoRotinaSoRefeicoes('CAE F PAULICEIA'), true);
   assert.equal(menuOcultoNoProjeto('/rotina', 'CAE F PAULICEIA'), false);

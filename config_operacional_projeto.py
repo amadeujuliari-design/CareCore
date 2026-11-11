@@ -99,8 +99,12 @@ def projeto_e_cae_f_pauliceia(projeto: InstituicaoDB | None) -> bool:
 
 
 def projeto_usa_familias(projeto: InstituicaoDB | None) -> bool:
-    """Reencontro Pari e CAE F Pauliceia: vínculo familiar e navegação entre membros."""
-    return projeto_e_reencontro_pari(projeto) or projeto_e_cae_f_pauliceia(projeto)
+    """Reencontro Pari, CAE F Pauliceia e CTA Canindé: vínculo familiar e navegação entre membros."""
+    return (
+        projeto_e_reencontro_pari(projeto)
+        or projeto_e_cae_f_pauliceia(projeto)
+        or projeto_e_cta_caninde(projeto)
+    )
 
 
 def projeto_rotina_so_refeicoes(projeto: InstituicaoDB | None) -> bool:

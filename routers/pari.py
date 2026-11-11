@@ -135,7 +135,7 @@ async def _exigir_familias(db: AsyncSession, usuario_atual: dict, *, escrita: bo
     if not projeto_usa_familias(projeto):
         raise HTTPException(
             status_code=404,
-            detail="Recurso disponível apenas nos projetos com vínculo familiar (Reencontro Pari e Pauliceia).",
+            detail="Recurso disponível apenas nos projetos com vínculo familiar (Reencontro Pari, Pauliceia e CTA Canindé).",
         )
     return instituicao_id
 

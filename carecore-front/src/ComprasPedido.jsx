@@ -2781,8 +2781,8 @@ export default function ComprasPedido() {
                       ? 'Se precisar, anexe um arquivo extra. A nota fiscal assinada já é do projeto.'
                       : 'A nota fiscal assinada é do projeto. Infraestrutura e Suprimentos só anexam arquivo extra, se precisar.')
                   : segueInfra
-                    ? 'Em cada parcela: nota fiscal, boleto, comprovante de pagamento ou arquivo relacionado. Boleto e nota fiscal exigem a Assinatura Digital AEB.'
-                    : 'Escolha o tipo: nota fiscal, boleto ou arquivo relacionado. Boleto e nota fiscal exigem a Assinatura Digital AEB.'}
+                    ? 'Em cada parcela: nota fiscal, boleto, comprovante de pagamento ou arquivo relacionado. Boleto e nota fiscal exigem a Assinatura Digital AEB; no boleto dá para carimbar também informações adicionais (opcional).'
+                    : 'Escolha o tipo: nota fiscal, boleto ou arquivo relacionado. Boleto e nota fiscal exigem a Assinatura Digital AEB; no boleto dá para carimbar também informações adicionais (opcional).'}
               >
                 <p className="mb-3 text-xs text-slate-500">
                   {ehEmergencia
@@ -2845,7 +2845,9 @@ export default function ComprasPedido() {
                     const ehPdfNf = arqsNf.every((arquivo) => /\.pdf$/i.test(arquivo.name) || arquivo.type === 'application/pdf');
                     if (ehPdfNf && querAssinar && !listaPosicoesCarimbo(carimboAssinaturaNf).length) {
                       setErro(classeDoc === 'boleto'
-                        ? 'Posicione a assinatura digital no PDF do boleto.'
+                        ? ((nfForm.observacao || '').trim()
+                          ? 'Posicione o texto e a assinatura digital no PDF do boleto.'
+                          : 'Posicione a assinatura digital no PDF do boleto.')
                         : 'Posicione o texto e a assinatura digital no PDF da nota.');
                       try {
                         setUnindoPdfsNf(true);
@@ -2859,8 +2861,15 @@ export default function ComprasPedido() {
                       }
                       return;
                     }
-                    if (ehPdfNf && classeEnvioAssinatura === 'nota_fiscal' && !listaPosicoesCarimbo(carimboNf).length && (nfForm.observacao || '').trim()) {
-                      setErro('Posicione o texto complementar no PDF da nota (ou abra o posicionamento).');
+                    if (
+                      ehPdfNf
+                      && (classeEnvioAssinatura === 'nota_fiscal' || classeEnvioAssinatura === 'boleto')
+                      && !listaPosicoesCarimbo(carimboNf).length
+                      && (nfForm.observacao || '').trim()
+                    ) {
+                      setErro(classeEnvioAssinatura === 'boleto'
+                        ? 'Posicione o texto complementar no PDF do boleto (ou abra o posicionamento).'
+                        : 'Posicione o texto complementar no PDF da nota (ou abra o posicionamento).');
                       try {
                         setUnindoPdfsNf(true);
                         const unido = pdfNfUnido || await unirPdfsNfParaPosicionar(arqsNf);
@@ -2876,7 +2885,7 @@ export default function ComprasPedido() {
                     const fd = new FormData();
                     Object.entries(nfForm).forEach(([chave, valor]) => {
                       if (!valor || chave === 'valor_reais' || chave === 'tipo_nf') return;
-                      if (classeDoc === 'boleto' && (chave === 'observacao' || chave === 'numero' || chave === 'data_pagamento')) return;
+                      if (classeDoc === 'boleto' && (chave === 'numero' || chave === 'data_pagamento')) return;
                       fd.append(chave, valor);
                     });
                     if (classeDoc === 'nota_fiscal') {
@@ -2997,24 +3006,37 @@ export default function ComprasPedido() {
                           className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm font-normal"
                         />
                       </label>
-                      <label className="md:col-span-3 text-xs font-semibold text-slate-600">
-                        Insira as informações complementares de pagamento para a impressão da NF
-                        <textarea
-                          value={nfForm.observacao}
-                          readOnly={!segueInfra && notasFiscaisPedido.some((nf) => nf.anexo_id)}
-                          onClick={() => {
-                            if (!segueInfra && notasFiscaisPedido.some((nf) => nf.anexo_id)) {
-                              window.alert(
-                                'Para alterar o texto, exclua o arquivo anexado, importe um novo arquivo e escreva a observação de novo.',
-                              );
-                            }
-                          }}
-                          onChange={(e) => setNfForm((a) => ({ ...a, observacao: e.target.value }))}
-                          rows={2}
-                          className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm font-normal"
-                        />
-                      </label>
                     </>
+                  ) : null}
+                  {(ehEmergencia ? classeDocEmergencia : classeDoc) === 'nota_fiscal'
+                    || (ehEmergencia ? classeDocEmergencia : classeDoc) === 'boleto' ? (
+                    <label className="md:col-span-3 text-xs font-semibold text-slate-600">
+                      {(ehEmergencia ? classeDocEmergencia : classeDoc) === 'boleto'
+                        ? 'Informações adicionais para impressão no boleto (opcional)'
+                        : 'Insira as informações complementares de pagamento para a impressão da NF'}
+                      <textarea
+                        value={nfForm.observacao}
+                        readOnly={
+                          (ehEmergencia ? classeDocEmergencia : classeDoc) === 'nota_fiscal'
+                          && !segueInfra
+                          && notasFiscaisPedido.some((nf) => nf.anexo_id)
+                        }
+                        onClick={() => {
+                          if (
+                            (ehEmergencia ? classeDocEmergencia : classeDoc) === 'nota_fiscal'
+                            && !segueInfra
+                            && notasFiscaisPedido.some((nf) => nf.anexo_id)
+                          ) {
+                            window.alert(
+                              'Para alterar o texto, exclua o arquivo anexado, importe um novo arquivo e escreva a observação de novo.',
+                            );
+                          }
+                        }}
+                        onChange={(e) => setNfForm((a) => ({ ...a, observacao: e.target.value }))}
+                        rows={2}
+                        className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm font-normal"
+                      />
+                    </label>
                   ) : null}
                   <input
                     type="file"
@@ -3666,7 +3688,9 @@ export default function ComprasPedido() {
             return;
           }
           setOk(classeDoc === 'boleto'
-            ? `Assinatura posicionada em ${assinaturas.length} página(s). Clique em Anexar boleto assinado para gravar no arquivo.`
+            ? (textos.length
+              ? `Texto em ${textos.length} e assinatura em ${assinaturas.length} página(s). Clique em Anexar boleto assinado para gravar no arquivo.`
+              : `Assinatura posicionada em ${assinaturas.length} página(s). Clique em Anexar boleto assinado para gravar no arquivo.`)
             : `Texto em ${textos.length} e assinatura em ${assinaturas.length} página(s). Clique em Anexar NF assinada para gravar no arquivo.`);
         }}
       />

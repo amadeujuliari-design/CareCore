@@ -57,7 +57,8 @@ function posicaoInicial(metricas, page) {
 /**
  * Posiciona texto complementar e assinatura por página, de forma independente.
  * Em cada página dá para manter ou remover cada caixa; no total o documento
- * precisa ter ao menos um texto e uma assinatura (NF) ou uma assinatura (boleto).
+ * precisa ter ao menos uma assinatura. Texto complementar é obrigatório na NF
+ * e opcional no boleto (quando houver texto preenchido).
  */
 export default function ModalPosicionarTextoNf({
   aberto,
@@ -81,6 +82,8 @@ export default function ModalPosicionarTextoNf({
   const [assinaturas, setAssinaturas] = useState({});
   const [erro, setErro] = useState('');
   const [linhaUnica, setLinhaUnica] = useState(false);
+  const temTextoAdicional = Boolean(String(texto || '').trim());
+  const usaCaixaTexto = modo !== 'boleto' || temTextoAdicional;
 
   useEffect(() => {
     if (!aberto || !arquivo) {
@@ -144,7 +147,7 @@ export default function ModalPosicionarTextoNf({
         const iniAssinatura = {};
         lista.forEach((metricas, indice) => {
           const inicial = posicaoInicial(metricas, indice);
-          if (modo !== 'boleto') iniTexto[indice] = inicial.texto;
+          if (usaCaixaTexto) iniTexto[indice] = inicial.texto;
           iniAssinatura[indice] = inicial.assinatura;
         });
         setMetricasList(lista);
@@ -160,7 +163,7 @@ export default function ModalPosicionarTextoNf({
       cancelado = true;
       tarefa?.cancel?.();
     };
-  }, [aberto, total, modo]);
+  }, [aberto, total, modo, usaCaixaTexto]);
 
   useEffect(() => {
     if (!aberto || metricasList.length === 0) return undefined;
@@ -213,13 +216,14 @@ export default function ModalPosicionarTextoNf({
   const listaAssinaturas = Object.values(assinaturas).filter(Boolean);
 
   const confirmar = () => {
-    if (modo === 'boleto') {
-      if (listaAssinaturas.length < 1) {
-        setErro('Mantenha a assinatura em pelo menos uma página.');
-        return;
-      }
-    } else if (listaTextos.length < 1 || listaAssinaturas.length < 1) {
-      setErro('O documento precisa de dados adicionais e assinatura em pelo menos uma página cada.');
+    if (listaAssinaturas.length < 1) {
+      setErro('Mantenha a assinatura em pelo menos uma página.');
+      return;
+    }
+    if (usaCaixaTexto && listaTextos.length < 1) {
+      setErro(modo === 'boleto'
+        ? 'Com informações adicionais preenchidas, posicione o texto em pelo menos uma página.'
+        : 'O documento precisa de dados adicionais e assinatura em pelo menos uma página cada.');
       return;
     }
     const textosPdf = listaTextos.map((box) => {
@@ -270,7 +274,7 @@ export default function ModalPosicionarTextoNf({
 
   const removerTexto = (indice) => {
     const restantes = listaTextos.filter((box) => (box.page ?? 0) !== indice);
-    if (modo !== 'boleto' && restantes.length < 1) {
+    if (usaCaixaTexto && restantes.length < 1) {
       setErro('Não é possível remover os dados adicionais de todas as páginas.');
       return;
     }
@@ -294,16 +298,20 @@ export default function ModalPosicionarTextoNf({
         <div className="shrink-0 px-4 pt-4">
           <p className="text-sm font-semibold text-slate-900">
             {modo === 'boleto'
-              ? 'Posicione a assinatura digital no boleto'
+              ? (usaCaixaTexto
+                ? 'Posicione o texto e a assinatura no boleto'
+                : 'Posicione a assinatura digital no boleto')
               : 'Posicione o texto e a assinatura na nota fiscal'}
           </p>
           <p className="mt-1 text-xs text-slate-500">
             {modo === 'boleto'
-              ? 'Cada página tem a própria assinatura. Arraste na página desejada. Dá para remover de uma página, mas o boleto precisa ficar com assinatura em pelo menos uma.'
+              ? (usaCaixaTexto
+                ? 'Cada página tem posição própria de dados adicionais (azul) e assinatura (escura). Arraste na página desejada. O boleto precisa manter assinatura em pelo menos uma página e o texto em pelo menos uma.'
+                : 'Cada página tem a própria assinatura. Arraste na página desejada. Dá para remover de uma página, mas o boleto precisa ficar com assinatura em pelo menos uma. Se quiser texto no boleto, preencha as informações adicionais antes de escolher o PDF.')
               : 'Cada página tem posição própria de dados adicionais (azul) e assinatura (escura). Ajuste página a página. Pode remover de uma página, mas o documento precisa manter ao menos um texto e uma assinatura.'}
           </p>
           {erro ? <p className="mt-2 text-sm text-rose-700">{erro}</p> : null}
-          {modo !== 'boleto' ? (
+          {usaCaixaTexto ? (
             <label className="mt-3 flex items-center gap-2 text-sm text-slate-700">
               <input
                 type="checkbox"
@@ -342,7 +350,7 @@ export default function ModalPosicionarTextoNf({
                     <p className="text-xs font-semibold text-slate-500">
                       Página {indice + 1} de {total}
                     </p>
-                    {modo !== 'boleto' ? (
+                    {usaCaixaTexto ? (
                       caixaTexto ? (
                         <button
                           type="button"
@@ -387,7 +395,7 @@ export default function ModalPosicionarTextoNf({
                       ref={(el) => { canvasRefs.current[indice] = el; }}
                       className="border border-slate-200"
                     />
-                    {modo !== 'boleto' && metricasList[indice] && caixaTexto ? (
+                    {usaCaixaTexto && metricasList[indice] && caixaTexto ? (
                       <div
                         className="absolute cursor-move overflow-hidden border border-sky-600 bg-sky-100/70 px-1 text-[11px] leading-tight text-slate-900"
                         style={{

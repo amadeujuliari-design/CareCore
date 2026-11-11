@@ -75,6 +75,7 @@ def test_cta_caninde_agenda_lavanderia_sem_secagem():
     assert projeto_e_cta_caninde(_projeto("Projeto Canindé"))
     assert projeto_usa_agenda_lavanderia(caninde)
     assert projeto_lavanderia_sem_secagem(caninde)
+    assert projeto_usa_familias(caninde)
     assert not projeto_e_reencontro_pari(caninde)
     assert not projeto_usa_agenda_lavanderia(_projeto("CEI BELÉM"))
 

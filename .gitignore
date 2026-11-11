@@ -95,6 +95,7 @@ minuta_contrato_carecore_aeb*
 !/scripts/capturar_dashboard_operacional_snapshots.py
 !/scripts/importar_cae_f_pauliceia.py
 !/scripts/importar_reencontro_pari.py
+!/scripts/importar_cta_caninde_sisa.py
 relatorios_importacao/
 preencher_organizacao.py
 RelatorioCidadaoVinculado.xls
