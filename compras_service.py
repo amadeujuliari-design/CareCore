@@ -161,6 +161,7 @@ from compras_pedido_fluxo import (
     registrar_nota_fiscal,
     reabrir_pedido,
     reprovar_pedido,
+    resgatar_pedidos_nf_pronta_a_pagar,
     restaurar_orcamentos_originais_cotacao,
     unificar_orcamentos_vencedor,
     upload_anexo_pedido,
@@ -1122,8 +1123,10 @@ async def listar_pedidos(
             .order_by(ComprasPedidoDB.atualizado_em.desc())
         )
     ).scalars().all()
-    await alinhar_status_consumo_escolhido_pelo_projeto(db, list(rows))
-    return [await serializar_pedido(db, pedido) for pedido in rows]
+    lista = list(rows)
+    await alinhar_status_consumo_escolhido_pelo_projeto(db, lista)
+    await resgatar_pedidos_nf_pronta_a_pagar(db, usuario, lista)
+    return [await serializar_pedido(db, pedido) for pedido in lista]
 
 
 async def criar_pedido(

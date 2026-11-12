@@ -37,6 +37,7 @@ from compras_pedido_fluxo import (
     reabrir_pedido_a_pagar,
     reabrir_orcamento_aprovado,
     reabrir_pedido,
+    resgatar_pedidos_nf_pronta_a_pagar,
     remover_anexo_pedido,
     separar_fila_assinatura,
     listar_fila_nf_pagamento,
@@ -831,6 +832,7 @@ async def get_pedido(
     await _ctx(db, usuario_atual)
     pedido = await obter_pedido(db, usuario_atual, pedido_id)
     await alinhar_status_consumo_escolhido_pelo_projeto(db, [pedido])
+    await resgatar_pedidos_nf_pronta_a_pagar(db, usuario_atual, [pedido])
     mudou = False
     if marcar_leitura_caixa_suprimentos(usuario_atual, pedido):
         mudou = True

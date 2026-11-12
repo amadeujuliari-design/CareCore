@@ -1,9 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import * as pdfjsLib from 'pdfjs-dist';
 
 import { PremiumButton } from './PremiumUI';
-
-pdfjsLib.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
+import { esperarCanvasPaginas, pdfjsLib } from '../utils/pdfjsWorker';
 
 function caixaPdf(box, metricas, altura) {
   const scaleX = metricas.pageW / metricas.canvasW;
@@ -122,6 +120,11 @@ export default function ModalPosicionarTextoNf({
     let tarefa = null;
     (async () => {
       try {
+        const canvasOk = await esperarCanvasPaginas(canvasRefs, total, () => cancelado);
+        if (!canvasOk || cancelado) {
+          if (!cancelado) setErro('Não foi possível montar a prévia do PDF. Feche e tente de novo.');
+          return;
+        }
         const lista = [];
         for (let indice = 0; indice < total; indice += 1) {
           const canvas = canvasRefs.current[indice];
@@ -131,10 +134,14 @@ export default function ModalPosicionarTextoNf({
           const base = page.getViewport({ scale: 1 });
           const scale = Math.min(720 / base.width, 1.35);
           const viewport = page.getViewport({ scale });
+          const ctx = canvas.getContext('2d', { alpha: false });
           canvas.width = viewport.width;
           canvas.height = viewport.height;
-          tarefa = page.render({ canvasContext: canvas.getContext('2d'), viewport });
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          tarefa = page.render({ canvasContext: ctx, viewport });
           await tarefa.promise;
+          if (cancelado) return;
           lista.push({
             canvasW: viewport.width,
             canvasH: viewport.height,

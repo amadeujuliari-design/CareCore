@@ -445,6 +445,8 @@ export default function ComprasPedido() {
   const [imprimindoNf, setImprimindoNf] = useState(false);
   const [modalEncerrarAposNf, setModalEncerrarAposNf] = useState(false);
   const [gravandoEncerrarNf, setGravandoEncerrarNf] = useState(false);
+  const [modalEscolherNfImpressao, setModalEscolherNfImpressao] = useState(null);
+  const [nfsImpressaoIds, setNfsImpressaoIds] = useState([]);
 
   // Autocheque leve a cada 30s (status/anexos/timeline) sem recarregar catálogos.
   useEffect(() => {
@@ -477,14 +479,51 @@ export default function ComprasPedido() {
     }
   };
 
-  const imprimirNfSede = async () => {
+  const notasComAnexoParaImpressao = () => (
+    (pedido?.notas_fiscais || []).filter((nf) => nf.anexo_id && nf.tipo_nf !== 'boleto')
+  );
+
+  const rotuloNfImpressao = (nf, indice) => {
+    const parcela = Number(nf.parcela_numero) || null;
+    const numero = (nf.numero || '').toString().trim();
+    const valor = Number(nf.valor_centavos) > 0
+      ? moneyCentavos(nf.valor_centavos)
+      : '';
+    const partes = [];
+    if (parcela) partes.push(`Parcela ${parcela}`);
+    else partes.push(`NF ${indice + 1}`);
+    if (numero) partes.push(`nº ${numero}`);
+    if (valor) partes.push(valor);
+    return partes.join(' · ');
+  };
+
+  const abrirImprimirNfSede = () => {
+    const notas = notasComAnexoParaImpressao();
+    if (!notas.length) {
+      setErro('Não há PDF ou imagem da nota fiscal para imprimir.');
+      return;
+    }
+    if (notas.length === 1) {
+      void imprimirNfSede(notas);
+      return;
+    }
+    setNfsImpressaoIds(notas.map((nf) => nf.id));
+    setModalEscolherNfImpressao(notas);
+  };
+
+  const imprimirNfSede = async (notasEscolhidas) => {
     if (imprimindoNfRef.current) return;
-    const notas = (pedido?.notas_fiscais || []).filter((nf) => nf.anexo_id);
+    const notas = (notasEscolhidas || []).filter((nf) => nf?.anexo_id);
+    if (!notas.length) {
+      setErro('Selecione ao menos uma nota fiscal para imprimir.');
+      return;
+    }
     const abertos = [];
     imprimindoNfRef.current = true;
     setImprimindoNf(true);
     setErro('');
     setOk('');
+    setModalEscolherNfImpressao(null);
     try {
       for (const nf of notas) {
         const aberto = await comprasAbrirAnexoBlob(pedido.id, nf.anexo_id);
@@ -510,7 +549,9 @@ export default function ComprasPedido() {
         await registrarImpressaoNfSede(false);
         return;
       }
-      setOk('Impressão da nota fiscal aberta.');
+      setOk(notas.length > 1
+        ? `Impressão aberta para ${notas.length} notas fiscais.`
+        : 'Impressão da nota fiscal aberta.');
     } catch (err) {
       setErro(err.response?.data?.detail || err.message || 'Não foi possível imprimir a nota fiscal.');
     } finally {
@@ -1182,7 +1223,7 @@ export default function ComprasPedido() {
                 <PremiumButton
                   type="button"
                   variant={pedido.nf_impressa ? 'secondary' : 'primary'}
-                  onClick={imprimirNfSede}
+                  onClick={abrirImprimirNfSede}
                   disabled={imprimindoNf}
                 >
                   {imprimindoNf ? 'Abrindo impressão…' : (pedido.nf_impressa ? 'Imprimir novamente' : 'Imprimir NF')}
@@ -3631,6 +3672,76 @@ export default function ComprasPedido() {
           }
         }}
       />
+      {modalEscolherNfImpressao ? (
+        <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-900/50 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl">
+            <p className="text-base font-black text-slate-900">Quais NFs imprimir?</p>
+            <p className="mt-2 text-sm text-slate-600">
+              Este pedido tem mais de uma nota. Escolha uma, várias ou todas.
+            </p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <PremiumButton
+                type="button"
+                variant="secondary"
+                onClick={() => setNfsImpressaoIds(modalEscolherNfImpressao.map((nf) => nf.id))}
+              >
+                Todas
+              </PremiumButton>
+              <PremiumButton
+                type="button"
+                variant="secondary"
+                onClick={() => setNfsImpressaoIds([])}
+              >
+                Nenhuma
+              </PremiumButton>
+            </div>
+            <ul className="mt-3 max-h-64 space-y-2 overflow-y-auto">
+              {modalEscolherNfImpressao.map((nf, indice) => {
+                const marcado = nfsImpressaoIds.includes(nf.id);
+                return (
+                  <li key={nf.id}>
+                    <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-800 hover:bg-slate-50">
+                      <input
+                        type="checkbox"
+                        className="mt-1"
+                        checked={marcado}
+                        onChange={(e) => {
+                          setNfsImpressaoIds((prev) => (
+                            e.target.checked
+                              ? [...prev, nf.id]
+                              : prev.filter((id) => id !== nf.id)
+                          ));
+                        }}
+                      />
+                      <span>{rotuloNfImpressao(nf, indice)}</span>
+                    </label>
+                  </li>
+                );
+              })}
+            </ul>
+            <div className="mt-4 flex flex-wrap justify-end gap-2">
+              <PremiumButton
+                type="button"
+                variant="secondary"
+                disabled={imprimindoNf}
+                onClick={() => setModalEscolherNfImpressao(null)}
+              >
+                Cancelar
+              </PremiumButton>
+              <PremiumButton
+                type="button"
+                disabled={imprimindoNf || nfsImpressaoIds.length === 0}
+                onClick={() => {
+                  const escolhidas = modalEscolherNfImpressao.filter((nf) => nfsImpressaoIds.includes(nf.id));
+                  void imprimirNfSede(escolhidas);
+                }}
+              >
+                {imprimindoNf ? 'Abrindo impressão…' : 'Imprimir selecionadas'}
+              </PremiumButton>
+            </div>
+          </div>
+        </div>
+      ) : null}
       {modalEncerrarAposNf ? (
         <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-900/50 p-4">
           <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl">

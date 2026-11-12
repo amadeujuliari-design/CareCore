@@ -4001,11 +4001,27 @@ def _exigir_infraestrutura(usuario: dict) -> None:
         raise HTTPException(status_code=403, detail="Somente a Infraestrutura acessa esta fila.")
 
 
+async def _resgatar_enviados_prontos_da_org(db: AsyncSession, usuario: dict, org_id: str) -> None:
+    candidatos = list(
+        (
+            await db.execute(
+                select(ComprasPedidoDB).where(
+                    ComprasPedidoDB.organizacao_id == org_id,
+                    ComprasPedidoDB.status == STATUS_ENVIADO,
+                )
+            )
+        ).scalars().all()
+    )
+    if candidatos:
+        await resgatar_pedidos_nf_pronta_a_pagar(db, usuario, candidatos)
+
+
 async def listar_fila_nf_pagamento(db: AsyncSession, usuario: dict) -> list[ComprasPedidoDB]:
     _exigir_infraestrutura(usuario)
     org_id = usuario.get("organizacao_id")
     if not org_id:
         return []
+    await _resgatar_enviados_prontos_da_org(db, usuario, org_id)
     rows = list(
         (
             await db.execute(
@@ -4033,6 +4049,7 @@ async def listar_fila_nf_pagamento_suprimentos(db: AsyncSession, usuario: dict) 
     org_id = usuario.get("organizacao_id")
     if not org_id:
         return []
+    await _resgatar_enviados_prontos_da_org(db, usuario, org_id)
     rows = list(
         (
             await db.execute(
@@ -4225,6 +4242,54 @@ async def _pedido_pronto_enviar_a_pagar(db: AsyncSession, pedido: ComprasPedidoD
         return True
     notas = await _notas_pedido(db, pedido.id)
     return pedido_tem_nf_pronta_para_a_pagar(notas)
+
+
+async def resgatar_pedidos_nf_pronta_a_pagar(
+    db: AsyncSession,
+    usuario: dict,
+    pedidos: list[ComprasPedidoDB],
+) -> bool:
+    """Resgata pedidos travados em enviado_fornecedor com NF já pronta.
+
+    Antes da regra parcela a parcela, o parcelado só ia a A pagar com todas as NFs.
+    Pedidos como Leopoldina ficaram com 1 NF assinada e status antigo.
+    """
+    mudou = False
+    for pedido in pedidos or []:
+        if (pedido.status or "") != STATUS_ENVIADO:
+            continue
+        if tipo_eh_emergencia(pedido.tipo):
+            continue
+        if not await _pedido_pronto_enviar_a_pagar(db, pedido):
+            continue
+        anterior = pedido.status
+        agora = agora_operacional_naive()
+        pedido.status = STATUS_AGUARDANDO_PAGAMENTO
+        pedido.a_pagar_lida_em = None
+        pedido.a_pagar_lida_por_id = None
+        pedido.atualizado_em = agora
+        destino = getattr(pedido, "destino_compras", None)
+        fila = (
+            "Suprimentos"
+            if not pedido_segue_infraestrutura(pedido.tipo, destino)
+            else "Infraestrutura"
+        )
+        await registrar_evento_pedido(
+            db,
+            pedido_id=pedido.id,
+            tipo=TIPO_EVENTO_STATUS,
+            texto=(
+                f"NF já assinada com data de pagamento. Pedido resgatado automaticamente "
+                f"para a fila A pagar ({fila})."
+            ),
+            usuario_id=_uid(usuario),
+            status_anterior=anterior,
+            status_novo=STATUS_AGUARDANDO_PAGAMENTO,
+        )
+        mudou = True
+    if mudou:
+        await db.commit()
+    return mudou
 
 
 async def _sincronizar_status_emergencia_apos_nf(

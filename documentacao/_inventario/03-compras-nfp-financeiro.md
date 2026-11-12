@@ -283,7 +283,7 @@ Na emergência, **quem anexa e assina a NF é o projeto**. Sem NF o status é **
 
 Quando o projeto encerra, o status vai para **Imprimir NF** (concluídos). Infraestrutura e Suprimentos abrem a caixa da impressora; depois a tela pergunta se o pedido vai para **Encerrado**. Pedidos que já estavam Encerrado permanecem Encerrado.
 
-Para a Sede, ao abrir um pedido em Imprimir NF ou Encerrado, o aviso abaixo do título diz se a NF **ainda não foi impressa** ou **já foi impressa** (com data). **Imprimir NF** / **Imprimir novamente** abre o PDF ou a imagem. Abrir o pedido concluído de Suprimentos marca a linha como lida na caixa.
+Para a Sede, ao abrir um pedido em Imprimir NF, Encerrado ou **A pagar**, o aviso abaixo do título diz se a NF **ainda não foi impressa** ou **já foi impressa** (com data). **Imprimir NF** / **Imprimir novamente**: com **uma** NF, abre direto o PDF/imagem; com **mais de uma** (parcelado), a Sede escolhe quais imprimir (1, várias ou todas). Abrir o pedido concluído de Suprimentos marca a linha como lida na caixa.
 
 #### Fluxo (ações condicionais ao status)
 
