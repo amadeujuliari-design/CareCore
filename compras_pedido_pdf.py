@@ -283,18 +283,32 @@ def _rodape_itens(identidade: Optional[dict[str, Any]], extra: Optional[str] = N
 
 
 def _build_pdf(story: list) -> bytes:
-    buffer = BytesIO()
-    doc = SimpleDocTemplate(
-        buffer,
-        pagesize=A4,
-        leftMargin=12 * mm,
-        rightMargin=12 * mm,
-        topMargin=12 * mm,
-        bottomMargin=14 * mm,
-        title="CareCore+ Compras",
-    )
-    doc.build(story)
-    return buffer.getvalue()
+    # Outlook e outros visualizadores embutidos falham com streams ASCII85
+    # (prévia em branco); Acrobat abre. Força Flate binário só neste PDF.
+    import reportlab.rl_config as rl_config
+
+    a85_antes = getattr(rl_config, "useA85", 1)
+    wrap_antes = getattr(rl_config, "wrapA85", None)
+    try:
+        rl_config.useA85 = 0
+        if wrap_antes is not None:
+            rl_config.wrapA85 = 0
+        buffer = BytesIO()
+        doc = SimpleDocTemplate(
+            buffer,
+            pagesize=A4,
+            leftMargin=12 * mm,
+            rightMargin=12 * mm,
+            topMargin=12 * mm,
+            bottomMargin=14 * mm,
+            title="CareCore+ Compras",
+        )
+        doc.build(story)
+        return buffer.getvalue()
+    finally:
+        rl_config.useA85 = a85_antes
+        if wrap_antes is not None:
+            rl_config.wrapA85 = wrap_antes
 
 
 def montar_pdf_solicitacao_cotacao(
@@ -364,6 +378,7 @@ def montar_pdf_pedido_compra(
     identidade: Optional[dict[str, Any]] = None,
     logo_bytes: Optional[bytes] = None,
     data_pedido: Optional[str] = None,
+    incluir_itens: bool = True,
 ) -> bytes:
     styles = _styles()
     projeto = (instituicao or {}).get("nome") or pedido.get("instituicao_nome") or "Projeto"
@@ -413,10 +428,19 @@ def montar_pdf_pedido_compra(
             ]
         ),
         Spacer(1, 8),
-        Paragraph("ITENS", styles["label"]),
-        _tabela_itens(styles, itens),
-        Spacer(1, 14),
     ]
+    if incluir_itens:
+        story.append(Paragraph("ITENS", styles["label"]))
+        story.append(_tabela_itens(styles, itens))
+        story.append(Spacer(1, 14))
+    else:
+        story.append(
+            Paragraph(
+                "Forneça conforme o orçamento anexo a este e-mail.",
+                styles["corpo"],
+            )
+        )
+        story.append(Spacer(1, 14))
     for linha in _rodape_itens(identidade, "Endereço de entrega do projeto acima."):
         story.append(Paragraph(linha, styles["rodape"]))
     return _build_pdf(story)
@@ -504,6 +528,7 @@ def montar_html_pedido_compra(
     cotacao_escolhida: Optional[dict[str, Any]],
     numero_pedido: str,
     data_pedido: Optional[str] = None,
+    incluir_itens: bool = True,
 ) -> str:
     linhas_itens = "".join(
         f"<tr><td>{_escape_html(str(item.get('quantidade', '')))}</td>"
@@ -523,11 +548,16 @@ def montar_html_pedido_compra(
     org = _escape_html(organizacao_nome or "AEB")
     linha_data = _linha_data_documento(data_pedido, "Data do pedido")
     data_html = f"<p>{_escape_html(linha_data)}</p>" if linha_data else ""
+    bloco_itens = (
+        f"<table>{linhas_itens}</table>"
+        if incluir_itens
+        else "<p>Forneça conforme o orçamento anexo a este e-mail.</p>"
+    )
     return (
         f"<h1>Pedido de compra {_escape_html(numero_pedido)}</h1>"
         f"{data_html}"
         f"<p>{org}</p><p>{projeto}</p><p>{endereco}</p>"
-        f"<p>{fornecedor} {valor}</p><table>{linhas_itens}</table>"
+        f"<p>{fornecedor} {valor}</p>{bloco_itens}"
     )
 
 

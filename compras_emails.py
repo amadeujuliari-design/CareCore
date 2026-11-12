@@ -109,7 +109,7 @@ def corpo_padrao_pedido_compra(
         )
         return (
             f"Segue em anexo o pedido de compra do {projeto} e o orçamento {extra}.\n\n"
-            "Endereço de entrega conforme documento do pedido.\n\n"
+            "Forneça conforme o orçamento anexo. Endereço de entrega conforme documento do pedido.\n\n"
             "— CareCore+ / Compras"
         )
     return (

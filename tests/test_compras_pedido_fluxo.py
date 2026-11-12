@@ -69,6 +69,37 @@ def test_pedido_compra_mostra_embalagem():
     assert "Data do pedido: 29/10/2026" in html
 
 
+def test_pedido_compra_pdf_omite_itens_somente_suprimentos():
+    from compras_regras import pedido_compra_pdf_omite_itens
+
+    assert pedido_compra_pdf_omite_itens("consumo") is True
+    assert pedido_compra_pdf_omite_itens("manutencao", "suprimentos") is True
+    assert pedido_compra_pdf_omite_itens("hortifruti") is False
+    assert pedido_compra_pdf_omite_itens("emergencia", "suprimentos") is False
+    assert pedido_compra_pdf_omite_itens("imobilizado") is False
+    assert pedido_compra_pdf_omite_itens("manutencao", "infraestrutura") is False
+
+    html = montar_html_pedido_compra(
+        pedido={"competencia": "2026-11", "tipo": "consumo"},
+        instituicao={"nome": "Casa Porto"},
+        organizacao_nome="AEB",
+        itens=[{
+            "quantidade": 2,
+            "unidade_medida": "un",
+            "descricao": "Item que nao deve aparecer",
+            "embalagem": None,
+            "marca_preferencial": None,
+        }],
+        cotacao_escolhida={"fornecedor_nome": "CARECORE TESTE COMPRAS3", "valor_centavos": 15000},
+        numero_pedido="TESTE01",
+        data_pedido="12/11/2026",
+        incluir_itens=False,
+    )
+    assert "Item que nao deve aparecer" not in html
+    assert "Forneça conforme o orçamento anexo" in html
+    assert "CARECORE TESTE COMPRAS3" in html
+
+
 def test_solicitacao_cotacao_pdf_padrao_aeb():
     from io import BytesIO
     from pypdf import PdfReader

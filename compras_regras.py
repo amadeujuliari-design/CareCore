@@ -574,6 +574,20 @@ def pedido_segue_infraestrutura(tipo: Optional[str], destino: Optional[str] = No
     )
 
 
+def pedido_compra_pdf_omite_itens(tipo: Optional[str], destino: Optional[str] = None) -> bool:
+    """PDF do pedido de compra de Suprimentos sem lista de itens.
+
+    Vale para consumo e manutenção+Suprimentos. Mantém a lista em hortifruti,
+    emergência e em qualquer fluxo que siga Infraestrutura.
+    """
+    chave = (tipo or "").strip().lower()
+    if chave in {TIPO_HORTIFRUTI, TIPO_EMERGENCIA}:
+        return False
+    if pedido_segue_infraestrutura(tipo, destino):
+        return False
+    return chave in {TIPO_CONSUMO, TIPO_MANUTENCAO}
+
+
 PAGAMENTO_PARCELAS_MAX = 36
 
 

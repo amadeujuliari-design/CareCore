@@ -128,6 +128,7 @@ from compras_regras import (
     ETAPA_CONTRATO_NOEMI,
     ETAPA_CONTRATO_ROBSON,
     pedido_segue_infraestrutura,
+    pedido_compra_pdf_omite_itens,
     pedido_na_fila_nf_pagamento,
     pedido_na_fila_nf_pagamento_suprimentos,
     pedido_pode_enviar_nf_para_a_pagar,
@@ -1936,6 +1937,10 @@ async def gerar_pedido_compra(
     logo_bytes = _logo_bytes_relatorio(identidade.get("relatorio_logo_url"))
     numero = pedido.id.split("-")[0].upper()[:8]
     data_pedido = formatar_data_br_compras(data_operacional())
+    incluir_itens = not pedido_compra_pdf_omite_itens(
+        pedido.tipo,
+        getattr(pedido, "destino_compras", None),
+    )
     pdf_bytes = montar_pdf_pedido_compra(
         pedido={
             "competencia": pedido.competencia,
@@ -1968,6 +1973,7 @@ async def gerar_pedido_compra(
         identidade=identidade,
         logo_bytes=logo_bytes,
         data_pedido=data_pedido,
+        incluir_itens=incluir_itens,
     )
     conteudo = pdf_bytes
     nome_arquivo = f"pedido-compra-{numero}.pdf"
