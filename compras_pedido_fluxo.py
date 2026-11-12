@@ -107,6 +107,7 @@ from compras_regras import (
     aviso_pedido_sem_tres_orcamentos_para_sede,
     data_operacional,
     pedido_escopo_sede,
+    pedido_pronto_para_assinatura_sede_orcamento,
     pedido_itens_podem_editar,
     pedido_rascunho_pode_excluir,
     pode_reabrir_orcamento_aprovado,
@@ -1362,15 +1363,6 @@ async def arquivar_orcamento_assinado_govbr(
         )
     if pedido.status != STATUS_AGUARDANDO_SEDE:
         raise HTTPException(status_code=400, detail="Pedido não está aguardando aprovação da Sede.")
-    if not pedido.aprovado_unidade_em and not pedido_escopo_sede(getattr(pedido, "escopo_unidade", None)):
-        raise HTTPException(
-            status_code=400,
-            detail="O projeto precisa enviar o pedido à Sede antes da assinatura.",
-        )
-
-    nome = (file.filename or "").strip()
-    if not nome.lower().endswith(".pdf"):
-        raise HTTPException(status_code=400, detail="Envie o PDF assinado no gov.br.")
 
     escolhida = (
         await db.execute(
@@ -1383,6 +1375,23 @@ async def arquivar_orcamento_assinado_govbr(
     ).scalars().first()
     if not escolhida:
         raise HTTPException(status_code=400, detail="Escolha o orçamento vencedor antes de arquivar o PDF.")
+    if not pedido_pronto_para_assinatura_sede_orcamento(
+        escopo_unidade=getattr(pedido, "escopo_unidade", None),
+        aprovado_unidade_em=getattr(pedido, "aprovado_unidade_em", None),
+        submetido_em=getattr(pedido, "submetido_em", None),
+        status=pedido.status,
+        tem_orcamento_escolhido=True,
+        tipo=pedido.tipo,
+        destino=getattr(pedido, "destino_compras", None),
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="O projeto precisa enviar o pedido à Sede antes da assinatura.",
+        )
+
+    nome = (file.filename or "").strip()
+    if not nome.lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="Envie o PDF assinado no gov.br.")
 
     conteudo = await file.read()
     if not conteudo:
@@ -1778,8 +1787,8 @@ async def reabrir_orcamento_aprovado(
         if anexo.tipo in {TIPO_ANEXO_ORCAMENTO_ASSINADO, TIPO_ANEXO_PEDIDO_PDF}:
             anexo.ativo = False
     pedido.pedido_compra_anexo_id = None
-    pedido.aprovado_unidade_por_id = None
-    pedido.aprovado_unidade_em = None
+    # Mantém aprovado_unidade_* / submetido_em: o projeto já encaminhou;
+    # só a escolha e a assinatura da Sede recomeçam.
     pedido.aprovado_sede_por_id = None
     pedido.aprovado_sede_em = None
     anterior = pedido.status
@@ -1792,7 +1801,8 @@ async def reabrir_orcamento_aprovado(
         texto=(
             f"Sede reabriu o orçamento aprovado. Motivo: {texto}. "
             "O processo voltou para a escolha do orçamento vencedor; "
-            "o projeto pode corrigir/excluir/anexar orçamentos e a Sede precisa escolher e assinar de novo."
+            "o projeto pode corrigir/excluir/anexar orçamentos e a Sede precisa escolher e assinar de novo "
+            "(sem novo envio do projeto à Sede)."
         ),
         usuario_id=_uid(usuario),
         status_anterior=anterior,
@@ -3471,11 +3481,6 @@ async def assinar_orcamento_e_aprovar_sede(
         raise HTTPException(status_code=403, detail="Pedido fora do escopo da sua classe de Compras.")
     if pedido.status != STATUS_AGUARDANDO_SEDE:
         raise HTTPException(status_code=400, detail="Pedido não está aguardando aprovação da Sede.")
-    if not pedido.aprovado_unidade_em and not pedido_escopo_sede(getattr(pedido, "escopo_unidade", None)):
-        raise HTTPException(
-            status_code=400,
-            detail="O projeto precisa enviar o pedido à Sede antes da assinatura.",
-        )
 
     from models import UsuarioDB
 
@@ -3499,6 +3504,19 @@ async def assinar_orcamento_e_aprovar_sede(
         raise HTTPException(
             status_code=400,
             detail="Escolha o orçamento vencedor nesta fila antes de assinar.",
+        )
+    if not pedido_pronto_para_assinatura_sede_orcamento(
+        escopo_unidade=getattr(pedido, "escopo_unidade", None),
+        aprovado_unidade_em=getattr(pedido, "aprovado_unidade_em", None),
+        submetido_em=getattr(pedido, "submetido_em", None),
+        status=pedido.status,
+        tem_orcamento_escolhido=True,
+        tipo=pedido.tipo,
+        destino=destino,
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="O projeto precisa enviar o pedido à Sede antes da assinatura.",
         )
     await unificar_orcamentos_vencedor(db, usuario, pedido, escolhida)
 

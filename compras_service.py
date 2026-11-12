@@ -2048,6 +2048,14 @@ async def escolher_cotacao(
             agora_escolha = agora_operacional_naive()
             pedido.aprovado_unidade_por_id = _uid(usuario)
             pedido.aprovado_unidade_em = agora_escolha
+        # Pós-reabertura (ou flag zerada): ao voltar para assinatura da Sede,
+        # restaura o encaminhamento da unidade sem exigir novo "Enviar à Sede".
+        if (
+            status_novo == STATUS_AGUARDANDO_SEDE
+            and not pedido.aprovado_unidade_em
+            and not _pedido_escopo_sede(pedido)
+        ):
+            pedido.aprovado_unidade_em = pedido.submetido_em or agora_operacional_naive()
         pedido.status = status_novo
         if status_novo == STATUS_APROVADO:
             await registrar_evento_pedido(

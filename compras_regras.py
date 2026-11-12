@@ -1601,6 +1601,39 @@ def pedido_escopo_sede(escopo_unidade: Optional[str]) -> bool:
     return (escopo_unidade or ESCOPO_PROJETO).strip().lower() == ESCOPO_SEDE
 
 
+def pedido_pronto_para_assinatura_sede_orcamento(
+    *,
+    escopo_unidade: Optional[str],
+    aprovado_unidade_em: Optional[datetime] = None,
+    submetido_em: Optional[datetime] = None,
+    status: Optional[str] = None,
+    tem_orcamento_escolhido: bool = False,
+    tipo: Optional[str] = None,
+    destino: Optional[str] = None,
+) -> bool:
+    """Projeto já encaminhou à Sede, ou a fila de assinatura já está aberta.
+
+    Após reabertura do orçamento aprovado, versões antigas zeravam
+    ``aprovado_unidade_em``. O pedido segue assinável se ainda houver
+    ``submetido_em`` ou se a Sede/Infra já recolocou o status em
+    ``aguardando_aprovacao_sede`` com orçamento escolhido.
+    """
+    if pedido_escopo_sede(escopo_unidade):
+        return True
+    if aprovado_unidade_em or submetido_em:
+        return True
+    if (
+        (status or "") == STATUS_AGUARDANDO_SEDE
+        and tem_orcamento_escolhido
+        and (
+            tipo_eh_cotacao_projeto(tipo)
+            or pedido_segue_infraestrutura(tipo, destino)
+        )
+    ):
+        return True
+    return False
+
+
 def normalizar_escopo_unidade(valor: Optional[str]) -> str:
     escopo = (valor or ESCOPO_PROJETO).strip().lower()
     if escopo not in ESCOPOS_UNIDADE:

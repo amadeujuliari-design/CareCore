@@ -146,3 +146,42 @@ def test_infra_apos_reabertura_escolha_volta_para_assinatura():
         projeto_escolheu=False,
         status_atual=STATUS_AGUARDANDO_SEDE,
     ) is None
+
+
+def test_assinatura_sede_apos_reabertura_sem_aprovado_unidade():
+    """Pedido reaberto (flag unidade zerada) continua assinável na Sede."""
+    from datetime import datetime
+
+    from compras_regras import (
+        STATUS_AGUARDANDO_SEDE,
+        TIPO_SERVICO,
+        pedido_pronto_para_assinatura_sede_orcamento,
+    )
+
+    # Caso Reforma Telhado: aprovado_unidade_em limpo, mas já em Aguardando Sede com escolha.
+    assert pedido_pronto_para_assinatura_sede_orcamento(
+        escopo_unidade="projeto",
+        aprovado_unidade_em=None,
+        submetido_em=None,
+        status=STATUS_AGUARDANDO_SEDE,
+        tem_orcamento_escolhido=True,
+        tipo=TIPO_SERVICO,
+    )
+    # Ainda sem envio e sem escolha: bloqueia.
+    assert not pedido_pronto_para_assinatura_sede_orcamento(
+        escopo_unidade="projeto",
+        aprovado_unidade_em=None,
+        submetido_em=None,
+        status=STATUS_AGUARDANDO_SEDE,
+        tem_orcamento_escolhido=False,
+        tipo=TIPO_SERVICO,
+    )
+    # submetido_em preservado após reabertura antiga também libera.
+    assert pedido_pronto_para_assinatura_sede_orcamento(
+        escopo_unidade="projeto",
+        aprovado_unidade_em=None,
+        submetido_em=datetime(2026, 10, 1, 10, 0),
+        status=STATUS_AGUARDANDO_SEDE,
+        tem_orcamento_escolhido=True,
+        tipo=TIPO_SERVICO,
+    )
