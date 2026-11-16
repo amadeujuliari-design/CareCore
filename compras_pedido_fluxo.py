@@ -3307,10 +3307,18 @@ async def remover_anexo_pedido(
         pedido.atualizado_em = agora_operacional_naive()
         return
     if anexo.tipo == TIPO_ANEXO_AQUISICAO:
-        if pedido.status != STATUS_ENVIADO:
+        if not pedido_pode_corrigir_nf(
+            status=pedido.status,
+            nf_impressa_em=getattr(pedido, "nf_impressa_em", None),
+            tipo=pedido.tipo,
+        ):
             raise HTTPException(
                 status_code=400,
-                detail="Os arquivos da aquisição só podem ser excluídos antes de encerrar o processo.",
+                detail=(
+                    "A nota já foi impressa. Reabra o pedido em A pagar para excluir o arquivo."
+                    if getattr(pedido, "nf_impressa_em", None)
+                    else "Os arquivos da aquisição só podem ser excluídos antes de encerrar o processo."
+                ),
             )
         anexo.ativo = False
         remover_arquivo_compras(anexo.caminho_arquivo)
