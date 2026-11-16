@@ -467,11 +467,20 @@ export default function ComprasPedido() {
       const dados = await comprasRegistrarImpressaoNf(atual.id, { encerrar });
       setPedido(dados);
       setModalEncerrarAposNf(false);
-      setOk(encerrar
-        ? 'Nota fiscal impressa e pedido enviado para Encerrado.'
-        : (atual.status === 'imprimir_nf'
-          ? 'Nota fiscal impressa. O status permanece Imprimir NF.'
-          : 'Impressão da nota fiscal registrada.'));
+      const parceladoAberto = dados.status === 'aguardando_pagamento'
+        && Number(dados.pagamento_qtd_parcelas) > 1
+        && !dados.pagamento_completo;
+      if (parceladoAberto) {
+        setOk('Nota desta parcela impressa. O pedido continua em A pagar para as demais parcelas.');
+      } else if (dados.status === 'recebido' && atual.status === 'aguardando_pagamento') {
+        setOk('Nota impressa e pedido concluído.');
+      } else {
+        setOk(encerrar
+          ? 'Nota fiscal impressa e pedido enviado para Encerrado.'
+          : (atual.status === 'imprimir_nf'
+            ? 'Nota fiscal impressa. O status permanece Imprimir NF.'
+            : 'Impressão da nota fiscal registrada.'));
+      }
     } catch (err) {
       setErro(err.response?.data?.detail || err.message || 'Não foi possível registrar a impressão da nota fiscal.');
     } finally {
@@ -691,10 +700,6 @@ export default function ComprasPedido() {
   const orcamentoAssinadoPelaSede = ['aprovado', 'enviado_fornecedor', 'recebido'].includes(pedido.status);
   const contratosPedido = (pedido.anexos || []).filter((a) => a.classe_documento === 'contrato');
   const notasFiscaisPedido = (pedido.notas_fiscais || []).filter((nf) => nf.tipo_nf !== 'boleto');
-  const maiorParcelaComDocumento = Math.max(
-    0,
-    ...(pedido.pagamento_parcelas || []).filter((p) => p.paga).map((p) => Number(p.numero) || 0),
-  );
   const mostraPassoContrato = segueInfra && !ehEmergencia && (
     orcamentoAssinadoPelaSede
     || contratosPedido.length > 0
@@ -1212,7 +1217,7 @@ export default function ComprasPedido() {
                 {pedido.status === 'aguardando_pagamento'
                   ? (
                     segueInfra && pedido.pagamento_qtd_parcelas > 1 && !pedido.pagamento_completo
-                      ? 'A pagar: imprima a NF desta parcela. O pedido só conclui quando todas as parcelas tiverem NF/comprovante (ou quando o projeto marcar que todos os valores já foram pagos).'
+                      ? 'A pagar: imprima só a NF desta parcela. O plano parcelado permanece e o pedido continua aberto para as demais. Ele só conclui quando todas tiverem NF ou comprovante, ou quando marcarem que todos os valores já foram pagos.'
                       : 'A pagar: ao imprimir a NF/documento para pagamento, o pedido vai automaticamente para Concluídos.'
                   )
                   : pedido.nf_impressa
@@ -2653,7 +2658,7 @@ export default function ComprasPedido() {
             {segueInfra && !ehEmergencia && compraJaExecutada && !terminal && (
               <SectionCard
                 title="Pagamento"
-                subtitle="À vista (1 pagamento) ou parcelado. Cada NF assinada com data de pagamento vai para A pagar na hora; nova parcela reabre a fila. O pedido só conclui quando todas as parcelas tiverem documento ou quando você marcar que o valor total já foi quitado."
+                subtitle="À vista (1 pagamento) ou parcelado. Cada NF assinada com data de pagamento vai para A pagar na hora; nova parcela reabre a fila. Imprimir uma parcela não muda a quantidade nem conclui o pedido. Ele só conclui quando todas as parcelas tiverem documento ou quando o valor total já foi quitado."
               >
                 {!pedido.pagamento_qtd_parcelas ? (
                   <form
@@ -2732,23 +2737,6 @@ export default function ComprasPedido() {
                         ))}
                       </ul>
                     ) : null}
-                    {maiorParcelaComDocumento >= 1
-                      && maiorParcelaComDocumento < Number(pedido.pagamento_qtd_parcelas || 0) ? (
-                        <PremiumButton
-                          type="button"
-                          variant="secondary"
-                          onClick={() => {
-                            const qtdAtual = Number(pedido.pagamento_qtd_parcelas || 0);
-                            if (!window.confirm(`O cliente pagou em ${maiorParcelaComDocumento} parcelas. Ajustar o pedido de ${qtdAtual} para ${maiorParcelaComDocumento}?`)) return;
-                            agir(
-                              () => comprasDefinirPagamento(pedido.id, maiorParcelaComDocumento),
-                              `Pagamento ajustado para ${maiorParcelaComDocumento} parcela${maiorParcelaComDocumento === 1 ? '' : 's'}.`,
-                            );
-                          }}
-                        >
-                          Cliente pagou em {maiorParcelaComDocumento} parcela{maiorParcelaComDocumento === 1 ? '' : 's'}
-                        </PremiumButton>
-                      ) : null}
                     {!pedido.pagamento_completo ? (
                       <PremiumButton
                         variant="secondary"

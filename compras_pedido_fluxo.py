@@ -727,6 +727,16 @@ async def definir_pagamento_parcelas(
         qtd = normalizar_qtd_parcelas_pagamento(qtd_parcelas)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    plano = getattr(pedido, "pagamento_qtd_parcelas", None)
+    if plano and qtd < int(plano):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"O plano já está em {int(plano)} parcelas. "
+                "Imprima a nota da parcela atual; o pedido continua em A pagar para as demais. "
+                "A quantidade combinada pelo projeto não diminui."
+            ),
+        )
     atual = await situacao_pagamento_infra(db, pedido)
     maior = maior_parcela_com_documento(atual.get("parcelas"))
     if maior and qtd < maior:
@@ -3000,13 +3010,21 @@ async def registrar_impressao_nf_e_opcional_encerrar(
             segue=bool(sit.get("segue")),
             completo=bool(sit.get("completo")),
         ):
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    "Não é possível concluir: ainda há parcela sem NF ou comprovante. "
-                    "Anexe o documento da parcela restante ou marque que todos os valores já foram pagos."
+            qtd = int(sit.get("qtd_parcelas") or 0)
+            pagas = int(sit.get("parcelas_pagas") or 0)
+            await registrar_evento_pedido(
+                db,
+                pedido_id=pedido.id,
+                tipo=TIPO_EVENTO_STATUS,
+                texto=(
+                    f"NF impressa. O pagamento continua em {qtd} parcelas "
+                    f"({pagas} com documento) e o pedido permanece em A pagar."
                 ),
+                usuario_id=_uid(usuario),
+                status_anterior=pedido.status,
+                status_novo=pedido.status,
             )
+            return
     anterior = pedido.status
     registrar_impressao_nf_suprimentos(usuario, pedido, encerrar=encerrar)
     if anterior != pedido.status and pedido.status == STATUS_RECEBIDO:
