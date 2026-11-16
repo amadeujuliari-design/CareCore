@@ -134,12 +134,9 @@ export default function ModalPosicionarTextoNf({
           const base = page.getViewport({ scale: 1 });
           const scale = Math.min(720 / base.width, 1.35);
           const viewport = page.getViewport({ scale });
-          const ctx = canvas.getContext('2d', { alpha: false });
           canvas.width = viewport.width;
           canvas.height = viewport.height;
-          ctx.fillStyle = '#ffffff';
-          ctx.fillRect(0, 0, canvas.width, canvas.height);
-          tarefa = page.render({ canvasContext: ctx, viewport });
+          tarefa = page.render({ canvas, viewport });
           await tarefa.promise;
           if (cancelado) return;
           lista.push({

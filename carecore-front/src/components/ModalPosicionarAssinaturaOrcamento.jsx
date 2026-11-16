@@ -50,7 +50,7 @@ async function primeiraPaginaComoDataUrl(blob) {
   const canvas = document.createElement('canvas');
   canvas.width = viewport.width;
   canvas.height = viewport.height;
-  await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+  await page.render({ canvas, viewport }).promise;
   return {
     dataUrl: canvas.toDataURL('image/png'),
     aspect: viewport.width / Math.max(viewport.height, 1),
@@ -138,12 +138,9 @@ export default function ModalPosicionarAssinaturaOrcamento({
           const base = page.getViewport({ scale: 1 });
           const scale = Math.min(720 / base.width, 1.35);
           const viewport = page.getViewport({ scale });
-          const ctx = canvas.getContext('2d', { alpha: false });
           canvas.width = viewport.width;
           canvas.height = viewport.height;
-          ctx.fillStyle = '#ffffff';
-          ctx.fillRect(0, 0, canvas.width, canvas.height);
-          tarefa = page.render({ canvasContext: ctx, viewport });
+          tarefa = page.render({ canvas, viewport });
           await tarefa.promise;
           if (cancelado) return;
           lista.push({
