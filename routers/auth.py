@@ -5,6 +5,7 @@
 # =====================================================================
 
 from datetime import timedelta, datetime, timezone
+import asyncio
 import hashlib
 import logging
 import os
@@ -402,10 +403,12 @@ async def login(
             detail="Usuário ou senha inválidos.",
         )
 
-    if not verificar_senha(
+    senha_ok = await asyncio.to_thread(
+        verificar_senha,
         payload.senha,
         usuario.senha_hash,
-    ):
+    )
+    if not senha_ok:
         await registrar_falha_login(request, email)
         registrar_evento_auditoria(
             "login_falha",

@@ -17,6 +17,28 @@ from credenciais_convivente import (
 
 PRIORIDADES_OCORRENCIA = ["Baixa", "Média", "Alta", "Crítica"]
 PESO_PRIORIDADE = {"Baixa": 1, "Média": 2, "Alta": 3, "Crítica": 4}
+_PRIORIDADES_ALTAS = frozenset({"Alta", "Crítica"})
+
+
+def agregar_resumo_prioridades_ocorrencias(linhas) -> tuple[int, int, dict]:
+    """Uma leitura agrupada substitui um count por prioridade no dashboard."""
+    resumo = {nome: {"total": 0, "pendentes": 0} for nome in PRIORIDADES_OCORRENCIA}
+    pendentes = 0
+    criticas_altas_pendentes = 0
+    for prioridade, status, total in linhas:
+        qtd = int(total or 0)
+        aberta = status is not None and status != "Resolvido"
+        if aberta:
+            pendentes += qtd
+            if prioridade in _PRIORIDADES_ALTAS:
+                criticas_altas_pendentes += qtd
+        item = resumo.get(prioridade)
+        if item is None:
+            continue
+        item["total"] += qtd
+        if aberta:
+            item["pendentes"] += qtd
+    return pendentes, criticas_altas_pendentes, resumo
 
 
 def normalizar_prioridade_ocorrencia(valor: str | None) -> str:

@@ -172,6 +172,7 @@ from security import (
 from routers.conviventes_helpers import (
     PESO_PRIORIDADE,
     PRIORIDADES_OCORRENCIA,
+    agregar_resumo_prioridades_ocorrencias,
     agora_sao_paulo,
     aplicar_credenciais_convivente_salvar,
     convivente_para_response,
@@ -8961,54 +8962,38 @@ async def _resumo_ocorrencias_dashboard(
     perfil: str | None,
     user_id: str | None,
 ):
-    base = select(OcorrenciaConviventeDB).where(OcorrenciaConviventeDB.instituicao_id == inst_id)
+    filtros = [OcorrenciaConviventeDB.instituicao_id == inst_id]
     if perfil == "Orientador":
         subq = select(ObservadorOcorrenciaDB.ocorrencia_id).where(
             ObservadorOcorrenciaDB.usuario_id == user_id
         )
-        base = base.where(
+        filtros.append(
             or_(
                 OcorrenciaConviventeDB.usuario_criador_id == user_id,
                 OcorrenciaConviventeDB.id.in_(subq),
             )
         )
 
-    def contar(expressao=None):
-        consulta = base
-        if expressao is not None:
-            consulta = consulta.where(expressao)
-        return select(func.count()).select_from(consulta.order_by(None).subquery())
-
-    ocorrencias_pendentes = int((await db.execute(
-        contar(OcorrenciaConviventeDB.status_resolucao != "Resolvido")
-    )).scalar_one() or 0)
-
-    ocorrencias_criticas_altas_pendentes = int((await db.execute(
-        contar(
-            and_(
-                OcorrenciaConviventeDB.status_resolucao != "Resolvido",
-                OcorrenciaConviventeDB.prioridade.in_(["Alta", "Crítica"]),
+    base = select(OcorrenciaConviventeDB).where(*filtros)
+    linhas_prioridade = (
+        await db.execute(
+            select(
+                OcorrenciaConviventeDB.prioridade,
+                OcorrenciaConviventeDB.status_resolucao,
+                func.count().label("total"),
+            )
+            .where(*filtros)
+            .group_by(
+                OcorrenciaConviventeDB.prioridade,
+                OcorrenciaConviventeDB.status_resolucao,
             )
         )
-    )).scalar_one() or 0)
-
-    resumo_prioridades = {}
-    for prioridade in PRIORIDADES_OCORRENCIA:
-        total_prioridade = int((await db.execute(
-            contar(OcorrenciaConviventeDB.prioridade == prioridade)
-        )).scalar_one() or 0)
-        pendentes_prioridade = int((await db.execute(
-            contar(
-                and_(
-                    OcorrenciaConviventeDB.prioridade == prioridade,
-                    OcorrenciaConviventeDB.status_resolucao != "Resolvido",
-                )
-            )
-        )).scalar_one() or 0)
-        resumo_prioridades[prioridade] = {
-            "total": total_prioridade,
-            "pendentes": pendentes_prioridade,
-        }
+    ).all()
+    (
+        ocorrencias_pendentes,
+        ocorrencias_criticas_altas_pendentes,
+        resumo_prioridades,
+    ) = agregar_resumo_prioridades_ocorrencias(linhas_prioridade)
 
     peso_sql = case(
         (OcorrenciaConviventeDB.prioridade == "Crítica", 4),
@@ -9143,19 +9128,12 @@ async def _resumo_ocorrencias_dashboard(
 
 
 async def _contagens_presenca_conviventes(db: AsyncSession, inst_id: str) -> dict:
-    ativos = (await db.execute(
-        select(func.count(ConviventeDB.id)).where(
-            ConviventeDB.instituicao_id == inst_id,
-            ConviventeDB.status == "Ativo",
-        )
-    )).scalar_one()
-
-    ausencias_justificadas = (await db.execute(
-        select(func.count(ConviventeDB.id)).where(
-            ConviventeDB.instituicao_id == inst_id,
-            ConviventeDB.status == "Ausência justificada",
-        )
-    )).scalar_one()
+    ativos, ausencias_justificadas = (await db.execute(
+        select(
+            func.count(case((ConviventeDB.status == "Ativo", ConviventeDB.id))),
+            func.count(case((ConviventeDB.status == "Ausência justificada", ConviventeDB.id))),
+        ).where(ConviventeDB.instituicao_id == inst_id)
+    )).one()
 
     ativos_int = int(ativos or 0)
     ausencias_int = int(ausencias_justificadas or 0)
@@ -9197,20 +9175,14 @@ async def dashboard_resumo(
     ausencias_justificadas = contagens_presenca["ausenciasJustificadas"]
     ativos_com_ausencias_justificadas = contagens_presenca["ativosComAusenciasJustificadas"]
 
-    total_leitos = (await db.execute(
-        select(func.count(LeitoDB.id))
+    total_leitos, leitos_ocupados = (await db.execute(
+        select(
+            func.count(LeitoDB.id),
+            func.count(case((LeitoDB.status == "Ocupado", LeitoDB.id))),
+        )
         .join(QuartoDB, QuartoDB.id == LeitoDB.quarto_id)
         .where(QuartoDB.instituicao_id == inst_id)
-    )).scalar_one()
-
-    leitos_ocupados = (await db.execute(
-        select(func.count(LeitoDB.id))
-        .join(QuartoDB, QuartoDB.id == LeitoDB.quarto_id)
-        .where(
-            QuartoDB.instituicao_id == inst_id,
-            LeitoDB.status == "Ocupado"
-        )
-    )).scalar_one()
+    )).one()
 
     resumo_ocorrencias = await _resumo_ocorrencias_dashboard(db, inst_id, perfil, user_id)
     series = await _dashboard_series_otimizada(db, inst_id, agora)
