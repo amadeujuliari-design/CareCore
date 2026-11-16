@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import process from 'node:process';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -34,14 +34,24 @@ function sincronizarVersionJson() {
   );
 }
 
+function sincronizarPdfjsWasm() {
+  const origem = resolve(__dirname, 'node_modules/pdfjs-dist/wasm');
+  const destino = resolve(__dirname, 'public/pdfjs/wasm');
+  rmSync(destino, { recursive: true, force: true });
+  mkdirSync(destino, { recursive: true });
+  cpSync(origem, destino, { recursive: true });
+}
+
 function carecoreVersaoBuildPlugin() {
   return {
     name: 'carecore-versao-build',
     buildStart() {
       sincronizarVersionJson();
+      sincronizarPdfjsWasm();
     },
     configureServer() {
       sincronizarVersionJson();
+      sincronizarPdfjsWasm();
     },
   };
 }

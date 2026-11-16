@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 
 import { PremiumButton } from './PremiumUI';
-import { esperarCanvasPaginas, pdfjsLib } from '../utils/pdfjsWorker';
+import { abrirDocumentoPdf, esperarCanvasPaginas } from '../utils/pdfjsWorker';
 
 function caixaPdf(box, metricas, altura) {
   const scaleX = metricas.pageW / metricas.canvasW;
@@ -100,7 +100,7 @@ export default function ModalPosicionarTextoNf({
     (async () => {
       try {
         const bytes = await arquivo.arrayBuffer();
-        const pdf = await pdfjsLib.getDocument({ data: bytes.slice(0) }).promise;
+        const pdf = await abrirDocumentoPdf(bytes.slice(0));
         if (cancelado) return;
         pdfRef.current = pdf;
         setTotal(pdf.numPages || 1);

@@ -5,7 +5,7 @@ import {
   comprasBlobAnexo,
   comprasBlobAssinaturaDigital,
 } from '../services/comprasService';
-import { esperarCanvasPaginas, pdfjsLib } from '../utils/pdfjsWorker';
+import { abrirDocumentoPdf, esperarCanvasPaginas } from '../utils/pdfjsWorker';
 
 function limitarNaPagina(box, metricas) {
   const width = Math.max(48, Math.min(box.width, metricas.canvasW));
@@ -44,7 +44,7 @@ function posicaoInicialRodape(metricas, page, aspect) {
 }
 
 async function primeiraPaginaComoDataUrl(blob) {
-  const pdf = await pdfjsLib.getDocument({ data: await blob.arrayBuffer() }).promise;
+  const pdf = await abrirDocumentoPdf(await blob.arrayBuffer());
   const page = await pdf.getPage(1);
   const viewport = page.getViewport({ scale: 2 });
   const canvas = document.createElement('canvas');
@@ -104,7 +104,7 @@ export default function ModalPosicionarAssinaturaOrcamento({
         if (cancelado) return;
         setAssinaturaUrl(sig.dataUrl);
         setAspectAssinatura(sig.aspect);
-        const pdf = await pdfjsLib.getDocument({ data: await orcBlob.arrayBuffer() }).promise;
+        const pdf = await abrirDocumentoPdf(await orcBlob.arrayBuffer());
         if (cancelado) return;
         pdfRef.current = pdf;
         setTotal(pdf.numPages || 1);

@@ -25,3 +25,6 @@ dist-ssr
 
 .vercel
 .env*
+
+# Gerado no build a partir de node_modules/pdfjs-dist/wasm
+public/pdfjs/
