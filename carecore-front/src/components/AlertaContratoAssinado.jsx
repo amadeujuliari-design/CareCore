@@ -12,7 +12,7 @@ import {
   usuarioPodeVerCompras,
 } from '../utils/rbacUtils';
 
-const INTERVALO_MS = 15000;
+const INTERVALO_MS = 120000;
 
 function obterTokenLocal() {
   return localStorage.getItem('@CareCore:token') || localStorage.getItem('token');
