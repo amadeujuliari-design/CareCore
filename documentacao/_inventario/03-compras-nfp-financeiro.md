@@ -131,7 +131,7 @@ Unidade · Tipo · Objeto / categoria · Status · Orçamentos · Atualizado · 
 
 Criar rascunho do pedido conforme o tipo; redireciona para a ficha. Em consumo, o rascunho pode ser salvo com a janela fechada (os itens vão sendo incrementados até o envio, que só ocorre na janela).
 
-No topo, **Copiar um pedido concluído** abre rascunho do mês seguinte. **Inteiro** junta de novo o que foi separado (carne, peixe, alimentação) para dividir no próximo envio. **Dividido** copia só o pedido escolhido.
+No topo, **Copiar um pedido concluído** abre rascunho no mês de hoje (competência do dia da cópia). **Inteiro** junta de novo o que foi separado (carne, peixe, alimentação) para dividir no próximo envio. **Dividido** copia só o pedido escolhido.
 
 ### Campos
 

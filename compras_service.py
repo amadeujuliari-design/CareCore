@@ -1318,7 +1318,10 @@ async def copiar_pedido_concluido(
     pedido_id: str,
     modo: str,
 ) -> ComprasPedidoDB:
-    """Copia um pedido recebido como rascunho do mês seguinte.
+    """Copia um pedido recebido como rascunho do mês operacional de hoje.
+
+    O pedido antigo só empresta itens e estrutura. A competência é a do dia
+    da cópia, não o mês seguinte ao da origem.
 
     inteiro junta os pedidos do mesmo envio (carne, peixe, alimentação).
     dividido copia só o pedido escolhido.
@@ -1344,10 +1347,7 @@ async def copiar_pedido_concluido(
             ).scalars().all()
         ) or [origem]
 
-    try:
-        competencia = competencia_mes_seguinte(origem.competencia) if origem.competencia else competencia_de_data(data_operacional())
-    except ValueError:
-        competencia = competencia_de_data(data_operacional())
+    competencia = competencia_de_data(data_operacional())
 
     novo = ComprasPedidoDB(
         organizacao_id=origem.organizacao_id,

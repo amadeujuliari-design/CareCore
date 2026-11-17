@@ -373,7 +373,7 @@ export default function ComprasPedidoNovo() {
             {tipo === TIPO_IMOBILIZADO || tipo === TIPO_SERVICO || tipo === TIPO_EMERGENCIA ? null : (
             <SectionCard
               title="Copiar um pedido concluído"
-              subtitle="Abre um rascunho do mês seguinte para editar. Inteiro junta de novo o que foi separado (carne, peixe, alimentação). Dividido copia só o pedido escolhido."
+              subtitle="Abre um rascunho no mês de hoje para editar. Inteiro junta de novo o que foi separado (carne, peixe, alimentação). Dividido copia só o pedido escolhido."
             >
               {concluidos.length === 0 ? (
                 <p className="text-sm text-slate-500">Nenhum pedido concluído deste tipo para copiar.</p>

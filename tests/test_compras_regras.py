@@ -584,8 +584,11 @@ def test_infraestrutura_nao_envia_email_fornecedor():
 
 
 def test_competencia_mes_seguinte_e_lado_da_timeline():
+    from datetime import date
+
     from compras_regras import (
         PERFIL_ADM_COMPRAS_SUPRIMENTOS,
+        competencia_de_data,
         competencia_mes_seguinte,
         lado_timeline_compras,
         tipo_arquivo_bem_de_anexo_pedido,
@@ -593,6 +596,9 @@ def test_competencia_mes_seguinte_e_lado_da_timeline():
 
     assert competencia_mes_seguinte("2026-09") == "2026-10"
     assert competencia_mes_seguinte("2026-12") == "2027-01"
+    # Cópia de pedido concluído usa o mês do dia, não o mês seguinte à origem.
+    assert competencia_de_data(date(2026, 11, 17)) == "2026-11"
+    assert competencia_de_data(date(2026, 11, 17)) != competencia_mes_seguinte("2026-09")
     assert lado_timeline_compras(perfil=PERFIL_ADM_COMPRAS_SUPRIMENTOS) == "suprimentos"
     assert lado_timeline_compras(perfil="ADM Global Compras Infraestrutura") == "infraestrutura"
     assert lado_timeline_compras(perfil="Gestor") == "projeto"
