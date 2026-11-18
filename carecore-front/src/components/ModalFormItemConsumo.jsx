@@ -63,6 +63,9 @@ export default function ModalFormItemConsumo({
   competenciaInicial = '',
   categorias = [],
   itens = [],
+  /** Categoria é sempre obrigatória no cadastro de item. */
+  exigirCategoria = true,
+  avisoSegmento = '',
   onFechar,
   onSalvo,
   onMensagem,
@@ -76,10 +79,16 @@ export default function ModalFormItemConsumo({
   useEffect(() => {
     if (aberto && !estavaAberto.current) {
       setErro('');
-      setForm(formDeItem(item, descricaoInicial, competenciaInicial));
+      const inicial = formDeItem(item, descricaoInicial, competenciaInicial);
+      // Se só há uma categoria do segmento do pedido, já seleciona.
+      if (!inicial.categoria_id && exigirCategoria && categorias.length === 1) {
+        inicial.categoria_id = categorias[0].id;
+        inicial.competencia_orcamento = competenciaPadraoDoSegmento(categorias[0].segmento);
+      }
+      setForm(inicial);
     }
     estavaAberto.current = aberto;
-  }, [aberto, item, descricaoInicial, competenciaInicial]);
+  }, [aberto, item, descricaoInicial, competenciaInicial, exigirCategoria, categorias]);
 
   useEffect(() => {
     if (!aberto) return undefined;
@@ -96,6 +105,14 @@ export default function ModalFormItemConsumo({
     evento.preventDefault();
     evento.stopPropagation();
     if (!form.descricao.trim()) return;
+    if (exigirCategoria && !form.categoria_id) {
+      setErro('Selecione a categoria deste pedido (mesmo segmento).');
+      return;
+    }
+    if (exigirCategoria && form.categoria_id && !categorias.some((c) => c.id === form.categoria_id)) {
+      setErro('A categoria precisa ser do mesmo tipo deste pedido.');
+      return;
+    }
     setSalvando(true);
     setErro('');
     try {
@@ -153,6 +170,11 @@ export default function ModalFormItemConsumo({
           {erro ? (
             <p className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">{erro}</p>
           ) : null}
+          {avisoSegmento ? (
+            <p className="rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-950">
+              {avisoSegmento}
+            </p>
+          ) : null}
           <CampoTexto
             label="Descrição"
             value={form.descricao}
@@ -175,8 +197,15 @@ export default function ModalFormItemConsumo({
               value: cat.id,
               label: `${rotuloCategoria(cat)} · ${rotuloSegmentoCatalogo(cat.segmento)}`,
             }))}
-            placeholder="Selecione"
+            placeholder={categorias.length ? 'Selecione' : 'Nenhuma categoria deste segmento'}
+            required={exigirCategoria}
           />
+          {exigirCategoria && categorias.length === 0 ? (
+            <p className="text-xs text-amber-800">
+              Não há categoria deste tipo no cadastro. Peça à Sede para criar a categoria
+              (ex.: Hortifruti) antes de cadastrar o item.
+            </p>
+          ) : null}
           <CampoSelect
             label="Competência de orçamento"
             value={form.competencia_orcamento || COMPETENCIA_SEDE}

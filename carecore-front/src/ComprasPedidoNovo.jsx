@@ -31,7 +31,10 @@ import {
   TIPO_SERVICO,
   TIPO_EMERGENCIA,
   competenciaPadraoDoSegmento,
+  categoriasDoSegmentoPedido,
+  itemCatalogoCompativelComPedido,
   itensConsumoDoSegmentoPedido,
+  rotuloSegmentoCatalogo,
   rotuloTipoPedido,
   segmentoDoTipoPedido,
   tipoEhCotacaoProjeto,
@@ -839,14 +842,29 @@ export default function ComprasPedidoNovo() {
         competenciaInicial={competenciaPadraoDoSegmento(
           tipo === TIPO_SERVICO ? SEGMENTO_SERVICO : segmentoDoTipoPedido(tipo),
         )}
-        categorias={categorias}
-        itens={itensConsumo}
+        categorias={categoriasDoSegmentoPedido(categorias, tipo)}
+        itens={
+          tipo === TIPO_SERVICO
+            ? itensConsumo.filter((item) => (item.segmento || '') === 'servico')
+            : itensConsumoDoSegmentoPedido(itensConsumo, tipo)
+        }
+        exigirCategoria
+        avisoSegmento={
+          `Neste pedido só entram itens de ${rotuloSegmentoCatalogo(
+            tipo === TIPO_SERVICO ? SEGMENTO_SERVICO : segmentoDoTipoPedido(tipo),
+          )}. Escolha a categoria correspondente.`
+        }
         onFechar={() => setModalItem(null)}
         onMensagem={({ erro: msgErro }) => { if (msgErro) setErro(msgErro); }}
         onSalvo={async (criado) => {
           const lista = await comprasItensConsumo();
           setItensConsumo(Array.isArray(lista) ? lista : []);
           if (modalItem?.linhaKey && criado?.id) {
+            if (!itemCatalogoCompativelComPedido(criado, tipo)) {
+              setErro('O item cadastrado não é deste tipo de pedido. Cadastre de novo na categoria correta.');
+              setModalItem(null);
+              return;
+            }
             atualizarLinha(modalItem.linhaKey, {
               catalogo_item_id: criado.id,
               descricao: criado.descricao || modalItem.descricao,

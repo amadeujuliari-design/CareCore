@@ -372,6 +372,31 @@ export function itensConsumoDoSegmentoPedido(itens = [], tipoPedido) {
   );
 }
 
+/** Categorias permitidas ao cadastrar item a partir de um pedido (mesmo segmento). */
+export function categoriasDoSegmentoPedido(categorias = [], tipoPedido) {
+  const t = String(tipoPedido || '').trim().toLowerCase();
+  let segmento = segmentoDoTipoPedido(tipoPedido);
+  if (segmento == null && t === TIPO_SERVICO) {
+    segmento = SEGMENTO_SERVICO;
+  }
+  if (segmento == null) return categorias || [];
+  return (categorias || []).filter(
+    (cat) => normalizarSegmentoCatalogo(cat?.segmento || SEGMENTO_CONSUMO) === segmento,
+  );
+}
+
+/** Item do catálogo pode entrar neste tipo de pedido? */
+export function itemCatalogoCompativelComPedido(item, tipoPedido) {
+  const t = String(tipoPedido || '').trim().toLowerCase();
+  let segmento = segmentoDoTipoPedido(tipoPedido);
+  if (segmento == null && t === TIPO_SERVICO) {
+    segmento = SEGMENTO_SERVICO;
+  }
+  if (segmento == null) return true;
+  if (!item) return false;
+  return normalizarSegmentoCatalogo(item.segmento || SEGMENTO_CONSUMO) === segmento;
+}
+
 export const BOTOES_NOVO_PEDIDO = [
   {
     tipo: TIPO_CONSUMO,

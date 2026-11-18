@@ -433,6 +433,18 @@ def segmento_do_tipo_pedido(tipo: Optional[str]) -> Optional[str]:
     return SEGMENTO_CONSUMO
 
 
+def item_catalogo_compativel_com_pedido(
+    *,
+    tipo_pedido: Optional[str],
+    segmento_item: Optional[str],
+) -> bool:
+    """True se o segmento do item do catálogo pode entrar neste tipo de pedido."""
+    alvo = segmento_do_tipo_pedido(tipo_pedido)
+    if alvo is None:
+        return True
+    return normalizar_segmento_catalogo(segmento_item or SEGMENTO_CONSUMO) == alvo
+
+
 def rotulo_segmento_catalogo(segmento: Optional[str]) -> str:
     chave = normalizar_segmento_catalogo(segmento)
     return ROTULO_SEGMENTO_CATALOGO.get(chave, chave)

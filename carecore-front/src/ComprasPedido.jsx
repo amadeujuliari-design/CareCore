@@ -93,6 +93,8 @@ import {
   fornecedoresParaCotacaoPedido,
   hortifrutiSemOrcamentoEscolhido,
   inferirFornecedorEnvioId,
+  categoriasDoSegmentoPedido,
+  itemCatalogoCompativelComPedido,
   itensConsumoDoSplitPedido,
   modoEmailPedeFornecedorEnvio,
   SEGMENTO_SERVICO,
@@ -3894,13 +3896,26 @@ export default function ComprasPedido() {
         competenciaInicial={competenciaPadraoDoSegmento(
           pedido?.tipo === TIPO_SERVICO ? SEGMENTO_SERVICO : segmentoDoTipoPedido(pedido?.tipo),
         )}
-        categorias={categorias}
-        itens={itensConsumo}
+        categorias={categoriasDoSegmentoPedido(categorias, pedido?.tipo)}
+        itens={itensBuscaPedido}
+        exigirCategoria
+        avisoSegmento={
+          pedido
+            ? `Neste pedido só entram itens de ${rotuloSegmentoCatalogo(
+              pedido?.tipo === TIPO_SERVICO ? SEGMENTO_SERVICO : segmentoDoTipoPedido(pedido?.tipo),
+            )}. Escolha a categoria correspondente.`
+            : ''
+        }
         onFechar={() => setModalNovoItem(null)}
         onSalvo={async (criado) => {
           const lista = await comprasItensConsumo({ ativos: true });
           setItensConsumo(Array.isArray(lista) ? lista : []);
           if (criado?.id) {
+            if (!itemCatalogoCompativelComPedido(criado, pedido?.tipo)) {
+              setModalNovoItem(null);
+              setErro('O item cadastrado não é deste tipo de pedido. Cadastre de novo na categoria correta.');
+              return;
+            }
             setItem((atual) => ({
               ...atual,
               catalogo_item_id: criado.id,

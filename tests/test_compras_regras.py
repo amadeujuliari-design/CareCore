@@ -545,6 +545,8 @@ def test_hortifruti_segmento_e_fluxo():
         tipo_pula_aprovacao_sede,
     )
 
+    from compras_regras import SEGMENTO_CONSUMO, item_catalogo_compativel_com_pedido
+
     assert normalizar_segmento_catalogo("hortifruti") == SEGMENTO_HORTIFRUTI
     assert inferir_segmento_por_nome_categoria("Hortifruti") == SEGMENTO_HORTIFRUTI
     assert segmento_do_tipo_pedido(TIPO_HORTIFRUTI) == SEGMENTO_HORTIFRUTI
@@ -553,6 +555,19 @@ def test_hortifruti_segmento_e_fluxo():
     assert not tipo_exige_janela(TIPO_HORTIFRUTI)
     assert not tipo_pula_aprovacao_sede(TIPO_HORTIFRUTI)
     assert not exige_tres_cotacoes(TIPO_HORTIFRUTI)
+    # Avental em Cozinha (consumo) não entra em pedido hortifruti.
+    assert item_catalogo_compativel_com_pedido(
+        tipo_pedido=TIPO_HORTIFRUTI, segmento_item=SEGMENTO_CONSUMO,
+    ) is False
+    assert item_catalogo_compativel_com_pedido(
+        tipo_pedido=TIPO_HORTIFRUTI, segmento_item=SEGMENTO_HORTIFRUTI,
+    ) is True
+    assert item_catalogo_compativel_com_pedido(
+        tipo_pedido="consumo", segmento_item=SEGMENTO_CONSUMO,
+    ) is True
+    assert item_catalogo_compativel_com_pedido(
+        tipo_pedido="emergencia", segmento_item=SEGMENTO_CONSUMO,
+    ) is True
 
 
 def test_consumo_aguardando_sede_nao_exige_aprovacao_da_unidade():

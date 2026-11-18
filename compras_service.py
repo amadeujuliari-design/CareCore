@@ -95,6 +95,7 @@ from compras_regras import (
     inferir_perecivel,
     inferir_segmento_por_nome_categoria,
     inferir_tipo_fonte,
+    item_catalogo_compativel_com_pedido,
     janela_consumo_aberta,
     normalizar_competencia,
     normalizar_competencia_orcamento,
@@ -115,8 +116,10 @@ from compras_regras import (
     pode_enviar_consumo,
     resumo_alteracao_itens_pedido,
     rotulo_custo_fonte,
+    rotulo_segmento_catalogo,
     rotulo_tipo_pedido,
     rotulo_unidade_relatorio,
+    segmento_do_tipo_pedido,
     sequencia_grupo_codigo,
     status_janela,
     sugerir_janela_competencia,
@@ -1288,6 +1291,7 @@ async def criar_pedido(
             status_code=400,
             detail="Inclua o item no catálogo antes de colocá-lo no pedido.",
         )
+    await _exigir_itens_catalogo_do_segmento_pedido(db, tipo_pedido=tipo, linhas=linhas)
     catalogo = await _fator_catalogo_por_ids(
         db,
         [item.get("catalogo_item_id") for item in linhas],
@@ -1439,6 +1443,76 @@ async def _fator_catalogo_por_ids(db: AsyncSession, ids: list[str]) -> dict[str,
     }
 
 
+async def _meta_catalogo_por_ids(db: AsyncSession, ids: list[str]) -> dict[str, dict]:
+    """Mapa catalogo_item_id → {segmento, tem_categoria}."""
+    ids_ok = [item_id for item_id in ids if item_id]
+    if not ids_ok:
+        return {}
+    rows = (
+        await db.execute(
+            select(
+                ComprasItemConsumoDB.id,
+                ComprasItemConsumoDB.categoria_id,
+                ComprasCategoriaDB.segmento,
+            )
+            .select_from(ComprasItemConsumoDB)
+            .outerjoin(
+                ComprasCategoriaDB,
+                ComprasCategoriaDB.id == ComprasItemConsumoDB.categoria_id,
+            )
+            .where(ComprasItemConsumoDB.id.in_(ids_ok))
+        )
+    ).all()
+    out: dict[str, dict] = {}
+    for row in rows:
+        # Sem categoria_id ou categoria apagada → não entra em pedido.
+        cat_ok = bool(row[1]) and row[2] is not None
+        out[row[0]] = {
+            "tem_categoria": cat_ok,
+            "segmento": normalizar_segmento_catalogo(row[2] or SEGMENTO_CONSUMO),
+        }
+    return out
+
+
+async def _exigir_itens_catalogo_do_segmento_pedido(
+    db: AsyncSession,
+    *,
+    tipo_pedido: str,
+    linhas: list[dict],
+) -> None:
+    """Impede item sem categoria ou de outro segmento no pedido."""
+    ids = [item.get("catalogo_item_id") for item in linhas if item.get("catalogo_item_id")]
+    metas = await _meta_catalogo_por_ids(db, ids)
+    alvo = segmento_do_tipo_pedido(tipo_pedido)
+    for item in linhas:
+        cid = (item.get("catalogo_item_id") or "").strip()
+        if not cid:
+            continue
+        meta = metas.get(cid) or {}
+        desc = (item.get("descricao") or "").strip() or "item"
+        if not meta.get("tem_categoria"):
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"O item «{desc}» está sem categoria no catálogo. "
+                    "Classifique-o antes de incluir no pedido."
+                ),
+            )
+        if alvo is None:
+            continue
+        seg = meta.get("segmento") or SEGMENTO_CONSUMO
+        if item_catalogo_compativel_com_pedido(tipo_pedido=tipo_pedido, segmento_item=seg):
+            continue
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"O item «{desc}» é de {rotulo_segmento_catalogo(seg)}, "
+                f"mas este pedido é de {rotulo_segmento_catalogo(alvo)}. "
+                "Cadastre ou escolha um item do mesmo tipo do pedido."
+            ),
+        )
+
+
 def _unidade_linha_pedido(item: dict, catalogo: dict | None = None) -> str:
     cat = catalogo or {}
     embalagem = (item.get("embalagem") or cat.get("embalagem") or "").strip() or None
@@ -1555,6 +1629,9 @@ async def substituir_itens(
         await db.execute(select(ComprasPedidoItemDB).where(ComprasPedidoItemDB.pedido_id == pedido.id))
     ).scalars().all()
     snapshot_antes = [_snapshot_item_pedido(item) for item in atuais]
+    await _exigir_itens_catalogo_do_segmento_pedido(
+        db, tipo_pedido=pedido.tipo or "", linhas=linhas,
+    )
     catalogo = await _fator_catalogo_por_ids(
         db,
         [item.get("catalogo_item_id") for item in linhas],
@@ -3580,6 +3657,15 @@ async def salvar_item_consumo(db: AsyncSession, usuario: dict, payload: dict, it
         raise HTTPException(status_code=400, detail="Descrição do item inválida.")
     descricao = limpo["descricao"]
     chave = limpo["chave"] or chave_item_consumo(descricao)
+    categoria_id = (payload.get("categoria_id") or "").strip() or None
+    if not categoria_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Informe a categoria do item. Não é permitido cadastrar item sem categoria.",
+        )
+    cats = await _mapa_nomes_categoria(db, org_id)
+    if categoria_id not in cats:
+        raise HTTPException(status_code=400, detail="Categoria inválida para esta organização.")
     extra = [ComprasItemConsumoDB.id != item_id] if item_id else []
     duplicado = (
         await db.execute(
@@ -3611,16 +3697,13 @@ async def salvar_item_consumo(db: AsyncSession, usuario: dict, payload: dict, it
         db.add(row)
     row.descricao = descricao
     row.chave = chave
-    row.categoria_id = payload.get("categoria_id") or None
+    row.categoria_id = categoria_id
     row.unidade_medida = limpo["unidade_medida"]
     row.embalagem = limpo["embalagem"]
     row.marca_preferencial = limpo["marca_preferencial"]
     row.observacao = limpo["observacao"]
     row.sinonimos = (payload.get("sinonimos") or "").strip() or None
-    cats = await _mapa_nomes_categoria(db, org_id)
-    seg_item = SEGMENTO_CONSUMO
-    if row.categoria_id and row.categoria_id in cats:
-        seg_item = normalizar_segmento_catalogo((cats[row.categoria_id] or {}).get("segmento"))
+    seg_item = normalizar_segmento_catalogo((cats[categoria_id] or {}).get("segmento"))
     if "competencia_orcamento" in payload and payload.get("competencia_orcamento") is not None:
         row.competencia_orcamento = normalizar_competencia_orcamento(payload.get("competencia_orcamento"))
     elif not item_id or not getattr(row, "competencia_orcamento", None):
@@ -3704,6 +3787,10 @@ async def importar_itens_consumo(db: AsyncSession, usuario: dict, linhas) -> dic
                 por_nome[nome_cat.lower()] = categoria
         row = por_chave.get(chave)
         if row is None:
+            if categoria is None:
+                # Novo item sem categoria não entra no catálogo.
+                ignorados += 1
+                continue
             row = ComprasItemConsumoDB(organizacao_id=org_id, chave=chave)
             db.add(row)
             por_chave[chave] = row

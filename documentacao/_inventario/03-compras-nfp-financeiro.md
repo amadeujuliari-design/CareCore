@@ -158,7 +158,7 @@ No topo, **Copiar um pedido concluído** abre rascunho no mês de hoje (competê
 | Qtd | — | quantidade | `quantidade` | linhas |
 | Unidade | — | un etc. | `unidade_medida` | linhas |
 
-Placeholders typeahead por tipo: «Digite o item de consumo» · «Buscar peça/material de manutenção» · «Buscar serviço no catálogo» · «Buscar item de hortifruti» · «Buscar bem no catálogo».
+Placeholders typeahead por tipo: «Digite o item de consumo» · «Buscar peça/material de manutenção» · «Buscar serviço no catálogo» · «Buscar item de hortifruti» · «Buscar bem no catálogo». Ao **cadastrar item** a partir do pedido, só aparecem categorias do **mesmo segmento** do pedido (ex.: hortifruti não aceita Cozinha/consumo); o backend também rejeita item de outro segmento. **Categoria é obrigatória** em todo cadastro de item; item sem categoria não entra em pedido.
 
 ### Botões
 

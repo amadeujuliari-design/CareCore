@@ -419,6 +419,8 @@ export default function ComprasItensConsumoCadastro({
         item={itemEmEdicao}
         categorias={categorias}
         itens={itens}
+        exigirCategoria
+        avisoSegmento="Todo item do catálogo precisa de categoria."
         onFechar={() => setFormAberto(false)}
         onSalvo={async () => {
           setFormAberto(false);

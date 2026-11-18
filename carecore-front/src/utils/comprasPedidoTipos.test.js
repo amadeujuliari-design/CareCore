@@ -13,6 +13,8 @@ import {
   pedidoListaEhInfraestrutura,
   pedidoProjetoEscolheOrcamento,
   inferirFornecedorEnvioId,
+  categoriasDoSegmentoPedido,
+  itemCatalogoCompativelComPedido,
   itensConsumoDoSegmentoPedido,
   itensConsumoDoSplitPedido,
   modoEmailPedeFornecedorEnvio,
@@ -142,6 +144,47 @@ describe('itensConsumoDoSplitPedido', () => {
 describe('itensConsumoDoSegmentoPedido', () => {
   it('serviço não usa catálogo de produto', () => {
     assert.deepEqual(itensConsumoDoSegmentoPedido([{ id: '1', segmento: 'servico' }], 'servico'), []);
+  });
+});
+
+describe('categorias e item no segmento do pedido', () => {
+  const categorias = [
+    { id: 'coz', nome: 'COZINHA', segmento: 'consumo' },
+    { id: 'hor', nome: 'HORTIFRUTI', segmento: 'hortifruti' },
+    { id: 'man', nome: 'Manutenção', segmento: 'manutencao' },
+    { id: 'srv', nome: 'Serviços', segmento: 'servico' },
+  ];
+
+  it('no hortifruti só lista categoria hortifruti', () => {
+    assert.deepEqual(
+      categoriasDoSegmentoPedido(categorias, 'hortifruti').map((c) => c.id),
+      ['hor'],
+    );
+  });
+
+  it('no consumo não lista hortifruti', () => {
+    assert.deepEqual(
+      categoriasDoSegmentoPedido(categorias, 'consumo').map((c) => c.id),
+      ['coz'],
+    );
+  });
+
+  it('avental de cozinha não entra em pedido hortifruti', () => {
+    assert.equal(
+      itemCatalogoCompativelComPedido({ segmento: 'consumo' }, 'hortifruti'),
+      false,
+    );
+    assert.equal(
+      itemCatalogoCompativelComPedido({ segmento: 'hortifruti' }, 'hortifruti'),
+      true,
+    );
+  });
+
+  it('serviço filtra categorias de serviço', () => {
+    assert.deepEqual(
+      categoriasDoSegmentoPedido(categorias, 'servico').map((c) => c.id),
+      ['srv'],
+    );
   });
 });
 
