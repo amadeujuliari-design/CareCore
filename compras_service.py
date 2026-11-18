@@ -630,10 +630,16 @@ async def serializar_pedido(
         "suprimentos_lida": bool(getattr(pedido, "suprimentos_lida_em", None)),
         "nf_impressa_em": _iso(getattr(pedido, "nf_impressa_em", None)),
         "nf_impressa": bool(getattr(pedido, "nf_impressa_em", None)),
-        # enviado + impresso = boleto pago aguardando NF na entrega (sem nova ida a A pagar)
+        # Heurística de lista; no detalhe o front usa também parcelas/boleto.
         "aguardando_nf_apos_boleto_pago": (
             (pedido.status or "") == "enviado_fornecedor"
             and bool(getattr(pedido, "nf_impressa_em", None))
+            and int(getattr(pedido, "pagamento_qtd_parcelas", 0) or 0) <= 1
+        ),
+        "aguardando_proxima_parcela": (
+            (pedido.status or "") == "enviado_fornecedor"
+            and bool(getattr(pedido, "nf_impressa_em", None))
+            and int(getattr(pedido, "pagamento_qtd_parcelas", 0) or 0) > 1
         ),
         "a_pagar_lida_em": _iso(getattr(pedido, "a_pagar_lida_em", None)),
         "a_pagar_lida": bool(getattr(pedido, "a_pagar_lida_em", None)),

@@ -44,6 +44,15 @@ describe('comprasPedidoStatus', () => {
       }),
       'Aguardando NF · boleto pago',
     );
+    assert.equal(
+      rotuloStatusPedidoLista({
+        status: 'enviado_fornecedor',
+        nf_impressa: true,
+        pagamento_qtd_parcelas: 2,
+        orcamentos_com_anexo: 3,
+      }),
+      'Aguardando próxima parcela',
+    );
   });
 
   it('rótulos e cores distintas da emergência', () => {

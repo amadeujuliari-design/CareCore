@@ -171,10 +171,22 @@ export function pedidoPodeCorrigirNf(pedido) {
 
 /** Boleto pago (impresso) e aguardando NF na entrega do bem. */
 export function pedidoAguardandoNfAposBoletoPago(pedido) {
+  if (pedido?.aguardando_proxima_parcela) return false;
+  if (Number(pedido?.pagamento_qtd_parcelas || 0) > 1) return false;
   return Boolean(pedido?.aguardando_nf_apos_boleto_pago)
     || (
       String(pedido?.status || '') === 'enviado_fornecedor'
       && Boolean(pedido?.nf_impressa || pedido?.nf_impressa_em)
+    );
+}
+
+/** Parcela impressa; aguarda próxima NF para voltar a A pagar. */
+export function pedidoAguardandoProximaParcela(pedido) {
+  return Boolean(pedido?.aguardando_proxima_parcela)
+    || (
+      String(pedido?.status || '') === 'enviado_fornecedor'
+      && Boolean(pedido?.nf_impressa || pedido?.nf_impressa_em)
+      && Number(pedido?.pagamento_qtd_parcelas || 0) > 1
     );
 }
 

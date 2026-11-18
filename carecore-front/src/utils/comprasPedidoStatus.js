@@ -72,11 +72,11 @@ export function rotuloStatusPedidoLista(pedido) {
   if ((status === 'em_cotacao' || status === 'aguardando_cotacao') && comAnexo <= 0) {
     return `${base} · aguardando retorno`;
   }
-  // Boleto já pago: status técnico continua enviado_fornecedor, rótulo orienta a NF.
-  if (
-    status === 'enviado_fornecedor'
-    && (pedido?.aguardando_nf_apos_boleto_pago || pedido?.nf_impressa || pedido?.nf_impressa_em)
-  ) {
+  // Saiu de A pagar após impressão parcial: boleto antecipado ou próxima parcela.
+  if (status === 'enviado_fornecedor' && (pedido?.nf_impressa || pedido?.nf_impressa_em || pedido?.aguardando_nf_apos_boleto_pago || pedido?.aguardando_proxima_parcela)) {
+    if (pedido?.aguardando_proxima_parcela || Number(pedido?.pagamento_qtd_parcelas || 0) > 1) {
+      return 'Aguardando próxima parcela';
+    }
     return 'Aguardando NF · boleto pago';
   }
   return base;

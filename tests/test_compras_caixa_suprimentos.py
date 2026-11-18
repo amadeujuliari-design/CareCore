@@ -153,14 +153,16 @@ def _infra():
     return {"perfil_acesso": PERFIL_ADM_COMPRAS_INFRAESTRUTURA, "id": "inf-1"}
 
 
-def test_impressao_de_parcela_incompleta_nao_conclui_nem_marca_impressa(monkeypatch):
+def test_impressao_de_parcela_incompleta_sai_da_fila_e_aguarda_proxima(monkeypatch):
     import compras_pedido_fluxo as fluxo
+    from compras_regras import STATUS_ENVIADO
 
     pedido = _pedido(
         id="p-bel",
         status=STATUS_AGUARDANDO_PAGAMENTO,
         pagamento_qtd_parcelas=4,
         recebido_em=None,
+        a_pagar_lida_em=datetime(2026, 11, 18, 8, 0, 0),
     )
 
     async def _sit(_db, _pedido):
@@ -177,12 +179,13 @@ def test_impressao_de_parcela_incompleta_nao_conclui_nem_marca_impressa(monkeypa
         await registrar_impressao_nf_e_opcional_encerrar(db, _infra(), pedido)
 
     asyncio.run(caso())
-    assert pedido.status == STATUS_AGUARDANDO_PAGAMENTO
-    assert pedido.nf_impressa_em is None
+    assert pedido.status == STATUS_ENVIADO
+    assert pedido.nf_impressa_em is not None
+    assert pedido.a_pagar_lida_em is None
     assert pedido.pagamento_qtd_parcelas == 4
     assert db.added
-    assert "permanece em A pagar" in (db.added[0].texto or "")
-    assert "4 parcelas" in (db.added[0].texto or "")
+    assert "saiu de A pagar" in (db.added[0].texto or "")
+    assert "4" in (db.added[0].texto or "")
 
 
 def test_impressao_com_pagamento_completo_conclui(monkeypatch):

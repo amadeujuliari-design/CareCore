@@ -114,6 +114,7 @@ import {
   ehOrcamentoUnificado,
   projetoPodeTrocarOrcamento,
   pedidoAguardandoNfAposBoletoPago,
+  pedidoAguardandoProximaParcela,
   pedidoPodeCorrigirNf,
   tipoExigeJanela,
   tipoPulaAprovacaoSede,
@@ -474,7 +475,11 @@ export default function ComprasPedido() {
       if (parceladoAberto) {
         setOk('Nota desta parcela impressa. O pedido continua em A pagar para as demais parcelas.');
       } else if (dados.status === 'enviado_fornecedor' && atual.status === 'aguardando_pagamento') {
-        setOk('Boleto impresso. Pedido saiu de A pagar — aguarde a NF na entrega do bem.');
+        setOk(
+          Number(dados.pagamento_qtd_parcelas) > 1
+            ? 'Parcela impressa. Pedido saiu de A pagar — volta quando anexarem a próxima NF.'
+            : 'Boleto impresso. Pedido saiu de A pagar — aguarde a NF na entrega do bem.',
+        );
       } else if (dados.status === 'recebido' && atual.status === 'aguardando_pagamento') {
         setOk('Documento impresso e pedido concluído.');
       } else {
@@ -1222,6 +1227,22 @@ export default function ComprasPedido() {
                 <strong>nota fiscal</strong>
                 {' '}
                 para encerrar o processo. Essa NF não volta para A pagar.
+              </p>
+            </div>
+          </div>
+        )}
+        {pedidoAguardandoProximaParcela(pedido) && !consultaGlobal && (
+          <div className="shrink-0 px-4 pt-3 md:px-6">
+            <div
+              className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950"
+              role="status"
+            >
+              <p>
+                Parcela já impressa/paga. Anexe a
+                {' '}
+                <strong>próxima NF</strong>
+                {' '}
+                (assinada, com data de pagamento) para o pedido voltar à fila A pagar.
               </p>
             </div>
           </div>
@@ -2695,7 +2716,7 @@ export default function ComprasPedido() {
             {segueInfra && !ehEmergencia && compraJaExecutada && !terminal && (
               <SectionCard
                 title="Pagamento"
-                subtitle="À vista (1 pagamento) ou parcelado. Cada NF assinada com data de pagamento vai para A pagar na hora; nova parcela reabre a fila. Imprimir uma parcela não muda a quantidade nem conclui o pedido. Ele só conclui quando todas as parcelas tiverem documento ou quando o valor total já foi quitado."
+                subtitle="À vista (1 pagamento) ou parcelado. Cada NF assinada com data de pagamento vai para A pagar. No parcelado, ao imprimir uma parcela o pedido sai da fila e só volta quando anexarem a próxima NF; na última parcela (ou quitação) a impressão conclui."
               >
                 {!pedido.pagamento_qtd_parcelas ? (
                   <form

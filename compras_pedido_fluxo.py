@@ -3057,19 +3057,38 @@ async def registrar_impressao_nf_e_opcional_encerrar(
             segue=bool(sit.get("segue")),
             completo=bool(sit.get("completo")),
         ):
+            # Parcelado incompleto: sai de A pagar; volta quando a próxima NF for anexada.
+            perfil = str(usuario.get("perfil_acesso") or usuario.get("perfil") or "")
+            if not usuario_e_sede_compras(
+                perfil=perfil, is_manutencao=bool(usuario.get("is_manutencao"))
+            ):
+                raise HTTPException(
+                    status_code=403,
+                    detail="Somente Infraestrutura ou Suprimentos registram a impressão da NF.",
+                )
             qtd = int(sit.get("qtd_parcelas") or 0)
             pagas = int(sit.get("parcelas_pagas") or 0)
+            anterior = pedido.status
+            agora = agora_operacional_naive()
+            if not getattr(pedido, "nf_impressa_em", None):
+                pedido.nf_impressa_em = agora
+                pedido.nf_impressa_por_id = _uid_caixa(usuario)
+            pedido.status = STATUS_ENVIADO
+            pedido.a_pagar_lida_em = None
+            pedido.a_pagar_lida_por_id = None
+            pedido.atualizado_em = agora
             await registrar_evento_pedido(
                 db,
                 pedido_id=pedido.id,
                 tipo=TIPO_EVENTO_STATUS,
                 texto=(
-                    f"NF impressa. O pagamento continua em {qtd} parcelas "
-                    f"({pagas} com documento) e o pedido permanece em A pagar."
+                    f"NF da parcela impressa ({pagas} de {qtd} com documento). "
+                    "Pedido saiu de A pagar. Anexe a próxima NF assinada com data "
+                    "para o pedido voltar à fila."
                 ),
                 usuario_id=_uid(usuario),
-                status_anterior=pedido.status,
-                status_novo=pedido.status,
+                status_anterior=anterior,
+                status_novo=STATUS_ENVIADO,
             )
             return
     anterior = pedido.status
@@ -4530,6 +4549,9 @@ async def enviar_nf_para_pagamento(
     anterior = pedido.status
     agora = agora_operacional_naive()
     pedido.status = STATUS_AGUARDANDO_PAGAMENTO
+    # Nova ida à fila: limpa impressão anterior para a Sede registrar a próxima.
+    pedido.nf_impressa_em = None
+    pedido.nf_impressa_por_id = None
     pedido.a_pagar_lida_em = None
     pedido.a_pagar_lida_por_id = None
     pedido.atualizado_em = agora
@@ -4553,7 +4575,7 @@ async def enviar_nf_para_pagamento(
     else:
         texto = (
             f"Nova NF/parcela reenviada para a fila A pagar ({fila})."
-            if reentrada
+            if (reentrada or anterior == STATUS_ENVIADO)
             else f"NF assinada enviada para a fila A pagar ({fila})."
         )
     await registrar_evento_pedido(
