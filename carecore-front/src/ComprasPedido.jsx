@@ -473,14 +473,16 @@ export default function ComprasPedido() {
         && !dados.pagamento_completo;
       if (parceladoAberto) {
         setOk('Nota desta parcela impressa. O pedido continua em A pagar para as demais parcelas.');
+      } else if (dados.status === 'enviado_fornecedor' && atual.status === 'aguardando_pagamento') {
+        setOk('Boleto impresso. Pedido saiu de A pagar — aguarde a NF na entrega do bem.');
       } else if (dados.status === 'recebido' && atual.status === 'aguardando_pagamento') {
-        setOk('Nota impressa e pedido concluído.');
+        setOk('Documento impresso e pedido concluído.');
       } else {
         setOk(encerrar
           ? 'Nota fiscal impressa e pedido enviado para Encerrado.'
           : (atual.status === 'imprimir_nf'
             ? 'Nota fiscal impressa. O status permanece Imprimir NF.'
-            : 'Impressão da nota fiscal registrada.'));
+            : 'Impressão do documento registrada.'));
       }
     } catch (err) {
       setErro(err.response?.data?.detail || err.message || 'Não foi possível registrar a impressão da nota fiscal.');
@@ -490,17 +492,20 @@ export default function ComprasPedido() {
   };
 
   const notasComAnexoParaImpressao = () => (
-    (pedido?.notas_fiscais || []).filter((nf) => nf.anexo_id && nf.tipo_nf !== 'boleto')
+    // NF e boleto: pagamento antecipado imprime o boleto na fila A pagar.
+    (pedido?.notas_fiscais || []).filter((nf) => nf.anexo_id)
   );
 
   const rotuloNfImpressao = (nf, indice) => {
+    const ehBoleto = nf.tipo_nf === 'boleto';
     const parcela = Number(nf.parcela_numero) || null;
     const numero = (nf.numero || '').toString().trim();
     const valor = Number(nf.valor_centavos) > 0
       ? moneyCentavos(nf.valor_centavos)
       : '';
     const partes = [];
-    if (parcela) partes.push(`Parcela ${parcela}`);
+    if (ehBoleto) partes.push(parcela ? `Boleto · parcela ${parcela}` : 'Boleto');
+    else if (parcela) partes.push(`Parcela ${parcela}`);
     else partes.push(`NF ${indice + 1}`);
     if (numero) partes.push(`nº ${numero}`);
     if (valor) partes.push(valor);
@@ -510,7 +515,7 @@ export default function ComprasPedido() {
   const abrirImprimirNfSede = () => {
     const notas = notasComAnexoParaImpressao();
     if (!notas.length) {
-      setErro('Não há PDF ou imagem da nota fiscal para imprimir.');
+      setErro('Não há PDF ou imagem de NF/boleto para imprimir.');
       return;
     }
     if (notas.length === 1) {
@@ -525,7 +530,7 @@ export default function ComprasPedido() {
     if (imprimindoNfRef.current) return;
     const notas = (notasEscolhidas || []).filter((nf) => nf?.anexo_id);
     if (!notas.length) {
-      setErro('Selecione ao menos uma nota fiscal para imprimir.');
+      setErro('Selecione ao menos um documento (NF ou boleto) para imprimir.');
       return;
     }
     const abertos = [];
@@ -545,7 +550,7 @@ export default function ComprasPedido() {
         }
       }
       if (!abertos.length) {
-        setErro('Não há PDF ou imagem da nota fiscal para imprimir.');
+        setErro('Não há PDF ou imagem de NF/boleto para imprimir.');
         return;
       }
       for (const aberto of abertos) {
@@ -559,11 +564,12 @@ export default function ComprasPedido() {
         await registrarImpressaoNfSede(false);
         return;
       }
+      const soBoleto = notas.every((nf) => nf.tipo_nf === 'boleto');
       setOk(notas.length > 1
-        ? `Impressão aberta para ${notas.length} notas fiscais.`
-        : 'Impressão da nota fiscal aberta.');
+        ? `Impressão aberta para ${notas.length} documentos.`
+        : (soBoleto ? 'Impressão do boleto aberta.' : 'Impressão da nota fiscal aberta.'));
     } catch (err) {
-      setErro(err.response?.data?.detail || err.message || 'Não foi possível imprimir a nota fiscal.');
+      setErro(err.response?.data?.detail || err.message || 'Não foi possível imprimir o documento.');
     } finally {
       imprimindoNfRef.current = false;
       setImprimindoNf(false);
@@ -3701,9 +3707,9 @@ export default function ComprasPedido() {
       {modalEscolherNfImpressao ? (
         <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-900/50 p-4">
           <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl">
-            <p className="text-base font-black text-slate-900">Quais NFs imprimir?</p>
+            <p className="text-base font-black text-slate-900">Quais documentos imprimir?</p>
             <p className="mt-2 text-sm text-slate-600">
-              Este pedido tem mais de uma nota. Escolha uma, várias ou todas.
+              Este pedido tem mais de um arquivo (NF e/ou boleto). Escolha um, vários ou todos.
             </p>
             <div className="mt-3 flex flex-wrap gap-2">
               <PremiumButton
