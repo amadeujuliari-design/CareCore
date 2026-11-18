@@ -1238,11 +1238,15 @@ export default function ComprasPedido() {
               role="status"
             >
               <p>
-                Parcela já impressa/paga. Anexe a
+                Parcela já impressa/paga. Anexe o
+                {' '}
+                <strong>próximo boleto</strong>
+                {' '}
+                ou a
                 {' '}
                 <strong>próxima NF</strong>
                 {' '}
-                (assinada, com data de pagamento) para o pedido voltar à fila A pagar.
+                (assinada, com data) para o pedido voltar à fila A pagar. Se anexar só a NF do valor do boleto já pago, ela não reabre a fila.
               </p>
             </div>
           </div>
@@ -1260,14 +1264,21 @@ export default function ComprasPedido() {
               <p>
                 {pedido.status === 'aguardando_pagamento'
                   ? (
-                    (pedido.notas_fiscais || []).some((n) => n.tipo_nf === 'boleto')
-                      && !(pedido.notas_fiscais || []).some((n) => n.tipo_nf !== 'boleto' && n.anexo_id)
-                      ? 'A pagar (boleto): ao imprimir o boleto, o pedido sai da fila e volta ao projeto para anexar a NF quando o bem for entregue.'
-                      : (
-                        segueInfra && pedido.pagamento_qtd_parcelas > 1 && !pedido.pagamento_completo
-                          ? 'A pagar: imprima só a NF desta parcela. O plano parcelado permanece e o pedido continua aberto para as demais. Ele só conclui quando todas tiverem NF ou comprovante, ou quando marcarem que todos os valores já foram pagos.'
-                          : 'A pagar: ao imprimir a NF/documento para pagamento, o pedido vai automaticamente para Concluídos.'
-                      )
+                    (() => {
+                      const notasAp = pedido.notas_fiscais || [];
+                      const temBoletoAp = notasAp.some((n) => n.tipo_nf === 'boleto' && n.anexo_id);
+                      const temNfAp = notasAp.some((n) => n.tipo_nf !== 'boleto' && n.anexo_id);
+                      if (temBoletoAp && !temNfAp) {
+                        return 'A pagar (boleto): ao imprimir o boleto, o pedido sai da fila e volta ao projeto para anexar a NF quando o bem for entregue.';
+                      }
+                      if (temBoletoAp && segueInfra && pedido.pagamento_qtd_parcelas > 1) {
+                        return 'A pagar (boleto/parcela): imprima o boleto ou a NF desta parcela (o PDF do boleto entra na impressão). O pedido sai da fila; a NF só do valor do boleto já pago não reabre A pagar — o próximo boleto/NF sim.';
+                      }
+                      if (segueInfra && pedido.pagamento_qtd_parcelas > 1 && !pedido.pagamento_completo) {
+                        return 'A pagar: imprima só o documento desta parcela (NF ou boleto). O plano parcelado permanece. Ele só conclui quando todas tiverem documento, ou quando marcarem que todos os valores já foram pagos.';
+                      }
+                      return 'A pagar: ao imprimir a NF/documento para pagamento, o pedido vai automaticamente para Concluídos.';
+                    })()
                   )
                   : pedido.nf_impressa
                     ? `A nota fiscal deste pedido já foi impressa${pedido.nf_impressa_em ? ` em ${quandoOperacional(pedido.nf_impressa_em)}` : ''}.`
@@ -1285,10 +1296,14 @@ export default function ComprasPedido() {
                     : (pedido.nf_impressa
                       ? 'Imprimir novamente'
                       : (
-                        (pedido.notas_fiscais || []).some((n) => n.tipo_nf === 'boleto')
-                          && !(pedido.notas_fiscais || []).some((n) => n.tipo_nf !== 'boleto' && n.anexo_id)
-                          ? 'Imprimir boleto'
-                          : 'Imprimir NF'
+                        (() => {
+                          const notasBtn = pedido.notas_fiscais || [];
+                          const temBoletoBtn = notasBtn.some((n) => n.tipo_nf === 'boleto' && n.anexo_id);
+                          const temNfBtn = notasBtn.some((n) => n.tipo_nf !== 'boleto' && n.anexo_id);
+                          if (temBoletoBtn && !temNfBtn) return 'Imprimir boleto';
+                          if (temBoletoBtn) return 'Imprimir boleto/NF';
+                          return 'Imprimir NF';
+                        })()
                       ))}
                 </PremiumButton>
                 {pedido.status === 'recebido' ? (

@@ -656,6 +656,38 @@ def pedido_tem_nota_fiscal_documento(notas) -> bool:
     )
 
 
+def _parcela_efetiva_documento(nota) -> int:
+    """Parcela do documento; sem número trata como 1 (à vista / parcela única)."""
+    try:
+        n = int(getattr(nota, "parcela_numero", None) or 0)
+    except (TypeError, ValueError):
+        n = 0
+    return n if n > 0 else 1
+
+
+def parcelas_com_boleto_pronto(notas) -> set[int]:
+    return {
+        _parcela_efetiva_documento(n)
+        for n in (notas or [])
+        if boleto_pronto_para_a_pagar(n)
+    }
+
+
+def nf_documenta_parcela_de_boleto_pago(notas) -> bool:
+    """Há NF assinada cuja parcela já tem boleto (espelho/entrega do valor já pago)."""
+    bol = parcelas_com_boleto_pronto(notas)
+    if not bol:
+        return False
+    for n in notas or []:
+        if _nota_eh_boleto(n):
+            continue
+        if not getattr(n, "anexo_id", None) or not getattr(n, "assinada_em", None):
+            continue
+        if _parcela_efetiva_documento(n) in bol:
+            return True
+    return False
+
+
 def pedido_a_pagar_somente_boleto(notas) -> bool:
     """Fila A pagar aberta só com boleto — ainda sem NF da entrega."""
     return (
@@ -664,12 +696,27 @@ def pedido_a_pagar_somente_boleto(notas) -> bool:
     )
 
 
+def pedido_a_pagar_por_boleto_pendente_nf(notas) -> bool:
+    """Há boleto pronto cuja parcela ainda não tem NF assinada (aguarda doc da entrega)."""
+    bol = parcelas_com_boleto_pronto(notas)
+    if not bol:
+        return False
+    nfs = {
+        _parcela_efetiva_documento(n)
+        for n in (notas or [])
+        if (not _nota_eh_boleto(n))
+        and bool(getattr(n, "anexo_id", None))
+        and bool(getattr(n, "assinada_em", None))
+    }
+    return any(p not in nfs for p in bol)
+
+
 def pedido_documento_pronto_para_a_pagar(notas) -> bool:
-    """Entra em A pagar com NF pronta ou com boleto assinado (pagamento antes da entrega)."""
+    """Entra em A pagar com NF pronta ou com boleto assinado (à vista ou parcela)."""
     if pedido_tem_nf_pronta_para_a_pagar(notas):
         return True
-    # Boleto só abre A pagar enquanto a NF do bem ainda não existe.
-    return pedido_a_pagar_somente_boleto(notas)
+    # Boleto de qualquer parcela abre A pagar (mesmo com NF de parcelas anteriores).
+    return pedido_tem_boleto_pronto_para_a_pagar(notas)
 
 
 def pedido_aguardando_nf_apos_boleto_pago(
@@ -686,7 +733,7 @@ def pedido_aguardando_nf_apos_boleto_pago(
     if notas is None:
         # Heurística de lista: enviado + já impresso ≡ boleto pago aguardando NF.
         return True
-    return pedido_a_pagar_somente_boleto(notas)
+    return pedido_a_pagar_por_boleto_pendente_nf(notas)
 
 
 def pode_concluir_a_pagar_com_pagamento(*, segue: bool, completo: bool) -> bool:

@@ -124,10 +124,12 @@ from compras_regras import (
     maior_parcela_com_documento,
     nota_fiscal_pronta_para_a_pagar,
     pedido_a_pagar_somente_boleto,
+    pedido_a_pagar_por_boleto_pendente_nf,
     pedido_aguardando_nf_apos_boleto_pago,
     pedido_documento_pronto_para_a_pagar,
     pedido_tem_boleto_pronto_para_a_pagar,
     pedido_tem_nf_pronta_para_a_pagar,
+    nf_documenta_parcela_de_boleto_pago,
     pode_concluir_a_pagar_com_pagamento,
     ETAPA_CONTRATO_ASSINADO,
     ETAPA_CONTRATO_NOEMI,
@@ -646,15 +648,17 @@ def situacao_pagamento_de_registros(pedido: ComprasPedidoDB, notas, anexos) -> d
         }
     docs: dict[int, bool] = {}
     for nota in notas or []:
-        if (nota.tipo_nf or "") == "boleto":
-            continue
         if not getattr(nota, "anexo_id", None):
+            continue
+        # Boleto assinado conta como documento da parcela (dual path com NF).
+        if (nota.tipo_nf or "") == "boleto" and not getattr(nota, "assinada_em", None):
             continue
         docs[_numero_parcela_doc(getattr(nota, "parcela_numero", None))] = True
     for anexo in anexos or []:
         if not getattr(anexo, "ativo", True):
             continue
         classe = (getattr(anexo, "classe_documento", None) or "")
+        # Boleto conta via nota assinada (acima); anexo solto de boleto não antecipa a parcela.
         if classe not in {CLASSE_DOC_COMPROVANTE, CLASSE_DOC_NOTA}:
             continue
         docs[_numero_parcela_doc(getattr(anexo, "parcela_numero", None))] = True
@@ -2875,8 +2879,8 @@ async def registrar_nota_fiscal(
         anexo_id=anexo.id if anexo else None,
     )
     pedido.atualizado_em = agora
-    if assinar_agora and (not eh_boleto) and await _deve_encerrar_apos_nf_com_boleto_pago(db, pedido):
-        await _encerrar_apos_nf_entrega_boleto_pago(db, usuario, pedido)
+    if assinar_agora and (not eh_boleto) and await _tratar_nf_apos_boleto_pago(db, usuario, pedido):
+        pass  # NF do valor do boleto: encerra ou fica aguardando próxima parcela (sem A pagar).
     elif (
         assinar_agora
         and pedido_pode_enviar_nf_para_a_pagar(pedido.tipo, pedido.status)
@@ -3020,16 +3024,23 @@ async def registrar_impressao_nf_e_opcional_encerrar(
 ) -> None:
     if (pedido.status or "") == STATUS_AGUARDANDO_PAGAMENTO:
         notas = await _notas_pedido(db, pedido.id)
-        # Boleto antecipado: imprimir paga e devolve o pedido ao projeto para anexar a NF na entrega.
-        if pedido_a_pagar_somente_boleto(notas):
-            perfil = str(usuario.get("perfil_acesso") or usuario.get("perfil") or "")
-            if not usuario_e_sede_compras(
-                perfil=perfil, is_manutencao=bool(usuario.get("is_manutencao"))
-            ):
-                raise HTTPException(
-                    status_code=403,
-                    detail="Somente Infraestrutura ou Suprimentos registram a impressão do boleto.",
-                )
+        perfil = str(usuario.get("perfil_acesso") or usuario.get("perfil") or "")
+        if not usuario_e_sede_compras(
+            perfil=perfil, is_manutencao=bool(usuario.get("is_manutencao"))
+        ):
+            raise HTTPException(
+                status_code=403,
+                detail="Somente Infraestrutura ou Suprimentos registram a impressão do documento.",
+            )
+        # Boleto (à vista ou parcela) sem NF daquela parcela: imprime, sai da fila e aguarda NF/espelho.
+        # Não exige "somente boleto" — no parcelado pode haver NF de parcelas anteriores.
+        if (
+            pedido_a_pagar_somente_boleto(notas)
+            or pedido_a_pagar_por_boleto_pendente_nf(notas)
+        ):
+            sit_bol = await situacao_pagamento_infra(db, pedido)
+            qtd_bol = int(sit_bol.get("qtd_parcelas") or 0)
+            pagas_bol = int(sit_bol.get("parcelas_pagas") or 0)
             anterior = pedido.status
             agora = agora_operacional_naive()
             if not getattr(pedido, "nf_impressa_em", None):
@@ -3039,14 +3050,22 @@ async def registrar_impressao_nf_e_opcional_encerrar(
             pedido.a_pagar_lida_em = None
             pedido.a_pagar_lida_por_id = None
             pedido.atualizado_em = agora
+            if qtd_bol > 1:
+                texto_bol = (
+                    f"Boleto da parcela impresso ({pagas_bol} de {qtd_bol} com documento). "
+                    "Pedido saiu de A pagar. A NF só desse valor não reabre a fila; "
+                    "o próximo boleto ou NF da parcela seguinte volta a A pagar."
+                )
+            else:
+                texto_bol = (
+                    "Boleto impresso para pagamento. Pedido saiu de A pagar. "
+                    "Aguardando a NF na entrega do bem para encerrar o processo."
+                )
             await registrar_evento_pedido(
                 db,
                 pedido_id=pedido.id,
                 tipo=TIPO_EVENTO_STATUS,
-                texto=(
-                    "Boleto impresso para pagamento. Pedido saiu de A pagar. "
-                    "Aguardando a NF na entrega do bem para encerrar o processo."
-                ),
+                texto=texto_bol,
                 usuario_id=_uid(usuario),
                 status_anterior=anterior,
                 status_novo=STATUS_ENVIADO,
@@ -3057,15 +3076,7 @@ async def registrar_impressao_nf_e_opcional_encerrar(
             segue=bool(sit.get("segue")),
             completo=bool(sit.get("completo")),
         ):
-            # Parcelado incompleto: sai de A pagar; volta quando a próxima NF for anexada.
-            perfil = str(usuario.get("perfil_acesso") or usuario.get("perfil") or "")
-            if not usuario_e_sede_compras(
-                perfil=perfil, is_manutencao=bool(usuario.get("is_manutencao"))
-            ):
-                raise HTTPException(
-                    status_code=403,
-                    detail="Somente Infraestrutura ou Suprimentos registram a impressão da NF.",
-                )
+            # Parcelado incompleto (NF): sai de A pagar; volta com o próximo documento.
             qtd = int(sit.get("qtd_parcelas") or 0)
             pagas = int(sit.get("parcelas_pagas") or 0)
             anterior = pedido.status
@@ -3083,7 +3094,7 @@ async def registrar_impressao_nf_e_opcional_encerrar(
                 tipo=TIPO_EVENTO_STATUS,
                 texto=(
                     f"NF da parcela impressa ({pagas} de {qtd} com documento). "
-                    "Pedido saiu de A pagar. Anexe a próxima NF assinada com data "
+                    "Pedido saiu de A pagar. Anexe o próximo boleto ou NF assinada com data "
                     "para o pedido voltar à fila."
                 ),
                 usuario_id=_uid(usuario),
@@ -4320,8 +4331,8 @@ async def assinar_nota_fiscal_pendente(
     )
     pedido.atualizado_em = agora
 
-    if await _deve_encerrar_apos_nf_com_boleto_pago(db, pedido):
-        await _encerrar_apos_nf_entrega_boleto_pago(db, usuario, pedido)
+    if await _tratar_nf_apos_boleto_pago(db, usuario, pedido):
+        pass
     elif (
         pedido_pode_enviar_nf_para_a_pagar(pedido.tipo, pedido.status)
         and await _pedido_pronto_enviar_a_pagar(db, pedido)
@@ -4338,29 +4349,59 @@ async def _pedido_pronto_enviar_a_pagar(db: AsyncSession, pedido: ComprasPedidoD
     return pedido_documento_pronto_para_a_pagar(notas)
 
 
-async def _deve_encerrar_apos_nf_com_boleto_pago(
+async def _deve_tratar_nf_apos_boleto_pago(
     db: AsyncSession,
     pedido: ComprasPedidoDB,
 ) -> bool:
-    """NF do bem após boleto já pago: encerra sem voltar a A pagar."""
+    """NF que espelha parcela já paga por boleto impresso — não reabre A pagar."""
     if tipo_eh_emergencia(pedido.tipo):
         return False
-    notas = await _notas_pedido(db, pedido.id)
-    if not pedido_aguardando_nf_apos_boleto_pago(
-        status=pedido.status,
-        nf_impressa_em=getattr(pedido, "nf_impressa_em", None),
-        notas=None,
-    ):
+    if (pedido.status or "") != STATUS_ENVIADO:
         return False
-    # Já tem NF do bem assinada (acabou de anexar/assinar) + boleto pago.
+    if not getattr(pedido, "nf_impressa_em", None):
+        return False
+    notas = await _notas_pedido(db, pedido.id)
     if not pedido_tem_boleto_pronto_para_a_pagar(notas):
         return False
-    return any(
-        (getattr(n, "tipo_nf", None) or "") != "boleto"
-        and bool(getattr(n, "anexo_id", None))
-        and bool(getattr(n, "assinada_em", None))
-        for n in (notas or [])
+    return nf_documenta_parcela_de_boleto_pago(notas)
+
+
+async def _tratar_nf_apos_boleto_pago(
+    db: AsyncSession,
+    usuario: dict,
+    pedido: ComprasPedidoDB,
+) -> bool:
+    """NF do valor do boleto já impresso: encerra se completo; senão fica sem A pagar.
+
+    Returns True se o fluxo foi tratado (caller não deve enviar a A pagar).
+    """
+    if not await _deve_tratar_nf_apos_boleto_pago(db, pedido):
+        return False
+    sit = await situacao_pagamento_infra(db, pedido)
+    if pode_concluir_a_pagar_com_pagamento(
+        segue=bool(sit.get("segue")),
+        completo=bool(sit.get("completo")),
+    ):
+        await _encerrar_apos_nf_entrega_boleto_pago(db, usuario, pedido)
+        return True
+    # Parcelado incompleto: NF só do boleto pago não reabre a fila.
+    qtd = int(sit.get("qtd_parcelas") or 0)
+    pagas = int(sit.get("parcelas_pagas") or 0)
+    await registrar_evento_pedido(
+        db,
+        pedido_id=pedido.id,
+        tipo=TIPO_EVENTO_STATUS,
+        texto=(
+            f"NF da parcela anexada após boleto pago ({pagas} de {qtd} com documento). "
+            "Sem retorno a A pagar. Anexe o próximo boleto ou NF da parcela seguinte "
+            "para o pedido voltar à fila."
+        ),
+        usuario_id=_uid(usuario),
+        status_anterior=STATUS_ENVIADO,
+        status_novo=STATUS_ENVIADO,
     )
+    pedido.atualizado_em = agora_operacional_naive()
+    return True
 
 
 async def _encerrar_apos_nf_entrega_boleto_pago(
@@ -4525,8 +4566,10 @@ async def enviar_nf_para_pagamento(
         )
     todas = await _notas_pedido(db, pedido.id)
     notas = [n for n in todas if (n.tipo_nf or "") != "boleto"]
+    tem_boleto = pedido_tem_boleto_pronto_para_a_pagar(todas)
     so_boleto = pedido_a_pagar_somente_boleto(todas)
-    if not notas and not so_boleto:
+    tem_nf_pronta = any(nota_fiscal_pronta_para_a_pagar(n) for n in notas)
+    if not notas and not tem_boleto:
         raise HTTPException(
             status_code=400,
             detail="Anexe a nota fiscal ou o boleto assinado antes de enviar para pagamento.",
@@ -4538,7 +4581,7 @@ async def enviar_nf_para_pagamento(
                 status_code=400,
                 detail="Aguarde a assinatura digital da nota fiscal antes de enviar para A pagar.",
             )
-    elif not so_boleto and not any(nota_fiscal_pronta_para_a_pagar(n) for n in notas):
+    elif not tem_boleto and not tem_nf_pronta:
         raise HTTPException(
             status_code=400,
             detail=(
@@ -4561,15 +4604,15 @@ async def enviar_nf_para_pagamento(
         if not pedido_segue_infraestrutura(pedido.tipo, destino)
         else "Infraestrutura"
     )
-    if so_boleto:
+    if tem_boleto and (so_boleto or pedido_a_pagar_por_boleto_pendente_nf(todas)):
         texto = (
             f"Boleto reenviado para a fila A pagar ({fila}). "
-            "Após o pagamento, o pedido volta para anexar a NF na entrega."
-            if reentrada
+            "Após imprimir, a NF só desse valor não reabre a fila."
+            if reentrada or anterior == STATUS_ENVIADO
             else (
                 f"Boleto assinado enviado para a fila A pagar ({fila}). "
-                "Pagamento antecipado: após imprimir, o pedido volta para o projeto "
-                "anexar a NF quando o bem for entregue."
+                "Após imprimir, o pedido volta ao projeto; a NF desse valor "
+                "não reabre A pagar — o próximo boleto/NF da parcela seguinte sim."
             )
         )
     else:

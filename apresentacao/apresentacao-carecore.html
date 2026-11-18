@@ -1172,7 +1172,7 @@
         boleto, nota fiscal e arquivos relacionados, com a Assinatura Digital AEB na nota e no boleto (na NF o texto complementar é obrigatório; no boleto a informação adicional é opcional e também pode ser carimbada).
         A NF pode ser excluída e reanexada enquanto a Sede não imprimir.
         A lista mostra primeiro Suprimentos e abaixo Infraestrutura, cada um agrupado por projeto.
-        Na Infraestrutura o pagamento pode ser à vista ou parcelado: boleto assinado (pagamento antes da entrega) vai para A pagar e, ao imprimir, o pedido volta ao projeto para anexar a NF na entrega sem nova ida à fila; NF assinada com data também vai para A pagar; imprimir uma parcela mantém o plano e o pedido aberto; a impressão da NF só conclui com todas as parcelas documentadas (ou quitadas).
+        Na Infraestrutura o pagamento pode ser à vista ou parcelado: cada parcela aceita boleto ou NF; boleto assinado vai para A pagar e, ao imprimir (PDF do boleto incluso), sai da fila — a NF só desse valor não reabre A pagar; o próximo boleto ou NF da parcela seguinte volta à fila; a impressão só conclui com todas as parcelas documentadas (ou quitadas).
         Compras emergência segue sem orçamentos: o projeto escolhe Infraestrutura ou Suprimentos; o status começa em Aguardando NF e, com a nota anexada sem assinatura, passa a Aguardando assinatura da NF. Depois de assinar, a Sede correspondente recebe em A pagar. Cancelados têm lista própria. Ao imprimir a NF, a Sede escolhe se o status vai para Encerrado.
       </p>
       <div class="shot">

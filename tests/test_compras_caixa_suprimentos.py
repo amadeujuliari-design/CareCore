@@ -244,7 +244,11 @@ def test_impressao_boleto_antecipado_volta_a_aguardar_nf(monkeypatch):
             )
         ]
 
+    async def _sit(_db, _pedido):
+        return {"segue": True, "completo": True, "qtd_parcelas": 1, "parcelas_pagas": 1}
+
     monkeypatch.setattr(fluxo, "_notas_pedido", _notas)
+    monkeypatch.setattr(fluxo, "situacao_pagamento_infra", _sit)
     db = _Db()
 
     async def caso():
@@ -255,6 +259,98 @@ def test_impressao_boleto_antecipado_volta_a_aguardar_nf(monkeypatch):
     assert pedido.nf_impressa_em is not None
     assert pedido.a_pagar_lida_em is None
     assert any("Aguardando a NF" in (item.texto or "") for item in db.added)
+
+
+def test_impressao_boleto_parcela_com_nf_anterior_sai_da_fila(monkeypatch):
+    """Parcelado: boleto da parcela 2 imprime mesmo com NF da parcela 1 já anexada."""
+    import compras_pedido_fluxo as fluxo
+    from compras_regras import STATUS_ENVIADO
+
+    pedido = _pedido(
+        id="p-bol-p2",
+        status=STATUS_AGUARDANDO_PAGAMENTO,
+        pagamento_qtd_parcelas=4,
+        recebido_em=None,
+        a_pagar_lida_em=datetime(2026, 11, 18, 8, 0, 0),
+    )
+
+    async def _notas(_db, _pid):
+        return [
+            SimpleNamespace(
+                tipo_nf="produto",
+                anexo_id="nf1",
+                assinada_em=datetime(2026, 11, 10, 7, 0, 0),
+                parcela_numero=1,
+            ),
+            SimpleNamespace(
+                tipo_nf="boleto",
+                anexo_id="b2",
+                assinada_em=datetime(2026, 11, 18, 7, 0, 0),
+                parcela_numero=2,
+            ),
+        ]
+
+    async def _sit(_db, _pedido):
+        return {"segue": True, "completo": False, "qtd_parcelas": 4, "parcelas_pagas": 2}
+
+    monkeypatch.setattr(fluxo, "_notas_pedido", _notas)
+    monkeypatch.setattr(fluxo, "situacao_pagamento_infra", _sit)
+    db = _Db()
+
+    async def caso():
+        await registrar_impressao_nf_e_opcional_encerrar(db, _infra(), pedido)
+
+    asyncio.run(caso())
+    assert pedido.status == STATUS_ENVIADO
+    assert pedido.nf_impressa_em is not None
+    assert any("Boleto da parcela" in (item.texto or "") for item in db.added)
+    assert pedido.status != STATUS_AGUARDANDO_PAGAMENTO
+
+
+def test_nf_apos_boleto_parcela_nao_reabre_a_pagar(monkeypatch):
+    import compras_pedido_fluxo as fluxo
+    from compras_regras import STATUS_ENVIADO
+
+    pedido = _pedido(
+        id="p-bol-nf",
+        tipo="servico",
+        destino_compras="infraestrutura",
+        status=STATUS_ENVIADO,
+        pagamento_qtd_parcelas=4,
+        nf_impressa_em=datetime(2026, 11, 18, 10, 0, 0),
+        recebido_em=None,
+    )
+
+    async def _notas(_db, _pid):
+        return [
+            SimpleNamespace(
+                tipo_nf="boleto",
+                anexo_id="b1",
+                assinada_em=datetime(2026, 11, 18, 7, 0, 0),
+                parcela_numero=1,
+            ),
+            SimpleNamespace(
+                tipo_nf="produto",
+                anexo_id="nf1",
+                assinada_em=datetime(2026, 11, 18, 11, 0, 0),
+                parcela_numero=1,
+            ),
+        ]
+
+    async def _sit(_db, _pedido):
+        return {"segue": True, "completo": False, "qtd_parcelas": 4, "parcelas_pagas": 1}
+
+    monkeypatch.setattr(fluxo, "_notas_pedido", _notas)
+    monkeypatch.setattr(fluxo, "situacao_pagamento_infra", _sit)
+    db = _Db()
+
+    async def caso():
+        return await fluxo._tratar_nf_apos_boleto_pago(db, _infra(), pedido)
+
+    tratado = asyncio.run(caso())
+    assert tratado is True
+    assert pedido.status == STATUS_ENVIADO
+    assert any("Sem retorno a A pagar" in (item.texto or "") for item in db.added)
 
 
 def test_resgate_nao_puxa_boleto_ja_impresso_nem_so_boleto(monkeypatch):

@@ -88,9 +88,9 @@ export default function ComprasFilaInfra({ modo }) {
   const titulo = ehNfSuprimentos ? 'A pagar — Suprimentos' : 'A pagar — Infraestrutura';
   const subtitulo = (
     'Revise o pedido e a data de pagamento. '
-    + 'Boleto antecipado: ao imprimir, sai de A pagar e volta ao projeto aguardar a NF na entrega. '
-    + 'Parcelado: ao imprimir uma parcela, sai de A pagar e só volta quando anexarem a próxima NF; '
-    + 'na última parcela (pagamento completo), vai para Concluídos. '
+    + 'Boleto (à vista ou parcela): ao imprimir, sai de A pagar; a NF só desse valor não reabre a fila. '
+    + 'Parcelado: cada boleto ou NF de parcela volta a A pagar; ao imprimir, sai da fila. '
+    + 'Na última parcela (pagamento completo), vai para Concluídos. '
     + 'Pedidos não abertos aparecem em negrito.'
   );
   const eyebrow = ehNfSuprimentos ? 'Compras · Suprimentos' : 'Compras · Infraestrutura';

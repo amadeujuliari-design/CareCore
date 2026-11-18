@@ -648,9 +648,16 @@ def test_situacao_pagamento_infra_conta_nf_ou_comprovante():
         pagamento_qtd_parcelas=2,
         pagamento_quitado_em=None,
     )
+    from datetime import datetime
+
     notas = [
-        SimpleNamespace(tipo_nf="produto", anexo_id="a1", parcela_numero=1),
-        SimpleNamespace(tipo_nf="boleto", anexo_id="a2", parcela_numero=2),
+        SimpleNamespace(tipo_nf="produto", anexo_id="a1", parcela_numero=1, assinada_em=None),
+        SimpleNamespace(
+            tipo_nf="boleto",
+            anexo_id="a2",
+            parcela_numero=2,
+            assinada_em=datetime(2026, 11, 18, 9, 0, 0),
+        ),
     ]
     anexos = [
         SimpleNamespace(ativo=True, classe_documento="boleto", parcela_numero=2),
@@ -664,11 +671,23 @@ def test_situacao_pagamento_infra_conta_nf_ou_comprovante():
 
     so_boleto = situacao_pagamento_de_registros(
         pedido,
-        [SimpleNamespace(tipo_nf="boleto", anexo_id="b1", parcela_numero=1)],
+        [SimpleNamespace(
+            tipo_nf="boleto",
+            anexo_id="b1",
+            parcela_numero=1,
+            assinada_em=datetime(2026, 11, 18, 9, 0, 0),
+        )],
         [SimpleNamespace(ativo=True, classe_documento="boleto", parcela_numero=1)],
     )
-    assert so_boleto["parcelas_pagas"] == 0
+    assert so_boleto["parcelas_pagas"] == 1
     assert so_boleto["completo"] is False
+
+    boleto_sem_assinatura = situacao_pagamento_de_registros(
+        pedido,
+        [SimpleNamespace(tipo_nf="boleto", anexo_id="b2", parcela_numero=1, assinada_em=None)],
+        [],
+    )
+    assert boleto_sem_assinatura["parcelas_pagas"] == 0
 
 
 def test_nf_parcela_pronta_para_a_pagar_e_conclusao():
@@ -677,7 +696,9 @@ def test_nf_parcela_pronta_para_a_pagar_e_conclusao():
 
     from compras_regras import (
         boleto_pronto_para_a_pagar,
+        nf_documenta_parcela_de_boleto_pago,
         nota_fiscal_pronta_para_a_pagar,
+        pedido_a_pagar_por_boleto_pendente_nf,
         pedido_a_pagar_somente_boleto,
         pedido_aguardando_nf_apos_boleto_pago,
         pedido_documento_pronto_para_a_pagar,
@@ -721,7 +742,32 @@ def test_nf_parcela_pronta_para_a_pagar_e_conclusao():
     assert pedido_documento_pronto_para_a_pagar([boleto]) is True
     assert pedido_a_pagar_somente_boleto([boleto]) is True
     assert pedido_a_pagar_somente_boleto([boleto, pronta]) is False
+    # Boleto de parcela seguinte ainda abre A pagar mesmo com NF anterior.
     assert pedido_documento_pronto_para_a_pagar([boleto, pronta]) is True
+    assert pedido_a_pagar_por_boleto_pendente_nf([boleto]) is True
+    assert pedido_a_pagar_por_boleto_pendente_nf([boleto, pronta]) is False
+    assert nf_documenta_parcela_de_boleto_pago([boleto, pronta]) is True
+    boleto_p1 = SimpleNamespace(
+        tipo_nf="boleto",
+        assinada_em=datetime(2026, 11, 10, 10, 0, 0),
+        anexo_id="bol1",
+        parcela_numero=1,
+    )
+    nf_p1 = SimpleNamespace(
+        tipo_nf="produto",
+        assinada_em=datetime(2026, 11, 11, 10, 0, 0),
+        data_pagamento=date(2026, 11, 11),
+        anexo_id="nf1",
+        parcela_numero=1,
+    )
+    boleto_p2 = SimpleNamespace(
+        tipo_nf="boleto",
+        assinada_em=datetime(2026, 11, 12, 10, 0, 0),
+        anexo_id="bol2",
+        parcela_numero=2,
+    )
+    assert pedido_a_pagar_por_boleto_pendente_nf([boleto_p1, nf_p1, boleto_p2]) is True
+    assert nf_documenta_parcela_de_boleto_pago([boleto_p1, nf_p1]) is True
     assert pedido_aguardando_nf_apos_boleto_pago(
         status=STATUS_ENVIADO,
         nf_impressa_em=datetime(2026, 11, 18, 9, 0, 0),
