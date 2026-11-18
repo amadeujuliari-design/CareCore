@@ -127,6 +127,7 @@ from compras_regras import (
     pedido_aguardando_nf_apos_boleto_pago,
     pedido_documento_pronto_para_a_pagar,
     pedido_tem_boleto_pronto_para_a_pagar,
+    pedido_tem_nf_pronta_para_a_pagar,
     pode_concluir_a_pagar_com_pagamento,
     ETAPA_CONTRATO_ASSINADO,
     ETAPA_CONTRATO_NOEMI,
@@ -4380,6 +4381,9 @@ async def resgatar_pedidos_nf_pronta_a_pagar(
 
     Antes da regra parcela a parcela, o parcelado só ia a A pagar com todas as NFs.
     Pedidos como Leopoldina ficaram com 1 NF assinada e status antigo.
+
+    Não resgata boleto antecipado nem pedido cujo documento de pagamento já foi impresso
+    (após imprimir boleto o status volta a enviado aguardando NF da entrega).
     """
     mudou = False
     for pedido in pedidos or []:
@@ -4387,7 +4391,12 @@ async def resgatar_pedidos_nf_pronta_a_pagar(
             continue
         if tipo_eh_emergencia(pedido.tipo):
             continue
-        if not await _pedido_pronto_enviar_a_pagar(db, pedido):
+        # Boleto já impresso / aguardando NF na entrega — não puxar de volta para A pagar.
+        if getattr(pedido, "nf_impressa_em", None):
+            continue
+        notas = await _notas_pedido(db, pedido.id)
+        # Só NF real com data; boleto entra em A pagar no anexo, não neste resgate.
+        if not pedido_tem_nf_pronta_para_a_pagar(notas):
             continue
         anterior = pedido.status
         agora = agora_operacional_naive()

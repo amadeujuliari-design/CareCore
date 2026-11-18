@@ -254,6 +254,48 @@ def test_impressao_boleto_antecipado_volta_a_aguardar_nf(monkeypatch):
     assert any("Aguardando a NF" in (item.texto or "") for item in db.added)
 
 
+def test_resgate_nao_puxa_boleto_ja_impresso_nem_so_boleto(monkeypatch):
+    import compras_pedido_fluxo as fluxo
+    from compras_pedido_fluxo import resgatar_pedidos_nf_pronta_a_pagar
+    from compras_regras import STATUS_ENVIADO
+
+    boleto_impresso = _pedido(
+        id="p-bol-imp",
+        status=STATUS_ENVIADO,
+        tipo="imobilizado",
+        destino_compras="infraestrutura",
+        nf_impressa_em=datetime(2026, 11, 18, 10, 0, 0),
+    )
+    so_boleto = _pedido(
+        id="p-bol",
+        status=STATUS_ENVIADO,
+        tipo="imobilizado",
+        destino_compras="infraestrutura",
+        nf_impressa_em=None,
+    )
+
+    async def _notas(_db, pid):
+        return [
+            SimpleNamespace(
+                tipo_nf="boleto",
+                anexo_id="b1",
+                assinada_em=datetime(2026, 11, 18, 9, 0, 0),
+                data_pagamento=None,
+            )
+        ]
+
+    monkeypatch.setattr(fluxo, "_notas_pedido", _notas)
+    db = _Db()
+
+    async def caso():
+        return await resgatar_pedidos_nf_pronta_a_pagar(db, _infra(), [boleto_impresso, so_boleto])
+
+    mudou = asyncio.run(caso())
+    assert mudou is False
+    assert boleto_impresso.status == STATUS_ENVIADO
+    assert so_boleto.status == STATUS_ENVIADO
+
+
 def test_plano_parcelado_nao_diminui(monkeypatch):
     import compras_pedido_fluxo as fluxo
 

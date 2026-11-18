@@ -86,7 +86,12 @@ export default function ComprasFilaInfra({ modo }) {
   }, [carregar]);
 
   const titulo = ehNfSuprimentos ? 'A pagar — Suprimentos' : 'A pagar — Infraestrutura';
-  const subtitulo = 'Revise o pedido e a data de pagamento. Ao imprimir a NF/documento para pagamento, o pedido vai para Concluídos. Pedidos não abertos aparecem em negrito.';
+  const subtitulo = (
+    'Revise o pedido e a data de pagamento. '
+    + 'Boleto antecipado: ao imprimir, sai de A pagar e volta ao projeto aguardar a NF na entrega. '
+    + 'NF: ao imprimir com o pagamento completo, vai para Concluídos; no parcelado permanece até as demais parcelas. '
+    + 'Pedidos não abertos aparecem em negrito.'
+  );
   const eyebrow = ehNfSuprimentos ? 'Compras · Suprimentos' : 'Compras · Infraestrutura';
   const semAcesso = ehNfSuprimentos
     ? 'Somente Suprimentos acessa esta fila.'
