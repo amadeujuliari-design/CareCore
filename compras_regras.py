@@ -619,9 +619,18 @@ def pagamento_infra_completo(*, qtd: Optional[int], parcelas_pagas: int, quitado
     return int(parcelas_pagas) >= int(qtd)
 
 
+def _nota_eh_boleto(nota) -> bool:
+    return (getattr(nota, "tipo_nf", None) or "") == "boleto"
+
+
+def boleto_pronto_para_a_pagar(nota) -> bool:
+    """Boleto assinado: pagamento antecipado (antes da NF na entrega)."""
+    return _nota_eh_boleto(nota) and bool(getattr(nota, "assinada_em", None))
+
+
 def nota_fiscal_pronta_para_a_pagar(nota) -> bool:
     """NF (não boleto) com assinatura digital e data de pagamento."""
-    if (getattr(nota, "tipo_nf", None) or "") == "boleto":
+    if _nota_eh_boleto(nota):
         return False
     if not getattr(nota, "assinada_em", None):
         return False
@@ -633,6 +642,51 @@ def nota_fiscal_pronta_para_a_pagar(nota) -> bool:
 def pedido_tem_nf_pronta_para_a_pagar(notas) -> bool:
     """Basta uma NF assinada com data para entrar (ou reentrar) em A pagar."""
     return any(nota_fiscal_pronta_para_a_pagar(n) for n in (notas or []))
+
+
+def pedido_tem_boleto_pronto_para_a_pagar(notas) -> bool:
+    return any(boleto_pronto_para_a_pagar(n) for n in (notas or []))
+
+
+def pedido_tem_nota_fiscal_documento(notas) -> bool:
+    """Há NF do bem (não boleto) anexada no pedido."""
+    return any(
+        (not _nota_eh_boleto(n)) and bool(getattr(n, "anexo_id", None))
+        for n in (notas or [])
+    )
+
+
+def pedido_a_pagar_somente_boleto(notas) -> bool:
+    """Fila A pagar aberta só com boleto — ainda sem NF da entrega."""
+    return (
+        pedido_tem_boleto_pronto_para_a_pagar(notas)
+        and not pedido_tem_nota_fiscal_documento(notas)
+    )
+
+
+def pedido_documento_pronto_para_a_pagar(notas) -> bool:
+    """Entra em A pagar com NF pronta ou com boleto assinado (pagamento antes da entrega)."""
+    if pedido_tem_nf_pronta_para_a_pagar(notas):
+        return True
+    # Boleto só abre A pagar enquanto a NF do bem ainda não existe.
+    return pedido_a_pagar_somente_boleto(notas)
+
+
+def pedido_aguardando_nf_apos_boleto_pago(
+    *,
+    status: Optional[str],
+    nf_impressa_em=None,
+    notas=None,
+) -> bool:
+    """Boleto já impresso/pago: saiu de A pagar e aguarda NF na entrega do bem."""
+    if (status or "").strip().lower() != STATUS_ENVIADO:
+        return False
+    if not nf_impressa_em:
+        return False
+    if notas is None:
+        # Heurística de lista: enviado + já impresso ≡ boleto pago aguardando NF.
+        return True
+    return pedido_a_pagar_somente_boleto(notas)
 
 
 def pode_concluir_a_pagar_com_pagamento(*, segue: bool, completo: bool) -> bool:
@@ -1324,12 +1378,18 @@ def pedido_pode_corrigir_nf(
     nf_impressa_em=None,
     tipo: Optional[str] = None,
 ) -> bool:
-    """NF pode ser excluída/reanexada enquanto a Sede ainda não imprimiu."""
-    if nf_impressa_em:
-        return False
+    """NF pode ser excluída/reanexada enquanto a Sede ainda não imprimiu o doc de pagamento definitivo.
+
+    Exceção: após imprimir só o boleto (pagamento antecipado), o pedido volta a
+    enviado_fornecedor com nf_impressa — aí ainda é possível anexar/trocar a NF do bem.
+    """
     st = (status or "").strip().lower()
     if st in {STATUS_RECEBIDO, STATUS_IMPRIMIR_NF, STATUS_CANCELADO, STATUS_REPROVADO}:
         return False
+    if nf_impressa_em:
+        if tipo_eh_emergencia(tipo):
+            return False
+        return st == STATUS_ENVIADO
     if tipo_eh_emergencia(tipo):
         return st in {
             STATUS_AGUARDANDO_NF,

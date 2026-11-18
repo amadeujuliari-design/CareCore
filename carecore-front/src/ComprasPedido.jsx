@@ -113,6 +113,7 @@ import {
   anexosOrcamentoParaEnvio,
   ehOrcamentoUnificado,
   projetoPodeTrocarOrcamento,
+  pedidoAguardandoNfAposBoletoPago,
   pedidoPodeCorrigirNf,
   tipoExigeJanela,
   tipoPulaAprovacaoSede,
@@ -1203,6 +1204,22 @@ export default function ComprasPedido() {
             )}
           </div>
         )}
+        {pedidoAguardandoNfAposBoletoPago(pedido) && !consultaGlobal && (
+          <div className="shrink-0 px-4 pt-3 md:px-6">
+            <div
+              className="rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-950"
+              role="status"
+            >
+              <p>
+                Boleto já pago. Monitore a entrega do bem e anexe a
+                {' '}
+                <strong>nota fiscal</strong>
+                {' '}
+                para encerrar o processo. Essa NF não volta para A pagar.
+              </p>
+            </div>
+          </div>
+        )}
         {sede && !consultaGlobal && (pedido.status === 'recebido' || pedido.status === 'imprimir_nf' || pedido.status === 'aguardando_pagamento') && (
           <div className="shrink-0 px-4 pt-3 md:px-6">
             <div
@@ -1216,9 +1233,14 @@ export default function ComprasPedido() {
               <p>
                 {pedido.status === 'aguardando_pagamento'
                   ? (
-                    segueInfra && pedido.pagamento_qtd_parcelas > 1 && !pedido.pagamento_completo
-                      ? 'A pagar: imprima só a NF desta parcela. O plano parcelado permanece e o pedido continua aberto para as demais. Ele só conclui quando todas tiverem NF ou comprovante, ou quando marcarem que todos os valores já foram pagos.'
-                      : 'A pagar: ao imprimir a NF/documento para pagamento, o pedido vai automaticamente para Concluídos.'
+                    (pedido.notas_fiscais || []).some((n) => n.tipo_nf === 'boleto')
+                      && !(pedido.notas_fiscais || []).some((n) => n.tipo_nf !== 'boleto' && n.anexo_id)
+                      ? 'A pagar (boleto): ao imprimir o boleto, o pedido sai da fila e volta ao projeto para anexar a NF quando o bem for entregue.'
+                      : (
+                        segueInfra && pedido.pagamento_qtd_parcelas > 1 && !pedido.pagamento_completo
+                          ? 'A pagar: imprima só a NF desta parcela. O plano parcelado permanece e o pedido continua aberto para as demais. Ele só conclui quando todas tiverem NF ou comprovante, ou quando marcarem que todos os valores já foram pagos.'
+                          : 'A pagar: ao imprimir a NF/documento para pagamento, o pedido vai automaticamente para Concluídos.'
+                      )
                   )
                   : pedido.nf_impressa
                     ? `A nota fiscal deste pedido já foi impressa${pedido.nf_impressa_em ? ` em ${quandoOperacional(pedido.nf_impressa_em)}` : ''}.`
@@ -1231,7 +1253,16 @@ export default function ComprasPedido() {
                   onClick={abrirImprimirNfSede}
                   disabled={imprimindoNf}
                 >
-                  {imprimindoNf ? 'Abrindo impressão…' : (pedido.nf_impressa ? 'Imprimir novamente' : 'Imprimir NF')}
+                  {imprimindoNf
+                    ? 'Abrindo impressão…'
+                    : (pedido.nf_impressa
+                      ? 'Imprimir novamente'
+                      : (
+                        (pedido.notas_fiscais || []).some((n) => n.tipo_nf === 'boleto')
+                          && !(pedido.notas_fiscais || []).some((n) => n.tipo_nf !== 'boleto' && n.anexo_id)
+                          ? 'Imprimir boleto'
+                          : 'Imprimir NF'
+                      ))}
                 </PremiumButton>
                 {pedido.status === 'recebido' ? (
                   <PremiumButton
@@ -2791,7 +2822,12 @@ export default function ComprasPedido() {
                 }
                 : (item) => {
                   if (consultaGlobal || terminal || !podeDocumentosPosCompra) return false;
-                  if (item.exclusao === 'nota') return pedidoPodeCorrigirNf(pedido);
+                  if (item.exclusao === 'nota') {
+                    if ((item.tipoNf === 'boleto' || item.classe === 'boleto') && (pedido.nf_impressa || pedido.nf_impressa_em)) {
+                      return false;
+                    }
+                    return pedidoPodeCorrigirNf(pedido);
+                  }
                   return true;
                 }}
               onVisualizar={setModalAnexo}
@@ -2809,9 +2845,11 @@ export default function ComprasPedido() {
                     : projetoAnexaNfAssinada
                       ? 'Se precisar, anexe um arquivo extra. A nota fiscal assinada já é do projeto.'
                       : 'A nota fiscal assinada é do projeto. Infraestrutura e Suprimentos só anexam arquivo extra, se precisar.')
-                  : segueInfra
-                    ? 'Em cada parcela: nota fiscal, boleto, comprovante de pagamento ou arquivo relacionado. Boleto e nota fiscal exigem a Assinatura Digital AEB; no boleto dá para carimbar também informações adicionais (opcional).'
-                    : 'Escolha o tipo: nota fiscal, boleto ou arquivo relacionado. Boleto e nota fiscal exigem a Assinatura Digital AEB; no boleto dá para carimbar também informações adicionais (opcional).'}
+                  : pedidoAguardandoNfAposBoletoPago(pedido)
+                    ? 'Boleto já pago. Anexe a nota fiscal da entrega (Assinatura Digital AEB) para encerrar. Essa NF não retorna à fila A pagar.'
+                    : segueInfra
+                      ? 'Em cada parcela: nota fiscal, boleto, comprovante de pagamento ou arquivo relacionado. Boleto assinado vai para A pagar (pagamento antes da entrega); NF assinada com data também. Boleto e nota fiscal exigem a Assinatura Digital AEB; no boleto a informação adicional é opcional.'
+                      : 'Escolha o tipo: nota fiscal, boleto ou arquivo relacionado. Boleto assinado vai para A pagar; NF assinada com data também. Boleto e nota fiscal exigem a Assinatura Digital AEB; no boleto a informação adicional é opcional.'}
               >
                 <p className="mb-3 text-xs text-slate-500">
                   {ehEmergencia

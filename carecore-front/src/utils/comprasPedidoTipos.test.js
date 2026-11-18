@@ -355,6 +355,15 @@ describe('pedidoPodeCorrigirNf', () => {
       }),
       false,
     );
+    // Boleto pago: volta a enviado e ainda permite anexar/trocar a NF do bem.
+    assert.equal(
+      pedidoPodeCorrigirNf({
+        tipo: 'servico',
+        status: 'enviado_fornecedor',
+        nf_impressa: true,
+      }),
+      true,
+    );
     assert.equal(
       pedidoPodeCorrigirNf({ tipo: 'servico', status: 'recebido' }),
       false,

@@ -166,7 +166,11 @@ def test_impressao_de_parcela_incompleta_nao_conclui_nem_marca_impressa(monkeypa
     async def _sit(_db, _pedido):
         return {"segue": True, "completo": False, "qtd_parcelas": 4, "parcelas_pagas": 1}
 
+    async def _notas(_db, _pid):
+        return [SimpleNamespace(tipo_nf="produto", anexo_id="nf1", assinada_em=datetime.now())]
+
     monkeypatch.setattr(fluxo, "situacao_pagamento_infra", _sit)
+    monkeypatch.setattr(fluxo, "_notas_pedido", _notas)
     db = _Db()
 
     async def caso():
@@ -198,8 +202,12 @@ def test_impressao_com_pagamento_completo_conclui(monkeypatch):
     async def _patrimonio(_db, _pedido):
         return None
 
+    async def _notas(_db, _pid):
+        return [SimpleNamespace(tipo_nf="produto", anexo_id="nf1", assinada_em=datetime.now())]
+
     monkeypatch.setattr(fluxo, "situacao_pagamento_infra", _sit)
     monkeypatch.setattr(fluxo, "garantir_patrimonio_imobilizado_apos_conclusao", _patrimonio)
+    monkeypatch.setattr(fluxo, "_notas_pedido", _notas)
     db = _Db()
 
     async def caso():
@@ -209,6 +217,41 @@ def test_impressao_com_pagamento_completo_conclui(monkeypatch):
     assert pedido.status == STATUS_RECEBIDO
     assert pedido.nf_impressa_em is not None
     assert any("concluído" in (item.texto or "") for item in db.added)
+
+
+def test_impressao_boleto_antecipado_volta_a_aguardar_nf(monkeypatch):
+    import compras_pedido_fluxo as fluxo
+    from compras_regras import STATUS_ENVIADO
+
+    pedido = _pedido(
+        id="p-bol",
+        status=STATUS_AGUARDANDO_PAGAMENTO,
+        pagamento_qtd_parcelas=1,
+        recebido_em=None,
+        a_pagar_lida_em=datetime(2026, 11, 18, 8, 0, 0),
+        a_pagar_lida_por_id="inf-1",
+    )
+
+    async def _notas(_db, _pid):
+        return [
+            SimpleNamespace(
+                tipo_nf="boleto",
+                anexo_id="b1",
+                assinada_em=datetime(2026, 11, 18, 7, 0, 0),
+            )
+        ]
+
+    monkeypatch.setattr(fluxo, "_notas_pedido", _notas)
+    db = _Db()
+
+    async def caso():
+        await registrar_impressao_nf_e_opcional_encerrar(db, _infra(), pedido)
+
+    asyncio.run(caso())
+    assert pedido.status == STATUS_ENVIADO
+    assert pedido.nf_impressa_em is not None
+    assert pedido.a_pagar_lida_em is None
+    assert any("Aguardando a NF" in (item.texto or "") for item in db.added)
 
 
 def test_plano_parcelado_nao_diminui(monkeypatch):

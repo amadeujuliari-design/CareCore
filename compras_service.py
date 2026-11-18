@@ -630,6 +630,11 @@ async def serializar_pedido(
         "suprimentos_lida": bool(getattr(pedido, "suprimentos_lida_em", None)),
         "nf_impressa_em": _iso(getattr(pedido, "nf_impressa_em", None)),
         "nf_impressa": bool(getattr(pedido, "nf_impressa_em", None)),
+        # enviado + impresso = boleto pago aguardando NF na entrega (sem nova ida a A pagar)
+        "aguardando_nf_apos_boleto_pago": (
+            (pedido.status or "") == "enviado_fornecedor"
+            and bool(getattr(pedido, "nf_impressa_em", None))
+        ),
         "a_pagar_lida_em": _iso(getattr(pedido, "a_pagar_lida_em", None)),
         "a_pagar_lida": bool(getattr(pedido, "a_pagar_lida_em", None)),
         "infraestrutura_ok_final_em": _iso(getattr(pedido, "infraestrutura_ok_final_em", None)),

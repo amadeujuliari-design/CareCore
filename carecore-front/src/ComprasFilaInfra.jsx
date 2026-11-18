@@ -229,8 +229,8 @@ export default function ComprasFilaInfra({ modo }) {
                                       Abrir pedido
                                     </PremiumButton>
                                     <p className="text-xs text-slate-600">
-                                      Abra o pedido e use <strong>Imprimir NF</strong> para pagar.
-                                      No parcelado, a conclusão só ocorre quando todas as parcelas tiverem documento.
+                                      Abra o pedido e use <strong>Imprimir NF</strong> (ou <strong>Imprimir boleto</strong>) para pagar.
+                                      No boleto antecipado, o pedido volta ao projeto para anexar a NF na entrega. No parcelado com NF, a conclusão só ocorre quando todas as parcelas tiverem documento.
                                     </p>
                                   </div>
                                   <p className="mt-2 text-xs text-slate-500">

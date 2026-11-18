@@ -36,6 +36,14 @@ describe('comprasPedidoStatus', () => {
       rotuloStatusPedidoLista({ status: 'enviado_fornecedor', orcamentos_com_anexo: 3 }),
       'Enviado ao fornecedor',
     );
+    assert.equal(
+      rotuloStatusPedidoLista({
+        status: 'enviado_fornecedor',
+        nf_impressa: true,
+        orcamentos_com_anexo: 3,
+      }),
+      'Aguardando NF · boleto pago',
+    );
   });
 
   it('rótulos e cores distintas da emergência', () => {

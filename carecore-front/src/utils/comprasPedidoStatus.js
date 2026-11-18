@@ -72,6 +72,13 @@ export function rotuloStatusPedidoLista(pedido) {
   if ((status === 'em_cotacao' || status === 'aguardando_cotacao') && comAnexo <= 0) {
     return `${base} · aguardando retorno`;
   }
+  // Boleto já pago: status técnico continua enviado_fornecedor, rótulo orienta a NF.
+  if (
+    status === 'enviado_fornecedor'
+    && (pedido?.aguardando_nf_apos_boleto_pago || pedido?.nf_impressa || pedido?.nf_impressa_em)
+  ) {
+    return 'Aguardando NF · boleto pago';
+  }
   return base;
 }
 

@@ -676,38 +676,62 @@ def test_nf_parcela_pronta_para_a_pagar_e_conclusao():
     from types import SimpleNamespace
 
     from compras_regras import (
+        boleto_pronto_para_a_pagar,
         nota_fiscal_pronta_para_a_pagar,
+        pedido_a_pagar_somente_boleto,
+        pedido_aguardando_nf_apos_boleto_pago,
+        pedido_documento_pronto_para_a_pagar,
         pedido_tem_nf_pronta_para_a_pagar,
         pode_concluir_a_pagar_com_pagamento,
+        STATUS_ENVIADO,
     )
 
     pronta = SimpleNamespace(
         tipo_nf="produto",
         assinada_em=datetime(2026, 11, 10, 10, 0, 0),
         data_pagamento=date(2026, 11, 15),
+        anexo_id="nf1",
     )
     sem_data = SimpleNamespace(
         tipo_nf="produto",
         assinada_em=datetime(2026, 11, 10, 10, 0, 0),
         data_pagamento=None,
+        anexo_id="nf2",
     )
     sem_assinatura = SimpleNamespace(
         tipo_nf="produto",
         assinada_em=None,
         data_pagamento=date(2026, 11, 15),
+        anexo_id="nf3",
     )
     boleto = SimpleNamespace(
         tipo_nf="boleto",
         assinada_em=datetime(2026, 11, 10, 10, 0, 0),
         data_pagamento=date(2026, 11, 15),
+        anexo_id="bol1",
     )
     assert nota_fiscal_pronta_para_a_pagar(pronta) is True
     assert nota_fiscal_pronta_para_a_pagar(sem_data) is False
     assert nota_fiscal_pronta_para_a_pagar(sem_assinatura) is False
     assert nota_fiscal_pronta_para_a_pagar(boleto) is False
+    assert boleto_pronto_para_a_pagar(boleto) is True
     # Uma parcela pronta basta para entrar/reentrar em A pagar, mesmo com outra incompleta.
     assert pedido_tem_nf_pronta_para_a_pagar([pronta, sem_assinatura]) is True
     assert pedido_tem_nf_pronta_para_a_pagar([sem_data, boleto]) is False
+    assert pedido_documento_pronto_para_a_pagar([boleto]) is True
+    assert pedido_a_pagar_somente_boleto([boleto]) is True
+    assert pedido_a_pagar_somente_boleto([boleto, pronta]) is False
+    assert pedido_documento_pronto_para_a_pagar([boleto, pronta]) is True
+    assert pedido_aguardando_nf_apos_boleto_pago(
+        status=STATUS_ENVIADO,
+        nf_impressa_em=datetime(2026, 11, 18, 9, 0, 0),
+        notas=[boleto],
+    ) is True
+    assert pedido_aguardando_nf_apos_boleto_pago(
+        status=STATUS_ENVIADO,
+        nf_impressa_em=datetime(2026, 11, 18, 9, 0, 0),
+        notas=[boleto, pronta],
+    ) is False
     assert pode_concluir_a_pagar_com_pagamento(segue=False, completo=False) is True
     assert pode_concluir_a_pagar_com_pagamento(segue=True, completo=False) is False
     assert pode_concluir_a_pagar_com_pagamento(segue=True, completo=True) is True
@@ -784,6 +808,12 @@ def test_compras_emergencia_e_filas_infra():
     assert pedido_pode_corrigir_nf(status=STATUS_AGUARDANDO_PAGAMENTO, tipo=TIPO_SERVICO)
     assert not pedido_pode_corrigir_nf(
         status=STATUS_AGUARDANDO_PAGAMENTO,
+        tipo=TIPO_SERVICO,
+        nf_impressa_em=datetime(2026, 11, 10, 12, 0, 0),
+    )
+    # Após imprimir boleto (volta a enviado com nf_impressa), ainda pode anexar/trocar a NF.
+    assert pedido_pode_corrigir_nf(
+        status=STATUS_ENVIADO,
         tipo=TIPO_SERVICO,
         nf_impressa_em=datetime(2026, 11, 10, 12, 0, 0),
     )

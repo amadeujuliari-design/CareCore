@@ -148,11 +148,15 @@ export function projetoPodeTrocarOrcamento(pedido) {
   return tipoEhCotacaoProjeto(pedido.tipo) || pedidoSegueInfraestrutura(pedido.tipo, pedido.destino_compras);
 }
 
-/** NF pode ser excluída/reanexada enquanto a Sede ainda não imprimiu. */
+/** NF pode ser excluída/reanexada enquanto a Sede ainda não imprimiu o pagamento definitivo. */
 export function pedidoPodeCorrigirNf(pedido) {
-  if (!pedido || pedido.nf_impressa || pedido.nf_impressa_em) return false;
+  if (!pedido) return false;
   const s = String(pedido.status || '').trim();
   if (['recebido', 'imprimir_nf', 'cancelado', 'reprovado'].includes(s)) return false;
+  // Boleto já impresso: pedido volta a enviado e ainda pode anexar/trocar a NF do bem.
+  if (pedido.nf_impressa || pedido.nf_impressa_em) {
+    return !tipoEhEmergencia(pedido.tipo) && s === 'enviado_fornecedor';
+  }
   if (tipoEhEmergencia(pedido.tipo)) {
     return [
       'aguardando_nf',
@@ -163,6 +167,15 @@ export function pedidoPodeCorrigirNf(pedido) {
     ].includes(s);
   }
   return ['enviado_fornecedor', 'aguardando_pagamento'].includes(s);
+}
+
+/** Boleto pago (impresso) e aguardando NF na entrega do bem. */
+export function pedidoAguardandoNfAposBoletoPago(pedido) {
+  return Boolean(pedido?.aguardando_nf_apos_boleto_pago)
+    || (
+      String(pedido?.status || '') === 'enviado_fornecedor'
+      && Boolean(pedido?.nf_impressa || pedido?.nf_impressa_em)
+    );
 }
 
 /** Hortifruti sem orçamento escolhido: o envio precisa do fornecedor na hora. */
