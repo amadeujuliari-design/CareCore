@@ -279,7 +279,7 @@ Botões: Anexar NF assinada · Anexar boleto assinado · Anexar comprovante · A
 
 Contrato fica no passo anterior, antes da compra. Boleto e nota exigem Assinatura Digital AEB. Relacionado não.
 
-Na emergência, **quem anexa e assina a NF é o projeto**. Sem NF o status é **Aguardando NF**; com NF anexada e ainda sem assinatura, **Aguardando assinatura da NF** — aí o projeto assina o PDF já anexado (senha + posicionar carimbo), sem anexar de novo. A assinatura (ou anexo já assinado) envia para a fila A pagar. Infraestrutura e Suprimentos não assinam NF nesse passo; podem só anexar arquivo extra, se precisar. O projeto também anexa extra.
+Na emergência, **quem anexa e assina a NF é o projeto**. Sem NF o status é **Aguardando NF**; com NF anexada e ainda sem assinatura, **Aguardando assinatura da NF** — aí o projeto assina o PDF já anexado (senha + posicionar carimbo), sem anexar de novo. A assinatura (ou anexo já assinado) envia para a fila A pagar. Infraestrutura e Suprimentos não assinam NF nesse passo; podem só anexar arquivo extra, se precisar. O projeto também anexa extra. Em **A pagar**, a Sede **imprime a NF** (ou usa **Confirmar envio ao pagamento**): o pedido sai da fila para **Aguardando conferência do extrato**. O projeto confere o extrato e **encerra**. Emergência **não** usa boleto nem plano parcelado na impressão.
 
 Quando o projeto encerra, o status vai para **Imprimir NF** (concluídos). Infraestrutura e Suprimentos abrem a caixa da impressora; depois a tela pergunta se o pedido vai para **Encerrado**. Pedidos que já estavam Encerrado permanecem Encerrado.
 
@@ -325,7 +325,7 @@ Duas filas: Infraestrutura (orçamentos e contratos aguardando ok) e representan
 **Arquivo:** `carecore-front/src/ComprasFilaInfra.jsx` (`modo="nf"`)  
 **Rota protegida:** ADM Global Compras Infraestrutura + Manutenção
 
-Fila de pedidos com **NF assinada** ou **boleto assinado** que seguem a Infraestrutura (emergência, bem, serviço, manutenção da Infra). Agrupa por unidade, no mesmo padrão de Aguardando assinatura (expandir, visualizar anexos). Dentro da unidade, ordena pela data de pagamento (vencidos e **hoje** no topo). Pagamento hoje ganha destaque bege. Pedidos não abertos ficam em negrito. No parcelado, cada boleto ou NF de parcela reentra na fila. **Imprimir boleto/NF** abre o PDF do documento (boleto incluso); ao imprimir, o pedido **sai** de A pagar. A NF só do valor do boleto já pago não reabre a fila; o próximo boleto/NF sim. Só conclui (e manda para **Pedidos concluídos**) quando o pagamento estiver completo ou quitado.
+Fila de pedidos com **NF assinada** ou **boleto assinado** que seguem a Infraestrutura (emergência, bem, serviço, manutenção da Infra). Agrupa por unidade, no mesmo padrão de Aguardando assinatura (expandir, visualizar anexos). Dentro da unidade, ordena pela data de pagamento (vencidos e **hoje** no topo). Pagamento hoje ganha destaque bege. Pedidos não abertos ficam em negrito. Na **emergência**, imprimir a NF (ou confirmar envio ao pagamento) leva o pedido à **conferência do extrato** pelo projeto — não conclui na impressão e não usa lógica de parcela. Nos demais: no parcelado, cada boleto ou NF de parcela reentra na fila; **Imprimir boleto/NF** abre o PDF (boleto incluso) e o pedido **sai** de A pagar; a NF só do valor do boleto já pago não reabre a fila; o próximo boleto/NF sim. Só conclui (e manda para **Pedidos concluídos**) quando o pagamento estiver completo ou quitado.
 
 ## 1.5c-2 NFs a pagar Suprimentos — `/compras/fila-nf-pagamento-suprimentos`
 

@@ -88,6 +88,7 @@ export default function ComprasFilaInfra({ modo }) {
   const titulo = ehNfSuprimentos ? 'A pagar — Suprimentos' : 'A pagar — Infraestrutura';
   const subtitulo = (
     'Revise o pedido e a data de pagamento. '
+    + 'Emergência: ao imprimir a NF, o projeto confere o extrato e encerra. '
     + 'Boleto (à vista ou parcela): ao imprimir, sai de A pagar; a NF só desse valor não reabre a fila. '
     + 'Parcelado: cada boleto ou NF de parcela volta a A pagar; ao imprimir, sai da fila. '
     + 'Na última parcela (pagamento completo), vai para Concluídos. '

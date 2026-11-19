@@ -16,7 +16,9 @@ from compras_pedido_fluxo import (
 from compras_regras import (
     PERFIL_ADM_COMPRAS_INFRAESTRUTURA,
     PERFIL_ADM_COMPRAS_SUPRIMENTOS,
+    STATUS_AGUARDANDO_EXTRATO,
     STATUS_AGUARDANDO_PAGAMENTO,
+    STATUS_ENVIADO,
     STATUS_IMPRIMIR_NF,
     STATUS_RECEBIDO,
 )
@@ -153,9 +155,79 @@ def _infra():
     return {"perfil_acesso": PERFIL_ADM_COMPRAS_INFRAESTRUTURA, "id": "inf-1"}
 
 
+def test_impressao_emergencia_vai_para_conferencia_extrato(monkeypatch):
+    """Emergência em A pagar: imprimir NF não usa parcela 0/0; libera conferência do extrato."""
+    import compras_pedido_fluxo as fluxo
+
+    pedido = _pedido(
+        id="p-em",
+        tipo="emergencia",
+        destino_compras="infraestrutura",
+        status=STATUS_AGUARDANDO_PAGAMENTO,
+        pagamento_qtd_parcelas=None,
+        recebido_em=None,
+        a_pagar_lida_em=datetime(2026, 11, 18, 8, 0, 0),
+        nf_para_pagamento_em=None,
+        nf_para_pagamento_por_id=None,
+    )
+
+    async def _notas(_db, _pid):
+        return [SimpleNamespace(tipo_nf="produto", anexo_id="nf1", assinada_em=datetime.now())]
+
+    monkeypatch.setattr(fluxo, "_notas_pedido", _notas)
+    db = _Db()
+
+    async def caso():
+        await registrar_impressao_nf_e_opcional_encerrar(db, _infra(), pedido)
+
+    asyncio.run(caso())
+    assert pedido.status == STATUS_AGUARDANDO_EXTRATO
+    assert pedido.nf_impressa_em is not None
+    assert pedido.nf_para_pagamento_em is not None
+    assert pedido.a_pagar_lida_em is None
+    assert any("conferir o extrato" in (item.texto or "") for item in db.added)
+    assert not any("0 de 0" in (item.texto or "") for item in db.added)
+
+
+def test_impressao_infra_sem_qtd_parcelas_conclui_com_nf(monkeypatch):
+    """Sem plano parcelado (qtd nula), NF em A pagar conclui — não sai como 0 de 0."""
+    import compras_pedido_fluxo as fluxo
+
+    pedido = _pedido(
+        id="p-sem-qtd",
+        tipo="servico",
+        destino_compras="infraestrutura",
+        status=STATUS_AGUARDANDO_PAGAMENTO,
+        pagamento_qtd_parcelas=None,
+        recebido_em=None,
+        recebido_por_id=None,
+    )
+
+    async def _sit(_db, _pedido):
+        return {"segue": True, "completo": False, "qtd_parcelas": None, "parcelas_pagas": 0}
+
+    async def _patrimonio(_db, _pedido):
+        return None
+
+    async def _notas(_db, _pid):
+        return [SimpleNamespace(tipo_nf="produto", anexo_id="nf1", assinada_em=datetime.now())]
+
+    monkeypatch.setattr(fluxo, "situacao_pagamento_infra", _sit)
+    monkeypatch.setattr(fluxo, "garantir_patrimonio_imobilizado_apos_conclusao", _patrimonio)
+    monkeypatch.setattr(fluxo, "_notas_pedido", _notas)
+    db = _Db()
+
+    async def caso():
+        await registrar_impressao_nf_e_opcional_encerrar(db, _infra(), pedido)
+
+    asyncio.run(caso())
+    assert pedido.status == STATUS_RECEBIDO
+    assert pedido.nf_impressa_em is not None
+    assert any("concluído" in (item.texto or "") for item in db.added)
+
+
 def test_impressao_de_parcela_incompleta_sai_da_fila_e_aguarda_proxima(monkeypatch):
     import compras_pedido_fluxo as fluxo
-    from compras_regras import STATUS_ENVIADO
 
     pedido = _pedido(
         id="p-bel",

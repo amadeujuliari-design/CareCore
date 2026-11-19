@@ -3032,6 +3032,41 @@ async def registrar_impressao_nf_e_opcional_encerrar(
                 status_code=403,
                 detail="Somente Infraestrutura ou Suprimentos registram a impressão do documento.",
             )
+        # Emergência não usa boleto/parcelado: imprimir a NF confirma o envio ao pagamento
+        # e libera o projeto para conferir o extrato e encerrar.
+        if tipo_eh_emergencia(getattr(pedido, "tipo", None)):
+            anterior = pedido.status
+            agora = agora_operacional_naive()
+            if not getattr(pedido, "nf_impressa_em", None):
+                pedido.nf_impressa_em = agora
+                pedido.nf_impressa_por_id = _uid_caixa(usuario)
+            pedido.status = STATUS_AGUARDANDO_EXTRATO
+            pedido.nf_para_pagamento_em = agora
+            pedido.nf_para_pagamento_por_id = _uid(usuario)
+            pedido.a_pagar_lida_em = None
+            pedido.a_pagar_lida_por_id = None
+            pedido.atualizado_em = agora
+            destino = getattr(pedido, "destino_compras", None)
+            if pedido_segue_infraestrutura(getattr(pedido, "tipo", None), destino):
+                texto_em = (
+                    "Infraestrutura imprimiu a NF e confirmou o envio ao pagamento. "
+                    "Projeto: conferir o extrato e encerrar."
+                )
+            else:
+                texto_em = (
+                    "Suprimentos imprimiu a NF e confirmou o envio ao pagamento. "
+                    "Projeto: conferir o extrato e encerrar."
+                )
+            await registrar_evento_pedido(
+                db,
+                pedido_id=pedido.id,
+                tipo=TIPO_EVENTO_STATUS,
+                texto=texto_em,
+                usuario_id=_uid(usuario),
+                status_anterior=anterior,
+                status_novo=STATUS_AGUARDANDO_EXTRATO,
+            )
+            return
         # Boleto (à vista ou parcela) sem NF daquela parcela: imprime, sai da fila e aguarda NF/espelho.
         # Não exige "somente boleto" — no parcelado pode haver NF de parcelas anteriores.
         if (
@@ -3072,12 +3107,14 @@ async def registrar_impressao_nf_e_opcional_encerrar(
             )
             return
         sit = await situacao_pagamento_infra(db, pedido)
-        if not pode_concluir_a_pagar_com_pagamento(
+        qtd = int(sit.get("qtd_parcelas") or 0)
+        # Parcela incompleta só com plano parcelado real (>1). Sem qtd (ou à vista)
+        # não trata como "0 de 0" — cai na conclusão normal.
+        if qtd > 1 and not pode_concluir_a_pagar_com_pagamento(
             segue=bool(sit.get("segue")),
             completo=bool(sit.get("completo")),
         ):
             # Parcelado incompleto (NF): sai de A pagar; volta com o próximo documento.
-            qtd = int(sit.get("qtd_parcelas") or 0)
             pagas = int(sit.get("parcelas_pagas") or 0)
             anterior = pedido.status
             agora = agora_operacional_naive()

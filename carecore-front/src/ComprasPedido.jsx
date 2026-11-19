@@ -1270,6 +1270,9 @@ export default function ComprasPedido() {
                       const notasAp = pedido.notas_fiscais || [];
                       const temBoletoAp = notasAp.some((n) => n.tipo_nf === 'boleto' && n.anexo_id);
                       const temNfAp = notasAp.some((n) => n.tipo_nf !== 'boleto' && n.anexo_id);
+                      if (ehEmergencia) {
+                        return 'A pagar (emergência): ao imprimir a NF, o pedido sai da fila e o projeto é avisado para conferir o extrato e encerrar. Também dá para usar Confirmar envio ao pagamento.';
+                      }
                       if (temBoletoAp && !temNfAp) {
                         return 'A pagar (boleto): ao imprimir o boleto, o pedido sai da fila e volta ao projeto para anexar a NF quando o bem for entregue.';
                       }
