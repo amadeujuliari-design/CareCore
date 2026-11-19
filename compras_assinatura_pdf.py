@@ -85,6 +85,21 @@ def _overlay_pdf_png(png_bytes: bytes, width_pt: float, height_pt: float) -> byt
     return buf.getvalue()
 
 
+def _normalizar_rotacao_pagina(pagina) -> None:
+    """Zera /Rotate e aplica a rotação no conteúdo (igual à prévia do PDF.js).
+
+    Sem isso, carimbos posicionados na tela ficam de ponta cabeça ou tortos em
+    DANFEs e outros PDFs que já vêm com a página rotacionada.
+    """
+    try:
+        rot = int(getattr(pagina, "rotation", 0) or 0) % 360
+    except (TypeError, ValueError):
+        rot = 0
+    if rot == 0:
+        return
+    pagina.transfer_rotation_to_content()
+
+
 def _dimensoes_carimbo(
     *,
     page_w: float,
@@ -182,6 +197,7 @@ def carimbar_assinatura_pdf(
         png_bytes = b""
 
     page = writer.pages[alvo_idx]
+    _normalizar_rotacao_pagina(page)
     page_w = float(page.mediabox.width)
     page_h = float(page.mediabox.height)
     tx, ty, desenho_w, desenho_h = _dimensoes_carimbo(
@@ -460,6 +476,7 @@ def carimbar_texto_pdf(
     )
     for indice in indices:
         pagina = escritor.pages[indice]
+        _normalizar_rotacao_pagina(pagina)
         caixa = pagina.mediabox
         page_w = float(caixa.width)
         page_h = float(caixa.height)
@@ -524,6 +541,7 @@ def carimbar_assinatura_gestor_pdf(
     )
     for indice in indices:
         pagina = escritor.pages[indice]
+        _normalizar_rotacao_pagina(pagina)
         caixa = pagina.mediabox
         page_w = float(caixa.width)
         page_h = float(caixa.height)

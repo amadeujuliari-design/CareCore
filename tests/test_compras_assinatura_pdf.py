@@ -207,6 +207,98 @@ def test_carimbar_pagina_invalida():
         )
 
 
+def _pdf_com_rotacao(graus: int, width: float = 400.0, height: float = 600.0) -> bytes:
+    """PDF com texto de referência e /Rotate (como DANFE com página invertida)."""
+    from pypdf import PdfReader, PdfWriter
+    from pypdf.generic import NameObject, NumberObject
+
+    buf = io.BytesIO()
+    c = pdf_canvas.Canvas(buf, pagesize=(width, height))
+    c.setFont("Helvetica", 14)
+    c.drawString(40, height - 40, "MARCA-TOPO")
+    c.drawString(40, 40, "MARCA-BASE")
+    c.save()
+    leitor = PdfReader(io.BytesIO(buf.getvalue()))
+    escritor = PdfWriter()
+    escritor.add_page(leitor.pages[0])
+    escritor.pages[0][NameObject("/Rotate")] = NumberObject(int(graus))
+    saida = io.BytesIO()
+    escritor.write(saida)
+    return saida.getvalue()
+
+
+def test_carimbo_em_pdf_rotado_180_fica_na_orientacao_da_previa():
+    """Página /Rotate 180: carimbo grava na mesma orientação da tela (sem ponta cabeça)."""
+    from pypdf import PdfReader
+
+    origem = _pdf_com_rotacao(180, width=500.0, height=700.0)
+    assert PdfReader(io.BytesIO(origem)).pages[0].rotation == 180
+
+    saida = carimbar_assinatura_gestor_pdf(
+        pdf_bytes=origem,
+        nome="Erika Anexo",
+        projeto="REENCONTRO ANHANGABAU",
+        x=40.0,
+        y=620.0,
+        width=220.0,
+        height=68.0,
+    )
+    pagina = PdfReader(io.BytesIO(saida)).pages[0]
+    assert int(pagina.rotation or 0) % 360 == 0
+    texto = pagina.extract_text() or ""
+    assert "Assinado Digitalmente" in texto
+    assert "Erika Anexo" in texto
+    assert "REENCONTRO ANHANGABAU" in texto
+
+
+def test_carimbo_texto_e_assinatura_em_pdf_rotado_90():
+    from pypdf import PdfReader
+
+    origem = _pdf_com_rotacao(90, width=500.0, height=700.0)
+    com_texto = carimbar_texto_pdf(
+        pdf_bytes=origem,
+        texto="Banco do Brasil - conta teste",
+        projeto="REENCONTRO ANHANGABAU",
+        x=24.0,
+        y=40.0,
+        width=280.0,
+        height=48.0,
+    )
+    saida = carimbar_assinatura_gestor_pdf(
+        pdf_bytes=com_texto,
+        nome="Erika Anexo",
+        projeto="REENCONTRO ANHANGABAU",
+        x=24.0,
+        y=100.0,
+        width=220.0,
+        height=68.0,
+    )
+    pagina = PdfReader(io.BytesIO(saida)).pages[0]
+    assert int(pagina.rotation or 0) % 360 == 0
+    texto = pagina.extract_text() or ""
+    assert "Banco do Brasil" in texto
+    assert "Assinado Digitalmente" in texto
+
+
+def test_assinatura_orcamento_em_pdf_rotado_180():
+    from pypdf import PdfReader
+
+    orc = _pdf_com_rotacao(180, width=500.0, height=700.0)
+    sig = _pdf_assinatura_com_imagem()
+    out = carimbar_assinatura_pdf(
+        orcamento_bytes=orc,
+        assinatura_bytes=sig,
+        page_index=0,
+        x=40.0,
+        y=80.0,
+        width=180.0,
+        height=50.0,
+    )
+    pagina = PdfReader(io.BytesIO(out)).pages[0]
+    assert int(pagina.rotation or 0) % 360 == 0
+    assert len(PdfReader(io.BytesIO(out)).pages) == 1
+
+
 def _jpeg_bytes() -> bytes:
     img = Image.new("RGB", (80, 50), (200, 30, 30))
     buf = io.BytesIO()
