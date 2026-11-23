@@ -36,8 +36,26 @@ describe('comprasCategoriaUtils', () => {
     assert.deepEqual(conflitosNomeCadastro('alimentação', EXISTENTES), ['Alimentação']);
   });
 
-  it('mostra a quantidade de itens no rótulo', () => {
+  it('mostra a quantidade de itens do catálogo no rótulo (não mistura patrimônio)', () => {
     assert.equal(rotuloCategoria({ nome: 'Alimentação', qtd_itens: 80 }), 'Alimentação (80)');
+    assert.equal(
+      rotuloCategoria({
+        nome: 'BEM / IMOBILIZADO',
+        qtd_itens: 318,
+        qtd_itens_consumo: 3,
+        qtd_bens: 315,
+      }),
+      'BEM / IMOBILIZADO (3)',
+    );
+    assert.equal(
+      rotuloCategoria({
+        nome: 'BEM / IMOBILIZADO',
+        qtd_itens: 318,
+        qtd_itens_consumo: 3,
+        qtd_bens: 315,
+      }, { contar: 'patrimonio' }),
+      'BEM / IMOBILIZADO (315)',
+    );
   });
 
   it('detalha uso de consumo e bens', () => {

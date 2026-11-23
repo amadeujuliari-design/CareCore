@@ -131,7 +131,7 @@ export default function ModalFormPatrimonio({
                 label="Categoria (Bem / imobilizado)"
                 value={form.categoria_id}
                 onChange={(valor) => onAtualizar('categoria_id', valor)}
-                options={categorias.map((c) => ({ value: c.id, label: rotuloCategoria(c) }))}
+                options={categorias.map((c) => ({ value: c.id, label: rotuloCategoria(c, { contar: 'patrimonio' }) }))}
                 placeholder={categorias.length ? 'Selecione a categoria' : 'Cadastre categorias de bem'}
               />
               <CampoSelect

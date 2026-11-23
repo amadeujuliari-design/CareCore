@@ -73,10 +73,20 @@ export function conflitosNomeCadastro(nome, existentes = [], { ignorar = '' } = 
   return nomesCadastroSemelhantes(nome, existentes, { ignorar });
 }
 
-export function rotuloCategoria(cat) {
+/**
+ * Rótulo da categoria com contagem.
+ * Por padrão conta só itens do catálogo (qtd_itens_consumo) — o total antigo
+ * misturava patrimônio e enganava o filtro do Catálogo de itens.
+ */
+export function rotuloCategoria(cat, { contar = 'catalogo' } = {}) {
   const nome = cat?.nome || '';
   if (!nome) return '';
-  const qtd = Number(cat?.qtd_itens) || 0;
+  const bruto = contar === 'patrimonio'
+    ? cat?.qtd_bens
+    : contar === 'total'
+      ? cat?.qtd_itens
+      : (cat?.qtd_itens_consumo != null ? cat.qtd_itens_consumo : cat?.qtd_itens);
+  const qtd = Number(bruto) || 0;
   return `${nome} (${qtd})`;
 }
 
