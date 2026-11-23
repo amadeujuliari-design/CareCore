@@ -766,6 +766,20 @@ export default function Compras() {
     }
   }, [competencia, podeCadastrarMestre, statusGrupoPedidos, usuario?.id, visaoOrganizacao]);
 
+  const removerCategoriaDaLista = useCallback((categoriaId) => {
+    setCategorias((lista) => lista.filter((item) => item.id !== categoriaId));
+    if (Array.isArray(cacheListaCompras.categorias)) {
+      cacheListaCompras.categorias = cacheListaCompras.categorias.filter((item) => item.id !== categoriaId);
+    }
+  }, []);
+
+  const removerFonteDaLista = useCallback((fonteId) => {
+    setFontes((lista) => lista.filter((item) => item.id !== fonteId));
+    if (Array.isArray(cacheListaCompras.fontes)) {
+      cacheListaCompras.fontes = cacheListaCompras.fontes.filter((item) => item.id !== fonteId);
+    }
+  }, []);
+
   const excluirPedidoCancelado = async (pedido) => {
     const codigo = pedido?.id ? String(pedido.id).slice(0, 8) : '';
     if (!window.confirm(`Excluir definitivamente o pedido cancelado ${codigo}? Esta ação não pode ser desfeita.`)) {
@@ -1137,6 +1151,8 @@ export default function Compras() {
                 podeEditar
                 mostrarFontes={false}
                 onRecarregar={carregar}
+                onCategoriaRemovida={removerCategoriaDaLista}
+                onFonteRemovida={removerFonteDaLista}
                 onMensagem={({ ok: msgOk, erro: msgErro }) => {
                   if (msgOk) {
                     setOk(msgOk);
@@ -1208,6 +1224,8 @@ export default function Compras() {
                     fontes={fontes}
                     podeEditar={!consultaGlobal}
                     onRecarregar={carregar}
+                    onCategoriaRemovida={removerCategoriaDaLista}
+                    onFonteRemovida={removerFonteDaLista}
                     onMensagem={({ ok: msgOk, erro: msgErro }) => {
                       if (msgOk) {
                         setOk(msgOk);

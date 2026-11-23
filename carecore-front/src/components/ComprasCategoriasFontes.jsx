@@ -327,6 +327,8 @@ export default function ComprasCategoriasFontes({
   mostrarFontes = true,
   onRecarregar,
   onMensagem,
+  onCategoriaRemovida,
+  onFonteRemovida,
 }) {
   const categoriasLista = useMemo(
     () => categorias.map((item) => ({
@@ -380,8 +382,10 @@ export default function ComprasCategoriasFontes({
     if (!window.confirm(`Excluir a categoria "${item.nome}"?`)) return;
     try {
       await comprasExcluirCategoria(item.id);
+      // Some na lista na hora — o recarregar completo pode demorar ou perder a corrida.
+      onCategoriaRemovida?.(item.id);
       onMensagem?.({ ok: 'Categoria excluída.' });
-      await onRecarregar?.();
+      void onRecarregar?.();
     } catch (err) {
       onMensagem?.({ erro: obterMensagemErro(err, 'Não foi possível excluir a categoria.') });
     }
@@ -397,8 +401,9 @@ export default function ComprasCategoriasFontes({
     if (!window.confirm(`Excluir a fonte de verba "${item.nome}"?`)) return;
     try {
       await comprasExcluirFonte(item.id);
+      onFonteRemovida?.(item.id);
       onMensagem?.({ ok: 'Fonte excluída.' });
-      await onRecarregar?.();
+      void onRecarregar?.();
     } catch (err) {
       onMensagem?.({ erro: obterMensagemErro(err, 'Não foi possível excluir a fonte.') });
     }
