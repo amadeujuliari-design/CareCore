@@ -79,6 +79,11 @@ export async function comprasSalvarFonte(payload, id) {
   return data;
 }
 
+export async function comprasExcluirFonte(id) {
+  const { data } = await api.delete(`/api/compras/fontes/${id}`);
+  return data;
+}
+
 export async function comprasFornecedores(params = {}) {
   const { data } = await api.get('/api/compras/fornecedores', { params });
   return data?.itens || [];

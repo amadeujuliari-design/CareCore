@@ -2,7 +2,12 @@ import { useMemo, useState } from 'react';
 
 import { CampoSelect, CampoTexto } from './UsuariosCampos';
 import { EmptyState, PremiumBadge, PremiumButton, SectionCard } from './PremiumUI';
-import { comprasExcluirCategoria, comprasSalvarCategoria, comprasSalvarFonte } from '../services/comprasService';
+import {
+  comprasExcluirCategoria,
+  comprasExcluirFonte,
+  comprasSalvarCategoria,
+  comprasSalvarFonte,
+} from '../services/comprasService';
 import { conflitosNomeCadastro, rotuloUsoCategoria } from '../utils/comprasCategoriaUtils';
 import {
   ROTULO_SEGMENTO_CATALOGO,
@@ -36,8 +41,9 @@ function ListaNomes({
   podeEditar,
   onSalvar,
   onAtualizarSegmento,
-  onRecarregar,
+  onExcluir,
 }) {
+  const mostraAcoes = podeEditar && Boolean(onExcluir || (tipo === 'categoria'));
   const [nome, setNome] = useState('');
   const [segmento, setSegmento] = useState(SEGMENTO_CONSUMO);
   const [tipoFonte, setTipoFonte] = useState('convenio');
@@ -186,7 +192,7 @@ function ListaNomes({
                   {tipo === 'fonte' ? <th className="px-2 py-2">Vigência</th> : null}
                   <th className="px-2 py-2">{colunaUso}</th>
                   <th className="px-2 py-2">Status</th>
-                  {tipo === 'categoria' && podeEditar ? <th className="px-2 py-2">Ações</th> : null}
+                  {mostraAcoes ? <th className="px-2 py-2">Ações</th> : null}
                 </tr>
               </thead>
               <tbody>
@@ -228,71 +234,79 @@ function ListaNomes({
                           ? <PremiumBadge variant="success">Em uso</PremiumBadge>
                           : <PremiumBadge>Sem uso</PremiumBadge>}
                     </td>
-                    {tipo === 'categoria' && podeEditar ? (
+                    {mostraAcoes ? (
                       <td className="px-2 py-2.5">
                         <div className="flex flex-wrap gap-2">
-                          <button
-                            type="button"
-                            className="text-xs font-semibold text-sky-800"
-                            onClick={async () => {
-                              const nomeNovo = window.prompt('Novo nome da categoria:', item.nome);
-                              if (!nomeNovo?.trim() || nomeNovo.trim() === item.nome) return;
-                              const valor = nomeNovo.trim();
-                              const parecidas = conflitosNomeCadastro(
-                                valor,
-                                itens.map((c) => c.nome),
-                                { ignorar: item.nome },
-                              );
-                              let permitirSemelhante = false;
-                              if (parecidas.length) {
-                                const lista = parecidas.map((n) => `"${n}"`).join(', ');
-                                const ok = window.confirm(
-                                  `Já existe categoria semelhante: ${lista}.\n\nDeseja renomear para "${valor}" mesmo assim?`,
+                          {tipo === 'categoria' ? (
+                            <button
+                              type="button"
+                              className="text-xs font-semibold text-sky-800"
+                              onClick={async () => {
+                                const nomeNovo = window.prompt('Novo nome da categoria:', item.nome);
+                                if (!nomeNovo?.trim() || nomeNovo.trim() === item.nome) return;
+                                const valor = nomeNovo.trim();
+                                const parecidas = conflitosNomeCadastro(
+                                  valor,
+                                  itens.map((c) => c.nome),
+                                  { ignorar: item.nome },
                                 );
-                                if (!ok) return;
-                                permitirSemelhante = true;
+                                let permitirSemelhante = false;
+                                if (parecidas.length) {
+                                  const lista = parecidas.map((n) => `"${n}"`).join(', ');
+                                  const ok = window.confirm(
+                                    `Já existe categoria semelhante: ${lista}.\n\nDeseja renomear para "${valor}" mesmo assim?`,
+                                  );
+                                  if (!ok) return;
+                                  permitirSemelhante = true;
+                                }
+                                await onSalvar({
+                                  nome: valor,
+                                  segmento: item.segmento,
+                                  depreciacao_anual_percentual: item.depreciacao_anual_percentual ?? null,
+                                  permitir_semelhante: permitirSemelhante,
+                                }, item.id);
+                              }}
+                            >
+                              Editar
+                            </button>
+                          ) : null}
+                          {onExcluir ? (
+                            <button
+                              type="button"
+                              className="text-xs font-semibold text-rose-700"
+                              disabled={tipo === 'fonte' && Number(item.qtd_uso) > 0}
+                              title={
+                                tipo === 'fonte' && Number(item.qtd_uso) > 0
+                                  ? 'Há pedidos com esta fonte'
+                                  : undefined
                               }
-                              await onSalvar({
-                                nome: valor,
-                                segmento: item.segmento,
-                                depreciacao_anual_percentual: item.depreciacao_anual_percentual ?? null,
-                                permitir_semelhante: permitirSemelhante,
-                              }, item.id);
-                            }}
-                          >
-                            Editar
-                          </button>
-                          <button
-                            type="button"
-                            className="text-xs font-semibold text-rose-700"
-                            onClick={async () => {
-                              if (!window.confirm(`Excluir a categoria "${item.nome}"?`)) return;
-                              await comprasExcluirCategoria(item.id);
-                              await onRecarregar?.();
-                            }}
-                          >
-                            Excluir
-                          </button>
+                              onClick={() => onExcluir(item)}
+                            >
+                              Excluir
+                            </button>
+                          ) : null}
                         </div>
-                        <label className="mt-1 block text-[11px] text-slate-500">
-                          Depreciação anual %
-                          <input
-                            type="number"
-                            min="0"
-                            max="100"
-                            step="0.1"
-                            className="mt-0.5 w-24 rounded-lg border border-slate-200 px-2 py-1 text-xs"
-                            defaultValue={item.depreciacao_anual_percentual ?? ''}
-                            onBlur={async (e) => {
-                              const valor = e.target.value;
-                              await onSalvar({
-                                nome: item.nome,
-                                segmento: item.segmento,
-                                depreciacao_anual_percentual: valor === '' ? null : Number(valor),
-                              }, item.id);
-                            }}
-                          />
-                        </label>
+                        {tipo === 'categoria' ? (
+                          <label className="mt-1 block text-[11px] text-slate-500">
+                            Depreciação anual %
+                            <input
+                              type="number"
+                              min="0"
+                              max="100"
+                              step="0.1"
+                              className="mt-0.5 w-24 rounded-lg border border-slate-200 px-2 py-1 text-xs"
+                              defaultValue={item.depreciacao_anual_percentual ?? ''}
+                              onBlur={async (e) => {
+                                const valor = e.target.value;
+                                await onSalvar({
+                                  nome: item.nome,
+                                  segmento: item.segmento,
+                                  depreciacao_anual_percentual: valor === '' ? null : Number(valor),
+                                }, item.id);
+                              }}
+                            />
+                          </label>
+                        ) : null}
                       </td>
                     ) : null}
                   </tr>
@@ -362,6 +376,34 @@ export default function ComprasCategoriasFontes({
     }
   };
 
+  const excluirCategoria = async (item) => {
+    if (!window.confirm(`Excluir a categoria "${item.nome}"?`)) return;
+    try {
+      await comprasExcluirCategoria(item.id);
+      onMensagem?.({ ok: 'Categoria excluída.' });
+      await onRecarregar?.();
+    } catch (err) {
+      onMensagem?.({ erro: obterMensagemErro(err, 'Não foi possível excluir a categoria.') });
+    }
+  };
+
+  const excluirFonte = async (item) => {
+    if (Number(item.qtd_uso) > 0) {
+      onMensagem?.({
+        erro: `Não é possível excluir: há ${Number(item.qtd_uso)} pedido(s) com a fonte «${item.nome}».`,
+      });
+      return;
+    }
+    if (!window.confirm(`Excluir a fonte de verba "${item.nome}"?`)) return;
+    try {
+      await comprasExcluirFonte(item.id);
+      onMensagem?.({ ok: 'Fonte excluída.' });
+      await onRecarregar?.();
+    } catch (err) {
+      onMensagem?.({ erro: obterMensagemErro(err, 'Não foi possível excluir a fonte.') });
+    }
+  };
+
   return (
     <div className="space-y-4">
       <ListaNomes
@@ -374,21 +416,19 @@ export default function ComprasCategoriasFontes({
         podeEditar={podeEditar}
         onSalvar={salvarCategoria}
         onAtualizarSegmento={atualizarSegmento}
-        onRecarregar={async () => {
-          onMensagem?.({ ok: 'Categoria excluída.' });
-          await onRecarregar?.();
-        }}
+        onExcluir={excluirCategoria}
       />
       {mostrarFontes ? (
         <ListaNomes
           titulo="Fontes de recurso"
-          ajuda="A fonte da verba do pedido só pode ser Convênio ou Custo indireto."
+          ajuda="A fonte da verba do pedido só pode ser Convênio ou Custo indireto. Excluir fonte sem pedidos é liberado apenas para Manutenção, Suprimentos e Infraestrutura."
           itens={fontesLista}
           colunaUso="Pedidos"
           campoNovo="Nova fonte"
           tipo="fonte"
           podeEditar={podeEditar}
           onSalvar={salvarFonte}
+          onExcluir={podeEditar ? excluirFonte : undefined}
         />
       ) : null}
     </div>

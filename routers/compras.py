@@ -91,6 +91,7 @@ from compras_service import (
     relatorio_economia,
     revogar_escolha_cotacao,
     excluir_categoria,
+    excluir_fonte,
     excluir_item_consumo,
     salvar_categoria,
     salvar_fonte,
@@ -745,6 +746,18 @@ async def put_fonte(
     row = await salvar_fonte(db, usuario_atual, payload.model_dump(), fonte_id)
     await db.commit()
     return {"id": row.id, "nome": row.nome, "ativo": row.ativo}
+
+
+@router.delete("/fontes/{fonte_id}")
+async def delete_fonte(
+    fonte_id: str,
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    await _ctx(db, usuario_atual)
+    await excluir_fonte(db, usuario_atual, fonte_id)
+    await db.commit()
+    return {"ok": True}
 
 
 @router.get("/fornecedores")

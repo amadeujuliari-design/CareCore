@@ -3505,11 +3505,35 @@ async def excluir_categoria(db: AsyncSession, usuario: dict, categoria_id: str) 
             )
         )
     ).scalar_one()
-    if int(uso_itens or 0) or int(uso_bens or 0):
+    uso_pedido_itens = (
+        await db.execute(
+            select(func.count()).select_from(ComprasPedidoItemDB).where(
+                ComprasPedidoItemDB.categoria_id == categoria_id
+            )
+        )
+    ).scalar_one()
+    if int(uso_itens or 0) or int(uso_bens or 0) or int(uso_pedido_itens or 0):
         raise HTTPException(
             status_code=400,
-            detail="Não é possível excluir: ainda há itens ou bens nesta categoria. Mova-os antes.",
+            detail=(
+                "Não é possível excluir: ainda há itens do catálogo, bens ou linhas de pedido "
+                "nesta categoria. Mova-os ou inative a categoria."
+            ),
         )
+    # Fornecedores podem apontar a categoria legada sem item no catálogo — limpa o vínculo.
+    await db.execute(
+        update(ComprasFornecedorDB)
+        .where(
+            ComprasFornecedorDB.organizacao_id == org_id,
+            ComprasFornecedorDB.categoria_id == categoria_id,
+        )
+        .values(categoria_id=None)
+    )
+    await db.execute(
+        delete(ComprasFornecedorCategoriaDB).where(
+            ComprasFornecedorCategoriaDB.categoria_id == categoria_id
+        )
+    )
     await db.delete(row)
 
 
@@ -3983,6 +4007,39 @@ async def salvar_fonte(db: AsyncSession, usuario: dict, payload: dict, fonte_id:
     if "ativo" in payload:
         row.ativo = bool(payload["ativo"])
     return row
+
+
+async def excluir_fonte(db: AsyncSession, usuario: dict, fonte_id: str) -> None:
+    """Remove fonte de verba sem pedidos. Só Sede (Manutenção / Suprimentos / Infra)."""
+    exigir_sede(usuario)
+    org_id = _org_id(usuario)
+    row = (
+        await db.execute(
+            select(ComprasFonteRecursoDB).where(
+                ComprasFonteRecursoDB.id == fonte_id,
+                ComprasFonteRecursoDB.organizacao_id == org_id,
+            )
+        )
+    ).scalar_one_or_none()
+    if not row:
+        raise HTTPException(status_code=404, detail="Fonte não encontrada.")
+    uso_pedidos = (
+        await db.execute(
+            select(func.count()).select_from(ComprasPedidoDB).where(
+                ComprasPedidoDB.fonte_recurso_id == fonte_id,
+                ComprasPedidoDB.organizacao_id == org_id,
+            )
+        )
+    ).scalar_one()
+    if int(uso_pedidos or 0):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Não é possível excluir: há {int(uso_pedidos)} pedido(s) com esta fonte. "
+                "Inative-a ou troque a fonte nos pedidos."
+            ),
+        )
+    await db.delete(row)
 
 
 async def listar_patrimonio(db: AsyncSession, usuario: dict) -> list[dict]:

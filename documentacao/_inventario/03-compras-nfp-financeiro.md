@@ -442,9 +442,14 @@ Colunas: Nome · Uso no pedido · Tipo · Vigência · Status · Ações
 ### Fontes de recurso (sede / `mostrarFontes`)
 
 Título: Fontes de recurso  
-Ajuda: A fonte da verba do pedido só pode ser Convênio ou Custo indireto.  
+Ajuda: A fonte da verba do pedido só pode ser Convênio ou Custo indireto. Excluir fonte sem pedidos é liberado apenas para Manutenção, Suprimentos e Infraestrutura.  
 Campo novo: Nova fonte  
-Tipos label: Convênio · Custo indireto
+Tipos label: Convênio · Custo indireto  
+Ações: **Excluir** (API `DELETE /api/compras/fontes/{id}`) — só Sede (`exigir_sede`); bloqueia se houver pedidos com a fonte.
+
+### Exclusão de categoria
+
+`DELETE /api/compras/categorias/{id}` — bloqueia se houver itens do catálogo, bens ou linhas de pedido; limpa vínculo legado em fornecedores (`categoria_id` / `compras_fornecedor_categorias`) e então remove. A UI só mostra sucesso após a API confirmar (não confunde com «categoria atualizada»).
 
 ---
 
