@@ -3404,13 +3404,21 @@ async def _nomes_categorias_org(
     return [r.nome for r in rows if r.id != ignorar_id]
 
 
-def _recusar_nome_semelhante(*, tipo: str, nome: str, existentes: list[str]) -> None:
+def _recusar_nome_semelhante(
+    *,
+    tipo: str,
+    nome: str,
+    existentes: list[str],
+    permitir_semelhante: bool = False,
+) -> None:
     exato = nome_cadastro_exato(nome, existentes)
     if exato:
         raise HTTPException(
             status_code=400,
             detail=f'Já existe {tipo} "{exato}". Use a existente para não duplicar.',
         )
+    if permitir_semelhante:
+        return
     semelhantes = nomes_cadastro_semelhantes(nome, existentes)
     if semelhantes:
         raise HTTPException(
@@ -3426,7 +3434,12 @@ async def salvar_categoria(db: AsyncSession, usuario: dict, payload: dict, categ
         raise HTTPException(status_code=400, detail="Nome da categoria obrigatório.")
     org_id = _org_id(usuario)
     existentes = await _nomes_categorias_org(db, org_id, ignorar_id=categoria_id)
-    _recusar_nome_semelhante(tipo="categoria", nome=nome, existentes=existentes)
+    _recusar_nome_semelhante(
+        tipo="categoria",
+        nome=nome,
+        existentes=existentes,
+        permitir_semelhante=bool(payload.get("permitir_semelhante")),
+    )
     if categoria_id:
         row = (
             await db.execute(
@@ -3937,7 +3950,12 @@ async def salvar_fonte(db: AsyncSession, usuario: dict, payload: dict, fonte_id:
         ).scalars().all()
         if r.id != fonte_id
     ]
-    _recusar_nome_semelhante(tipo="fonte", nome=nome, existentes=existentes)
+    _recusar_nome_semelhante(
+        tipo="fonte",
+        nome=nome,
+        existentes=existentes,
+        permitir_semelhante=bool(payload.get("permitir_semelhante")),
+    )
     if fonte_id:
         row = (
             await db.execute(

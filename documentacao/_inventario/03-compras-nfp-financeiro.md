@@ -428,7 +428,7 @@ Botões: Fechar · Cancelar · Salvar / Salvando…
 
 ### Categorias do catálogo
 
-Ajuda (texto JSX): uso Consumo (janela), Itens de manutenção, Bem/imobilizado ou Serviço; Carne/Peixe categorias próprias.
+Ajuda (texto JSX): uso Consumo (janela), Itens de manutenção, Bem/imobilizado ou Serviço; Carne/Peixe categorias próprias. Nome parecido avisa e oferece **Cadastrar mesmo assim** (com confirmação); nome **idêntico** continua bloqueado.
 
 | Campo cadastro | Rótulo |
 | --- | --- |

@@ -52,7 +52,14 @@ function ListaNomes({
   const enviar = async (evento) => {
     evento.preventDefault();
     const valor = nome.trim();
-    if (!valor || semelhantes.length) return;
+    if (!valor) return;
+    if (semelhantes.length) {
+      const lista = semelhantes.map((item) => `"${item}"`).join(', ');
+      const ok = window.confirm(
+        `Já existe ${tipo} semelhante: ${lista}.\n\nDeseja criar "${valor}" mesmo assim?`,
+      );
+      if (!ok) return;
+    }
     // Limpa antes do recarregar da lista — senão o nome novo já entra em
     // `itens` com o campo ainda preenchido e dispara aviso falso de duplicata.
     const snapshot = {
@@ -61,6 +68,7 @@ function ListaNomes({
       tipoFonte,
       vigenciaInicio,
       vigenciaFim,
+      permitirSemelhante: semelhantes.length > 0,
     };
     setNome('');
     setSegmento(SEGMENTO_CONSUMO);
@@ -75,9 +83,14 @@ function ListaNomes({
           tipo: snapshot.tipoFonte,
           vigencia_inicio: snapshot.vigenciaInicio || null,
           vigencia_fim: snapshot.vigenciaFim || null,
+          permitir_semelhante: snapshot.permitirSemelhante,
         });
       } else if (tipo === 'categoria') {
-        await onSalvar({ nome: valor, segmento: snapshot.segmento });
+        await onSalvar({
+          nome: valor,
+          segmento: snapshot.segmento,
+          permitir_semelhante: snapshot.permitirSemelhante,
+        });
       } else {
         await onSalvar(valor);
       }
@@ -128,8 +141,8 @@ function ListaNomes({
                   />
                 </div>
               ) : null}
-              <PremiumButton type="submit" disabled={salvando || !nome.trim() || semelhantes.length > 0}>
-                Cadastrar
+              <PremiumButton type="submit" disabled={salvando || !nome.trim()}>
+                {semelhantes.length > 0 ? 'Cadastrar mesmo assim' : 'Cadastrar'}
               </PremiumButton>
             </div>
             {tipo === 'fonte' ? (
@@ -151,7 +164,10 @@ function ListaNomes({
             {semelhantes.length > 0 ? (
               <p className="text-sm text-amber-800">
                 Já existe {tipo} semelhante: {semelhantes.map((item) => `"${item}"`).join(', ')}.
-                Use a existente para não duplicar.
+                Confira se precisa de outra; se precisar das duas, clique em
+                {' '}
+                <strong>Cadastrar mesmo assim</strong>
+                .
               </p>
             ) : null}
           </form>
@@ -221,10 +237,26 @@ function ListaNomes({
                             onClick={async () => {
                               const nomeNovo = window.prompt('Novo nome da categoria:', item.nome);
                               if (!nomeNovo?.trim() || nomeNovo.trim() === item.nome) return;
+                              const valor = nomeNovo.trim();
+                              const parecidas = conflitosNomeCadastro(
+                                valor,
+                                itens.map((c) => c.nome),
+                                { ignorar: item.nome },
+                              );
+                              let permitirSemelhante = false;
+                              if (parecidas.length) {
+                                const lista = parecidas.map((n) => `"${n}"`).join(', ');
+                                const ok = window.confirm(
+                                  `Já existe categoria semelhante: ${lista}.\n\nDeseja renomear para "${valor}" mesmo assim?`,
+                                );
+                                if (!ok) return;
+                                permitirSemelhante = true;
+                              }
                               await onSalvar({
-                                nome: nomeNovo.trim(),
+                                nome: valor,
                                 segmento: item.segmento,
                                 depreciacao_anual_percentual: item.depreciacao_anual_percentual ?? null,
+                                permitir_semelhante: permitirSemelhante,
                               }, item.id);
                             }}
                           >

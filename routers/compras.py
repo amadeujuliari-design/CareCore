@@ -323,6 +323,8 @@ class NomeCadastroIn(BaseModel):
     nome: str
     ativo: Optional[bool] = True
     segmento: Optional[str] = None
+    # Aviso de nome parecido no front; se True, grava mesmo assim (nome idêntico continua bloqueado).
+    permitir_semelhante: Optional[bool] = False
 
 
 class CategoriaIn(NomeCadastroIn):

@@ -44,3 +44,27 @@ def test_mensagem_aponta_a_existente():
     texto = mensagem_nome_semelhante(tipo="categoria", semelhantes=["Higiene e limpeza"])
     assert "Higiene e limpeza" in texto
     assert "não duplicar" in texto
+
+
+def test_permitir_semelhante_nao_bloqueia_parecido_mas_bloqueia_exato():
+    from fastapi import HTTPException
+
+    from compras_service import _recusar_nome_semelhante
+
+    _recusar_nome_semelhante(
+        tipo="categoria",
+        nome="HIGIENE E LIMPEZA",
+        existentes=["HIGIENE"],
+        permitir_semelhante=True,
+    )
+    try:
+        _recusar_nome_semelhante(
+            tipo="categoria",
+            nome="HIGIENE",
+            existentes=["HIGIENE"],
+            permitir_semelhante=True,
+        )
+        raise AssertionError("nome idêntico deveria continuar bloqueado")
+    except HTTPException as exc:
+        assert exc.status_code == 400
+        assert "HIGIENE" in str(exc.detail)
