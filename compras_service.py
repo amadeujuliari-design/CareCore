@@ -476,46 +476,54 @@ async def _sanear_acentos_cadastro_compras(db: AsyncSession, organizacao_id: str
 
 
 async def garantir_cadastros_padrao(db: AsyncSession, organizacao_id: str) -> None:
-    await _sanear_acentos_cadastro_compras(db, organizacao_id)
-    existentes_cat = {
-        (row[0] or "").strip().lower()
-        for row in (
-            await db.execute(
-                select(ComprasCategoriaDB.nome).where(
-                    ComprasCategoriaDB.organizacao_id == organizacao_id
-                )
-            )
-        ).all()
-    }
-    for nome in CATEGORIAS_PADRAO:
-        if nome.lower() not in existentes_cat:
-            db.add(ComprasCategoriaDB(
-                organizacao_id=organizacao_id,
-                nome=nome,
-                segmento=inferir_segmento_por_nome_categoria(nome),
-                ativo=True,
-            ))
-            existentes_cat.add(nome.lower())
+    """Sanea acentos e só semeia padrão na 1ª vez (org sem categorias/fontes).
 
-    existentes_fonte = {
-        (row[0] or "").strip().lower()
-        for row in (
+    Rodar o seed a cada request recriava nomes padrão após a Sede renomear ou excluir
+    (ex.: «Cama e banho» → outro nome e a lista voltava a ter as duas).
+    """
+    await _sanear_acentos_cadastro_compras(db, organizacao_id)
+
+    qtd_cat = int(
+        (
             await db.execute(
-                select(ComprasFonteRecursoDB.nome).where(
-                    ComprasFonteRecursoDB.organizacao_id == organizacao_id
+                select(func.count())
+                .select_from(ComprasCategoriaDB)
+                .where(ComprasCategoriaDB.organizacao_id == organizacao_id)
+            )
+        ).scalar_one()
+        or 0
+    )
+    if qtd_cat == 0:
+        for nome in CATEGORIAS_PADRAO:
+            db.add(
+                ComprasCategoriaDB(
+                    organizacao_id=organizacao_id,
+                    nome=nome,
+                    segmento=inferir_segmento_por_nome_categoria(nome),
+                    ativo=True,
                 )
             )
-        ).all()
-    }
-    for nome in FONTES_PADRAO:
-        if nome.lower() not in existentes_fonte:
-            db.add(ComprasFonteRecursoDB(
-                organizacao_id=organizacao_id,
-                nome=nome,
-                tipo=inferir_tipo_fonte(nome),
-                ativo=True,
-            ))
-            existentes_fonte.add(nome.lower())
+
+    qtd_fonte = int(
+        (
+            await db.execute(
+                select(func.count())
+                .select_from(ComprasFonteRecursoDB)
+                .where(ComprasFonteRecursoDB.organizacao_id == organizacao_id)
+            )
+        ).scalar_one()
+        or 0
+    )
+    if qtd_fonte == 0:
+        for nome in FONTES_PADRAO:
+            db.add(
+                ComprasFonteRecursoDB(
+                    organizacao_id=organizacao_id,
+                    nome=nome,
+                    tipo=inferir_tipo_fonte(nome),
+                    ativo=True,
+                )
+            )
 
 
 def _iso(valor: Optional[datetime | date]) -> Optional[str]:
