@@ -147,10 +147,23 @@ function ListaNomes({
                   />
                 </div>
               ) : null}
-              <PremiumButton type="submit" disabled={salvando || !nome.trim()}>
+              <PremiumButton
+                type="submit"
+                disabled={salvando || !nome.trim()}
+                title={!nome.trim() ? `Digite o nome da ${tipo} para cadastrar` : undefined}
+              >
                 {semelhantes.length > 0 ? 'Cadastrar mesmo assim' : 'Cadastrar'}
               </PremiumButton>
             </div>
+            {!nome.trim() ? (
+              <p className="text-xs text-slate-500">
+                Digite o nome em
+                {' '}
+                <strong>{campoNovo}</strong>
+                {' '}
+                para liberar o botão Cadastrar. Editar e Excluir ficam na lista abaixo, nas categorias já existentes.
+              </p>
+            ) : null}
             {tipo === 'fonte' ? (
               <div className="grid gap-2 sm:grid-cols-2">
                 <CampoTexto
