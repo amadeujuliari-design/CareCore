@@ -112,6 +112,15 @@ from compras_regras import (
     pedido_rascunho_pode_excluir,
     pode_reabrir_orcamento_aprovado,
     sede_pode_reabrir_aprovado,
+    pedido_status_permite_reabrir_processo,
+    fases_reabertura_processo,
+    fase_reabertura_valida,
+    FASE_REABERTURA_AGUARDANDO_NF,
+    FASE_REABERTURA_ASSINATURA_NF,
+    FASE_REABERTURA_ENVIADO,
+    FASE_REABERTURA_A_PAGAR,
+    FASE_REABERTURA_EXTRATO,
+    _FASES_REABERTURA_META,
     CLASSE_DOC_BOLETO,
     CLASSE_DOC_COMPROVANTE,
     CLASSE_DOC_CONTRATO,
@@ -1100,6 +1109,21 @@ async def extras_serializacao_pedido(db: AsyncSession, pedido: ComprasPedidoDB) 
         "pode_reabrir_aprovado": pode_reabrir_orcamento_aprovado(
             status=pedido.status,
             pedido_compra_enviado=bool(email_pedido_ok and pedido.pedido_compra_anexo_id),
+        ),
+        "fases_reabertura_processo": fases_reabertura_processo(
+            pedido.tipo,
+            getattr(pedido, "destino_compras", None),
+            pedido.status,
+        ),
+        "pode_reabrir_processo_fase": (
+            pedido_status_permite_reabrir_processo(pedido.status)
+            and bool(
+                fases_reabertura_processo(
+                    pedido.tipo,
+                    getattr(pedido, "destino_compras", None),
+                    pedido.status,
+                )
+            )
         ),
         "pode_excluir": pedido_rascunho_pode_excluir(
             status=pedido.status,
@@ -4716,6 +4740,98 @@ async def reabrir_pedido_a_pagar(
         usuario_id=_uid(usuario),
         status_anterior=anterior,
         status_novo=STATUS_AGUARDANDO_PAGAMENTO,
+    )
+    return pedido
+
+
+def _limpar_marcadores_conclusao_pedido(pedido: ComprasPedidoDB) -> None:
+    pedido.recebido_em = None
+    pedido.recebido_por_id = None
+
+
+def _limpar_marcadores_a_pagar_pedido(pedido: ComprasPedidoDB) -> None:
+    pedido.a_pagar_lida_em = None
+    pedido.a_pagar_lida_por_id = None
+    pedido.nf_impressa_em = None
+    pedido.nf_impressa_por_id = None
+    pedido.nf_para_pagamento_em = None
+    pedido.nf_para_pagamento_por_id = None
+
+
+async def reabrir_processo_para_fase(
+    db: AsyncSession,
+    usuario: dict,
+    pedido: ComprasPedidoDB,
+    fase: str,
+    motivo: str,
+) -> ComprasPedidoDB:
+    """Sede reabre o fluxo para uma fase escolhida, atualizando status e marcadores."""
+    perfil = str(usuario.get("perfil_acesso") or usuario.get("perfil") or "")
+    if not usuario_e_sede_compras(perfil=perfil, is_manutencao=bool(usuario.get("is_manutencao"))):
+        raise HTTPException(
+            status_code=403,
+            detail="Somente Infraestrutura ou Suprimentos pode reabrir o processo para uma fase.",
+        )
+    texto_motivo = (motivo or "").strip()
+    if len(texto_motivo) < 3:
+        raise HTTPException(status_code=400, detail="Informe o motivo da reabertura (mínimo 3 caracteres).")
+    if not pedido_status_permite_reabrir_processo(pedido.status):
+        raise HTTPException(
+            status_code=400,
+            detail="Só é possível reabrir pedidos concluídos, em A pagar ou em conferência do extrato.",
+        )
+    destino = getattr(pedido, "destino_compras", None)
+    alvo = (fase or "").strip().lower()
+    if not fase_reabertura_valida(
+        pedido.tipo,
+        alvo,
+        destino=destino,
+        status_atual=pedido.status,
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="Fase de reabertura inválida para este tipo de pedido ou status atual.",
+        )
+
+    anterior = pedido.status
+    agora = agora_operacional_naive()
+    _limpar_marcadores_conclusao_pedido(pedido)
+
+    if alvo in {FASE_REABERTURA_AGUARDANDO_NF, FASE_REABERTURA_ASSINATURA_NF, FASE_REABERTURA_ENVIADO}:
+        _limpar_marcadores_a_pagar_pedido(pedido)
+    elif alvo == FASE_REABERTURA_A_PAGAR:
+        _limpar_marcadores_a_pagar_pedido(pedido)
+    elif alvo == FASE_REABERTURA_EXTRATO:
+        # Continua “após impressão”: limpa só conclusão; mantém/marca envio ao pagamento.
+        pedido.a_pagar_lida_em = None
+        pedido.a_pagar_lida_por_id = None
+        if not getattr(pedido, "nf_para_pagamento_em", None):
+            pedido.nf_para_pagamento_em = agora
+            pedido.nf_para_pagamento_por_id = _uid(usuario)
+        if not getattr(pedido, "nf_impressa_em", None):
+            pedido.nf_impressa_em = agora
+            pedido.nf_impressa_por_id = _uid_caixa(usuario)
+
+    # Assinatura da NF: se não houver NF anexada, cai para Aguardando NF.
+    if alvo == FASE_REABERTURA_ASSINATURA_NF:
+        notas = [n for n in await _notas_pedido(db, pedido.id) if (n.tipo_nf or "") != "boleto"]
+        if not notas:
+            alvo = FASE_REABERTURA_AGUARDANDO_NF
+
+    pedido.status = alvo
+    pedido.status_anterior = None
+    pedido.atualizado_em = agora
+
+    meta = _FASES_REABERTURA_META.get(alvo) or {}
+    rotulo = meta.get("rotulo") or alvo
+    await registrar_evento_pedido(
+        db,
+        pedido_id=pedido.id,
+        tipo=TIPO_EVENTO_STATUS,
+        texto=f"Processo reaberto para «{rotulo}». Motivo: {texto_motivo}",
+        usuario_id=_uid(usuario),
+        status_anterior=anterior,
+        status_novo=alvo,
     )
     return pedido
 

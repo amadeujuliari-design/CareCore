@@ -198,6 +198,14 @@ export async function comprasReabrirAPagar(pedidoId) {
   return data;
 }
 
+export async function comprasReabrirProcesso(pedidoId, { fase, motivo }) {
+  const { data } = await api.post(`/api/compras/pedidos/${pedidoId}/reabrir-processo`, {
+    fase,
+    motivo,
+  });
+  return data;
+}
+
 export async function comprasEmailNotasPendentes(pedidoId, payload = {}) {
   const { data } = await api.post(`/api/compras/pedidos/${pedidoId}/email-notas-pendentes`, payload);
   return data;

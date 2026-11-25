@@ -1460,6 +1460,102 @@ def pedido_pode_corrigir_nf(
     return st in {STATUS_ENVIADO, STATUS_AGUARDANDO_PAGAMENTO}
 
 
+# Fases para "Reabrir processo" (Sede escolhe até onde voltar).
+FASE_REABERTURA_AGUARDANDO_NF = STATUS_AGUARDANDO_NF
+FASE_REABERTURA_ASSINATURA_NF = STATUS_AGUARDANDO_ASSINATURA_NF
+FASE_REABERTURA_ENVIADO = STATUS_ENVIADO
+FASE_REABERTURA_A_PAGAR = STATUS_AGUARDANDO_PAGAMENTO
+FASE_REABERTURA_EXTRATO = STATUS_AGUARDANDO_EXTRATO
+
+STATUS_ORIGEM_REABERTURA_PROCESSO = frozenset(
+    {
+        STATUS_RECEBIDO,
+        STATUS_IMPRIMIR_NF,
+        STATUS_AGUARDANDO_EXTRATO,
+        STATUS_AGUARDANDO_PAGAMENTO,
+    }
+)
+
+_FASES_REABERTURA_META = {
+    FASE_REABERTURA_AGUARDANDO_NF: {
+        "id": FASE_REABERTURA_AGUARDANDO_NF,
+        "rotulo": "Aguardando NF",
+        "ajuda": "Volta para anexar ou trocar a nota fiscal (projeto exclui a errada e sobe a certa).",
+    },
+    FASE_REABERTURA_ASSINATURA_NF: {
+        "id": FASE_REABERTURA_ASSINATURA_NF,
+        "rotulo": "Aguardando assinatura da NF",
+        "ajuda": "Mantém a NF anexada e pede assinatura digital de novo.",
+    },
+    FASE_REABERTURA_ENVIADO: {
+        "id": FASE_REABERTURA_ENVIADO,
+        "rotulo": "Documentos / NF (após compra)",
+        "ajuda": "Volta à etapa de documentos da compra para corrigir ou anexar NF, boleto ou relacionados.",
+    },
+    FASE_REABERTURA_A_PAGAR: {
+        "id": FASE_REABERTURA_A_PAGAR,
+        "rotulo": "A pagar",
+        "ajuda": "Devolve o pedido à fila A pagar da Sede (impressão / envio ao pagamento).",
+    },
+    FASE_REABERTURA_EXTRATO: {
+        "id": FASE_REABERTURA_EXTRATO,
+        "rotulo": "Conferência do extrato",
+        "ajuda": "Projeto confere o extrato e encerra de novo.",
+    },
+}
+
+
+def pedido_status_permite_reabrir_processo(status: Optional[str]) -> bool:
+    return (status or "").strip().lower() in STATUS_ORIGEM_REABERTURA_PROCESSO
+
+
+def fases_reabertura_processo(
+    tipo: Optional[str],
+    destino: Optional[str] = None,
+    status_atual: Optional[str] = None,
+) -> list[dict]:
+    """Fases disponíveis para a Sede reabrir o fluxo, filtradas pelo tipo e pelo status atual."""
+    st = (status_atual or "").strip().lower()
+    if tipo_eh_emergencia(tipo):
+        ordem = [
+            FASE_REABERTURA_AGUARDANDO_NF,
+            FASE_REABERTURA_ASSINATURA_NF,
+            FASE_REABERTURA_A_PAGAR,
+            FASE_REABERTURA_EXTRATO,
+        ]
+    else:
+        # Demais tipos: documentos pós-compra e fila A pagar (sem fase de extrato da emergência).
+        ordem = [FASE_REABERTURA_ENVIADO, FASE_REABERTURA_A_PAGAR]
+
+    # Não oferecer a própria fase atual (exceto concluídos, que não estão na lista de fases).
+    fases: list[dict] = []
+    for fase_id in ordem:
+        if fase_id == st:
+            continue
+        # De A pagar só faz sentido voltar para etapas anteriores (não "avançar" para extrato sem imprimir).
+        if st == STATUS_AGUARDANDO_PAGAMENTO and fase_id in {
+            FASE_REABERTURA_EXTRATO,
+        }:
+            continue
+        meta = _FASES_REABERTURA_META.get(fase_id)
+        if meta:
+            fases.append(dict(meta))
+    return fases
+
+
+def fase_reabertura_valida(
+    tipo: Optional[str],
+    fase: Optional[str],
+    *,
+    destino: Optional[str] = None,
+    status_atual: Optional[str] = None,
+) -> bool:
+    alvo = (fase or "").strip().lower()
+    if not alvo:
+        return False
+    return any(item["id"] == alvo for item in fases_reabertura_processo(tipo, destino, status_atual))
+
+
 EMAIL_NOTAS_PENDENTES = "notaspendentes@aeb-brasil.org.br"
 
 

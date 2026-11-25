@@ -35,6 +35,7 @@ from compras_pedido_fluxo import (
     assinar_nota_fiscal_pendente,
     marcar_leitura_a_pagar,
     reabrir_pedido_a_pagar,
+    reabrir_processo_para_fase,
     reabrir_orcamento_aprovado,
     reabrir_pedido,
     resgatar_pedidos_nf_pronta_a_pagar,
@@ -279,6 +280,11 @@ class ReprovarIn(BaseModel):
 
 class ReabrirAprovadoIn(BaseModel):
     motivo: str
+
+
+class ReabrirProcessoFaseIn(BaseModel):
+    fase: str = Field(..., min_length=1)
+    motivo: str = Field(..., min_length=3, max_length=2000)
 
 
 class DesativarCotacaoIn(BaseModel):
@@ -1166,6 +1172,27 @@ async def post_reabrir_a_pagar(
     await _ctx(db, usuario_atual)
     pedido = await obter_pedido(db, usuario_atual, pedido_id)
     await reabrir_pedido_a_pagar(db, usuario_atual, pedido)
+    await db.commit()
+    return await serializar_pedido(db, pedido, incluir_detalhe=True, usuario=usuario_atual)
+
+
+@router.post("/pedidos/{pedido_id}/reabrir-processo")
+async def post_reabrir_processo(
+    pedido_id: str,
+    payload: ReabrirProcessoFaseIn,
+    db: AsyncSession = Depends(get_db),
+    usuario_atual: dict = Depends(get_usuario_logado),
+):
+    """Sede escolhe a fase do fluxo para a qual o pedido deve voltar."""
+    await _ctx(db, usuario_atual)
+    pedido = await obter_pedido(db, usuario_atual, pedido_id)
+    await reabrir_processo_para_fase(
+        db,
+        usuario_atual,
+        pedido,
+        fase=payload.fase,
+        motivo=payload.motivo,
+    )
     await db.commit()
     return await serializar_pedido(db, pedido, incluir_detalhe=True, usuario=usuario_atual)
 

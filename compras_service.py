@@ -825,6 +825,14 @@ async def serializar_pedido(
         payload["pode_excluir"] = False
         payload["pode_reabrir"] = False
         payload["pode_reabrir_aprovado"] = False
+        payload["pode_reabrir_processo_fase"] = False
+    elif usuario and payload.get("pode_reabrir_processo_fase"):
+        perfil = str(usuario.get("perfil_acesso") or usuario.get("perfil") or "")
+        if not usuario_e_sede_compras(
+            perfil=perfil,
+            is_manutencao=bool(usuario.get("is_manutencao")),
+        ):
+            payload["pode_reabrir_processo_fase"] = False
     return payload
 
 

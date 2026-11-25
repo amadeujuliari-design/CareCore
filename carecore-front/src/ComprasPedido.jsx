@@ -8,6 +8,7 @@ import ComprasItemTypeahead from './components/ComprasItemTypeahead';
 import ModalFormItemConsumo from './components/ModalFormItemConsumo';
 import ModalPosicionarAssinaturaOrcamento from './components/ModalPosicionarAssinaturaOrcamento';
 import ModalPosicionarTextoNf from './components/ModalPosicionarTextoNf';
+import ModalReabrirProcessoCompras from './components/ModalReabrirProcessoCompras';
 import ModalRevisarEmailCompras from './components/ModalRevisarEmailCompras';
 import ModalVisualizarAnexoCompras from './components/ModalVisualizarAnexoCompras';
 import Sidebar from './Sidebar';
@@ -54,6 +55,7 @@ import {
   comprasQuitarPagamento,
   comprasReabrir,
   comprasReabrirAPagar,
+  comprasReabrirProcesso,
   comprasReabrirAprovado,
   comprasAbrirAnexoBlob,
   comprasAssinarNotaFiscal,
@@ -359,6 +361,8 @@ export default function ComprasPedido() {
   const [assinaturaGestor, setAssinaturaGestor] = useState({ gestor: false, cadastrada: false });
   const [modalAssinatura, setModalAssinatura] = useState(null);
   const [modalEmail, setModalEmail] = useState(null);
+  const [modalReabrirProcesso, setModalReabrirProcesso] = useState(false);
+  const [reabrindoProcesso, setReabrindoProcesso] = useState(false);
   const [modalNotasPendentes, setModalNotasPendentes] = useState(null);
   const [fornecedorEnvioId, setFornecedorEnvioId] = useState('');
   const [rascunhoEmail, setRascunhoEmail] = useState({
@@ -697,6 +701,8 @@ export default function ComprasPedido() {
   ) && (sede || (unidade && !pedidoSede));
   const podeReabrir = pedido.pode_reabrir && pedido.fechado_por_id === usuarioId;
   const podeReabrirAprovado = sede && pedido.pode_reabrir_aprovado;
+  const podeReabrirProcessoFase = Boolean(sede && !consultaGlobal && pedido.pode_reabrir_processo_fase);
+  const fasesReaberturaProcesso = pedido.fases_reabertura_processo || [];
   const pedidoCompra = (pedido.anexos || []).find((a) => a.tipo === 'pedido_compra');
   const cotacaoVencedoraId = (pedido.cotacoes || []).find((c) => c.escolhida)?.id;
   const orcamentosEnvio = anexosOrcamentoParaEnvio(pedido.anexos, cotacaoVencedoraId);
@@ -3623,6 +3629,15 @@ export default function ComprasPedido() {
                     Reabrir processo
                   </PremiumButton>
                 )}
+                {podeReabrirProcessoFase && (
+                  <PremiumButton
+                    variant="secondary"
+                    className="border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100"
+                    onClick={() => setModalReabrirProcesso(true)}
+                  >
+                    Reabrir processo
+                  </PremiumButton>
+                )}
                 {podeReabrirAprovado && (
                   <PremiumButton
                     variant="secondary"
@@ -3690,6 +3705,27 @@ export default function ComprasPedido() {
           </div>
         </ScrollArea>
       </MainShell>
+      <ModalReabrirProcessoCompras
+        aberto={modalReabrirProcesso}
+        fases={fasesReaberturaProcesso}
+        salvando={reabrindoProcesso}
+        onCancelar={() => {
+          if (reabrindoProcesso) return;
+          setModalReabrirProcesso(false);
+        }}
+        onConfirmar={async ({ fase, motivo }) => {
+          setReabrindoProcesso(true);
+          try {
+            const ok = await agir(
+              () => comprasReabrirProcesso(pedido.id, { fase, motivo }),
+              'Processo reaberto na fase escolhida.',
+            );
+            if (ok) setModalReabrirProcesso(false);
+          } finally {
+            setReabrindoProcesso(false);
+          }
+        }}
+      />
       <ModalRevisarEmailCompras
         aberto={Boolean(modalEmail)}
         titulo={

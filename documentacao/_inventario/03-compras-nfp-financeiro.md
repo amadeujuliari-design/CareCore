@@ -297,7 +297,7 @@ Para a Sede, ao abrir um pedido em Imprimir NF, Encerrado ou **A pagar**, o avis
 | Aprovar na Sede | sede + aguardando_aprovacao_sede (não projeto) |
 | Posicionar assinatura e aprovar (Sede) | cotação projeto na sede |
 | Enviar pedido de compra por e-mail | aprovado / pode enviar |
-| Reabrir processo | quando `podeReabrir` |
+| Reabrir processo | quando `podeReabrir` (cancelado/reprovado) **ou** Sede com `pode_reabrir_processo_fase` (concluído / A pagar / conferência do extrato): modal escolhe a fase (emergência: Aguardando NF, assinatura NF, A pagar, conferência do extrato; demais: documentos pós-compra ou A pagar), motivo obrigatório; atualiza status e marcadores e registra na timeline |
 | Reabrir orçamento aprovado | Sede + `aprovado` + pedido de compra ainda não enviado (motivo obrigatório) |
 | Excluir rascunho | `pedido.pode_excluir` |
 | Reprovar / Cancelar | não terminal (motivo via prompt) |
