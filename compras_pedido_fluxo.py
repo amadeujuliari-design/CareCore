@@ -3281,24 +3281,89 @@ async def encerrar_pedido(
     return pedido
 
 
+def _descricao_patrimonio_fallback_pedido(pedido: ComprasPedidoDB) -> str:
+    """Bem/imobilizado costuma não ter linhas: usa a descrição digitada no pedido."""
+    for candidato in (
+        getattr(pedido, "info_pedido", None),
+        getattr(pedido, "titulo", None),
+    ):
+        texto = (candidato or "").strip()
+        if texto:
+            return texto
+    return ""
+
+
+def _valor_centavos_patrimonio_pedido(pedido: ComprasPedidoDB, escolhida) -> int | None:
+    if escolhida is not None and getattr(escolhida, "valor_centavos", None) is not None:
+        try:
+            return int(escolhida.valor_centavos)
+        except (TypeError, ValueError):
+            pass
+    estimado = getattr(pedido, "valor_estimado_centavos", None)
+    if estimado is not None:
+        try:
+            return int(estimado)
+        except (TypeError, ValueError):
+            return None
+    return None
+
+
+async def _copiar_anexos_pedido_para_patrimonio(
+    db: AsyncSession,
+    *,
+    bem: ComprasPatrimonioDB,
+    anexos_pedido: list,
+    notas_nf: list,
+    agora,
+) -> None:
+    ids_nf = {n.anexo_id for n in notas_nf if n.anexo_id}
+    vistos = set()
+    for anexo_nf in anexos_pedido:
+        if not getattr(anexo_nf, "ativo", True):
+            continue
+        if anexo_nf.id not in ids_nf and anexo_nf.tipo not in TIPOS_ANEXO_NO_BEM:
+            continue
+        chave = anexo_nf.caminho_arquivo or anexo_nf.id
+        if chave in vistos:
+            continue
+        vistos.add(chave)
+        db.add(
+            ComprasPatrimonioAnexoDB(
+                patrimonio_id=bem.id,
+                nome_arquivo=anexo_nf.nome_arquivo,
+                caminho_arquivo=anexo_nf.caminho_arquivo,
+                content_type=anexo_nf.content_type,
+                tamanho_bytes=anexo_nf.tamanho_bytes,
+                tipo=tipo_arquivo_bem_de_anexo_pedido(anexo_nf.tipo) or "nota",
+                ativo=True,
+                criado_em=agora,
+            )
+        )
+
+
 async def garantir_patrimonio_imobilizado_apos_conclusao(
     db: AsyncSession,
     pedido: ComprasPedidoDB,
-) -> None:
-    """Cria bens patrimoniais ao concluir imobilizado (impressão em A pagar)."""
+) -> int:
+    """Cria bens patrimoniais ao concluir imobilizado (impressão em A pagar).
+
+    Com linhas de item: um bem por linha. Sem linhas (fluxo típico de bem/serviço
+    com descrição livre): um bem a partir de info_pedido/titulo.
+    Retorna quantos bens foram criados nesta chamada.
+    """
     if pedido.tipo != TIPO_IMOBILIZADO:
-        return
+        return 0
     existentes = (
         await db.execute(
             select(ComprasPatrimonioDB.id).where(ComprasPatrimonioDB.pedido_id == pedido.id)
         )
     ).scalars().all()
     if existentes:
-        return
+        return 0
     notas = await _notas_pedido(db, pedido.id)
     notas_nf = [n for n in notas if (n.tipo_nf or "") != "boleto"]
     if not notas_nf:
-        return
+        return 0
     doc_nf = notas_nf[0].numero or notas_nf[0].chave_acesso
     itens = (
         await db.execute(
@@ -3307,9 +3372,38 @@ async def garantir_patrimonio_imobilizado_apos_conclusao(
     ).scalars().all()
     cotacoes = await _cotacoes_ativas(db, pedido.id)
     escolhida = next((c for c in cotacoes if c.escolhida), None)
-    valor_item = None
-    if escolhida and itens:
-        valor_item = int(escolhida.valor_centavos / max(len(itens), 1))
+    specs: list[dict] = []
+    if itens:
+        valor_total = _valor_centavos_patrimonio_pedido(pedido, escolhida)
+        valor_item = (
+            int(valor_total / max(len(itens), 1))
+            if valor_total is not None
+            else None
+        )
+        for item in itens:
+            desc = (getattr(item, "descricao", None) or "").strip()
+            if not desc:
+                continue
+            specs.append(
+                {
+                    "pedido_item_id": item.id,
+                    "categoria_id": getattr(item, "categoria_id", None),
+                    "descricao": desc,
+                    "valor_centavos": valor_item,
+                }
+            )
+    if not specs:
+        desc = _descricao_patrimonio_fallback_pedido(pedido)
+        if not desc:
+            return 0
+        specs.append(
+            {
+                "pedido_item_id": None,
+                "categoria_id": None,
+                "descricao": desc,
+                "valor_centavos": _valor_centavos_patrimonio_pedido(pedido, escolhida),
+            }
+        )
     escopo = getattr(pedido, "escopo_unidade", ESCOPO_PROJETO) or ESCOPO_PROJETO
     inst_id = None if pedido_escopo_sede(escopo) else pedido.instituicao_id
     agora = agora_operacional_naive()
@@ -3324,16 +3418,18 @@ async def garantir_patrimonio_imobilizado_apos_conclusao(
         ).scalar_one_or_none()
         if fonte and (fonte.tipo or "") == FONTE_TIPO_CONVENIO:
             propriedade = PATRIMONIO_PROPRIEDADE_PUBLICO
-    for item in itens:
+    anexos_pedido = await _anexos_pedido(db, pedido.id)
+    criados = 0
+    for spec in specs:
         bem = ComprasPatrimonioDB(
             organizacao_id=pedido.organizacao_id,
             instituicao_id=inst_id,
             pedido_id=pedido.id,
-            pedido_item_id=item.id,
-            categoria_id=item.categoria_id,
-            descricao=item.descricao,
+            pedido_item_id=spec["pedido_item_id"],
+            categoria_id=spec["categoria_id"],
+            descricao=spec["descricao"],
             documento_nf=doc_nf,
-            valor_centavos=valor_item,
+            valor_centavos=spec["valor_centavos"],
             origem=PATRIMONIO_ORIGEM_COMPRA,
             propriedade=propriedade,
             situacao=PATRIMONIO_SITUACAO_BOM,
@@ -3344,30 +3440,50 @@ async def garantir_patrimonio_imobilizado_apos_conclusao(
         )
         db.add(bem)
         await db.flush()
-        anexos_pedido = await _anexos_pedido(db, pedido.id)
-        ids_nf = {n.anexo_id for n in notas_nf if n.anexo_id}
-        vistos = set()
-        for anexo_nf in anexos_pedido:
-            if not anexo_nf.ativo:
-                continue
-            if anexo_nf.id not in ids_nf and anexo_nf.tipo not in TIPOS_ANEXO_NO_BEM:
-                continue
-            chave = anexo_nf.caminho_arquivo or anexo_nf.id
-            if chave in vistos:
-                continue
-            vistos.add(chave)
-            db.add(
-                ComprasPatrimonioAnexoDB(
-                    patrimonio_id=bem.id,
-                    nome_arquivo=anexo_nf.nome_arquivo,
-                    caminho_arquivo=anexo_nf.caminho_arquivo,
-                    content_type=anexo_nf.content_type,
-                    tamanho_bytes=anexo_nf.tamanho_bytes,
-                    tipo=tipo_arquivo_bem_de_anexo_pedido(anexo_nf.tipo) or "nota",
-                    ativo=True,
-                    criado_em=agora,
+        await _copiar_anexos_pedido_para_patrimonio(
+            db,
+            bem=bem,
+            anexos_pedido=anexos_pedido,
+            notas_nf=notas_nf,
+            agora=agora,
+        )
+        criados += 1
+    return criados
+
+
+async def resgatar_patrimonios_imobilizado_pendentes(
+    db: AsyncSession,
+    usuario: dict,
+    pedidos: list[ComprasPedidoDB] | None = None,
+) -> int:
+    """Garante patrimônio em imobilizado já concluído que ficou sem bem (ex.: só descrição)."""
+    if pedidos is None:
+        org_id = (
+            usuario.get("organizacao_id")
+            or usuario.get("org_id")
+            or ""
+        )
+        if not org_id:
+            return 0
+        pedidos = list(
+            (
+                await db.execute(
+                    select(ComprasPedidoDB).where(
+                        ComprasPedidoDB.organizacao_id == org_id,
+                        ComprasPedidoDB.tipo == TIPO_IMOBILIZADO,
+                        ComprasPedidoDB.status.in_({STATUS_RECEBIDO, STATUS_IMPRIMIR_NF}),
+                    )
                 )
-            )
+            ).scalars().all()
+        )
+    total = 0
+    for pedido in pedidos:
+        if (pedido.tipo or "") != TIPO_IMOBILIZADO:
+            continue
+        if (pedido.status or "") not in {STATUS_RECEBIDO, STATUS_IMPRIMIR_NF}:
+            continue
+        total += await garantir_patrimonio_imobilizado_apos_conclusao(db, pedido)
+    return total
 
 
 async def _pedido_tem_orcamento_assinado(db: AsyncSession, pedido_id: str) -> bool:

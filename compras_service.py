@@ -165,6 +165,7 @@ from compras_pedido_fluxo import (
     reabrir_pedido,
     reprovar_pedido,
     resgatar_pedidos_nf_pronta_a_pagar,
+    resgatar_patrimonios_imobilizado_pendentes,
     restaurar_orcamentos_originais_cotacao,
     unificar_orcamentos_vencedor,
     upload_anexo_pedido,
@@ -4059,6 +4060,9 @@ async def excluir_fonte(db: AsyncSession, usuario: dict, fonte_id: str) -> None:
 
 
 async def listar_patrimonio(db: AsyncSession, usuario: dict) -> list[dict]:
+    # Resgata bens de imobilizado concluído que ficaram sem patrimônio (só descrição).
+    if await resgatar_patrimonios_imobilizado_pendentes(db, usuario):
+        await db.commit()
     filtros = [ComprasPatrimonioDB.organizacao_id == _org_id(usuario)]
     if not _sede(usuario):
         filtros.append(ComprasPatrimonioDB.instituicao_id == usuario.get("instituicao_id"))

@@ -493,6 +493,8 @@ Ficha (somente leitura adicional): CEP · Logradouro · Número · Complemento �
 
 ## 1.10 Patrimônio — aba Patrimônio
 
+Ao **concluir** pedido **Bem / imobilizado** (impressão em A pagar → Encerrado), o sistema cria o bem automaticamente: um por linha de item, ou — se o pedido só tiver descrição livre (`info_pedido`/`titulo`, caso típico) — **um bem a partir dessa descrição**, com valor da cotação escolhida (ou estimado), NF e anexos relevantes. Pedidos já encerrados sem patrimônio são **resgatados** ao abrir o pedido ou a aba Patrimônio.
+
 **Arquivos:** `ComprasPatrimonioCadastro.jsx`, `ModalFormPatrimonio.jsx`
 
 Filtros: Busca · Unidade · Situação · Propriedade  
