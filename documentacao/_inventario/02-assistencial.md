@@ -481,7 +481,7 @@ Título **Resumo mensal**. Campos: **Mês de referência**, **Data inicial**, **
 
 **Modos de bip automático:** **Entrada/Saída** · **Interação**
 
-**SIAT:** com o modo Entrada/Saída, a câmera do QR Code também reconhece o rosto a partir da foto já cadastrada. Correspondência forte registra Entrada ou Saída e mostra o mesmo aviso da carteirinha. Correspondência só moderada abre o painel para a portaria confirmar. O mesmo convivente não é registrado de novo em menos de 7 segundos. Nos outros projetos a câmera continua só no QR Code.  
+**SIAT:** a câmera da rotina usa **QR Code** (e inserção manual), como nos demais projetos. O reconhecimento facial por foto cadastrada existe no código (`SIAT_RECONHECIMENTO_FACIAL_HABILITADO`), mas está **desligado**; se religar, a mesma câmera volta a reconhecer o rosto na Entrada/Saída (correspondência forte registra sozinha; moderada pede confirmação; mesmo convivente não registra de novo em menos de 7 s).  
 **Ações por convivente:** **Entrada** · **Saída** · botões de refeição/interação configuráveis · lista **Últimas Leituras**.
 
 **Campos / modais:**

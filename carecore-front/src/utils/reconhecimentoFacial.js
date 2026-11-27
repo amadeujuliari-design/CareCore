@@ -6,6 +6,13 @@ import {
   classificarCorrespondenciaFacial,
 } from './reconhecimentoFacialMatch';
 
+/**
+ * Liga/desliga o facial na rotina do SIAT sem apagar o código.
+ * false = só QR Code e inserção manual (como antes).
+ * true = câmera também reconhece o rosto na Entrada/Saída.
+ */
+export const SIAT_RECONHECIMENTO_FACIAL_HABILITADO = false;
+
 const MODELOS_URL = '/modelos-faciais';
 const cacheDescritores = new Map();
 

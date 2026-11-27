@@ -40,6 +40,7 @@ import {
   deveIgnorarLeituraConviventeRepetida,
 } from './utils/leituraCodigoUtils';
 import {
+  SIAT_RECONHECIMENTO_FACIAL_HABILITADO,
   observarRostoNaCamera,
   prepararReferenciasFaciais,
 } from './utils/reconhecimentoFacial';
@@ -226,7 +227,8 @@ export default function RotinaDiaria() {
   const [feedback, setFeedback] = useState(null);
   const [modoAutomatico, setModoAutomatico] = useState(true);
   const [tipoBipagemAutomatica, setTipoBipagemAutomatica] = useState('fluxo');
-  const facialAtivo = projetoSiat
+  const facialAtivo = SIAT_RECONHECIMENTO_FACIAL_HABILITADO
+    && projetoSiat
     && !semPortaria
     && !somenteLeitura
     && modoAutomatico
